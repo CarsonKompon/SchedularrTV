@@ -174,7 +174,7 @@ public sealed class PlayoutPublisher(
     }
 
     /// <summary>
-    /// A live feed (such as a WeatherStar station) is read through a small program marked live, so ErsatzTV joins it
+    /// A live feed (such as a web page channel) is read through a small program marked live, so ErsatzTV joins it
     /// where it is. Given as an http source, ErsatzTV would read through it to the scheduled offset first, which for
     /// an endless real-time stream never arrives (a viewer tuning in mid-forecast would wait forever).
     /// </summary>

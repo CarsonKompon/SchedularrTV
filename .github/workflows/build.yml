@@ -136,7 +136,7 @@ jobs:
             ${{ env.PREFIX }}-${{ matrix.rid }}.tar.gz
           if-no-files-found: error
 
-  # The optional plugins (Generated promos, the voices, WeatherStar) aren't in the main download. Each is zipped on its own,
+  # The optional plugins (Generated promos, the voices, web page channels…) aren't in the main download. Each is zipped on its own,
   # plus one zip of all of them that the Plugins page installs in one go. They're framework-dependent, so one build
   # serves every system.
   plugins:
@@ -206,7 +206,7 @@ jobs:
             --prerelease \
             --target "$GITHUB_SHA" \
             --title "Nightly build" \
-            --notes "Built automatically from ${GITHUB_SHA::7} on main. Download the file for your system, unzip it and run SchedularrTV. For generated promos, their voices and WeatherStar weather channels, also download $PREFIX-all-plugins.zip and install it from the Plugins page (or pick single plugins from the $PREFIX-plugin-*.zip files). These builds are untested snapshots; use a numbered release for anything you rely on."
+            --notes "Built automatically from ${GITHUB_SHA::7} on main. Download the file for your system, unzip it and run SchedularrTV. For generated promos, their voices and web page channels (WeatherStar weather and more), also download $PREFIX-all-plugins.zip and install it from the Plugins page (or pick single plugins from the $PREFIX-plugin-*.zip files). These builds are untested snapshots; use a numbered release for anything you rely on."
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')

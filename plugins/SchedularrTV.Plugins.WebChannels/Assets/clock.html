@@ -1,0 +1,221 @@
+<!doctype html>
+<!--
+  The clock preset: the time (and, with a place, its current weather) drawn at 1280x720 for the hidden browser.
+  Everything it shows comes in the address: name, place, tz (IANA time zone), style (digital|analog), h12 (1|0),
+  units (c|f), lat and lon (for the weather, from Open-Meteo) and msg (a line scrolled along the bottom).
+  Text from the address is only ever set as text, never as HTML.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1280, height=720">
+<title>Clock</title>
+<style>
+  :root {
+    --bg1: #0a1f5c; --bg2: #123a8f; --bg3: #1d5fbf;
+    --ink: #ffffff; --soft: #b9cdf5; --accent: #ffd34d; --bar: rgba(0, 8, 40, .55);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1280px; height: 720px; overflow: hidden; background: var(--bg1); }
+  body {
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: var(--ink);
+    background: linear-gradient(160deg, var(--bg1) 0%, var(--bg2) 55%, var(--bg3) 100%);
+    position: relative;
+  }
+  body::before {
+    content: ""; position: absolute; inset: -40%;
+    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.10), transparent 40%),
+                radial-gradient(circle at 70% 60%, rgba(120,190,255,.10), transparent 45%);
+    animation: drift 60s ease-in-out infinite alternate;
+  }
+  @keyframes drift { from { transform: translate(-4%, -3%) rotate(0deg); } to { transform: translate(4%, 3%) rotate(8deg); } }
+
+  header {
+    position: absolute; top: 0; left: 0; right: 0; height: 84px; padding: 0 48px;
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--bar); border-bottom: 3px solid var(--accent);
+  }
+  header .name { font-size: 34px; font-weight: 700; letter-spacing: .02em; }
+  header .place { font-size: 26px; color: var(--soft); }
+
+  main { position: absolute; top: 84px; bottom: 74px; left: 0; right: 0; display: flex; align-items: center; justify-content: center; gap: 70px; }
+
+  /* Digital */
+  .digital { text-align: center; }
+  .digital .time { font-size: 220px; font-weight: 300; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.02em; text-shadow: 0 6px 30px rgba(0,0,0,.35); }
+  .digital .time .colon { animation: blink 1s steps(1) infinite; }
+  .digital .time .sec { font-size: 80px; color: var(--soft); margin-left: 10px; }
+  .digital .time .ampm { font-size: 60px; color: var(--accent); margin-left: 14px; font-weight: 600; }
+  @keyframes blink { 50% { opacity: .25; } }
+  .date { font-size: 40px; color: var(--soft); margin-top: 14px; }
+
+  /* Analog */
+  .analog { display: flex; align-items: center; gap: 70px; }
+  .analog svg { width: 470px; height: 470px; filter: drop-shadow(0 10px 30px rgba(0,0,0,.4)); }
+  .analog .side { min-width: 420px; }
+  .analog .side .digits { font-size: 96px; font-weight: 300; font-variant-numeric: tabular-nums; }
+  .analog .side .digits .ampm { font-size: 44px; color: var(--accent); margin-left: 10px; font-weight: 600; }
+
+  .weather { margin-top: 28px; display: flex; align-items: center; gap: 26px; justify-content: center; }
+  .analog .weather { justify-content: flex-start; }
+  .weather .temp { font-size: 92px; font-weight: 600; color: var(--accent); }
+  .weather .about { text-align: left; }
+  .weather .cond { font-size: 38px; }
+  .weather .wind { font-size: 28px; color: var(--soft); margin-top: 4px; }
+  .hidden { display: none !important; }
+
+  footer {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 74px; background: var(--bar);
+    border-top: 3px solid var(--accent); overflow: hidden; display: flex; align-items: center;
+  }
+  footer .ticker { white-space: nowrap; font-size: 32px; padding-left: 100%; animation: scroll linear infinite; }
+  @keyframes scroll { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+</style>
+</head>
+<body>
+<header><div class="name" id="name"></div><div class="place" id="place"></div></header>
+<main id="main"></main>
+<footer id="footer" class="hidden"><div class="ticker" id="ticker"></div></footer>
+
+<script>
+(() => {
+  const params = new URLSearchParams(location.search);
+  const name = params.get('name') || 'The Time';
+  const place = params.get('place') || '';
+  const analog = params.get('style') === 'analog';
+  const h12 = params.get('h12') === '1';
+  const fahrenheit = params.get('units') === 'f';
+  const lat = parseFloat(params.get('lat'));
+  const lon = parseFloat(params.get('lon'));
+  const message = (params.get('msg') || '').trim();
+
+  // An unknown time zone falls back to this computer's.
+  let timeZone = params.get('tz') || undefined;
+  try { new Intl.DateTimeFormat('en-US', { timeZone }); } catch { timeZone = undefined; }
+
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  document.getElementById('name').textContent = name;
+  document.getElementById('place').textContent = place;
+  document.title = name;
+
+  // --- Layout -----------------------------------------------------------------------------------------------
+  const main = document.getElementById('main');
+  const weather = el('div', 'weather hidden');
+  const temp = el('div', 'temp'); const about = el('div', 'about');
+  const cond = el('div', 'cond'); const wind = el('div', 'wind');
+  about.append(cond, wind); weather.append(temp, about);
+  const date = el('div', 'date');
+
+  let draw;
+  if (!analog) {
+    const box = el('div', 'digital');
+    const time = el('div', 'time');
+    const hm = el('span'); const sec = el('span', 'sec'); const ampm = el('span', 'ampm');
+    time.append(hm, sec, ampm);
+    box.append(time, date, weather);
+    main.append(box);
+    draw = t => {
+      hm.replaceChildren(document.createTextNode(t.hour), el('span', 'colon', ':'), document.createTextNode(t.minute));
+      sec.textContent = t.second;
+      ampm.textContent = t.ampm;
+      date.textContent = t.date;
+    };
+  } else {
+    const box = el('div', 'analog');
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '-100 -100 200 200');
+    const add = (tag, attrs) => { const e = document.createElementNS(ns, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); svg.append(e); return e; };
+    add('circle', { r: 96, fill: 'rgba(0,10,50,.55)', stroke: '#ffd34d', 'stroke-width': 3 });
+    for (let i = 0; i < 60; i++) {
+      const major = i % 5 === 0;
+      add('line', { x1: 0, y1: major ? -80 : -86, x2: 0, y2: -91, stroke: major ? '#ffffff' : '#b9cdf5', 'stroke-width': major ? 3 : 1, transform: `rotate(${i * 6})`, 'stroke-linecap': 'round' });
+    }
+    const hourHand = add('line', { x1: 0, y1: 12, x2: 0, y2: -48, stroke: '#ffffff', 'stroke-width': 7, 'stroke-linecap': 'round' });
+    const minuteHand = add('line', { x1: 0, y1: 14, x2: 0, y2: -72, stroke: '#ffffff', 'stroke-width': 4, 'stroke-linecap': 'round' });
+    const secondHand = add('line', { x1: 0, y1: 18, x2: 0, y2: -80, stroke: '#ffd34d', 'stroke-width': 1.6, 'stroke-linecap': 'round' });
+    add('circle', { r: 4, fill: '#ffd34d' });
+    const side = el('div', 'side');
+    const digits = el('div', 'digits'); const hm = el('span'); const ampm = el('span', 'ampm');
+    digits.append(hm, ampm);
+    side.append(digits, date, weather);
+    box.append(svg, side);
+    main.append(box);
+    draw = t => {
+      const s = t.s + t.ms / 1000;
+      secondHand.setAttribute('transform', `rotate(${s * 6})`);
+      minuteHand.setAttribute('transform', `rotate(${(t.m + s / 60) * 6})`);
+      hourHand.setAttribute('transform', `rotate(${((t.h % 12) + t.m / 60) * 30})`);
+      hm.textContent = `${t.hour}:${t.minute}`;
+      ampm.textContent = t.ampm;
+      date.textContent = t.date;
+    };
+  }
+
+  // --- Time -------------------------------------------------------------------------------------------------
+  const partsFormat = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+  const dateFormat = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const pad = n => String(n).padStart(2, '0');
+
+  function now() {
+    const d = new Date();
+    const p = Object.fromEntries(partsFormat.formatToParts(d).map(x => [x.type, x.value]));
+    const h = parseInt(p.hour, 10) % 24, m = parseInt(p.minute, 10), s = parseInt(p.second, 10);
+    const shownHour = h12 ? String(((h + 11) % 12) + 1) : pad(h);
+    return { h, m, s, ms: d.getMilliseconds(), hour: shownHour, minute: pad(m), second: pad(s), ampm: h12 ? (h < 12 ? 'AM' : 'PM') : '', date: dateFormat.format(d) };
+  }
+
+  let lastSecond = -1;
+  function tick() {
+    const t = now();
+    if (analog || t.s !== lastSecond) { draw(t); lastSecond = t.s; }
+    requestAnimationFrame(tick);
+  }
+  tick();
+
+  // --- Weather (Open-Meteo, no key needed) ------------------------------------------------------------------
+  const conditions = {
+    0: 'Clear', 1: 'Mostly Clear', 2: 'Partly Cloudy', 3: 'Cloudy', 45: 'Fog', 48: 'Freezing Fog',
+    51: 'Light Drizzle', 53: 'Drizzle', 55: 'Heavy Drizzle', 56: 'Freezing Drizzle', 57: 'Freezing Drizzle',
+    61: 'Light Rain', 63: 'Rain', 65: 'Heavy Rain', 66: 'Freezing Rain', 67: 'Freezing Rain',
+    71: 'Light Snow', 73: 'Snow', 75: 'Heavy Snow', 77: 'Snow Grains',
+    80: 'Showers', 81: 'Showers', 82: 'Heavy Showers', 85: 'Snow Showers', 86: 'Snow Showers',
+    95: 'Thunderstorms', 96: 'Thunderstorms', 99: 'Thunderstorms'
+  };
+  const compass = deg => ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(((deg % 360) + 360) % 360 / 45) % 8];
+
+  async function loadWeather() {
+    if (!isFinite(lat) || !isFinite(lon)) return;
+    try {
+      const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon
+        + '&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m'
+        + '&temperature_unit=' + (fahrenheit ? 'fahrenheit' : 'celsius') + '&wind_speed_unit=' + (fahrenheit ? 'mph' : 'kmh');
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok) throw new Error(response.status);
+      const current = (await response.json()).current;
+      temp.textContent = Math.round(current.temperature_2m) + '°' + (fahrenheit ? 'F' : 'C');
+      cond.textContent = conditions[current.weather_code] || '';
+      wind.textContent = 'Wind ' + compass(current.wind_direction_10m) + ' ' + Math.round(current.wind_speed_10m) + (fahrenheit ? ' mph' : ' km/h');
+      weather.classList.remove('hidden');
+    } catch {
+      // Offline or the service is down: keep the last reading, or just the time.
+    }
+  }
+  loadWeather();
+  setInterval(loadWeather, 10 * 60 * 1000);
+
+  // --- Ticker -----------------------------------------------------------------------------------------------
+  if (message) {
+    const footer = document.getElementById('footer');
+    const ticker = document.getElementById('ticker');
+    ticker.textContent = message;
+    footer.classList.remove('hidden');
+    // A steady 120 pixels a second, whatever the message's length.
+    requestAnimationFrame(() => { ticker.style.animationDuration = ((ticker.scrollWidth) / 120) + 's'; });
+  } else {
+    document.getElementById('main').style.bottom = '0';
+  }
+})();
+</script>
+</body>
+</html>

@@ -58,7 +58,7 @@ public sealed class ErsatzTvOptions
     public string PaddingAudioLavfi { get; set; } = "anullsrc=channel_layout=stereo:sample_rate=48000";
 
     /// <summary>
-    /// The program ErsatzTV runs to read a live stream (a plugin's live feed, such as WeatherStar), given the
+    /// The program ErsatzTV runs to read a live stream (a plugin's live feed, such as a web page channel), given the
     /// stream's address as its last argument; it must write the MPEG-TS to its output. ErsatzTV treats what it
     /// reads this way as live: joined where it is rather than skipped through to the scheduled position, which
     /// an endless stream would never reach. curl comes with Windows 10 and later, macOS and most Linux systems.

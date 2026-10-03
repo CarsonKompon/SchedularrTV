@@ -16,7 +16,7 @@
     <Project Path="plugins/SchedularrTV.Plugins.TikTok/SchedularrTV.Plugins.TikTok.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.TvGuide/SchedularrTV.Plugins.TvGuide.csproj" />
     <Project Path="plugins/shared/SchedularrTV.LiveCapture/SchedularrTV.LiveCapture.csproj" />
-    <Project Path="plugins/SchedularrTV.Plugins.WeatherStar/SchedularrTV.Plugins.WeatherStar.csproj" />
+    <Project Path="plugins/SchedularrTV.Plugins.WebChannels/SchedularrTV.Plugins.WebChannels.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/SchedularrTV.Plugins.Sample/SchedularrTV.Plugins.Sample.csproj" />

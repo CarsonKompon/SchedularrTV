@@ -60,7 +60,7 @@ The first time the web UI opens, a setup guide walks through:
 3. **ffmpeg**: checks both programs are found.
 4. **Commercials** folders and **extras** (start at sign-in), both optional.
 
-Generated promos, their voices and WeatherStar are optional plugins: download `SchedularrTV-<version>-all-plugins.zip`
+Generated promos, their voices and web page channels (WeatherStar and friends) are optional plugins: download `SchedularrTV-<version>-all-plugins.zip`
 from the same release and install it from the **Plugins** page, then restart.
 
 Finishing saves the settings, which are used straight away (the scheduler only restarts if you changed its port

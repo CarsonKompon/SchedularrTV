@@ -60,7 +60,7 @@ slots, programming blocks, ad breaks, bumpers and promos, and hands them to
 | [Configuration](docs/configuration.md) | App settings, the schedule file, commercials on disk, Jellyfin tags |
 | [How scheduling works](docs/scheduling.md) | Blocks and anchors, ad break packing, mid-rolls, the query language, seasonal tags |
 | [Generated promos](docs/generated-promos.md) | Promo templates, voices, music, external generators |
-| [WeatherStar weather](docs/weatherstar.md) | Live retro weather channels and forecasts between shows |
+| [Web page channels](docs/web-channels.md) | Live web pages as channels: WeatherStar retro weather, a clock, weather radar, the wind globe or any page |
 | [TV Guide channel](docs/tv-guide.md) | A scrolling Prevue / TV Guide Channel-style listings channel from your own schedule |
 | [Auto Chapters](docs/auto-chapters.md) | Mid-roll breaks at the fades to black in files without chapter markers |
 | [Archive Follow](docs/archive-follow.md) | Replaying historical schedules |

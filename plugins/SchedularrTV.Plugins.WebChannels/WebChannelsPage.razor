@@ -1,0 +1,586 @@
+@page "/plugins/web-channels"
+@* Web channels: each one a "show" of a live web page (from a preset or any address), in the lengths you allow. *@
+@implements IDisposable
+@inject ChannelStore Store
+@inject ChannelHub Hub
+@inject WebChannelSettings Settings
+@inject Geocoder Places
+
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Web page channels</div>
+        <h1>Web channels</h1>
+        <p class="muted">Live web pages scheduled like shows: retro WeatherStar forecasts, a time-and-temperature clock, weather radar,
+            the wind globe, or any page you like. Run one around the clock, or in short segments between programmes.</p>
+    </div>
+</div>
+
+@if (BrowserLocator.Find(Settings.BrowserPath) is null)
+{
+    <div class="banner banner-error" role="alert">
+        No Chrome, Edge or Chromium was found on this computer. Pages are drawn by one running hidden; install one, or choose it
+        in this plugin's settings (its gear on the Plugins page).
+    </div>
+}
+@if (_message is not null)
+{
+    <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status">@_message</div>
+}
+
+@foreach (WebChannel channel in _channels)
+{
+    bool editing = ReferenceEquals(channel, _editing);
+    WebPreset preset = channel.PresetInfo;
+    LiveStatus? status = string.IsNullOrEmpty(channel.Id) ? null : Hub.Streams.Status(channel.Id);
+    <div class="card" @key="channel">
+        <div class="card-head">
+            <h2>@(string.IsNullOrWhiteSpace(channel.Name) ? "New channel" : channel.Name)</h2>
+            <span class="pill pill-muted">@preset.Name</span>
+            @if (status is not null)
+            {
+                <span class="pill pill-ok">On air · @status.Viewers watching</span>
+            }
+            <div class="spacer"></div>
+            @if (_confirmDelete == channel.Id && !string.IsNullOrEmpty(channel.Id))
+            {
+                <button class="btn btn-sm btn-danger" type="button" @onclick="() => Remove(channel)">Delete @(channel.Name)?</button>
+                <button class="btn btn-sm" type="button" @onclick="() => _confirmDelete = null">Keep</button>
+            }
+            else
+            {
+                @if (!editing)
+                {
+                    <button class="btn btn-sm" type="button" @onclick="() => Edit(channel)">Edit</button>
+                }
+                <button class="btn btn-sm btn-ghost" type="button" title="Delete this channel" aria-label="Delete @channel.Name"
+                        @onclick="() => AskDelete(channel)">Delete</button>
+            }
+        </div>
+
+        @if (editing)
+        {
+            <div class="grid grid-2">
+                <label class="field">
+                    <span>Shows</span>
+                    <select value="@preset.Id" @onchange="e => SetPreset(channel, Text(e))">
+                        @foreach (WebPreset option in WebPresets.All)
+                        {
+                            <option value="@option.Id">@option.Name</option>
+                        }
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Show name</span>
+                    <input type="text" value="@channel.Name" placeholder="@preset.DefaultName(Town(channel))" @onchange="e => channel.Name = Text(e)" />
+                </label>
+            </div>
+            <p class="hint" style="margin:-4px 0 12px;">@preset.Description</p>
+
+            @if (preset.Id == WebPresets.Custom)
+            {
+                <label class="field">
+                    <span>Page address</span>
+                    <input type="text" value="@channel.Url" placeholder="https://example.com/dashboard?kiosk=1" @onchange="e => channel.Url = Text(e)" />
+                </label>
+                <p class="hint" style="margin:-4px 0 10px;">
+                    {lat}, {lon}, {location} and {name} are filled in from the place below, if you choose one. The page's own sound isn't captured;
+                    pick a music folder instead.
+                </p>
+                @if (!string.IsNullOrWhiteSpace(channel.Url) && !WebPresets.IsWebAddress(channel.Url))
+                {
+                    <p class="hint warn">That isn't a web address; it has to start with http:// or https://.</p>
+                }
+            }
+
+            @if (preset.Place != PlaceNeed.None)
+            {
+                <h3 class="wc-section">Place @(preset.Place == PlaceNeed.Optional ? "(optional)" : "")</h3>
+                <div class="field">
+                    <div class="row" style="gap:6px;">
+                        <input type="text" value="@_query" placeholder="Search for a city" style="flex:1;min-width:0;"
+                               @onchange="e => _query = Text(e)" @onkeydown="SearchOnEnter" />
+                        <button class="btn btn-sm" type="button" disabled="@_searching" @onclick="SearchAsync">@(_searching ? "Searching…" : "Search")</button>
+                        @if (preset.Place == PlaceNeed.Optional && channel.HasPlace)
+                        {
+                            <button class="btn btn-sm btn-ghost" type="button" @onclick="() => ClearPlace(channel)">No place</button>
+                        }
+                    </div>
+                </div>
+                @if (_places.Count > 0)
+                {
+                    <div class="row row-wrap" style="gap:6px;margin-bottom:10px;">
+                        @foreach (Place place in _places)
+                        {
+                            <button class="btn btn-sm" type="button" @onclick="() => Pick(channel, place)">@place.Label</button>
+                        }
+                    </div>
+                }
+                <div class="grid grid-3">
+                    <label class="field">
+                        <span>Shown as</span>
+                        <input type="text" value="@channel.Location" placeholder="Toronto, Ontario" @onchange="e => channel.Location = Text(e)" />
+                    </label>
+                    <label class="field">
+                        <span>Latitude</span>
+                        <input type="number" step="0.0001" value="@channel.Latitude.ToString("0.####", CultureInfo.InvariantCulture)"
+                               @onchange="e => channel.Latitude = Number(e, channel.Latitude)" />
+                    </label>
+                    <label class="field">
+                        <span>Longitude</span>
+                        <input type="number" step="0.0001" value="@channel.Longitude.ToString("0.####", CultureInfo.InvariantCulture)"
+                               @onchange="e => channel.Longitude = Number(e, channel.Longitude)" />
+                    </label>
+                </div>
+            }
+
+            <h3 class="wc-section">Look</h3>
+            @switch (preset.Id)
+            {
+                case WebPresets.WeatherStar:
+                    <div class="grid grid-3">
+                        <label class="field">
+                            <span>Units</span>
+                            <select value="@(channel.Imperial ? "imperial" : "metric")" @onchange="e => channel.Imperial = IsImperial(e)">
+                                <option value="metric">Metric (°C, km/h, km, hPa)</option>
+                                <option value="imperial">Imperial (°F, mph, mi, inHg)</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Page speed</span>
+                            <select value="@channel.Speed.ToString("0.##", CultureInfo.InvariantCulture)" @onchange="e => channel.Speed = Number(e, 1.0)">
+                                <option value="0.5">Very fast</option>
+                                <option value="0.75">Fast</option>
+                                <option value="1">Normal</option>
+                                <option value="1.25">Slow</option>
+                                <option value="1.5">Very slow</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="row row-wrap" style="gap:18px;margin-bottom:10px;">
+                        <label class="check"><input type="checkbox" checked="@channel.Widescreen" @onchange="e => channel.Widescreen = e.Value is true" /><span>Widescreen</span></label>
+                        <label class="check"><input type="checkbox" checked="@channel.TwelveHourClock" @onchange="e => channel.TwelveHourClock = e.Value is true" /><span>12-hour clock</span></label>
+                        <label class="check"><input type="checkbox" checked="@channel.ScanLines" @onchange="e => channel.ScanLines = e.Value is true" /><span>Scan lines</span></label>
+                    </div>
+                    break;
+
+                case WebPresets.Clock:
+                    <div class="grid grid-3">
+                        <label class="field">
+                            <span>Style</span>
+                            <select value="@channel.ClockStyle" @onchange="e => channel.ClockStyle = Text(e)">
+                                <option value="digital">Digital</option>
+                                <option value="analog">Clock face</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Time zone <span class="muted">(empty for this computer's)</span></span>
+                            <input type="text" value="@channel.TimeZone" placeholder="America/Toronto" @onchange="e => channel.TimeZone = Text(e)" />
+                        </label>
+                        <label class="field">
+                            <span>Units</span>
+                            <select value="@(channel.Imperial ? "imperial" : "metric")" @onchange="e => channel.Imperial = IsImperial(e)">
+                                <option value="metric">°C, km/h</option>
+                                <option value="imperial">°F, mph</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="row row-wrap" style="gap:18px;margin-bottom:10px;">
+                        <label class="check"><input type="checkbox" checked="@channel.TwelveHourClock" @onchange="e => channel.TwelveHourClock = e.Value is true" /><span>12-hour clock</span></label>
+                        <label class="check"><input type="checkbox" checked="@channel.ShowWeather" @onchange="e => channel.ShowWeather = e.Value is true" /><span>Current weather (needs a place)</span></label>
+                    </div>
+                    <label class="field">
+                        <span>Scrolling message <span class="muted">(optional)</span></span>
+                        <input type="text" value="@channel.Message" maxlength="500" placeholder="Thanks for watching. Regular programming resumes shortly." @onchange="e => channel.Message = Text(e)" />
+                    </label>
+                    break;
+
+                case WebPresets.Radar:
+                case WebPresets.Globe:
+                    <div class="grid grid-3">
+                        <label class="field">
+                            <span>Map shows</span>
+                            <select value="@preset.LayerFor(channel)" @onchange="e => channel.Layer = Text(e)">
+                                @foreach (LayerOption layer in preset.Layers)
+                                {
+                                    <option value="@layer.Value">@layer.Label</option>
+                                }
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Zoom: @preset.ZoomFor(channel)</span>
+                            <input type="range" min="@preset.MinZoom" max="@preset.MaxZoom" step="1" value="@preset.ZoomFor(channel)"
+                                   @onchange="e => channel.Zoom = (int)Number(e, preset.DefaultZoom)" />
+                        </label>
+                        @if (preset.Id == WebPresets.Radar)
+                        {
+                            <label class="field">
+                                <span>Units</span>
+                                <select value="@(channel.Imperial ? "imperial" : "metric")" @onchange="e => channel.Imperial = IsImperial(e)">
+                                    <option value="metric">°C, km/h</option>
+                                    <option value="imperial">°F, mph</option>
+                                </select>
+                            </label>
+                        }
+                    </div>
+                    @if (preset.Id == WebPresets.Radar && preset.LayerFor(channel) == "radar")
+                    {
+                        <p class="hint">Radar only covers some parts of the world; elsewhere choose Rain and thunder.</p>
+                    }
+                    break;
+
+                default:
+                    <p class="hint">The page is shown as it is, at 1280×720.</p>
+                    break;
+            }
+
+            <h3 class="wc-section">Scheduling and sound</h3>
+            <label class="field">
+                <span>Lengths it can be scheduled for (minutes)</span>
+                <input type="text" value="@(string.Join(", ", channel.Lengths))" placeholder="3, 4, 5, 10, 30, 60" @onchange="e => channel.Lengths = Lengths(e)" />
+            </label>
+            <div class="grid grid-2">
+                <label class="field">
+                    <span>Music folder <span class="muted">(optional; shuffled under the page)</span></span>
+                    <input type="text" value="@channel.MusicFolder" placeholder="D:\Music\Weather" @onchange="e => channel.MusicFolder = Text(e)" />
+                </label>
+                <label class="field">
+                    <span>Music volume: @((int)Math.Round(channel.MusicVolume * 100))%</span>
+                    <input type="range" min="0" max="1" step="0.05" value="@channel.MusicVolume.ToString(CultureInfo.InvariantCulture)"
+                           @onchange="e => channel.MusicVolume = Number(e, channel.MusicVolume)" />
+                </label>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(channel.MusicFolder) && !Directory.Exists(channel.MusicFolder))
+            {
+                <p class="hint warn">That music folder doesn't exist on this computer; the channel will be silent.</p>
+            }
+            <div class="row" style="gap:8px;margin-top:6px;">
+                <div class="spacer"></div>
+                <button class="btn btn-sm" type="button" @onclick="Cancel">Cancel</button>
+                <button class="btn btn-sm btn-primary" type="button" disabled="@(!CanShow(channel))" @onclick="Save">Save</button>
+            </div>
+        }
+        else
+        {
+            <p class="muted" style="margin:0 0 8px;">@Summary(channel)</p>
+            <div class="row row-wrap" style="gap:6px;margin-bottom:10px;">
+                @foreach (int minutes in channel.ValidLengths)
+                {
+                    <span class="pill pill-muted">@minutes min</span>
+                }
+            </div>
+            <p class="hint" style="margin:0 0 8px;">
+                Schedule it as the show <strong>@channel.Name</strong>: in a channel's base rotation or a block to run it round the clock,
+                or as one of a channel's interstitial shows (Breaks tab) between programmes. Stream: <code>@Settings.LiveUrl(channel.Id)</code>
+            </p>
+            @if (status?.Problem is { } problem)
+            {
+                <p class="hint warn">@problem</p>
+            }
+        }
+
+        <details style="margin-top:10px;" open="@editing">
+            <summary class="hint" style="cursor:pointer;">Preview</summary>
+            <div class="wc-preview">
+                @if (status is not null && !editing)
+                {
+                    <img src="@($"plugins/web-channels/snapshot/{Uri.EscapeDataString(channel.Id)}.jpg?t={_tick}")" alt="What's on air now" />
+                }
+                else if (CanShow(channel))
+                {
+                    <iframe src="@preset.PageUrl(channel, Settings.ForPreview)" title="@channel.Name preview" loading="lazy"></iframe>
+                }
+                else
+                {
+                    <div class="empty">@(preset.Id == WebPresets.Custom ? "Enter a page address to preview it." : "Choose a place to preview it.")</div>
+                }
+            </div>
+            @if (preset.Id == WebPresets.Custom)
+            {
+                <p class="hint">Some sites refuse to show inside another page, so the preview can stay blank even when the channel works.</p>
+            }
+        </details>
+    </div>
+}
+
+<div class="row" style="gap:8px;">
+    <button class="btn btn-primary" type="button" disabled="@(_editing is not null)" @onclick="Add">Add a channel</button>
+</div>
+
+<div class="card" style="margin-top:16px;">
+    <div class="card-head"><h2>How it works</h2></div>
+    <ul class="hint" style="margin:0;padding-left:18px;line-height:1.6;">
+        <li>Each channel appears as a show (under TV Shows and in collection pickers) with one "episode" per length, so the scheduler picks whichever fits.</li>
+        <li><strong>Round the clock:</strong> make it a channel's base rotation, with long lengths (30, 60).</li>
+        <li><strong>Between shows:</strong> on a channel's Breaks tab, add it to the interstitial shows with short lengths (2–5 minutes), one per slot.</li>
+        <li>When it airs, ErsatzTV plays it live: a hidden browser shows the page and its picture is streamed with your music, so it's always current.</li>
+        <li>New or renamed channels reach the schedule on its next rebuild (Dashboard → Rebuild).</li>
+    </ul>
+</div>
+
+<style>
+    .wc-section { font-size: 13px; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    .wc-preview { margin-top: 8px; width: 640px; max-width: 100%; height: 360px; background: #000; border-radius: 8px; overflow: hidden; }
+    .wc-preview iframe { width: 1280px; height: 720px; border: 0; display: block; transform: scale(.5); transform-origin: 0 0; }
+    .wc-preview img { width: 100%; height: 100%; display: block; object-fit: contain; }
+    .wc-preview .empty { height: 100%; border: 0; border-radius: 0; display: flex; align-items: center; justify-content: center; }
+    .hint.warn { color: #ffd08a; }
+</style>
+
+@code {
+    private List<WebChannel> _channels = [];
+    private WebChannel? _editing;
+    private string? _confirmDelete;
+    private string _query = string.Empty;
+    private IReadOnlyList<Place> _places = [];
+    private bool _searching;
+    private string? _message;
+    private bool _messageOk;
+    private long _tick;
+    private Timer? _refresh;
+
+    protected override void OnInitialized()
+    {
+        Load();
+        Hub.Streams.Changed += OnHubChanged;
+
+        // Keeps the on-air preview frames moving.
+        _refresh = new Timer(_ => InvokeAsync(() => { _tick++; if (Hub.Streams.Running.Count > 0) StateHasChanged(); }), null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+    }
+
+    public void Dispose()
+    {
+        Hub.Streams.Changed -= OnHubChanged;
+        _refresh?.Dispose();
+    }
+
+    private void OnHubChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void Load()
+    {
+        _channels = [.. Store.Channels.Select(channel => channel.Copy())];
+        _editing = null;
+        _places = [];
+    }
+
+    /// <summary>Whether the channel has what its preset needs to show anything.</summary>
+    private static bool CanShow(WebChannel channel) => channel.PresetInfo switch
+    {
+        { Id: WebPresets.Custom } => WebPresets.IsWebAddress(channel.Url),
+        { Place: PlaceNeed.Required } => channel.HasPlace,
+        _ => true
+    };
+
+    private static string? Town(WebChannel channel) =>
+        string.IsNullOrWhiteSpace(channel.Location) ? null : channel.Location.Split(',')[0].Trim();
+
+    private static string Summary(WebChannel channel)
+    {
+        WebPreset preset = channel.PresetInfo;
+        List<string> parts = [];
+        if (preset.Id == WebPresets.Custom)
+        {
+            parts.Add(channel.Url ?? "No address");
+        }
+
+        if (preset.Place != PlaceNeed.None)
+        {
+            parts.Add(string.IsNullOrWhiteSpace(channel.Location) ? (channel.HasPlace ? "Unnamed place" : "No place") : channel.Location);
+        }
+
+        switch (preset.Id)
+        {
+            case WebPresets.WeatherStar:
+                parts.Add(channel.Imperial ? "Imperial" : "Metric");
+                parts.Add(channel.Widescreen ? "Widescreen" : "4:3");
+                break;
+            case WebPresets.Clock:
+                parts.Add(channel.ClockStyle == "analog" ? "Clock face" : "Digital");
+                parts.Add(string.IsNullOrWhiteSpace(channel.TimeZone) ? "this computer's time" : channel.TimeZone);
+                break;
+            case WebPresets.Radar:
+            case WebPresets.Globe:
+                string? layer = preset.LayerFor(channel);
+                parts.Add(preset.Layers.FirstOrDefault(option => option.Value == layer)?.Label ?? string.Empty);
+                parts.Add($"zoom {preset.ZoomFor(channel)}");
+                break;
+        }
+
+        parts.Add(string.IsNullOrWhiteSpace(channel.MusicFolder) ? "no music" : "music from " + channel.MusicFolder);
+        return string.Join(" · ", parts.Where(part => part.Length > 0));
+    }
+
+    private void SetPreset(WebChannel channel, string id)
+    {
+        WebPreset before = channel.PresetInfo;
+        WebPreset after = WebPresets.Find(id);
+
+        // A name that was only the old preset's suggestion follows the new one.
+        if (string.IsNullOrWhiteSpace(channel.Name) || channel.Name == before.DefaultName(Town(channel)))
+        {
+            channel.Name = after.DefaultName(Town(channel));
+        }
+
+        channel.Preset = after.Id;
+        channel.Zoom = 0;
+        channel.Layer = null;
+    }
+
+    private void Edit(WebChannel channel)
+    {
+        if (_editing is not null)
+        {
+            Load();
+            channel = _channels.FirstOrDefault(candidate => candidate.Id == channel.Id) ?? channel;
+        }
+
+        _editing = channel;
+        _query = channel.Location;
+        _places = [];
+        _message = null;
+    }
+
+    private void Add()
+    {
+        var channel = new WebChannel { Name = string.Empty };
+        _channels.Add(channel);
+        _editing = channel;
+        _query = string.Empty;
+        _places = [];
+        _message = null;
+    }
+
+    private void Cancel() => Load();
+
+    private void AskDelete(WebChannel channel)
+    {
+        // A channel that was never saved is just discarded.
+        if (string.IsNullOrEmpty(channel.Id))
+        {
+            Load();
+            return;
+        }
+
+        _confirmDelete = channel.Id;
+    }
+
+    private void Remove(WebChannel channel)
+    {
+        _confirmDelete = null;
+
+        // Deleted from what's saved, so unsaved edits to other channels aren't written along with it.
+        try
+        {
+            Store.Save(Store.Channels.Where(saved => !string.Equals(saved.Id, channel.Id, StringComparison.OrdinalIgnoreCase)));
+            Load();
+            Say($"Deleted {channel.Name}. Channels that used it fill that time with their other programming from the next rebuild.", ok: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Say($"Couldn't delete the channel: {ex.Message}", ok: false);
+        }
+    }
+
+    private void Save()
+    {
+        if (_editing is not { } channel)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(channel.Name))
+        {
+            channel.Name = channel.PresetInfo.DefaultName(Town(channel));
+        }
+
+        string name = channel.Name;
+        try
+        {
+            Store.Save(_channels);
+            Load();
+            Say($"Saved {name}. If it's on air, it starts again with the new settings.", ok: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Say($"Couldn't save the channels: {ex.Message}", ok: false);
+        }
+    }
+
+    private async Task SearchAsync()
+    {
+        _searching = true;
+        try
+        {
+            _places = await Places.SearchAsync(_query, CancellationToken.None);
+            if (_places.Count == 0)
+            {
+                Say($"No places called \"{_query}\" were found.", ok: false);
+            }
+            else
+            {
+                _message = null;
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            Say($"Couldn't search for places: {ex.Message}", ok: false);
+        }
+        finally
+        {
+            _searching = false;
+        }
+    }
+
+    private void Pick(WebChannel channel, Place place)
+    {
+        string? before = Town(channel);
+        bool suggestedName = string.IsNullOrWhiteSpace(channel.Name) || channel.Name == channel.PresetInfo.DefaultName(before);
+
+        channel.Location = string.Join(", ", place.Label.Split(", ").Take(2));
+        channel.Latitude = Math.Round(place.Latitude, 4);
+        channel.Longitude = Math.Round(place.Longitude, 4);
+        channel.TimeZone = place.TimeZone;
+        if (suggestedName)
+        {
+            channel.Name = channel.PresetInfo.DefaultName(Town(channel));
+        }
+
+        _query = place.Label;
+        _places = [];
+    }
+
+    private void ClearPlace(WebChannel channel)
+    {
+        channel.Location = string.Empty;
+        channel.Latitude = 0;
+        channel.Longitude = 0;
+        _query = string.Empty;
+    }
+
+    private async Task SearchOnEnter(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SearchAsync();
+        }
+    }
+
+    private void Say(string message, bool ok)
+    {
+        _message = message;
+        _messageOk = ok;
+    }
+
+    private static bool IsImperial(ChangeEventArgs e) => string.Equals(e.Value?.ToString(), "imperial", StringComparison.Ordinal);
+
+    private static string Text(ChangeEventArgs e) => e.Value?.ToString()?.Trim() ?? string.Empty;
+
+    private static double Number(ChangeEventArgs e, double fallback) =>
+        double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ? value : fallback;
+
+    private static List<int> Lengths(ChangeEventArgs e) =>
+        [.. Text(e).Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out int minutes) ? minutes : 0)
+            .Where(minutes => minutes is > 0 and <= 1440)
+            .Distinct()
+            .Order()];
+}

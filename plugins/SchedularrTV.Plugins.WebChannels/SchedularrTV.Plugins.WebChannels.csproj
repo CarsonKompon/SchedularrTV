@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!--
+    Web page channels: any web page as a live, schedulable channel, captured by a hidden browser and streamed to
+    ErsatzTV. Presets set up the pages that make good television (WeatherStar 4000+ forecasts, a time-and-temperature
+    clock served by the plugin itself, Windy's weather radar, the earth.nullschool wind globe), and "Custom web page"
+    takes any address. Each channel is a "show" whose episodes are the lengths you allow.
+
+    Not part of the main download: it ships in the all-plugins zip of each release. Replaces the WeatherStar plugin
+    (ws4kp), whose stations it takes over the first time it starts.
+  -->
+  <PropertyGroup>
+    <RootNamespace>SchedularrTV.WebChannels</RootNamespace>
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+    <ScopedCssEnabled>false</ScopedCssEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Supplied by the scheduler at runtime, so it isn't copied into the plugin. -->
+    <ProjectReference Include="..\..\src\SchedularrTV.Plugins.Abstractions\SchedularrTV.Plugins.Abstractions.csproj" Private="false" />
+
+    <!-- Shared with the other live page channels; shipped beside this plugin's .dll. -->
+    <ProjectReference Include="..\shared\SchedularrTV.LiveCapture\SchedularrTV.LiveCapture.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The clock preset's page (HTML, CSS and script in one file), served from the plugin. -->
+    <EmbeddedResource Include="Assets\clock.html" LogicalName="clock.html" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="SchedularrTV.Plugins" />
+    <Using Include="SchedularrTV.LiveCapture" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+</Project>
