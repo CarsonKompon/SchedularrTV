@@ -11,9 +11,10 @@ public static class PluginApi
     /// </summary>
     /// <remarks>
     /// 1.1 added editor sections (<c>channelSettings</c>, <c>blockSettings</c>, <c>scheduleSettings</c>). 1.2 added
-    /// media enrichers (<c>AddMediaEnricher</c>).
+    /// media enrichers (<c>AddMediaEnricher</c>). 1.3 added external channels (<c>AddExternalChannels</c>) and
+    /// <c>IScheduleRepublisher</c>.
     /// </remarks>
-    public static readonly Version Version = new(1, 2);
+    public static readonly Version Version = new(1, 3);
 
     public static bool IsCompatible(Version wanted) => wanted.Major == Version.Major && wanted.Minor <= Version.Minor;
 }

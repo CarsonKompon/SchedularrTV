@@ -1,0 +1,41 @@
+{
+  "id": "iptv",
+  "name": "IPTV passthrough",
+  "version": "1.0.0",
+  "description": "Live channels from an IPTV playlist (M3U) and its XMLTV guide, added alongside your own channels: same channel list, same guide in Jellyfin. Streams are passed through without re-encoding where possible; HLS and MPEG-TS sources both work.",
+  "author": "SchedularrTV",
+  "apiVersion": "1.3",
+  "entryAssembly": "SchedularrTV.Plugins.Iptv.dll",
+  "settings": [
+    {
+      "key": "FfmpegPath",
+      "label": "ffmpeg",
+      "type": "File",
+      "description": "Relays each stream (and turns HLS into MPEG-TS for ErsatzTV). Leave empty to use the ffmpeg set under App settings."
+    },
+    {
+      "key": "StreamAddress",
+      "label": "Stream address",
+      "type": "Text",
+      "placeholder": "http://localhost:5252",
+      "description": "How ErsatzTV reaches this scheduler. Leave empty unless ErsatzTV runs on another machine or in a container."
+    },
+    {
+      "key": "RefreshHours",
+      "label": "Refresh playlists and guides every (hours)",
+      "type": "Number",
+      "placeholder": "6",
+      "description": "How often each playlist and guide is downloaded again (1 to 48)."
+    },
+    {
+      "key": "KeepAliveSeconds",
+      "label": "Keep a stream open after its last viewer (seconds)",
+      "type": "Number",
+      "placeholder": "30",
+      "description": "Holds the provider connection over programme changes, when ErsatzTV briefly reconnects. Some providers allow only one connection at a time."
+    }
+  ],
+  "pages": [
+    { "path": "/plugins/iptv", "title": "IPTV", "icon": "radio" }
+  ]
+}

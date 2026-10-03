@@ -159,6 +159,7 @@ public static class SchedulerHost
             () => [.. sp.GetServices<PlannerFeature>()]));
 
         builder.Services.AddSingleton<ScheduleCoordinator>();
+        builder.Services.AddSingleton<SchedularrTV.Plugins.Playout.IScheduleRepublisher, ScheduleRepublisher>();
         // Also resolvable on its own, so settings and plugin switches can ask for a rebuild.
         builder.Services.AddSingleton<ScheduleRebuildService>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<ScheduleRebuildService>());

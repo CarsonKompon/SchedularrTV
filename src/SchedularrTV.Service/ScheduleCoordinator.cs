@@ -30,7 +30,8 @@ public sealed class ScheduleCoordinator(
     ILoggerFactory loggerFactory,
     TimeProvider timeProvider,
     IEnumerable<IScheduleFinisher>? finishers = null,
-    IEnumerable<IPlayoutProcessor>? processors = null)
+    IEnumerable<IPlayoutProcessor>? processors = null,
+    IEnumerable<IExternalChannelSource>? externalSources = null)
 {
     // Read on each use, not kept from the constructor: the lists leave out plugins switched off while running.
     private IReadOnlyList<IScheduleFinisher> _finishers => [.. finishers ?? []];
@@ -409,9 +410,41 @@ public sealed class ScheduleCoordinator(
         }
     }
 
+    /// <summary>
+    /// Publishes the latest schedules again without rebuilding, for plugins whose output-side contributions (such as
+    /// external channels) changed. Does nothing before the first build: publishing then would hand the outputs a
+    /// lineup without the scheduler's own channels.
+    /// </summary>
+    public async Task RepublishAsync(CancellationToken cancellationToken)
+    {
+        await _publishLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (LastBuiltAt is null)
+            {
+                return;
+            }
+
+            logger.LogInformation("Republishing without rebuilding.");
+            await PublishAsync(_latest, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _publishLock.Release();
+        }
+    }
+
     private async Task PublishAsync(IReadOnlyList<ChannelSchedule> schedules, CancellationToken cancellationToken)
     {
         schedules = await ProcessAsync(schedules, cancellationToken).ConfigureAwait(false);
+
+        // After the processors, which work on the scheduler's own channels and their configuration.
+        IReadOnlyList<ChannelSchedule> external = await ExternalAsync(schedules, cancellationToken).ConfigureAwait(false);
+        if (external.Count > 0)
+        {
+            schedules = [.. schedules, .. external];
+        }
+
         foreach (IPlayoutPublisher publisher in publishers)
         {
             if (Progress is { } progress)
@@ -427,6 +460,57 @@ public sealed class ScheduleCoordinator(
                 logger.LogError(ex, "Publisher {Publisher} failed.", publisher.Name);
             }
         }
+    }
+
+    /// <summary>
+    /// The plugins' whole channels (IPTV and the like), asked for at publish time. One whose number, id or guide id
+    /// is already used is left out with a warning, so it can never take over one of the scheduler's own channels.
+    /// </summary>
+    private async Task<IReadOnlyList<ChannelSchedule>> ExternalAsync(IReadOnlyList<ChannelSchedule> own, CancellationToken cancellationToken)
+    {
+        List<IExternalChannelSource> sources = [.. externalSources ?? []];
+        if (sources.Count == 0)
+        {
+            return [];
+        }
+
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        DateTimeOffset until = now + configProvider.Current.Settings.Horizon;
+        HashSet<int> numbers = [.. own.Select(schedule => schedule.ChannelNumber)];
+        HashSet<string> ids = new(own.Select(schedule => schedule.ChannelId), StringComparer.OrdinalIgnoreCase);
+        HashSet<string> guideIds = new(own.Select(schedule => schedule.TvgId), StringComparer.OrdinalIgnoreCase);
+        List<ChannelSchedule> added = [];
+
+        foreach (IExternalChannelSource source in sources)
+        {
+            IReadOnlyList<ChannelSchedule> offered;
+            try
+            {
+                offered = await source.GetSchedulesAsync(new ExternalChannelRequest(now, until, numbers), cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "External channels from {Source} couldn't be read; they're left out of this publish.", source.Name);
+                continue;
+            }
+
+            foreach (ChannelSchedule schedule in offered)
+            {
+                if (numbers.Contains(schedule.ChannelNumber) || ids.Contains(schedule.ChannelId) || guideIds.Contains(schedule.TvgId))
+                {
+                    logger.LogWarning("{Source}'s channel {Name} ({Number}) uses a channel number or id that's already taken; it's left out.",
+                        source.Name, schedule.ChannelName, schedule.ChannelNumber);
+                    continue;
+                }
+
+                numbers.Add(schedule.ChannelNumber);
+                ids.Add(schedule.ChannelId);
+                guideIds.Add(schedule.TvgId);
+                added.Add(schedule);
+            }
+        }
+
+        return added;
     }
 
     /// <summary>

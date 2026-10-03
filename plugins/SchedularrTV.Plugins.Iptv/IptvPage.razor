@@ -1,0 +1,390 @@
+@page "/plugins/iptv"
+@* IPTV providers: a playlist and its guide each, and which of their channels to carry alongside your own. *@
+@implements IDisposable
+@inject SourceStore Store
+@inject IptvCatalog Catalog
+@inject IptvChannels Channels
+@inject IptvFetcher Fetcher
+@inject IptvRefresher Refresher
+@inject RelayHub Hub
+
+<div class="page-header">
+    <div>
+        <div class="eyebrow">IPTV passthrough</div>
+        <h1>IPTV</h1>
+        <p class="muted">Live channels from an IPTV playlist and its guide, carried alongside your own: they appear in ErsatzTV's channel list and
+            Jellyfin's guide with everything else, with the provider's listings.</p>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn" type="button" disabled="@Refresher.Refreshing" @onclick="Refresher.RequestRefresh">
+        @(Refresher.Refreshing ? "Reading playlists…" : "Refresh now")
+    </button>
+</div>
+
+@if (_message is not null)
+{
+    <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status">@_message</div>
+}
+
+@foreach (IptvSource source in _sources)
+{
+    bool editing = ReferenceEquals(source, _editing);
+    SourceCatalog? loaded = string.IsNullOrEmpty(source.Id) ? null : Catalog.Get(source.Id);
+    List<CarriedChannel> carried = [.. _carried.Where(channel => string.Equals(channel.SourceId, source.Id, StringComparison.OrdinalIgnoreCase))];
+    <div class="card" @key="source">
+        <div class="card-head">
+            <h2>@(string.IsNullOrWhiteSpace(source.Name) ? "New provider" : source.Name)</h2>
+            @if (!source.Enabled)
+            {
+                <span class="pill pill-muted">Off</span>
+            }
+            <span class="pill pill-muted">@(source.Passthrough ? "Passthrough" : "Re-encoded")</span>
+            <div class="spacer"></div>
+            @if (_confirmDelete == source.Id && !string.IsNullOrEmpty(source.Id))
+            {
+                <button class="btn btn-sm btn-danger" type="button" @onclick="() => Remove(source)">Delete @(source.Name)?</button>
+                <button class="btn btn-sm" type="button" @onclick="() => _confirmDelete = null">Keep</button>
+            }
+            else
+            {
+                @if (!editing)
+                {
+                    <button class="btn btn-sm" type="button" @onclick="() => Edit(source)">Edit</button>
+                }
+                <button class="btn btn-sm btn-ghost" type="button" @onclick="() => AskDelete(source)">Delete</button>
+            }
+        </div>
+
+        @if (editing)
+        {
+            <div class="grid grid-2">
+                <label class="field"><span>Name</span>
+                    <input type="text" value="@source.Name" placeholder="My provider" @onchange="e => source.Name = Text(e)" /></label>
+                <label class="field"><span>First channel number</span>
+                    <input type="number" min="1" value="@source.FirstNumber" @onchange="e => source.FirstNumber = Int(e, source.FirstNumber)" /></label>
+            </div>
+            <label class="field"><span>Playlist (M3U) address or file</span>
+                <input type="text" value="@source.PlaylistUrl" placeholder="http://provider.example/get.php?username=…&password=…&type=m3u_plus"
+                       @onchange="e => source.PlaylistUrl = Text(e)" /></label>
+            <label class="field"><span>Guide (XMLTV) address or file <span class="muted">(.xml or .xml.gz; empty uses the one the playlist names)</span></span>
+                <input type="text" value="@source.GuideUrl" placeholder="@(_preview?.GuideUrls.FirstOrDefault() ?? "http://provider.example/xmltv.php?username=…&password=…")"
+                       @onchange="e => source.GuideUrl = Text(e)" /></label>
+            <div class="grid grid-2">
+                <label class="field"><span>User agent <span class="muted">(optional)</span></span>
+                    <input type="text" value="@source.UserAgent" placeholder="Some providers want a particular player's" @onchange="e => source.UserAgent = Text(e)" /></label>
+                <label class="field"><span>Guide group <span class="muted">(optional; empty keeps the playlist's groups)</span></span>
+                    <input type="text" value="@source.Group" placeholder="IPTV" @onchange="e => source.Group = Text(e)" /></label>
+            </div>
+            <div class="row row-wrap" style="gap:18px;margin-bottom:10px;">
+                <label class="check"><input type="checkbox" checked="@source.Enabled" @onchange="e => source.Enabled = e.Value is true" /><span>On</span></label>
+                <label class="check"><input type="checkbox" checked="@source.Passthrough" @onchange="e => source.Passthrough = e.Value is true" />
+                    <span>Pass video and audio through without re-encoding (recommended)</span></label>
+            </div>
+
+            <h3 class="iptv-section">Channels</h3>
+            <div class="row" style="gap:8px;margin-bottom:10px;">
+                <button class="btn btn-sm" type="button" disabled="@(_loading || string.IsNullOrWhiteSpace(source.PlaylistUrl))" @onclick="() => LoadAsync(source)">
+                    @(_loading ? "Reading the playlist…" : _preview is null ? "Load channels" : "Load again")
+                </button>
+                <label class="check" style="margin:0;"><input type="checkbox" checked="@source.IncludeAll" @onchange="e => source.IncludeAll = e.Value is true" />
+                    <span>Carry every channel in the playlist</span></label>
+            </div>
+
+            @if (_preview is { } playlist && !source.IncludeAll)
+            {
+                List<PlaylistChannel> shown = [.. Shown(playlist)];
+                <div class="row row-wrap" style="gap:8px;margin-bottom:8px;">
+                    <input type="search" value="@_filter" placeholder="Filter by name" style="flex:1;min-width:180px;" @oninput="e => _filter = Text(e)" />
+                    <select value="@_group" @onchange="e => _group = Text(e)">
+                        <option value="">Every group</option>
+                        @foreach (string group in playlist.Channels.Select(channel => channel.Group ?? string.Empty).Where(group => group.Length > 0).Distinct().Order())
+                        {
+                            <option value="@group">@group</option>
+                        }
+                    </select>
+                    <button class="btn btn-sm" type="button" @onclick="() => SelectShown(source, shown, true)">Carry all shown</button>
+                    <button class="btn btn-sm btn-ghost" type="button" @onclick="() => SelectShown(source, shown, false)">Drop all shown</button>
+                </div>
+                <p class="hint">@source.Selected.Count of @playlist.Channels.Count carried. @(shown.Count > PageSize ? $"Showing the first {PageSize} of {shown.Count} matches." : $"{shown.Count} shown.")</p>
+                <div class="iptv-list">
+                    @foreach (PlaylistChannel channel in shown.Take(PageSize))
+                    {
+                        bool selected = source.Selected.Contains(channel.Key);
+                        <label class="iptv-row @(selected ? "on" : "")" @key="channel.Key">
+                            <input type="checkbox" checked="@selected" @onchange="e => Toggle(source, channel.Key, e.Value is true)" />
+                            <span class="iptv-number">@(source.Numbers.TryGetValue(channel.Key, out int number) ? number.ToString(CultureInfo.InvariantCulture) : selected ? "new" : "")</span>
+                            @if (!string.IsNullOrWhiteSpace(channel.Logo))
+                            {
+                                <img src="@channel.Logo" alt="" loading="lazy" />
+                            }
+                            else
+                            {
+                                <span class="iptv-logo"></span>
+                            }
+                            <span class="iptv-name">@channel.Name</span>
+                            <span class="muted">@channel.Group</span>
+                        </label>
+                    }
+                </div>
+            }
+            else if (_preview is null && !source.IncludeAll)
+            {
+                <p class="hint">Load the playlist to choose its channels.</p>
+            }
+
+            <div class="row" style="gap:8px;margin-top:12px;">
+                <div class="spacer"></div>
+                <button class="btn btn-sm" type="button" @onclick="Cancel">Cancel</button>
+                <button class="btn btn-sm btn-primary" type="button" disabled="@string.IsNullOrWhiteSpace(source.PlaylistUrl)" @onclick="Save">Save</button>
+            </div>
+        }
+        else
+        {
+            <p class="muted" style="margin:0 0 8px;">
+                @IptvFetcher.Redact(source.PlaylistUrl)
+                @if (loaded is not null)
+                {
+                    <text> · @loaded.Playlist.Channels.Count channel(s), @carried.Count carried · read @loaded.LoadedAt.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)</text>
+                }
+            </p>
+            @if (loaded?.Problem is { } problem)
+            {
+                <p class="hint warn">@problem</p>
+            }
+            @if (loaded?.GuideProblem is { } guideProblem)
+            {
+                <p class="hint warn">@guideProblem</p>
+            }
+            @if (carried.Count > 0)
+            {
+                <div class="iptv-carried">
+                    @foreach (CarriedChannel channel in carried.OrderBy(channel => channel.Number))
+                    {
+                        RelayStatus? relaying = Hub.Running.FirstOrDefault(status => status.Key == $"{source.Id}/{channel.Number.ToString(CultureInfo.InvariantCulture)}");
+                        <div class="iptv-carried-row">
+                            <span class="channel-number">@channel.Number</span>
+                            <span class="iptv-name">@channel.Channel.Name</span>
+                            @if (relaying is not null)
+                            {
+                                <span class="pill pill-ok">On air · @relaying.Viewers</span>
+                            }
+                            @if (channel.NumberTaken)
+                            {
+                                <span class="pill pill-danger" title="One of your own channels has this number, so this one is left out.">Number taken</span>
+                            }
+                            else if (channel.Listings == 0)
+                            {
+                                <span class="pill pill-muted" title="Shown in the guide under its own name.">No listings</span>
+                            }
+                            else
+                            {
+                                <span class="muted">@channel.Listings listings</span>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            else if (loaded is not null && loaded.Problem is null)
+            {
+                <p class="hint">No channels carried yet. Edit the provider to choose some.</p>
+            }
+        }
+    </div>
+}
+
+<div class="row" style="gap:8px;">
+    <button class="btn btn-primary" type="button" disabled="@(_editing is not null)" @onclick="Add">Add a provider</button>
+</div>
+
+<div class="card" style="margin-top:16px;">
+    <div class="card-head"><h2>How it works</h2></div>
+    <ul class="hint" style="margin:0;padding-left:18px;line-height:1.6;">
+        <li>Carried channels are added to ErsatzTV's lineup with your own, under the numbers shown, so Jellyfin finds them on the same tuner and guide. A channel keeps its number when the playlist changes.</li>
+        <li>The guide is the provider's own listings, as they wrote them. Channels without listings show their name instead.</li>
+        <li>When a channel is watched, the scheduler relays the provider's stream (HLS or MPEG-TS) through ffmpeg without re-encoding it, and ErsatzTV passes it on; with passthrough off, ErsatzTV re-encodes it to the channel's settings.</li>
+        <li>Playlists and guides are read again every few hours (the plugin's settings), and when you save here. Changes reach ErsatzTV straight away; new or removed channels restart it.</li>
+        <li>A number already used by one of your own channels is skipped: change the provider's first number, or the channel's.</li>
+    </ul>
+</div>
+
+<style>
+    .iptv-section { font-size: 13px; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    .iptv-list { max-height: 420px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+    .iptv-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--line); cursor: pointer; margin: 0; }
+    .iptv-row:last-child { border-bottom: 0; }
+    .iptv-row.on { background: rgba(111, 127, 255, .08); }
+    .iptv-row img, .iptv-logo { width: 36px; height: 22px; object-fit: contain; flex: none; }
+    .iptv-number { width: 44px; text-align: right; font-family: var(--mono); font-size: 12px; color: var(--muted); flex: none; }
+    .iptv-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .iptv-carried { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 6px 16px; }
+    .iptv-carried-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .hint.warn { color: #ffd08a; }
+</style>
+
+@code {
+    private const int PageSize = 300;
+
+    private List<IptvSource> _sources = [];
+    private IReadOnlyList<CarriedChannel> _carried = [];
+    private IptvSource? _editing;
+    private Playlist? _preview;
+    private bool _loading;
+    private string _filter = string.Empty;
+    private string _group = string.Empty;
+    private string? _confirmDelete;
+    private string? _message;
+    private bool _messageOk;
+
+    protected override void OnInitialized()
+    {
+        Load();
+        Catalog.Changed += OnChanged;
+        Refresher.StateChanged += OnChanged;
+        Hub.Changed += OnChanged;
+    }
+
+    public void Dispose()
+    {
+        Catalog.Changed -= OnChanged;
+        Refresher.StateChanged -= OnChanged;
+        Hub.Changed -= OnChanged;
+    }
+
+    private void OnChanged() => _ = InvokeAsync(() =>
+    {
+        _carried = Channels.Carried();
+        StateHasChanged();
+    });
+
+    private void Load()
+    {
+        _sources = [.. Store.Sources.Select(source => source.Copy())];
+        _carried = Channels.Carried();
+        _editing = null;
+        _preview = null;
+        _filter = string.Empty;
+        _group = string.Empty;
+    }
+
+    private IEnumerable<PlaylistChannel> Shown(Playlist playlist) => playlist.Channels.Where(channel =>
+        (_group.Length == 0 || string.Equals(channel.Group, _group, StringComparison.Ordinal))
+        && (_filter.Length == 0 || channel.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase)));
+
+    private void Edit(IptvSource source)
+    {
+        if (_editing is not null)
+        {
+            Load();
+            source = _sources.FirstOrDefault(candidate => candidate.Id == source.Id) ?? source;
+        }
+
+        _editing = source;
+        _preview = Catalog.Get(source.Id)?.Playlist is { Channels.Count: > 0 } known ? known : null;
+        _message = null;
+    }
+
+    private void Add()
+    {
+        var source = new IptvSource { FirstNumber = NextFirstNumber() };
+        _sources.Add(source);
+        _editing = source;
+        _preview = null;
+        _message = null;
+    }
+
+    /// <summary>A block of numbers after every provider's, so a second provider doesn't land among the first's.</summary>
+    private int NextFirstNumber()
+    {
+        int highest = Store.Sources.SelectMany(source => source.Numbers.Values.Append(source.FirstNumber)).DefaultIfEmpty(0).Max();
+        return highest < 1000 ? 1000 : (highest / 1000 + 1) * 1000;
+    }
+
+    private void Cancel() => Load();
+
+    private async Task LoadAsync(IptvSource source)
+    {
+        _loading = true;
+        try
+        {
+            _preview = await Fetcher.LoadPlaylistAsync(source, CancellationToken.None);
+            _message = null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidOperationException or TaskCanceledException or UnauthorizedAccessException)
+        {
+            Say($"Couldn't read the playlist: {ex.Message}", ok: false);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static void Toggle(IptvSource source, string key, bool on)
+    {
+        source.Selected.Remove(key);
+        if (on)
+        {
+            source.Selected.Add(key);
+        }
+    }
+
+    private static void SelectShown(IptvSource source, List<PlaylistChannel> shown, bool on)
+    {
+        foreach (PlaylistChannel channel in shown)
+        {
+            Toggle(source, channel.Key, on);
+        }
+    }
+
+    private void AskDelete(IptvSource source)
+    {
+        if (string.IsNullOrEmpty(source.Id))
+        {
+            Load();
+            return;
+        }
+
+        _confirmDelete = source.Id;
+    }
+
+    private void Remove(IptvSource source)
+    {
+        _confirmDelete = null;
+        try
+        {
+            Store.Save(Store.Sources.Where(saved => !string.Equals(saved.Id, source.Id, StringComparison.OrdinalIgnoreCase)));
+            Load();
+            Say($"Deleted {source.Name}. Its channels leave ErsatzTV's lineup now.", ok: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Say($"Couldn't delete the provider: {ex.Message}", ok: false);
+        }
+    }
+
+    private void Save()
+    {
+        string name = _editing?.Name ?? string.Empty;
+        try
+        {
+            Store.Save(_sources);
+            Load();
+            Say($"Saved {name}. Its playlist and guide are being read; its channels reach ErsatzTV in a moment.", ok: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Say($"Couldn't save: {ex.Message}", ok: false);
+        }
+    }
+
+    private void Say(string message, bool ok)
+    {
+        _message = message;
+        _messageOk = ok;
+    }
+
+    private static string Text(ChangeEventArgs e) => e.Value?.ToString()?.Trim() ?? string.Empty;
+
+    private static int Int(ChangeEventArgs e, int fallback) =>
+        int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) ? value : fallback;
+}

@@ -182,6 +182,13 @@ public sealed record ChannelSchedule
 
     public IReadOnlyList<ScheduleDiagnostic> Diagnostics { get; init; } = [];
 
+    /// <summary>
+    /// Facts about the whole channel for the outputs, keyed <c>&lt;output or plugin&gt;.&lt;name&gt;</c>, such as
+    /// <c>ersatztv.copy</c> for a channel whose streams should be passed through rather than re-encoded. Outputs
+    /// ignore keys they don't understand. Never set by the planner.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? Annotations { get; init; }
+
     public TimeSpan TotalPadding => Entries
         .Where(e => e.Kind == ScheduleEntryKind.Padding)
         .Aggregate(TimeSpan.Zero, (acc, e) => acc + e.Duration);

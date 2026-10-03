@@ -12,7 +12,7 @@ namespace SchedularrTV.Service.Plugins;
 /// Makes plugin switches apply while running. Every loaded plugin registers its services at startup, switched on
 /// or not; this then gates what it added by its switch:
 /// <list type="bullet">
-/// <item>Its contributions (outputs, playout processors, voices, planner features, editor sections, dashboard cards,
+/// <item>Its contributions (outputs, playout processors, external channels, voices, planner features, editor sections, dashboard cards,
 /// schedule finishers, viewer counts) are left out of every list of them while it's off, checked each time a list is
 /// read.</item>
 /// <item>Its media sources are left out of the combined library.</item>
@@ -28,6 +28,7 @@ public static class PluginServiceGate
         typeof(IPlayoutPublisher),
         typeof(IMediaEnricher),
         typeof(IPlayoutProcessor),
+        typeof(IExternalChannelSource),
         typeof(IChannelViewers),
         typeof(ITextToSpeechProvider),
         typeof(PlannerFeature),

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Xml;
+using System.Xml.Linq;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SchedularrTV.Core.Media;
@@ -193,10 +194,21 @@ public sealed class XmltvPublisher(IOptions<ErsatzTvOptions> options, ILogger<Xm
         return guide;
     }
 
+    /// <summary>
+    /// Entry annotation holding a <c>&lt;programme&gt;</c> element from another guide (an IPTV provider's, say). It's
+    /// written as it is, with every detail the provider gave, only moved onto this channel and the entry's times.
+    /// </summary>
+    public const string SourceProgrammeAnnotation = "xmltv.programme";
+
     private static void WriteProgramme(XmlWriter writer, string tvgId, GuideEntry guide, string? artworkBaseUrl)
     {
         ScheduleEntry entry = guide.Entry;
         MediaItem? item = entry.Item;
+
+        if (entry.Annotations?.TryGetValue(SourceProgrammeAnnotation, out string? source) == true && TryWriteSource(writer, source, tvgId, guide))
+        {
+            return;
+        }
 
         writer.WriteStartElement("programme");
         writer.WriteAttributeString("start", FormatXmltvTime(guide.Start));
@@ -263,6 +275,29 @@ public sealed class XmltvPublisher(IOptions<ErsatzTvOptions> options, ILogger<Xm
         }
 
         writer.WriteEndElement();
+    }
+
+    private static bool TryWriteSource(XmlWriter writer, string source, string tvgId, GuideEntry guide)
+    {
+        try
+        {
+            XElement programme = XElement.Parse(source);
+            if (programme.Name.LocalName != "programme")
+            {
+                return false;
+            }
+
+            programme.SetAttributeValue("start", FormatXmltvTime(guide.Start));
+            programme.SetAttributeValue("stop", FormatXmltvTime(guide.Stop));
+            programme.SetAttributeValue("channel", tvgId);
+            programme.WriteTo(writer);
+            return true;
+        }
+        catch (XmlException)
+        {
+            // Written the usual way from the entry instead.
+            return false;
+        }
     }
 
     /// <summary>

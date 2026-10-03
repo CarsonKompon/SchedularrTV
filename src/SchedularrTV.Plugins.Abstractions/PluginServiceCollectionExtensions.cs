@@ -57,6 +57,15 @@ public static class PluginServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>Whole channels, schedule included, published alongside the scheduler's own; see <see cref="IExternalChannelSource"/>.</summary>
+    public static IServiceCollection AddExternalChannels<TSource>(this IServiceCollection services)
+        where TSource : class, IExternalChannelSource
+    {
+        services.TryAddSingleton<TSource>();
+        services.AddSingleton<IExternalChannelSource>(provider => provider.GetRequiredService<TSource>());
+        return services;
+    }
+
     /// <summary>Tells the scheduler which channels are being watched, e.g. from a playout engine's activity.</summary>
     public static IServiceCollection AddChannelViewers<TViewers>(this IServiceCollection services)
         where TViewers : class, IChannelViewers

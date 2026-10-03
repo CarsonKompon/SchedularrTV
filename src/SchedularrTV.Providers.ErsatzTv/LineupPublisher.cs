@@ -81,6 +81,7 @@ public sealed class LineupPublisher(
                 Number = number,
                 Name = schedule.ChannelName,
                 Config = channelConfigPath,
+                Overlays = IsPassthrough(schedule) ? [await EnsureCopyOverlayAsync(root, cancellationToken).ConfigureAwait(false)] : null,
                 TvgId = schedule.TvgId,
                 Logo = schedule.ChannelLogo,
                 Group = schedule.ChannelGroup
@@ -103,7 +104,44 @@ public sealed class LineupPublisher(
         // Everything ErsatzTV reads from the lineup belongs here: it loads the file once at startup,
         // so any field that changes without a restart would silently keep serving the old value.
         supervisor.NotifyLineupPublished(
-            string.Join('|', lineup.Channels.Select(c => $"{c.Number}:{c.TvgId}:{c.Config}:{c.Name}:{c.Logo}:{c.Group}")));
+            string.Join('|', lineup.Channels.Select(c =>
+                $"{c.Number}:{c.TvgId}:{c.Config}:{string.Join(',', c.Overlays ?? [])}:{c.Name}:{c.Logo}:{c.Group}")));
+    }
+
+    /// <summary>
+    /// Channel annotation asking for the channel's streams to be passed through (copied) rather than re-encoded where
+    /// ErsatzTV can, as for IPTV channels that are already in a format players take.
+    /// </summary>
+    public const string CopyAnnotation = "ersatztv.copy";
+
+    internal static bool IsPassthrough(ChannelSchedule schedule) =>
+        schedule.Annotations?.TryGetValue(CopyAnnotation, out string? copy) == true && bool.TryParse(copy, out bool passthrough) && passthrough;
+
+    /// <summary>
+    /// Copying is an overlay on the channel's own channel.json, so the rest of its settings (and any edits to them)
+    /// still apply to whatever can't be copied. Loudness normalisation needs re-encoding, so it's off.
+    /// </summary>
+    internal const string CopyOverlay = """
+        {
+          "version": "https://ersatztv.org/channel/version/0.1.0",
+          "normalization": {
+            "audio": { "mode": "copy", "normalize_loudness": false },
+            "video": { "mode": "copy" }
+          }
+        }
+        """;
+
+    private static async Task<string> EnsureCopyOverlayAsync(string root, CancellationToken cancellationToken)
+    {
+        string folder = Path.Combine(root, "overlays");
+        string path = Path.Combine(folder, "copy.json");
+        if (!File.Exists(path) || await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false) != CopyOverlay)
+        {
+            Directory.CreateDirectory(folder);
+            await File.WriteAllTextAsync(path, CopyOverlay, cancellationToken).ConfigureAwait(false);
+        }
+
+        return path;
     }
 
     /// <summary>
@@ -207,6 +245,10 @@ internal sealed class LineupChannel
 
     [JsonPropertyName("config")]
     public string Config { get; set; } = string.Empty;
+
+    /// <summary>Configs merged over <see cref="Config"/>, such as the copy overlay for passed-through channels.</summary>
+    [JsonPropertyName("overlays")]
+    public List<string>? Overlays { get; set; }
 
     [JsonPropertyName("tvg_id")]
     public string TvgId { get; set; } = string.Empty;

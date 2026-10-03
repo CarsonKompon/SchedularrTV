@@ -6,7 +6,8 @@ loaded at startup.
 
 Jellyfin, local media folders, ErsatzTV Next, Promos and Archive Follow (off until you switch it on) are
 built-in plugins. Generated promos (which needs Promos), the TikTok, MiniMax and Piper voices for it, and
-[Web page channels](web-channels.md) (live pages such as WeatherStar forecasts, a clock and weather radar), the [TV Guide channel](tv-guide.md)
+[Web page channels](web-channels.md) (live pages such as WeatherStar forecasts, a clock and weather radar), [IPTV passthrough](iptv.md) (channels from an
+M3U playlist and its guide), the [TV Guide channel](tv-guide.md)
 (scrolling listings in the style of the Prevue Channel or TV Guide Channel) and [Auto Chapters](auto-chapters.md)
 (mid-roll break points found where programmes fade to black) are optional: each release has a
 `SchedularrTV-<version>-all-plugins.zip` with all of them (and a
@@ -139,6 +140,7 @@ service. These helpers fill the scheduler's extension points:
 | Output (another playout engine, M3U files…) | `services.AddPlayoutOutput<T>()` | `IPlayoutPublisher` |
 | Voice for generated promos | `services.AddSpeechProvider<T>()` | `ITextToSpeechProvider` |
 | Changes to what's sent to outputs | `services.AddPlayoutProcessor<T>()` | `IPlayoutProcessor` |
+| Whole channels with their own schedule, published alongside the scheduler's (IPTV, say) | `services.AddExternalChannels<T>()` (API 1.3); inject `IScheduleRepublisher` to publish again when they change | `IExternalChannelSource` |
 | Who's watching which channel | `services.AddChannelViewers<T>()` | `IChannelViewers` |
 | HTTP endpoints | implement `IPluginEndpoints` on the plugin class | |
 
@@ -225,7 +227,7 @@ reason, and none of its registrations are kept.
 
 ## Roadmap
 
-Plugin API 1.2 covers sources, media enrichers, outputs, voices, publish-time playout changes, settings, pages, endpoints
+Plugin API 1.3 covers sources, media enrichers, outputs, voices, publish-time playout changes, external channels, settings, pages, endpoints
 and schedule editor sections. Promos, generated promos and Archive Follow use extension points inside the
 planner that are internal for now (see [engine-extension-points.md](engine-extension-points.md)).
 Planned next:

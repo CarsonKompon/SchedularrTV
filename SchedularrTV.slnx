@@ -11,6 +11,7 @@
   <Folder Name="/plugins/">
     <Project Path="plugins/SchedularrTV.Plugins.AutoChapters/SchedularrTV.Plugins.AutoChapters.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.GeneratedPromos/SchedularrTV.Plugins.GeneratedPromos.csproj" />
+    <Project Path="plugins/SchedularrTV.Plugins.Iptv/SchedularrTV.Plugins.Iptv.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.MiniMax/SchedularrTV.Plugins.MiniMax.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.Piper/SchedularrTV.Plugins.Piper.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.TikTok/SchedularrTV.Plugins.TikTok.csproj" />
