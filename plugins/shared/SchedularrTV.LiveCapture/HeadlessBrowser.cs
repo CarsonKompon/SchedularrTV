@@ -122,14 +122,18 @@ public sealed class HeadlessBrowser : IAsyncDisposable
     /// Starts <paramref name="browser"/> on the page, trying each way of starting it headless until one stays open.
     /// When none does, the error says what the browser printed, so the cause can be seen.
     /// </summary>
-    public static async Task<HeadlessBrowser> StartAsync(string browser, string url, int width, int height, CancellationToken cancellationToken)
+    /// <param name="transparent">
+    /// Pictures are PNGs with a see-through background where the page draws none (for a page laid over a video).
+    /// </param>
+    public static async Task<HeadlessBrowser> StartAsync(string browser, string url, int width, int height, CancellationToken cancellationToken,
+        bool transparent = false)
     {
         List<string> problems = [];
         foreach (string[] mode in Modes)
         {
             try
             {
-                return await StartAsync(browser, mode, url, width, height, cancellationToken).ConfigureAwait(false);
+                return await StartAsync(browser, mode, url, width, height, transparent, cancellationToken).ConfigureAwait(false);
             }
             catch (BrowserClosedException ex)
             {
@@ -141,7 +145,7 @@ public sealed class HeadlessBrowser : IAsyncDisposable
             $"{Path.GetFileNameWithoutExtension(browser)} closed straight away each time it was started. {problems.LastOrDefault()}".Trim());
     }
 
-    private static async Task<HeadlessBrowser> StartAsync(string browser, string[] mode, string url, int width, int height,
+    private static async Task<HeadlessBrowser> StartAsync(string browser, string[] mode, string url, int width, int height, bool transparent,
         CancellationToken cancellationToken)
     {
         string profile = Path.Combine(Path.GetTempPath(), "schedularrtv-browser", Guid.NewGuid().ToString("N"));
@@ -171,7 +175,7 @@ public sealed class HeadlessBrowser : IAsyncDisposable
         }
 
         Process process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start {browser}.");
-        var browserProcess = new HeadlessBrowser(process, profile);
+        var browserProcess = new HeadlessBrowser(process, profile) { _transparent = transparent };
         process.OutputDataReceived += (_, e) => browserProcess.Remember(e.Data);
         process.ErrorDataReceived += (_, e) => browserProcess.Remember(e.Data);
         process.BeginOutputReadLine();
@@ -192,17 +196,30 @@ public sealed class HeadlessBrowser : IAsyncDisposable
             {
             }
 
+            if (transparent)
+            {
+                // What the page leaves clear stays clear in the pictures (the page's own background must be transparent too).
+                // A browser that won't still draws the page, just not see-through.
+                try
+                {
+                    await browserProcess.RetryAsync("Emulation.setDefaultBackgroundColorOverride",
+                        new JsonObject { ["color"] = new JsonObject { ["r"] = 0, ["g"] = 0, ["b"] = 0, ["a"] = 0 } }, cancellationToken).ConfigureAwait(false);
+                }
+                catch (InvalidOperationException)
+                {
+                }
+            }
+
             // Without a screencast the stream takes a picture every second instead, so this isn't fatal either.
             try
             {
-                await browserProcess.RetryAsync("Page.startScreencast", new JsonObject
-                {
-                    ["format"] = "jpeg",
-                    ["quality"] = 85,
-                    ["maxWidth"] = width,
-                    ["maxHeight"] = height,
-                    ["everyNthFrame"] = 1
-                }, cancellationToken).ConfigureAwait(false);
+                JsonObject screencast = transparent
+                    ? new JsonObject { ["format"] = "png" }
+                    : new JsonObject { ["format"] = "jpeg", ["quality"] = 85 };
+                screencast["maxWidth"] = width;
+                screencast["maxHeight"] = height;
+                screencast["everyNthFrame"] = 1;
+                await browserProcess.RetryAsync("Page.startScreencast", screencast, cancellationToken).ConfigureAwait(false);
             }
             catch (InvalidOperationException)
             {
@@ -216,6 +233,9 @@ public sealed class HeadlessBrowser : IAsyncDisposable
             throw;
         }
     }
+
+    // Pictures are PNGs with a see-through background (see StartAsync).
+    private bool _transparent;
 
     private async Task ConnectAsync(CancellationToken cancellationToken)
     {
@@ -467,12 +487,9 @@ public sealed class HeadlessBrowser : IAsyncDisposable
     /// </summary>
     public async Task<byte[]?> CaptureAsync(CancellationToken cancellationToken)
     {
-        JsonNode? result = await RetryAsync("Page.captureScreenshot", new JsonObject
-        {
-            ["format"] = "jpeg",
-            ["quality"] = 85,
-            ["fromSurface"] = true
-        }, cancellationToken).ConfigureAwait(false);
+        JsonNode? result = await RetryAsync("Page.captureScreenshot", _transparent
+            ? new JsonObject { ["format"] = "png", ["fromSurface"] = true }
+            : new JsonObject { ["format"] = "jpeg", ["quality"] = 85, ["fromSurface"] = true }, cancellationToken).ConfigureAwait(false);
         return (string?)result?["data"] is { Length: > 0 } data ? Convert.FromBase64String(data) : null;
     }
 

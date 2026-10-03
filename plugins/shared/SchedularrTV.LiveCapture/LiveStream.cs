@@ -57,10 +57,17 @@ public sealed record LiveStreamSpec
 
     public FrameRect? VisualizerRect { get; init; }
 
+    /// <summary>
+    /// Draws the page over the window's stream instead of under it: the page is captured with a see-through background
+    /// (PNG frames), so whatever it leaves clear shows the stream, and what it draws (a chat box, a pop-up) sits on top.
+    /// Without a window stream the page is laid over a plain dark background.
+    /// </summary>
+    public bool PageOnTop { get; init; }
+
     /// <summary>Changes whenever anything that affects the running stream does, so it's started again with the new settings.</summary>
     public string Fingerprint =>
         string.Join('|', PageUrl, Ffmpeg, BrowserPath, CaptureFrameRate, WindowStreamUrl, Window, Audio, MusicFolder,
-            Volume.ToString(CultureInfo.InvariantCulture), AudioStreamUrl, Visualizer, VisualizerRect);
+            Volume.ToString(CultureInfo.InvariantCulture), AudioStreamUrl, Visualizer, VisualizerRect, PageOnTop);
 }
 
 /// <summary>
@@ -153,7 +160,7 @@ public sealed class LiveStream : IAsyncDisposable
     private async Task StartCoreAsync(CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(_workFolder);
-        _placeholder = await PlaceholderAsync(Spec.Ffmpeg, cancellationToken).ConfigureAwait(false);
+        _placeholder = await PlaceholderAsync(Spec.Ffmpeg, Spec.PageOnTop, cancellationToken).ConfigureAwait(false);
 
         // A channel that can't be reached would stop ffmpeg from starting at all, so check first and leave it out.
         List<string> problems = [];
@@ -231,7 +238,7 @@ public sealed class LiveStream : IAsyncDisposable
         List<string> arguments =
         [
             "-hide_banner", "-loglevel", "warning", "-nostdin",
-            "-f", "image2pipe", "-c:v", "mjpeg", "-framerate", Math.Clamp(spec.CaptureFrameRate, 5, 30).ToString(CultureInfo.InvariantCulture), "-i", "pipe:0"
+            "-f", "image2pipe", "-c:v", spec.PageOnTop ? "png" : "mjpeg", "-framerate", Math.Clamp(spec.CaptureFrameRate, 5, 30).ToString(CultureInfo.InvariantCulture), "-i", "pipe:0"
         ];
 
         int next = 1;
@@ -272,14 +279,35 @@ public sealed class LiveStream : IAsyncDisposable
             audioFilter = $"[{audio}:a]anull[a]";
         }
 
-        List<string> graph = [$"[0:v]scale={Width}:{Height}:force_original_aspect_ratio=decrease,pad={Width}:{Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={OutputFrameRate}[page]"];
-        string current = "[page]";
+        List<string> graph = [];
+        string current;
+        if (spec.PageOnTop)
+        {
+            // The page keeps the timing (its frames are paced by the clock): a copy of it, filled in, is the dark background;
+            // the window's stream goes over that, and the page itself (see-through where it draws nothing) over both.
+            graph.Add($"[0:v]scale={Width}:{Height}:force_original_aspect_ratio=decrease,pad={Width}:{Height}:(ow-iw)/2:(oh-ih)/2:color=black@0,"
+                      + $"setsar=1,fps={OutputFrameRate},format=rgba,split=2[pagetop][pagebase]");
+            graph.Add($"[pagebase]drawbox=x=0:y=0:w=iw:h=ih:color=0x0b0d12@1:t=fill,format=yuv420p[base]");
+            current = "[base]";
+        }
+        else
+        {
+            graph.Add($"[0:v]scale={Width}:{Height}:force_original_aspect_ratio=decrease,pad={Width}:{Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={OutputFrameRate}[page]");
+            current = "[page]";
+        }
+
         if (window is { } windowInput && spec.Window is { } rect)
         {
             graph.Add($"[{windowInput}:v]setpts=PTS-STARTPTS,scale={rect.Width}:{rect.Height}:force_original_aspect_ratio=decrease,"
                       + $"pad={rect.Width}:{rect.Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={OutputFrameRate}[window]");
             graph.Add($"{current}[window]overlay={rect.X}:{rect.Y}:eof_action=pass:shortest=0[windowed]");
             current = "[windowed]";
+        }
+
+        if (spec.PageOnTop)
+        {
+            graph.Add($"{current}[pagetop]overlay=0:0:eof_action=pass:shortest=0:format=auto[paged]");
+            current = "[paged]";
         }
 
         if (spec.Visualizer is { Length: > 0 } visualizer && spec.VisualizerRect is { } box)
@@ -331,15 +359,16 @@ public sealed class LiveStream : IAsyncDisposable
     public static string ConcatPath(string path) =>
         (OperatingSystem.IsWindows() ? path.Replace('\\', '/') : path).Replace("'", "'\\''", StringComparison.Ordinal);
 
-    /// <summary>A plain dark frame, shown until the page has drawn.</summary>
-    private static async Task<byte[]> PlaceholderAsync(string ffmpeg, CancellationToken cancellationToken)
+    /// <summary>A plain dark frame (or, for a page drawn on top, a see-through one), shown until the page has drawn.</summary>
+    private static async Task<byte[]> PlaceholderAsync(string ffmpeg, bool transparent, CancellationToken cancellationToken)
     {
         var start = new ProcessStartInfo(ffmpeg) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
-        foreach (string argument in new[]
-                 {
-                     "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", $"color=c=0x101828:s={Width}x{Height}",
-                     "-frames:v", "1", "-f", "mjpeg", "-q:v", "3", "pipe:1"
-                 })
+        string[] frame = transparent
+            ? ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", $"color=c=black@0.0:s={Width}x{Height},format=rgba",
+                "-frames:v", "1", "-c:v", "png", "-f", "image2pipe", "pipe:1"]
+            : ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", $"color=c=0x101828:s={Width}x{Height}",
+                "-frames:v", "1", "-f", "mjpeg", "-q:v", "3", "pipe:1"];
+        foreach (string argument in frame)
         {
             start.ArgumentList.Add(argument);
         }
@@ -482,7 +511,8 @@ public sealed class LiveStream : IAsyncDisposable
                 {
                     try
                     {
-                        _browser = await HeadlessBrowser.StartAsync(browser, Spec.PageUrl, Width, Height, cancellationToken).ConfigureAwait(false);
+                        _browser = await HeadlessBrowser.StartAsync(browser, Spec.PageUrl, Width, Height, cancellationToken, transparent: Spec.PageOnTop)
+                            .ConfigureAwait(false);
                         Interlocked.Exchange(ref _lastFrameAt, Environment.TickCount64);
                         _startedAt = Environment.TickCount64;
                         _drawing = false;

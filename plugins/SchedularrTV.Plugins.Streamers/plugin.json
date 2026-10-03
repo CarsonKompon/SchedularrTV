@@ -1,0 +1,75 @@
+{
+  "id": "streamers",
+  "name": "Streamer channels",
+  "version": "1.0.0",
+  "description": "A channel of your favourite Twitch and YouTube streamers, in priority order: whoever is live is shown (the highest in the list wins), with their chat and pop-ups when the others are live too. While nobody is live, a countdown to the next stream, predicted from their past ones. No API keys needed. Needs Chrome or Edge on this computer, and yt-dlp (downloaded for you).",
+  "author": "SchedularrTV",
+  "apiVersion": "1.3",
+  "entryAssembly": "SchedularrTV.Plugins.Streamers.dll",
+  "settings": [
+    {
+      "key": "YtDlpPath",
+      "label": "yt-dlp",
+      "type": "File",
+      "description": "Opens the streams. Leave empty to use the copy downloaded on the Streamers page, or one installed on this computer."
+    },
+    {
+      "key": "BrowserPath",
+      "label": "Browser",
+      "type": "File",
+      "description": "Chrome, Edge or Chromium, run hidden to draw the countdown, the chat and the pop-ups. Leave empty to find one automatically."
+    },
+    {
+      "key": "FfmpegPath",
+      "label": "ffmpeg",
+      "type": "File",
+      "description": "Leave empty to use the ffmpeg set under App settings."
+    },
+    {
+      "key": "StreamAddress",
+      "label": "Stream address",
+      "type": "Text",
+      "placeholder": "http://localhost:5252",
+      "description": "How ErsatzTV reaches this scheduler. Leave empty unless ErsatzTV runs on another machine or in a container."
+    },
+    {
+      "key": "PollSeconds",
+      "label": "Check who's live every (seconds)",
+      "type": "Number",
+      "placeholder": "60",
+      "description": "20 to 900. A streamer counts as offline after two checks in a row say so."
+    },
+    {
+      "key": "MaxHeight",
+      "label": "Highest stream quality",
+      "type": "Choice",
+      "default": "720",
+      "options": [ "480", "720", "1080" ],
+      "description": "The tallest picture asked of a stream. The channel itself is 720p, so more mostly costs bandwidth."
+    },
+    {
+      "key": "TimeZone",
+      "label": "Time zone for predictions",
+      "type": "Text",
+      "placeholder": "This computer's",
+      "description": "Streamers' habits (\"Saturdays at 8pm\") are worked out in this time zone, e.g. America/New_York. Leave empty for this computer's."
+    },
+    {
+      "key": "FrameRate",
+      "label": "Capture frames per second",
+      "type": "Number",
+      "placeholder": "15",
+      "description": "How often the chat and pop-ups are drawn (5 to 30). The stream itself always plays at its own rate."
+    },
+    {
+      "key": "KeepAliveSeconds",
+      "label": "Keep a channel running after its last viewer (seconds)",
+      "type": "Number",
+      "placeholder": "60",
+      "description": "Holds the stream over guide changes, when ErsatzTV briefly reconnects."
+    }
+  ],
+  "pages": [
+    { "path": "/plugins/streamers", "title": "Streamers", "icon": "video" }
+  ]
+}

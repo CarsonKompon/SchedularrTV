@@ -1,0 +1,636 @@
+@page "/plugins/streamers"
+@* Streamer channels: Twitch and YouTube streamers in priority order, with their chat, also-live reminders and an offline countdown. *@
+@implements IDisposable
+@inject StreamerStore Store
+@inject StreamerSettings Settings
+@inject StreamerMonitor Monitor
+@inject StreamerChannels Guide
+@inject StreamersHub Hub
+@inject YtDlp YtDlp
+@inject IJSRuntime JS
+
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Streamer channels</div>
+        <h1>Streamers</h1>
+        <p class="muted">A channel of Twitch and YouTube streamers in priority order: whoever is live is on (the highest in the list wins), with
+            their chat; while nobody is, a countdown to the next stream, predicted from their past ones.</p>
+    </div>
+</div>
+
+@if (BrowserLocator.Find(Settings.BrowserPath) is null)
+{
+    <div class="banner banner-error" role="alert">
+        No Chrome, Edge or Chromium was found on this computer. The countdown, chat and pop-ups are drawn by one running hidden; install
+        one, or choose it in this plugin's settings (its gear on the Plugins page).
+    </div>
+}
+
+<div class="card">
+    <div class="card-head">
+        <h2>yt-dlp</h2>
+        @if (_ytDlpVersion is { } version)
+        {
+            <span class="pill pill-ok">@version</span>
+        }
+        else if (!_checkingYtDlp)
+        {
+            <span class="pill pill-muted">Not installed</span>
+        }
+        <div class="spacer"></div>
+        @if (YtDlp.Executable is null || YtDlp.Executable == YtDlp.DownloadPath)
+        {
+            <button class="btn btn-sm @(_ytDlpVersion is null ? "btn-primary" : "")" type="button" disabled="@(_downloading is not null)" @onclick="DownloadYtDlpAsync">
+                @(_downloading is { } progress ? $"Downloading… {progress:P0}" : _ytDlpVersion is null ? "Download yt-dlp" : "Update")
+            </button>
+        }
+    </div>
+    <p class="hint" style="margin:0;">
+        Opens the live streams. @(YtDlp.Executable is { } path ? $"Using {path}." : "Download it here (from yt-dlp's GitHub releases), or install it and it's found automatically.")
+        Keep it up to date: Twitch and YouTube change often, and new versions keep up.
+    </p>
+    @if (_ytDlpProblem is { } ytDlpProblem)
+    {
+        <p class="hint warn">@ytDlpProblem</p>
+    }
+</div>
+
+@if (_message is not null)
+{
+    <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status">@_message</div>
+}
+
+@foreach (StreamerChannel channel in _channels)
+{
+    bool editing = ReferenceEquals(channel, _editing);
+    StreamerChannel? saved = string.IsNullOrEmpty(channel.Id) ? null : Store.Find(channel.Id);
+    LiveStatus? status = saved is null ? null : Hub.Streams.Status(saved.Id);
+    StreamerEntry? active = saved is null ? null : Monitor.Active(saved);
+    <div class="card" @key="channel">
+        <div class="card-head">
+            <h2>@(string.IsNullOrWhiteSpace(channel.Name) ? "New channel" : channel.Name)</h2>
+            @if (channel.Number > 0)
+            {
+                <span class="pill pill-muted">Channel @channel.Number</span>
+            }
+            @if (!channel.Enabled)
+            {
+                <span class="pill pill-muted">Off</span>
+            }
+            else if (saved is not null && Guide.NumberTaken(saved))
+            {
+                <span class="pill pill-warn">Number @saved.Number is taken</span>
+            }
+            @if (active is not null)
+            {
+                <span class="pill pill-live">● @Name(active) is live</span>
+            }
+            @if (status is not null)
+            {
+                <span class="pill pill-ok">On air · @status.Viewers watching</span>
+            }
+            <div class="spacer"></div>
+            @if (_confirmDelete == channel.Id && !string.IsNullOrEmpty(channel.Id))
+            {
+                <button class="btn btn-sm btn-danger" type="button" @onclick="() => Remove(channel)">Delete @(channel.Name)?</button>
+                <button class="btn btn-sm" type="button" @onclick="() => _confirmDelete = null">Keep</button>
+            }
+            else
+            {
+                @if (!editing)
+                {
+                    <button class="btn btn-sm" type="button" @onclick="() => Edit(channel)">Edit</button>
+                }
+                <button class="btn btn-sm btn-ghost" type="button" @onclick="() => AskDelete(channel)">Delete</button>
+            }
+        </div>
+
+        @if (!editing && saved is not null)
+        {
+            <div class="streamer-list">
+                @for (int index = 0; index < saved.Streamers.Count; index++)
+                {
+                    StreamerEntry streamer = saved.Streamers[index];
+                    StreamerState? state = Monitor.State(streamer.Key);
+                    <div class="streamer-row">
+                        <span class="rank">@(index + 1)</span>
+                        @if (state?.Latest?.Avatar is { } avatar)
+                        {
+                            <img src="@avatar" alt="" />
+                        }
+                        else
+                        {
+                            <span class="noavatar"></span>
+                        }
+                        <div class="who">
+                            <strong>@Name(streamer)</strong>
+                            <span class="muted">@StreamerHandles.PlatformName(streamer.Platform) · @streamer.Handle</span>
+                        </div>
+                        <div class="what">@Describe(streamer, state)</div>
+                    </div>
+                }
+            </div>
+            @if (Monitor.OnAir(saved.Id)?.Problem is { } openProblem && active is not null)
+            {
+                <p class="hint warn">Couldn't open @Name(active)'s stream: @openProblem</p>
+            }
+            @if (status?.Problem is { } problem)
+            {
+                <p class="hint warn">@problem</p>
+            }
+            <p class="hint" style="margin:8px 0 0;">Its own channel in ErsatzTV (not on the Channels page). Stream: <code>@Settings.LiveUrl(saved.Id)</code></p>
+            @if (status is not null)
+            {
+                <img class="streamer-snapshot" src="@($"plugins/streamers/snapshot/{Uri.EscapeDataString(saved.Id)}?t={_tick}")" alt="What's on air now" />
+            }
+        }
+        else if (editing)
+        {
+            <div class="streamer-editor">
+                <div class="streamer-form">
+                    <h3>Channel</h3>
+                    <div class="grid grid-3">
+                        <label class="field"><span>Name</span>
+                            <input type="text" value="@channel.Name" placeholder="Friday night streams" @onchange="e => Change(() => channel.Name = Text(e))" /></label>
+                        <label class="field"><span>Number</span>
+                            <input type="number" min="1" value="@channel.Number" @onchange="e => Change(() => channel.Number = Whole(e, channel.Number))" /></label>
+                        <label class="field"><span>Group <span class="muted">(optional)</span></span>
+                            <input type="text" value="@channel.Group" placeholder="Streamers" @onchange="e => Change(() => channel.Group = Text(e))" /></label>
+                    </div>
+                    <label class="check"><input type="checkbox" checked="@channel.Enabled" @onchange="e => Change(() => channel.Enabled = e.Value is true)" /><span>On</span></label>
+
+                    <h3>Streamers <span class="muted" style="text-transform:none;letter-spacing:0;">(highest priority first)</span></h3>
+                    @for (int index = 0; index < channel.Streamers.Count; index++)
+                    {
+                        int at = index;
+                        StreamerEntry streamer = channel.Streamers[at];
+                        <div class="streamer-edit-row" @key="streamer">
+                            <span class="rank">@(at + 1)</span>
+                            <select value="@streamer.Platform" @onchange="e => Change(() => streamer.Platform = Enum.Parse<StreamPlatform>(Text(e)))">
+                                <option value="Twitch">Twitch</option>
+                                <option value="YouTube">YouTube</option>
+                            </select>
+                            <input type="text" value="@streamer.Handle" placeholder="@HandleHint(streamer.Platform)" @onchange="e => Change(() => streamer.Handle = Text(e))" />
+                            <input type="text" value="@streamer.DisplayName" placeholder="Name shown (optional)" @onchange="e => Change(() => streamer.DisplayName = Text(e))" />
+                            <button class="btn btn-sm btn-ghost" type="button" title="Higher priority" disabled="@(at == 0)" @onclick="() => Move(channel, at, -1)">↑</button>
+                            <button class="btn btn-sm btn-ghost" type="button" title="Lower priority" disabled="@(at == channel.Streamers.Count - 1)" @onclick="() => Move(channel, at, 1)">↓</button>
+                            <button class="btn btn-sm btn-ghost" type="button" title="Remove" @onclick="() => RemoveStreamer(channel, at)">✕</button>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(streamer.Handle) && StreamerHandles.Normalize(streamer.Platform, streamer.Handle).Length == 0)
+                        {
+                            <p class="hint warn" style="margin:0 0 6px 34px;">That doesn't look like a @StreamerHandles.PlatformName(streamer.Platform) @(streamer.Platform == StreamPlatform.Twitch ? "name" : "handle or channel").</p>
+                        }
+                    }
+                    <button class="btn btn-sm" type="button" @onclick="() => AddStreamer(channel)">Add a streamer</button>
+                    <label class="field" style="margin-top:12px;"><span>Stream volume: @((int)Math.Round(channel.Volume * 100))%</span>
+                        <input type="range" min="0" max="2" step="0.05" value="@channel.Volume.ToString(CultureInfo.InvariantCulture)"
+                               @onchange="e => Change(() => channel.Volume = Number(e, 1))" /></label>
+
+                    <h3>Chat</h3>
+                    <label class="check"><input type="checkbox" checked="@channel.Chat.Enabled" @onchange="e => Change(() => channel.Chat.Enabled = e.Value is true)" />
+                        <span>Show the live streamer's chat</span></label>
+                    @if (channel.Chat.Enabled)
+                    {
+                        <div class="grid grid-2">
+                            <label class="field"><span>Where</span>
+                                <select value="@channel.Chat.Layout" @onchange="e => Change(() => channel.Chat.Layout = Enum.Parse<ChatLayout>(Text(e)))">
+                                    <option value="OverlayRight">Over the stream, right side</option>
+                                    <option value="OverlayLeft">Over the stream, left side</option>
+                                    <option value="OverlayBottomRight">Over the stream, bottom right</option>
+                                    <option value="OverlayBottomLeft">Over the stream, bottom left</option>
+                                    <option value="PanelRight">A panel beside the stream, right</option>
+                                    <option value="PanelLeft">A panel beside the stream, left</option>
+                                    <option value="Custom">My own box</option>
+                                </select></label>
+                            <label class="field"><span>Look</span>
+                                <select value="@channel.Chat.Style" @onchange="e => Change(() => channel.Chat.Style = Enum.Parse<ChatStyle>(Text(e)))">
+                                    <option value="Classic">Classic</option>
+                                    <option value="Bubbles">Bubbles</option>
+                                    <option value="Minimal">Minimal (outlined text)</option>
+                                    <option value="Custom">My own template</option>
+                                </select></label>
+                        </div>
+                        @if (channel.Chat.Layout == ChatLayout.Custom)
+                        {
+                            <div class="grid grid-4">
+                                <label class="field"><span>Left</span><input type="number" value="@channel.Chat.Box.X" @onchange="e => Change(() => SetBox(channel.Chat, 0, e))" /></label>
+                                <label class="field"><span>Top</span><input type="number" value="@channel.Chat.Box.Y" @onchange="e => Change(() => SetBox(channel.Chat, 1, e))" /></label>
+                                <label class="field"><span>Width</span><input type="number" value="@channel.Chat.Box.Width" @onchange="e => Change(() => SetBox(channel.Chat, 2, e))" /></label>
+                                <label class="field"><span>Height</span><input type="number" value="@channel.Chat.Box.Height" @onchange="e => Change(() => SetBox(channel.Chat, 3, e))" /></label>
+                            </div>
+                            <p class="hint">In pixels on the 1280×720 picture.</p>
+                        }
+                        @if (channel.Chat.Style == ChatStyle.Custom)
+                        {
+                            <label class="field"><span>Template for each message</span>
+                                <textarea rows="3" @onchange="e => Change(() => channel.Chat.Template = Text(e))">@channel.Chat.Template</textarea></label>
+                            <p class="hint">HTML. <code>{author}</code>, <code>{message}</code>, <code>{color}</code> (the author's colour), <code>{platform}</code> and
+                                <code>{time}</code> are filled in; the author and message are made safe first.</p>
+                        }
+                        <div class="grid grid-4">
+                            <label class="field"><span>Text size</span>
+                                <input type="number" min="10" max="48" value="@channel.Chat.FontSize" @onchange="e => Change(() => channel.Chat.FontSize = Whole(e, 18))" /></label>
+                            <label class="field"><span>Messages shown</span>
+                                <input type="number" min="1" max="60" value="@channel.Chat.MaxMessages" @onchange="e => Change(() => channel.Chat.MaxMessages = Whole(e, 14))" /></label>
+                            <label class="field"><span>Fade after (s, 0 = never)</span>
+                                <input type="number" min="0" value="@channel.Chat.FadeAfterSeconds" @onchange="e => Change(() => channel.Chat.FadeAfterSeconds = Whole(e, 45))" /></label>
+                            <label class="field"><span>Backing: @((int)Math.Round(channel.Chat.BackgroundOpacity * 100))%</span>
+                                <input type="range" min="0" max="1" step="0.05" value="@channel.Chat.BackgroundOpacity.ToString(CultureInfo.InvariantCulture)"
+                                       @onchange="e => Change(() => channel.Chat.BackgroundOpacity = Number(e, 0.45))" /></label>
+                        </div>
+                    }
+
+                    <h3>When others are live too</h3>
+                    <label class="check"><input type="checkbox" checked="@channel.AlsoLive.Enabled" @onchange="e => Change(() => channel.AlsoLive.Enabled = e.Value is true)" />
+                        <span>Mention the channel's other streamers who are live</span></label>
+                    @if (channel.AlsoLive.Enabled)
+                    {
+                        <div class="grid grid-4">
+                            <label class="field"><span>As</span>
+                                <select value="@channel.AlsoLive.Style" @onchange="e => Change(() => channel.AlsoLive.Style = Enum.Parse<AlsoLiveStyle>(Text(e)))">
+                                    <option value="Popup">A pop-up card</option>
+                                    <option value="Ticker">Scrolling text</option>
+                                    <option value="Both">Both</option>
+                                </select></label>
+                            <label class="field"><span>Corner</span>
+                                <select value="@channel.AlsoLive.Corner" @onchange="e => Change(() => channel.AlsoLive.Corner = Enum.Parse<ScreenCorner>(Text(e)))">
+                                    <option value="TopLeft">Top left</option>
+                                    <option value="TopRight">Top right</option>
+                                    <option value="BottomLeft">Bottom left</option>
+                                    <option value="BottomRight">Bottom right</option>
+                                </select></label>
+                            <label class="field"><span>Every (minutes)</span>
+                                <input type="number" min="1" value="@channel.AlsoLive.EveryMinutes" @onchange="e => Change(() => channel.AlsoLive.EveryMinutes = Whole(e, 10))" /></label>
+                            <label class="field"><span>For (seconds)</span>
+                                <input type="number" min="3" value="@channel.AlsoLive.ShowSeconds" @onchange="e => Change(() => channel.AlsoLive.ShowSeconds = Whole(e, 12))" /></label>
+                        </div>
+                        <label class="field"><span>Text</span>
+                            <input type="text" value="@channel.AlsoLive.Text" @onchange="e => Change(() => channel.AlsoLive.Text = Text(e))" /></label>
+                        <p class="hint"><code>{name}</code>, <code>{title}</code>, <code>{game}</code>, <code>{platform}</code> and <code>{viewers}</code> are filled in.
+                            Someone who's just gone live is mentioned within seconds.</p>
+                    }
+
+                    <h3>While nobody is live</h3>
+                    <div class="grid grid-2">
+                        <label class="field"><span>Heading</span>
+                            <input type="text" value="@channel.Offline.Heading" @onchange="e => Change(() => channel.Offline.Heading = Text(e))" /></label>
+                        <label class="field"><span>Message <span class="muted">(optional)</span></span>
+                            <input type="text" value="@channel.Offline.Message" placeholder="Follow them to know when they're live" @onchange="e => Change(() => channel.Offline.Message = Text(e))" /></label>
+                        <div class="field"><span>Accent colour</span>
+                            <input type="color" value="@channel.Offline.AccentColor" @onchange="e => Change(() => channel.Offline.AccentColor = Text(e))" style="width:56px;height:34px;padding:2px;" /></div>
+                        <div class="field"><span>Background colour</span>
+                            <input type="color" value="@channel.Offline.BackgroundColor" @onchange="e => Change(() => channel.Offline.BackgroundColor = Text(e))" style="width:56px;height:34px;padding:2px;" /></div>
+                    </div>
+                    <label class="check"><input type="checkbox" checked="@channel.Offline.ShowEveryone" @onchange="e => Change(() => channel.Offline.ShowEveryone = e.Value is true)" />
+                        <span>List when everyone else is expected too</span></label>
+                    <div class="grid grid-2">
+                        <label class="field"><span>Music folder <span class="muted">(optional)</span></span>
+                            <input type="text" value="@channel.Offline.MusicFolder" placeholder="Silence" @onchange="e => Change(() => channel.Offline.MusicFolder = Text(e))" /></label>
+                        <label class="field"><span>Music volume: @((int)Math.Round(channel.Offline.MusicVolume * 100))%</span>
+                            <input type="range" min="0" max="1.5" step="0.05" value="@channel.Offline.MusicVolume.ToString(CultureInfo.InvariantCulture)"
+                                   @onchange="e => Change(() => channel.Offline.MusicVolume = Number(e, 0.4))" /></label>
+                    </div>
+
+                    <div class="row" style="gap:8px;margin-top:14px;">
+                        <div class="spacer"></div>
+                        <button class="btn btn-sm" type="button" @onclick="Cancel">Cancel</button>
+                        <button class="btn btn-sm btn-primary" type="button" disabled="@(!CanSave(channel))" @onclick="Save">Save</button>
+                    </div>
+                </div>
+
+                <div class="streamer-preview-column">
+                    <div class="row" style="gap:6px;margin-bottom:8px;">
+                        <button class="btn btn-sm @(_previewMode == PreviewLive ? "btn-primary" : "")" type="button" @onclick="ShowLiveAsync">Someone's live</button>
+                        <button class="btn btn-sm @(_previewMode == PreviewOffline ? "btn-primary" : "")" type="button" @onclick="ShowOfflineAsync">Nobody's live</button>
+                    </div>
+                    <div class="streamer-preview">
+                        <iframe name="streamersPreview" title="Live preview" src="@PreviewSource(channel)" @onload="PushPreviewAsync"></iframe>
+                    </div>
+                    <p class="hint">Live preview with made-up streamers and chat. On air, the real stream fills the picture behind the chat.</p>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<div class="row" style="gap:8px;">
+    <button class="btn btn-primary" type="button" disabled="@(_editing is not null)" @onclick="Add">Add a streamer channel</button>
+</div>
+
+<div class="card" style="margin-top:16px;">
+    <div class="card-head"><h2>How it works</h2></div>
+    <ul class="hint" style="margin:0;padding-left:18px;line-height:1.6;">
+        <li>Each streamer channel is its own channel in ErsatzTV and Jellyfin's guide, alongside your others.</li>
+        <li>Streamers are checked every minute. The first one in the list who's live is shown; when they finish, the next one live takes over.
+            Switching streamer restarts the channel's stream, so players reconnect for a moment.</li>
+        <li>While nobody is live, the channel counts down to the soonest expected stream. Predictions come from each streamer's past streams
+            (and announced ones: YouTube's scheduled streams, Twitch's schedule) and get better as the plugin sees them stream.</li>
+        <li>The guide shows who's live and who's expected when.</li>
+        <li>No API keys: the plugin reads Twitch and YouTube the way their own sites do, so a change on their side can break it until an update.</li>
+    </ul>
+</div>
+
+<style>
+    .streamer-editor { display: grid; grid-template-columns: minmax(0, 1fr) 660px; gap: 22px; align-items: start; }
+    @@media (max-width: 1300px) { .streamer-editor { grid-template-columns: minmax(0, 1fr); } }
+    .streamer-form h3 { font-size: 13px; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    .streamer-form h3:first-child { margin-top: 0; }
+    .streamer-preview-column { position: sticky; top: 16px; }
+    .streamer-preview { width: 640px; height: 360px; overflow: hidden; border-radius: 10px; background: #000; border: 1px solid var(--line); }
+    .streamer-preview iframe { width: 1280px; height: 720px; border: 0; transform: scale(.5); transform-origin: 0 0; display: block; }
+    .streamer-snapshot { width: 100%; max-width: 640px; border-radius: 10px; display: block; margin-top: 8px; background: #000; }
+    .streamer-list { display: flex; flex-direction: column; gap: 6px; }
+    .streamer-row { display: grid; grid-template-columns: 22px 36px minmax(160px, 260px) 1fr; gap: 10px; align-items: center; }
+    .streamer-row img, .streamer-row .noavatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; background: rgba(255,255,255,.08); display: block; }
+    .streamer-row .who { display: flex; flex-direction: column; min-width: 0; }
+    .streamer-row .who span { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .streamer-row .what { font-size: 13px; color: var(--muted); }
+    .streamer-row .rank, .streamer-edit-row .rank { color: var(--muted); font-weight: 700; text-align: center; }
+    .streamer-edit-row { display: grid; grid-template-columns: 22px 110px minmax(0, 1.3fr) minmax(0, 1fr) auto auto auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+    .pill-live { background: rgba(233, 25, 22, .18); color: #ff6b6b; border-color: rgba(233, 25, 22, .3); }
+    .hint.warn { color: #ffd08a; }
+</style>
+
+@code {
+    private const string PreviewLive = "live";
+    private const string PreviewOffline = "offline";
+
+    private List<StreamerChannel> _channels = [];
+    private StreamerChannel? _editing;
+    private string? _confirmDelete;
+    private string? _message;
+    private bool _messageOk;
+    private long _tick;
+    private Timer? _refresh;
+    private string _previewMode = PreviewLive;
+    private string? _ytDlpVersion;
+    private bool _checkingYtDlp = true;
+    private string? _ytDlpProblem;
+    private double? _downloading;
+
+    protected override void OnInitialized()
+    {
+        Load();
+        Hub.Streams.Changed += OnChanged;
+        Monitor.Checked += OnChanged;
+        _refresh = new Timer(_ => InvokeAsync(() => { _tick++; if (Hub.Streams.Running.Count > 0) StateHasChanged(); }), null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _ytDlpVersion = await YtDlp.VersionAsync(CancellationToken.None);
+        _checkingYtDlp = false;
+    }
+
+    public void Dispose()
+    {
+        Hub.Streams.Changed -= OnChanged;
+        Monitor.Checked -= OnChanged;
+        _refresh?.Dispose();
+    }
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void Load()
+    {
+        _channels = [.. Store.Channels.Select(channel => channel.Copy())];
+        _editing = null;
+    }
+
+    private string Name(StreamerEntry streamer) => Monitor.State(streamer.Key)?.Name(streamer) ?? streamer.DisplayName ?? streamer.Handle;
+
+    private static string HandleHint(StreamPlatform platform) => platform == StreamPlatform.Twitch ? "Twitch name or link" : "@handle, channel id or link";
+
+    private string Describe(StreamerEntry streamer, StreamerState? state)
+    {
+        if (state is null)
+        {
+            return "Not checked yet";
+        }
+
+        if (state.Problem is { } problem && state.Latest is null)
+        {
+            return problem;
+        }
+
+        if (state.Live)
+        {
+            StreamerSnapshot? live = state.Latest;
+            string viewers = live?.Viewers is { } count ? $" · {count:N0} watching" : "";
+            return $"Live now: {live?.Title ?? "(no title)"}{(live?.Game is { } game ? $" · {game}" : "")}{viewers}";
+        }
+
+        if (Monitor.Prediction(streamer) is not { } next)
+        {
+            return "Offline · not enough past streams to predict the next one yet";
+        }
+
+        string when = next.At.ToLocalTime().ToString("ddd h:mm tt", CultureInfo.CurrentCulture);
+        string how = next.Kind switch
+        {
+            PredictionKind.Scheduled => "scheduled",
+            PredictionKind.Weekly => $"weekly habit, {next.Confidence:P0} sure",
+            PredictionKind.Daily => $"daily habit, {next.Confidence:P0} sure",
+            _ => "rough guess"
+        };
+        return $"Offline · next expected {when} ({how})";
+    }
+
+    private static string PreviewSource(StreamerChannel channel) =>
+        $"plugins/streamers/view/{Uri.EscapeDataString(string.IsNullOrEmpty(channel.Id) ? "preview" : channel.Id)}?preview=true";
+
+    private static bool CanSave(StreamerChannel channel) =>
+        channel.Number > 0 && channel.Streamers.Any(streamer => StreamerHandles.Normalize(streamer.Platform, streamer.Handle).Length > 0);
+
+    private void Edit(StreamerChannel channel)
+    {
+        if (_editing is not null)
+        {
+            Load();
+            channel = _channels.FirstOrDefault(candidate => candidate.Id == channel.Id) ?? channel;
+        }
+
+        _editing = channel;
+        _message = null;
+    }
+
+    private void Add()
+    {
+        var channel = new StreamerChannel
+        {
+            Number = 900 + _channels.Count,
+            Streamers = [new StreamerEntry()]
+        };
+        _channels.Add(channel);
+        _editing = channel;
+        _message = null;
+    }
+
+    private void Cancel() => Load();
+
+    private void AskDelete(StreamerChannel channel)
+    {
+        if (string.IsNullOrEmpty(channel.Id))
+        {
+            Load();
+            return;
+        }
+
+        _confirmDelete = channel.Id;
+    }
+
+    private void Remove(StreamerChannel channel)
+    {
+        _confirmDelete = null;
+        try
+        {
+            Store.Save(Store.Channels.Where(saved => !string.Equals(saved.Id, channel.Id, StringComparison.OrdinalIgnoreCase)));
+            Load();
+            Say($"Deleted {channel.Name}. It leaves ErsatzTV's lineup with the next publish.", ok: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Say($"Couldn't delete the channel: {ex.Message}", ok: false);
+        }
+    }
+
+    private void Save()
+    {
+        try
+        {
+            string name = _editing?.Name ?? string.Empty;
+            Store.Save(_channels);
+            Load();
+            Say($"Saved {name}. Its streamers are being checked now; it's in ErsatzTV's lineup with the next publish.", ok: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Say($"Couldn't save: {ex.Message}", ok: false);
+        }
+    }
+
+    private async Task AddStreamer(StreamerChannel channel)
+    {
+        channel.Streamers.Add(new StreamerEntry { Platform = channel.Streamers.LastOrDefault()?.Platform ?? StreamPlatform.Twitch });
+        await PushPreviewAsync();
+    }
+
+    private async Task RemoveStreamer(StreamerChannel channel, int index)
+    {
+        channel.Streamers.RemoveAt(index);
+        await PushPreviewAsync();
+    }
+
+    private void Move(StreamerChannel channel, int index, int by)
+    {
+        int to = index + by;
+        if (to < 0 || to >= channel.Streamers.Count)
+        {
+            return;
+        }
+
+        (channel.Streamers[index], channel.Streamers[to]) = (channel.Streamers[to], channel.Streamers[index]);
+    }
+
+    private async Task DownloadYtDlpAsync()
+    {
+        _downloading = 0;
+        _ytDlpProblem = null;
+        try
+        {
+            var progress = new Progress<double>(value => _ = InvokeAsync(() => { _downloading = value; StateHasChanged(); }));
+            await YtDlp.DownloadAsync(progress, CancellationToken.None);
+            _ytDlpVersion = await YtDlp.VersionAsync(CancellationToken.None);
+            if (_ytDlpVersion is null)
+            {
+                _ytDlpProblem = "Downloaded, but it won't run on this computer.";
+            }
+
+            Monitor.Poke();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or UnauthorizedAccessException or PlatformNotSupportedException or TaskCanceledException)
+        {
+            _ytDlpProblem = $"Couldn't download yt-dlp: {ex.Message}";
+        }
+        finally
+        {
+            _downloading = null;
+        }
+    }
+
+    private async Task ShowLiveAsync()
+    {
+        _previewMode = PreviewLive;
+        await PushPreviewAsync();
+    }
+
+    private async Task ShowOfflineAsync()
+    {
+        _previewMode = PreviewOffline;
+        await PushPreviewAsync();
+    }
+
+    private async Task Change(Action change)
+    {
+        change();
+        await PushPreviewAsync();
+    }
+
+    /// <summary>Sends the settings being edited to the preview, which redraws without reloading.</summary>
+    private async Task PushPreviewAsync()
+    {
+        if (_editing is not { } channel)
+        {
+            return;
+        }
+
+        StreamerChannel shown = channel.Copy();
+        StreamerStore.Tidy(shown);
+        if (string.IsNullOrEmpty(shown.Id))
+        {
+            shown.Id = "preview";
+        }
+
+        try
+        {
+            // Looked up afresh each time (the iframe is replaced whenever the editor reopens). Escaped so the settings
+            // (a chat template, say) are a safe script literal.
+            string settings = StreamerPage.Script(System.Text.Json.JsonSerializer.Serialize(StreamerPageConfig.For(shown, preview: true), StreamerPage.Json));
+            string message = $"{{\"type\":\"streamers-settings\",\"mode\":\"{_previewMode}\",\"settings\":{settings}}}";
+            await JS.InvokeVoidAsync("eval", $"document.querySelector('iframe[name=\"streamersPreview\"]')?.contentWindow?.postMessage({message}, '*')");
+        }
+        catch (JSException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    /// <summary>Sets one side of the chat's own box: 0 left, 1 top, 2 width, 3 height.</summary>
+    private static void SetBox(ChatOptions chat, int part, ChangeEventArgs e)
+    {
+        PixelBox box = chat.Box;
+        chat.Box = part switch
+        {
+            0 => box with { X = Whole(e, box.X) },
+            1 => box with { Y = Whole(e, box.Y) },
+            2 => box with { Width = Whole(e, box.Width) },
+            _ => box with { Height = Whole(e, box.Height) }
+        };
+    }
+
+    private void Say(string message, bool ok)
+    {
+        _message = message;
+        _messageOk = ok;
+    }
+
+    private static string Text(ChangeEventArgs e) => e.Value?.ToString()?.Trim() ?? string.Empty;
+
+    private static double Number(ChangeEventArgs e, double fallback) =>
+        double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ? value : fallback;
+
+    private static int Whole(ChangeEventArgs e, int fallback) =>
+        int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) ? value : fallback;
+}

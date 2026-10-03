@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.Radio\SchedularrTV.Plugins.Radio.csproj" />
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.Overlays\SchedularrTV.Plugins.Overlays.csproj" />
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.LocalAi\SchedularrTV.Plugins.LocalAi.csproj" />
+    <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.Streamers\SchedularrTV.Plugins.Streamers.csproj" />
   </ItemGroup>
 
   <ItemGroup>

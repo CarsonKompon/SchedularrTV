@@ -17,6 +17,7 @@
     <Project Path="plugins/SchedularrTV.Plugins.Overlays/SchedularrTV.Plugins.Overlays.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.Piper/SchedularrTV.Plugins.Piper.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.Radio/SchedularrTV.Plugins.Radio.csproj" />
+    <Project Path="plugins/SchedularrTV.Plugins.Streamers/SchedularrTV.Plugins.Streamers.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.TikTok/SchedularrTV.Plugins.TikTok.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.TvGuide/SchedularrTV.Plugins.TvGuide.csproj" />
     <Project Path="plugins/shared/SchedularrTV.LiveCapture/SchedularrTV.LiveCapture.csproj" />

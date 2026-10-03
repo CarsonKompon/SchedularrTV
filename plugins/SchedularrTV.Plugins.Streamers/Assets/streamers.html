@@ -1,0 +1,424 @@
+<!doctype html>
+<!--
+  A streamer channel's picture, drawn at 1280x720 for the hidden browser.
+  Live: the stream itself is laid UNDER this page by ffmpeg, so the page is transparent except for what it draws on
+  top: the chat, and pop-ups or a ticker about the channel's other streamers who are live too.
+  Offline: a countdown to the soonest expected stream, and when everyone else is expected.
+  Who's live comes from state.json (every 5 s), the chat from chat.json (every 1.5 s). Text from either is set as text,
+  never as HTML; only the channel's own chat template (written by whoever runs the scheduler) is HTML.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1280, height=720">
+<title>Streamers</title>
+<style>
+  :root { --accent: #9146ff; --bgc: #0e0e14; --ink: #ffffff; --soft: rgba(255,255,255,.74); --faint: rgba(255,255,255,.42); --chat-size: 18px; --chat-bg: rgba(0,0,0,.45); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1280px; height: 720px; overflow: hidden; background: transparent; }
+  body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: var(--ink); position: relative; }
+  .hidden { display: none !important; }
+
+  /* Offline: the countdown */
+  #offline { position: absolute; inset: 0; background: var(--bgc); overflow: hidden; }
+  #offline .glow { position: absolute; inset: -30%; background:
+      radial-gradient(circle at 25% 30%, color-mix(in srgb, var(--accent) 45%, transparent), transparent 45%),
+      radial-gradient(circle at 75% 75%, color-mix(in srgb, var(--accent) 25%, #001a33), transparent 50%);
+    animation: drift 50s ease-in-out infinite alternate; opacity: .8; }
+  @keyframes drift { from { transform: translate(-4%, -3%) rotate(0); } to { transform: translate(4%, 3%) rotate(10deg); } }
+  #channel { position: absolute; top: 30px; left: 44px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; font-size: 18px; color: var(--soft); }
+  #clock { position: absolute; top: 26px; right: 44px; font-size: 24px; font-weight: 600; color: var(--soft); font-variant-numeric: tabular-nums; }
+  #hero { position: absolute; left: 0; right: 0; top: 118px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+  #hero .avatar { width: 132px; height: 132px; border-radius: 50%; border: 4px solid var(--accent); object-fit: cover; background: rgba(255,255,255,.08); box-shadow: 0 0 60px color-mix(in srgb, var(--accent) 50%, transparent); }
+  #heading { margin-top: 20px; font-size: 20px; letter-spacing: .18em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+  #who { margin-top: 6px; font-size: 46px; font-weight: 800; max-width: 1100px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #countdown { margin-top: 10px; font-size: 92px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: .02em; line-height: 1; }
+  #when { margin-top: 12px; font-size: 22px; color: var(--soft); }
+  #message { margin-top: 10px; font-size: 20px; color: var(--faint); max-width: 1000px; }
+  #others { position: absolute; left: 50%; transform: translateX(-50%); bottom: 34px; display: flex; gap: 14px; max-width: 1200px; }
+  .other { display: flex; align-items: center; gap: 10px; padding: 9px 14px 9px 9px; border-radius: 999px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.1); white-space: nowrap; }
+  .other img { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; background: rgba(255,255,255,.1); }
+  .other b { font-size: 16px; display: block; }
+  .other span { font-size: 13px; color: var(--soft); display: block; }
+
+  /* Someone's live but their stream isn't open yet */
+  #opening { position: absolute; inset: 0; background: var(--bgc); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }
+  #opening img { width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 4px solid #e91916; }
+  #opening b { font-size: 40px; }
+  #opening span { font-size: 20px; color: var(--soft); max-width: 900px; }
+
+  /* The editor's stand-in for the stream */
+  #fakevideo { position: absolute; background: linear-gradient(135deg, #1d3557, #6a4c93 55%, #e76f51); display: flex; align-items: center; justify-content: center; font-size: 34px; font-weight: 800; color: rgba(255,255,255,.6); }
+
+  /* Chat */
+  #chatpanel { position: absolute; top: 0; bottom: 0; width: 320px; background: #0f0f17; border-left: 1px solid rgba(255,255,255,.08); }
+  #chat { position: absolute; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; gap: 4px; font-size: var(--chat-size); line-height: 1.3; padding: 10px; border-radius: 12px; }
+  #chat.boxed { background: var(--chat-bg); }
+  #chat .msg { transition: opacity .8s, transform .3s; overflow-wrap: anywhere; animation: arrive .25s ease-out; }
+  @keyframes arrive { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  #chat .msg.gone { opacity: 0; }
+  #chat .author { font-weight: 700; margin-right: 6px; }
+  #chat .emote { height: 1.5em; vertical-align: middle; margin: -0.2em 1px; }
+  #chat .paid { display: inline-block; font-size: .8em; font-weight: 800; background: #ffca28; color: #222; border-radius: 6px; padding: 0 6px; margin-right: 6px; }
+  .s-Classic .msg { text-shadow: 0 1px 2px rgba(0,0,0,.9); }
+  .s-Bubbles .msg { background: rgba(20,20,28,.82); border-radius: 14px; padding: 7px 12px; align-self: flex-start; max-width: 100%; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+  .s-Bubbles .author { display: block; font-size: .78em; margin-bottom: 2px; }
+  .s-Minimal .msg { text-shadow: 0 0 3px #000, 0 1px 2px #000, 0 0 8px rgba(0,0,0,.8); }
+  .s-Minimal .author { font-weight: 600; opacity: .9; }
+  #chatnote { position: absolute; font-size: 13px; color: var(--faint); }
+
+  /* Also live */
+  #popup { position: absolute; width: 430px; display: flex; gap: 14px; align-items: center; padding: 14px 18px 14px 14px; border-radius: 16px;
+    background: rgba(14,14,20,.9); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 12px 40px rgba(0,0,0,.5); transition: opacity .5s, transform .5s; }
+  #popup.away { opacity: 0; transform: translateY(-16px) scale(.97); }
+  #popup img { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 3px solid #e91916; flex: none; background: rgba(255,255,255,.1); }
+  #popup .tag { font-size: 12px; font-weight: 800; letter-spacing: .12em; color: #ff4d4d; }
+  #popup .tag::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff4d4d; margin-right: 6px; vertical-align: 1px; animation: pulse 1.6s infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  #popup .line { font-size: 17px; font-weight: 600; margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  #popup .meta { font-size: 13px; color: var(--soft); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #ticker { position: absolute; left: 0; right: 0; bottom: 0; height: 44px; background: rgba(10,10,16,.88); border-top: 2px solid #e91916; overflow: hidden; transition: opacity .5s; }
+  #ticker.away { opacity: 0; }
+  #ticker .label { position: absolute; left: 0; top: 0; bottom: 0; z-index: 1; background: #e91916; color: #fff; font-weight: 800; letter-spacing: .1em; font-size: 15px; padding: 0 16px; display: flex; align-items: center; }
+  #ticker .run { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; white-space: nowrap; font-size: 19px; font-weight: 600; padding-left: 1280px; animation: scroll linear infinite; }
+  @keyframes scroll { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+</style>
+</head>
+<body>
+<div id="offline" class="hidden">
+  <div class="glow"></div>
+  <div id="channel"></div>
+  <div id="clock"></div>
+  <div id="hero">
+    <img class="avatar" id="heroAvatar" alt="">
+    <div id="heading"></div>
+    <div id="who"></div>
+    <div id="countdown"></div>
+    <div id="when"></div>
+    <div id="message"></div>
+  </div>
+  <div id="others"></div>
+</div>
+<div id="opening" class="hidden"><img id="openingAvatar" alt=""><b id="openingName"></b><span id="openingNote"></span></div>
+<div id="fakevideo" class="hidden">The stream</div>
+<div id="chatpanel" class="hidden"></div>
+<div id="chat" class="hidden"></div>
+<div id="chatnote" class="hidden"></div>
+<div id="popup" class="away hidden"><img alt=""><div><div class="tag">ALSO LIVE</div><div class="line"></div><div class="meta"></div></div></div>
+<div id="ticker" class="away hidden"><div class="label">ALSO LIVE</div><div class="run"></div></div>
+
+<script>window.STREAMERS = __CONFIG__;</script>
+<script>
+(() => {
+  "use strict";
+  const base = "/plugins/streamers";
+  let cfg = window.STREAMERS;
+  let state = null, offset = 0, mode = "", chatSource = null, lastSeq = 0;
+  let previewMode = "live";
+  let reminderIndex = 0, reminderTimer = null, nextReminder = 0, announced = new Set();
+  const $ = id => document.getElementById(id);
+  const now = () => Date.now() + offset;
+  const blank = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+
+  // ---- Settings ----
+  function applyConfig() {
+    const root = document.documentElement.style;
+    root.setProperty("--accent", cfg.offline.accentColor);
+    root.setProperty("--bgc", cfg.offline.backgroundColor);
+    root.setProperty("--chat-size", cfg.chat.fontSize + "px");
+    root.setProperty("--chat-bg", `rgba(0,0,0,${cfg.chat.backgroundOpacity})`);
+    $("channel").textContent = cfg.name;
+    $("heading").textContent = cfg.offline.heading;
+    $("message").textContent = cfg.offline.message || "";
+    placeChat();
+    placePopup();
+    if (cfg.preview) samples();
+    render();
+  }
+
+  function placeChat() {
+    const chat = $("chat"), panel = $("chatpanel"), note = $("chatnote");
+    const layouts = {
+      OverlayRight: [1280 - 16 - 350, 70, 350, 580], OverlayLeft: [16, 70, 350, 580],
+      OverlayBottomRight: [1280 - 16 - 400, 720 - 16 - 300, 400, 300], OverlayBottomLeft: [16, 720 - 16 - 300, 400, 300],
+      PanelRight: [960, 0, 320, 720], PanelLeft: [0, 0, 320, 720]
+    };
+    const box = cfg.chat.layout === "Custom" ? [cfg.chat.box.x, cfg.chat.box.y, cfg.chat.box.width, cfg.chat.box.height] : layouts[cfg.chat.layout] || layouts.OverlayRight;
+    Object.assign(chat.style, { left: box[0] + "px", top: box[1] + "px", width: box[2] + "px", height: box[3] + "px" });
+    Object.assign(note.style, { left: (box[0] + 12) + "px", top: (box[1] + box[3] - 24) + "px" });
+    const isPanel = cfg.chat.layout === "PanelRight" || cfg.chat.layout === "PanelLeft";
+    panel.style.left = cfg.chat.layout === "PanelLeft" ? "0px" : "960px";
+    panel.dataset.on = isPanel ? "1" : "";
+    chat.className = `s-${cfg.chat.style}` + (cfg.chat.backgroundOpacity > 0 && !isPanel && cfg.chat.style !== "Bubbles" ? " boxed" : "");
+    const fake = $("fakevideo");
+    Object.assign(fake.style, { left: cfg.video.x + "px", top: cfg.video.y + "px", width: cfg.video.width + "px", height: cfg.video.height + "px" });
+  }
+
+  function placePopup() {
+    const popup = $("popup");
+    const corner = cfg.alsoLive.corner;
+    const tickerRoom = cfg.alsoLive.style !== "Popup" ? 56 : 0;
+    Object.assign(popup.style, { left: "", right: "", top: "", bottom: "" });
+    if (corner.endsWith("Left")) popup.style.left = (cfg.video.x + 24) + "px"; else popup.style.right = (1280 - cfg.video.x - cfg.video.width + 24) + "px";
+    if (corner.startsWith("Top")) popup.style.top = (cfg.video.y + 24) + "px"; else popup.style.bottom = (720 - cfg.video.y - cfg.video.height + 24 + tickerRoom) + "px";
+  }
+
+  // ---- Who's live ----
+  async function poll() {
+    if (cfg.preview) return;
+    try {
+      const response = await fetch(`${base}/state/${encodeURIComponent(cfg.id)}.json`, { cache: "no-store" });
+      if (response.ok) {
+        state = await response.json();
+        offset = state.serverTime - Date.now();
+        render();
+      }
+    } catch { }
+  }
+
+  function render() {
+    const current = cfg.preview ? previewMode : (state ? state.mode : "offline");
+    if (current !== mode) {
+      mode = current;
+      if (mode !== "live") { clearChat(); hideReminder(); }
+    }
+    $("offline").classList.toggle("hidden", mode !== "offline");
+    $("opening").classList.toggle("hidden", mode !== "opening");
+    const showChat = mode === "live" && cfg.chat.enabled;
+    $("chat").classList.toggle("hidden", !showChat);
+    $("chatpanel").classList.toggle("hidden", !(showChat && $("chatpanel").dataset.on));
+    $("fakevideo").classList.toggle("hidden", !(cfg.preview && mode === "live"));
+    if (!showChat) $("chatnote").classList.add("hidden");
+    if (mode === "opening" && state && state.live) {
+      $("openingAvatar").src = state.live.avatar || blank;
+      $("openingName").textContent = `${state.live.name} is live`;
+      $("openingNote").textContent = state.problem ? `Their stream couldn't be opened yet: ${state.problem}` : "Opening their stream…";
+    }
+    if (mode === "offline") renderOffline();
+    scheduleReminders();
+  }
+
+  // ---- Offline countdown ----
+  function renderOffline() {
+    const upcoming = (state && state.upcoming) || [];
+    const next = upcoming.find(u => u.at != null);
+    $("heroAvatar").src = (next && next.avatar) || (upcoming[0] && upcoming[0].avatar) || blank;
+    $("heroAvatar").classList.toggle("hidden", !next && !upcoming.length);
+    if (next) {
+      $("who").textContent = next.name;
+      $("when").textContent = describeWhen(next);
+    } else {
+      $("who").textContent = upcoming.length ? "Nobody's live right now" : "No streamers yet";
+      $("when").textContent = upcoming.length ? "Not enough past streams to guess the next one yet." : "";
+    }
+    tick();
+    const others = $("others");
+    others.replaceChildren();
+    if (cfg.offline.showEveryone) {
+      for (const u of upcoming.filter(u => u !== next).slice(0, 5)) {
+        const pill = document.createElement("div"); pill.className = "other";
+        const img = document.createElement("img"); img.src = u.avatar || blank; img.alt = "";
+        const text = document.createElement("div");
+        const name = document.createElement("b"); name.textContent = u.name;
+        const at = document.createElement("span"); at.textContent = u.at != null ? relative(u.at) : "no guess yet";
+        text.append(name, at); pill.append(img, text); others.append(pill);
+      }
+    }
+  }
+
+  function describeWhen(u) {
+    const at = new Date(u.at);
+    const day = dayName(at);
+    const time = at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const sure = u.kind === "Scheduled" ? "Scheduled" : u.kind === "Interval" || u.confidence < 0.5 ? "Rough guess" : "Usually live";
+    const title = u.title ? ` · ${u.title}` : "";
+    const length = u.minutes ? ` · about ${u.minutes >= 90 ? Math.round(u.minutes / 60 * 2) / 2 + " h" : u.minutes + " min"}` : "";
+    return `${sure}: ${day} ${time}${length}${title} · on ${u.platform}`;
+  }
+
+  function dayName(at) {
+    const today = new Date(now()); today.setHours(0, 0, 0, 0);
+    const days = Math.round((new Date(at).setHours(0, 0, 0, 0) - today) / 86400000);
+    if (days === 0) return at.getHours() >= 17 ? "Tonight" : "Today";
+    if (days === 1) return "Tomorrow";
+    return at.toLocaleDateString([], { weekday: "long" });
+  }
+
+  function relative(at) {
+    const minutes = Math.round((at - now()) / 60000);
+    if (minutes <= 0) return "any minute now";
+    if (minutes < 60) return `in ${minutes} min`;
+    if (minutes < 48 * 60) return `in ${Math.round(minutes / 60)} h`;
+    return `in ${Math.round(minutes / 1440)} days`;
+  }
+
+  function tick() {
+    const date = new Date(now());
+    $("clock").textContent = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    if (mode !== "offline") return;
+    const upcoming = (state && state.upcoming) || [];
+    const next = upcoming.find(u => u.at != null);
+    const countdown = $("countdown");
+    if (!next) { countdown.textContent = "—"; return; }
+    let left = Math.floor((next.at - now()) / 1000);
+    if (left <= 0) { countdown.textContent = "Any minute now"; countdown.style.fontSize = "64px"; return; }
+    countdown.style.fontSize = "";
+    const d = Math.floor(left / 86400); left -= d * 86400;
+    const h = Math.floor(left / 3600); left -= h * 3600;
+    const m = Math.floor(left / 60); const s = left - m * 60;
+    const pad = n => String(n).padStart(2, "0");
+    countdown.textContent = d > 0 ? `${d}d ${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(h)}:${pad(m)}:${pad(s)}`;
+  }
+
+  // ---- Chat ----
+  async function pollChat() {
+    if (cfg.preview || mode !== "live" || !cfg.chat.enabled) return;
+    try {
+      const response = await fetch(`${base}/chat/${encodeURIComponent(cfg.id)}.json?after=${lastSeq}`, { cache: "no-store" });
+      if (!response.ok) return;
+      const reply = await response.json();
+      if (reply.source !== chatSource) { clearChat(); chatSource = reply.source; }
+      for (const message of reply.messages) { lastSeq = Math.max(lastSeq, message.seq); addMessage(message); }
+      const note = $("chatnote");
+      note.textContent = reply.problem ? `Chat: ${reply.problem}` : "";
+      note.classList.toggle("hidden", !reply.problem);
+    } catch { }
+  }
+
+  function clearChat() { $("chat").replaceChildren(); lastSeq = 0; chatSource = null; }
+
+  const escape = text => String(text ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  function messageHtml(message) {
+    return message.parts.map(part => part.image
+      ? `<img class="emote" src="${escape(part.image)}" alt="${escape(part.text || "")}">`
+      : escape(part.text)).join("");
+  }
+
+  function addMessage(message) {
+    const chat = $("chat");
+    const row = document.createElement("div");
+    row.className = "msg";
+    if (cfg.chat.style === "Custom") {
+      const time = new Date(message.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      row.innerHTML = cfg.chat.template
+        .replaceAll("{author}", escape(message.author))
+        .replaceAll("{color}", escape(message.color))
+        .replaceAll("{platform}", escape(state && state.live ? state.live.platform : ""))
+        .replaceAll("{time}", escape(time))
+        .replaceAll("{message}", (message.highlight ? `<span class="paid">${escape(message.highlight)}</span>` : "") + messageHtml(message));
+    } else {
+      if (message.highlight) { const paid = document.createElement("span"); paid.className = "paid"; paid.textContent = message.highlight; row.append(paid); }
+      const author = document.createElement("span");
+      author.className = "author"; author.style.color = message.color; author.textContent = message.author + (cfg.chat.style === "Bubbles" ? "" : ":");
+      const body = document.createElement("span");
+      for (const part of message.parts) {
+        if (part.image) { const img = document.createElement("img"); img.className = "emote"; img.src = part.image; img.alt = part.text || ""; body.append(img); }
+        else body.append(document.createTextNode(part.text || ""));
+      }
+      row.append(author, body);
+    }
+    chat.append(row);
+    while (chat.children.length > cfg.chat.maxMessages) chat.firstChild.remove();
+    if (cfg.chat.fadeAfterSeconds > 0) {
+      setTimeout(() => { row.classList.add("gone"); setTimeout(() => row.remove(), 900); }, cfg.chat.fadeAfterSeconds * 1000);
+    }
+  }
+
+  // ---- Also live ----
+  function others() { return (state && state.alsoLive) || []; }
+
+  function fill(text, who) {
+    return text.replaceAll("{name}", who.name).replaceAll("{title}", who.title || "")
+      .replaceAll("{game}", who.game || "").replaceAll("{platform}", who.platform)
+      .replaceAll("{viewers}", who.viewers != null ? who.viewers.toLocaleString() : "")
+      .replace(/\s*[:·-]\s*$/, "").trim();
+  }
+
+  function scheduleReminders() {
+    if (!cfg.alsoLive.enabled || mode !== "live") return;
+    const list = others();
+    // Someone newly live is mentioned soon; otherwise every few minutes.
+    const fresh = list.find(o => !announced.has(o.name));
+    for (const o of list) announced.add(o.name);
+    for (const name of [...announced]) if (!list.some(o => o.name === name)) announced.delete(name);
+    if (fresh && !reminderTimer) { nextReminder = now() + 8000; }
+    if (!nextReminder) nextReminder = now() + Math.min(60000, cfg.alsoLive.everyMinutes * 60000);
+  }
+
+  function reminderTick() {
+    if (!cfg.alsoLive.enabled || mode !== "live" || !nextReminder || now() < nextReminder || reminderTimer) return;
+    const list = others();
+    nextReminder = now() + cfg.alsoLive.everyMinutes * 60000;
+    if (!list.length) return;
+    const who = list[reminderIndex++ % list.length];
+    showReminder(who, list);
+  }
+
+  function showReminder(who, list) {
+    const style = cfg.alsoLive.style;
+    if (style !== "Ticker") {
+      const popup = $("popup");
+      popup.querySelector("img").src = who.avatar || blank;
+      popup.querySelector(".line").textContent = fill(cfg.alsoLive.text, who);
+      popup.querySelector(".meta").textContent = [who.game, who.viewers != null ? `${who.viewers.toLocaleString()} watching` : null, who.platform].filter(Boolean).join(" · ");
+      popup.classList.remove("hidden");
+      requestAnimationFrame(() => popup.classList.remove("away"));
+    }
+    if (style !== "Popup") {
+      const ticker = $("ticker"), run = ticker.querySelector(".run");
+      run.textContent = list.map(o => fill(cfg.alsoLive.text, o)).join("     •     ");
+      ticker.classList.remove("hidden");
+      requestAnimationFrame(() => {
+        ticker.classList.remove("away");
+        run.style.animationDuration = Math.max(8, run.scrollWidth / 140) + "s";
+      });
+    }
+    reminderTimer = setTimeout(hideReminder, Math.max(cfg.alsoLive.showSeconds, style !== "Popup" ? 8 : 0) * 1000);
+  }
+
+  function hideReminder() {
+    clearTimeout(reminderTimer); reminderTimer = null;
+    $("popup").classList.add("away"); $("ticker").classList.add("away");
+    setTimeout(() => { if (!reminderTimer) { $("popup").classList.add("hidden"); $("ticker").classList.add("hidden"); } }, 600);
+  }
+
+  // ---- The editor's preview ----
+  function samples() {
+    const t = Date.now();
+    state = {
+      mode: previewMode,
+      live: { name: "Streamer", platform: "Twitch", title: "Playing something fun", game: "Just Chatting", viewers: 1234, avatar: null },
+      alsoLive: [{ name: "Another streamer", platform: "YouTube", title: "Late night stream", game: "Minecraft", viewers: 321, avatar: null }],
+      upcoming: [
+        { name: "Streamer", platform: "Twitch", avatar: null, at: t + 2 * 3600e3 + 754e3, minutes: 180, confidence: .8, kind: "Weekly", title: null },
+        { name: "Another streamer", platform: "YouTube", avatar: null, at: t + 26 * 3600e3, minutes: 120, confidence: .4, kind: "Daily", title: null }
+      ],
+      serverTime: t
+    };
+    clearChat();
+    const lines = [["viewer_one", "#74c0fc", "hello chat!"], ["Mod", "#8ce99a", "Welcome in everyone"], ["someone", "#f783ac", "that was so good"],
+      ["lurker42", "#ffd43b", "first time catching a stream live"], ["viewer_one", "#74c0fc", "LET'S GO"]];
+    lines.forEach(([author, color, text], i) => addMessage({ seq: i + 1, author, color, parts: [{ text }], at: t, highlight: i === 3 ? "$5.00" : null }));
+    if (previewMode === "live" && cfg.alsoLive.enabled) { hideReminder(); setTimeout(() => showReminder(state.alsoLive[0], state.alsoLive), 300); }
+  }
+
+  window.addEventListener("message", event => {
+    const data = event.data || {};
+    if (data.type === "streamers-settings" && data.settings) {
+      cfg = data.settings;
+      if (data.mode) previewMode = data.mode;
+      mode = "";
+      applyConfig();
+    }
+  });
+
+  applyConfig();
+  poll();
+  setInterval(poll, 5000);
+  setInterval(pollChat, 1500);
+  setInterval(() => { tick(); reminderTick(); }, 1000);
+})();
+</script>
+</body>
+</html>
