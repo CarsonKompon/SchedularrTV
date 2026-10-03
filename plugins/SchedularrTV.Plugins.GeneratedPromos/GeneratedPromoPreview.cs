@@ -140,17 +140,33 @@ public sealed class GeneratedPromoPreview(
     }
 
     /// <summary>Full render with voice and music, cached like a scheduled promo.</summary>
+    /// <param name="song">Renders it with this background song (one of the template's) instead of the one it would pick.</param>
     public Task<GeneratedPromoRender> RenderVideoAsync(
         GeneratedPromoTemplate template,
         string channelName,
         IReadOnlyList<UpNextListing> listings,
         TimeZoneInfo zone,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default,
+        string? song = null) =>
         promos.RenderAsync(
-            (GeneratedPromoResolver.Resolve(template, channelName, listings, zone, clock.GetUtcNow())
+            (GeneratedPromoResolver.Resolve(WithSong(template, song), channelName, listings, zone, clock.GetUtcNow())
                 ?? throw new InvalidOperationException("The preview needs at least one upcoming programme."))
             with { Folder = GeneratedPromoService.PreviewFolder },
             cancellationToken);
+
+    /// <summary>A copy of the template whose only song is <paramref name="song"/>, keeping its start and volume.</summary>
+    public static GeneratedPromoTemplate WithSong(GeneratedPromoTemplate template, string? song)
+    {
+        if (song is null || template.Music is null)
+        {
+            return template;
+        }
+
+        GeneratedPromoTemplate copy = GeneratedPromoEditing.Copy(template);
+        copy.Music!.Path = null;
+        copy.Music.Paths = [song];
+        return copy;
+    }
 
     /// <summary>
     /// The stretch of <paramref name="song"/> a promo of <paramref name="duration"/> would play, looped and faded the way
@@ -165,7 +181,10 @@ public sealed class GeneratedPromoPreview(
 
         TimeSpan start = music.StartFor(song);
         TimeSpan fadeOut = music.FadeOut > duration ? duration : music.FadeOut;
-        string key = string.Join('|', Path.GetFullPath(song), File.GetLastWriteTimeUtc(song).Ticks, start.Ticks, duration.Ticks, music.FadeIn.Ticks, fadeOut.Ticks, "song");
+        // Played as loud as it would be in a promo (master times the song's own), so songs can be levelled by ear.
+        double volume = music.EffectiveVolume(song);
+        string key = string.Join('|', Path.GetFullPath(song), File.GetLastWriteTimeUtc(song).Ticks, start.Ticks, duration.Ticks, music.FadeIn.Ticks, fadeOut.Ticks,
+            volume.ToString("0.###", CultureInfo.InvariantCulture), "song");
         string directory = Path.Combine(promos.Root, GeneratedPromoService.PreviewFolder, "songs");
         string clip = Path.Combine(directory, Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..32] + ".mp4");
         if (File.Exists(clip))
@@ -185,7 +204,7 @@ public sealed class GeneratedPromoPreview(
         string Seconds(TimeSpan value) => value.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
         foreach (string argument in (string[])["-hide_banner", "-loglevel", "error", "-y", "-stream_loop", "-1",
                      "-ss", Seconds(start), "-i", song, "-vn", "-t", Seconds(duration),
-                     "-af", $"afade=t=in:st=0:d={Seconds(music.FadeIn)},afade=t=out:st={Seconds(duration - fadeOut)}:d={Seconds(fadeOut)}",
+                     "-af", $"volume={volume.ToString("0.###", CultureInfo.InvariantCulture)},afade=t=in:st=0:d={Seconds(music.FadeIn)},afade=t=out:st={Seconds(duration - fadeOut)}:d={Seconds(fadeOut)}",
                      "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", "-f", "mp4", partial])
         {
             info.ArgumentList.Add(argument);

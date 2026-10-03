@@ -196,8 +196,32 @@ public sealed class GeneratedMusicConfig
     public IReadOnlyList<string> Songs =>
         [.. (Path is { Length: > 0 } path ? Paths.Prepend(path) : Paths).Where(song => !string.IsNullOrWhiteSpace(song)).Distinct(StringComparer.OrdinalIgnoreCase)];
 
-    /// <summary>0 to 1, relative to the file's own level.</summary>
+    /// <summary>0 to 1, relative to the file's own level: the master volume, which each song's own one multiplies.</summary>
     public double Volume { get; set; } = 0.35;
+
+    /// <summary>
+    /// Per-song volumes (0 to 2, 1 = as loud as the master) keyed by path, for songs louder or quieter than the rest;
+    /// null (rather than empty) keeps render keys of templates without them unchanged.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, double>? SongVolumes { get; set; }
+
+    /// <summary>The song's own volume, 1 when it has none.</summary>
+    public double VolumeFor(string song)
+    {
+        if (SongVolumes is not null)
+        {
+            foreach ((string path, double volume) in SongVolumes)
+            {
+                if (string.Equals(path, song, StringComparison.OrdinalIgnoreCase)) return volume;
+            }
+        }
+
+        return 1;
+    }
+
+    /// <summary>How loud the song plays: the master volume times its own, at most full level.</summary>
+    public double EffectiveVolume(string song) => Math.Clamp(Volume * VolumeFor(song), 0, 1);
 
     /// <summary>Offset into the song where the promo starts, for songs without their own entry in <see cref="SongStarts"/>.</summary>
     public TimeSpan StartAt { get; set; }

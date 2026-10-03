@@ -115,6 +115,32 @@ public sealed class PromoClipMuteTests
     }
 
     [Fact]
+    public void Each_song_plays_at_the_master_volume_times_its_own_and_a_preview_can_pin_one()
+    {
+        var music = new GeneratedMusicConfig
+        {
+            Volume = 0.4,
+            Paths = ["a.mp3", "b.mp3"],
+            SongVolumes = new Dictionary<string, double> { ["B.mp3"] = 0.5 },
+            SongStarts = new Dictionary<string, TimeSpan> { ["b.mp3"] = TimeSpan.FromSeconds(12) }
+        };
+
+        Assert.Equal(0.4, music.EffectiveVolume("a.mp3"), 3);
+        Assert.Equal(0.2, music.EffectiveVolume("b.mp3"), 3);
+        Assert.Equal(1, new GeneratedMusicConfig { Volume = 0.8, SongVolumes = new() { ["loud.mp3"] = 2 } }.EffectiveVolume("loud.mp3"), 3);
+
+        GeneratedPromoTemplate template = GeneratedPromoTemplates.UpNext();
+        template.Music = music;
+        GeneratedPromoTemplate pinned = GeneratedPromoPreview.WithSong(template, "b.mp3");
+
+        Assert.Equal(new[] { "b.mp3" }, pinned.Music!.Songs);
+        Assert.Equal(0.2, pinned.Music.EffectiveVolume("b.mp3"), 3);
+        Assert.Equal(TimeSpan.FromSeconds(12), pinned.Music.StartFor("b.mp3"));
+        Assert.Equal(2, template.Music.Songs.Count);
+        Assert.Same(template, GeneratedPromoPreview.WithSong(template, null));
+    }
+
+    [Fact]
     public async Task Ffmpeg_reads_the_volume_curve()
     {
         IReadOnlyList<PromoLevel> points = PromoAudioEnvelope.ForBlockers([Box(0.2, 0.8, PromoTransition.Fade, fade: 0.2)], TimeSpan.FromSeconds(1));

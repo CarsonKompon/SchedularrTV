@@ -56,7 +56,9 @@ plugins:
         paths:
         - /media/Promos/Music/theme.mp3
         - /media/Promos/Music/theme-2.mp3
-        volume: 0.35
+        volume: 0.35        # the master volume
+        song_volumes:       # a song's own volume on top of it (1 = the master volume, up to 2); songs not listed play at 1
+          /media/Promos/Music/theme-2.mp3: 0.7
         song_starts:        # where each song starts; songs not listed start at start_at (default 0)
           /media/Promos/Music/theme.mp3: 12s
           /media/Promos/Music/theme-2.mp3: 41.5s

@@ -622,12 +622,27 @@
                                        aria-label="@($"Start into {Path.GetFileName(song)} in seconds")"
                                        @onchange="e => SetSongStart(e, music, song)" />
                             </label>
+                            <label class="song-start" title="This song's own volume, on top of the master volume below (100% plays it at the master volume)">
+                                <span>Volume %</span>
+                                <input type="number" min="0" max="200" step="5" value="@Number(Math.Round(music.VolumeFor(song) * 100))"
+                                       aria-label="@($"Volume of {Path.GetFileName(song)} in percent")"
+                                       @onchange="e => SetSongVolume(e, music, song)" />
+                            </label>
                             <button class="btn btn-sm" type="button" disabled="@(cutting || Missing(song) || string.IsNullOrWhiteSpace(song))"
                                     title="@($"Play the {Number(Template.Duration.TotalSeconds)} s a promo would use")"
                                     aria-label="@($"{(playing ? "Stop" : "Play")} {Path.GetFileName(song)} preview")"
                                     @onclick="() => ToggleSongPreview(music, song)">
                                 @(cutting ? "…" : playing ? "■ Stop" : "▶ Play")
                             </button>
+                            @if (songs.Count > 1)
+                            {
+                                bool renderingThis = _rendering && string.Equals(_videoSong, song, StringComparison.OrdinalIgnoreCase);
+                                <button class="btn btn-sm" type="button" disabled="@(_rendering || Missing(song) || string.IsNullOrWhiteSpace(song))"
+                                        title="Render a preview promo with this song" aria-label="@($"Preview a promo with {Path.GetFileName(song)}")"
+                                        @onclick="() => RenderVideo(song)">
+                                    @(renderingThis ? "Rendering…" : "Preview")
+                                </button>
+                            }
                             <button class="btn btn-sm btn-danger" type="button" aria-label="@($"Remove {Path.GetFileName(song)}")"
                                     @onclick="() => SetSong(music, position, null)">Remove</button>
                         </div>
@@ -638,6 +653,17 @@
                         @if (playing && _songClipUrl is not null)
                         {
                             <audio class="song-preview" src="@_songClipUrl" autoplay controls @onended="StopSongPreview"></audio>
+                        }
+                        @if (_videoSong is not null && string.Equals(_videoSong, song, StringComparison.OrdinalIgnoreCase))
+                        {
+                            @if (_videoMessage is not null)
+                            {
+                                <p class="hint warn" role="status">@_videoMessage</p>
+                            }
+                            @if (_videoUrl is not null)
+                            {
+                                <video class="promo-video" src="@_videoUrl" controls autoplay></video>
+                            }
                         }
                     </li>
                 }
@@ -657,7 +683,7 @@
         </div>
         <div class="grid grid-3">
             <label class="field">
-                <span>Volume: @($"{music.Volume:P0}")</span>
+                <span>Master volume: @($"{music.Volume:P0}")</span>
                 <input type="range" min="0" max="100" value="@Number(music.Volume * 100)"
                        @onchange="e => SetNumber(e, value => music.Volume = Math.Clamp(value / 100, 0, 1))" />
             </label>
@@ -687,16 +713,16 @@
 
     <h3 class="ed-section">Preview</h3>
     <div class="row row-wrap">
-        <button class="btn btn-primary" type="button" disabled="@_rendering" @onclick="RenderVideo">
-            @(_rendering ? "Rendering…" : "Render preview video")
+        <button class="btn btn-primary" type="button" disabled="@_rendering" @onclick="() => RenderVideo(null)">
+            @(_rendering && _videoSong is null ? "Rendering…" : "Render preview video")
         </button>
         <span class="hint" style="margin:0;">Renders the full promo with voice and music, exactly as it will air.</span>
     </div>
-    @if (_videoMessage is not null)
+    @if (_videoSong is null && _videoMessage is not null)
     {
         <p class="hint warn" role="status">@_videoMessage</p>
     }
-    @if (_videoUrl is not null)
+    @if (_videoSong is null && _videoUrl is not null)
     {
         <video class="promo-video" src="@_videoUrl" controls autoplay></video>
     }
@@ -764,6 +790,7 @@
     private bool _rendering;
     private string? _videoUrl;
     private string? _videoMessage;
+    private string? _videoSong;
     private string? _songPlaying;
     private string? _songCutting;
     private string? _songClipUrl;
@@ -1291,7 +1318,9 @@
         List<string> songs = Songs(music);
         string old = songs[index];
         TimeSpan start = music.StartFor(old);
+        double volume = music.VolumeFor(old);
         SetStart(music, old, TimeSpan.Zero);
+        SetVolume(music, old, 1);
         if (string.Equals(_songPlaying, old, StringComparison.OrdinalIgnoreCase)) StopSongPreview();
 
         if (string.IsNullOrWhiteSpace(value))
@@ -1301,10 +1330,41 @@
         else
         {
             songs[index] = value;
-            // Swapping the file keeps the start the row had.
+            // Swapping the file keeps the start and volume the row had.
             SetStart(music, value, start);
+            SetVolume(music, value, volume);
         }
     });
+
+    /// <summary>Sets a song's own volume (1 = the master volume), keeping only the ones that differ.</summary>
+    private static void SetVolume(GeneratedMusicConfig music, string song, double volume)
+    {
+        // Copies made for previews come back with an ordinal map, so the comparer is restored here.
+        Dictionary<string, double> volumes = music.SongVolumes is { } existing
+            ? new Dictionary<string, double>(existing, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        if (Math.Abs(volume - 1) < 0.001)
+        {
+            volumes.Remove(song);
+        }
+        else
+        {
+            volumes[song] = Math.Round(Math.Clamp(volume, 0, 2), 3);
+        }
+
+        // Null rather than empty, so the YAML and the render key stay as they were without per-song volumes.
+        music.SongVolumes = volumes.Count == 0 ? null : volumes;
+    }
+
+    private async Task SetSongVolume(ChangeEventArgs e, GeneratedMusicConfig music, string song)
+    {
+        await SetNumber(e, value => SetVolume(music, song, value / 100));
+        if (string.Equals(_songPlaying, song, StringComparison.OrdinalIgnoreCase))
+        {
+            // Restart so what's heard is at the new volume.
+            await PlaySongPreview(music, song);
+        }
+    }
 
     private Task AddSongs(GeneratedMusicConfig music, IReadOnlyList<string> picked) => Set(() =>
     {
@@ -1412,10 +1472,14 @@
         }
     }
 
-    private async Task RenderVideo()
+    /// <param name="song">Renders with this background song rather than the one the promo would pick; the video then
+    /// shows under that song.</param>
+    private async Task RenderVideo(string? song)
     {
         _rendering = true;
         _videoMessage = null;
+        _videoUrl = null;
+        _videoSong = song;
         try
         {
             if (NeedsClip)
@@ -1424,7 +1488,7 @@
             }
 
             IReadOnlyList<UpNextListing> listings = PreviewListings(out _sample);
-            GeneratedPromoRender render = await Preview.RenderVideoAsync(GeneratedPromoEditing.Copy(Template), Channel.Name, listings, Zone, _life.Token);
+            GeneratedPromoRender render = await Preview.RenderVideoAsync(GeneratedPromoEditing.Copy(Template), Channel.Name, listings, Zone, _life.Token, song);
             _videoUrl = $"{Preview.FileUrl(render.Path)}?v={DateTime.UtcNow.Ticks}";
             _videoMessage = render.VoiceError is { } error
                 ? $"The voice-over failed, so this preview is silent: {error.GetBaseException().Message}"

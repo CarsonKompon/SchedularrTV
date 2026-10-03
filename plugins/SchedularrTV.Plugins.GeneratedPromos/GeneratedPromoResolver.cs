@@ -324,7 +324,7 @@ public static partial class GeneratedPromoResolver
             AudioTempo = audioTempo,
             Music = template.Music?.Songs is { Count: > 0 } songs && template.Music is { } music
                 && Song(songs, promo.Key) is { } song
-                ? new PromoMusic(song, music.Volume, music.StartFor(song), music.FadeIn, music.FadeOut, music.DuckUnderVoice)
+                ? new PromoMusic(song, music.EffectiveVolume(song), music.StartFor(song), music.FadeIn, music.FadeOut, music.DuckUnderVoice)
                 {
                     DuckUnderBackground = music.DuckUnderClip == true
                 }
