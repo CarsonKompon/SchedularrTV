@@ -154,7 +154,9 @@
     $("message").textContent = (cfg.message || "").replaceAll("{channel}", cfg.name);
     const label = $("window-label");
     if (cfg.top === "Channel") {
-      label.textContent = cfg.preview ? (cfg.windowChannel ? `Channel ${cfg.windowChannel} plays here` : "Choose a channel to show here") : "";
+      label.textContent = !cfg.preview ? ""
+        : cfg.cycleChannels ? `A different channel plays here every ${cfg.cycleMinutes} minute${cfg.cycleMinutes === 1 ? "" : "s"}`
+        : cfg.windowChannel ? `Channel ${cfg.windowChannel} plays here` : "Choose a channel to show here";
     } else {
       label.textContent = "";
     }
@@ -272,9 +274,11 @@
     }, 400);
   }
 
+  // Only the editor's preview plays the commercials here. On air they come in the stream's own window feed, with
+  // their sound, laid over this box.
   async function playAds() {
     const video = $("ad");
-    if (cfg.top !== "Ads" || !cfg.window) {
+    if (cfg.top !== "Ads" || !cfg.window || !cfg.preview) {
       video.pause();
       video.removeAttribute("src");
       video.style.display = "none";

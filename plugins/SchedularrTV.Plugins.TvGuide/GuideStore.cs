@@ -80,6 +80,8 @@ public sealed class GuideStore
         guide.Volume = Math.Clamp(guide.Volume, 0, 1);
         guide.MusicFolder = string.IsNullOrWhiteSpace(guide.MusicFolder) ? null : guide.MusicFolder.Trim().Trim('"');
         guide.HiddenChannels = [.. guide.HiddenChannels.Distinct().Order()];
+        guide.CycleChannelNumbers = [.. guide.CycleChannelNumbers.Distinct().Order()];
+        guide.CycleMinutes = Math.Clamp(guide.CycleMinutes, 1, 120);
         guide.Background = Colour(guide.Background);
         guide.RowColor = Colour(guide.RowColor);
         guide.TextColor = Colour(guide.TextColor);

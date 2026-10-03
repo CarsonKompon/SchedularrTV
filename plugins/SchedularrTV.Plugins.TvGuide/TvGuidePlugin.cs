@@ -12,6 +12,7 @@ public sealed class TvGuidePlugin : IPlugin, IPluginEndpoints
         services.AddSingleton(new GuideStore(context.DataDirectory));
         services.AddSingleton(new GuideSettings(context));
         services.AddSingleton<GuideData>();
+        services.AddSingleton<WindowFeed>();
         services.AddSingleton(sp =>
         {
             GuideStore store = sp.GetRequiredService<GuideStore>();
@@ -74,6 +75,9 @@ public sealed class TvGuidePlugin : IPlugin, IPluginEndpoints
                 ? Results.File(ads[index].File, GuideData.ContentType(ads[index].File), enableRangeProcessing: true)
                 : Results.NotFound();
         });
+
+        // What the video window plays when it isn't one channel: the commercials, or channels in turn (read by the guide's own ffmpeg).
+        endpoints.MapGet(prefix + "/feed/{id}.ts", (string id, HttpContext http, WindowFeed feed) => feed.ServeAsync(id, http));
 
         // What ErsatzTV plays: the guide's live MPEG-TS, started on demand.
         endpoints.MapGet(prefix + "/live/{id}.ts", (string id, HttpContext http, LiveStreamHub hub) => hub.ServeAsync(id, http));

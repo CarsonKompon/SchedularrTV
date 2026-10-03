@@ -146,7 +146,7 @@
                     <h3>Top panel</h3>
                     <div class="grid grid-2">
                         <label class="field"><span>Shows</span>
-                            <select value="@guide.Top" @onchange="e => Change(() => guide.Top = Enum.Parse<TopPanel>(Text(e)))">
+                            <select value="@guide.Top" @onchange="e => Change(() => SetTop(guide, Enum.Parse<TopPanel>(Text(e))))">
                                 <option value="Info">Information (clock, message, what's on now)</option>
                                 <option value="Ads">Commercials, round the clock</option>
                                 <option value="Channel">A channel's picture</option>
@@ -161,18 +161,45 @@
                     {
                         <label class="field"><span>Which commercials (a library query)</span>
                             <input type="text" value="@guide.AdsQuery" @onchange="e => Change(() => guide.AdsQuery = Text(e))" /></label>
-                        <p class="hint">MP4 and WebM files play; the sound is the guide's own (below). Ads are shuffled and loop.</p>
+                        <p class="hint">MP4 and WebM files play, shuffled and looping. For their sound, choose <em>The top panel's sound</em> below.</p>
                     }
                     @if (guide.Top == TopPanel.Channel)
                     {
-                        <label class="field"><span>Channel to show</span>
-                            <select value="@(guide.WindowChannel?.ToString(CultureInfo.InvariantCulture) ?? "")" @onchange="e => Change(() => guide.WindowChannel = Channel(e))">
-                                <option value="">Choose…</option>
-                                @foreach (GuideRow channel in _channels)
-                                {
-                                    <option value="@channel.Number">@channel.Number @channel.Name</option>
-                                }
-                            </select></label>
+                        <label class="check" style="margin-bottom:8px;"><input type="checkbox" checked="@guide.CycleChannels" @onchange="e => Change(() => guide.CycleChannels = e.Value is true)" />
+                            <span>Cycle through channels at random</span></label>
+                        @if (guide.CycleChannels)
+                        {
+                            <label class="field"><span>Change channel every: @guide.CycleMinutes @(guide.CycleMinutes == 1 ? "minute" : "minutes")</span>
+                                <input type="range" min="1" max="30" step="1" value="@guide.CycleMinutes"
+                                       @oninput="e => Change(() => guide.CycleMinutes = (int)Number(e, 5))" /></label>
+                            @if (_channels.Count > 0)
+                            {
+                                <div class="field"><span>Channels to cycle through <span class="muted">(none ticked: every listed channel)</span></span>
+                                    <div class="row row-wrap" style="gap:6px 16px;">
+                                        @foreach (GuideRow channel in _channels)
+                                        {
+                                            <label class="check" style="margin:0;">
+                                                <input type="checkbox" checked="@guide.CycleChannelNumbers.Contains(channel.Number)"
+                                                       @onchange="e => Change(() => Toggle(guide.CycleChannelNumbers, channel.Number, e.Value is true))" />
+                                                <span>@channel.Number @channel.Name</span>
+                                            </label>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            <p class="hint">Each channel is asked for shortly before its turn, so the switch is quick.</p>
+                        }
+                        else
+                        {
+                            <label class="field"><span>Channel to show</span>
+                                <select value="@(guide.WindowChannel?.ToString(CultureInfo.InvariantCulture) ?? "")" @onchange="e => Change(() => guide.WindowChannel = Channel(e))">
+                                    <option value="">Choose…</option>
+                                    @foreach (GuideRow channel in _channels)
+                                    {
+                                        <option value="@channel.Number">@channel.Number @channel.Name</option>
+                                    }
+                                </select></label>
+                        }
                     }
                     @if (guide.Top != TopPanel.Info && guide.Window is null)
                     {
@@ -184,6 +211,10 @@
                         <label class="field"><span>Plays</span>
                             <select value="@guide.Sound" @onchange="e => Change(() => guide.Sound = Enum.Parse<GuideSound>(Text(e)))">
                                 <option value="Music">Music from a folder</option>
+                                @if (guide.Top != TopPanel.Info)
+                                {
+                                    <option value="Window">The top panel's sound (@(guide.Top == TopPanel.Ads ? "the commercials" : "the channel shown"))</option>
+                                }
                                 <option value="Channel">A channel's sound</option>
                                 <option value="Silence">Nothing</option>
                             </select></label>
@@ -403,6 +434,23 @@
         yield return ("Rows", () => guide.RowColor, value => guide.RowColor = value, prevue ? "#1d3aa8" : "#2f45b8");
         yield return ("Text", () => guide.TextColor, value => guide.TextColor = value, "#ffffff");
         yield return ("Highlights", () => guide.AccentColor, value => guide.AccentColor = value, prevue ? "#ffd400" : "#ffcc33");
+    }
+
+    /// <summary>
+    /// Changes what's up top. Commercials are meant to be heard, so a guide still on its default music switches to
+    /// their sound; and the top panel's sound goes back to music when there's no longer a window to hear.
+    /// </summary>
+    private static void SetTop(GuideStation guide, TopPanel top)
+    {
+        guide.Top = top;
+        if (top == TopPanel.Ads && guide.Sound == GuideSound.Music)
+        {
+            guide.Sound = GuideSound.Window;
+        }
+        else if (top == TopPanel.Info && guide.Sound == GuideSound.Window)
+        {
+            guide.Sound = GuideSound.Music;
+        }
     }
 
     private static void Toggle(List<int> hidden, int number, bool hide)

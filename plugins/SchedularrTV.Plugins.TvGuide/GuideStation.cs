@@ -33,7 +33,10 @@ public enum GuideSound
     /// <summary>A channel's sound, like the old cable "barker" channels.</summary>
     Channel,
 
-    Silence
+    Silence,
+
+    /// <summary>The top panel's own sound: the commercials', or the channel's (or channels') in the window.</summary>
+    Window
 }
 
 /// <summary>One guide channel: how it looks, what's up top, what it plays, and the lengths it can be scheduled for.</summary>
@@ -91,8 +94,17 @@ public sealed class GuideStation
     /// <summary>Which library items play as ads, when the top panel shows ads.</summary>
     public string AdsQuery { get; set; } = "tag:\"Commercials\"";
 
-    /// <summary>The channel whose picture is shown, when the top panel shows a channel.</summary>
+    /// <summary>The channel whose picture is shown, when the top panel shows a channel (and doesn't cycle).</summary>
     public int? WindowChannel { get; set; }
+
+    /// <summary>Show a different channel, picked at random, every <see cref="CycleMinutes"/>, instead of <see cref="WindowChannel"/>.</summary>
+    public bool CycleChannels { get; set; }
+
+    /// <summary>How long each channel stays in the window when cycling.</summary>
+    public int CycleMinutes { get; set; } = 5;
+
+    /// <summary>The channels to cycle through; empty means every listed channel.</summary>
+    public List<int> CycleChannelNumbers { get; set; } = [];
 
     // --- Sound ---
 
@@ -113,6 +125,7 @@ public sealed class GuideStation
     {
         var copy = (GuideStation)MemberwiseClone();
         copy.HiddenChannels = [.. HiddenChannels];
+        copy.CycleChannelNumbers = [.. CycleChannelNumbers];
         copy.Lengths = [.. Lengths];
         return copy;
     }
@@ -144,9 +157,12 @@ public sealed class GuideStation
         }
     }
 
-    /// <summary>The channel heard, when the sound is a channel's.</summary>
+    /// <summary>
+    /// Whether the window plays the plugin's own feed (commercials one after another, or channels in turn) rather
+    /// than one channel's stream.
+    /// </summary>
     [JsonIgnore]
-    public int? HeardChannel => Sound == GuideSound.Channel ? SoundChannel ?? (Top == TopPanel.Channel ? WindowChannel : null) : null;
+    public bool WindowIsFeed => Top == TopPanel.Ads || (Top == TopPanel.Channel && CycleChannels);
 
     /// <summary>A safe, lowercase id from a name: letters, digits and dashes.</summary>
     public static string Slug(string name)

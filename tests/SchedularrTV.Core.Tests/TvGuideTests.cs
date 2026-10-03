@@ -110,6 +110,115 @@ public sealed class TvGuideTests : IDisposable
         Assert.Contains("[1:a]", graph, StringComparison.Ordinal);
     }
 
+    private GuideSettings Settings()
+    {
+        IConfiguration app = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["ErsatzTv:Lineup:Port"] = "8409", ["Server:Port"] = "5252" })
+            .Build();
+        return new GuideSettings(new FakeContext(app, _folder));
+    }
+
+    [Fact]
+    public void Commercials_play_from_the_window_feed_and_can_be_heard()
+    {
+        var guide = new GuideStation { Id = "guide", Top = TopPanel.Ads, Sound = GuideSound.Window };
+
+        LiveStreamSpec spec = Settings().Spec(guide);
+
+        Assert.Equal("http://localhost:5252/plugins/tv-guide/feed/guide.ts", spec.WindowStreamUrl);
+        Assert.Equal(guide.Window, spec.Window);
+        Assert.Equal(LiveAudio.Stream, spec.Audio);
+        Assert.Equal(spec.WindowStreamUrl, spec.AudioStreamUrl);
+    }
+
+    [Fact]
+    public void Commercials_under_music_keep_the_music()
+    {
+        LiveStreamSpec spec = Settings().Spec(new GuideStation { Id = "guide", Top = TopPanel.Ads, Sound = GuideSound.Music, MusicFolder = "D:/Music" });
+
+        Assert.Equal("http://localhost:5252/plugins/tv-guide/feed/guide.ts", spec.WindowStreamUrl);
+        Assert.Equal(LiveAudio.Music, spec.Audio);
+        Assert.Null(spec.AudioStreamUrl);
+    }
+
+    [Fact]
+    public void Cycling_channels_play_from_the_feed_and_the_window_sound_follows_them()
+    {
+        var guide = new GuideStation { Id = "guide", Top = TopPanel.Channel, CycleChannels = true, WindowChannel = 3, Sound = GuideSound.Channel };
+
+        LiveStreamSpec spec = Settings().Spec(guide);
+
+        Assert.Equal("http://localhost:5252/plugins/tv-guide/feed/guide.ts", spec.WindowStreamUrl);
+        Assert.Equal(spec.WindowStreamUrl, spec.AudioStreamUrl);
+
+        guide.SoundChannel = 7;
+        Assert.Equal("http://localhost:8409/channel/7.m3u8", Settings().Spec(guide).AudioStreamUrl);
+    }
+
+    [Fact]
+    public void The_top_panels_sound_without_a_window_is_music()
+    {
+        LiveStreamSpec spec = Settings().Spec(new GuideStation { Id = "guide", Top = TopPanel.Info, Sound = GuideSound.Window });
+
+        Assert.Null(spec.WindowStreamUrl);
+        Assert.Equal(LiveAudio.Music, spec.Audio);
+    }
+
+    [Fact]
+    public void Cycling_picks_from_the_chosen_channels_that_are_published_else_every_listed_one()
+    {
+        var guide = new GuideStation { HiddenChannels = [1] };
+        Assert.Equal([2, 3], WindowFeed.Candidates(guide, [3, 1, 2]));
+
+        guide.CycleChannelNumbers = [3, 9];
+        Assert.Equal([3], WindowFeed.Candidates(guide, [3, 1, 2]));
+    }
+
+    [Fact]
+    public void Cycling_never_picks_the_same_channel_twice_in_a_row_when_there_is_another()
+    {
+        for (int attempt = 0; attempt < 50; attempt++)
+        {
+            Assert.NotEqual(2, WindowFeed.Pick([2, 5], avoid: 2));
+        }
+
+        Assert.Equal(4, WindowFeed.Pick([4], avoid: 4));
+    }
+
+    [Fact]
+    public void Shuffled_commercials_dont_start_with_the_last_one_played()
+    {
+        GuideAd[] ads = [new("A", "a.mp4", TimeSpan.FromSeconds(30)), new("B", "b.mp4", TimeSpan.FromSeconds(30))];
+
+        for (int attempt = 0; attempt < 50; attempt++)
+        {
+            IReadOnlyList<GuideAd> shuffled = WindowFeed.Shuffle(ads, last: "a.mp4");
+            Assert.Equal(2, shuffled.Count);
+            Assert.Equal("b.mp4", shuffled[0].File);
+        }
+    }
+
+    [Fact]
+    public void Each_feed_segment_is_normalised_and_stamped_on_the_running_clock()
+    {
+        IReadOnlyList<string> ad = SequenceFeed.Arguments(new FeedSegment("ad.mp4", TimeSpan.FromSeconds(30), Realtime: true), 496, 280, TimeSpan.FromSeconds(95.5));
+        IReadOnlyList<string> silent = SequenceFeed.Arguments(new FeedSegment("quiet.mp4", TimeSpan.FromSeconds(15), Realtime: true, HasAudio: false), 496, 280, TimeSpan.Zero);
+        IReadOnlyList<string> channel = SequenceFeed.Arguments(new FeedSegment("http://localhost:8409/channel/3.m3u8", TimeSpan.FromMinutes(5), Realtime: false), 496, 280, TimeSpan.Zero);
+
+        Assert.Equal("-re", ad[4]);
+        Assert.Equal("95.5", ad[ad.ToList().IndexOf("-output_ts_offset") + 1]);
+        Assert.Equal("30", ad[ad.ToList().IndexOf("-t") + 1]);
+        Assert.Contains(ad, argument => argument.StartsWith("scale=496:280", StringComparison.Ordinal));
+        Assert.Equal("0:a:0", ad[ad.ToList().IndexOf("0:v:0") + 2]);
+
+        Assert.Contains("anullsrc=channel_layout=stereo:sample_rate=48000", silent);
+        Assert.Equal("1:a:0", silent[silent.ToList().IndexOf("0:v:0") + 2]);
+
+        Assert.DoesNotContain("-re", channel);
+        Assert.Equal("300", channel[channel.ToList().IndexOf("-t") + 1]);
+        Assert.Equal("pipe:1", channel[^1]);
+    }
+
     [Fact]
     public void Without_a_window_or_music_the_stream_is_the_page_and_silence()
     {

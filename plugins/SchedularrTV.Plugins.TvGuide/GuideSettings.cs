@@ -93,25 +93,67 @@ public sealed class GuideSettings(IPluginContext context)
         return null;
     }
 
-    /// <summary>What a guide plays when it's on air.</summary>
-    public LiveStreamSpec Spec(GuideStation guide) => new()
+    /// <summary>ffprobe: App settings' own, else the one beside ffmpeg, else ffprobe on the PATH.</summary>
+    public string Ffprobe
     {
-        Id = guide.Id,
-        Name = guide.Name,
-        PageUrl = PageUrl(guide.Id),
-        Ffmpeg = Ffmpeg,
-        BrowserPath = BrowserPath,
-        CaptureFrameRate = CaptureFrameRate,
-        WindowStreamUrl = guide.Top == TopPanel.Channel && guide.WindowChannel is { } window ? ChannelUrl(window) : null,
-        Window = guide.Top == TopPanel.Channel ? guide.Window : null,
-        Audio = guide.Sound switch
+        get
         {
-            GuideSound.Channel when guide.HeardChannel is not null => LiveAudio.Stream,
-            GuideSound.Silence => LiveAudio.Silence,
-            _ => LiveAudio.Music
-        },
-        AudioStreamUrl = guide.HeardChannel is { } heard ? ChannelUrl(heard) : null,
-        MusicFolder = guide.MusicFolder,
-        Volume = guide.Volume
-    };
+            if (context.AppConfiguration["FileSystemLibrary:FfprobePath"] is { Length: > 0 } configured && Path.IsPathRooted(configured))
+            {
+                return configured;
+            }
+
+            string ffmpeg = Ffmpeg;
+            if (Path.IsPathRooted(ffmpeg))
+            {
+                string sibling = Path.Combine(Path.GetDirectoryName(ffmpeg)!, OperatingSystem.IsWindows() ? "ffprobe.exe" : "ffprobe");
+                if (File.Exists(sibling))
+                {
+                    return sibling;
+                }
+            }
+
+            return "ffprobe";
+        }
+    }
+
+    /// <summary>The window's feed (commercials, or channels in turn) for a guide; local, like the page.</summary>
+    public string FeedUrl(string guideId) => $"http://localhost:{ServerPort}{RoutePrefix}/feed/{Uri.EscapeDataString(guideId)}.ts";
+
+    /// <summary>What plays in a guide's video window: its feed, the one channel chosen, or nothing.</summary>
+    public string? WindowUrl(GuideStation guide) =>
+        guide.Window is null ? null
+        : guide.WindowIsFeed ? FeedUrl(guide.Id)
+        : guide.Top == TopPanel.Channel && guide.WindowChannel is { } channel ? ChannelUrl(channel)
+        : null;
+
+    /// <summary>What a guide plays when it's on air.</summary>
+    public LiveStreamSpec Spec(GuideStation guide)
+    {
+        string? window = WindowUrl(guide);
+        string? sound = guide.Sound switch
+        {
+            GuideSound.Window => window,
+            GuideSound.Channel => guide.SoundChannel is { } heard ? ChannelUrl(heard)
+                // A channel's sound with none chosen has always meant the one in the window.
+                : guide.Top == TopPanel.Channel ? window : null,
+            _ => null
+        };
+
+        return new LiveStreamSpec
+        {
+            Id = guide.Id,
+            Name = guide.Name,
+            PageUrl = PageUrl(guide.Id),
+            Ffmpeg = Ffmpeg,
+            BrowserPath = BrowserPath,
+            CaptureFrameRate = CaptureFrameRate,
+            WindowStreamUrl = window,
+            Window = window is null ? null : guide.Window,
+            Audio = sound is not null ? LiveAudio.Stream : guide.Sound == GuideSound.Silence ? LiveAudio.Silence : LiveAudio.Music,
+            AudioStreamUrl = sound,
+            MusicFolder = guide.MusicFolder,
+            Volume = guide.Volume
+        };
+    }
 }

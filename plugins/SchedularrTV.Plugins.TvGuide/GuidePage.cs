@@ -22,6 +22,8 @@ public sealed record GuidePageConfig(
     int TopHeight,
     FrameRect? Window,
     int? WindowChannel,
+    bool CycleChannels,
+    int CycleMinutes,
     string Message,
     string AdsQuery,
     bool Preview)
@@ -45,6 +47,8 @@ public sealed record GuidePageConfig(
         guide.TopHeight,
         guide.Window,
         guide.WindowChannel,
+        guide.CycleChannels,
+        guide.CycleMinutes,
         guide.Message,
         guide.AdsQuery,
         preview);

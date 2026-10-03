@@ -14,7 +14,8 @@ the one from the same release as your scheduler.
 
 - **Chrome, Edge, Chromium or Brave** on the scheduler's computer: the guide is a web page drawn by one running
   hidden. It's found automatically, or choose it in the plugin's settings (its gear on the Plugins page).
-- **ffmpeg**, the same one as the rest of SchedularrTV.
+- **ffmpeg**, the same one as the rest of SchedularrTV (and ffprobe beside it, to tell which commercials have
+  sound).
 
 ## Making a guide
 
@@ -26,16 +27,25 @@ in the live preview beside the form, with your real listings.
 | Guide | Show name, look (Prevue 1990s or TV Guide Channel 2000s), lengths it can be scheduled for |
 | Listings | Time shown (1 to 3 hours), scroll speed, row height, text size, channel logos, 24-hour clock, which channels are listed |
 | Colours | Background, rows, text and highlights, or the theme's own |
-| Top panel | Information (clock, date, a message and a rotating "Now on…"), commercials round the clock, or a channel's picture; its height |
-| Sound | Music from a folder (shuffled), a channel's sound (the old cable "barker" channel), or nothing; volume |
+| Top panel | Information (clock, date, a message and a rotating "Now on…"), commercials round the clock, or a channel's picture (one channel, or a different one at random every few minutes); its height |
+| Sound | Music from a folder (shuffled), the top panel's sound (the commercials, or the channel shown), a channel's sound (the old cable "barker" channel), or nothing; volume |
 
 Untick the guide's own channel under **Channels listed** so it doesn't list itself.
 
 - **Commercials** are library items matching a query (`tag:"Commercials"` by default). MP4 and WebM files
-  play; they're shuffled and loop, with the guide's sound under them.
+  play, shuffled and looping. Choose **The top panel's sound** to hear them (choosing commercials does this for
+  you when the guide was playing music); otherwise the guide's music plays over them.
 - **A channel's picture** is that channel's live stream from ErsatzTV, laid into the window as the guide is
   streamed. The preview shows where it goes. If the channel can't be played when the guide starts, the
   window stays empty and the station page says so.
+- **Cycle through channels at random** shows a different channel every few minutes (1 to 30), from the
+  channels you tick, or every listed channel when none are ticked. It never shows the same channel twice in a
+  row, and asks ErsatzTV for the next one shortly before its turn so the switch is quick. With **The top
+  panel's sound** (or *A channel's sound* left on "The one in the window") you hear whichever channel is up.
+
+On air, commercials and cycling channels come from the guide's own window feed
+(`/plugins/tv-guide/feed/<guide>.ts`): each commercial or channel turn is played by ffmpeg, sized to the window,
+one after another. Between two of them the picture holds for a moment.
 
 ## Scheduling it
 
