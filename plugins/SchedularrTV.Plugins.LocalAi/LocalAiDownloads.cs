@@ -17,8 +17,19 @@ public sealed class LocalAiDownloads(LocalAiPaths paths, ILogger<LocalAiDownload
     private readonly ConcurrentDictionary<string, string> _errors = new(StringComparer.OrdinalIgnoreCase);
     private readonly CancellationTokenSource _stopping = new();
 
-    /// <summary>Raised from download threads as progress is made and when a download ends.</summary>
-    public event Action? Changed;
+    private readonly ConcurrentDictionary<string, DateTime> _finished = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Raised from download threads as progress is made (false) and when a download starts or ends (true): listeners
+    /// can skip some progress, but never a start or an end.
+    /// </summary>
+    public event Action<bool>? Changed;
+
+    /// <summary>Downloaded completely in the last few minutes, so the settings can say so.</summary>
+    public bool JustFinished(string key) => _finished.TryGetValue(key, out DateTime at) && DateTime.UtcNow - at < TimeSpan.FromMinutes(5);
+
+    /// <summary>The download is in, and it's being unpacked or moved into place.</summary>
+    public bool IsFinishing(string key) => _progress.TryGetValue(key, out double done) && done >= 1;
 
     /// <summary>The NuGet package holding llama.cpp built for every kind of computer; only this computer's part is kept.</summary>
     public static string EngineUrl =>
@@ -66,12 +77,14 @@ public sealed class LocalAiDownloads(LocalAiPaths paths, ILogger<LocalAiDownload
         }
 
         _errors.TryRemove(key, out _);
+        _finished.TryRemove(key, out _);
         _progress[key] = 0;
-        Raise();
+        Raise(true);
         var progress = new Reporter(value =>
         {
-            _progress[key] = value;
-            Raise();
+            // 1 is said once the whole file is in hand; it's only done when the download below returns.
+            _progress[key] = Math.Min(value, 1);
+            Raise(value >= 1);
         });
 
         _ = Task.Run(async () =>
@@ -79,6 +92,7 @@ public sealed class LocalAiDownloads(LocalAiPaths paths, ILogger<LocalAiDownload
             try
             {
                 await download(progress, cancellation.Token).ConfigureAwait(false);
+                _finished[key] = DateTime.UtcNow;
             }
             catch (OperationCanceledException)
             {
@@ -93,7 +107,7 @@ public sealed class LocalAiDownloads(LocalAiPaths paths, ILogger<LocalAiDownload
                 _running.TryRemove(key, out _);
                 _progress.TryRemove(key, out _);
                 cancellation.Dispose();
-                Raise();
+                Raise(true);
             }
         });
     }
@@ -222,11 +236,11 @@ public sealed class LocalAiDownloads(LocalAiPaths paths, ILogger<LocalAiDownload
         }
     }
 
-    private void Raise()
+    private void Raise(bool milestone)
     {
         try
         {
-            Changed?.Invoke();
+            Changed?.Invoke(milestone);
         }
         catch (Exception ex)
         {

@@ -16,7 +16,11 @@
                 <strong>AI engine</strong>
                 <span class="hint">llama.cpp for this computer, about 30 to 120 MB, from NuGet.</span>
             </div>
-            @if (downloads.Progress(LocalAiDownloads.EngineKey) is { } engineDone)
+            @if (downloads.IsFinishing(LocalAiDownloads.EngineKey))
+            {
+                <span class="hint">Unpacking…</span>
+            }
+            else if (downloads.Progress(LocalAiDownloads.EngineKey) is { } engineDone)
             {
                 <progress max="1" value="@Fraction(engineDone)"></progress>
                 <span class="hint">@Percent(engineDone)</span>
@@ -24,7 +28,7 @@
             }
             else if (downloads.EngineInstalled)
             {
-                <span class="pill pill-ok">Installed</span>
+                <span class="pill pill-ok">@(downloads.JustFinished(LocalAiDownloads.EngineKey) ? JustInstalled : Installed)</span>
             }
             else
             {
@@ -48,7 +52,11 @@
                         <strong>@model.Name</strong>
                         <span class="hint">@model.Description @Size(model.Size).</span>
                     </div>
-                    @if (downloads.Progress(model.Id) is { } done)
+                    @if (downloads.IsFinishing(model.Id))
+                    {
+                        <span class="hint">Finishing…</span>
+                    }
+                    else if (downloads.Progress(model.Id) is { } done)
                     {
                         <progress max="1" value="@Fraction(done)"></progress>
                         <span class="hint">@Percent(done)</span>
@@ -58,14 +66,18 @@
                     {
                         <button class="btn btn-sm @(chosen ? "btn-primary" : string.Empty)" type="button" @onclick="() => downloads.StartModel(model, ModelsFolder)">Download</button>
                     }
-                    else if (chosen)
-                    {
-                        <span class="pill pill-ok">In use</span>
-                    }
                     else
                     {
-                        <button class="btn btn-sm" type="button" @onclick="() => Choose(model.Id)">Use this</button>
-                        <button class="btn btn-sm btn-ghost" type="button" title="Delete the downloaded file" @onclick="() => Remove(file)">Delete</button>
+                        <span class="pill pill-ok">@(downloads.JustFinished(model.Id) ? JustDownloaded : Downloaded)</span>
+                        @if (chosen)
+                        {
+                            <span class="pill pill-accent">In use</span>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm" type="button" @onclick="() => Choose(model.Id)">Use this</button>
+                            <button class="btn btn-sm btn-ghost" type="button" title="Delete the downloaded file" @onclick="() => Remove(file)">Delete</button>
+                        }
                     }
                 </div>
                 @if (downloads.Error(model.Id) is { } modelError)
@@ -211,10 +223,11 @@
         _closing.Dispose();
     }
 
-    // Progress arrives on download threads; it's painted a few times a second.
-    private void OnDownloadChanged()
+    // Progress arrives on download threads; it's painted a few times a second, but a start or an end always is (an
+    // end skipped here would leave the bar at 100% with nothing saying it's done).
+    private void OnDownloadChanged(bool milestone)
     {
-        if (DateTime.UtcNow - _lastPaint < TimeSpan.FromMilliseconds(250))
+        if (!milestone && DateTime.UtcNow - _lastPaint < TimeSpan.FromMilliseconds(250))
         {
             return;
         }
@@ -315,7 +328,12 @@
         }
     }
 
-    private const string ChooseFileFirst = "Choose a GGUF file in Your own model file above first.";
+    private const string Installed = "Installed";
+    private const string JustInstalled = "Installed ✓";
+    private const string Downloaded = "Downloaded";
+    private const string JustDownloaded = "Downloaded ✓";
+
+    private const string ChooseFileFirst ="Choose a GGUF file in Your own model file above first.";
 
     private string? OwnFile => (Editor.Get(ModelFileKey) ?? Saved.ModelFile) is { Length: > 0 } own && own.Trim().Length > 0 ? own.Trim() : null;
 
