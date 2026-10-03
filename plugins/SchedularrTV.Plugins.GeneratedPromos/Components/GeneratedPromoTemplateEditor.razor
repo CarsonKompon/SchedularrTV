@@ -5,8 +5,9 @@
 @inject GeneratedPromoPreview Preview
 @inject TextToSpeechCatalog Voices
 @inject ConfigEditor Editor
+@inject IJSRuntime JS
 
-<div class="card promo-template">
+<div class="card promo-template visual-editor">
     <div class="card-head">
         <h2>@(string.IsNullOrWhiteSpace(Template.Name) ? "Untitled template" : Template.Name)</h2>
         @if (!Template.Enabled)
@@ -63,110 +64,27 @@
                        @onchange="e => SetNumber(e, value => Template.MixChance = Math.Clamp(value, 0, 100) / 100)" />
             </label>
         }
+        <label class="field">
+            <span>Video made with</span>
+            <select value="@(Template.Generator is null ? CanvasMode : GeneratorMode)" @onchange="SetMadeWith">
+                <option value="@CanvasMode">The canvas editor</option>
+                <option value="@GeneratorMode">An external program or script</option>
+            </select>
+        </label>
         <label class="check template-enabled">
             <input type="checkbox" checked="@Template.Enabled" @onchange="e => Set(() => Template.Enabled = e.Value is true)" />
             <span>Template enabled</span>
         </label>
     </div>
 
-    <h3>Canvas</h3>
-    <label class="field made-with">
-        <span>Video made with</span>
-        <select value="@(Template.Generator is null ? "canvas" : "generator")" aria-label="Video made with" @onchange="SetMadeWith">
-            <option value="canvas">The canvas editor below</option>
-            <option value="generator">An external program or script</option>
-        </select>
-    </label>
-    <div class="grid grid-3">
-        <label class="field">
-            <span>Output size</span>
-            <select value="@(CustomSize ? CustomValue : $"{Template.Width}x{Template.Height}")" @onchange="SetSize">
-                @foreach ((int width, int height, string label) in Sizes)
-                {
-                    <option value="@($"{width}x{height}")">@label</option>
-                }
-                <option value="@CustomValue">Custom size…</option>
-            </select>
-        </label>
-        <label class="field">
-            <span>Frame rate</span>
-            <select value="@Template.Fps" @onchange="e => Set(() => Template.Fps = int.Parse(Text(e), CultureInfo.InvariantCulture))">
-                @foreach (int fps in (int[])[24, 25, 30, 60])
-                {
-                    <option value="@fps">@fps fps</option>
-                }
-            </select>
-        </label>
-        <div class="field">
-            <span>Background colour</span>
-            <input type="color" aria-label="Background colour" value="@GeneratedPromoEditing.SplitColor(Template.BackgroundColor).Rgb"
-                   @onchange="e => Set(() => Template.BackgroundColor = GeneratedPromoEditing.JoinColor(Text(e), 100))" />
-        </div>
-    </div>
-    @if (CustomSize)
-    {
-        <div class="grid grid-3">
-            <label class="field">
-                <span>Width (px)</span>
-                <input type="number" min="16" max="3840" step="2" value="@Template.Width" @onchange="e => SetCustomSize(e, width: true, max: 3840)" />
-            </label>
-            <label class="field">
-                <span>Height (px)</span>
-                <input type="number" min="16" max="2160" step="2" value="@Template.Height" @onchange="e => SetCustomSize(e, width: false, max: 2160)" />
-            </label>
-        </div>
-    }
-    <div class="field">
-        <span>@(Template.BackgroundClip is null || GeneratedPromoResolver.UsesClip(Template.Generator) ? "Background image or video (optional; videos loop)" : "Fallback background image or video (when the episode file can't be read)")</span>
-        <FilePathPicker Value="@Template.Background" ValueChanged="value => Set(() => Template.Background = value)"
-                        Extensions="BackgroundExtensions" Label="background image or video" Placeholder="D:\Media\Promos\Backgrounds\loop.mp4" />
-    </div>
-    <label class="check">
-        <input type="checkbox" checked="@(Template.BackgroundClip is not null)"
-               @onchange="e => Set(() => Template.BackgroundClip = e.Value is true ? Template.BackgroundClip ?? new GeneratedClipConfig() : null)" />
-        <span>Play a clip from the promoted episode behind the promo</span>
-    </label>
-    @if (Template.BackgroundClip is { } clip)
-    {
-        <div class="grid grid-3">
-            <label class="field">
-                <span>Start into the episode (s; blank picks a spot in the middle)</span>
-                <input type="number" min="0" step="1" value="@(clip.StartAt is { } clipStart ? Number(clipStart.TotalSeconds) : "")"
-                       placeholder="Middle of the episode" @onchange="e => SetOptionalSeconds(e, value => clip.StartAt = value)" />
-            </label>
-            <label class="check template-enabled">
-                <input type="checkbox" checked="@clip.IncludeAudio" @onchange="e => Set(() => clip.IncludeAudio = e.Value is true)" />
-                <span>Include the episode's sound</span>
-            </label>
-            @if (clip.IncludeAudio)
-            {
-                <label class="field">
-                    <span>Episode volume: @($"{clip.Volume:P0}")</span>
-                    <input type="range" min="0" max="100" value="@Number(clip.Volume * 100)"
-                           @onchange="e => SetNumber(e, value => clip.Volume = Math.Clamp(value / 100, 0, 1))" />
-                </label>
-            }
-        </div>
-        @if (clip.IncludeAudio)
-        {
-            <label class="check">
-                <input type="checkbox" checked="@clip.DuckUnderVoice" @onchange="e => Set(() => clip.DuckUnderVoice = e.Value is true)" />
-                <span>Lower the episode's sound while the voice speaks</span>
-            </label>
-        }
-        <p class="hint">
-            Uses the episode this promo is for (the first show listed on Up Next).
-            @(GeneratedPromoResolver.UsesClip(Template.Generator) ? "The program below is handed this clip, so it isn't played behind; only the start time applies." : "")
-            @(_sample ? "The preview shows the fallback background until the channel's schedule is built." : "")
-        </p>
-    }
-    @if (Missing(Template.Background))
-    {
-        <p class="hint warn">The scheduler can't find this file.</p>
-    }
-
     @if (Template.Generator is { } generator)
     {
+        <div class="ed-plain">
+            <h3 class="ed-section">Canvas</h3>
+            @CanvasSettings
+        </div>
+
+        <h3 class="ed-section">External program</h3>
         <div class="generator" aria-label="External generator">
             <p class="hint">
                 The program draws the video; the voice-over and music are then mixed on top. Its video is scaled to fit the
@@ -261,65 +179,53 @@
     }
     else
     {
-    <div class="canvas-toolbar">
-        <span class="toolbar-label">Add</span>
-        <button class="btn btn-sm" type="button" @onclick="() => AddLayer(RequiredKind)">@KindName(RequiredKind)</button>
-        <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Text)">Text</button>
-        <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Rect)">Rectangle</button>
-        <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Image)">Image</button>
-        <div class="spacer"></div>
-        <label class="inline-field">
-            <span>Zoom</span>
-            <select value="@Number(_scale)" @onchange="SetZoom">
-                @foreach (double zoom in (double[])[0.25, 1 / 3.0, 0.5, 0.75])
-                {
-                    <option value="@Number(zoom)">@($"{zoom:P0}")</option>
-                }
-            </select>
-        </label>
-    </div>
-
-    @if (!Template.Layers.Any(layer => layer.Kind == RequiredKind))
-    {
-        <div class="banner banner-error">
-            This template needs a “@KindName(RequiredKind)” block to show the promoted show.
-            <button class="btn btn-sm" type="button" @onclick="() => AddLayer(RequiredKind)">Add one</button>
-        </div>
-    }
-
-    <div class="canvas-workspace">
-        <div class="canvas-column">
-            <div class="promo-canvas-scroll">
-                <div class="promo-canvas" role="group" aria-label="Promo canvas"
-                     style="width:@Px(Template.Width * _scale);height:@Px(Template.Height * _scale);@(_still is null ? "" : $"background-image:url('{_still}');")">
-                    @foreach (GeneratedLayer layer in Template.Layers)
-                    {
-                        bool isSelected = ReferenceEquals(layer, _layer);
-                        <div class="layer-box @(isSelected ? "selected" : "") @(VisibleAt(layer) ? "" : "hidden-now")" @key="layer"
-                             style="left:@Px(layer.X * _scale);top:@Px(layer.Y * _scale);width:@Px(layer.Width * _scale);height:@Px(layer.Height * _scale);"
-                             title="@layer.Name" @onpointerdown="e => StartDrag(e, layer, Move)" @onpointerdown:preventDefault="true">
-                            <span class="layer-tag">@Label(layer)</span>
-                            @if (isSelected)
-                            {
-                                @foreach (string handle in Handles)
-                                {
-                                    <span class="handle handle-@handle" aria-hidden="true" @onpointerdown="e => StartDrag(e, layer, handle)"
-                                          @onpointerdown:stopPropagation="true" @onpointerdown:preventDefault="true"></span>
-                                }
-                            }
-                        </div>
-                    }
-                    @if (_drag is not null && _snapX)
-                    {
-                        <div class="snap-guide snap-guide-x" aria-hidden="true"></div>
-                    }
-                    @if (_drag is not null && _snapY)
-                    {
-                        <div class="snap-guide snap-guide-y" aria-hidden="true"></div>
-                    }
-                </div>
+    <div class="ed-workspace">
+        <div class="ed-stage">
+            <div class="ed-toolbar">
+                <span class="ed-toolbar-label">Add</span>
+                <button class="btn btn-sm" type="button" @onclick="() => AddLayer(RequiredKind)">+ @KindName(RequiredKind)</button>
+                <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Text)">+ Text</button>
+                <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Rect)">+ Rectangle</button>
+                <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Image)">+ Image</button>
+                <div class="spacer"></div>
+                <span class="ed-meta">@Template.Width × @Template.Height</span>
             </div>
-            <div class="timeline">
+            @if (!Template.Layers.Any(layer => layer.Kind == RequiredKind))
+            {
+                <div class="banner banner-error">
+                    This template needs a “@KindName(RequiredKind)” block to show the promoted show.
+                    <button class="btn btn-sm" type="button" @onclick="() => AddLayer(RequiredKind)">Add one</button>
+                </div>
+            }
+            <div class="ed-canvas" id="@_canvasId" role="group" aria-label="Promo canvas" @onpointerenter="MeasureCanvas"
+                 style="aspect-ratio:@(Template.Width) / @(Template.Height);@(_still is null ? "" : $"background-image:url('{_still}');")">
+                @foreach (GeneratedLayer layer in Template.Layers)
+                {
+                    bool isSelected = ReferenceEquals(layer, _layer);
+                    <div class="layer-box @(isSelected ? "selected" : "") @(VisibleAt(layer) ? "" : "hidden-now")" @key="layer"
+                         style="left:@Pct(layer.X, Template.Width);top:@Pct(layer.Y, Template.Height);width:@Pct(layer.Width, Template.Width);height:@Pct(layer.Height, Template.Height);"
+                         title="@layer.Name" @onpointerdown="e => StartDrag(e, layer, Move)" @onpointerdown:preventDefault="true">
+                        <span class="layer-tag">@Label(layer)</span>
+                        @if (isSelected)
+                        {
+                            @foreach (string handle in Handles)
+                            {
+                                <span class="handle handle-@handle" aria-hidden="true" @onpointerdown="e => StartDrag(e, layer, handle)"
+                                      @onpointerdown:stopPropagation="true" @onpointerdown:preventDefault="true"></span>
+                            }
+                        }
+                    </div>
+                }
+                @if (_drag is not null && _snapX)
+                {
+                    <div class="snap-guide snap-guide-x" aria-hidden="true"></div>
+                }
+                @if (_drag is not null && _snapY)
+                {
+                    <div class="snap-guide snap-guide-y" aria-hidden="true"></div>
+                }
+            </div>
+            <div class="ed-timeline">
                 <label class="field">
                     <span>Preview time: @($"{_time:0.00}")s of @($"{Template.Duration.TotalSeconds:0.#}")s</span>
                     <input type="range" min="0" max="@Number(Math.Max(0, Template.Duration.TotalSeconds - 0.01))" step="0.05"
@@ -334,10 +240,13 @@
             {
                 <p class="hint warn" role="alert">Preview failed: @_stillError</p>
             }
+
+            <h3 class="ed-section">Canvas</h3>
+            @CanvasSettings
         </div>
 
-        <div class="layer-panel">
-            <h3>Layers <span class="meta">top first</span></h3>
+        <div class="ed-side">
+            <h3 class="ed-section">Layers <span class="ed-meta">top first</span></h3>
             <ol class="layer-list">
                 @foreach (GeneratedLayer layer in Enumerable.Reverse(Template.Layers).ToList())
                 {
@@ -357,14 +266,14 @@
             </ol>
             @if (Template.Layers.Count == 0)
             {
-                <p class="hint">No layers yet.</p>
+                <p class="hint">No layers yet. Add one above the canvas.</p>
             }
 
             @if (_layer is { } selected)
             {
                 <div class="inspector" aria-label="Layer settings">
-                    <div class="row">
-                        <h3>@KindName(selected.Kind)</h3>
+                    <div class="inspector-head">
+                        <h3 class="ed-section">@KindName(selected.Kind)</h3>
                         <div class="spacer"></div>
                         <button class="btn btn-sm" type="button" @onclick="() => DuplicateLayer(selected)">Duplicate</button>
                         <button class="btn btn-sm btn-danger" type="button" @onclick="() => RemoveLayer(selected)">Delete</button>
@@ -445,6 +354,7 @@
 
                     @if (selected.Kind is GeneratedLayerKind.Text or GeneratedLayerKind.UpNext || GeneratedPromoKinds.IsShowLayer(selected.Kind))
                     {
+                        <h4>Text style</h4>
                         <div class="grid grid-2">
                             <label class="field">
                                 <span>Font</span>
@@ -461,7 +371,7 @@
                                 </select>
                             </label>
                             <label class="field">
-                                <span>Largest font size</span>
+                                <span>Largest size</span>
                                 <input type="number" min="4" max="600" value="@Number(selected.FontSize)"
                                        @onchange="e => SetNumber(e, value => selected.FontSize = (float)Math.Clamp(value, 4, 600))" />
                             </label>
@@ -494,7 +404,7 @@
                         <div class="grid grid-2">
                             <div class="field">
                                 <span>Colour</span>
-                                <input type="color" aria-label="Layer colour" value="@rgb"
+                                <input type="color" class="ed-colour" aria-label="Layer colour" value="@rgb"
                                        @onchange="e => Set(() => selected.Color = GeneratedPromoEditing.JoinColor(Text(e), alpha))" />
                             </div>
                             <label class="field">
@@ -568,7 +478,7 @@
     </div>
     }
 
-    <h3>Voice-over</h3>
+    <h3 class="ed-section">Voice-over</h3>
     <label class="check">
         <input type="checkbox" checked="@(Template.Voice is { Enabled: true })" @onchange="ToggleVoice" />
         <span>Read the listings aloud</span>
@@ -652,7 +562,7 @@
         <p class="hint">Read-out (one of the variations): <em>@Script()</em></p>
     }
 
-    <h3>Background music</h3>
+    <h3 class="ed-section">Background music</h3>
     <label class="check">
         <input type="checkbox" checked="@(Template.Music is not null)" @onchange="ToggleMusic" />
         <span>Play a song under the promo</span>
@@ -733,7 +643,7 @@
         </label>
     }
 
-    <h3>Preview</h3>
+    <h3 class="ed-section">Preview</h3>
     <div class="row row-wrap">
         <button class="btn btn-primary" type="button" disabled="@_rendering" @onclick="RenderVideo">
             @(_rendering ? "Rendering…" : "Render preview video")
@@ -783,11 +693,14 @@
     private readonly CancellationTokenSource _life = new();
     private GeneratedLayer? _layer;
     private DragState? _drag;
-    // Screen pixels, so snapping feels the same at every zoom.
+    // Screen pixels, so snapping feels the same however wide the canvas is drawn.
     private const double SnapDistance = 8;
+    private const string CanvasMode = "canvas";
+    private const string GeneratorMode = "generator";
+    private readonly string _canvasId = $"promo-canvas-{Guid.NewGuid():N}";
+    private double _canvasPixels;
     private bool _snapX;
     private bool _snapY;
-    private double _scale = 1 / 3.0;
     private double _time;
     private string? _still;
     private string? _stillError;
@@ -834,6 +747,15 @@
         }
 
         _ = LoadVoices();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Once, as soon as the canvas is on the page (it isn't while an external program makes the video).
+        if (_canvasPixels <= 0 && Template.Generator is null)
+        {
+            await MeasureCanvas();
+        }
     }
 
     public void Dispose()
@@ -916,7 +838,8 @@
         {
             await Task.Delay(120, cancellation.Token);
             IReadOnlyList<UpNextListing> listings = PreviewListings(out _sample);
-            int width = (int)Math.Min(1600, Template.Width * _scale * 1.5);
+            // The canvas fills the editor's width, so the still is drawn about as wide as a large screen shows it.
+            int width = Math.Min(1600, Template.Width);
             byte[] jpeg = await Preview.RenderStillAsync(Template, Channel.Name, listings, Zone, TimeSpan.FromSeconds(_time), width, cancellation.Token);
             if (cancellation.IsCancellationRequested)
             {
@@ -948,12 +871,23 @@
         }
     }
 
-    private void SetZoom(ChangeEventArgs e)
+    /// <summary>Screen pixels per template pixel: the canvas fills the editor's width, so this follows the window.</summary>
+    private double Scale => (_canvasPixels > 0 ? _canvasPixels : 640) / Math.Max(1, Template.Width);
+
+    /// <summary>Reads how wide the canvas is drawn, for turning pointer movement into template pixels.</summary>
+    private async Task MeasureCanvas()
     {
-        if (double.TryParse(Text(e), NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
+        try
         {
-            _scale = value;
-            _ = RefreshStill();
+            double width = await JS.InvokeAsync<double>("eval", $"document.getElementById('{_canvasId}')?.getBoundingClientRect().width || 0");
+            if (width > 0)
+            {
+                _canvasPixels = width;
+            }
+        }
+        catch (Exception)
+        {
+            // Disconnected or still prerendering: the last width (or a guess) stands in.
         }
     }
 
@@ -1024,6 +958,8 @@
     {
         _layer = layer;
         _drag = new DragState(layer, handle, e.ClientX, e.ClientY, layer.X, layer.Y, layer.Width, layer.Height);
+        // Usually already measured when the pointer came onto the canvas; this catches a resized window.
+        _ = MeasureCanvas();
     }
 
     private void Drag(PointerEventArgs e)
@@ -1033,8 +969,8 @@
             return;
         }
 
-        float dx = (float)((e.ClientX - drag.StartX) / _scale);
-        float dy = (float)((e.ClientY - drag.StartY) / _scale);
+        float dx = (float)((e.ClientX - drag.StartX) / Scale);
+        float dy = (float)((e.ClientY - drag.StartY) / Scale);
         GeneratedLayer layer = drag.Layer;
         const float minimum = 8;
         drag.Moved |= Math.Abs(dx) >= 1 || Math.Abs(dy) >= 1;
@@ -1045,7 +981,7 @@
             float y = MathF.Round(drag.Y + dy);
             (layer.X, layer.Y, _snapX, _snapY) = e.AltKey
                 ? (x, y, false, false)
-                : GeneratedPromoEditing.SnapToCenter(x, y, layer.Width, layer.Height, Template.Width, Template.Height, (float)(SnapDistance / _scale));
+                : GeneratedPromoEditing.SnapToCenter(x, y, layer.Width, layer.Height, Template.Width, Template.Height, (float)(SnapDistance / Scale));
             return;
         }
 
@@ -1195,7 +1131,7 @@
         Set(() => Template.Music = e.Value is true ? Template.Music ?? new GeneratedMusicConfig() : null);
 
     private Task SetMadeWith(ChangeEventArgs e) => Set(() =>
-        Template.Generator = Text(e) == "generator" ? Template.Generator ?? new GeneratedScriptConfig() : null);
+        Template.Generator = Text(e) == GeneratorMode ? Template.Generator ?? new GeneratedScriptConfig() : null);
 
     private static List<string> Lines(ChangeEventArgs e) =>
         [.. Text(e).Replace("\r", "").Split('\n').Where(line => line.Trim().Length > 0)];
@@ -1484,5 +1420,100 @@
 
     private static string Number(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
 
-    private static string Px(double value) => $"{value.ToString("0.##", CultureInfo.InvariantCulture)}px";
+    /// <summary>A template-pixel position or size as a percent of the canvas, so boxes follow the canvas at any width.</summary>
+    private static string Pct(double value, double of) => $"{(value / Math.Max(1, of) * 100).ToString("0.###", CultureInfo.InvariantCulture)}%";
+
+    /// <summary>
+    /// Output size, frame rate and background: under the preview when the canvas is used, or on their own when an
+    /// external program makes the video.
+    /// </summary>
+    private RenderFragment CanvasSettings => @<div class="ed-settings">
+        <div class="grid grid-3">
+            <label class="field">
+                <span>Output size</span>
+                <select value="@(CustomSize ? CustomValue : $"{Template.Width}x{Template.Height}")" @onchange="SetSize">
+                    @foreach ((int width, int height, string label) in Sizes)
+                    {
+                        <option value="@($"{width}x{height}")">@label</option>
+                    }
+                    <option value="@CustomValue">Custom size…</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Frame rate</span>
+                <select value="@Template.Fps" @onchange="e => Set(() => Template.Fps = int.Parse(Text(e), CultureInfo.InvariantCulture))">
+                    @foreach (int fps in (int[])[24, 25, 30, 60])
+                    {
+                        <option value="@fps">@fps fps</option>
+                    }
+                </select>
+            </label>
+            <div class="field">
+                <span>Background colour</span>
+                <input type="color" class="ed-colour" aria-label="Background colour" value="@GeneratedPromoEditing.SplitColor(Template.BackgroundColor).Rgb"
+                       @onchange="e => Set(() => Template.BackgroundColor = GeneratedPromoEditing.JoinColor(Text(e), 100))" />
+            </div>
+        </div>
+        @if (CustomSize)
+        {
+            <div class="grid grid-3">
+                <label class="field">
+                    <span>Width (px)</span>
+                    <input type="number" min="16" max="3840" step="2" value="@Template.Width" @onchange="e => SetCustomSize(e, width: true, max: 3840)" />
+                </label>
+                <label class="field">
+                    <span>Height (px)</span>
+                    <input type="number" min="16" max="2160" step="2" value="@Template.Height" @onchange="e => SetCustomSize(e, width: false, max: 2160)" />
+                </label>
+            </div>
+        }
+        <div class="field">
+            <span>@(Template.BackgroundClip is null || GeneratedPromoResolver.UsesClip(Template.Generator) ? "Background image or video (optional; videos loop)" : "Fallback background image or video (when the episode file can't be read)")</span>
+            <FilePathPicker Value="@Template.Background" ValueChanged="value => Set(() => Template.Background = value)"
+                            Extensions="BackgroundExtensions" Label="background image or video" Placeholder="D:\Media\Promos\Backgrounds\loop.mp4" />
+        </div>
+        @if (Missing(Template.Background))
+        {
+            <p class="hint warn">The scheduler can't find this file.</p>
+        }
+        <label class="check">
+            <input type="checkbox" checked="@(Template.BackgroundClip is not null)"
+                   @onchange="e => Set(() => Template.BackgroundClip = e.Value is true ? Template.BackgroundClip ?? new GeneratedClipConfig() : null)" />
+            <span>Play a clip from the promoted episode behind the promo</span>
+        </label>
+        @if (Template.BackgroundClip is { } clip)
+        {
+            <div class="grid grid-3">
+                <label class="field">
+                    <span>Start into the episode (s; blank picks a spot in the middle)</span>
+                    <input type="number" min="0" step="1" value="@(clip.StartAt is { } clipStart ? Number(clipStart.TotalSeconds) : "")"
+                           placeholder="Middle of the episode" @onchange="e => SetOptionalSeconds(e, value => clip.StartAt = value)" />
+                </label>
+                <label class="check template-enabled">
+                    <input type="checkbox" checked="@clip.IncludeAudio" @onchange="e => Set(() => clip.IncludeAudio = e.Value is true)" />
+                    <span>Include the episode's sound</span>
+                </label>
+                @if (clip.IncludeAudio)
+                {
+                    <label class="field">
+                        <span>Episode volume: @($"{clip.Volume:P0}")</span>
+                        <input type="range" min="0" max="100" value="@Number(clip.Volume * 100)"
+                               @onchange="e => SetNumber(e, value => clip.Volume = Math.Clamp(value / 100, 0, 1))" />
+                    </label>
+                }
+            </div>
+            @if (clip.IncludeAudio)
+            {
+                <label class="check">
+                    <input type="checkbox" checked="@clip.DuckUnderVoice" @onchange="e => Set(() => clip.DuckUnderVoice = e.Value is true)" />
+                    <span>Lower the episode's sound while the voice speaks</span>
+                </label>
+            }
+            <p class="hint">
+                Uses the episode this promo is for (the first show listed on Up Next).
+                @(GeneratedPromoResolver.UsesClip(Template.Generator) ? "The program below is handed this clip, so it isn't played behind; only the start time applies." : "")
+                @(_sample ? "The preview shows the fallback background until the channel's schedule is built." : "")
+            </p>
+        }
+    </div>;
 }

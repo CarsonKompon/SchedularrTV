@@ -1,7 +1,6 @@
 /* The Overlays plugin's channel tab. Scoped under .ov-scope so nothing leaks into the rest of the app. */
 
 .ov-scope .ov-section { font-size: 13px; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-.ov-scope .ov-panel .ov-section:first-child { margin-top: 0; }
 
 .ov-scope .ov-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .ov-scope .ov-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
@@ -9,20 +8,46 @@
 .ov-scope .ov-item-name { background: none; border: 0; color: inherit; text-align: left; cursor: pointer; padding: 0; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .ov-scope .ov-item-name .muted { font-size: 12px; }
 
-.ov-scope .ov-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
-@media (max-width: 1200px) { .ov-scope .ov-workspace { grid-template-columns: minmax(0, 1fr); } }
-.ov-scope .ov-canvas-scroll { max-width: 100%; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: #0b0c0f; }
-.ov-scope .ov-canvas {
-    position: relative; overflow: hidden; background-color: #1a1f2e; background-size: 100% 100%; background-repeat: no-repeat;
-    user-select: none;
+/* File placement */
+.ov-scope .ov-anchors { display: grid; grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(3, 22px); gap: 4px; padding: 6px;
+    border: 1px solid var(--line); border-radius: 8px; width: max-content; background: rgba(255,255,255,.03); }
+.ov-scope .ov-anchor { border: 1px solid var(--line); border-radius: 4px; background: transparent; cursor: pointer; }
+.ov-scope .ov-anchor.on { background: var(--accent); border-color: var(--accent); }
+
+/* ---- Visual editor. The same rules (under .gp-scope) style the Generated promos template editor: keep the two in step. ---- */
+.ov-scope .visual-editor .ed-section {
+    display: flex; align-items: baseline; gap: 8px; margin: 22px 0 10px;
+    font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
 }
+.ov-scope .visual-editor h4 { margin: 14px 0 8px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.ov-scope .visual-editor .hint.warn { color: var(--warn); }
+.ov-scope .ed-meta { color: var(--muted); font-size: 11.5px; font-weight: normal; text-transform: none; letter-spacing: 0; }
+.ov-scope .ed-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; margin-top: 16px; }
+.ov-scope .ed-stage, .ov-scope .ed-side { min-width: 0; }
+.ov-scope .ed-side { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.ov-scope .ed-side > .ed-section:first-child { margin-top: 0; }
+.ov-scope .ed-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.ov-scope .ed-toolbar-label { color: var(--muted); font-size: 12px; margin-right: 2px; }
+.ov-scope .ed-canvas {
+    position: relative; width: 100%; overflow: hidden; border: 1px solid var(--line); border-radius: 8px;
+    background-color: #000; background-size: 100% 100%; background-repeat: no-repeat; touch-action: none; user-select: none;
+}
+.ov-scope .ed-timeline { margin-top: 10px; }
+.ov-scope .ed-timeline .field { margin-bottom: 0; }
+.ov-scope .ed-timeline input[type=range], .ov-scope .ed-stage input[type=range], .ov-scope .inspector input[type=range] { width: 100%; }
+.ov-scope .ed-strip { position: relative; height: 22px; border-radius: 6px; background: rgba(255,255,255,.06); border: 1px solid var(--line); overflow: hidden; }
+.ov-scope .ed-strip-on { position: absolute; top: 0; bottom: 0; min-width: 2px; background: var(--accent); opacity: .85; }
+.ov-scope .ed-colour { width: 56px; height: 34px; padding: 2px; }
+.ov-scope .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.ov-scope .check-stack { display: grid; gap: 6px; align-content: end; padding-bottom: 10px; }
 
 .ov-scope .layer-box { position: absolute; border: 1px solid rgba(255,255,255,.35); box-sizing: border-box; cursor: move; touch-action: none; }
 .ov-scope .layer-box:hover { border-color: rgba(255,255,255,.75); }
+.ov-scope .layer-box.hidden-now { border-style: dashed; border-color: rgba(255,255,255,.2); }
 .ov-scope .layer-box.selected { border: 2px solid var(--accent); z-index: 2; }
 .ov-scope .layer-tag {
-    position: absolute; left: -1px; top: -18px; font-size: 10px; line-height: 16px; padding: 0 5px; border-radius: 4px 4px 0 0;
-    background: rgba(0,0,0,.65); color: #fff; white-space: nowrap; pointer-events: none;
+    position: absolute; left: 0; top: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 10px; line-height: 16px; padding: 0 5px; border-radius: 0 0 4px 0; background: rgba(0,0,0,.65); color: #fff; pointer-events: none;
 }
 .ov-scope .layer-box.selected .layer-tag { background: var(--accent); }
 .ov-scope .handle { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; background: #fff; border: 2px solid var(--accent); border-radius: 3px; }
@@ -39,18 +64,22 @@
 .ov-scope .snap-guide-x { left: 50%; top: 0; bottom: 0; border-left-width: 1px; }
 .ov-scope .snap-guide-y { top: 50%; left: 0; right: 0; border-top-width: 1px; }
 
-.ov-scope .ov-layers { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
-.ov-scope .ov-layer { display: flex; align-items: center; gap: 4px; padding: 4px 6px; border-radius: 6px; border: 1px solid transparent; }
-.ov-scope .ov-layer.on { border-color: var(--accent); }
-.ov-scope .ov-layer-name { flex: 1; min-width: 0; text-align: left; background: none; border: 0; color: inherit; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ov-scope .ov-layer-name .muted { font-size: 11px; margin-left: 4px; }
-.ov-scope .ov-colour { width: 56px; height: 34px; padding: 2px; }
+.ov-scope .layer-list { list-style: none; margin: 0 0 12px; padding: 0; max-height: 260px; overflow: auto; }
+.ov-scope .layer-row { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+.ov-scope .layer-select {
+    flex: 1; min-width: 0; display: flex; justify-content: space-between; gap: 8px; padding: 6px 9px; text-align: left; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text);
+}
+.ov-scope .layer-select span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-scope .layer-select small { color: var(--muted); flex: none; }
+.ov-scope .layer-row.selected .layer-select { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.ov-scope .inspector { border-top: 1px solid var(--line); padding-top: 12px; }
+.ov-scope .inspector-head { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.ov-scope .inspector-head .ed-section { margin: 0; }
 
-.ov-scope .ov-anchors { display: grid; grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(3, 22px); gap: 4px; padding: 6px;
-    border: 1px solid var(--line); border-radius: 8px; width: max-content; background: rgba(255,255,255,.03); }
-.ov-scope .ov-anchor { border: 1px solid var(--line); border-radius: 4px; background: transparent; cursor: pointer; }
-.ov-scope .ov-anchor.on { background: var(--accent); border-color: var(--accent); }
-
-.ov-scope .ov-strip { position: relative; height: 22px; border-radius: 6px; background: rgba(255,255,255,.06); border: 1px solid var(--line); overflow: hidden; }
-.ov-scope .ov-strip-on { position: absolute; top: 0; bottom: 0; min-width: 2px; background: var(--accent); opacity: .85; }
-.ov-scope .hint.warn { color: #ffd08a; }
+@media (max-width: 1100px) {
+    .ov-scope .ed-workspace { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+    .ov-scope .grid-4 { grid-template-columns: 1fr 1fr; }
+}

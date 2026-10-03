@@ -13,28 +13,58 @@
 .gp-scope .template-choice strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gp-scope .template-choice.selected { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
 
-/* Template editor */
-.gp-scope .promo-template h3 { margin: 22px 0 10px; }
-.gp-scope .promo-template h4 { margin: 14px 0 8px; font-size: 13px; color: var(--muted); }
+/* Template settings that only promos have */
 .gp-scope .template-enabled { align-self: end; margin-bottom: 10px; }
-.gp-scope .promo-template .warn { color: var(--warn); }
-.gp-scope .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-.gp-scope .canvas-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 14px 0 10px; }
-.gp-scope .toolbar-label { color: var(--muted); font-size: 12px; margin-right: 2px; }
-.gp-scope .canvas-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
-.gp-scope .canvas-column { min-width: 0; }
-.gp-scope .promo-canvas-scroll { max-width: 100%; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: #0b0c0f; }
-.gp-scope .promo-canvas {
-    position: relative; background-size: 100% 100%; background-repeat: no-repeat; background-color: #000;
-    touch-action: none; user-select: none;
+.gp-scope .generator textarea { font-family: Consolas, monospace; font-size: 12px; }
+.gp-scope .generator-tokens { margin: 10px 0; }
+.gp-scope .generator-tokens ul { columns: 2; margin: 8px 0; padding-left: 18px; font-size: 12px; }
+.gp-scope .generator-command {
+    white-space: pre-wrap; word-break: break-all; font-size: 12px; padding: 10px 12px; margin: 6px 0 0;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
 }
+.gp-scope .song-list { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
+.gp-scope .song-row { display: flex; gap: 6px; align-items: center; }
+.gp-scope .song-row .file-field { flex: 1; min-width: 0; }
+.gp-scope .song-start { display: flex; align-items: center; gap: 4px; font-size: 12.5px; white-space: nowrap; }
+.gp-scope .song-start input { width: 72px; }
+.gp-scope .song-row .btn { white-space: nowrap; }
+.gp-scope .song-preview { display: block; width: 100%; height: 32px; margin-top: 4px; }
+.gp-scope .promo-video { width: 100%; max-width: 960px; margin-top: 12px; border-radius: 8px; background: #000; }
+
+/* ---- Visual editor. The same rules (under .ov-scope) style the Overlays editor: keep the two in step. ---- */
+.gp-scope .visual-editor .ed-section {
+    display: flex; align-items: baseline; gap: 8px; margin: 22px 0 10px;
+    font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+}
+.gp-scope .visual-editor h4 { margin: 14px 0 8px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.gp-scope .visual-editor .hint.warn { color: var(--warn); }
+.gp-scope .ed-meta { color: var(--muted); font-size: 11.5px; font-weight: normal; text-transform: none; letter-spacing: 0; }
+.gp-scope .ed-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; margin-top: 16px; }
+.gp-scope .ed-stage, .gp-scope .ed-side { min-width: 0; }
+.gp-scope .ed-side { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.gp-scope .ed-side > .ed-section:first-child { margin-top: 0; }
+.gp-scope .ed-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.gp-scope .ed-toolbar-label { color: var(--muted); font-size: 12px; margin-right: 2px; }
+.gp-scope .ed-canvas {
+    position: relative; width: 100%; overflow: hidden; border: 1px solid var(--line); border-radius: 8px;
+    background-color: #000; background-size: 100% 100%; background-repeat: no-repeat; touch-action: none; user-select: none;
+}
+.gp-scope .ed-timeline { margin-top: 10px; }
+.gp-scope .ed-timeline .field { margin-bottom: 0; }
+.gp-scope .ed-timeline input[type=range], .gp-scope .ed-stage input[type=range], .gp-scope .inspector input[type=range] { width: 100%; }
+.gp-scope .ed-strip { position: relative; height: 22px; border-radius: 6px; background: rgba(255,255,255,.06); border: 1px solid var(--line); overflow: hidden; }
+.gp-scope .ed-strip-on { position: absolute; top: 0; bottom: 0; min-width: 2px; background: var(--accent); opacity: .85; }
+.gp-scope .ed-colour { width: 56px; height: 34px; padding: 2px; }
+.gp-scope .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.gp-scope .check-stack { display: grid; gap: 6px; align-content: end; padding-bottom: 10px; }
+
 .gp-scope .layer-box { position: absolute; border: 1px solid rgba(255,255,255,.35); box-sizing: border-box; cursor: move; touch-action: none; }
 .gp-scope .layer-box:hover { border-color: rgba(255,255,255,.75); }
 .gp-scope .layer-box.hidden-now { border-style: dashed; border-color: rgba(255,255,255,.2); }
 .gp-scope .layer-box.selected { border: 2px solid var(--accent); z-index: 2; }
 .gp-scope .layer-tag {
-    position: absolute; left: -1px; top: -18px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    font-size: 10px; line-height: 16px; padding: 0 5px; border-radius: 4px 4px 0 0; background: rgba(0,0,0,.65); color: #fff; pointer-events: none;
+    position: absolute; left: 0; top: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 10px; line-height: 16px; padding: 0 5px; border-radius: 0 0 4px 0; background: rgba(0,0,0,.65); color: #fff; pointer-events: none;
 }
 .gp-scope .layer-box.selected .layer-tag { background: var(--accent); }
 .gp-scope .handle { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; background: #fff; border: 2px solid var(--accent); border-radius: 3px; }
@@ -48,43 +78,24 @@
 .gp-scope .handle-w { left: 0; top: 50%; cursor: ew-resize; }
 .gp-scope .drag-overlay { position: fixed; inset: 0; z-index: 1000; cursor: grabbing; touch-action: none; }
 .gp-scope .snap-guide { position: absolute; z-index: 3; pointer-events: none; border: 0 dashed #ff3da8; }
-.gp-scope .song-list { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
-.gp-scope .made-with { max-width: 360px; }
-.gp-scope .generator textarea { font-family: Consolas, monospace; font-size: 12px; }
-.gp-scope .generator-tokens { margin: 10px 0; }
-.gp-scope .generator-tokens ul { columns: 2; margin: 8px 0; padding-left: 18px; font-size: 12px; }
-.gp-scope .generator-command {
-    white-space: pre-wrap; word-break: break-all; font-size: 12px; padding: 10px 12px; margin: 6px 0 0;
-    background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
-}
-.gp-scope .song-row { display: flex; gap: 6px; align-items: center; }
-.gp-scope .song-row .file-field { flex: 1; min-width: 0; }
-.gp-scope .song-start { display: flex; align-items: center; gap: 4px; font-size: 12.5px; white-space: nowrap; }
-.gp-scope .song-start input { width: 72px; }
-.gp-scope .song-row .btn { white-space: nowrap; }
-.gp-scope .song-preview { display: block; width: 100%; height: 32px; margin-top: 4px; }
 .gp-scope .snap-guide-x { left: 50%; top: 0; bottom: 0; border-left-width: 1px; }
 .gp-scope .snap-guide-y { top: 50%; left: 0; right: 0; border-top-width: 1px; }
-.gp-scope .timeline { margin-top: 10px; }
-.gp-scope .timeline input[type=range] { width: 100%; }
-.gp-scope .layer-panel h3 { margin-top: 0; }
-.gp-scope .layer-panel h3 .meta { color: var(--muted); font-size: 11px; font-weight: normal; }
-.gp-scope .layer-list { list-style: none; margin: 0 0 14px; padding: 0; max-height: 260px; overflow: auto; }
+
+.gp-scope .layer-list { list-style: none; margin: 0 0 12px; padding: 0; max-height: 260px; overflow: auto; }
 .gp-scope .layer-row { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
 .gp-scope .layer-select {
     flex: 1; min-width: 0; display: flex; justify-content: space-between; gap: 8px; padding: 6px 9px; text-align: left; cursor: pointer;
-    border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text);
 }
 .gp-scope .layer-select span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gp-scope .layer-select small { color: var(--muted); flex: none; }
-.gp-scope .layer-row.selected .layer-select { border-color: var(--accent); }
+.gp-scope .layer-row.selected .layer-select { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
 .gp-scope .inspector { border-top: 1px solid var(--line); padding-top: 12px; }
-.gp-scope .inspector h3 { margin: 0; }
-.gp-scope .inspector input[type=range] { width: 100%; }
-.gp-scope .check-stack { display: grid; gap: 6px; align-content: end; padding-bottom: 10px; }
-.gp-scope .promo-video { width: 100%; max-width: 960px; margin-top: 12px; border-radius: 8px; background: #000; }
+.gp-scope .inspector-head { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.gp-scope .inspector-head .ed-section { margin: 0; }
+
 @media (max-width: 1100px) {
-    .gp-scope .canvas-workspace { grid-template-columns: minmax(0, 1fr); }
+    .gp-scope .ed-workspace { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 600px) {
     .gp-scope .grid-4 { grid-template-columns: 1fr 1fr; }
