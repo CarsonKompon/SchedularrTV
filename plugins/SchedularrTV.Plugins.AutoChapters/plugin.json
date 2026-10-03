@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Finds where programmes with no chapter markers fade to black (and go quiet), and uses those moments for mid-roll breaks instead of cutting at a fixed interval. Programmes are analysed in the background with ffmpeg, those about to air first.",
   "author": "SchedularrTV",
-  "apiVersion": "1.2",
+  "apiVersion": "1.3",
   "entryAssembly": "SchedularrTV.Plugins.AutoChapters.dll",
   "settings": [
     {

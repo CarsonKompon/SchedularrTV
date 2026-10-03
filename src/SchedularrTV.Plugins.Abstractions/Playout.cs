@@ -12,7 +12,8 @@ namespace SchedularrTV.Plugins.Playout;
 /// Processors run every time schedules are published, always on the schedule as planned, never on a previous
 /// processor run's output; nothing they return is fed back into planning. A processor must therefore be a pure
 /// function of its input (no randomness that isn't seeded from it), or the same airing would differ between
-/// publishes. Keep entries' start times and durations intact: outputs expect a gap-free timeline.
+/// publishes. Keep the timeline gap-free: outputs expect each entry to start where the last ended. Moving things within a
+/// programme's own span (sliding a mid-roll break, so one part gets shorter and the next longer) is fine.
 /// </remarks>
 public interface IPlayoutProcessor
 {

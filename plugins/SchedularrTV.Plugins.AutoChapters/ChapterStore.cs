@@ -52,6 +52,12 @@ public sealed class ChapterStore
     /// <summary>Raised after a record is added or the store is cleared.</summary>
     public event Action? Changed;
 
+    /// <summary>Raised after a programme's record is saved, with the record.</summary>
+    public event Action<ChapterRecord>? Saved;
+
+    /// <summary>Where the records are kept on disk.</summary>
+    public string FilePath => _path;
+
     /// <summary>Goes up with every change, so caches built from the store know when to start over.</summary>
     public int Version => Volatile.Read(ref _version);
 
@@ -107,6 +113,7 @@ public sealed class ChapterStore
 
         Interlocked.Increment(ref _version);
         Changed?.Invoke();
+        Saved?.Invoke(record);
     }
 
     /// <summary>Forgets everything (to analyse again after changing the detection settings).</summary>

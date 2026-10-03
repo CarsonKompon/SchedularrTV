@@ -4,6 +4,8 @@
 @inject ChapterStore Store
 @inject ChapterScanner Scanner
 @inject AutoChaptersSettings Settings
+@inject MidRollAligner Aligner
+@inject IServiceProvider Services
 
 <div class="page-header">
     <div>
@@ -26,6 +28,79 @@
 {
     <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status">@_message</div>
 }
+
+<div class="card">
+    <div class="card-head"><h2>Mid-roll breaks coming up</h2><span class="muted" style="font-size:12px;">next two days, all channels</span></div>
+    @{ MidRollSummary breaks = Aligner.Summary; }
+    @if (breaks.Total == 0)
+    {
+        <p class="hint" style="margin:0;">
+            No programmes with mid-roll breaks in the schedule yet. Breaks inside programmes are switched on per channel
+            (or block) under mid-rolls; this fills in after the schedule is next published.
+        </p>
+    }
+    else
+    {
+        <div class="ac-bar" role="img" aria-label="@BreakLabel(breaks)">
+            <span class="ac-seg ac-ok" style="width:@Pct(breaks.AtBreakPoints, breaks.Total);"></span>
+            <span class="ac-seg ac-own" style="width:@Pct(breaks.OwnChapters, breaks.Total);"></span>
+            <span class="ac-seg ac-wait" style="width:@Pct(breaks.WaitingForAnalysis, breaks.Total);"></span>
+            <span class="ac-seg ac-fixed" style="width:@Pct(breaks.NoneFound + breaks.NoPointNearby, breaks.Total);"></span>
+        </div>
+        <div class="row row-wrap" style="gap:8px;margin:10px 0 0;">
+            <span class="pill pill-ok">@breaks.AtBreakPoints split at their fades to black</span>
+            @if (breaks.OwnChapters > 0)
+            {
+                <span class="pill pill-accent">@breaks.OwnChapters split at their own chapter markers</span>
+            }
+            @if (breaks.WaitingForAnalysis > 0)
+            {
+                <span class="pill pill-muted">@breaks.WaitingForAnalysis on the fixed interval until analysed</span>
+            }
+            @if (breaks.NoneFound > 0)
+            {
+                <span class="pill pill-warn">@breaks.NoneFound on the fixed interval: no fades found</span>
+            }
+            @if (breaks.NoPointNearby > 0)
+            {
+                <span class="pill pill-warn" title="Either no fade was close enough to where a break was planned, or the programme was already on air when its fades were found.">
+                    @breaks.NoPointNearby with a break left on the fixed interval
+                </span>
+            }
+        </div>
+        <p class="hint" style="margin:10px 0 0;">
+            Programmes are planned before they're analysed, so breaks start out on the fixed interval (every 13 minutes or so).
+            Once a programme's fades are found, its breaks are slid onto them (up to @((int)MidRollAligner.Reach.TotalMinutes) minutes) the next time
+            the schedule goes out, without moving anything around it. A programme already on air is left alone until it ends.
+        </p>
+    }
+</div>
+
+<div class="card">
+    <div class="card-head"><h2>Library analysed</h2></div>
+    @if (_coverage is { } coverage)
+    {
+        <div class="ac-bar" role="img" aria-label="@($"{coverage.Analysed} of {coverage.Total} analysed")">
+            <span class="ac-seg ac-ok" style="width:@Pct(coverage.Analysed, coverage.Total);"></span>
+        </div>
+        <p style="margin:8px 0 0;">
+            <strong>@Percent(coverage.Analysed, coverage.Total)</strong>
+            <span class="muted">· @coverage.Analysed.ToString("N0") of @coverage.Total.ToString("N0") episodes and movies without their own chapters</span>
+        </p>
+    }
+    else if (_coverageError is not null)
+    {
+        <p class="hint warn" style="margin:0;">Couldn't read the library: @_coverageError</p>
+    }
+    else
+    {
+        <p class="hint" style="margin:0;">Counting the library…</p>
+    }
+    <p class="hint" style="margin:8px 0 0;">
+        What's found is kept in <code>@Store.FilePath</code> and reused from then on: a programme is only analysed again if its
+        file changes, or after <em>Start over</em>. @(Settings.ScanLibrary ? "The whole library is being worked through in the background." : "Only programmes coming up are analysed; use Analyse the whole library (or switch it on in the settings) to do the rest.")
+    </p>
+</div>
 
 <div class="card">
     <div class="card-head"><h2>Progress</h2></div>
@@ -126,26 +201,81 @@
 
 <style>
     .hint.warn { color: #ffd08a; }
+    .ac-bar { display: flex; height: 10px; border-radius: 6px; overflow: hidden; background: rgba(255,255,255,.07); }
+    .ac-seg { display: block; height: 100%; }
+    .ac-ok { background: var(--ok, #3fbf7f); }
+    .ac-own { background: var(--accent); }
+    .ac-wait { background: rgba(255,255,255,.25); }
+    .ac-fixed { background: var(--warn, #f3b74f); }
 </style>
 
 @code {
     private string? _message;
     private bool _messageOk;
     private bool _confirmForget;
+    private HashSet<string>? _wanted;
+    private (int Analysed, int Total)? _coverage;
+    private string? _coverageError;
+    private DateTime _countedAt;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         Store.Changed += OnChanged;
         Scanner.Changed += OnChanged;
+        Aligner.Changed += OnChanged;
+
+        // Every episode and movie the plugin would analyse, once; how many are done is counted against it as it goes.
+        try
+        {
+            if (Services.GetService(typeof(IMediaLibrary)) is IMediaLibrary library)
+            {
+                IReadOnlyList<MediaItem> items = await library.SearchAsync(
+                    SchedularrTV.Core.Query.QueryParser.Parse("kind == 'Episode' OR kind == 'Movie'"));
+                _wanted = [.. items.Where(ChapterEnricher.Wants).Select(item => item.Path!)];
+                Count();
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _coverageError = ex.GetBaseException().Message;
+        }
     }
 
     public void Dispose()
     {
         Store.Changed -= OnChanged;
         Scanner.Changed -= OnChanged;
+        Aligner.Changed -= OnChanged;
     }
 
-    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+    private void OnChanged() => _ = InvokeAsync(() =>
+    {
+        // At most once a second while a scan saves a record every few seconds.
+        if (DateTime.UtcNow - _countedAt > TimeSpan.FromSeconds(1))
+        {
+            Count();
+        }
+
+        StateHasChanged();
+    });
+
+    private void Count()
+    {
+        _countedAt = DateTime.UtcNow;
+        if (_wanted is not null)
+        {
+            _coverage = (_wanted.Count(path => Store.Find(path) is not null), _wanted.Count);
+        }
+    }
+
+    private static string Pct(int part, int total) =>
+        (total == 0 ? 0 : part * 100.0 / total).ToString("0.##", CultureInfo.InvariantCulture) + "%";
+
+    private static string Percent(int part, int total) =>
+        total == 0 ? "Nothing to analyse" : (part * 100.0 / total).ToString(part == total ? "0" : "0.0", CultureInfo.InvariantCulture) + "% analysed";
+
+    private static string BreakLabel(MidRollSummary breaks) =>
+        $"{breaks.AtBreakPoints} of {breaks.Total} programmes split at break points";
 
     private async Task QueueLibrary()
     {

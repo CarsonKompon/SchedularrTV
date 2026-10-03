@@ -123,6 +123,63 @@ public sealed class AutoChaptersTests : IDisposable
         Assert.Equal([TimeSpan.Zero, TimeSpan.FromSeconds(420.5), TimeSpan.FromSeconds(840.5)], parts.Select(part => part.InPoint));
     }
 
+    [Fact]
+    public async Task Breaks_planned_on_the_fixed_interval_slide_onto_the_fades_found_later_and_nothing_else_moves()
+    {
+        var store = new ChapterStore(_folder);
+        var clock = new SteppedClock(new DateTimeOffset(2026, 10, 3, 12, 0, 0, TimeSpan.Zero));
+        var aligner = new MidRollAligner(store, Settings(), clock: clock);
+        DateTimeOffset start = clock.GetUtcNow().AddHours(1);
+        MediaItem episode = Episode("/tv/a.mkv");
+        ScheduleEntry Part(int number, DateTimeOffset at, TimeSpan inPoint, TimeSpan length) => new()
+        {
+            Start = at, Duration = length, Kind = ScheduleEntryKind.Program, Item = episode, InPoint = inPoint, SegmentNumber = number, SegmentCount = 2
+        };
+
+        // Split at 13:00 with a two-minute break, then the next programme at 0:24:00.
+        ScheduleEntry first = Part(1, start, TimeSpan.Zero, TimeSpan.FromMinutes(13));
+        ScheduleEntry advert = new() { Start = start.AddMinutes(13), Duration = TimeSpan.FromMinutes(2), Kind = ScheduleEntryKind.Commercial };
+        ScheduleEntry second = Part(2, start.AddMinutes(15), TimeSpan.FromMinutes(13), TimeSpan.FromMinutes(9));
+        ScheduleEntry next = new() { Start = start.AddMinutes(24), Duration = TimeSpan.FromMinutes(30), Kind = ScheduleEntryKind.Program,
+            Item = Episode("/tv/b.mkv") };
+        var schedule = new ChannelSchedule
+        {
+            ChannelId = "ch", ChannelName = "Ch", Start = start, End = start.AddMinutes(54), Entries = [first, advert, second, next]
+        };
+        var context = new SchedularrTV.Plugins.Playout.PlayoutContext(new SchedulerConfig(), null, schedule);
+
+        // Not analysed yet: left on the interval, and counted as waiting.
+        Assert.Same(schedule, await aligner.ProcessAsync(context, CancellationToken.None));
+        Assert.Equal(1, aligner.Summary.WaitingForAnalysis);
+
+        store.Save(new ChapterRecord { Path = "/tv/a.mkv", Markers = [700, 1250] });
+        ChannelSchedule aligned = await aligner.ProcessAsync(context, CancellationToken.None);
+
+        Assert.Equal(TimeSpan.FromSeconds(700), aligned.Entries[0].Duration);
+        Assert.Equal(start.AddSeconds(700), aligned.Entries[1].Start);
+        Assert.Equal(start.AddSeconds(820), aligned.Entries[2].Start);
+        Assert.Equal(TimeSpan.FromSeconds(700), aligned.Entries[2].InPoint);
+        Assert.Equal(TimeSpan.FromMinutes(9) + TimeSpan.FromSeconds(80), aligned.Entries[2].Duration);
+        Assert.Equal(aligned.Entries[3].Start, aligned.Entries[2].End);
+        Assert.Same(next, aligned.Entries[3]);
+        Assert.Equal(1, aligner.Summary.AtBreakPoints);
+
+        // Once it's on air it stays as sent; one that went out unaligned isn't changed under ErsatzTV mid-programme.
+        clock.Advance(TimeSpan.FromHours(1) + TimeSpan.FromMinutes(5));
+        Assert.Equal(TimeSpan.FromSeconds(700), (await aligner.ProcessAsync(context, CancellationToken.None)).Entries[0].Duration);
+        var fresh = new MidRollAligner(store, Settings(), clock: clock);
+        Assert.Same(schedule, await fresh.ProcessAsync(context, CancellationToken.None));
+    }
+
+    private sealed class SteppedClock(DateTimeOffset now) : TimeProvider
+    {
+        private DateTimeOffset _now = now;
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public void Advance(TimeSpan by) => _now += by;
+    }
+
     private sealed class FakeContext(IConfiguration configuration, string folder) : IPluginContext
     {
         public PluginManifest Manifest { get; } = new() { Id = "auto-chapters", Name = "Auto Chapters" };

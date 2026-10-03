@@ -20,8 +20,14 @@ It's optional: install `SchedularrTV-<version>-plugin-auto-chapters.zip` (or the
    A fade to black that's silent too becomes a marker, at its middle. A short episode takes a minute or
    two; a large library takes a long time, which is why analysing everything is off by default.
 3. **The markers are used like real chapters.** Mid-roll breaks snap to them, in either mid-roll mode,
-   from the next schedule build on. Files with chapter markers of their own keep them. If none are found
+   for airings planned from then on. Files with chapter markers of their own keep them. If none are found
    (no fades to black), breaks still fall on the interval in **Auto** mode.
+4. **Airings already planned are fixed up too.** A programme is usually planned (with its breaks on the
+   fixed interval, every 13 minutes or so) before it's been analysed, and planned airings are kept. So once
+   its fades are found, the next time the schedule goes out each of its breaks is slid onto the nearest fade
+   within 5 minutes: the part before gets shorter and the part after longer by the same amount, so where the
+   programme starts and ends (and everything around it) doesn't move. A programme already on air is left
+   alone until it ends.
 
 Results are kept in `plugin-data/auto-chapters/chapters.json` in the data folder, so nothing is analysed
 twice. A file that's replaced (a different size or date) is analysed again.
@@ -31,8 +37,17 @@ seconds of each other count as one: a fade out, a card and a fade back in.
 
 ## The Auto chapters page
 
-It shows how many programmes have break points, how many have none, what's waiting and what's being
-analysed now, plus the latest results with the times found. From there you can:
+It shows:
+
+- **Mid-roll breaks coming up**: of the programmes with breaks in the next two days, how many are split at
+  their fades, at their own chapters, still on the fixed interval waiting to be analysed, or on the interval
+  because no fade was found (or none near enough). This is the quickest way to see it working.
+- **Library analysed**: how much of the library (episodes and movies without their own chapters) has been
+  analysed and kept, as a percentage.
+- How many programmes have break points, how many have none, what's waiting and what's being analysed now,
+  plus the latest results with the times found.
+
+From there you can:
 
 - **Analyse the whole library**: queue every episode and movie without chapters.
 - **Stop waiting ones**: empty the queue (programmes coming up are queued again at the next publish).
