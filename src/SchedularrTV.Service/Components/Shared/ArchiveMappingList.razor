@@ -1,0 +1,137 @@
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+
+<section class="mapping-section" aria-label="@Heading">
+    <div class="mapping-heading">
+        <h2>@Heading <span>@Names.Count.ToString("N0")</span></h2>
+        <span>@_selected.Count selected</span>
+    </div>
+    <div class="mapping-toolbar">
+        <label class="field">
+            <span>Search @Heading.ToLowerInvariant()</span>
+            <input type="text" @bind="_search" @bind:event="oninput" @bind:after="Filter" />
+        </label>
+        <label class="field">
+            <span>Assignment</span>
+            <select @bind="_status" @bind:after="Filter">
+                <option value="all">All</option>
+                <option value="mapped">Mapped</option>
+                <option value="unmapped">Unmapped</option>
+            </select>
+        </label>
+    </div>
+    <div class="mapping-actions">
+        <label class="field mapping-target">
+            <span>Assign selected to</span>
+            <input type="text" list="@_targetId" @bind="_target" @bind:event="oninput" />
+            <datalist id="@_targetId">
+                @foreach (string target in Targets) { <option value="@target"></option> }
+            </datalist>
+        </label>
+        <button class="btn btn-sm" disabled="@(_selected.Count == 0 || !Targets.Contains(_target, StringComparer.OrdinalIgnoreCase))" @onclick="Assign">Assign</button>
+        <button class="btn btn-sm" disabled="@(_selected.Count == 0)" @onclick="Unmap">Unmap</button>
+        @if (Automatic is not null)
+        {
+            <button class="btn btn-sm" disabled="@(_selected.Count == 0)" @onclick="Reset">Auto match</button>
+        }
+    </div>
+    <div class="mapping-header">
+        <label><input type="checkbox" aria-label="Select filtered @Heading.ToLowerInvariant()" checked="@(_filtered.Count > 0 && _filtered.All(_selected.Contains))" @onchange="SelectFiltered" /> Select filtered</label>
+        <span>@_filtered.Count.ToString("N0") results</span>
+        <button class="btn btn-sm" disabled="@(_selected.Count == 0)" @onclick="() => _selected.Clear()">Clear selection</button>
+    </div>
+    <div class="mapping-scroll" role="group" aria-label="@Heading mappings">
+        @if (_filtered.Count == 0)
+        {
+            <div class="mapping-empty">No @Heading.ToLowerInvariant()</div>
+        }
+        else
+        {
+            <Virtualize Items="_filtered" Context="name" ItemSize="64">
+                <div class="mapping-row @(_selected.Contains(name) ? "selected" : "")" @key="name">
+                    <input type="checkbox" aria-label="Select @name" checked="@_selected.Contains(name)" @onchange="change => Select(name, change)" />
+                    <div class="mapping-label">
+                        <span class="mapping-name" title="@name">@name</span>
+                        @if (Counts?.TryGetValue(name, out long count) == true)
+                        {
+                            <small>@count.ToString("N0") occurrences</small>
+                        }
+                    </div>
+                    <div class="mapping-value">
+                        <span title="@Resolved(name)">@(Resolved(name) ?? "Unmapped")</span>
+                        <small class="@(IsMapped(Resolved(name)) ? "mapped" : "unmapped")">@Status(name)</small>
+                    </div>
+                </div>
+            </Virtualize>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Heading { get; set; } = string.Empty;
+    [Parameter] public IReadOnlyList<string> Names { get; set; } = [];
+    [Parameter] public IReadOnlyList<string> Targets { get; set; } = [];
+    [Parameter] public IReadOnlyDictionary<string, long>? Counts { get; set; }
+    [Parameter, EditorRequired] public Dictionary<string, string?> Assignments { get; set; } = null!;
+    [Parameter] public Func<string, string?>? Automatic { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
+    private readonly string _targetId = $"mapping-target-{Guid.NewGuid():N}";
+    private List<string> _filtered = [];
+    private HashSet<string> _availableTargets = new(StringComparer.OrdinalIgnoreCase);
+    private string _search = string.Empty;
+    private string _target = string.Empty;
+    private string _status = "all";
+
+    protected override void OnParametersSet()
+    {
+        _availableTargets = new(Targets, StringComparer.OrdinalIgnoreCase);
+        _selected.IntersectWith(Names);
+        Filter();
+    }
+
+    private string? Resolved(string name) => Assignments.TryGetValue(name, out string? value) ? value : Automatic?.Invoke(name);
+    private string Status(string name) => Assignments.TryGetValue(name, out string? value)
+        ? string.IsNullOrWhiteSpace(value) ? "Excluded" : Targets.Contains(value, StringComparer.OrdinalIgnoreCase) ? "Assigned" : "Unavailable"
+        : Resolved(name) is null ? "No match" : "Automatic";
+
+    private bool IsMapped(string? target) => !string.IsNullOrWhiteSpace(target) && _availableTargets.Contains(target);
+
+    private void Filter() => _filtered = Names.Select(name => (Name: name, Target: Resolved(name)))
+        .Where(entry => (entry.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)
+            || (entry.Target?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false))
+            && (_status == "all" || (_status == "mapped") == IsMapped(entry.Target)))
+        .OrderBy(entry => IsMapped(entry.Target))
+        .ThenByDescending(entry => Counts?.GetValueOrDefault(entry.Name) ?? 0)
+        .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+        .Select(entry => entry.Name).ToList();
+
+    private void Select(string name, ChangeEventArgs change)
+    {
+        if (change.Value is true) _selected.Add(name);
+        else _selected.Remove(name);
+    }
+
+    private void SelectFiltered(ChangeEventArgs change)
+    {
+        if (change.Value is true) _selected.UnionWith(_filtered);
+        else _selected.ExceptWith(_filtered);
+    }
+
+    private Task Assign() => Apply(Targets.First(target => string.Equals(target, _target, StringComparison.OrdinalIgnoreCase)));
+    private Task Unmap() => Apply(null);
+
+    private async Task Apply(string? target)
+    {
+        foreach (string name in _selected) Assignments[name] = target;
+        Filter();
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Reset()
+    {
+        foreach (string name in _selected) Assignments.Remove(name);
+        Filter();
+        await Changed.InvokeAsync();
+    }
+}

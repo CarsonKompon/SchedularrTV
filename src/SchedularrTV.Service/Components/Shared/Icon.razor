@@ -1,0 +1,13 @@
+@* Stroke icons drawn from Lucide (ISC licence, lucide.dev). Inline so they inherit currentColor. *@
+
+<svg class="icon @Class" width="@Size" height="@Size" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+     stroke-width="@StrokeWidth" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+    @((MarkupString)(Paths.TryGetValue(Name, out string? body) ? body : string.Empty))
+</svg>
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+    [Parameter] public int Size { get; set; } = 16;
+    [Parameter] public double StrokeWidth { get; set; } = 2;
+    [Parameter] public string? Class { get; set; }
+}

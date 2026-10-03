@@ -1,0 +1,277 @@
+@page "/library/movies"
+@inject ConfigEditor Editor
+@inject LibraryBrowser Library
+@inject NavigationManager Nav
+
+<PageHeader Title="Movies" Eyebrow="Library">
+    @if (_loading)
+    {
+        <span>Reading your Jellyfin library&hellip;</span>
+    }
+    else
+    {
+        <span>@_movies.Count.ToString("N0") movies in your Jellyfin library</span>
+    }
+</PageHeader>
+
+@if (Editor.Working.GlobalCollections.Count == 0)
+{
+    <div class="banner banner-warn">Create a collection first on the <a href="collections">Collections</a> page, then add movies to it here.</div>
+}
+
+@if (_message is not null)
+{
+    <div class="banner banner-ok" role="status">@_message</div>
+}
+
+<div class="library-toolbar">
+    <div class="search-field">
+        <Icon Name="search" Size="15" />
+        <input type="text" placeholder="Search movies" aria-label="Filter movies" value="@_filter"
+               @oninput="e => { _filter = e.Value?.ToString() ?? string.Empty; _limit = PageSize; }" />
+    </div>
+
+    <div class="segmented" aria-label="Layout">
+        <button class="@(Grid ? "on" : "")" title="Poster grid" aria-pressed="@(Grid ? "true" : "false")" @onclick="@(() => SetView("grid"))"><Icon Name="grid" Size="14" /></button>
+        <button class="@(Grid ? "" : "on")" title="Detailed list" aria-pressed="@(Grid ? "false" : "true")" @onclick="@(() => SetView("list"))"><Icon Name="list" Size="14" /></button>
+    </div>
+
+    @if (Grid)
+    {
+        <select style="min-width:130px;" aria-label="Sort by" value="@_sort.Column" @onchange="e => _sort.Set(Enum.Parse<LibrarySortColumn>(e.Value?.ToString() ?? nameof(LibrarySortColumn.Default)), _sort.Descending)">
+            <option value="@LibrarySortColumn.Default">Title</option>
+            <option value="@LibrarySortColumn.Year">Year</option>
+            <option value="@LibrarySortColumn.Runtime">Runtime</option>
+        </select>
+        @if (_sort.Column != LibrarySortColumn.Default)
+        {
+            <button class="btn btn-icon" title="@(_sort.Descending ? "Descending" : "Ascending")" @onclick="() => _sort.Set(_sort.Column, !_sort.Descending)">
+                @(_sort.Descending ? "↓" : "↑")
+            </button>
+        }
+    }
+
+    <div class="toolbar-group">
+    <span class="selection-count"><strong>@_selected.Count</strong> selected</span>
+    <button class="btn btn-sm btn-ghost" @onclick="() => SelectShown(true)">Select shown</button>
+    @if (_selected.Count > 0)
+    {
+        <button class="btn btn-sm btn-ghost" @onclick="() => _selected.Clear()">Clear</button>
+    }
+
+    <select aria-label="Target collection" @onchange="e => _targetCollection = e.Value?.ToString() ?? string.Empty" value="@_targetCollection">
+        <option value="">Choose a collection…</option>
+        @foreach (string key in Editor.Working.GlobalCollections.Keys.OrderBy(k => k))
+        {
+            <option value="@key">@key</option>
+        }
+    </select>
+    <button class="btn btn-primary" disabled="@(_selected.Count == 0 || _targetCollection.Length == 0)" @onclick="AddSelected">
+        <Icon Name="plus" Size="15" />Add @(_selected.Count > 0 ? _selected.Count.ToString() : "")
+    </button>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <div class="media-grid" aria-hidden="true">
+        @for (int i = 0; i < 18; i++)
+        {
+            <div><div class="skeleton" style="aspect-ratio:2/3;border-radius:12px;"></div><div class="skeleton" style="height:12px;margin-top:10px;width:70%;"></div></div>
+        }
+    </div>
+}
+else if (!Visible.Any())
+{
+    <div class="empty">
+        <Icon Name="film" Size="30" StrokeWidth="1.5" />
+        <div class="empty-title">No movies match</div>
+        <div>Try a different title.</div>
+    </div>
+}
+else if (Grid)
+{
+    <div class="media-grid">
+        @foreach (LibraryMovie movie in Visible.Take(_limit))
+        {
+            bool selected = _selected.Contains(movie.Title);
+            <div class="media-card @(selected ? "selected" : "")" @key="movie.Title" tabindex="0" role="checkbox"
+                 aria-checked="@(selected ? "true" : "false")" aria-label="@movie.Title"
+                 @onclick="() => Toggle(movie.Title)" @onkeydown="e => OnCardKey(e, movie.Title)">
+                <span class="media-card-check" aria-hidden="true"><Icon Name="check" Size="14" StrokeWidth="3" /></span>
+                <div style="position:relative;">
+                    <Artwork Id="@movie.Id" Title="@movie.Title" Width="320" />
+                    @if (Membership(movie.Title).ToList() is { Count: > 0 } member)
+                    {
+                        <div class="media-card-in">
+                            @foreach (string collection in member.Take(2))
+                            {
+                                <span class="pill pill-accent">@collection</span>
+                            }
+                            @if (member.Count > 2)
+                            {
+                                <span class="pill pill-muted">+@(member.Count - 2)</span>
+                            }
+                        </div>
+                    }
+                </div>
+                <div class="media-card-title" title="@movie.Title">@movie.Title</div>
+                <div class="media-card-meta">
+                    <span>@(movie.Year?.ToString() ?? "—")</span>
+                    <span>&middot;</span>
+                    <span>@movie.Runtime</span>
+                </div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <div class="media-table-wrap">
+        <table class="library-movies-table media-table">
+            <thead>
+                <tr>
+                    <th style="width:44px;">
+                        <input type="checkbox" aria-label="Select all shown" checked="@AllShownSelected"
+                               @onchange="e => SelectShown((bool)(e.Value ?? false))" />
+                    </th>
+                    <th>Title</th>
+                    <LibrarySortHeader Sort="_sort" Column="LibrarySortColumn.Year" Label="Year" Width="85px" OnSort="_sort.Toggle" />
+                    <LibrarySortHeader Sort="_sort" Column="LibrarySortColumn.Runtime" Label="Runtime" Width="110px" OnSort="_sort.Toggle" />
+                    <th style="width:170px;">In collections</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (LibraryMovie movie in Visible.Take(_limit))
+                {
+                    bool selected = _selected.Contains(movie.Title);
+                    <tr class="selectable @(selected ? "selected" : "")" @key="movie.Title" @onclick="() => Toggle(movie.Title)">
+                        <td>
+                            <input type="checkbox" aria-label="@($"Select {movie.Title}")" checked="@selected"
+                                   @onclick:stopPropagation="true" @onchange="() => Toggle(movie.Title)" />
+                        </td>
+                        <td>
+                            <div class="media-title">
+                                <Artwork Id="@movie.Id" Title="@movie.Title" Width="96" />
+                                <div class="media-name">@movie.Title</div>
+                            </div>
+                        </td>
+                        <td class="num muted">@movie.Year</td>
+                        <td class="num muted">@movie.Runtime</td>
+                        <td>
+                            <div class="collection-tags">
+                                @foreach (string collection in Membership(movie.Title))
+                                {
+                                    <span class="pill pill-accent">@collection</span>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (!_loading && Visible.Count() is var total && total > 0)
+{
+    <div class="load-more">
+        <span>Showing @Math.Min(_limit, total).ToString("N0") of @total.ToString("N0")</span>
+        @if (total > _limit)
+        {
+            <button class="btn btn-sm" @onclick="() => _limit += PageSize">Show more</button>
+        }
+    </div>
+}
+
+@code {
+    private const int PageSize = 120;
+
+    [SupplyParameterFromQuery(Name = "view")] public string? ViewMode { get; set; }
+
+    private IReadOnlyList<LibraryMovie> _movies = [];
+    private readonly LibraryTableSort _sort = new();
+    private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
+    private string _filter = "";
+    private string _targetCollection = "";
+    private string? _message;
+    private bool _loading = true;
+    private int _limit = PageSize;
+
+    private bool Grid => !string.Equals(ViewMode, "list", StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _movies = await Library.GetMoviesAsync();
+        _loading = false;
+    }
+
+    private void SetView(string view) =>
+        Nav.NavigateTo(Nav.GetUriWithQueryParameter("view", view == "grid" ? null : view), replace: true);
+
+    private IEnumerable<LibraryMovie> Visible => _sort.Apply(_filter.Length == 0
+        ? _movies
+        : _movies.Where(m => m.Title.Contains(_filter, StringComparison.OrdinalIgnoreCase)));
+
+    private void Toggle(string title)
+    {
+        if (!_selected.Add(title))
+        {
+            _selected.Remove(title);
+        }
+    }
+
+    private void OnCardKey(KeyboardEventArgs e, string title)
+    {
+        if (e.Key is " " or "Enter")
+        {
+            Toggle(title);
+        }
+    }
+
+    private bool AllShownSelected => Visible.Any() && Visible.Take(_limit).All(m => _selected.Contains(m.Title));
+
+    private void SelectShown(bool select)
+    {
+        foreach (LibraryMovie movie in Visible.Take(_limit))
+        {
+            if (select)
+            {
+                _selected.Add(movie.Title);
+            }
+            else
+            {
+                _selected.Remove(movie.Title);
+            }
+        }
+    }
+
+    private IEnumerable<string> Membership(string title) =>
+        Editor.Working.GlobalCollections
+            .Where(c => c.Value.Include.Any(i => string.Equals(i.Movie, title, StringComparison.OrdinalIgnoreCase)))
+            .Select(c => c.Key);
+
+    private void AddSelected()
+    {
+        if (!Editor.Working.GlobalCollections.TryGetValue(_targetCollection, out ContentSelector? target))
+        {
+            return;
+        }
+
+        int added = 0;
+        foreach (string title in _selected)
+        {
+            if (target.Include.Any(i => string.Equals(i.Movie, title, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            target.Include.Add(new ContentInclude { Movie = title });
+            added++;
+        }
+
+        _message = $"Added {added} movie(s) to \"{_targetCollection}\".";
+        _selected.Clear();
+        Editor.MarkDirty();
+    }
+}

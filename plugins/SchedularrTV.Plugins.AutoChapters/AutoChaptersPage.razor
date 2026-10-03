@@ -1,0 +1,191 @@
+@page "/plugins/auto-chapters"
+@* What Auto Chapters has found, what it's working on, and buttons to analyse the library or start over. *@
+@implements IDisposable
+@inject ChapterStore Store
+@inject ChapterScanner Scanner
+@inject AutoChaptersSettings Settings
+
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Auto Chapters</div>
+        <h1>Auto chapters</h1>
+        <p class="muted">
+            Programmes without chapter markers are analysed for the moments they fade to black@(Settings.RequireSilence ? " and go quiet" : ""),
+            where their ad breaks used to be. Mid-roll breaks then go there instead of at a fixed interval.
+        </p>
+    </div>
+</div>
+
+@if (!Settings.UseForMidRolls)
+{
+    <div class="banner banner-warn" role="status">
+        Markers are being found but not used: <em>Use the markers found for mid-roll breaks</em> is off in this plugin's settings.
+    </div>
+}
+@if (_message is not null)
+{
+    <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status">@_message</div>
+}
+
+<div class="card">
+    <div class="card-head"><h2>Progress</h2></div>
+    @{
+        (int found, int none, int failed) = Store.Totals();
+        (int soon, int later) = Scanner.Queued;
+        IReadOnlyList<string> working = Scanner.Working;
+    }
+    <div class="row row-wrap" style="gap:8px;margin-bottom:12px;">
+        <span class="pill pill-ok">@found with break points</span>
+        <span class="pill pill-muted">@none with none found</span>
+        @if (failed > 0)
+        {
+            <span class="pill pill-error">@failed couldn't be read</span>
+        }
+        <span class="pill pill-accent">@(soon + later) waiting@(soon > 0 ? $" ({soon} airing soon)" : "")</span>
+    </div>
+    @if (working.Count > 0)
+    {
+        <p class="hint" style="margin:0 0 10px;">Analysing: <strong>@string.Join(", ", working)</strong></p>
+    }
+    else if (soon + later == 0)
+    {
+        <p class="hint" style="margin:0 0 10px;">Nothing waiting. Programmes coming up in the schedule are queued automatically as it's published.</p>
+    }
+    @if (Scanner.LastError is { } error)
+    {
+        <p class="hint warn" style="margin:0 0 10px;">Last problem: @error</p>
+    }
+    <div class="row row-wrap" style="gap:8px;">
+        <button class="btn btn-sm btn-primary" type="button" disabled="@Scanner.ScanningLibrary" @onclick="QueueLibrary">
+            @(Scanner.ScanningLibrary ? "Reading the library…" : "Analyse the whole library")
+        </button>
+        @if (soon + later > 0)
+        {
+            <button class="btn btn-sm" type="button" @onclick="ClearQueue">Stop waiting ones</button>
+        }
+        @if (failed > 0)
+        {
+            <button class="btn btn-sm" type="button" @onclick="RetryFailed">Try failed ones again</button>
+        }
+        <div class="spacer"></div>
+        @if (_confirmForget)
+        {
+            <button class="btn btn-sm btn-danger" type="button" @onclick="ForgetAll">Forget everything found?</button>
+            <button class="btn btn-sm" type="button" @onclick="() => _confirmForget = false">Keep</button>
+        }
+        else
+        {
+            <button class="btn btn-sm btn-ghost" type="button" @onclick="() => _confirmForget = true">Start over</button>
+        }
+    </div>
+    <p class="hint" style="margin-top:10px;">
+        Each programme is decoded once, in the background, at low priority, so a large library takes a while. Markers are used
+        from the next schedule build on. <em>Start over</em> after changing how fades are detected (this plugin's settings).
+    </p>
+</div>
+
+<div class="card">
+    <div class="card-head"><h2>Recently analysed</h2></div>
+    @{ IReadOnlyList<ChapterRecord> recent = Store.Recent(40); }
+    @if (recent.Count == 0)
+    {
+        <div class="empty">Nothing yet.</div>
+    }
+    else
+    {
+        <table>
+            <thead>
+                <tr><th>Programme</th><th>Break points</th><th class="num">Took</th></tr>
+            </thead>
+            <tbody>
+                @foreach (ChapterRecord record in recent)
+                {
+                    <tr>
+                        <td title="@record.Path">@(record.Title.Length > 0 ? record.Title : Path.GetFileName(record.Path))</td>
+                        <td>
+                            @if (record.Error is { } problem)
+                            {
+                                <span class="hint warn" style="margin:0;">@problem</span>
+                            }
+                            else if (record.Markers.Count == 0)
+                            {
+                                <span class="muted">None found</span>
+                            }
+                            else
+                            {
+                                @(string.Join("  ·  ", record.MarkerTimes.Select(Clock)))
+                            }
+                        </td>
+                        <td class="num">@(record.Error is null ? $"{record.Seconds:0}s" : "")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+<style>
+    .hint.warn { color: #ffd08a; }
+</style>
+
+@code {
+    private string? _message;
+    private bool _messageOk;
+    private bool _confirmForget;
+
+    protected override void OnInitialized()
+    {
+        Store.Changed += OnChanged;
+        Scanner.Changed += OnChanged;
+    }
+
+    public void Dispose()
+    {
+        Store.Changed -= OnChanged;
+        Scanner.Changed -= OnChanged;
+    }
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task QueueLibrary()
+    {
+        try
+        {
+            int added = await Scanner.QueueLibraryAsync(CancellationToken.None);
+            Say(added == 0 ? "Everything in the library has been analysed already." : $"Queued {added} programme(s) to analyse.", ok: true);
+        }
+        catch (Exception ex)
+        {
+            Say($"Couldn't read the library: {ex.Message}", ok: false);
+        }
+    }
+
+    private void ClearQueue()
+    {
+        Scanner.ClearQueue();
+        Say("Stopped the waiting ones; programmes coming up are queued again when the schedule is next published.", ok: true);
+    }
+
+    private void RetryFailed()
+    {
+        Store.Clear(failedOnly: true);
+        Say("The failed ones will be tried again as they come up, or with Analyse the whole library.", ok: true);
+    }
+
+    private void ForgetAll()
+    {
+        _confirmForget = false;
+        Scanner.ClearQueue();
+        Store.Clear();
+        Say("Forgot everything found. Programmes are analysed again as they come up.", ok: true);
+    }
+
+    private void Say(string message, bool ok)
+    {
+        _message = message;
+        _messageOk = ok;
+    }
+
+    private static string Clock(TimeSpan at) =>
+        at.TotalHours >= 1 ? at.ToString(@"h\:mm\:ss", CultureInfo.InvariantCulture) : at.ToString(@"m\:ss", CultureInfo.InvariantCulture);
+}

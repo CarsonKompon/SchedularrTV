@@ -1,0 +1,259 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Extensions.Options;
+using SkiaSharp;
+using SchedularrTV.Core.Configuration;
+using SchedularrTV.Core.Media;
+using SchedularrTV.Core.Scheduling;
+using SchedularrTV.Service.Editor;
+
+namespace SchedularrTV.GeneratedPromos;
+
+/// <summary>Editor previews drawn by the real renderer, so the canvas shows exactly what airs.</summary>
+public sealed class GeneratedPromoPreview(
+    GeneratedPromoService promos,
+    IOptions<GeneratedPromoOptions> options,
+    TimeProvider clock,
+    IServiceProvider services)
+{
+    private static readonly string[] SampleTitles = ["SpongeBob SquarePants", "The Fairly OddParents", "Hey Arnold!", "Rugrats"];
+
+    private readonly ConcurrentDictionary<string, string?> _frames = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, MediaItem?> _standIns = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Finds an episode file the channel could play, so a sample preview still has a clip to play behind
+    /// the promo or hand to a generator.
+    /// </summary>
+    public async Task PrepareStandInAsync(ChannelConfig channel, CancellationToken cancellationToken = default)
+    {
+        if (_standIns.ContainsKey(channel.Id) || services.GetService<LibraryBrowser>() is not { } library)
+        {
+            return;
+        }
+
+        IReadOnlyList<MediaItem> programmes = await library.GetProgrammesAsync(cancellationToken).ConfigureAwait(false);
+        string? collection = channel.BaseRotation?.Collection;
+        _standIns[channel.Id] = await Task.Run(() => programmes
+            .Where(item => item.Duration > TimeSpan.FromMinutes(1) && !string.IsNullOrWhiteSpace(item.Path) && !PromoRenderer.IsImage(item.Path))
+            .OrderByDescending(item => collection is not null && item.Collections.Contains(collection, StringComparer.OrdinalIgnoreCase))
+            .ThenBy(item => item.Id, StringComparer.Ordinal)
+            .FirstOrDefault(item => File.Exists(item.Path)), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The programmes a template would show right now: upcoming ones for Up Next and Now Playing, the
+    /// one just finished for This Has Been, and a later airing for Coming Up and Eventually.
+    /// Stand-ins are used until the channel has a schedule.
+    /// </summary>
+    public IReadOnlyList<UpNextListing> Listings(ChannelConfig channel, GeneratedPromoTemplate template, out bool sample)
+    {
+        DateTimeOffset now = clock.GetUtcNow();
+        ChannelSchedule? schedule = services.GetService<ScheduleCoordinator>()?.Latest
+            .FirstOrDefault(candidate => string.Equals(candidate.ChannelId, channel.Id, StringComparison.OrdinalIgnoreCase));
+        int needed = GeneratedPromoResolver.ListingsNeeded(template);
+        IReadOnlyList<UpNextListing> real = schedule is null ? [] : template.Type switch
+        {
+            GeneratedPromoType.ThisHasBeen or GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow =>
+                UpNextPromo.Previous(schedule, now) is { } previous ? [previous] : [],
+            GeneratedPromoType.ComingUp => UpNextPromo.Listings(schedule, now, 3) is { Count: > 1 } upcoming ? [upcoming[^1]] : [],
+            GeneratedPromoType.Eventually => [],
+            _ => UpNextPromo.Listings(schedule, now, needed)
+        };
+        sample = real.Count == 0;
+        if (!sample)
+        {
+            return real;
+        }
+
+        var next = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, now.Minute < 30 ? 30 : 0, 0, now.Offset);
+        if (now.Minute >= 30)
+        {
+            next = next.AddHours(1);
+        }
+
+        IReadOnlyList<UpNextListing> samples = template.Type switch
+        {
+            GeneratedPromoType.ThisHasBeen or GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow =>
+                [new UpNextListing(SampleTitles[0], next.AddMinutes(-30), "Help Wanted")],
+            GeneratedPromoType.ComingUp => [new UpNextListing(SampleTitles[1], next.AddHours(2), "The Big Problem")],
+            GeneratedPromoType.Eventually => [new UpNextListing(SampleTitles[2], new DateTimeOffset(next.Date, next.Offset).AddDays(3).AddHours(16), "Downtown Cityscape")],
+            _ => [.. Enumerable.Range(0, Math.Max(1, needed)).Select(index =>
+                new UpNextListing(SampleTitles[index % SampleTitles.Length], next.AddMinutes(30 * index), index == 0 ? "Help Wanted" : null))]
+        };
+
+        // The promoted show is a real file when one was found, so episode clips work before the first build.
+        return _standIns.GetValueOrDefault(channel.Id) is { } standIn
+            ? [UpNextPromo.Listing(standIn, samples[0].Start), .. samples.Skip(1)]
+            : samples;
+    }
+
+    public DateTimeOffset Now => clock.GetUtcNow();
+
+    public static TimeZoneInfo Zone(SchedulerConfig config, ChannelConfig channel) =>
+        SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(channel.TimeZone) ? config.Settings.TimeZone : channel.TimeZone);
+
+    /// <summary>JPEG of one frame, scaled to at most <paramref name="width"/> pixels wide.</summary>
+    public async Task<byte[]> RenderStillAsync(
+        GeneratedPromoTemplate template,
+        string channelName,
+        IReadOnlyList<UpNextListing> listings,
+        TimeZoneInfo zone,
+        TimeSpan time,
+        int width,
+        CancellationToken cancellationToken = default,
+        DateTimeOffset? airsAt = null)
+    {
+        ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(template, channelName, listings, zone, airsAt ?? clock.GetUtcNow())
+            ?? throw new InvalidOperationException("The preview needs at least one upcoming programme.");
+        PromoComposition composition = GeneratedPromoResolver.Compose(promo);
+        if (composition.BackgroundPath is { } background && !PromoRenderer.IsImage(background))
+        {
+            composition = composition with { BackgroundPath = await FrameAsync(background, composition.BackgroundStart + time, cancellationToken).ConfigureAwait(false) };
+        }
+
+        return await Task.Run(() =>
+        {
+            float scale = Math.Clamp(width / (float)composition.Width, 0.05f, 1f);
+            var info = new SKImageInfo(Math.Max(1, (int)Math.Round(composition.Width * scale)), Math.Max(1, (int)Math.Round(composition.Height * scale)));
+            using SKSurface surface = SKSurface.Create(info);
+            surface.Canvas.Scale(scale);
+            using var images = new PromoImageCache();
+            PromoRenderer.DrawFrame(surface.Canvas, composition, time, images);
+            using SKImage image = surface.Snapshot();
+            using SKData data = image.Encode(SKEncodedImageFormat.Jpeg, 85);
+            return data.ToArray();
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Full render with voice and music, cached like a scheduled promo.</summary>
+    public Task<GeneratedPromoRender> RenderVideoAsync(
+        GeneratedPromoTemplate template,
+        string channelName,
+        IReadOnlyList<UpNextListing> listings,
+        TimeZoneInfo zone,
+        CancellationToken cancellationToken = default) =>
+        promos.RenderAsync(
+            (GeneratedPromoResolver.Resolve(template, channelName, listings, zone, clock.GetUtcNow())
+                ?? throw new InvalidOperationException("The preview needs at least one upcoming programme."))
+            with { Folder = GeneratedPromoService.PreviewFolder },
+            cancellationToken);
+
+    /// <summary>
+    /// The stretch of <paramref name="song"/> a promo of <paramref name="duration"/> would play, looped and faded the way
+    /// the render does it, so a start point can be auditioned without rendering a whole promo.
+    /// </summary>
+    public async Task<string> SongClipAsync(GeneratedMusicConfig music, string song, TimeSpan duration, CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(song))
+        {
+            throw new FileNotFoundException("The scheduler can't find this song.", song);
+        }
+
+        TimeSpan start = music.StartFor(song);
+        TimeSpan fadeOut = music.FadeOut > duration ? duration : music.FadeOut;
+        string key = string.Join('|', Path.GetFullPath(song), File.GetLastWriteTimeUtc(song).Ticks, start.Ticks, duration.Ticks, music.FadeIn.Ticks, fadeOut.Ticks, "song");
+        string directory = Path.Combine(promos.Root, GeneratedPromoService.PreviewFolder, "songs");
+        string clip = Path.Combine(directory, Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..32] + ".mp4");
+        if (File.Exists(clip))
+        {
+            File.SetLastWriteTimeUtc(clip, DateTime.UtcNow);
+            return clip;
+        }
+
+        Directory.CreateDirectory(directory);
+        string partial = clip + ".partial.mp4";
+        var info = new ProcessStartInfo(options.Value.FfmpegPath)
+        {
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        string Seconds(TimeSpan value) => value.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
+        foreach (string argument in (string[])["-hide_banner", "-loglevel", "error", "-y", "-stream_loop", "-1",
+                     "-ss", Seconds(start), "-i", song, "-vn", "-t", Seconds(duration),
+                     "-af", $"afade=t=in:st=0:d={Seconds(music.FadeIn)},afade=t=out:st={Seconds(duration - fadeOut)}:d={Seconds(fadeOut)}",
+                     "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", "-f", "mp4", partial])
+        {
+            info.ArgumentList.Add(argument);
+        }
+
+        try
+        {
+            using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffmpeg could not be started.");
+            Task<string> error = process.StandardError.ReadToEndAsync(cancellationToken);
+            try
+            {
+                await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                if (!process.HasExited) process.Kill(entireProcessTree: true);
+                throw;
+            }
+
+            if (process.ExitCode != 0 || !File.Exists(partial))
+            {
+                throw new InvalidOperationException($"ffmpeg could not cut the song (exit {process.ExitCode}): {(await error.ConfigureAwait(false)).Trim()}");
+            }
+
+            File.Move(partial, clip, overwrite: true);
+            return clip;
+        }
+        finally
+        {
+            File.Delete(partial);
+        }
+    }
+
+    public string FileUrl(string path) =>
+        "api/generated-promos/files/" + string.Join('/', promos.RelativePath(path)
+            .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Select(Uri.EscapeDataString));
+
+    /// <summary>A background video's frame at the preview time; the render loops the video the same way.</summary>
+    private async Task<string?> FrameAsync(string video, TimeSpan time, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(video))
+        {
+            return null;
+        }
+
+        double second = Math.Round(time.TotalSeconds * 2) / 2;
+        string key = $"{Path.GetFullPath(video)}|{File.GetLastWriteTimeUtc(video).Ticks}|{second.ToString(CultureInfo.InvariantCulture)}";
+        if (_frames.TryGetValue(key, out string? cached) && (cached is null || File.Exists(cached)))
+        {
+            return cached;
+        }
+
+        string directory = Path.Combine(promos.Root, "preview-frames");
+        Directory.CreateDirectory(directory);
+        string frame = Path.Combine(directory, Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..32] + ".jpg");
+        string? result = await ExtractAsync(video, second, frame, cancellationToken).ConfigureAwait(false)
+            ?? await ExtractAsync(video, 0, frame, cancellationToken).ConfigureAwait(false);
+        _frames[key] = result;
+        return result;
+    }
+
+    private async Task<string?> ExtractAsync(string video, double second, string frame, CancellationToken cancellationToken)
+    {
+        var info = new ProcessStartInfo(options.Value.FfmpegPath)
+        {
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        foreach (string argument in (string[])["-hide_banner", "-loglevel", "error", "-y", "-stream_loop", "-1",
+                     "-ss", second.ToString("0.###", CultureInfo.InvariantCulture), "-i", video, "-frames:v", "1", "-q:v", "3", frame])
+        {
+            info.ArgumentList.Add(argument);
+        }
+
+        using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffmpeg could not be started.");
+        await process.StandardError.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        return process.ExitCode == 0 && File.Exists(frame) ? frame : null;
+    }
+}

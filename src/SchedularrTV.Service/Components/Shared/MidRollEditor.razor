@@ -1,0 +1,60 @@
+@* Mid-roll break placement. *@
+
+<div class="card">
+    <div class="card-head"><h2>Mid-roll breaks</h2></div>
+    <p class="hint">
+        Breaks inside a programme. These only ever contain commercials and filler &mdash; interstitial
+        shows and "up next" promos are held back for the break after the programme.
+    </p>
+
+    <label class="field">
+        <span>Mode</span>
+        <select value="@Config.Mode" @onchange="OnModeChanged">
+            <option value="None">Off &mdash; all break time goes after the programme</option>
+            <option value="Chapters">Chapters only &mdash; no markers means no breaks</option>
+            <option value="Auto">Auto &mdash; use markers, otherwise split evenly</option>
+        </select>
+    </label>
+
+    @if (Config.Mode != MidRollMode.None)
+    {
+        <div class="grid grid-2">
+            <DurationInput Label="Break roughly every" Value="Config.TargetSegment"
+                           ValueChanged="v => { Config.TargetSegment = v ?? TimeSpan.FromMinutes(15); Changed.InvokeAsync(); }" />
+            <DurationInput Label="Never leave a part shorter than" Value="Config.MinSegment"
+                           ValueChanged="v => { Config.MinSegment = v ?? TimeSpan.FromMinutes(5); Changed.InvokeAsync(); }" />
+            <DurationInput Label="Snap to a marker within" Value="Config.ChapterTolerance"
+                           ValueChanged="v => { Config.ChapterTolerance = v ?? TimeSpan.FromMinutes(4); Changed.InvokeAsync(); }" />
+            <DurationInput Label="Longest single break" Value="Config.MaxBreakLength"
+                           ValueChanged="v => { Config.MaxBreakLength = v ?? TimeSpan.FromMinutes(4); Changed.InvokeAsync(); }" />
+        </div>
+
+        <div class="grid grid-2">
+            <label class="field">
+                <span>Hard cap on breaks per programme</span>
+                <input type="number" min="1" value="@Config.MaxBreaks"
+                       @onchange="e => { Config.MaxBreaks = int.TryParse(e.Value?.ToString(), out int v) ? v : 8; Changed.InvokeAsync(); }" />
+            </label>
+            <DurationInput Label="Skip breaks shorter than" Value="Config.MinBreak"
+                           ValueChanged="v => { Config.MinBreak = v ?? TimeSpan.FromSeconds(30); Changed.InvokeAsync(); }" />
+        </div>
+
+        <p class="hint">
+            Cadence sets the frequency, so a 90&#8209;minute film gets about
+            @(Math.Max(1, (int)(90 / Math.Max(1, Config.TargetSegment.TotalMinutes)) - 1)) breaks
+            while a 30&#8209;minute episode gets about
+            @(Math.Max(0, (int)(30 / Math.Max(1, Config.TargetSegment.TotalMinutes)) - 1)).
+        </p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MidRollConfig Config { get; set; } = new();
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private async Task OnModeChanged(ChangeEventArgs e)
+    {
+        Config.Mode = Enum.Parse<MidRollMode>(e.Value?.ToString() ?? nameof(MidRollMode.None));
+        await Changed.InvokeAsync();
+    }
+}

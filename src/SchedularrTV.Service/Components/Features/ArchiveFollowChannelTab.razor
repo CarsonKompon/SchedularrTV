@@ -1,0 +1,10 @@
+@* The Archive Follow plugin's channel tab. *@
+
+@if (Context.Channel is { } channel)
+{
+    <FollowEditor @key="channel" Channel="channel" Changed="Context.NotifyChanged" />
+}
+
+@code {
+    [Parameter, EditorRequired] public PluginEditorContext Context { get; set; } = default!;
+}

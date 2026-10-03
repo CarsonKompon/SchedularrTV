@@ -1,0 +1,637 @@
+@page "/archive"
+@* The Archive Follow plugin's page: browse an archive folder's days, read a day's schedule, edit it, or build days by hand. *@
+@using System.Globalization
+@using SchedularrTV.Service.Plugins
+@inject PluginRegistry Registry
+@inject ConfigEditor Editor
+@inject LibraryBrowser Library
+@inject IServiceProvider Services
+@inject NavigationManager Navigation
+
+<PageHeader Title="Archive schedules" Eyebrow="Archive Follow">
+    <ChildContent>See what an archive aired on any day, correct it, or build days of your own for a channel to follow.</ChildContent>
+</PageHeader>
+
+@if (!Registry.IsActive(BuiltInPluginIds.ArchiveFollow))
+{
+    <div class="empty">
+        <div class="empty-title">Archive Follow is switched off</div>
+        <div>Turn it on under <a href="settings/plugins">Plugins</a> to use this page.</div>
+    </div>
+}
+else
+{
+    <div class="card">
+        <div class="card-head"><h2>Archive folder</h2></div>
+        <div class="grid grid-2">
+            @if (KnownFolders.Count > 0)
+            {
+                <label class="field">
+                    <span>Followed by a channel</span>
+                    <select value="@(KnownFolders.Any(known => SameFolder(known.Folder, _folder)) ? _folder : "")" @onchange="e => OpenFolder(e.Value?.ToString())">
+                        <option value="">Other folder…</option>
+                        @foreach ((string channel, string folder) in KnownFolders)
+                        {
+                            <option value="@folder">@channel — @folder</option>
+                        }
+                    </select>
+                </label>
+            }
+            <label class="field">
+                <span>Folder</span>
+                <FilePathPicker Value="@_folder" ValueChanged="OpenFolder" Extensions="SettingsFiles.None" PickFolder="true"
+                                Label="an archive folder" Placeholder="Folder holding YYYY/MM/YYYY-MM-DD.json files"
+                                StartIn="Environment.SpecialFolder.MyDocuments" />
+            </label>
+        </div>
+        <p class="hint">
+            Each day is a file at <code>YYYY/MM/YYYY-MM-DD.json</code> in the folder. Pick an empty folder to start a new archive:
+            days you save here are written in the same format, and their block labels added to <code>_block_index.json</code>.
+        </p>
+        @if (_folderError is not null)
+        {
+            <p class="hint warn" role="alert">@_folderError</p>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_folder) && _folderError is null)
+    {
+        <div class="archive-layout">
+            <div class="card archive-calendar">
+                <div class="row" style="align-items:center;gap:6px;margin-bottom:10px;">
+                    <button class="btn btn-sm btn-icon" type="button" aria-label="Previous month" @onclick="() => ShiftMonth(-1)"><Icon Name="arrow-left" Size="14" /></button>
+                    <h2 style="margin:0;flex:1;text-align:center;font-size:15px;">@MonthStart.ToString("MMMM yyyy", CultureInfo.CurrentCulture)</h2>
+                    <button class="btn btn-sm btn-icon" type="button" aria-label="Next month" @onclick="() => ShiftMonth(1)"><Icon Name="chevron-right" Size="14" /></button>
+                </div>
+                <div class="row" style="gap:6px;margin-bottom:10px;">
+                    <input type="number" min="1" max="9999" style="width:90px;" value="@_year" aria-label="Year"
+                           @onchange="e => { if (int.TryParse(e.Value?.ToString(), out int year) && year is > 0 and < 10000) { _year = year; _ = LoadMonthAsync(); } }" />
+                    @if (_dates.Count > 0)
+                    {
+                        <select aria-label="Jump to a year in the archive" @onchange="e => JumpToYear(e.Value?.ToString())">
+                            <option value="">Years in this archive…</option>
+                            @foreach (int year in _dates.Select(date => date.Year).Distinct())
+                            {
+                                <option value="@year">@year (@_dates.Count(date => date.Year == year) days)</option>
+                            }
+                        </select>
+                    }
+                </div>
+                <div class="archive-month" role="grid" aria-label="@($"Days of {MonthStart:MMMM yyyy}")">
+                    @foreach (string weekday in Weekdays)
+                    {
+                        <span class="archive-weekday">@weekday</span>
+                    }
+                    @for (int blank = 0; blank < LeadingBlanks; blank++)
+                    {
+                        <span></span>
+                    }
+                    @for (int dayNumber = 1; dayNumber <= DateTime.DaysInMonth(_year, _month); dayNumber++)
+                    {
+                        DateOnly date = new(_year, _month, dayNumber);
+                        bool has = _monthCounts.ContainsKey(date);
+                        <button type="button" class="archive-day @(has ? "has" : "") @(date == _day ? "on" : "")"
+                                title="@(has ? $"{_monthCounts[date]} programme(s)" : "No schedule")" @onclick="() => SelectDay(date)">
+                            <span>@dayNumber</span>
+                            @if (has)
+                            {
+                                <small>@_monthCounts[date]</small>
+                            }
+                        </button>
+                    }
+                </div>
+                <p class="hint" style="margin-top:10px;">@_dates.Count day(s) in this archive@(_dates.Count > 0 ? $", {_dates[0]:yyyy-MM-dd} to {_dates[^1]:yyyy-MM-dd}" : "").</p>
+            </div>
+
+            <div class="card archive-day-editor">
+                @if (_day is not { } day)
+                {
+                    <div class="empty">Pick a day on the calendar.</div>
+                }
+                else
+                {
+                    <div class="row row-wrap" style="align-items:center;gap:8px;">
+                        <button class="btn btn-sm btn-icon" type="button" aria-label="Previous day" @onclick="() => SelectDay(day.AddDays(-1))"><Icon Name="arrow-left" Size="14" /></button>
+                        <h2 style="margin:0;">@day.ToString("dddd d MMMM yyyy", CultureInfo.CurrentCulture)</h2>
+                        <button class="btn btn-sm btn-icon" type="button" aria-label="Next day" @onclick="() => SelectDay(day.AddDays(1))"><Icon Name="chevron-right" Size="14" /></button>
+                        <div class="spacer"></div>
+                        @if (_doc is not null)
+                        {
+                            <button class="btn btn-sm" type="button" @onclick="SortRows">Sort by time</button>
+                            <button class="btn btn-sm" type="button" disabled="@(!_dirty)" @onclick="Revert"><Icon Name="undo" Size="14" />Revert</button>
+                            <button class="btn btn-sm btn-primary" type="button" disabled="@(!_dirty)" @onclick="SaveAsync"><Icon Name="save" Size="14" />Save day</button>
+                        }
+                    </div>
+
+                    @if (_pendingDay is { } pending)
+                    {
+                        <div class="banner banner-warn" role="alert" style="margin-top:10px;">
+                            Unsaved changes to @day.ToString("yyyy-MM-dd").
+                            <button class="btn btn-sm btn-primary" style="margin-left:8px;" @onclick="SaveAndGoAsync">Save and go</button>
+                            <button class="btn btn-sm" @onclick="() => GoTo(pending)">Discard</button>
+                            <button class="btn btn-sm btn-ghost" @onclick="() => _pendingDay = null">Stay</button>
+                        </div>
+                    }
+                    @if (_message is not null)
+                    {
+                        <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status" style="margin-top:10px;">@_message</div>
+                    }
+                    @foreach (string problem in _problems)
+                    {
+                        <p class="hint warn" style="margin:6px 0;">@problem</p>
+                    }
+
+                    @if (_doc is null)
+                    {
+                        <div class="empty" style="margin-top:12px;">
+                            <div class="empty-title">No schedule for this day</div>
+                            <div class="row row-wrap" style="gap:8px;justify-content:center;margin-top:10px;">
+                                <button class="btn btn-primary" type="button" @onclick="StartEmpty"><Icon Name="plus" Size="14" />Start this day</button>
+                                @if (_dates.Count > 0)
+                                {
+                                    <select aria-label="Copy another day" @onchange="e => CopyFromAsync(e.Value?.ToString())">
+                                        <option value="">Copy another day…</option>
+                                        @foreach (DateOnly other in NearbyDates(day))
+                                        {
+                                            <option value="@(other.ToString("yyyy-MM-dd"))">@(other.ToString("ddd yyyy-MM-dd"))</option>
+                                        }
+                                    </select>
+                                }
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <datalist id="archive-show-names">
+                            @foreach (string name in ShowSuggestions)
+                            {
+                                <option value="@name"></option>
+                            }
+                        </datalist>
+
+                        <div class="media-table-wrap" style="margin-top:12px;">
+                            <table class="table archive-rows">
+                                <thead>
+                                    <tr>
+                                        <th style="width:84px;">Starts</th>
+                                        <th style="width:84px;">Ends</th>
+                                        <th>Show</th>
+                                        <th>Episode</th>
+                                        <th style="width:190px;">Blocks <span class="meta">(comma-separated)</span></th>
+                                        <th style="width:70px;">Length</th>
+                                        <th style="width:96px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @for (int index = 0; index < _doc.Rows.Count; index++)
+                                    {
+                                        ArchiveRowDraft row = _doc.Rows[index];
+                                        int at = index;
+                                        <tr @key="row">
+                                            <td><input type="text" inputmode="numeric" placeholder="06:00" value="@row.Time" aria-label="Starts"
+                                                       @onchange="e => Edit(() => row.Time = Text(e))" /></td>
+                                            <td><input type="text" inputmode="numeric" placeholder="next row" value="@row.EndTime" aria-label="Ends"
+                                                       @onchange="e => Edit(() => row.EndTime = Optional(e))" /></td>
+                                            <td><input type="text" list="archive-show-names" value="@row.Show" aria-label="Show"
+                                                       @onchange="e => Edit(() => row.Show = Text(e))" /></td>
+                                            <td><input type="text" value="@row.Episode" placeholder="Episode title or S01E02" aria-label="Episode"
+                                                       @onchange="e => Edit(() => row.Episode = Optional(e))" /></td>
+                                            <td><input type="text" value="@string.Join(", ", row.Blocks)" placeholder="Morning" aria-label="Blocks"
+                                                       @onchange="e => Edit(() => row.Blocks = [.. Text(e).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)])" /></td>
+                                            <td class="num muted">@Length(at)</td>
+                                            <td style="text-align:right;white-space:nowrap;">
+                                                <button class="btn btn-sm btn-icon" type="button" title="Add a row after this one" aria-label="Add a row after this one"
+                                                        @onclick="() => InsertAfter(at)"><Icon Name="plus" Size="14" /></button>
+                                                <button class="btn btn-sm btn-icon btn-ghost" type="button" title="Remove this row" aria-label="Remove this row"
+                                                        @onclick="() => Edit(() => _doc.Rows.RemoveAt(at))"><Icon Name="trash" Size="14" /></button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="row row-wrap" style="gap:8px;margin-top:10px;align-items:center;">
+                            <button class="btn btn-sm" type="button" @onclick="() => InsertAfter(_doc.Rows.Count - 1)"><Icon Name="plus" Size="14" />Add a programme</button>
+                            @if (_dates.Count > 0)
+                            {
+                                <select aria-label="Replace with a copy of another day" @onchange="e => CopyFromAsync(e.Value?.ToString())">
+                                    <option value="">Replace with a copy of…</option>
+                                    @foreach (DateOnly other in NearbyDates(day).Where(other => other != day))
+                                    {
+                                        <option value="@(other.ToString("yyyy-MM-dd"))">@(other.ToString("ddd yyyy-MM-dd"))</option>
+                                    }
+                                </select>
+                            }
+                            <div class="spacer"></div>
+                            @if (_exists)
+                            {
+                                @if (_confirmDelete)
+                                {
+                                    <span class="hint" style="margin:0;">Delete this day's file?</span>
+                                    <button class="btn btn-sm btn-danger" type="button" @onclick="DeleteDay">Delete</button>
+                                    <button class="btn btn-sm" type="button" @onclick="() => _confirmDelete = false">Keep</button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm btn-ghost" type="button" @onclick="() => _confirmDelete = true"><Icon Name="trash" Size="14" />Delete day</button>
+                                }
+                            }
+                        </div>
+                        <p class="hint" style="margin-top:10px;">
+                            Times are the archive's own clock, <code>HH:mm</code>. Leave <strong>Ends</strong> empty to run until the next programme;
+                            use <code>24:00</code> for midnight. Blocks are the archive's labels that a channel maps onto its own blocks.
+                            Episodes are matched to your library by title, or by codes like <code>S01E02</code>.
+                        </p>
+                    }
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "folder")] public string? FolderQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "date")] public string? DateQuery { get; set; }
+
+    private static readonly string[] Weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+    private string _folder = string.Empty;
+    private string? _folderError;
+    private IReadOnlyList<DateOnly> _dates = [];
+    private int _year = DateTime.Today.Year;
+    private int _month = DateTime.Today.Month;
+    private Dictionary<DateOnly, int> _monthCounts = [];
+
+    private DateOnly? _day;
+    private DateOnly? _pendingDay;
+    private ArchiveDayDocument? _doc;
+    private ArchiveDayDocument? _saved;
+    private bool _exists;
+    private bool _dirty;
+    private bool _confirmDelete;
+    private IReadOnlyList<string> _problems = [];
+    private string? _message;
+    private bool _messageOk;
+    private IReadOnlyList<string> _libraryTitles = [];
+
+    private DateOnly MonthStart => new(_year, _month, 1);
+
+    private int LeadingBlanks => ((int)MonthStart.DayOfWeek + 6) % 7;
+
+    private List<(string Channel, string Folder)> KnownFolders => [.. Editor.Working.Channels
+        .Where(channel => !string.IsNullOrWhiteSpace(channel.Follow?.Directory))
+        .Select(channel => (channel.Name, channel.Follow!.Directory))];
+
+    private IEnumerable<string> ShowSuggestions => _libraryTitles
+        .Concat(_doc?.Rows.Select(row => row.Show) ?? [])
+        .Where(name => !string.IsNullOrWhiteSpace(name))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .Order(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        string? folder = !string.IsNullOrWhiteSpace(FolderQuery) ? FolderQuery : KnownFolders.FirstOrDefault().Folder;
+        if (!string.IsNullOrWhiteSpace(folder))
+        {
+            await LoadFolderAsync(folder);
+            if (DateOnly.TryParseExact(DateQuery, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly date))
+            {
+                await GoToAsync(date);
+            }
+        }
+
+        try
+        {
+            _libraryTitles = [.. (await Library.GetShowsAsync()).Select(show => show.Name)];
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Suggestions only; the page works without the library.
+        }
+    }
+
+    private static bool SameFolder(string? left, string? right) =>
+        !string.IsNullOrWhiteSpace(left) && !string.IsNullOrWhiteSpace(right)
+        && string.Equals(Path.TrimEndingDirectorySeparator(left.Trim()), Path.TrimEndingDirectorySeparator(right.Trim()), StringComparison.OrdinalIgnoreCase);
+
+    private async Task OpenFolder(string? folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder) || SameFolder(folder, _folder))
+        {
+            return;
+        }
+
+        if (_dirty)
+        {
+            _message = "Save or revert this day's changes before opening another folder.";
+            _messageOk = false;
+            return;
+        }
+
+        await LoadFolderAsync(folder);
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(new Dictionary<string, object?> { ["folder"] = _folder, ["date"] = null }), replace: true);
+    }
+
+    private async Task LoadFolderAsync(string folder)
+    {
+        _folder = folder.Trim().Trim('"');
+        _folderError = null;
+        _day = null;
+        _doc = _saved = null;
+        _dirty = _exists = false;
+        _message = null;
+        if (!Directory.Exists(_folder))
+        {
+            _folderError = "That folder doesn't exist. Create it first, then pick it here.";
+            _dates = [];
+            return;
+        }
+
+        try
+        {
+            _dates = await Task.Run(() => ArchiveDayFile.ListDates(_folder));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _folderError = $"Couldn't read the folder: {ex.Message}";
+            _dates = [];
+            return;
+        }
+
+        DateOnly focus = _dates.Count > 0 ? _dates[^1] : DateOnly.FromDateTime(DateTime.Today);
+        _year = focus.Year;
+        _month = focus.Month;
+        await LoadMonthAsync();
+    }
+
+    private async Task LoadMonthAsync()
+    {
+        Dictionary<DateOnly, int> counts = [];
+        foreach (DateOnly date in _dates.Where(date => date.Year == _year && date.Month == _month))
+        {
+            try
+            {
+                counts[date] = (await ArchiveDayFile.ReadAsync(_folder, date))?.Rows.Count ?? 0;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+            {
+                counts[date] = 0;
+            }
+        }
+
+        _monthCounts = counts;
+        StateHasChanged();
+    }
+
+    private async Task ShiftMonth(int delta)
+    {
+        DateOnly shifted = MonthStart.AddMonths(delta);
+        _year = shifted.Year;
+        _month = shifted.Month;
+        await LoadMonthAsync();
+    }
+
+    private async Task JumpToYear(string? value)
+    {
+        if (int.TryParse(value, out int year) && _dates.FirstOrDefault(date => date.Year == year) is { } first && first != default)
+        {
+            _year = first.Year;
+            _month = first.Month;
+            await LoadMonthAsync();
+        }
+    }
+
+    private IEnumerable<DateOnly> NearbyDates(DateOnly day) =>
+        _dates.OrderBy(date => Math.Abs(date.DayNumber - day.DayNumber)).Take(60).Order();
+
+    private async Task SelectDay(DateOnly date)
+    {
+        if (_dirty && date != _day)
+        {
+            _pendingDay = date;
+            return;
+        }
+
+        await GoToAsync(date);
+    }
+
+    private Task GoTo(DateOnly date) => GoToAsync(date);
+
+    private async Task GoToAsync(DateOnly date)
+    {
+        _pendingDay = null;
+        _message = null;
+        _problems = [];
+        _confirmDelete = false;
+        _day = date;
+        if (date.Year != _year || date.Month != _month)
+        {
+            _year = date.Year;
+            _month = date.Month;
+            await LoadMonthAsync();
+        }
+
+        try
+        {
+            _saved = await ArchiveDayFile.ReadAsync(_folder, date);
+            _exists = _saved is not null;
+            _doc = Clone(_saved);
+            _dirty = false;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            _saved = _doc = null;
+            _exists = true;
+            _message = $"Couldn't read this day's file: {ex.Message}";
+            _messageOk = false;
+        }
+    }
+
+    private static ArchiveDayDocument? Clone(ArchiveDayDocument? document) => document?.Copy();
+
+    private void Edit(Action change)
+    {
+        change();
+        _dirty = true;
+        _message = null;
+        _problems = ArchiveDayFile.Problems(_doc?.Rows ?? []);
+    }
+
+    private void StartEmpty()
+    {
+        _doc = new ArchiveDayDocument { Rows = [new ArchiveRowDraft { Time = "06:00" }] };
+        _dirty = true;
+        _problems = [];
+    }
+
+    private async Task CopyFromAsync(string? value)
+    {
+        if (_day is null || !DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly source))
+        {
+            return;
+        }
+
+        try
+        {
+            ArchiveDayDocument? copy = await ArchiveDayFile.ReadAsync(_folder, source);
+            if (copy is null)
+            {
+                return;
+            }
+
+            // Kept as this day's file if it exists, so its other fields survive; the rows come from the copy.
+            ArchiveDayDocument target = Clone(_saved) ?? new ArchiveDayDocument();
+            target.Rows = [.. copy.Rows.Select(row => row.Copy())];
+            _doc = target;
+            Edit(() => { });
+            _message = $"Copied {source:yyyy-MM-dd}. Save to keep it.";
+            _messageOk = true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            _message = $"Couldn't read {source:yyyy-MM-dd}: {ex.Message}";
+            _messageOk = false;
+        }
+    }
+
+    private void InsertAfter(int index)
+    {
+        if (_doc is null)
+        {
+            return;
+        }
+
+        // Starts where the row above ends, or half an hour after it starts.
+        string time = "06:00";
+        if (index >= 0 && index < _doc.Rows.Count)
+        {
+            ArchiveRowDraft above = _doc.Rows[index];
+            TimeSpan? next = ArchiveDayFile.ParseTime(above.EndTime, allowMidnight: true)
+                             ?? ArchiveDayFile.ParseTime(above.Time, allowMidnight: false)?.Add(TimeSpan.FromMinutes(30));
+            if (next is { } value && value < TimeSpan.FromDays(1))
+            {
+                time = value.ToString(@"hh\:mm");
+            }
+        }
+
+        Edit(() => _doc.Rows.Insert(index + 1, new ArchiveRowDraft
+        {
+            Time = time,
+            Blocks = index >= 0 && index < _doc.Rows.Count ? [.. _doc.Rows[index].Blocks] : []
+        }));
+    }
+
+    private void SortRows()
+    {
+        if (_doc is not null)
+        {
+            Edit(() => _doc.Rows = [.. _doc.Rows.OrderBy(row => ArchiveDayFile.ParseTime(row.Time, allowMidnight: false) ?? TimeSpan.MaxValue)]);
+        }
+    }
+
+    private void Revert()
+    {
+        _doc = Clone(_saved);
+        _dirty = false;
+        _problems = [];
+        _message = null;
+    }
+
+    private async Task<bool> SaveCoreAsync()
+    {
+        if (_day is not { } day || _doc is null)
+        {
+            return false;
+        }
+
+        _problems = ArchiveDayFile.Problems(_doc.Rows);
+        if (_problems.Count > 0)
+        {
+            _message = "Fix the rows below before saving.";
+            _messageOk = false;
+            return false;
+        }
+
+        try
+        {
+            await ArchiveDayFile.WriteAsync(_folder, day, _doc);
+            Services.GetService<ArchiveBrowser>()?.Invalidate(_folder);
+            if (!_dates.Contains(day))
+            {
+                _dates = [.. _dates.Append(day).Order()];
+            }
+
+            _saved = await ArchiveDayFile.ReadAsync(_folder, day);
+            _doc = Clone(_saved);
+            _exists = true;
+            _dirty = false;
+            _monthCounts[day] = _doc?.Rows.Count ?? 0;
+            _message = $"Saved {day:yyyy-MM-dd}. Channels following this folder pick it up on their next rebuild.";
+            _messageOk = true;
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.Text.Json.JsonException)
+        {
+            _message = $"Couldn't save: {ex.Message}";
+            _messageOk = false;
+            return false;
+        }
+    }
+
+    private Task SaveAsync() => SaveCoreAsync();
+
+    private async Task SaveAndGoAsync()
+    {
+        if (_pendingDay is { } next && await SaveCoreAsync())
+        {
+            await GoToAsync(next);
+        }
+    }
+
+    private void DeleteDay()
+    {
+        if (_day is not { } day)
+        {
+            return;
+        }
+
+        try
+        {
+            ArchiveDayFile.Delete(_folder, day);
+            Services.GetService<ArchiveBrowser>()?.Invalidate(_folder);
+            _dates = [.. _dates.Where(date => date != day)];
+            _monthCounts.Remove(day);
+            _saved = _doc = null;
+            _exists = _dirty = _confirmDelete = false;
+            _message = $"Deleted {day:yyyy-MM-dd}.";
+            _messageOk = true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _message = $"Couldn't delete: {ex.Message}";
+            _messageOk = false;
+        }
+    }
+
+    // How long a row runs, the way the scheduler reads it: to its end, or to the next row's start.
+    private string Length(int index)
+    {
+        if (_doc is null || ArchiveDayFile.ParseTime(_doc.Rows[index].Time, allowMidnight: false) is not { } start)
+        {
+            return "—";
+        }
+
+        TimeSpan next = _doc.Rows.Select(row => ArchiveDayFile.ParseTime(row.Time, allowMidnight: false))
+            .OfType<TimeSpan>().Where(time => time > start).DefaultIfEmpty(TimeSpan.FromDays(1)).Min();
+        TimeSpan end = ArchiveDayFile.ParseTime(_doc.Rows[index].EndTime, allowMidnight: true) is { } given
+            ? given == TimeSpan.Zero ? TimeSpan.FromDays(1) : given
+            : next;
+        TimeSpan length = (end < next ? end : next) - start;
+        return length <= TimeSpan.Zero ? "—" : length.TotalHours >= 1 ? $"{(int)length.TotalHours}h {length.Minutes:00}m" : $"{length.Minutes}m";
+    }
+
+    private static string Text(ChangeEventArgs e) => e.Value?.ToString()?.Trim() ?? string.Empty;
+
+    private static string? Optional(ChangeEventArgs e) => string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString()!.Trim();
+}

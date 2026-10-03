@@ -1,0 +1,7 @@
+@* The Promos plugin's schedule-wide settings. *@
+
+<PromoEditor Config="Context.Config.Settings.Promos" Changed="Context.NotifyChanged" />
+
+@code {
+    [Parameter, EditorRequired] public PluginEditorContext Context { get; set; } = default!;
+}

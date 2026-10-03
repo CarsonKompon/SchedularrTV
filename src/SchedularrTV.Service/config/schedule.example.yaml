@@ -1,0 +1,169 @@
+---
+# =============================================================================
+# SchedularrTV channel definition
+# Reloaded automatically when this file changes (Scheduler:WatchConfig).
+# =============================================================================
+
+settings:
+  time_zone: "America/New_York"
+  horizon: 48h              # how far ahead playouts are generated
+  rebuild_interval: 1h
+  seed: "SchedularrTV"      # change to reshuffle every deterministic rotation
+
+  temporal_tags:
+    any_time_tag: "Any Time"
+    include_month: true
+    include_season: true
+    include_exact_date: true
+    include_full_date: false
+    include_holidays: true
+
+  # Channel-level `interstitials` blocks inherit anything not set here.
+  interstitials:
+    commercials:
+      base_query: 'tag:"Commercials"'
+      strict_fit: true      # never trimmed, never overruns a gap
+      min_item_duration: 5s
+      max_item_duration: 3m
+      tolerance: 500ms      # residual below this goes straight to the filler tier
+      granularity: 250ms    # knapsack bucket size
+      max_repeats_per_break: 1
+
+    filler:
+      query: "tag:'Bumpers' OR tag:'StationID' OR tag:'MusicVideo'"
+      trimmable: true       # may be cut short to land exactly on the boundary
+      fallback: true
+      stop_before_end: false
+
+  # Settings of plugins, keyed by plugin id. Promos, Generated promos and Archive Follow are built-in plugins.
+  plugins:
+    promos:
+      enabled: true
+      base_query: 'tag:"Promo"'
+      lookahead: 12h
+      max_per_break: 2
+      up_next:
+        enabled: true
+        promo_types: ["up_next", "next", "coming_up_next"]
+        tag: "Up Next"
+        skip_when_same_series: true
+
+# -----------------------------------------------------------------------------
+# Reusable collections. Channels reference these by key.
+# -----------------------------------------------------------------------------
+global_collections:
+  adult_swim_shows:
+    query: "collection:'Adult Swim at Home'"
+    order: shuffle
+
+  nick_90s:
+    query: "collection:'90s Nick'"
+    order: shuffle
+
+  shorts_and_pilots:
+    query: "collection:'Shorts & Pilots'"
+    order: shuffle
+
+channels:
+  - id: "cartoon-network"
+    name: "Cartoon Network / Adult Swim"
+    number: 1
+    auto_temporal_tags: true
+    pad_to_nearest: 30m       # programmes start on the half hour; the remainder becomes the ad break
+
+    # Continuous fallback so the 24h grid is never empty.
+    base_rotation:
+      collection: adult_swim_shows
+      order: shuffle
+
+    # Three-tier interstitial architecture.
+    interstitials:
+      # Tier 1: shorts used to collapse larger gaps between programmes.
+      shows:
+        collection: shorts_and_pilots
+        order: shuffle
+        max_duration: 12m
+
+      # Tier 2: strict commercials. Must fit cleanly; "Up Next" promos are packed here too.
+      commercials:
+        query: "tag:'Commercials' AND (tag:'Adult Swim' OR tag:'Any Channel')"
+        strict_fit: true
+
+      # Tier 3: filler used to zero out micro gaps. Trimmable, non-guaranteed full play.
+      filler:
+        query: "tag:'Bumpers' OR tag:'StationID' OR tag:'MusicVideo'"
+        trimmable: true
+        fallback: true
+
+    blocks:
+      # ---- Fixed weekday anchor (no end_time => anchor slot) -----------------
+      - name: "SpongeBob Morning Anchor"
+        time: "08:00"
+        days: [Monday, Tuesday, Wednesday, Thursday, Friday]
+        shows:
+          - query: "show:'SpongeBob SquarePants'"
+            order: chronological
+
+      # ---- Holiday override -------------------------------------------------
+      - name: "Christmas Marathon"
+        time: "00:00"
+        end_time: "23:59"
+        schedule:
+          date: "12-25"
+          repeat: yearly
+        shows:
+          - collection: adult_swim_shows
+            filter: "title CONTAINS 'christmas' OR plot CONTAINS 'xmas'"
+            filter_scope: collection
+            order: shuffle
+
+      # ---- Night block with nested anchors ----------------------------------
+      - name: "Teletoon at Night"
+        time: "21:00"
+        end_time: "03:00"
+        recurrence: daily
+        commercial_base_tags: ["Adult Swim", "Any Channel"]
+
+        anchors:
+          - time: "22:00"
+            name: "Clone High"
+            show:
+              query: "show:'Clone High'"
+              order: chronological
+
+        shows:
+          - collection: adult_swim_shows
+            order: shuffle
+
+  - id: "nick-rewind"
+    name: "Nick Rewind"
+    number: 2
+    auto_temporal_tags: true
+    commercial_base_tags: ["Nickelodeon", "Any Channel"]
+    pad_to_nearest: 30m
+
+    base_rotation:
+      collection: nick_90s
+      order: shuffle
+
+    interstitials:
+      filler:
+        query: "tag:'Bumpers' OR tag:'StationID'"
+        trimmable: true
+
+    anchors:
+      - name: "Rugrats at noon"
+        time: "12:00"
+        count: 2
+        show:
+          query: "show:'Rugrats'"
+          order: season_episode
+
+    blocks:
+      - name: "SNICK"
+        time: "20:00"
+        end_time: "22:00"
+        days: [Saturday]
+        shows:
+          - collection: nick_90s
+            order: shuffle

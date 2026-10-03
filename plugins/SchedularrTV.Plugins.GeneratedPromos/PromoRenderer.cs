@@ -1,0 +1,435 @@
+using System.Diagnostics;
+using System.Globalization;
+using System.Text;
+using SkiaSharp;
+
+namespace SchedularrTV.GeneratedPromos;
+
+public sealed record PromoRenderResult(string OutputPath, int Frames, TimeSpan Elapsed);
+
+public static class PromoFonts
+{
+    /// <summary>Font families the renderer can draw with, including fonts installed for the current user only.</summary>
+    public static IReadOnlyList<string> Installed() =>
+    [
+        .. SKFontManager.Default.GetFontFamilies()
+            .Where(family => !string.IsNullOrWhiteSpace(family) && family[0] != '@')
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+    ];
+}
+
+/// <summary>Draws composition frames with SkiaSharp and streams them to ffmpeg as raw video.</summary>
+public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
+{
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif"
+    };
+
+    public string VideoEncoder { get; init; } = "libx264";
+
+    public async Task<PromoRenderResult> RenderAsync(PromoComposition composition, string outputPath, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(composition.Duration, TimeSpan.Zero);
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
+
+        bool videoBackground = composition.BackgroundPath is { } background && !IsImage(background);
+        var stopwatch = Stopwatch.StartNew();
+        string? mixed = null;
+        if (composition.AudioPath is not null || composition.Music is not null || composition.BackgroundAudio is not null || composition.OverlayAudio is not null)
+        {
+            // Tempo changes mixed straight into AAC lose the voice in ffmpeg, so the mix is made as PCM first.
+            mixed = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath))!, $".{Guid.NewGuid():N}.audio.wav");
+            await RunAsync(AudioArguments(composition, mixed), cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            return await RenderVideoAsync(composition, outputPath, videoBackground, mixed, stopwatch, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (mixed is not null)
+            {
+                File.Delete(mixed);
+            }
+        }
+    }
+
+    private async Task<PromoRenderResult> RenderVideoAsync(
+        PromoComposition composition,
+        string outputPath,
+        bool videoBackground,
+        string? mixedAudio,
+        Stopwatch stopwatch,
+        CancellationToken cancellationToken)
+    {
+        using var images = new PromoImageCache();
+        using Process ffmpeg = Process.Start(new ProcessStartInfo(ffmpegPath)
+        {
+            RedirectStandardInput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        }.WithArguments(Arguments(composition, outputPath, videoBackground, mixedAudio)))
+            ?? throw new InvalidOperationException("ffmpeg could not be started.");
+
+        var errors = new StringBuilder();
+        Task drain = Task.Run(async () =>
+        {
+            while (await ffmpeg.StandardError.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
+            {
+                lock (errors)
+                {
+                    errors.AppendLine(line);
+                    if (errors.Length > 16_000) errors.Remove(0, errors.Length - 16_000);
+                }
+            }
+        }, cancellationToken);
+
+        try
+        {
+            var info = new SKImageInfo(composition.Width, composition.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
+            // A transparent overlay has to reach ffmpeg with straight alpha.
+            var output = info.WithAlphaType(videoBackground ? SKAlphaType.Unpremul : SKAlphaType.Premul);
+            byte[] frame = new byte[output.BytesSize];
+            using SKSurface surface = SKSurface.Create(info);
+            using var pixels = new SKBitmap(output);
+            Stream input = ffmpeg.StandardInput.BaseStream;
+            PromoLayerFrame?[]? previous = null;
+
+            for (int index = 0; index < composition.FrameCount; index++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var time = TimeSpan.FromSeconds(index / (double)composition.Fps);
+                PromoLayerFrame?[] states = [.. composition.Layers.Select(layer => PromoAnimation.Evaluate(layer, time, composition.Duration, composition.Height))];
+
+                // Held poses between transitions are identical, so resend the last frame unchanged.
+                if (previous is null || !states.SequenceEqual(previous))
+                {
+                    DrawFrame(surface.Canvas, composition, time, images, !videoBackground);
+                    if (!surface.ReadPixels(output, pixels.GetPixels(), pixels.RowBytes, 0, 0))
+                    {
+                        throw new InvalidOperationException("Could not read the rendered frame.");
+                    }
+
+                    pixels.GetPixelSpan().CopyTo(frame);
+                    previous = states;
+                }
+
+                await input.WriteAsync(frame, cancellationToken).ConfigureAwait(false);
+            }
+
+            input.Close();
+            await ffmpeg.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            await drain.ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException || cancellationToken.IsCancellationRequested)
+        {
+            if (!ffmpeg.HasExited) ffmpeg.Kill(entireProcessTree: true);
+            if (cancellationToken.IsCancellationRequested) throw;
+            await ffmpeg.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        if (ffmpeg.ExitCode != 0)
+        {
+            string log;
+            lock (errors) log = errors.ToString();
+            throw new InvalidOperationException($"ffmpeg exited with code {ffmpeg.ExitCode}: {log.Trim()}");
+        }
+
+        return new PromoRenderResult(outputPath, composition.FrameCount, stopwatch.Elapsed);
+    }
+
+    public static void DrawFrame(SKCanvas canvas, PromoComposition composition, TimeSpan time, PromoImageCache images, bool drawBackground = true)
+    {
+        canvas.Clear(drawBackground ? composition.BackgroundColor : SKColors.Transparent);
+        var frame = SKRect.Create(composition.Width, composition.Height);
+
+        if (drawBackground && composition.BackgroundPath is { } background && images.Get(background) is { } image)
+        {
+            DrawImage(canvas, image, frame, cover: true, paint: null);
+        }
+
+        foreach (PromoLayer layer in composition.Layers)
+        {
+            if (PromoAnimation.Evaluate(layer, time, composition.Duration, composition.Height) is not { } state || state.Opacity <= 0)
+            {
+                continue;
+            }
+
+            SKRect bounds = layer.Bounds;
+            canvas.Save();
+            canvas.Translate(state.OffsetX, state.OffsetY);
+            canvas.Scale(state.Scale, state.Scale, bounds.MidX, bounds.MidY);
+            bool translucent = state.Opacity < 0.999f;
+            if (translucent)
+            {
+                // Shadows spill past the text box, so leave headroom around the offscreen layer.
+                SKRect area = bounds;
+                area.Inflate(bounds.Height * 0.25f + 8, bounds.Height * 0.25f + 8);
+                using var alpha = new SKPaint { Color = SKColors.Black.WithAlpha((byte)Math.Round(Math.Clamp(state.Opacity, 0, 1) * 255)) };
+                canvas.SaveLayer(area, alpha);
+            }
+
+            switch (layer)
+            {
+                case PromoRectLayer rect:
+                    using (var paint = new SKPaint { Color = rect.Color, IsAntialias = true })
+                        canvas.DrawRoundRect(bounds, rect.CornerRadius, rect.CornerRadius, paint);
+                    break;
+                case PromoTextLayer text:
+                    DrawText(canvas, text, images);
+                    break;
+                case PromoImageLayer picture when images.Get(picture.Path) is { } bitmap:
+                    DrawImage(canvas, bitmap, bounds, cover: false, paint: null);
+                    break;
+            }
+
+            if (translucent) canvas.Restore();
+            canvas.Restore();
+        }
+    }
+
+    private static void DrawText(SKCanvas canvas, PromoTextLayer layer, PromoImageCache cache)
+    {
+        if (layer.Lines.Count == 0)
+        {
+            return;
+        }
+
+        SKTypeface typeface = cache.Typeface(layer.FontFamily, layer.Bold);
+        using var font = new SKFont(typeface, layer.MaxFontSize) { Edging = SKFontEdging.SubpixelAntialias, Subpixel = true };
+        using var paint = new SKPaint { Color = layer.Color, IsAntialias = true };
+        using SKImageFilter? shadow = layer.Shadow is { } shade
+            ? SKImageFilter.CreateDropShadow(0, font.Size * 0.04f, font.Size * 0.05f, font.Size * 0.05f, shade)
+            : null;
+        paint.ImageFilter = shadow;
+
+        SKRect bounds = layer.Bounds;
+        while (font.Size > 8
+               && (layer.Lines.Max(line => font.MeasureText(line, paint)) > bounds.Width
+                   || font.Spacing * layer.Lines.Count > bounds.Height))
+        {
+            font.Size *= 0.94f;
+        }
+
+        float x = layer.Align switch
+        {
+            SKTextAlign.Center => bounds.MidX,
+            SKTextAlign.Right => bounds.Right,
+            _ => bounds.Left
+        };
+        float y = bounds.Top - font.Metrics.Ascent;
+
+        foreach (string line in layer.Lines)
+        {
+            canvas.DrawText(line, x, y, layer.Align, font, paint);
+            y += font.Spacing;
+        }
+    }
+
+    private static void DrawImage(SKCanvas canvas, SKImage image, SKRect bounds, bool cover, SKPaint? paint)
+    {
+        float scale = cover
+            ? Math.Max(bounds.Width / image.Width, bounds.Height / image.Height)
+            : Math.Min(bounds.Width / image.Width, bounds.Height / image.Height);
+        var destination = SKRect.Create(
+            bounds.MidX - image.Width * scale / 2,
+            bounds.MidY - image.Height * scale / 2,
+            image.Width * scale,
+            image.Height * scale);
+
+        canvas.Save();
+        canvas.ClipRect(bounds);
+        canvas.DrawImage(image, destination, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear), paint);
+        canvas.Restore();
+    }
+
+    public static bool IsImage(string path) => ImageExtensions.Contains(Path.GetExtension(path));
+
+    private static string Seconds(TimeSpan value) =>
+        Math.Max(0, value.TotalSeconds).ToString("0.###", CultureInfo.InvariantCulture);
+
+    private IEnumerable<string> Arguments(PromoComposition composition, string outputPath, bool videoBackground, string? mixedAudio)
+    {
+        string fps = composition.Fps.ToString(CultureInfo.InvariantCulture);
+        string duration = Seconds(composition.Duration);
+        List<string> args =
+        [
+            "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "rawvideo", "-pix_fmt", "bgra", "-s", $"{composition.Width}x{composition.Height}", "-r", fps, "-i", "-"
+        ];
+
+        int next = 1;
+        int? background = null;
+        if (videoBackground)
+        {
+            args.AddRange(composition.BackgroundStart > TimeSpan.Zero
+                ? ["-stream_loop", "-1", "-ss", Seconds(composition.BackgroundStart), "-i", composition.BackgroundPath!]
+                : ["-stream_loop", "-1", "-i", composition.BackgroundPath!]);
+            background = next++;
+        }
+
+        int audio = next;
+        args.AddRange(mixedAudio is null ? ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"] : ["-i", mixedAudio]);
+        next++;
+
+        int? overlay = null;
+        if (composition.OverlayPath is { } overlayPath)
+        {
+            args.AddRange(["-i", overlayPath]);
+            overlay = next++;
+        }
+
+        string size = $"{composition.Width}:{composition.Height}";
+        string overlayChain = overlay is { } generated
+            ? $"[{generated}:v:0]scale={size}:force_original_aspect_ratio=decrease,setsar=1,fps={fps},format=yuva420p,"
+              + $"tpad=stop_mode=clone:stop_duration={duration}[ov];"
+            : string.Empty;
+        const string centred = "overlay=(W-w)/2:(H-h)/2:format=auto";
+
+        string video = background is { } index
+            ? $"{overlayChain}[{index}:v:0]scale={size}:force_original_aspect_ratio=increase,crop={size},fps={fps},setsar=1[bg];"
+              + (overlay is null ? "[bg]" : $"[bg][ov]{centred}[base];[base]")
+              + "[0:v]overlay=format=auto,format=yuv420p[v]"
+            : overlay is null
+                ? "[0:v]format=yuv420p[v]"
+                : $"{overlayChain}[0:v][ov]{centred},format=yuv420p[v]";
+
+        args.AddRange(
+        [
+            "-filter_complex", $"{video};[{audio}:a]apad[a]",
+            "-map", "[v]", "-map", "[a]", "-t", duration,
+            "-c:v", VideoEncoder, "-r", fps
+        ]);
+        if (VideoEncoder == "libx264")
+        {
+            // Measured on 1080p cartoon footage: about a quarter smaller than veryfast/crf 20 at equal SSIM.
+            args.AddRange(["-preset", "medium", "-crf", "22", "-tune", "animation"]);
+        }
+
+        args.AddRange(["-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", outputPath]);
+        return args;
+    }
+
+    private static List<string> AudioArguments(PromoComposition composition, string outputPath)
+    {
+        List<string> args = ["-hide_banner", "-loglevel", "error", "-y"];
+        args.AddRange(composition.AudioPath is { } audioPath ? ["-i", audioPath] : ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]);
+        PromoMusic[] beds = [.. new[] { composition.Music, composition.BackgroundAudio, composition.OverlayAudio }.OfType<PromoMusic>()];
+        foreach (PromoMusic bed in beds)
+        {
+            args.AddRange(bed.Loop
+                ? ["-stream_loop", "-1", "-ss", Seconds(bed.StartAt), "-i", bed.Path]
+                : ["-ss", Seconds(bed.StartAt), "-i", bed.Path]);
+        }
+
+        string delay = ((long)composition.AudioStart.TotalMilliseconds).ToString(CultureInfo.InvariantCulture);
+        string tempo = Math.Clamp(composition.AudioTempo, 0.5, 2).ToString("0.###", CultureInfo.InvariantCulture);
+        string voice = $"[0:a]aresample=48000,aformat=channel_layouts=stereo,atempo={tempo},adelay={delay}:all=1,apad";
+        string ending = $"afade=t=out:st={Seconds(composition.Duration - TimeSpan.FromMilliseconds(250))}:d=0.25[a]";
+        bool voiced = composition.AudioPath is not null;
+        int keys = voiced ? beds.Count(bed => bed.DuckUnderVoice) : 0;
+        List<string> chains = [keys == 0 ? $"{voice}[voice]" : $"{voice},asplit={keys + 1}[voice]{string.Concat(Enumerable.Range(0, keys).Select(key => $"[key{key}]"))}"];
+        List<string> mix = ["[voice]"];
+        int nextKey = 0;
+        for (int index = 0; index < beds.Length; index++)
+        {
+            PromoMusic bed = beds[index];
+            TimeSpan fadeOut = bed.FadeOut > composition.Duration ? composition.Duration : bed.FadeOut;
+            chains.Add($"[{index + 1}:a:0]aresample=48000,aformat=channel_layouts=stereo,"
+                + $"volume={Math.Clamp(bed.Volume, 0, 1).ToString("0.###", CultureInfo.InvariantCulture)},"
+                + $"afade=t=in:st=0:d={Seconds(bed.FadeIn)},afade=t=out:st={Seconds(composition.Duration - fadeOut)}:d={Seconds(fadeOut)},apad[bed{index}]");
+            if (voiced && bed.DuckUnderVoice)
+            {
+                chains.Add($"[bed{index}][key{nextKey++}]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=350[ducked{index}]");
+                mix.Add($"[ducked{index}]");
+            }
+            else
+            {
+                mix.Add($"[bed{index}]");
+            }
+        }
+
+        string sound = beds.Length == 0
+            ? $"{voice},{ending}"
+            : $"{string.Join(';', chains)};{string.Concat(mix)}amix=inputs={mix.Count}:duration=first:normalize=0,{ending}";
+
+        args.AddRange(["-filter_complex", sound, "-map", "[a]", "-t", Seconds(composition.Duration), "-c:a", "pcm_s16le", outputPath]);
+        return args;
+    }
+
+    private async Task RunAsync(IEnumerable<string> arguments, CancellationToken cancellationToken)
+    {
+        using Process process = Process.Start(new ProcessStartInfo(ffmpegPath)
+        {
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        }.WithArguments(arguments)) ?? throw new InvalidOperationException("ffmpeg could not be started.");
+
+        Task<string> error = process.StandardError.ReadToEndAsync(cancellationToken);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            throw;
+        }
+
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"ffmpeg could not mix the audio (exit {process.ExitCode}): {(await error.ConfigureAwait(false)).Trim()}");
+        }
+    }
+}
+
+/// <summary>Decoded images shared across frames; a layer never re-decodes its file per frame.</summary>
+public sealed class PromoImageCache : IDisposable
+{
+    private readonly Dictionary<string, SKImage?> _images = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<(string Family, bool Bold), SKTypeface> _typefaces = [];
+
+    public SKTypeface Typeface(string family, bool bold)
+    {
+        if (!_typefaces.TryGetValue((family, bold), out SKTypeface? typeface))
+        {
+            typeface = SKTypeface.FromFamilyName(family, bold ? SKFontStyle.Bold : SKFontStyle.Normal);
+            _typefaces[(family, bold)] = typeface;
+        }
+
+        return typeface;
+    }
+
+    public SKImage? Get(string path)
+    {
+        if (!_images.TryGetValue(path, out SKImage? image))
+        {
+            image = File.Exists(path) ? SKImage.FromEncodedData(path) : null;
+            _images[path] = image;
+        }
+
+        return image;
+    }
+
+    public void Dispose()
+    {
+        foreach (SKImage? image in _images.Values) image?.Dispose();
+        foreach (SKTypeface typeface in _typefaces.Values) typeface.Dispose();
+        _images.Clear();
+        _typefaces.Clear();
+    }
+}
+
+internal static class ProcessStartInfoExtensions
+{
+    public static ProcessStartInfo WithArguments(this ProcessStartInfo info, IEnumerable<string> arguments)
+    {
+        foreach (string argument in arguments) info.ArgumentList.Add(argument);
+        return info;
+    }
+}

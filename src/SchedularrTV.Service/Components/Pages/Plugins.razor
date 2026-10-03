@@ -1,0 +1,399 @@
+@page "/settings/plugins"
+@using SchedularrTV.Service.Hosting
+@using SchedularrTV.Service.Plugins
+@implements IDisposable
+@inject PluginManager Manager
+@inject AppRuntime Runtime
+@inject IServiceProvider Services
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+
+<PageHeader Title="Plugins" Eyebrow="System">
+    <ChildContent>Media sources, outputs, features and voices. Switches and settings apply straight away; installing or removing a plugin takes a restart.</ChildContent>
+    <Actions>
+        @if (Local.IsLocal)
+        {
+            <button class="btn" type="button" @onclick="OpenFolder"><Icon Name="folder" Size="15" />Open plugins folder</button>
+        }
+    </Actions>
+</PageHeader>
+
+@if (_restarting)
+{
+    <div class="banner banner-warn" role="status">Restarting… this page reloads when the scheduler is back.</div>
+}
+else if (Registry.RestartRequired)
+{
+    <div class="banner banner-ok" role="status">
+        Restart the scheduler to finish installing or removing plugins.
+        <button class="btn btn-sm btn-primary" style="margin-left:10px;" @onclick="Restart">Restart now</button>
+    </div>
+}
+@if (_message is not null)
+{
+    <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status">@_message</div>
+}
+
+<div class="card">
+    <div class="card-head"><h2>Install a plugin</h2></div>
+    @if (Local.IsLocal)
+    {
+        <p class="hint">
+            Choose a plugin's <code>.zip</code>, or the all-plugins zip from a release to install all of them at once (Generated
+            promos, the TikTok, MiniMax and Piper voices, and WeatherStar). Plugins run with the same access to this computer as the scheduler
+            itself, so only install ones you trust.
+        </p>
+        <div class="row row-wrap" style="gap:10px;align-items:center;">
+            <InputFile OnChange="Install" accept=".zip" disabled="@_installing" />
+            @if (_installing)
+            {
+                <span class="hint" style="margin:0;">Unpacking…</span>
+            }
+        </div>
+    }
+    else
+    {
+        <p class="hint">
+            For safety, plugins can only be installed, removed, switched on or off and configured from a browser on the computer
+            running the scheduler. You can also copy a plugin's folder into <code>@Registry.UserDirectory</code> and restart.
+        </p>
+    }
+    <p class="hint" style="margin-top:10px;">
+        Plugins are kept in <code>@Registry.UserDirectory</code>. Updating SchedularrTV leaves that folder alone, and you can
+        update a plugin by replacing its folder there and restarting.
+    </p>
+    <p class="hint" style="margin-top:6px;">Writing your own? See <code>docs/plugins.md</code> in the source repository.</p>
+</div>
+
+@foreach (IGrouping<PluginSource, PluginDescriptor> group in Registry.Plugins.GroupBy(plugin => plugin.Source).OrderBy(group => group.Key))
+{
+    <h3 style="margin:18px 0 8px;">@(group.Key switch { PluginSource.BuiltIn => "Built in", PluginSource.Bundled => "Included", _ => "Installed" })</h3>
+    @foreach (PluginDescriptor plugin in group)
+    {
+        bool wanted = WantedEnabled(plugin);
+        <div class="card plugin-card" @key="plugin.Id">
+            <div class="plugin-head">
+                <div class="plugin-info">
+                    <div class="row row-wrap" style="gap:8px;align-items:center;">
+                        <strong>@plugin.Manifest.Name</strong>
+                        <span class="pill pill-muted">@plugin.Manifest.Version</span>
+                        <span class="pill @StatusClass(plugin)">@StatusText(plugin)</span>
+                        @if (Pending(plugin) is { } pending)
+                        {
+                            <span class="pill pill-warn">@pending</span>
+                        }
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(plugin.Manifest.Description))
+                    {
+                        <p class="hint" style="margin:6px 0 0;">@plugin.Manifest.Description</p>
+                    }
+                    <p class="meta" style="margin:4px 0 0;">
+                        <code>@plugin.Id</code>
+                        @if (!string.IsNullOrWhiteSpace(plugin.Manifest.Author))
+                        {
+                            <text> · by @plugin.Manifest.Author</text>
+                        }
+                        @if (plugin.Manifest.Dependencies.Count > 0)
+                        {
+                            <text> · needs @string.Join(", ", plugin.Manifest.Dependencies.Select(d => d.Optional ? $"{d.Id} (optional)" : d.Id))</text>
+                        }
+                        @if (Uri.TryCreate(plugin.Manifest.Website, UriKind.Absolute, out Uri? site) && site.Scheme is "https" or "http")
+                        {
+                            <text> · </text><a href="@site" target="_blank" rel="noopener">website</a>
+                        }
+                    </p>
+                    @if (plugin.Problem is not null && plugin.Status != PluginStatus.Disabled)
+                    {
+                        <p class="hint warn" style="margin:6px 0 0;">@plugin.Problem</p>
+                    }
+                    else if (plugin.Enabled && plugin.Blocked is not null)
+                    {
+                        <p class="hint warn" style="margin:6px 0 0;">@plugin.Blocked</p>
+                    }
+                </div>
+                <div class="plugin-actions">
+                    @if (Local.IsLocal && plugin.Source == PluginSource.Installed && !Manager.IsPendingRemoval(plugin.Id))
+                    {
+                        @if (_confirmRemove == plugin.Id)
+                        {
+                            <button class="btn btn-sm btn-danger" type="button" @onclick="() => Uninstall(plugin)">Remove?</button>
+                            <button class="btn btn-sm btn-icon" type="button" aria-label="Keep it" title="Keep it" @onclick="() => _confirmRemove = null"><Icon Name="x" Size="14" /></button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-icon btn-ghost" type="button" aria-label="Remove @plugin.Manifest.Name" title="Remove"
+                                    @onclick="() => _confirmRemove = plugin.Id"><Icon Name="trash" Size="15" /></button>
+                        }
+                    }
+                    @if (Local.IsLocal && HasSettings(plugin))
+                    {
+                        <button class="btn btn-sm btn-icon" type="button" aria-label="@plugin.Manifest.Name settings" title="Settings"
+                                @onclick="() => OpenSettings(plugin)"><Icon Name="gear" Size="15" /></button>
+                    }
+                    <label class="switch" title="@(plugin.Manifest.Required ? "Always on: the rest of the app relies on it for now" : wanted ? "On" : "Off")">
+                        <input type="checkbox" role="switch" checked="@wanted" disabled="@(plugin.Manifest.Required || !Local.IsLocal)"
+                               aria-label="@(plugin.Manifest.Name) enabled" @onchange="e => SetEnabled(plugin, e.Value is true)" />
+                        <span class="switch-track" aria-hidden="true"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@if (_settingsFor is { } open)
+{
+    <div class="modal-backdrop">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="@open.Manifest.Name settings">
+            <div class="modal-head">
+                <h2>@open.Manifest.Name</h2>
+                <div class="spacer"></div>
+                <button class="btn btn-sm btn-icon btn-ghost" type="button" aria-label="Close" @onclick="CloseSettings"><Icon Name="x" Size="15" /></button>
+            </div>
+
+            @* A broken plugin component shouldn't take the page down with it. *@
+            <ErrorBoundary>
+                <ChildContent>
+                    @if (_form is not null && BuiltInSettingsPanels.For(open.Id) is { } panel)
+                    {
+                        <DynamicComponent Type="panel" Parameters="@(new Dictionary<string, object> { ["Form"] = _form, ["Changed"] = EventCallback.Factory.Create(this, StateHasChanged) })" />
+                    }
+                    else if (_editor is not null)
+                    {
+                        @* The manifest's fields, then the plugin's own component (downloads, tests, anything more) when it's loaded. *@
+                        @foreach (PluginSetting setting in open.Manifest.Settings)
+                        {
+                            <PluginSettingField Setting="setting" Editor="_editor" />
+                        }
+                        @if (CustomSettings(open) is { } component)
+                        {
+                            <DynamicComponent Type="component" Parameters="@(new Dictionary<string, object> { ["Editor"] = _editor })" />
+                        }
+                    }
+                </ChildContent>
+                <ErrorContent>
+                    <p class="hint warn">This plugin's settings couldn't be shown: @context.Message</p>
+                </ErrorContent>
+            </ErrorBoundary>
+
+            @if (_settingsError is not null)
+            {
+                <p class="hint warn" role="alert">@_settingsError</p>
+            }
+            <p class="hint" style="margin-top:12px;">Settings apply as soon as they're saved.</p>
+            <div class="row" style="gap:8px;margin-top:8px;">
+                <div class="spacer"></div>
+                <button class="btn btn-sm btn-ghost" type="button" @onclick="CloseSettings">Cancel</button>
+                <button class="btn btn-sm btn-primary" type="button" disabled="@(!SettingsDirty)" @onclick="SaveSettings">Save</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [CascadingParameter] private LocalAccess Local { get; set; } = new(false);
+
+    private PluginRegistry Registry => Manager.Registry;
+
+    private bool _installing;
+    private bool _restarting;
+    private string? _message;
+    private bool _messageOk;
+    private string? _confirmRemove;
+
+    // The open settings dialog: a built-in plugin's app-settings section (_form) or a plugin's own settings (_editor).
+    private PluginDescriptor? _settingsFor;
+    private AppSettingsForm? _form;
+    private PluginSettingsEditor? _editor;
+    private string? _settingsError;
+
+    private bool SettingsDirty => _form?.IsDirty ?? _editor?.IsDirty ?? false;
+
+    protected override void OnInitialized() => Registry.Changed += OnRegistryChanged;
+
+    private void OnRegistryChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Registry.Changed -= OnRegistryChanged;
+
+    // A loaded plugin's switch is live; one that isn't loaded shows what will apply on the next start.
+    private bool WantedEnabled(PluginDescriptor plugin) =>
+        plugin.Manifest.Required || (plugin.IsLoaded ? plugin.Enabled : Manager.SavedEnabled(plugin.Id) ?? plugin.Enabled);
+
+    private bool HasSettings(PluginDescriptor plugin) =>
+        BuiltInSettingsPanels.For(plugin.Id) is not null || plugin.Manifest.Settings.Count > 0 || CustomSettings(plugin) is not null;
+
+    private string? Pending(PluginDescriptor plugin) =>
+        Manager.IsPendingRemoval(plugin.Id) ? "Removed after restart"
+        : Manager.IsPendingInstall(plugin.Id) ? "Update waiting for restart"
+        : Registry.Pending.Contains(plugin.Id) ? "Restart to apply"
+        : null;
+
+    private static string StatusText(PluginDescriptor plugin) => plugin.Status switch
+    {
+        PluginStatus.Active when plugin.IsActive => "Running",
+        PluginStatus.Active when plugin.Enabled => "Waiting",
+        PluginStatus.Active or PluginStatus.Disabled => "Off",
+        PluginStatus.Incompatible => "Incompatible",
+        PluginStatus.MissingDependency => "Missing dependency",
+        _ => "Failed"
+    };
+
+    private static string StatusClass(PluginDescriptor plugin) => plugin.Status switch
+    {
+        PluginStatus.Active when plugin.IsActive => "pill-ok",
+        PluginStatus.Active when plugin.Enabled => "pill-warn",
+        PluginStatus.Active or PluginStatus.Disabled => "pill-muted",
+        _ => "pill-error"
+    };
+
+    private static Type? CustomSettings(PluginDescriptor plugin) =>
+        plugin.Manifest.SettingsComponent is { Length: > 0 } name && plugin.Assembly?.GetType(name) is { } type
+        && typeof(IComponent).IsAssignableFrom(type) ? type : null;
+
+    private async Task Install(InputFileChangeEventArgs e)
+    {
+        if (!Local.IsLocal)
+        {
+            return;
+        }
+
+        _installing = true;
+        _message = null;
+        try
+        {
+            await using Stream upload = e.File.OpenReadStream(PluginManager.MaxPackageBytes);
+            PluginInstallResult result = await Manager.InstallAsync(upload, CancellationToken.None);
+            _message = result.Message;
+            _messageOk = result.Ok;
+        }
+        catch (IOException ex)
+        {
+            _message = ex.Message.Contains("exceeds", StringComparison.OrdinalIgnoreCase)
+                ? $"That file is larger than {PluginManager.MaxPackageBytes / 1024 / 1024} MB."
+                : $"Couldn't read the file: {ex.Message}";
+            _messageOk = false;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _message = $"Couldn't install the plugin: {ex.GetBaseException().Message}";
+            _messageOk = false;
+        }
+        finally
+        {
+            _installing = false;
+        }
+    }
+
+    // Each action checks again: the controls are hidden or disabled for remote browsers, but a crafted event mustn't get through.
+    private void SetEnabled(PluginDescriptor plugin, bool enabled)
+    {
+        if (Local.IsLocal && !plugin.Manifest.Required)
+        {
+            Try(() => Manager.SetEnabled(plugin.Id, enabled));
+        }
+    }
+
+    private void Uninstall(PluginDescriptor plugin)
+    {
+        _confirmRemove = null;
+        if (Local.IsLocal)
+        {
+            Try(() => Manager.Uninstall(plugin.Id));
+        }
+    }
+
+    private void OpenSettings(PluginDescriptor plugin)
+    {
+        if (!Local.IsLocal)
+        {
+            return;
+        }
+
+        _settingsError = null;
+        _form = null;
+        _editor = null;
+        if (BuiltInSettingsPanels.For(plugin.Id) is not null)
+        {
+            _form = Services.GetRequiredService<AppSettingsForm>();
+            _form.Load();
+        }
+        else
+        {
+            Dictionary<string, string?> values = Manager.LoadSettings(plugin.Id);
+            foreach (PluginSetting setting in plugin.Manifest.Settings.Where(setting => setting.Default is not null && !values.ContainsKey(setting.Key)))
+            {
+                values[setting.Key] = setting.Default;
+            }
+
+            _editor = new PluginSettingsEditor(plugin.Id, values);
+            _editor.Changed += StateHasChanged;
+        }
+
+        _settingsFor = plugin;
+    }
+
+    private void CloseSettings()
+    {
+        _settingsFor = null;
+        _form = null;
+        _editor = null;
+        _settingsError = null;
+    }
+
+    private void SaveSettings()
+    {
+        if (!Local.IsLocal || _settingsFor is not { } plugin)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_form is not null)
+            {
+                _form.Save();
+            }
+            else if (_editor is not null)
+            {
+                Manager.SaveSettings(plugin.Id, _editor.Values);
+                _editor.MarkSaved();
+            }
+
+            _message = $"Saved {plugin.Manifest.Name}'s settings. They're in use now.";
+            _messageOk = true;
+            CloseSettings();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            _settingsError = $"Couldn't save: {ex.Message}";
+        }
+    }
+
+    private void OpenFolder()
+    {
+        if (Local.IsLocal)
+        {
+            Try(() => SchedularrTV.Hosting.Autostart.OpenFolder(Registry.UserDirectory));
+        }
+    }
+
+    private async Task Restart()
+    {
+        _restarting = true;
+        StateHasChanged();
+        await RestartFlow.RestartAndReloadAsync(Runtime, JS, Navigation, "/settings/plugins");
+    }
+
+    private void Try(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            _message = ex.Message;
+            _messageOk = false;
+        }
+    }
+}

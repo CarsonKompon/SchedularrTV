@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!--
+    Generated promos: promos rendered from templates (text, artwork, music, voice-over). Not part of the main
+    download: it ships in the all-plugins zip of each release (see .github/workflows/build.yml) and is installed
+    from the Plugins page.
+
+    Unlike third-party plugins it builds against the scheduler itself (SchedularrTV.Service: the editor's shared
+    components, the schedule coordinator), so it has to come from the same release as the scheduler it runs in.
+  -->
+  <PropertyGroup>
+    <RootNamespace>SchedularrTV.GeneratedPromos</RootNamespace>
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <!-- Its stylesheet is a plain file served from the plugin's wwwroot, not a Razor static web asset. -->
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+    <ScopedCssEnabled>false</ScopedCssEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Everything of the scheduler's is supplied at runtime (the host's copies always win), so none of it is
+      copied into the plugin: SkiaSharp, YamlDotNet and the rest come from the scheduler too.
+    -->
+    <ProjectReference Include="..\..\src\SchedularrTV.Service\SchedularrTV.Service.csproj" Private="false" ExcludeAssets="runtime;native" />
+    <ProjectReference Include="..\..\src\SchedularrTV.Plugins.Abstractions\SchedularrTV.Plugins.Abstractions.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- plugin.json is copied by plugins/Directory.Build.targets. The stylesheet is served from wwwroot beside the .dll. -->
+    <None Include="assets\**" Link="wwwroot\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

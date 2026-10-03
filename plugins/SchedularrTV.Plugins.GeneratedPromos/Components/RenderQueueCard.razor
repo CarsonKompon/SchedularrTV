@@ -1,0 +1,78 @@
+@* The dashboard's "Generating promos" card, while renders are queued or running. *@
+@using System.Globalization
+@implements IDisposable
+@inject GeneratedPromoService Promos
+
+@if (Promos.Queue is { } queue)
+{
+    <div class="activity">
+        <div class="spinner spinner-sm"></div>
+        <div class="activity-body" role="status" aria-live="polite">
+            <div class="activity-title">
+                Generating promos: @queue.Done of @queue.Total ready
+                @if (queue.Failed > 0)
+                {
+                    <span style="color:var(--error);"> &middot; @queue.Failed failed (retried later)</span>
+                }
+            </div>
+            @foreach (GeneratedPromoJob job in queue.Rendering)
+            {
+                <div class="activity-detail">
+                    Rendering @job.Label for @job.AirsAt.ToLocalTime().ToString("ddd HH:mm") &middot; @Elapsed(job.StartedAt)
+                </div>
+            }
+            @if (queue.Waiting > 0)
+            {
+                <div class="activity-detail">
+                    @queue.Waiting waiting@(queue.NextAirsAt is { } next ? $", next airs {next.ToLocalTime():ddd HH:mm}" : ""). Slots air stand-in commercials until their promo is ready.
+                </div>
+            }
+            <progress aria-label="Generated promo progress" max="100" value="@queue.Percent.ToString("0.#", CultureInfo.InvariantCulture)"></progress>
+        </div>
+    </div>
+}
+
+@code {
+    private readonly CancellationTokenSource _life = new();
+
+    protected override void OnInitialized()
+    {
+        Promos.QueueChanged += OnQueueChanged;
+        _ = TickAsync(_life.Token);
+    }
+
+    public void Dispose()
+    {
+        Promos.QueueChanged -= OnQueueChanged;
+        _life.Cancel();
+        _life.Dispose();
+    }
+
+    // Raised from a render thread, so hop back to the renderer.
+    private void OnQueueChanged() => _ = InvokeAsync(StateHasChanged);
+
+    // Keeps the elapsed times moving between queue changes.
+    private async Task TickAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(4));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                if (Promos.Queue is not null)
+                {
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private static string Elapsed(DateTimeOffset since)
+    {
+        TimeSpan elapsed = DateTimeOffset.UtcNow - since;
+        return elapsed.TotalMinutes >= 1 ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds:00}s" : $"{Math.Max(0, (int)elapsed.TotalSeconds)}s";
+    }
+}

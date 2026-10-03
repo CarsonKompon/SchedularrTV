@@ -1,0 +1,25 @@
+{
+  "id": "tts-piper",
+  "name": "Piper voices",
+  "version": "1.0.0",
+  "description": "Free voices for generated promos that run offline on this computer. Download Piper and voices from this plugin's settings.",
+  "author": "SchedularrTV",
+  "website": "https://github.com/rhasspy/piper",
+  "apiVersion": "1.1",
+  "entryAssembly": "SchedularrTV.Plugins.Piper.dll",
+  "settingsComponent": "SchedularrTV.Speech.Piper.PiperDownloadsPanel",
+  "settings": [
+    {
+      "key": "ExecutablePath",
+      "label": "Piper program",
+      "type": "File",
+      "description": "The piper program. Leave empty to use SchedularrTV/piper/piper/ in your local application data folder, where Download Piper below puts it."
+    },
+    {
+      "key": "VoicesPath",
+      "label": "Voices folder",
+      "type": "Folder",
+      "description": "Voice models: each .onnx with its .onnx.json beside it. Leave empty to use SchedularrTV/piper/voices/, where voices below are downloaded to."
+    }
+  ]
+}

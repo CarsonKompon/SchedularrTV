@@ -1,0 +1,71 @@
+<section class="block-section" aria-label="Blocks">
+    <div class="block-heading">
+        <h2>Blocks (@Blocks.Count)</h2>
+        <button class="btn btn-sm" @onclick="() => Add(false)">Add block</button>
+        <button class="btn btn-sm" @onclick="() => Add(true)">Add anchor slot</button>
+    </div>
+    <div class="block-workspace">
+        <nav class="block-list" aria-label="Block selection">
+            @foreach (BlockConfig block in Blocks)
+            {
+                <button type="button" class="block-choice @(ReferenceEquals(block, _selected) ? "selected" : "")"
+                        aria-pressed="@(ReferenceEquals(block, _selected) ? "true" : "false")"
+                        @onclick="() => _selected = block" @key="block">
+                    <strong>@(string.IsNullOrWhiteSpace(block.Name) ? "Untitled block" : block.Name)</strong>
+                    <span>@TimeLabel(block)</span>
+                    @if (!block.FollowOnly)
+                    {
+                        <small>@(block.Recurrence?.ToString() ?? "Daily")</small>
+                    }
+                </button>
+            }
+            @if (Blocks.Count == 0)
+            {
+                <p class="hint">No blocks</p>
+            }
+        </nav>
+        <div class="block-inspector">
+            @if (_selected is { } selected)
+            {
+                <BlockEditor @key="selected" Block="selected" Changed="Changed" OnRemove="() => Remove(selected)" />
+            }
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public List<BlockConfig> Blocks { get; set; } = [];
+    [Parameter] public EventCallback Changed { get; set; }
+    private BlockConfig? _selected;
+
+    protected override void OnParametersSet()
+    {
+        if (_selected is null || !Blocks.Contains(_selected)) _selected = Blocks.FirstOrDefault();
+    }
+
+    private static string TimeLabel(BlockConfig block) =>
+        block.FollowOnly ? "Follow Only" :
+        $"{block.Time?.ToString(@"hh\:mm") ?? "Unscheduled"}{(block.EndTime is { } end ? $" - {end:hh\\:mm}" : " / Anchor slot")}";
+
+    private async Task Add(bool anchor)
+    {
+        _selected = new BlockConfig
+        {
+            Name = anchor ? "New anchor slot" : "New block",
+            Time = TimeSpan.FromHours(anchor ? 8 : 20),
+            EndTime = anchor ? null : TimeSpan.FromHours(22),
+            Recurrence = Recurrence.Daily,
+            Shows = [new ContentSelector()]
+        };
+        Blocks.Add(_selected);
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Remove(BlockConfig block)
+    {
+        int index = Blocks.IndexOf(block);
+        Blocks.Remove(block);
+        _selected = Blocks.Count == 0 ? null : Blocks[Math.Clamp(index, 0, Blocks.Count - 1)];
+        await Changed.InvokeAsync();
+    }
+}

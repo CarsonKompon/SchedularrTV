@@ -1,0 +1,287 @@
+@* Shown in Piper's settings dialog under its fields: download the program and voices without leaving the app. *@
+@using Microsoft.Extensions.DependencyInjection
+@using Microsoft.Extensions.Options
+@implements IDisposable
+@inject IServiceProvider Services
+
+<div class="piper-panel">
+    <h3>Piper program</h3>
+    @if (ProgramInstalled)
+    {
+        <p class="hint" style="margin:0 0 8px;">Installed at <code>@ProgramPath</code>.</p>
+    }
+    else
+    {
+        <p class="hint" style="margin:0 0 8px;">Not installed yet. It will go in <code>@(Path.GetDirectoryName(ProgramPath))</code>.</p>
+    }
+    @if (PiperDownloads.ProgramAsset() is null)
+    {
+        <p class="hint warn">Piper doesn't have a download for this kind of computer; build or install it yourself and choose it above.</p>
+    }
+    else
+    {
+        <div class="row" style="gap:10px;align-items:center;">
+            <button class="btn btn-sm @(ProgramInstalled ? "" : "btn-primary")" type="button" disabled="@Busy" @onclick="InstallProgram">
+                @(ProgramInstalled ? "Download again" : "Download Piper")
+            </button>
+            @if (_programProgress is { } done)
+            {
+                <progress max="1" value="@done.ToString(CultureInfo.InvariantCulture)" style="flex:1;max-width:220px;"></progress>
+                <span class="hint" style="margin:0;">@((int)(done * 100))%</span>
+            }
+        </div>
+    }
+
+    <h3 style="margin-top:18px;">Voices</h3>
+    @{ IReadOnlyList<string> installed = PiperDownloads.InstalledVoices(VoicesPath); }
+    @if (installed.Count == 0)
+    {
+        <p class="hint" style="margin:0 0 8px;">No voices in <code>@VoicesPath</code> yet. Download some below.</p>
+    }
+    else
+    {
+        <p class="hint" style="margin:0 0 6px;">In <code>@VoicesPath</code>:</p>
+        <div class="row row-wrap" style="gap:6px;margin-bottom:10px;">
+            @foreach (string voice in installed)
+            {
+                <span class="pill pill-muted" style="gap:4px;">
+                    @voice
+                    <button class="piper-remove" type="button" title="Remove @voice" aria-label="Remove @voice" disabled="@Busy" @onclick="() => Remove(voice)">×</button>
+                </span>
+            }
+        </div>
+    }
+
+    @if (_catalog is null)
+    {
+        <button class="btn btn-sm" type="button" disabled="@(_loadingCatalog || Busy)" @onclick="LoadCatalog">
+            @(_loadingCatalog ? "Loading voices…" : "Browse voices to download")
+        </button>
+    }
+    else
+    {
+        <div class="row row-wrap" style="gap:8px;margin-bottom:8px;">
+            <select value="@_language" @onchange="e => _language = e.Value?.ToString() ?? string.Empty" aria-label="Language">
+                @foreach (string language in _catalog.Select(voice => voice.Language).Distinct())
+                {
+                    <option value="@language">@language</option>
+                }
+            </select>
+            <select value="@_quality" @onchange="e => _quality = e.Value?.ToString() ?? string.Empty" aria-label="Quality">
+                <option value="">Any quality</option>
+                <option value="x_low">Extra low</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+            </select>
+        </div>
+        <div class="piper-voices">
+            @foreach (PiperCatalogVoice voice in Shown)
+            {
+                bool have = installed.Contains(voice.Key, StringComparer.OrdinalIgnoreCase);
+                <div class="piper-voice">
+                    <div style="min-width:0;flex:1;">
+                        <strong>@Words(voice.Name)</strong>
+                        <span class="hint" style="margin:0;">
+                            @Words(voice.Quality) quality@(voice.Speakers > 1 ? $" · {voice.Speakers} speakers" : "") · @Size(voice.SizeBytes)
+                        </span>
+                    </div>
+                    @if (_voiceProgress.TryGetValue(voice.Key, out double done))
+                    {
+                        <span class="hint" style="margin:0;">@((int)(done * 100))%</span>
+                    }
+                    else if (have)
+                    {
+                        <span class="pill pill-ok">Installed</span>
+                    }
+                    else
+                    {
+                        <button class="btn btn-sm" type="button" disabled="@_installingProgram" @onclick="() => InstallVoice(voice)">Download</button>
+                    }
+                </div>
+            }
+        </div>
+        <p class="hint" style="margin-top:8px;">
+            Listen to them first at <a href="https://rhasspy.github.io/piper-samples/" target="_blank" rel="noopener">rhasspy.github.io/piper-samples</a>.
+            Downloaded voices can be used straight away (if you changed the voices folder above, save and restart first).
+        </p>
+    }
+
+    @if (Busy)
+    {
+        <p class="hint" style="margin-top:8px;">Keep this window open until the download finishes; closing it stops the download.</p>
+    }
+    @if (_message is not null)
+    {
+        <p class="hint @(_messageOk ? "" : "warn")" role="status" style="margin-top:8px;">@_message</p>
+    }
+</div>
+
+<style>
+    .piper-panel { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 14px; }
+    .piper-panel h3 { font-size: 13px; margin: 0 0 6px; }
+    .piper-voices { max-height: 280px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+    .piper-voice { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+    .piper-voice:last-child { border-bottom: 0; }
+    .piper-voice .hint { display: block; }
+    .piper-remove { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; opacity: .7; }
+    .piper-remove:hover { opacity: 1; }
+    .hint.warn { color: #ffd08a; }
+</style>
+
+@code {
+    [Parameter] public PluginSettingsEditor Editor { get; set; } = default!;
+
+    private readonly CancellationTokenSource _closing = new();
+    private readonly Dictionary<string, double> _voiceProgress = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<PiperCatalogVoice>? _catalog;
+    private bool _loadingCatalog;
+    private bool _installingProgram;
+    private double? _programProgress;
+    private string _language = string.Empty;
+    private string _quality = string.Empty;
+    private string? _message;
+    private bool _messageOk;
+    private DateTime _lastPaint;
+
+    private bool Busy => _installingProgram || _voiceProgress.Count > 0;
+
+    // What's in force: the field above if set, else what's saved (or the default).
+    private PiperOptions Saved => Services.GetService<IOptions<PiperOptions>>()?.Value ?? new PiperOptions();
+
+    private PiperPaths Paths => Services.GetService<PiperPaths>()
+        ?? new PiperPaths(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SchedularrTV"));
+
+    private string ProgramPath => Paths.Resolve(Editor.Get("ExecutablePath"), Saved.ExecutablePath);
+
+    private string VoicesPath => Paths.Resolve(Editor.Get("VoicesPath"), Saved.VoicesPath);
+
+    private bool ProgramInstalled => File.Exists(ProgramPath);
+
+    private IEnumerable<PiperCatalogVoice> Shown =>
+        (_catalog ?? []).Where(voice => voice.Language == _language && (_quality.Length == 0 || voice.Quality == _quality));
+
+    public void Dispose()
+    {
+        _closing.Cancel();
+        _closing.Dispose();
+    }
+
+    private async Task InstallProgram()
+    {
+        _installingProgram = true;
+        _programProgress = 0;
+        _message = null;
+        try
+        {
+            string installed = await PiperDownloads.InstallProgramAsync(ProgramPath, Reporter(value => { if (_installingProgram) _programProgress = value; }), _closing.Token);
+            if (string.Equals(installed, ProgramPath, StringComparison.OrdinalIgnoreCase))
+            {
+                Say("Piper is installed and ready.", ok: true);
+            }
+            else
+            {
+                // The chosen file had another name; point the setting at the program that was installed.
+                Editor.Set("ExecutablePath", installed);
+                Say("Piper is installed. Save to use it.", ok: true);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Say($"Couldn't download Piper: {ex.Message}", ok: false);
+        }
+        finally
+        {
+            _installingProgram = false;
+            _programProgress = null;
+        }
+    }
+
+    private async Task LoadCatalog()
+    {
+        _loadingCatalog = true;
+        _message = null;
+        try
+        {
+            _catalog = await PiperDownloads.LoadCatalogAsync(_closing.Token);
+
+            // Start with the language this computer uses, else US English.
+            string culture = CultureInfo.CurrentUICulture.Name.Replace('-', '_');
+            _language = (_catalog.FirstOrDefault(voice => voice.LanguageCode.Equals(culture, StringComparison.OrdinalIgnoreCase))
+                ?? _catalog.FirstOrDefault(voice => voice.LanguageCode == "en_US")
+                ?? _catalog.FirstOrDefault())?.Language ?? string.Empty;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Say($"Couldn't load the voice list: {ex.Message}", ok: false);
+        }
+        finally
+        {
+            _loadingCatalog = false;
+        }
+    }
+
+    private async Task InstallVoice(PiperCatalogVoice voice)
+    {
+        _voiceProgress[voice.Key] = 0;
+        _message = null;
+        try
+        {
+            await PiperDownloads.InstallVoiceAsync(voice, VoicesPath, Reporter(value => { if (_voiceProgress.ContainsKey(voice.Key)) _voiceProgress[voice.Key] = value; }), _closing.Token);
+            Say($"Downloaded {Words(voice.Name)} ({Words(voice.Quality)}).", ok: true);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Say($"Couldn't download {Words(voice.Name)}: {ex.Message}", ok: false);
+        }
+        finally
+        {
+            _voiceProgress.Remove(voice.Key);
+        }
+    }
+
+    private void Remove(string voice)
+    {
+        try
+        {
+            PiperDownloads.RemoveVoice(voice, VoicesPath);
+            Say($"Removed {voice}.", ok: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            Say($"Couldn't remove {voice}: {ex.Message}", ok: false);
+        }
+    }
+
+    // Progress arrives on download threads; it's applied on the UI and painted a few times a second.
+    private Progress<double> Reporter(Action<double> apply) => new(value => _ = InvokeAsync(() =>
+    {
+        apply(value);
+        if (DateTime.UtcNow - _lastPaint > TimeSpan.FromMilliseconds(200) || value >= 1)
+        {
+            _lastPaint = DateTime.UtcNow;
+            StateHasChanged();
+        }
+    }));
+
+    private void Say(string message, bool ok)
+    {
+        _message = message;
+        _messageOk = ok;
+    }
+
+    private static string Words(string value) =>
+        CultureInfo.InvariantCulture.TextInfo.ToTitleCase(value.Replace('_', ' ').Replace('-', ' '));
+
+    private static string Size(long bytes) =>
+        bytes <= 0 ? "size unknown" : bytes >= 1_000_000 ? $"{bytes / 1_000_000.0:0} MB" : $"{bytes / 1000.0:0} KB";
+}

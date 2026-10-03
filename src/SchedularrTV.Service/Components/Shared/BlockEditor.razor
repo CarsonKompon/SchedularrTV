@@ -1,0 +1,279 @@
+@* One block: when it runs, what it plays, and its own anchors and overrides. *@
+@inject ConfigEditor Editor
+@inject PluginRegistry Registry
+@inject IEnumerable<PluginEditorSection> EditorSections
+
+<div class="card">
+    <div class="card-head">
+        <h2>@(string.IsNullOrWhiteSpace(Block.Name) ? "Untitled block" : Block.Name)</h2>
+        @if (Block.FollowOnly)
+        {
+            <span class="pill pill-muted">Follow Only</span>
+        }
+        else if (Block.IsAnchorSlot)
+        {
+            <span class="pill pill-muted">anchor slot</span>
+        }
+        <div class="spacer"></div>
+        <button class="btn btn-sm btn-danger" @onclick="OnRemove">Delete block</button>
+    </div>
+
+    @* Archive Follow maps archived slots onto blocks like this one; off without the plugin unless already set. *@
+    @if (Block.FollowOnly || Registry.IsActive(BuiltInPluginIds.ArchiveFollow))
+    {
+        <label class="check">
+            <input type="checkbox" checked="@Block.FollowOnly" @onchange="OnFollowOnlyChanged" />
+            Follow Only
+        </label>
+    }
+
+    <div class="grid grid-3">
+        <label class="field">
+            <span>Name</span>
+            <input type="text" value="@Block.Name"
+                   @onchange="e => { Block.Name = e.Value?.ToString() ?? string.Empty; Changed.InvokeAsync(); }" />
+        </label>
+        @if (!Block.FollowOnly)
+        {
+        <label class="field">
+            <span>Starts</span>
+            <input type="time" value="@Format(Block.Time)" @onchange="e => SetTime(e, start: true)" />
+        </label>
+        <label class="field">
+            <span>Ends <span style="color:var(--muted);">(blank = anchor slot)</span></span>
+            <input type="time" value="@Format(Block.EndTime)" @onchange="e => SetTime(e, start: false)" />
+        </label>
+        }
+    </div>
+
+    @if (!Block.FollowOnly)
+    {
+    @if (Block is { Time: not null, EndTime: not null } && Block.EndTime <= Block.Time)
+    {
+        <p class="hint">This block crosses midnight.</p>
+    }
+
+    <h3>When it runs</h3>
+    <label class="field">
+        <span>Recurrence</span>
+        <select value="@(Block.Recurrence?.ToString() ?? "Daily")" @onchange="OnRecurrenceChanged">
+            <option value="Daily">Every day</option>
+            <option value="DaysOfWeek">Certain days</option>
+            <option value="SpecificDate">A specific date</option>
+        </select>
+    </label>
+
+    @if (Block.Recurrence == Recurrence.DaysOfWeek)
+    {
+        <DayOfWeekPicker Days="Block.Days" Changed="Changed" Label="Days" />
+    }
+    else if (Block.Recurrence == Recurrence.SpecificDate)
+    {
+        <div class="grid grid-2">
+            <label class="field">
+                <span>Repeat</span>
+                <select value="@(Schedule.Repeat)" @onchange="OnRepeatChanged">
+                    <option value="Yearly">Every year (MM-DD)</option>
+                    <option value="Monthly">Every month (DD)</option>
+                    <option value="None">Once (yyyy-MM-dd)</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Date</span>
+                @if (Schedule.Repeat == RepeatModifier.None)
+                {
+                    <input type="date" value="@Schedule.Date"
+                           @onchange="e => { Schedule.Date = e.Value?.ToString(); Changed.InvokeAsync(); }" />
+                }
+                else
+                {
+                    <input type="text" value="@Schedule.Date"
+                           placeholder="@(Schedule.Repeat == RepeatModifier.Monthly ? "15" : "12-25")"
+                           @onchange="e => { Schedule.Date = e.Value?.ToString(); Changed.InvokeAsync(); }" />
+                }
+            </label>
+        </div>
+        <label class="field">
+            <span>Priority <span style="color:var(--muted);">(higher wins when blocks overlap)</span></span>
+            <input type="number" value="@(Block.Priority?.ToString() ?? "")" placeholder="@Block.EffectivePriority"
+                   @onchange="e => { Block.Priority = int.TryParse(e.Value?.ToString(), out int v) ? v : null; Changed.InvokeAsync(); }" />
+        </label>
+    }
+
+    }
+
+    <h3>What plays</h3>
+    @foreach (ContentSelector selector in Block.Shows.ToList())
+    {
+        <SelectorEditor Selector="selector" Label="Rotation pool" Changed="Changed"
+                        OnRemove="() => RemoveShow(selector)" />
+    }
+    <button class="btn btn-sm" @onclick="AddShow">Add a pool</button>
+
+    @if (!Block.FollowOnly)
+    {
+        <AnchorListEditor Anchors="Block.Anchors" Label="Anchors inside this block" Changed="Changed" />
+    }
+
+    <h3>Overrides</h3>
+    <p class="hint">Anything left blank inherits from the channel.</p>
+
+    <div class="grid grid-2">
+        <DurationInput Label="Pad programmes to" Value="Block.PadToNearest"
+                       ValueChanged="v => { Block.PadToNearest = v; Changed.InvokeAsync(); }" />
+        <DurationInput Label="Longest break" Value="Block.MaxBreak"
+                       ValueChanged="v => { Block.MaxBreak = v; Changed.InvokeAsync(); }" />
+    </div>
+
+    <label class="field">
+        <span>Fill a slot with more episodes of the same show</span>
+        <select value="@(Block.StackToFill?.ToString() ?? "")"
+                @onchange="e => { string v = e.Value?.ToString() ?? string.Empty; Block.StackToFill = v.Length == 0 ? null : bool.Parse(v); Changed.InvokeAsync(); }">
+            <option value="">Inherit from channel</option>
+            <option value="True">Yes</option>
+            <option value="False">No</option>
+        </select>
+    </label>
+
+    <TagListEditor Label="Commercial brand tags" Placeholder="Adult Swim"
+                   Values="_commercialTags" Changed="OnTagsChanged" />
+
+    <label class="check">
+        <input type="checkbox" checked="@(Block.AutoTemporalTags ?? false)"
+               @onchange="e => { Block.AutoTemporalTags = (bool)(e.Value ?? false); Changed.InvokeAsync(); }" />
+        <span>Match seasonal / holiday commercial tags</span>
+    </label>
+
+    @* Promos and any installed plugin's block settings. *@
+    @foreach (PluginEditorSection section in BlockSections)
+    {
+        <h3>@section.Title</h3>
+        <DynamicComponent @key="section.Id" Type="section.Component" Parameters="SectionParameters(section)" />
+    }
+
+    <details>
+        <summary style="cursor:pointer;color:var(--muted);font-size:12px;margin:8px 0;">
+            Block-specific interstitials and mid-rolls
+        </summary>
+        @if (Block.Interstitials is null)
+        {
+            <button class="btn btn-sm" @onclick="() => { Block.Interstitials = new InterstitialsConfig(); Changed.InvokeAsync(); }">
+                Override interstitials
+            </button>
+        }
+        else
+        {
+            <InterstitialsEditor Interstitials="Block.Interstitials" Changed="Changed" />
+            <button class="btn btn-sm btn-danger" @onclick="() => { Block.Interstitials = null; Changed.InvokeAsync(); }">
+                Inherit from channel
+            </button>
+        }
+
+        @if (Block.MidRoll is null)
+        {
+            <button class="btn btn-sm" @onclick="() => { Block.MidRoll = new MidRollConfig(); Changed.InvokeAsync(); }">
+                Override mid-rolls
+            </button>
+        }
+        else
+        {
+            <MidRollEditor Config="Block.MidRoll" Changed="Changed" />
+            <button class="btn btn-sm btn-danger" @onclick="() => { Block.MidRoll = null; Changed.InvokeAsync(); }">
+                Inherit from channel
+            </button>
+        }
+    </details>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public BlockConfig Block { get; set; } = new() { Name = "" };
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback OnRemove { get; set; }
+
+    private List<string> _commercialTags = [];
+
+    private BlockSchedule Schedule => Block.Schedule ??= new BlockSchedule { Repeat = RepeatModifier.Yearly };
+
+    private IEnumerable<PluginEditorSection> BlockSections =>
+        EditorSections.Where(section => section.Surface == EditorSurface.Block).OrderBy(section => section.Order);
+
+    private Dictionary<string, object> SectionParameters(PluginEditorSection section) => new()
+    {
+        ["Context"] = new PluginEditorContext
+        {
+            PluginId = section.PluginId,
+            Config = Editor.Working,
+            Channel = Editor.Working.Channels.FirstOrDefault(channel => channel.Blocks.Contains(Block)),
+            Block = Block,
+            Changed = () => Changed.InvokeAsync()
+        }
+    };
+
+    protected override void OnParametersSet()
+    {
+        _commercialTags = Block.CommercialBaseTags ?? [];
+    }
+
+    private static string Format(TimeSpan? value) => value?.ToString(@"hh\:mm") ?? "";
+
+    private async Task OnFollowOnlyChanged(ChangeEventArgs args)
+    {
+        Block.FollowOnly = args.Value is true;
+        if (Block.FollowOnly)
+        {
+            Block.Time = null;
+            Block.EndTime = null;
+        }
+        await Changed.InvokeAsync();
+    }
+
+    private async Task SetTime(ChangeEventArgs e, bool start)
+    {
+        string raw = e.Value?.ToString() ?? "";
+        TimeSpan? value = TimeSpan.TryParse(raw, out TimeSpan parsed) ? parsed : null;
+
+        if (start) { Block.Time = value; } else { Block.EndTime = value; }
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnRecurrenceChanged(ChangeEventArgs e)
+    {
+        Block.Recurrence = Enum.Parse<Recurrence>(e.Value?.ToString() ?? nameof(Recurrence.Daily));
+
+        if (Block.Recurrence != Recurrence.SpecificDate)
+        {
+            Block.Schedule = null;
+        }
+
+        if (Block.Recurrence != Recurrence.DaysOfWeek)
+        {
+            Block.Days.Clear();
+        }
+
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnRepeatChanged(ChangeEventArgs e)
+    {
+        Schedule.Repeat = Enum.Parse<RepeatModifier>(e.Value?.ToString() ?? nameof(RepeatModifier.Yearly));
+        await Changed.InvokeAsync();
+    }
+
+    private async Task AddShow()
+    {
+        Block.Shows.Add(new ContentSelector());
+        await Changed.InvokeAsync();
+    }
+
+    private async Task RemoveShow(ContentSelector selector)
+    {
+        Block.Shows.Remove(selector);
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnTagsChanged()
+    {
+        Block.CommercialBaseTags = _commercialTags.Count > 0 ? _commercialTags : null;
+        await Changed.InvokeAsync();
+    }
+}

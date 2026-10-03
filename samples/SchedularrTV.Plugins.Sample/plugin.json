@@ -1,0 +1,23 @@
+{
+  "id": "sample.hello",
+  "name": "Hello plugin (sample)",
+  "version": "1.0.0",
+  "description": "A sample showing settings, a page and a playout processor that tags programmes with a per-channel screen bug.",
+  "author": "SchedularrTV",
+  "apiVersion": "1.0",
+  "entryAssembly": "SchedularrTV.Plugins.Sample.dll",
+  "enabledByDefault": true,
+  "dependencies": [],
+  "settings": [
+    {
+      "key": "Greeting",
+      "label": "Greeting",
+      "type": "Text",
+      "default": "Hello from a plugin!",
+      "description": "Shown on the plugin's page."
+    }
+  ],
+  "pages": [
+    { "path": "/plugins/sample.hello", "title": "Hello", "icon": "sparkles" }
+  ]
+}

@@ -1,0 +1,11 @@
+@page "/plugins/sample.hello"
+@inject HelloSettings Settings
+
+@* Plugin pages use the scheduler's layout and styles; the classes below are the app's own. *@
+<div class="card">
+    <div class="card-head"><h2>@Settings.Greeting</h2></div>
+    <p class="hint">
+        This page comes from the sample plugin. Its settings are on the Plugins page, and its playout processor tags
+        programmes on any channel whose YAML has a <code>plugins: sample.hello: bug: …</code> section.
+    </p>
+</div>

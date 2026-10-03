@@ -1,0 +1,537 @@
+@* Clip blocks played around a title's episodes, laid out as a timeline. *@
+@using SchedularrTV.Providers.Jellyfin
+@inject JellyfinClient Jellyfin
+@inject LibraryBrowser Library
+@inject ConfigEditor Editor
+
+<div class="modal-backdrop" @onclick="Close">
+    <div class="modal modal-wide" @onclick:stopPropagation="true">
+        <h2 style="margin-top:0;">@Include.Show &mdash; intros &amp; outros</h2>
+        <p class="hint">
+            Blocks play in the order shown, wrapped around the episodes filling the slot. Each block
+            holds a pool of clips and decides which one to use when it plays.
+        </p>
+
+        @if (ShowWide)
+        {
+            <p class="hint">
+                These play wherever the show is scheduled. A collection can still give the show its own blocks instead
+                (from the collection's <strong>Intros/outros…</strong>).
+                @if (OverriddenIn.Count > 0)
+                {
+                    <text> Right now @string.Join(", ", OverriddenIn) @(OverriddenIn.Count == 1 ? "does" : "do"), so these don't play there.</text>
+                }
+            </p>
+        }
+        else
+        {
+            <div class="row row-wrap" style="gap:8px;align-items:baseline;">
+                <label class="check">
+                    <input type="radio" name="bumper-scope" checked="@(!IsOverride)" @onchange="() => SetScope(false)" />
+                    <span>Use everywhere this show plays</span>
+                </label>
+                <label class="check">
+                    <input type="radio" name="bumper-scope" checked="@IsOverride" @onchange="() => SetScope(true)" />
+                    <span>Only in this collection</span>
+                </label>
+            </div>
+            <p class="hint">
+                @(IsOverride
+                    ? "These blocks replace the show's own for this collection only."
+                    : "Editing these changes the show wherever it is scheduled.")
+            </p>
+        }
+
+        <div class="bumper-timeline">
+            @foreach (BumperBlock block in Ordered(BumperPosition.Intro))
+            {
+                <div class="bumper-chip @(block == _expanded ? "bumper-chip-on" : "")" @onclick="() => Expand(block)">
+                    <div class="bumper-chip-name">@Label(block)</div>
+                    <div class="bumper-chip-meta">@Summarise(block)</div>
+                </div>
+            }
+
+            <div class="bumper-chip bumper-chip-episode">
+                <div class="bumper-chip-name">Episode</div>
+                <div class="bumper-chip-meta">@(Include.Show ?? "the programme")</div>
+            </div>
+
+            @foreach (BumperBlock block in Ordered(BumperPosition.Outro))
+            {
+                <div class="bumper-chip @(block == _expanded ? "bumper-chip-on" : "")" @onclick="() => Expand(block)">
+                    <div class="bumper-chip-name">@Label(block)</div>
+                    <div class="bumper-chip-meta">@Summarise(block)</div>
+                </div>
+            }
+
+            @if (Blocks.Count == 0)
+            {
+                <div class="hint" style="margin:0 0 0 12px;align-self:center;">No blocks yet.</div>
+            }
+        </div>
+
+        @if (_error is not null)
+        {
+            <div class="empty">@_error</div>
+        }
+
+        @foreach (BumperPosition position in (BumperPosition[])[BumperPosition.Intro, BumperPosition.Outro])
+        {
+            <div class="row" style="align-items:baseline;margin-top:14px;">
+                <h3 style="margin:0;">@(position == BumperPosition.Intro ? "Before the episode" : "After the episode")</h3>
+                <div class="spacer"></div>
+                <button class="btn btn-sm" @onclick="() => AddBlock(position)">Add block</button>
+            </div>
+
+            @foreach (BumperBlock block in Ordered(position))
+            {
+                <div class="list-row" style="align-items:flex-start;flex-wrap:wrap;">
+                    <input type="text" style="width:190px;" placeholder="Opening theme" value="@block.Name"
+                           @onchange="e => Rename(block, e)" />
+
+                    <label class="inline-field" title="How this block picks a clip when it plays">
+                        <span>Picks</span>
+                        <select value="@block.Selection" @onchange="e => SetSelection(block, e)">
+                            @foreach (BumperSelection option in Enum.GetValues<BumperSelection>())
+                            {
+                                <option value="@option">@Describe(option)</option>
+                            }
+                        </select>
+                    </label>
+
+                    <span class="meta">@Summarise(block)</span>
+
+                    <fieldset style="flex-basis:100%;min-width:0;" aria-label="Seasons for @Label(block)">
+                        <legend>Seasons: @(block.Seasons.Count == 0 ? "All seasons" : string.Join(", ", block.Seasons.Order()))</legend>
+                        <div class="row row-wrap" style="gap:12px;">
+                            @foreach (int season in _seasons.Concat(block.Seasons).Distinct().Order())
+                            {
+                                <label class="check">
+                                    <input type="checkbox" checked="@block.Seasons.Contains(season)"
+                                           @onchange="args => ToggleSeason(block, season, args.Value is true)" />
+                                    <span>@(season == 0 ? "Specials (0)" : $"Season {season}")</span>
+                                </label>
+                            }
+                            <button class="btn btn-sm" disabled="@(block.Seasons.Count == 0)"
+                                    @onclick="() => ClearSeasons(block)">All seasons</button>
+                        </div>
+                    </fieldset>
+
+                    <div class="spacer"></div>
+
+                    <button class="btn btn-sm" disabled="@(IsFirst(block))" @onclick="() => Move(block, -1)">↑</button>
+                    <button class="btn btn-sm" disabled="@(IsLast(block))" @onclick="() => Move(block, 1)">↓</button>
+                    <button class="btn btn-sm" @onclick="() => Expand(block)">
+                        @(block == _expanded ? "Hide clips" : "Clips…")
+                    </button>
+                    <button class="btn btn-sm btn-danger" @onclick="() => RemoveBlock(block)">Remove</button>
+
+                    @if (block == _expanded)
+                    {
+                        <div style="flex-basis:100%;margin-top:10px;">
+                            @if (block.Clips.Count == 0)
+                            {
+                                <p class="hint">No clips yet. Add one from the show's extras below.</p>
+                            }
+                            else
+                            {
+                                <table class="table">
+                                    <thead>
+                                        <tr><th>Clip</th><th style="width:90px;">Length</th><th>Plays with</th><th style="width:150px;"></th></tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (BumperClip clip in block.Clips.ToList())
+                                        {
+                                            <tr>
+                                                <td>@ClipName(clip)</td>
+                                                <td>@LengthOf(clip)</td>
+                                                <td>
+                                                    @if (clip.Episodes.Count == 0)
+                                                    {
+                                                        <span class="meta">any episode</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="pill pill-ok">@string.Join(", ", clip.Episodes)</span>
+                                                    }
+                                                </td>
+                                                <td style="text-align:right;">
+                                                    <button class="btn btn-sm" @onclick="() => PinTo(block, clip)">Episodes…</button>
+                                                    <button class="btn btn-sm btn-danger" @onclick="() => RemoveClip(block, clip)">Remove</button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+
+                            <p class="hint">
+                                A clip tied to episodes plays only with those, and they always get it
+                                ahead of whatever the behaviour would otherwise pick.
+                            </p>
+
+                            <TagListEditor Label="Skip this block when the episode's file name contains"
+                                           Placeholder="(with Intro)"
+                                           Values="block.SkipWhenFileContains" Changed="Changed" />
+                            <p class="hint">
+                                For copies that already have the sequence baked in, so they do not get a
+                                second one. Case does not matter.
+                            </p>
+
+                            @if (_extras is null)
+                            {
+                                <p class="hint">Loading extras…</p>
+                            }
+                            else
+                            {
+                                <div class="row row-wrap" style="gap:6px;">
+                                    @foreach (JellyfinExtra extra in _extras.Where(x => !block.Clips.Any(c => SamePath(c.Path, x.Path))))
+                                    {
+                                        <button class="btn btn-sm" @onclick="() => AddClip(block, extra)">
+                                            + @extra.Name <span class="meta">@($"{extra.Duration.TotalSeconds:0}s")</span>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        }
+
+        @if (_pinning is not null)
+        {
+            <div class="modal-backdrop" @onclick="() => _pinning = null">
+                <div class="modal" @onclick:stopPropagation="true">
+                    <h2 style="margin-top:0;">Episodes for @ClipName(_pinning)</h2>
+                    <p class="hint">Leave everything unticked to keep the clip in the general pool.</p>
+
+                    @if (_episodes.Count == 0)
+                    {
+                        <div class="empty">No episodes found for this show.</div>
+                    }
+                    else
+                    {
+                        <div class="scroll-list" style="max-height:320px;">
+                            @foreach (LibraryEpisode episode in _episodes)
+                            {
+                                <label class="check" style="display:flex;gap:8px;padding:3px 0;">
+                                    <input type="checkbox" checked="@_pinning.Episodes.Contains(episode.Code)"
+                                           @onchange="e => TogglePin(episode.Code, (bool)(e.Value ?? false))" />
+                                    <span>@episode.Code <span class="meta">@episode.Title</span></span>
+                                </label>
+                            }
+                        </div>
+                    }
+
+                    <div class="row" style="margin-top:14px;">
+                        <div class="spacer"></div>
+                        <button class="btn btn-primary" @onclick="() => _pinning = null">Done</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="row" style="margin-top:16px;">
+            <div class="spacer"></div>
+            <button class="btn btn-primary" @onclick="Close">Done</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ContentInclude Include { get; set; } = new();
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Opened from the TV Shows page: edits only the show's own blocks, with no collection to override them in.</summary>
+    [Parameter] public bool ShowWide { get; set; }
+
+    // Collections whose own blocks replace the show's, named so the TV Shows page can say where these don't apply.
+    private List<string> OverriddenIn => [.. Editor.Working.GlobalCollections
+        .Where(pair => pair.Value.Include.Any(include => include.Bumpers.Count > 0
+            && string.Equals(include.Show, Include.Show, StringComparison.OrdinalIgnoreCase)))
+        .Select(pair => pair.Key)];
+
+    private IReadOnlyList<JellyfinExtra>? _extras;
+    private IReadOnlyList<LibraryEpisode> _episodes = [];
+    private IReadOnlyList<int> _seasons = [];
+    private string? _seriesId;
+    private BumperBlock? _expanded;
+    private BumperClip? _pinning;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Resolved here rather than taken from the caller: the show list may still be loading
+            // when the dialog opens, and a null id would otherwise stick for the whole session.
+            IReadOnlyList<LibraryShow> shows = await Library.GetShowsAsync();
+
+            LibraryShow? show = shows.FirstOrDefault(s =>
+                (Include.ShowId is not null && string.Equals(s.Id, Include.ShowId, StringComparison.Ordinal))
+                || string.Equals(s.Name, Include.Show, StringComparison.OrdinalIgnoreCase));
+
+            if (show is null)
+            {
+                _error = "This title is not in the library, so its extras cannot be listed.";
+                return;
+            }
+
+            _seriesId = show.Id;
+            _seasons = show.Seasons;
+            _extras = await Jellyfin.GetSpecialFeaturesAsync(show.Id, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not read extras: {ex.Message}";
+        }
+    }
+
+    private IEnumerable<BumperBlock> Ordered(BumperPosition position) =>
+        Blocks.Where(b => b.Position == position);
+
+    /// <summary>Blocks named on the collection win; otherwise the show's own are edited in place.</summary>
+    private bool IsOverride => !ShowWide && Include.Bumpers.Count > 0;
+
+    private List<BumperBlock> Blocks =>
+        IsOverride ? Include.Bumpers : Shared?.Bumpers ?? [];
+
+    private TitleDefaults? Shared =>
+        Include.Show is { Length: > 0 } show && Editor.Working.Titles.TryGetValue(show, out TitleDefaults? defaults)
+            ? defaults
+            : null;
+
+    private List<BumperBlock> EnsureTarget()
+    {
+        if (IsOverride)
+        {
+            return Include.Bumpers;
+        }
+
+        string show = Include.Show ?? string.Empty;
+
+        if (!Editor.Working.Titles.TryGetValue(show, out TitleDefaults? defaults))
+        {
+            defaults = new TitleDefaults();
+            Editor.Working.Titles[show] = defaults;
+        }
+
+        return defaults.Bumpers;
+    }
+
+    private async Task SetScope(bool over)
+    {
+        if (over == IsOverride)
+        {
+            return;
+        }
+
+        string show = Include.Show ?? string.Empty;
+
+        if (over)
+        {
+            // Start the override from whatever the show already does, so nothing silently changes.
+            Include.Bumpers = [.. Blocks.Select(Copy)];
+        }
+        else
+        {
+            List<BumperBlock> moving = Include.Bumpers;
+            Include.Bumpers = [];
+
+            if (moving.Count > 0)
+            {
+                EnsureTarget().AddRange(moving);
+            }
+        }
+
+        Prune(show);
+        await Changed.InvokeAsync();
+    }
+
+    private static BumperBlock Copy(BumperBlock block) => new()
+    {
+        Name = block.Name,
+        Position = block.Position,
+        Selection = block.Selection,
+        Seasons = [.. block.Seasons],
+        SkipWhenFileContains = [.. block.SkipWhenFileContains],
+        Clips = [.. block.Clips.Select(c => new BumperClip { Path = c.Path, Name = c.Name, Episodes = [.. c.Episodes] })]
+    };
+
+    // An empty entry would otherwise be written back to the config for every show ever opened.
+    private void Prune(string show)
+    {
+        if (Editor.Working.Titles.TryGetValue(show, out TitleDefaults? defaults) && defaults.Bumpers.Count == 0)
+        {
+            Editor.Working.Titles.Remove(show);
+        }
+    }
+
+    private static string Label(BumperBlock block) =>
+        string.IsNullOrWhiteSpace(block.Name) ? "Untitled" : block.Name;
+
+    private static string ClipName(BumperClip clip) =>
+        string.IsNullOrWhiteSpace(clip.Name) ? System.IO.Path.GetFileNameWithoutExtension(clip.Path) : clip.Name!;
+
+    private string Summarise(BumperBlock block) =>
+        block.Clips.Count switch
+        {
+            0 => "no clips",
+            1 => $"1 clip · {LengthOf(block.Clips[0])}",
+            _ => $"{block.Clips.Count} clips · {Describe(block.Selection).ToLowerInvariant()}"
+        };
+
+    private static string Describe(BumperSelection selection) => selection switch
+    {
+        BumperSelection.LongestThatFits => "Longest that fits",
+        BumperSelection.ShortestThatFits => "Shortest that fits",
+        _ => "Random"
+    };
+
+    private string LengthOf(BumperClip clip)
+    {
+        JellyfinExtra? extra = _extras?.FirstOrDefault(x => SamePath(x.Path, clip.Path));
+        return extra is null ? "\u2014" : $"{extra.Duration.TotalSeconds:0}s";
+    }
+
+    // Jellyfin and the saved config can disagree on casing, and the engine matches paths the same way.
+    private static bool SamePath(string? left, string? right) =>
+        string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
+    private bool IsFirst(BumperBlock block) => Ordered(block.Position).First() == block;
+
+    private bool IsLast(BumperBlock block) => Ordered(block.Position).Last() == block;
+
+    private async Task AddBlock(BumperPosition position)
+    {
+        var block = new BumperBlock
+        {
+            Name = position == BumperPosition.Intro ? "Opening" : "Closing",
+            Position = position
+        };
+
+        EnsureTarget().Add(block);
+        _expanded = block;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task RemoveBlock(BumperBlock block)
+    {
+        Blocks.Remove(block);
+
+        if (_expanded == block)
+        {
+            _expanded = null;
+        }
+
+        Prune(Include.Show ?? string.Empty);
+        await Changed.InvokeAsync();
+    }
+
+    /// <summary>Reorders within a position, which is what the list order means to the engine.</summary>
+    private async Task Move(BumperBlock block, int delta)
+    {
+        List<BumperBlock> side = [.. Ordered(block.Position)];
+        int from = side.IndexOf(block);
+        int to = from + delta;
+
+        if (to < 0 || to >= side.Count)
+        {
+            return;
+        }
+
+        (side[from], side[to]) = (side[to], side[from]);
+
+        List<BumperBlock> target = Blocks;
+        List<BumperBlock> rebuilt = [];
+        int index = 0;
+
+        foreach (BumperBlock existing in target)
+        {
+            rebuilt.Add(existing.Position == block.Position ? side[index++] : existing);
+        }
+
+        target.Clear();
+        target.AddRange(rebuilt);
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Rename(BumperBlock block, ChangeEventArgs e)
+    {
+        block.Name = e.Value?.ToString() ?? string.Empty;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task SetSelection(BumperBlock block, ChangeEventArgs e)
+    {
+        block.Selection = Enum.Parse<BumperSelection>(e.Value?.ToString() ?? nameof(BumperSelection.Random));
+        await Changed.InvokeAsync();
+    }
+
+    private async Task ToggleSeason(BumperBlock block, int season, bool selected)
+    {
+        if (selected && !block.Seasons.Contains(season)) block.Seasons.Add(season);
+        else if (!selected) block.Seasons.Remove(season);
+        block.Seasons.Sort();
+        await Changed.InvokeAsync();
+    }
+
+    private async Task ClearSeasons(BumperBlock block)
+    {
+        block.Seasons.Clear();
+        await Changed.InvokeAsync();
+    }
+
+    private void Expand(BumperBlock block) => _expanded = _expanded == block ? null : block;
+
+    private async Task AddClip(BumperBlock block, JellyfinExtra extra)
+    {
+        block.Clips.Add(new BumperClip { Path = extra.Path, Name = extra.Name });
+        await Changed.InvokeAsync();
+    }
+
+    private async Task RemoveClip(BumperBlock block, BumperClip clip)
+    {
+        block.Clips.Remove(clip);
+
+        if (_pinning == clip)
+        {
+            _pinning = null;
+        }
+
+        await Changed.InvokeAsync();
+    }
+
+    private async Task PinTo(BumperBlock block, BumperClip clip)
+    {
+        _pinning = clip;
+
+        if (_episodes.Count == 0 && _seriesId is not null)
+        {
+            _episodes = await Library.GetEpisodesAsync(_seriesId);
+        }
+    }
+
+    private async Task TogglePin(string code, bool on)
+    {
+        if (_pinning is null)
+        {
+            return;
+        }
+
+        if (on && !_pinning.Episodes.Contains(code, StringComparer.OrdinalIgnoreCase))
+        {
+            _pinning.Episodes.Add(code);
+        }
+        else if (!on)
+        {
+            _pinning.Episodes.RemoveAll(e => string.Equals(e, code, StringComparison.OrdinalIgnoreCase));
+        }
+
+        await Changed.InvokeAsync();
+    }
+
+    private Task Close() => OnClose.InvokeAsync();
+}

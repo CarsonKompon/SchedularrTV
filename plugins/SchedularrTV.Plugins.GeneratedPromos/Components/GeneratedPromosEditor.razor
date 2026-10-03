@@ -1,0 +1,152 @@
+@* Generated promo templates for a channel or block, with one template open for editing. *@
+
+@if (Config is not { } generated)
+{
+    <div class="card">
+        <div class="card-head"><h2>Templates</h2></div>
+        <p class="hint">
+            Render promos from the schedule, with a voice-over and background music: Up Next,
+            Now Playing, This Has Been, Coming Up, Eventually, and You're Watching and Back to the Show for mid-show breaks.
+            They fill in when a show has no promo clip,
+            or mix in with the clips it has.
+        </p>
+        <div class="row row-wrap">
+            <label class="inline-field">
+                <span>Type</span>
+                <select aria-label="New template type" @bind="_newType">
+                    @foreach (GeneratedPromoType type in Enum.GetValues<GeneratedPromoType>())
+                    {
+                        <option value="@type">@TypeName(type)</option>
+                    }
+                </select>
+            </label>
+            <button class="btn btn-primary" type="button" @onclick="Enable">Create a template</button>
+        </div>
+    </div>
+}
+else
+{
+    <section class="generated" aria-label="Generated promos">
+        <div class="generated-heading">
+            <h2>Templates</h2>
+            <label class="check">
+                <input type="checkbox" checked="@generated.Enabled"
+                       @onchange="e => { generated.Enabled = e.Value is true; Changed.InvokeAsync(); }" />
+                <span>Use in @Scope</span>
+            </label>
+            <div class="spacer"></div>
+            <label class="inline-field">
+                <span>Type</span>
+                <select aria-label="New template type" @bind="_newType">
+                    @foreach (GeneratedPromoType type in Enum.GetValues<GeneratedPromoType>())
+                    {
+                        <option value="@type">@TypeName(type)</option>
+                    }
+                </select>
+            </label>
+            <button class="btn btn-sm" type="button" @onclick="Add">New template</button>
+            <button class="btn btn-sm" type="button" disabled="@(_selected is null)" @onclick="Duplicate">Duplicate</button>
+            <button class="btn btn-sm btn-danger" type="button" @onclick="Disable">Remove all</button>
+        </div>
+
+        <nav class="template-list" aria-label="Templates">
+            @foreach (GeneratedPromoTemplate template in generated.Templates)
+            {
+                <button type="button" class="template-choice @(ReferenceEquals(template, _selected) ? "selected" : "")" @key="template"
+                        aria-pressed="@(ReferenceEquals(template, _selected) ? "true" : "false")" @onclick="() => _selected = template">
+                    <strong>@(string.IsNullOrWhiteSpace(template.Name) ? "Untitled" : template.Name)</strong>
+                    <span>@Summary(template)</span>
+                </button>
+            }
+            @if (generated.Templates.Count == 0)
+            {
+                <p class="hint">No templates yet.</p>
+            }
+        </nav>
+
+        @if (_selected is { } selected)
+        {
+            <GeneratedPromoTemplateEditor @key="selected" Template="selected" Channel="Channel" Changed="Changed"
+                                          ErrorScope="@ErrorScope" OnRemove="() => Remove(selected)" />
+        }
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public ChannelConfig Channel { get; set; } = new() { Id = "", Name = "" };
+    [Parameter] public GeneratedPromosConfig? Config { get; set; }
+    [Parameter] public EventCallback<GeneratedPromosConfig?> ConfigChanged { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter, EditorRequired] public string ErrorScope { get; set; } = "";
+    [Parameter] public string Scope { get; set; } = "this channel";
+
+    private GeneratedPromoTemplate? _selected;
+    private GeneratedPromoType _newType = GeneratedPromoType.UpNext;
+
+    private static string TypeName(GeneratedPromoType type) => type switch
+    {
+        GeneratedPromoType.UpNext => "Up Next",
+        GeneratedPromoType.NowPlaying => "Now Playing",
+        GeneratedPromoType.ThisHasBeen => "This Has Been",
+        GeneratedPromoType.ComingUp => "Coming Up",
+        GeneratedPromoType.YoureWatching => "You're Watching",
+        GeneratedPromoType.BackToTheShow => "Back to the Show",
+        _ => "Eventually"
+    };
+
+    protected override void OnParametersSet()
+    {
+        List<GeneratedPromoTemplate> templates = Config?.Templates ?? [];
+        if (_selected is null || !templates.Contains(_selected))
+        {
+            _selected = templates.FirstOrDefault();
+        }
+    }
+
+    private static string Summary(GeneratedPromoTemplate template) =>
+        $"{TypeName(template.Type)} · {(template.Usage == GeneratedPromoUsage.Mixed ? $"Mixed {template.MixChance:P0}" : "Fallback")} · {template.Duration.TotalSeconds:0.#}s"
+        + (template.Generator is null ? "" : " · external")
+        + (template.Enabled ? "" : " · off");
+
+    private async Task Enable()
+    {
+        _selected = GeneratedPromoTemplates.ForType(_newType);
+        await ConfigChanged.InvokeAsync(new GeneratedPromosConfig { Templates = [_selected] });
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Add()
+    {
+        List<GeneratedPromoTemplate> templates = Config!.Templates;
+        _selected = GeneratedPromoTemplates.ForType(_newType,
+            GeneratedPromoEditing.UniqueName(templates.Select(template => template.Name), TypeName(_newType)));
+        templates.Add(_selected);
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Duplicate()
+    {
+        List<GeneratedPromoTemplate> templates = Config!.Templates;
+        GeneratedPromoTemplate copy = GeneratedPromoEditing.Copy(_selected!);
+        copy.Name = GeneratedPromoEditing.UniqueName(templates.Select(template => template.Name), $"{_selected!.Name} copy");
+        templates.Insert(templates.IndexOf(_selected) + 1, copy);
+        _selected = copy;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Remove(GeneratedPromoTemplate template)
+    {
+        List<GeneratedPromoTemplate> templates = Config!.Templates;
+        int index = templates.IndexOf(template);
+        templates.Remove(template);
+        _selected = templates.Count == 0 ? null : templates[Math.Clamp(index, 0, templates.Count - 1)];
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Disable()
+    {
+        _selected = null;
+        await ConfigChanged.InvokeAsync(null);
+        await Changed.InvokeAsync();
+    }
+}

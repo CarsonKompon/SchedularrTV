@@ -1,0 +1,49 @@
+@* The Promos plugin's channel tab. *@
+@inject LibraryBrowser Browser
+
+@if (Context.Channel is { } channel)
+{
+    @if (channel.Promos is null)
+    {
+        <div class="card">
+            <div class="card-head"><h2>Promos</h2></div>
+            <p class="hint">
+                This channel uses the global promo settings. You can still point it at its own brand
+                folders without restating the rest.
+            </p>
+
+            <TagChipPicker Label="Brand folders (any of)"
+                           Hint="Leave all off to use this channel's advert brands."
+                           EmptyHint="No commercials library configured."
+                           Available="_folders.Brands"
+                           Selected="channel.PromoBaseTags"
+                           SelectedChanged="OnBrandsChanged" />
+
+            <button class="btn btn-primary" @onclick="() => { channel.Promos = new PromoConfig(); Context.NotifyChanged(); }">
+                Configure everything for this channel
+            </button>
+        </div>
+    }
+    else
+    {
+        <PromoEditor Config="channel.Promos" ChannelName="channel.Name" Changed="Context.NotifyChanged" />
+        <button class="btn btn-sm btn-danger" @onclick="() => { channel.Promos = null; Context.NotifyChanged(); }">
+            Inherit global promos
+        </button>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public PluginEditorContext Context { get; set; } = default!;
+
+    private CommercialFolders _folders = new([], [], [], []);
+
+    protected override async Task OnInitializedAsync() => _folders = await Browser.GetCommercialFoldersAsync();
+
+    private Task OnBrandsChanged(List<string>? brands)
+    {
+        Context.Channel!.PromoBaseTags = brands;
+        Context.NotifyChanged();
+        return Task.CompletedTask;
+    }
+}

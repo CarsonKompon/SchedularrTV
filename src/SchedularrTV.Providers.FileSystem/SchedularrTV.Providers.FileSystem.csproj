@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>SchedularrTV.Providers.FileSystem</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SchedularrTV.Core\SchedularrTV.Core.csproj" />
+    <ProjectReference Include="..\SchedularrTV.Plugins.Abstractions\SchedularrTV.Plugins.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SchedularrTV.Core.Tests" />
+  </ItemGroup>
+
+</Project>

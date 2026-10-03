@@ -1,0 +1,31 @@
+{
+  "id": "tts-minimax",
+  "name": "MiniMax voices",
+  "version": "1.0.0",
+  "description": "Natural-sounding paid voices for generated promos, including your account's cloned and designed ones.",
+  "author": "SchedularrTV",
+  "apiVersion": "1.1",
+  "entryAssembly": "SchedularrTV.Plugins.MiniMax.dll",
+  "settings": [
+    {
+      "key": "ApiKey",
+      "label": "API key",
+      "type": "Secret",
+      "placeholder": "From the MiniMax platform's API keys page",
+      "description": "Stored in plain text in the settings file, readable by anyone who can open your data folder. MINIMAX_API_KEY in the environment is used when this is empty."
+    },
+    {
+      "key": "Model",
+      "label": "Model",
+      "type": "Text",
+      "placeholder": "speech-2.8-turbo",
+      "description": "Changing it makes new voice-overs; cached ones are left in place."
+    },
+    {
+      "key": "LanguageBoost",
+      "label": "Language hint",
+      "type": "Text",
+      "placeholder": "auto"
+    }
+  ]
+}

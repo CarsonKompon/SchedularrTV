@@ -1,0 +1,602 @@
+@* Guided creation of a channel: what plays, how breaks work, which commercials, and an optional block. *@
+@using SchedularrTV.Providers.Jellyfin
+@implements IDisposable
+@inject ConfigEditor Editor
+@inject LibraryBrowser Library
+@inject JellyfinMediaLibrary Jellyfin
+
+<div class="modal-backdrop">
+    <div class="modal wizard" role="dialog" aria-modal="true" aria-label="Create a channel">
+        <div class="wizard-steps" aria-hidden="true">
+            @for (int index = 0; index < Steps.Length; index++)
+            {
+                <span class="wizard-step @(index < _step ? "done" : index == _step ? "current" : "")" title="@Steps[index]"></span>
+            }
+        </div>
+        <div class="wizard-eyebrow">New channel · Step @(_step + 1) of @Steps.Length · @Steps[_step]</div>
+
+        <div class="wizard-body">
+        @if (_loading)
+        {
+            <div class="wizard-loading" role="status" aria-live="polite">
+                <div class="spinner"></div>
+                <strong style="color:var(--text);">Reading your library…</strong>
+                @if (Jellyfin.Loading is { } progress)
+                {
+                    <span>
+                        @progress.Stage
+                        @if (progress.Items > 0)
+                        {
+                            <text> · @progress.Items.ToString("N0")@(progress.Total is > 0 && progress.Stage == "Reading items" ? $" of {progress.Total:N0}" : "") items</text>
+                        }
+                    </span>
+                    @if (progress.Stage == "Reading items" && progress.Percent is { } percent)
+                    {
+                        <progress max="100" value="@percent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)"></progress>
+                    }
+                    else
+                    {
+                        <progress></progress>
+                    }
+                }
+                else
+                {
+                    <span>Checking shows, collections and commercials folders</span>
+                    <progress></progress>
+                }
+                <span class="hint">The wizard needs the full list to offer shows and ad folders. A large library takes a minute the first time.</span>
+            </div>
+        }
+        else
+        {
+        @switch (_step)
+        {
+            case 0:
+                <h2>Name your channel</h2>
+                <p>The name and number appear in your IPTV player's channel list and guide.</p>
+                <div class="grid grid-2">
+                    <label class="field">
+                        <span>Channel name</span>
+                        <input type="text" value="@_name" placeholder="Saturday Morning TV" @oninput="e => _name = e.Value?.ToString() ?? string.Empty" />
+                    </label>
+                    <label class="field">
+                        <span>Channel number</span>
+                        <input type="number" min="1" value="@_number" @onchange="e => _number = int.TryParse(e.Value?.ToString(), out int n) && n > 0 ? n : _number" />
+                    </label>
+                </div>
+                @if (NumberTaken)
+                {
+                    <p class="hint warn">Channel @_number is already used by @Editor.Working.Channels.First(c => c.Number == _number).Name.</p>
+                }
+                break;
+
+            case 1:
+                <h2>What should it play?</h2>
+                <p>This is the channel's main rotation: what airs whenever nothing more specific is scheduled.</p>
+                @if (_libraryError is not null)
+                {
+                    <p class="hint warn">@_libraryError</p>
+                }
+                <div class="wizard-choices">
+                    <button type="button" class="wizard-choice @(_source == Source.Titles ? "on" : "")" @onclick="() => _source = Source.Titles">
+                        <strong>Pick shows and movies</strong>
+                        <span>Choose exactly which titles air.</span>
+                    </button>
+                    @if (_jellyfinCollections.Count > 0)
+                    {
+                        <button type="button" class="wizard-choice @(_source == Source.JellyfinCollection ? "on" : "")" @onclick="() => _source = Source.JellyfinCollection">
+                            <strong>A Jellyfin collection</strong>
+                            <span>Everything in one of your @_jellyfinCollections.Count collections.</span>
+                        </button>
+                    }
+                    @if (Editor.Working.GlobalCollections.Count > 0)
+                    {
+                        <button type="button" class="wizard-choice @(_source == Source.SavedCollection ? "on" : "")" @onclick="() => _source = Source.SavedCollection">
+                            <strong>A saved collection</strong>
+                            <span>One of the collections on the Collections page.</span>
+                        </button>
+                    }
+                    <button type="button" class="wizard-choice @(_source == Source.Everything ? "on" : "")" @onclick="() => _source = Source.Everything">
+                        <strong>Every TV episode</strong>
+                        <span>@(_showCount > 0 ? $"All {_showCount} shows in your library." : "Every show in your library.")</span>
+                    </button>
+                </div>
+
+                @switch (_source)
+                {
+                    case Source.Titles:
+                        <IncludeListEditor Includes="_includes" Changed="StateHasChanged" />
+                        break;
+                    case Source.JellyfinCollection:
+                        <label class="field">
+                            <span>Jellyfin collection</span>
+                            <select value="@_jellyfinCollection" @onchange="e => _jellyfinCollection = e.Value?.ToString()">
+                                <option value="">Choose…</option>
+                                @foreach (string collection in _jellyfinCollections)
+                                {
+                                    <option value="@collection">@collection</option>
+                                }
+                            </select>
+                        </label>
+                        break;
+                    case Source.SavedCollection:
+                        <label class="field">
+                            <span>Saved collection</span>
+                            <select value="@_savedCollection" @onchange="e => _savedCollection = e.Value?.ToString()">
+                                <option value="">Choose…</option>
+                                @foreach (string key in Editor.Working.GlobalCollections.Keys.Order(StringComparer.OrdinalIgnoreCase))
+                                {
+                                    <option value="@key">@key</option>
+                                }
+                            </select>
+                        </label>
+                        break;
+                }
+
+                @if (_source == Source.SavedCollection)
+                {
+                    <p class="hint">A saved collection keeps its own order and settings; change them on the Collections page.</p>
+                    break;
+                }
+                <div class="grid grid-2" style="margin-top:8px;">
+                    <label class="field">
+                        <span>Episode order</span>
+                        <select value="@_order" @onchange="e => _order = Enum.Parse<PlaybackOrder>(e.Value?.ToString() ?? nameof(PlaybackOrder.Shuffle))">
+                            <option value="@PlaybackOrder.Shuffle">Shuffle (no repeats until everything has played)</option>
+                            <option value="@PlaybackOrder.SeasonEpisode">In order, season by season</option>
+                            <option value="@PlaybackOrder.Chronological">In order of original air date</option>
+                            <option value="@PlaybackOrder.Random">Random (repeats allowed)</option>
+                        </select>
+                    </label>
+                    <div class="field">
+                        <span>&nbsp;</span>
+                        <label class="check">
+                            <input type="checkbox" checked="@_skipSpecials" @onchange="e => _skipSpecials = e.Value is true" />
+                            <span>Skip specials and extras</span>
+                        </label>
+                    </div>
+                </div>
+                @if (_order is PlaybackOrder.SeasonEpisode or PlaybackOrder.Chronological)
+                {
+                    <label class="check">
+                        <input type="checkbox" checked="@_rotateTitles" @onchange="e => _rotateTitles = e.Value is true" />
+                        <span>Take turns between shows</span>
+                    </label>
+                    <p class="hint">Each show continues where it left off, and shows alternate, instead of playing one whole series before the next.</p>
+                }
+                break;
+
+            case 2:
+                <h2>How should time be laid out?</h2>
+                <p>Real TV starts programmes on the hour or half hour, with ad breaks making up the difference.</p>
+                <div class="wizard-choices">
+                    @foreach ((TimeSpan? grid, string title, string detail) in Grids)
+                    {
+                        <button type="button" class="wizard-choice @(_grid == grid ? "on" : "")" @onclick="() => _grid = grid">
+                            <strong>@title</strong>
+                            <span>@detail</span>
+                        </button>
+                    }
+                </div>
+                @if (_grid is not null)
+                {
+                    <label class="check">
+                        <input type="checkbox" checked="@_stack" @onchange="e => _stack = e.Value is true" />
+                        <span>Play more than one short episode in a slot</span>
+                    </label>
+                    <p class="hint">Two 11-minute cartoons fill a half hour the way they did on air, instead of one followed by 19 minutes of ads.</p>
+                    <DurationInput Label="Longest ad break (blank = no limit)" Placeholder="e.g. 8m" Value="_maxBreak" ValueChanged="v => _maxBreak = v" />
+                    <p class="hint">When a programme is much shorter than its slot, the break is capped here and the next programme starts early.</p>
+                }
+                <label class="check">
+                    <input type="checkbox" checked="@_midRoll" @onchange="e => _midRoll = e.Value is true" />
+                    <span>Put ad breaks inside programmes, too</span>
+                </label>
+                <p class="hint">Breaks land on chapter markers where there are any, roughly every 15 minutes.</p>
+                break;
+
+            case 3:
+                <h2>Ad breaks</h2>
+                @if (_folders.Roots.Count == 0)
+                {
+                    <p>
+                        No commercials were found. Add folders of adverts and bumpers under <strong>App settings → Commercials library</strong>,
+                        then pick them for this channel on its <strong>Breaks</strong> tab. Until then, breaks are short black gaps.
+                    </p>
+                }
+                else
+                {
+                    <label class="check">
+                        <input type="checkbox" checked="@_useCommercials" @onchange="e => _useCommercials = e.Value is true" />
+                        <span>Fill breaks from my commercials library</span>
+                    </label>
+                    @if (_useCommercials)
+                    {
+                        <TagChipPicker Label="Brands (any of)" Hint="Only adverts filed under these brand folders. Leave all off to use every brand."
+                                       Available="_folders.Brands" Selected="_brands" SelectedChanged="v => _brands = v" />
+                        <TagChipPicker Label="Clip folders for commercials" Hint="Played whole, only when they fit. Leave all off to use any kind."
+                                       Available="_folders.Types" Selected="_adTypes" SelectedChanged="v => _adTypes = v" />
+                        <TagChipPicker Label="Clip folders that may be trimmed to close the last few seconds"
+                                       Hint="Bumpers and station IDs, not adverts. Leave all off to leave tiny gaps instead."
+                                       Available="_folders.Types" Selected="_fillerTypes" SelectedChanged="v => _fillerTypes = v" />
+                        @if (_folders.Occasions.Count > 0)
+                        {
+                            <label class="check">
+                                <input type="checkbox" checked="@_seasonal" @onchange="e => _seasonal = e.Value is true" />
+                                <span>Seasonal adverts</span>
+                            </label>
+                            <p class="hint">
+                                Uses folders named after months, seasons and holidays (@string.Join(", ", _folders.Occasions.Take(4))…) at the right
+                                time of year, plus "Any Time" folders all year.
+                            </p>
+                        }
+                    }
+                }
+                break;
+
+            case 4:
+                <h2>Add a programming block <span class="pill pill-muted">Optional</span></h2>
+                <p>
+                    A block gives part of the day its own line-up, like Saturday morning cartoons or a late-night anime hour.
+                    Outside blocks the channel plays its main rotation. You can add more blocks, fixed-time slots and marathons later.
+                </p>
+                <label class="check">
+                    <input type="checkbox" checked="@_addBlock" @onchange="e => _addBlock = e.Value is true" />
+                    <span>Add a block now</span>
+                </label>
+                @if (_addBlock)
+                {
+                    <div class="grid grid-3">
+                        <label class="field">
+                            <span>Block name</span>
+                            <input type="text" value="@_blockName" @oninput="e => _blockName = e.Value?.ToString() ?? string.Empty" />
+                        </label>
+                        <label class="field">
+                            <span>Starts</span>
+                            <input type="time" value="@Clock(_blockStart)" @onchange="e => _blockStart = ParseClock(e, _blockStart)" />
+                        </label>
+                        <label class="field">
+                            <span>Ends</span>
+                            <input type="time" value="@Clock(_blockEnd)" @onchange="e => _blockEnd = ParseClock(e, _blockEnd)" />
+                        </label>
+                    </div>
+                    <DayOfWeekPicker Days="_blockDays" Label="On these days" Changed="StateHasChanged" />
+                    <IncludeListEditor Includes="_blockIncludes" Changed="StateHasChanged" />
+                }
+                break;
+
+            default:
+                <h2>Ready to create @(_name.Trim())</h2>
+                <ul class="checklist">
+                    <li><Icon Name="radio" Size="15" /><span>Channel <strong>@_number</strong>, “@_name.Trim()”</span></li>
+                    <li><Icon Name="tv" Size="15" /><span>Plays @SourceSummary()@(_source == Source.SavedCollection ? " in its own order" : $", {OrderSummary()}{(_skipSpecials ? ", skipping specials" : "")}")</span></li>
+                    <li><Icon Name="clock" Size="15" /><span>@TimingSummary()</span></li>
+                    <li><Icon Name="megaphone" Size="15" /><span>@BreakSummary()</span></li>
+                    @if (_addBlock)
+                    {
+                        <li><Icon Name="layers" Size="15" /><span>Block “@_blockName.Trim()”, @Clock(_blockStart)–@Clock(_blockEnd) on @DaysSummary(), with @_blockIncludes.Count title(s)</span></li>
+                    }
+                </ul>
+                <p class="hint">
+                    @(_wasDirty ? "You have other unsaved changes, so the channel is added but not saved; use Save changes when you're ready."
+                               : "The channel is saved and its schedule is built in the background.")
+                    It opens in the channel editor, where you can fine-tune everything.
+                </p>
+                break;
+        }
+
+        @if (Problem is { } problem && _tried)
+        {
+            <p class="hint warn" role="alert">@problem</p>
+        }
+        }
+        </div>
+
+        <div class="wizard-foot">
+            @if (_loading)
+            {
+                <button class="btn btn-ghost" type="button" @onclick="Cancel">Cancel</button>
+            }
+            else if (_step == 0)
+            {
+                <button class="btn btn-ghost" type="button" @onclick="Cancel">Cancel</button>
+            }
+            else
+            {
+                <button class="btn btn-ghost" type="button" @onclick="Back"><Icon Name="arrow-left" Size="14" />Back</button>
+            }
+            <div class="spacer"></div>
+            @if (_loading)
+            {
+                <button class="btn btn-primary" type="button" disabled>Next<Icon Name="chevron-right" Size="14" /></button>
+            }
+            else if (_step == Steps.Length - 1)
+            {
+                <button class="btn btn-primary" type="button" disabled="@_creating" @onclick="Create"><Icon Name="check" Size="14" />Create channel</button>
+            }
+            else
+            {
+                <button class="btn btn-primary" type="button" @onclick="Next">Next<Icon Name="chevron-right" Size="14" /></button>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>Raised with the new channel's id once it has been added.</summary>
+    [Parameter] public EventCallback<string> OnCreated { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private enum Source { Titles, JellyfinCollection, SavedCollection, Everything }
+
+    private static readonly string[] Steps = ["Name", "Programming", "Timing", "Ad breaks", "Block", "Review"];
+
+    private static readonly (TimeSpan? Grid, string Title, string Detail)[] Grids =
+    [
+        (TimeSpan.FromMinutes(30), "Half-hour slots", "Programmes start on :00 and :30. Best for TV shows."),
+        (TimeSpan.FromHours(1), "Hourly slots", "Programmes start on the hour. Suits hour-long shows and films."),
+        (null, "Back to back", "No slots and no breaks between programmes.")
+    ];
+
+    // Whole words, so "Kids" or "Holiday" folders aren't taken for station IDs.
+    private static System.Text.RegularExpressions.Regex FillerNames() => FillerPattern;
+
+    private static readonly System.Text.RegularExpressions.Regex FillerPattern = new(
+        @"\b(bumps?|bumpers?|idents?|ids?|station\s*ids?|stingers?|filler|interstitials?|promos?)\b",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    private int _step;
+    private bool _tried;
+    private bool _creating;
+    private bool _loading = true;
+    private bool _wasDirty;
+
+    private string _name = string.Empty;
+    private int _number;
+
+    private Source _source = Source.Titles;
+    private readonly List<ContentInclude> _includes = [];
+    private string? _jellyfinCollection;
+    private string? _savedCollection;
+    private PlaybackOrder _order = PlaybackOrder.Shuffle;
+    private bool _skipSpecials = true;
+    private bool _rotateTitles = true;
+
+    private TimeSpan? _grid = TimeSpan.FromMinutes(30);
+    private bool _stack = true;
+    private TimeSpan? _maxBreak = TimeSpan.FromMinutes(8);
+    private bool _midRoll;
+
+    private CommercialFolders _folders = new([], [], [], []);
+    private bool _useCommercials;
+    private List<string>? _brands;
+    private List<string>? _adTypes;
+    private List<string>? _fillerTypes;
+    private bool _seasonal;
+
+    private bool _addBlock;
+    private string _blockName = "Saturday Morning Cartoons";
+    private TimeSpan _blockStart = TimeSpan.FromHours(7);
+    private TimeSpan _blockEnd = TimeSpan.FromHours(11);
+    private readonly List<DayOfWeek> _blockDays = [DayOfWeek.Saturday];
+    private readonly List<ContentInclude> _blockIncludes = [];
+
+    private IReadOnlyList<string> _jellyfinCollections = [];
+    private int _showCount;
+    private string? _libraryError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // A first channel starts at 1; after that, past the highest in use.
+        _number = Editor.Working.Channels.Count == 0 ? 1 : Editor.NextChannelNumber();
+        _name = $"Channel {_number}";
+        _wasDirty = Editor.IsDirty;
+
+        // Nothing can be picked until the library is in memory, so the steps wait behind a progress screen.
+        _loading = true;
+        Jellyfin.LoadingChanged += OnLoadingChanged;
+        try
+        {
+            _showCount = (await Library.GetShowsAsync()).Count;
+            _jellyfinCollections = await Library.GetJellyfinCollectionsAsync();
+            _folders = await Library.GetCommercialFoldersAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _libraryError = $"Couldn't read the library ({ex.GetBaseException().Message}). Check the Jellyfin connection under App settings.";
+        }
+        finally
+        {
+            _loading = false;
+            Jellyfin.LoadingChanged -= OnLoadingChanged;
+        }
+
+        _useCommercials = _folders.Roots.Count > 0;
+        // Seasonal matching keeps only clips in a month, season, holiday or "Any Time" folder, so it's only
+        // offered as the default when the library is laid out that way.
+        _seasonal = _folders.Occasions.Contains(Editor.Working.Settings.TemporalTags.AnyTimeTag, StringComparer.OrdinalIgnoreCase);
+        List<string> filler = [.. _folders.Types.Where(type => FillerNames().IsMatch(type))];
+        _fillerTypes = filler.Count > 0 ? filler : null;
+        // Adverts are whatever isn't a bumper or ID, so filler clips aren't counted as commercials too.
+        List<string> adverts = [.. _folders.Types.Except(filler, StringComparer.OrdinalIgnoreCase)];
+        _adTypes = filler.Count > 0 && adverts.Count > 0 ? adverts : null;
+    }
+
+    // Raised on the loading thread.
+    private void OnLoadingChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Jellyfin.LoadingChanged -= OnLoadingChanged;
+
+    private bool NumberTaken => Editor.Working.Channels.Any(c => c.Number == _number);
+
+    /// <summary>What stops the current step from going on, if anything.</summary>
+    private string? Problem => _step switch
+    {
+        0 when string.IsNullOrWhiteSpace(_name) => "Give the channel a name.",
+        0 when NumberTaken => "Choose a channel number that isn't taken.",
+        1 when _source == Source.Titles && _includes.Count == 0 => "Add at least one show or movie, or choose another option.",
+        1 when _source == Source.JellyfinCollection && string.IsNullOrWhiteSpace(_jellyfinCollection) => "Choose a Jellyfin collection.",
+        1 when _source == Source.SavedCollection && string.IsNullOrWhiteSpace(_savedCollection) => "Choose a saved collection.",
+        4 when _addBlock && string.IsNullOrWhiteSpace(_blockName) => "Give the block a name.",
+        4 when _addBlock && _blockStart == _blockEnd => "The block's start and end times must differ.",
+        4 when _addBlock && _blockDays.Count == 0 => "Choose at least one day for the block.",
+        4 when _addBlock && _blockIncludes.Count == 0 => "Add at least one title to the block, or untick “Add a block now”.",
+        _ => null
+    };
+
+    private void Next()
+    {
+        _tried = true;
+        if (Problem is not null)
+        {
+            return;
+        }
+
+        _tried = false;
+        _step++;
+    }
+
+    private void Back()
+    {
+        _tried = false;
+        _step--;
+    }
+
+    private Task Cancel() => OnCancel.InvokeAsync();
+
+    private async Task Create()
+    {
+        // A double click would otherwise add the channel twice.
+        if (_creating)
+        {
+            return;
+        }
+
+        _creating = true;
+        ChannelConfig channel = Build();
+        Editor.Working.Channels.Add(channel);
+        Editor.MarkDirty();
+
+        // Don't sweep up unrelated edits the user hasn't chosen to save.
+        if (!_wasDirty)
+        {
+            Editor.Save();
+        }
+
+        await OnCreated.InvokeAsync(channel.Id);
+    }
+
+    private ChannelConfig Build()
+    {
+        var channel = new ChannelConfig
+        {
+            Id = Editor.NextChannelId(),
+            Name = _name.Trim(),
+            Number = _number,
+            Group = "SchedularrTV",
+            BaseRotation = Selector(_source switch
+            {
+                Source.JellyfinCollection => new ContentSelector { Include = [new ContentInclude { Collection = _jellyfinCollection }] },
+                Source.SavedCollection => new ContentSelector { Collection = _savedCollection },
+                Source.Everything => new ContentSelector { Query = "kind == 'Episode'" },
+                _ => new ContentSelector { Include = [.. _includes] }
+            }),
+            PadToNearest = _grid,
+            MaxBreak = _grid is null ? null : _maxBreak,
+            StackToFill = _grid is not null && _stack ? true : null,
+            MidRoll = _midRoll ? new MidRollConfig { Mode = MidRollMode.Auto } : null
+        };
+
+        if (_useCommercials && _folders.Roots.Count > 0)
+        {
+            channel.Interstitials = new InterstitialsConfig
+            {
+                Commercials = new CommercialsConfig
+                {
+                    BaseQuery = string.Join(" OR ", _folders.Roots.Select(root => $"tag:\"{root.Replace("\"", "\\\"")}\"")),
+                    BaseTags = _brands,
+                    Types = _adTypes,
+
+                    // Adverts only: bumpers rarely sit in month or holiday folders, so seasonal matching would empty the filler.
+                    AutoTemporalTags = _seasonal ? true : null
+                },
+                // Without trimmable clips, the last seconds of a break are left as a short gap rather than cutting an advert.
+                Filler = _fillerTypes is { Count: > 0 }
+                    ? new FillerTierConfig { Types = _fillerTypes, AutoTemporalTags = false }
+                    : new FillerTierConfig { Fallback = false }
+            };
+        }
+
+        if (_addBlock)
+        {
+            channel.Blocks.Add(new BlockConfig
+            {
+                Name = _blockName.Trim(),
+                Time = _blockStart,
+                EndTime = _blockEnd,
+                Recurrence = _blockDays.Count == 7 ? Recurrence.Daily : Recurrence.DaysOfWeek,
+                Days = _blockDays.Count == 7 ? [] : [.. _blockDays],
+                Shows = [Selector(new ContentSelector { Include = [.. _blockIncludes] })]
+            });
+        }
+
+        return channel;
+    }
+
+    /// <summary>Applies the chosen order and specials setting; a saved collection keeps its own settings.</summary>
+    private ContentSelector Selector(ContentSelector selector)
+    {
+        if (selector.Collection is not null)
+        {
+            return selector;
+        }
+
+        selector.Order = _order;
+        if (_skipSpecials)
+        {
+            selector.ExcludeSeasons.Add(0);
+        }
+
+        if (_rotateTitles && _order is PlaybackOrder.SeasonEpisode or PlaybackOrder.Chronological)
+        {
+            selector.TitleOrder = TitleOrder.Shuffle;
+        }
+
+        return selector;
+    }
+
+    private string SourceSummary() => _source switch
+    {
+        Source.JellyfinCollection => $"the Jellyfin collection “{_jellyfinCollection}”",
+        Source.SavedCollection => $"the saved collection “{_savedCollection}”",
+        Source.Everything => "every TV episode",
+        _ => $"{_includes.Count} chosen title(s)"
+    };
+
+    private string OrderSummary() => _order switch
+    {
+        PlaybackOrder.SeasonEpisode => "in order",
+        PlaybackOrder.Chronological => "in air-date order",
+        PlaybackOrder.Random => "at random",
+        _ => "shuffled"
+    } + (_rotateTitles && _order is PlaybackOrder.SeasonEpisode or PlaybackOrder.Chronological ? ", taking turns between shows" : "");
+
+    private string TimingSummary() =>
+        (_grid is null ? "Programmes back to back"
+            : $"{(_grid == TimeSpan.FromHours(1) ? "Hourly" : "Half-hour")} slots{(_stack ? ", stacking short episodes" : "")}"
+              + (_maxBreak is { } cap ? $", breaks up to {DurationText.Format(cap)}" : ""))
+        + (_midRoll ? ", with breaks inside programmes" : "");
+
+    private string BreakSummary() =>
+        !_useCommercials || _folders.Roots.Count == 0 ? "No commercials yet; breaks are short black gaps"
+        : $"Commercials from {(_brands is { Count: > 0 } ? string.Join(", ", _brands) : "every brand")}"
+          + (_seasonal ? ", seasonal adverts on" : "");
+
+    private string DaysSummary() =>
+        _blockDays.Count == 7 ? "every day" : string.Join(", ", _blockDays.Order().Select(day => day.ToString()[..3]));
+
+    private static string Clock(TimeSpan time) => $"{(int)time.TotalHours % 24:00}:{time.Minutes:00}";
+
+    private static TimeSpan ParseClock(ChangeEventArgs e, TimeSpan fallback) =>
+        TimeSpan.TryParse(e.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, out TimeSpan time) ? time : fallback;
+}

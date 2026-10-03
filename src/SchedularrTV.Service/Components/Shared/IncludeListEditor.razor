@@ -1,0 +1,285 @@
+@* The list of explicitly picked shows/movies inside a collection. *@
+@inject LibraryBrowser Library
+@inject ConfigEditor Editor
+
+<div class="field">
+    <span style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px;">
+        Titles (@Includes.Count)
+    </span>
+
+    @if (Includes.Count == 0)
+    {
+        <div class="empty" style="padding:14px;">
+            Nothing picked yet. Add titles from the TV Shows or Movies pages, or add one below.
+        </div>
+    }
+
+    @foreach (ContentInclude include in Includes)
+    {
+        <div class="list-row">
+            <Artwork Id="@ArtId(include)" Title="@(include.Show ?? include.Describe())" Class="art-sm" Width="80" />
+            <div style="flex:1;min-width:0;">
+                <div class="title">@include.Describe()</div>
+                @if (!string.IsNullOrWhiteSpace(include.Show))
+                {
+                    <div class="meta">
+                        @if (include.Seasons.Count == 0 && include.Episodes.Count == 0)
+                        {
+                            <span>all seasons</span>
+                        }
+                        else
+                        {
+                            <span>@(include.Episodes.Count > 0 ? $"{include.Episodes.Count} episode(s)" : $"{include.Seasons.Count} season(s)")</span>
+                        }
+
+                        @if (Find(include) is { VersionedEpisodes: > 0 } versioned)
+                        {
+                            <span class="pill pill-warn" title="@versioned.VersionHint">@versioned.VersionedEpisodes with versions</span>
+                        }
+
+                        @if (BlockCount(include) is > 0 and var blocks)
+                        {
+                            <span class="pill pill-ok" title="Intro and outro blocks">
+                                @blocks block(s)@(include.Bumpers.Count > 0 ? ", this collection" : "")
+                            </span>
+                        }
+                    </div>
+                }
+            </div>
+            <label class="inline-field" title="Overrides the collection's episode order for this title">
+                <span>Order</span>
+                <select value="@(include.Order?.ToString() ?? "")"
+                        @onchange="e => SetOrder(include, e)">
+                    <option value="">Collection default</option>
+                    @foreach (PlaybackOrder option in Enum.GetValues<PlaybackOrder>())
+                    {
+                        <option value="@option">@SelectorEditor.Describe(option)</option>
+                    }
+                </select>
+            </label>
+
+            <label class="inline-field" title="Turns per rotation; 2 plays twice as often as 1">
+                <span>Weight</span>
+                <input type="number" min="1" max="20" style="width:62px;"
+                       value="@(include.Weight?.ToString() ?? "")" placeholder="1"
+                       @onchange="e => SetWeight(include, e)" />
+            </label>
+
+            @if (!string.IsNullOrWhiteSpace(include.Show))
+            {
+                <button class="btn btn-sm" @onclick="() => EditBumpers(include)">Intros/outros…</button>
+                <button class="btn btn-sm" @onclick="() => Edit(include)">Seasons…</button>
+            }
+            <button class="btn btn-sm btn-danger" @onclick="() => Remove(include)">Remove</button>
+        </div>
+    }
+
+    <div class="row" style="margin-top:8px;">
+        <select @onchange="OnPickerChanged" value="@_pickerKind">
+            <option value="show">Show</option>
+            <option value="movie">Movie</option>
+            <option value="collection">Jellyfin collection</option>
+        </select>
+        <input type="text" list="include-options" placeholder="type to search…" value="@_pending"
+               @oninput="e => _pending = e.Value?.ToString() ?? string.Empty" />
+        <button class="btn btn-sm" @onclick="Add">Add</button>
+    </div>
+
+    <datalist id="include-options">
+        @foreach (string option in _options.Take(200))
+        {
+            <option value="@option"></option>
+        }
+    </datalist>
+</div>
+
+@if (_editing is not null)
+{
+    <div class="modal-backdrop" @onclick="() => _editing = null">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h2 style="margin-top:0;">@_editing.Show</h2>
+            <p class="hint">Leave everything unticked to include the whole show.</p>
+
+            <h3>Seasons</h3>
+            <div class="row row-wrap">
+                @foreach (int season in _editSeasons)
+                {
+                    <label class="check" style="margin-right:12px;">
+                        <input type="checkbox" checked="@_editing.Seasons.Contains(season)"
+                               @onchange="e => ToggleSeason(season, (bool)(e.Value ?? false))" />
+                        <span>Season @season</span>
+                    </label>
+                }
+            </div>
+
+            <h3>Individual episodes</h3>
+            <div class="scroll-list" style="max-height:220px;">
+                <table>
+                    @foreach (LibraryEpisode episode in _editEpisodes)
+                    {
+                        <tr>
+                            <td style="width:34px;">
+                                <input type="checkbox" checked="@_editing.Episodes.Contains(episode.Code)"
+                                       @onchange="e => ToggleEpisode(episode.Code, (bool)(e.Value ?? false))" />
+                            </td>
+                            <td style="width:70px;color:var(--muted);">@episode.Code</td>
+                            <td>@episode.Title</td>
+                        </tr>
+                    }
+                </table>
+            </div>
+
+            <div class="row" style="margin-top:16px;">
+                <div class="spacer"></div>
+                <button class="btn btn-primary" @onclick="CloseEdit">Done</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_bumpersFor is not null)
+{
+    <BumperEditor Include="_bumpersFor" Changed="Changed" OnClose="() => _bumpersFor = null" />
+}
+
+@code {
+    [Parameter, EditorRequired] public List<ContentInclude> Includes { get; set; } = [];
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private string _pickerKind = "show";
+    private string _pending = "";
+    private List<string> _options = [];
+
+    private ContentInclude? _editing;
+    private IReadOnlyList<int> _editSeasons = [];
+    private IReadOnlyList<LibraryEpisode> _editEpisodes = [];
+
+    private ContentInclude? _bumpersFor;
+
+    private void EditBumpers(ContentInclude include) => _bumpersFor = include;
+
+    private int BlockCount(ContentInclude include) =>
+        include.Bumpers.Count > 0
+            ? include.Bumpers.Count
+            : include.Show is { Length: > 0 } show && Editor.Working.Titles.TryGetValue(show, out TitleDefaults? d)
+                ? d.Bumpers.Count
+                : 0;
+
+    private Dictionary<string, LibraryShow> _showsById = new(StringComparer.Ordinal);
+    private Dictionary<string, LibraryShow> _showsByName = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, string?> _movieIds = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        IReadOnlyList<LibraryShow> shows = await Library.GetShowsAsync();
+
+        _showsById = shows.ToDictionary(s => s.Id, s => s, StringComparer.Ordinal);
+
+        // Two series can share a name; the first is only used when an entry has no pinned id.
+        _showsByName = shows
+            .GroupBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        _movieIds = (await Library.GetMoviesAsync())
+            .DistinctBy(m => m.Title, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(m => m.Title, m => m.Id, StringComparer.OrdinalIgnoreCase);
+
+        await LoadOptions();
+    }
+
+    private string? ArtId(ContentInclude include) =>
+        include.ShowId is { Length: > 0 } id ? id
+        : Find(include)?.Id
+        ?? (include.Movie is { Length: > 0 } movie ? _movieIds.GetValueOrDefault(movie) : null);
+
+    private LibraryShow? Find(ContentInclude include)
+    {
+        if (!string.IsNullOrWhiteSpace(include.ShowId) && _showsById.TryGetValue(include.ShowId, out LibraryShow? byId))
+        {
+            return byId;
+        }
+
+        return include.Show is { Length: > 0 } name && _showsByName.TryGetValue(name, out LibraryShow? byName)
+            ? byName
+            : null;
+    }
+
+    private async Task OnPickerChanged(ChangeEventArgs e)
+    {
+        _pickerKind = e.Value?.ToString() ?? "show";
+        _pending = "";
+        await LoadOptions();
+    }
+
+    private async Task LoadOptions() => _options = _pickerKind switch
+    {
+        "movie" => (await Library.GetMoviesAsync()).Select(m => m.Title).ToList(),
+        "collection" => (await Library.GetJellyfinCollectionsAsync()).ToList(),
+        _ => (await Library.GetShowsAsync()).Select(s => s.Name).ToList()
+    };
+
+    private async Task Add()
+    {
+        string value = _pending.Trim();
+        if (value.Length == 0)
+        {
+            return;
+        }
+
+        Includes.Add(_pickerKind switch
+        {
+            "movie" => new ContentInclude { Movie = value },
+            "collection" => new ContentInclude { Collection = value },
+            _ => new ContentInclude { Show = value }
+        });
+
+        _pending = "";
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Remove(ContentInclude include)
+    {
+        Includes.Remove(include);
+        await Changed.InvokeAsync();
+    }
+
+    private async Task SetOrder(ContentInclude include, ChangeEventArgs e)
+    {
+        string value = e.Value?.ToString() ?? "";
+        include.Order = value.Length == 0 ? null : Enum.Parse<PlaybackOrder>(value);
+        await Changed.InvokeAsync();
+    }
+
+    private async Task SetWeight(ContentInclude include, ChangeEventArgs e)
+    {
+        include.Weight = int.TryParse(e.Value?.ToString(), out int weight) && weight > 1 ? weight : null;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Edit(ContentInclude include)
+    {
+        _editing = include;
+        _editSeasons = (await Library.GetShowsAsync())
+            .FirstOrDefault(s => string.Equals(s.Name, include.Show, StringComparison.OrdinalIgnoreCase))
+            ?.Seasons ?? [];
+        _editEpisodes = await Library.GetEpisodesAsync(include.Show!);
+    }
+
+    private void ToggleSeason(int season, bool on)
+    {
+        if (_editing is null) return;
+        if (on) { _editing.Seasons.Add(season); } else { _editing.Seasons.Remove(season); }
+    }
+
+    private void ToggleEpisode(string code, bool on)
+    {
+        if (_editing is null) return;
+        if (on) { _editing.Episodes.Add(code); } else { _editing.Episodes.Remove(code); }
+    }
+
+    private async Task CloseEdit()
+    {
+        _editing = null;
+        await Changed.InvokeAsync();
+    }
+}

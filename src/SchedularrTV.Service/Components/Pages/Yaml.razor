@@ -1,0 +1,72 @@
+@page "/yaml"
+@inject ConfigEditor Editor
+@inject SchedulerConfigProvider Provider
+@using SchedularrTV.Core.Configuration
+
+<PageHeader Title="YAML" Eyebrow="System">
+    <ChildContent>The same file the scheduler reads. Editing here is equivalent to editing schedule.yaml on disk.</ChildContent>
+    <Actions>
+        <button class="btn" @onclick="LoadFromEditor"><Icon Name="pencil" Size="15" />Load current edits</button>
+        <button class="btn" @onclick="LoadFromDisk"><Icon Name="folder" Size="15" />Load from disk</button>
+        <button class="btn btn-primary" @onclick="Apply"><Icon Name="check" Size="15" />Apply to editor</button>
+    </Actions>
+</PageHeader>
+
+@if (_error is not null)
+{
+    <div class="banner banner-error">@_error</div>
+}
+@if (_ok is not null)
+{
+    <div class="banner banner-ok">@_ok</div>
+}
+
+<textarea class="yaml-editor" rows="34" spellcheck="false" aria-label="schedule.yaml" value="@_yaml" @onchange="e => _yaml = e.Value?.ToString() ?? string.Empty"></textarea>
+
+@code {
+    private string _yaml = "";
+    private string? _error;
+    private string? _ok;
+
+    protected override void OnInitialized() => LoadFromEditor();
+
+    private void LoadFromEditor()
+    {
+        _yaml = Editor.ToYaml();
+        _error = _ok = null;
+    }
+
+    private void LoadFromDisk()
+    {
+        _yaml = Provider.ReadRaw();
+        _error = _ok = null;
+    }
+
+    private void Apply()
+    {
+        _error = _ok = null;
+
+        try
+        {
+            SchedulerConfig parsed = SchedulerConfigLoader.Parse(_yaml);
+            ConfigValidationResult result = SchedulerConfigLoader.Validate(parsed);
+
+            if (!result.IsValid)
+            {
+                _error = string.Join(" · ", result.Errors);
+                return;
+            }
+
+            Editor.Working.Settings = parsed.Settings;
+            Editor.Working.GlobalCollections = parsed.GlobalCollections;
+            Editor.Working.Channels = parsed.Channels;
+            Editor.MarkDirty();
+
+            _ok = "Applied. Save to write it out.";
+        }
+        catch (Exception ex) when (ex is SchedulerConfigException or YamlDotNet.Core.YamlException)
+        {
+            _error = ex.Message;
+        }
+    }
+}

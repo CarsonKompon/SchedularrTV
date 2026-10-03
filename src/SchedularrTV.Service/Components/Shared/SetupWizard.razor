@@ -1,0 +1,261 @@
+@* First-run guide: walks through the app settings a new install needs, then offers the channel wizard. *@
+@using SchedularrTV.Hosting
+@using SchedularrTV.Service.Hosting
+@inject AppSettingsForm Form
+@inject AppRuntime Runtime
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+
+<div class="modal-backdrop">
+    <div class="modal wizard" role="dialog" aria-modal="true" aria-label="Set up SchedularrTV">
+        <div class="wizard-steps" aria-hidden="true">
+            @for (int index = 0; index < Steps.Length; index++)
+            {
+                <span class="wizard-step @(index < _step ? "done" : index == _step ? "current" : "")" title="@Steps[index]"></span>
+            }
+        </div>
+        <div class="wizard-eyebrow">Step @(_step + 1) of @Steps.Length · @Steps[_step]</div>
+
+        <div class="wizard-body">
+
+        @switch (_step)
+        {
+            case 0:
+                <h2>Welcome to SchedularrTV</h2>
+                <p>
+                    SchedularrTV turns your Jellyfin library into round-the-clock TV channels, with time slots, programming
+                    blocks, ad breaks and promos, and hands them to ErsatzTV Next to stream to your IPTV player.
+                </p>
+                <p>This guide takes a couple of minutes. You'll need:</p>
+                <ul class="checklist">
+                    <li><Icon Name="library" Size="15" /><span><strong>Jellyfin</strong> with your shows and movies, and permission to create an API key.</span></li>
+                    <li><Icon Name="radio" Size="15" /><span><strong><a href="https://github.com/ErsatzTV/next" target="_blank" rel="noopener">ErsatzTV Next</a></strong> downloaded on this computer, to stream the channels.</span></li>
+                    <li><Icon Name="film" Size="15" /><span><strong>ffmpeg</strong>, which we'll try to find for you.</span></li>
+                    <li><Icon Name="megaphone" Size="15" /><span>Optionally, a folder of <strong>commercials and bumpers</strong> for the ad breaks.</span></li>
+                </ul>
+                <p class="hint">Everything here can be changed later under <strong>App settings</strong>.</p>
+                break;
+
+            case 1:
+                <h2>Connect to Jellyfin</h2>
+                <p>SchedularrTV reads your shows, movies and collections from Jellyfin to build schedules.</p>
+                <JellyfinSettings Form="Form" ShowUser="false" Changed="Edited" @bind-Result="_jellyfinTest" />
+                @if (_jellyfinTest is null && JellyfinFilled)
+                {
+                    <p class="hint">Press <strong>Test connection</strong> to make sure the address and key work.</p>
+                }
+                else if (!JellyfinFilled)
+                {
+                    <p class="hint warn">Channels can't be built until Jellyfin is connected. You can skip this for now and come back to it.</p>
+                }
+                break;
+
+            case 2:
+                <h2>ErsatzTV Next</h2>
+                <p>
+                    ErsatzTV Next does the streaming: it plays the schedules SchedularrTV writes and serves the channel playlist and guide.
+                    Download it from its <a href="https://github.com/ErsatzTV/next/releases" target="_blank" rel="noopener">releases page</a>,
+                    then choose the program below so SchedularrTV can start and stop it for you.
+                </p>
+                <ErsatzSettings Form="Form" ShowStatus="false" Changed="Edited" />
+                break;
+
+            case 3:
+                <h2>ffmpeg</h2>
+                <p>SchedularrTV uses ffmpeg to measure clips and render promos.</p>
+                <ToolSettings Form="Form" Changed="Edited" Checked="ok => _toolsOk = ok" />
+                break;
+
+            case 4:
+                <h2>Commercials <span class="pill pill-muted">Optional</span></h2>
+                <p>
+                    Ad breaks are filled from folders on disk. Organise clips into sub-folders by channel or brand
+                    (<code>Commercials/Nickelodeon</code>) and by kind (<code>Ads</code>, <code>Bumpers</code>) and each folder name becomes a tag
+                    you can pick per channel. Skip this if you don't have any; breaks will then be short black gaps.
+                </p>
+                <FolderSettings Form="Form" ShowAdvanced="false" Changed="Edited" />
+                break;
+
+            case 5:
+                <h2>A few extras <span class="pill pill-muted">Optional</span></h2>
+                @if (Autostart.IsSupported)
+                {
+                    <label class="check">
+                        <input type="checkbox" checked="@_autostart" @onchange="ToggleAutostart" />
+                        <span>Start SchedularrTV when I sign in to this computer</span>
+                    </label>
+                    @if (_autostartError is not null)
+                    {
+                        <p class="hint warn">@_autostartError</p>
+                    }
+                    else
+                    {
+                        <p class="hint">Recommended, so channels keep their schedules up to date.</p>
+                    }
+                }
+                <h3>More features</h3>
+                <p class="hint">
+                    Generated promos (rendered from your own templates, with voice-overs), the voices for them and WeatherStar weather
+                    channels are optional plugins. Download the <code>all-plugins</code> zip from the release page and install it under
+                    <strong>Plugins</strong>.
+                </p>
+                break;
+
+            default:
+                <h2>You're all set</h2>
+                <ul class="checklist">
+                    <li class="@(JellyfinFilled ? "ok" : "warn")">
+                        <Icon Name="@(JellyfinFilled ? "check-circle" : "alert")" Size="15" />
+                        <span>@(JellyfinFilled ? $"Jellyfin at {Form.JellyfinUrl}" + (_jellyfinTest is { Ok: true } ? " (connected)" : "") : "Jellyfin isn't connected yet; channels can't be built until it is.")</span>
+                    </li>
+                    <li class="@(ErsatzReady ? "ok" : "warn")">
+                        <Icon Name="@(ErsatzReady ? "check-circle" : "alert")" Size="15" />
+                        <span>@(Form.ErsatzManage ? ErsatzReady ? "ErsatzTV Next starts and stops with SchedularrTV" : "ErsatzTV Next is switched on but no program is chosen" : "ErsatzTV Next is not managed; run it yourself")</span>
+                    </li>
+                    <li class="@(_toolsOk ? "ok" : "warn")">
+                        <Icon Name="@(_toolsOk ? "check-circle" : "alert")" Size="15" />
+                        <span>@(_toolsOk ? "ffmpeg found" : "ffmpeg wasn't found; promos and commercial folders need it")</span>
+                    </li>
+                    <li class="ok">
+                        <Icon Name="check-circle" Size="15" />
+                        <span>@(Form.Folders.Count(f => !string.IsNullOrWhiteSpace(f.Path)) is var count and > 0 ? $"{count} commercials folder(s)" : "No commercials folders (optional)")</span>
+                    </li>
+                </ul>
+                @if (Form.IsDirty)
+                {
+                    <p class="hint">Finishing saves these settings and restarts the scheduler, which takes a few seconds.</p>
+                }
+                @if (JellyfinFilled)
+                {
+                    <p>Next, create your first channel: the channel wizard picks what to show, when breaks happen and which commercials to use.</p>
+                }
+                else
+                {
+                    <p>Connect Jellyfin under <strong>App settings</strong> when you're ready; this guide will open again until you do.</p>
+                }
+                break;
+        }
+
+        @if (_error is not null)
+        {
+            <p class="hint warn" role="alert">@_error</p>
+        }
+        </div>
+
+        <div class="wizard-foot">
+            @if (_restarting)
+            {
+                <span class="hint" style="margin:0;" role="status">Restarting the scheduler… this page reloads in a few seconds.</span>
+            }
+            else
+            {
+                @if (_step == 0)
+                {
+                    <button class="btn btn-ghost" type="button" @onclick="Skip">Skip for now</button>
+                }
+                else
+                {
+                    <button class="btn btn-ghost" type="button" @onclick="() => _step--"><Icon Name="arrow-left" Size="14" />Back</button>
+                }
+                <div class="spacer"></div>
+                @if (_step == Steps.Length - 1)
+                {
+                    @if (JellyfinFilled)
+                    {
+                        <button class="btn" type="button" @onclick="() => Finish(createChannel: false)">Done</button>
+                        <button class="btn btn-primary" type="button" @onclick="() => Finish(createChannel: true)"><Icon Name="plus" Size="14" />Create a channel</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-primary" type="button" @onclick="() => Finish(createChannel: false)">Done</button>
+                    }
+                }
+                else
+                {
+                    @if (_step is 4 or 5)
+                    {
+                        <button class="btn btn-ghost" type="button" @onclick="() => _step++">Skip</button>
+                    }
+                    <button class="btn btn-primary" type="button" @onclick="() => _step++">@(_step == 0 ? "Get started" : "Next")<Icon Name="chevron-right" Size="14" /></button>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private static readonly string[] Steps = ["Welcome", "Jellyfin", "ErsatzTV Next", "ffmpeg", "Commercials", "Extras", "Finish"];
+
+    private int _step;
+    private ConnectionTest? _jellyfinTest;
+    private bool _toolsOk;
+    private bool _autostart;
+    private string? _autostartError;
+    private string? _error;
+    private bool _restarting;
+
+    private bool JellyfinFilled =>
+        !string.IsNullOrWhiteSpace(Form.JellyfinUrl) && (Form.JellyfinKeySet || !string.IsNullOrWhiteSpace(Form.JellyfinKey));
+
+    private bool ErsatzReady => !Form.ErsatzManage || (!string.IsNullOrWhiteSpace(Form.ErsatzExe) && File.Exists(Form.ErsatzExe));
+
+    protected override void OnInitialized()
+    {
+        Form.Load();
+        _autostart = Autostart.IsSupported && Autostart.IsEnabled();
+    }
+
+    private void Edited()
+    {
+    }
+
+    private void ToggleAutostart(ChangeEventArgs e)
+    {
+        _autostartError = null;
+        try
+        {
+            AutostartSetting.Apply(Runtime, e.Value is true);
+        }
+        catch (Exception ex)
+        {
+            _autostartError = $"Couldn't change the sign-in setting: {ex.Message}";
+        }
+
+        _autostart = Autostart.IsEnabled();
+    }
+
+    private Task Skip() => OnClose.InvokeAsync();
+
+    private async Task Finish(bool createChannel)
+    {
+        _error = null;
+        try
+        {
+            Form.Save(completeOnboarding: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            _error = $"Couldn't save {Form.SettingsPath}: {ex.Message}";
+            return;
+        }
+
+        if (Form.NeedsRestart)
+        {
+            _restarting = true;
+            StateHasChanged();
+            await RestartFlow.RestartAndReloadAsync(Runtime, JS, Navigation,
+                createChannel ? "/channels" : "/",
+                createChannel ? "wizard=1" : null,
+                Form.Port != Form.LoadedPort ? Form.Port : null);
+            return;
+        }
+
+        await OnClose.InvokeAsync();
+        if (createChannel)
+        {
+            Navigation.NavigateTo("channels?wizard=1");
+        }
+    }
+}

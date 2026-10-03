@@ -1,0 +1,27 @@
+@* Says when a newer release is out, with a link to it. Shown at the top of the settings pages. *@
+@using SchedularrTV.Service.Hosting
+@implements IDisposable
+@inject UpdateChecker Updates
+
+@if (Updates.Available is { } update)
+{
+    <div class="banner banner-ok update-banner" role="status">
+        <Icon Name="sparkles" Size="15" />
+        <span>
+            <strong>SchedularrTV @update.Tag is available.</strong>
+            You're running @AppRuntime.Version.
+        </span>
+        @if (update.Url.Length > 0)
+        {
+            <a class="btn btn-sm btn-primary" href="@update.Url" target="_blank" rel="noopener">Get @update.Tag</a>
+        }
+    </div>
+}
+
+@code {
+    protected override void OnInitialized() => Updates.Changed += OnChanged;
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Updates.Changed -= OnChanged;
+}

@@ -1,0 +1,9 @@
+{
+  "id": "tts-tiktok",
+  "name": "TikTok voices",
+  "version": "1.0.0",
+  "description": "Free text-to-speech voices for generated promos. Needs no account.",
+  "author": "SchedularrTV",
+  "apiVersion": "1.1",
+  "entryAssembly": "SchedularrTV.Plugins.TikTok.dll"
+}

@@ -1,0 +1,64 @@
+@* Toggle chips for picking tags from a discovered list, with a free-text escape hatch. *@
+
+<div class="field">
+    <span>@Label</span>
+
+    @if (Available.Count == 0 && (Selected?.Count ?? 0) == 0)
+    {
+        <p class="hint">@EmptyHint</p>
+    }
+    else
+    {
+        <div class="chip-row">
+            @foreach (string tag in Options())
+            {
+                <button type="button" class="chip @(IsOn(tag) ? "chip-on" : "")" @onclick="() => Toggle(tag)">
+                    @tag
+                </button>
+            }
+        </div>
+    }
+
+    @if (Hint is not null)
+    {
+        <p class="hint">@Hint</p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public string EmptyHint { get; set; } = "Nothing found in the library yet.";
+
+    /// <summary>Everything the library offers at this level.</summary>
+    [Parameter] public IReadOnlyList<string> Available { get; set; } = [];
+
+    /// <summary>The chosen subset. Null means "everything", which is why it round-trips as null.</summary>
+    [Parameter] public List<string>? Selected { get; set; }
+
+    [Parameter] public EventCallback<List<string>?> SelectedChanged { get; set; }
+
+    private bool IsOn(string tag) =>
+        Selected?.Contains(tag, StringComparer.OrdinalIgnoreCase) == true;
+
+    // A tag saved in the config but missing from the library still has to be visible, or the user
+    // could never untick a folder they have since renamed or deleted.
+    private IEnumerable<string> Options() =>
+        Available
+            .Concat(Selected ?? [])
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(t => t, StringComparer.OrdinalIgnoreCase);
+
+    private async Task Toggle(string tag)
+    {
+        List<string> next = Selected is null ? [] : [.. Selected];
+
+        if (next.RemoveAll(t => string.Equals(t, tag, StringComparison.OrdinalIgnoreCase)) == 0)
+        {
+            next.Add(tag);
+        }
+
+        Selected = next.Count > 0 ? next : null;
+        await SelectedChanged.InvokeAsync(Selected);
+    }
+}

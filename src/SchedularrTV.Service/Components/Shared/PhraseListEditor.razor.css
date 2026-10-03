@@ -1,0 +1,4 @@
+.phrase-list { display: grid; gap: 6px; }
+.phrase-row { display: flex; gap: 6px; align-items: center; }
+.phrase-row input { flex: 1; min-width: 0; }
+.phrase-silent { flex: 1; color: var(--muted); font-style: italic; padding: 6px 2px; }

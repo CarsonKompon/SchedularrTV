@@ -1,0 +1,213 @@
+@page "/settings/app"
+@using SchedularrTV.Hosting
+@using SchedularrTV.Service.Hosting
+@inject AppRuntime Runtime
+@inject AppSettingsForm Form
+@inject OnboardingState Onboarding
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<PageHeader Title="App settings" Eyebrow="System">
+    <ChildContent>Connections, keys and programs this copy of SchedularrTV uses. Stored in <code>@Form.SettingsPath</code>.</ChildContent>
+    <Actions>
+        <button class="btn" type="button" @onclick="Onboarding.Open"><Icon Name="sparkles" Size="15" />Run setup guide</button>
+    </Actions>
+</PageHeader>
+
+<UpdateBanner />
+@if (_restarting)
+{
+    <div class="banner banner-warn" role="status">
+        Restarting… this page reloads in a few seconds@(Form.Port != Form.LoadedPort ? $" — the scheduler is moving to port {Form.Port}" : "").
+    </div>
+}
+else if (Form.NeedsRestart)
+{
+    <div class="banner banner-ok" role="status">
+        Saved. The port and network access change when the scheduler restarts; everything else is already in use.
+        <button class="btn btn-sm btn-primary" style="margin-left:10px;" @onclick="Restart">Restart now</button>
+    </div>
+}
+else if (_saved && !Form.IsDirty)
+{
+    <div class="banner banner-ok" role="status">Saved and in use.</div>
+}
+@if (_error is not null)
+{
+    <div class="banner banner-error" role="alert">@_error</div>
+}
+
+<div class="card">
+    <div class="card-head"><h2>This computer</h2></div>
+    <div class="grid grid-3">
+        <label class="field">
+            <span>Web UI port</span>
+            <input type="number" min="1" max="65535" value="@Form.Port"
+                   @onchange="e => { Form.Port = int.TryParse(e.Value?.ToString(), out int port) && port is > 0 and < 65536 ? port : Form.Port; Form.IsDirty = true; }" />
+        </label>
+        <div class="field">
+            <span>Version</span>
+            <code style="padding:8px 0;">@AppRuntime.Version</code>
+        </div>
+    </div>
+    <label class="check">
+        <input type="checkbox" checked="@Form.AllowRemote" @onchange="e => { Form.AllowRemote = e.Value is true; Form.IsDirty = true; }" />
+        <span>Allow other devices on the network to open the web UI</span>
+    </label>
+    @if (Form.AllowRemote)
+    {
+        <p class="hint warn">The web UI has no password. Only turn this on for a network you trust.</p>
+    }
+
+    @if (Autostart.IsSupported)
+    {
+        <label class="check">
+            <input type="checkbox" checked="@_autostart" @onchange="ToggleAutostart" />
+            <span>Start SchedularrTV when I sign in to this computer</span>
+        </label>
+        @if (_autostartError is not null)
+        {
+            <p class="hint warn">@_autostartError</p>
+        }
+        else if (!Runtime.UnderTray && OperatingSystem.IsWindows())
+        {
+            <p class="hint">Started without the tray app, so this opens the server in a console window. Use the tray app to start quietly.</p>
+        }
+        else
+        {
+            <p class="hint">Applies right away.</p>
+        }
+    }
+
+    <div class="field">
+        <span>Data folder</span>
+        <div class="row row-wrap" style="gap:8px;align-items:center;">
+            <code>@Runtime.DataDirectory</code>
+            <button class="btn btn-sm" type="button" @onclick="OpenDataFolder"><Icon Name="folder" Size="14" />Open</button>
+        </div>
+    </div>
+    <p class="hint">
+        Schedule, playback state, rendered promos and these settings. Start with <code>--data-dir &lt;folder&gt;</code>
+        (or set <code>@AppPaths.DataDirectoryVariable</code>) to keep them somewhere else.
+    </p>
+</div>
+
+<div class="card">
+    <div class="card-head"><h2>Jellyfin</h2></div>
+    <JellyfinSettings Form="Form" Changed="Edited" @bind-Result="_jellyfinTest" />
+</div>
+
+<div class="card">
+    <div class="card-head"><h2>ErsatzTV Next</h2></div>
+    <ErsatzSettings Form="Form" Changed="Edited" />
+</div>
+
+<div class="card">
+    <div class="card-head"><h2>ffmpeg</h2></div>
+    <ToolSettings Form="Form" Changed="Edited" />
+</div>
+
+<div class="card">
+    <div class="card-head"><h2>Commercials library</h2></div>
+    <FolderSettings Form="Form" Changed="Edited" />
+</div>
+
+<div class="save-dock" role="region" aria-label="App settings" style="@(Form.IsDirty ? "" : "display:none;")">
+    <div class="save-dock-text">
+        <span class="status-dot warn"></span>
+        <span>Unsaved app settings</span>
+    </div>
+    <button class="btn btn-sm btn-ghost" @onclick="Discard"><Icon Name="undo" Size="14" />Discard</button>
+    <button class="btn btn-sm btn-primary" @onclick="Save"><Icon Name="save" Size="14" />Save</button>
+</div>
+
+@code {
+    private bool _restarting;
+    private bool _saved;
+    private string? _error;
+    private bool _autostart;
+    private string? _autostartError;
+    private ConnectionTest? _jellyfinTest;
+
+    protected override void OnInitialized()
+    {
+        Form.Load();
+        _autostart = Autostart.IsSupported && Autostart.IsEnabled();
+        Onboarding.Closed += OnSetupClosed;
+    }
+
+    // The setup guide edits its own copy; show what it saved, keeping any edits made here.
+    private void OnSetupClosed() => InvokeAsync(() =>
+    {
+        if (!Form.IsDirty)
+        {
+            Form.Load();
+        }
+
+        _autostart = Autostart.IsSupported && Autostart.IsEnabled();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Onboarding.Closed -= OnSetupClosed;
+
+    // A section changed the form; handling the callback re-renders this page so the save bar appears.
+    private void Edited()
+    {
+    }
+
+    private void Discard()
+    {
+        Form.Load();
+        _error = null;
+    }
+
+    private void Save()
+    {
+        try
+        {
+            Form.Save();
+            _error = null;
+            _saved = true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            _error = $"Couldn't save {Form.SettingsPath}: {ex.Message}";
+        }
+    }
+
+    private async Task Restart()
+    {
+        _restarting = true;
+        StateHasChanged();
+        await RestartFlow.RestartAndReloadAsync(Runtime, JS, Navigation, "/settings/app",
+            newPort: Form.Port != Form.LoadedPort ? Form.Port : null);
+    }
+
+    private void ToggleAutostart(ChangeEventArgs e)
+    {
+        _autostartError = null;
+        try
+        {
+            AutostartSetting.Apply(Runtime, e.Value is true);
+        }
+        catch (Exception ex)
+        {
+            _autostartError = $"Couldn't change the sign-in setting: {ex.Message}";
+        }
+
+        _autostart = Autostart.IsEnabled();
+    }
+
+    private void OpenDataFolder()
+    {
+        try
+        {
+            Autostart.OpenFolder(Runtime.DataDirectory);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Couldn't open the folder: {ex.Message}";
+        }
+    }
+}

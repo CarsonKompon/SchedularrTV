@@ -1,0 +1,82 @@
+@* Jellyfin address, key and a connection test; shared by App settings and the setup wizard. *@
+@using SchedularrTV.Service.Hosting
+@implements IDisposable
+
+<div class="grid grid-2">
+    <label class="field">
+        <span>Server address</span>
+        <input type="url" value="@Form.JellyfinUrl" placeholder="http://localhost:8096"
+               @onchange="e => Edit(() => Form.JellyfinUrl = Text(e).TrimEnd('/'))" />
+    </label>
+    <label class="field">
+        <span>API key @(Form.JellyfinKeySet ? "(saved)" : "")</span>
+        <input type="password" autocomplete="off" value="@Form.JellyfinKey"
+               placeholder="@(Form.JellyfinKeySet ? "•••••••• (leave blank to keep)" : "Dashboard → API Keys → +")"
+               @onchange="e => Edit(() => Form.JellyfinKey = Text(e))" />
+    </label>
+</div>
+@if (ShowUser)
+{
+    <label class="field" style="max-width:420px;">
+        <span>User ID (optional)</span>
+        <input type="text" value="@Form.JellyfinUser" placeholder="Limit the library to what this user can see"
+               @onchange="e => Edit(() => Form.JellyfinUser = Text(e))" />
+    </label>
+}
+<div class="row row-wrap" style="gap:10px;align-items:center;">
+    <button class="btn btn-sm" type="button" disabled="@_testing" @onclick="Test">@(_testing ? "Testing…" : "Test connection")</button>
+    @if (Result is { } result)
+    {
+        <span class="pill @(result.Ok ? "pill-ok" : "pill-error")">@result.Message</span>
+    }
+</div>
+<p class="hint" style="margin-top:10px;">
+    In Jellyfin, open <strong>Dashboard → API Keys</strong>, press <strong>+</strong>, name it "SchedularrTV" and paste the key here.
+</p>
+
+@code {
+    [Parameter, EditorRequired] public AppSettingsForm Form { get; set; } = default!;
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public bool ShowUser { get; set; } = true;
+
+    /// <summary>The last test's outcome, so a wizard can wait for a successful one.</summary>
+    [Parameter] public ConnectionTest? Result { get; set; }
+    [Parameter] public EventCallback<ConnectionTest?> ResultChanged { get; set; }
+
+    private readonly CancellationTokenSource _life = new();
+    private bool _testing;
+
+    private async Task Edit(Action change)
+    {
+        change();
+        Form.IsDirty = true;
+        await ResultChanged.InvokeAsync(null);
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Test()
+    {
+        _testing = true;
+        await ResultChanged.InvokeAsync(null);
+        try
+        {
+            ConnectionTest result = await Form.TestJellyfinAsync(_life.Token);
+            await ResultChanged.InvokeAsync(result);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            _testing = false;
+        }
+    }
+
+    private static string Text(ChangeEventArgs e) => e.Value?.ToString()?.Trim() ?? string.Empty;
+
+    public void Dispose()
+    {
+        _life.Cancel();
+        _life.Dispose();
+    }
+}

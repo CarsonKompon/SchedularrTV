@@ -1,0 +1,184 @@
+@* The three interstitial tiers, shared by channels and blocks. *@
+@inject LibraryBrowser Library
+
+<div class="card">
+    <div class="card-head"><h2>Interstitials &amp; ad breaks</h2></div>
+    <p class="hint">
+        Gaps are filled in order: short programmes, then commercials that fit exactly, then filler
+        that can be trimmed to land on the boundary.
+    </p>
+
+    <h3>Tier 1 &mdash; interstitial shows</h3>
+    <label class="field">
+        <span>Max interstitial shows per timeslot</span>
+        <input type="number" min="0" step="1" placeholder="Inherit (default: unlimited)"
+               value="@(Interstitials.MaxShowsPerSlot?.ToString() ?? "")"
+               @onchange="e => { Interstitials.MaxShowsPerSlot = Int(e); Changed.InvokeAsync(); }" />
+    </label>
+    @if (Interstitials.Shows is null)
+    {
+        <button class="btn btn-sm" @onclick="AddShows">Add a shorts pool</button>
+        <p class="hint">Without this, a long gap is filled entirely with adverts.</p>
+    }
+    else
+    {
+        <SelectorEditor Selector="Interstitials.Shows" Label="Short programmes"
+                        Changed="Changed" OnRemove="RemoveShows" />
+    }
+
+    <h3>Brands</h3>
+    <TagChipPicker Label="Brand folders (any of)"
+                   Hint="Tier 2 draws its adverts from these folders. Leave all off to use every brand."
+                   EmptyHint="No commercials library configured."
+                   Available="_folders.Brands"
+                   Selected="Commercials.BaseTags"
+                   SelectedChanged="OnBrandsChanged" />
+
+    <h3>Tier 2 &mdash; commercials</h3>
+    <TagChipPicker Label="Clip folders to use"
+                   Hint="Only whole clips that fit the remaining gap are used, so nothing is cut off."
+                   Available="_folders.Types"
+                   Selected="Commercials.Types"
+                   SelectedChanged="OnCommercialTypesChanged" />
+
+    <h3>Tier 3 &mdash; filler</h3>
+    <label class="check">
+        <input type="checkbox" checked="@Filler.IsEnabled"
+               @onchange="e => { Filler.Fallback = (bool)(e.Value ?? true); Changed.InvokeAsync(); }" />
+        <span>Use filler to close the last few seconds</span>
+    </label>
+
+    @if (Filler.IsEnabled)
+    {
+        <TagChipPicker Label="Clip folders to use"
+                       Hint="These may be trimmed, so keep it to bumpers and station IDs rather than adverts."
+                       Available="_folders.Types"
+                       Selected="Filler.Types"
+                       SelectedChanged="OnFillerTypesChanged" />
+
+        <TagChipPicker Label="Brand folders (any of)"
+                       Hint="Leave all off to use every brand. Bumpers are often filed under one brand only, so narrowing this can empty the tier."
+                       Available="_folders.Brands"
+                       Selected="Filler.BaseTags"
+                       SelectedChanged="OnFillerBrandsChanged" />
+    }
+
+    <details>
+        <summary style="cursor:pointer;color:var(--muted);font-size:12px;margin:12px 0 8px;">Advanced</summary>
+
+        <h3>Tier 2 &mdash; commercials</h3>
+        <div class="grid grid-2">
+            <label class="field">
+                <span>Base query</span>
+                <input type="text" value="@Commercials.BaseQuery" placeholder="tag:&quot;Commercials&quot;"
+                       @onchange="e => { Commercials.BaseQuery = Text(e); Changed.InvokeAsync(); }" />
+            </label>
+            <label class="field">
+                <span>Extra filter</span>
+                <input type="text" value="@Commercials.Filter" placeholder="year >= 1990"
+                       @onchange="e => { Commercials.Filter = Text(e); Changed.InvokeAsync(); }" />
+            </label>
+        </div>
+
+        <div class="grid grid-4">
+            <DurationInput Label="Shortest item" Value="Commercials.MinItemDuration"
+                           ValueChanged="v => { Commercials.MinItemDuration = v; Changed.InvokeAsync(); }" />
+            <DurationInput Label="Longest item" Value="Commercials.MaxItemDuration"
+                           ValueChanged="v => { Commercials.MaxItemDuration = v; Changed.InvokeAsync(); }" />
+            <DurationInput Label="Tolerance" Value="Commercials.Tolerance"
+                           ValueChanged="v => { Commercials.Tolerance = v; Changed.InvokeAsync(); }" />
+            <label class="field">
+                <span>Repeats per break</span>
+                <input type="number" min="1" value="@(Commercials.MaxRepeatsPerBreak?.ToString() ?? "")"
+                       @onchange="e => { Commercials.MaxRepeatsPerBreak = Int(e); Changed.InvokeAsync(); }" />
+            </label>
+        </div>
+
+        <label class="check">
+            <input type="checkbox" checked="@Commercials.IsStrictFit"
+                   @onchange="e => { Commercials.StrictFit = (bool)(e.Value ?? true); Changed.InvokeAsync(); }" />
+            <span>Strict fit &mdash; never trim a commercial (recommended)</span>
+        </label>
+
+        <h3>Tier 3 &mdash; filler</h3>
+        <label class="field">
+            <span>Filler query (replaces the folder picks above)</span>
+            <input type="text" value="@Filler.Query" placeholder="tag:&quot;Bumpers&quot; OR tag:&quot;StationID&quot;"
+                   @onchange="e => { Filler.Query = Text(e); Changed.InvokeAsync(); }" />
+        </label>
+
+        <div class="grid grid-3">
+            <DurationInput Label="Shortest item" Value="Filler.MinItemDuration"
+                           ValueChanged="v => { Filler.MinItemDuration = v; Changed.InvokeAsync(); }" />
+            <DurationInput Label="Longest item" Value="Filler.MaxItemDuration"
+                           ValueChanged="v => { Filler.MaxItemDuration = v; Changed.InvokeAsync(); }" />
+            <DurationInput Label="Min trimmed length" Value="Filler.MinTrimmedDuration"
+                           ValueChanged="v => { Filler.MinTrimmedDuration = v; Changed.InvokeAsync(); }" />
+        </div>
+
+        <label class="check">
+            <input type="checkbox" checked="@Filler.IsTrimmable"
+                   @onchange="e => { Filler.Trimmable = (bool)(e.Value ?? true); Changed.InvokeAsync(); }" />
+            <span>Allow trimming to land exactly on the boundary</span>
+        </label>
+        <label class="check">
+            <input type="checkbox" checked="@(Filler.StopBeforeEnd ?? false)"
+                   @onchange="e => { Filler.StopBeforeEnd = (bool)(e.Value ?? false); Changed.InvokeAsync(); }" />
+            <span>Stop before the end rather than hard-cutting</span>
+        </label>
+    </details>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public InterstitialsConfig Interstitials { get; set; } = new();
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private CommercialsConfig Commercials => Interstitials.Commercials ??= new CommercialsConfig();
+    private FillerTierConfig Filler => Interstitials.Filler ??= new FillerTierConfig();
+
+    private CommercialFolders _folders = new([], [], [], []);
+
+    protected override async Task OnInitializedAsync() => _folders = await Library.GetCommercialFoldersAsync();
+
+    private async Task OnBrandsChanged(List<string>? tags)
+    {
+        Commercials.BaseTags = tags;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnCommercialTypesChanged(List<string>? tags)
+    {
+        Commercials.Types = tags;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnFillerTypesChanged(List<string>? tags)
+    {
+        Filler.Types = tags;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnFillerBrandsChanged(List<string>? tags)
+    {
+        Filler.BaseTags = tags;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task AddShows()
+    {
+        Interstitials.Shows = new ContentSelector();
+        await Changed.InvokeAsync();
+    }
+
+    private async Task RemoveShows()
+    {
+        Interstitials.Shows = null;
+        await Changed.InvokeAsync();
+    }
+
+    private static string? Text(ChangeEventArgs e) =>
+        string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString();
+
+    private static int? Int(ChangeEventArgs e) =>
+        int.TryParse(e.Value?.ToString(), out int v) ? v : null;
+}

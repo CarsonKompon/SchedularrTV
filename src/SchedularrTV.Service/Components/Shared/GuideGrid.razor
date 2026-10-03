@@ -1,0 +1,372 @@
+@* Channels down the side, time across the top, with a playhead at the current moment. *@
+@implements IDisposable
+
+<div class="guide-toolbar">
+    <div class="segmented" aria-label="Zoom">
+        <button disabled="@(_zoom == 0)" title="Zoom out" aria-label="Zoom out" @onclick="() => _zoom--"><Icon Name="zoom-out" Size="14" /></button>
+        <button disabled="@(_zoom == Zooms.Length - 1)" title="Zoom in" aria-label="Zoom in" @onclick="() => _zoom++"><Icon Name="zoom-in" Size="14" /></button>
+    </div>
+    <span>@Hours(Visible) of schedule &middot; scroll sideways for later</span>
+    <div class="guide-legend" aria-label="Colour key">
+        <span><i class="guide-swatch normal"></i>Programme</span>
+        <span><i class="guide-swatch interstitial"></i>Short, intro or outro</span>
+        <span><i class="guide-swatch anchor"></i>Anchor</span>
+        @if (AnyFollow)
+        {
+            <span><i class="guide-swatch archive"></i>Archived episode</span>
+            <span><i class="guide-swatch archive-random"></i>Stand-in for an archived episode</span>
+            <span><i class="guide-swatch archived"></i>Archived schedule (compare)</span>
+        }
+        <span title="Each programming block gets its own colour"><i class="guide-swatch blocks"></i>Programming block</span>
+    </div>
+</div>
+
+<div class="guide-scroll">
+    <div class="guide-content" style="width:@(ChannelWidth + TrackWidth)px;">
+        <div class="guide-row guide-ruler">
+            <div class="guide-channel"></div>
+            <div class="guide-track" style="width:@(TrackWidth)px;">
+                @foreach (DateTimeOffset tick in Ticks())
+                {
+                    <span class="guide-tick" style="left:@(X(tick))px;">@tick.ToString("HH:mm")</span>
+                }
+            </div>
+        </div>
+
+        @foreach (ChannelSchedule schedule in Schedules.OrderBy(s => s.ChannelNumber))
+        {
+            <div class="guide-row @(schedule.ArchiveFollowEnabled || schedule.ArchiveDays.Count > 0 ? "guide-follow" : "")" @key="schedule.ChannelId">
+                <div class="guide-channel">
+                    @if (!string.IsNullOrWhiteSpace(schedule.ChannelLogo))
+                    {
+                        <img src="@schedule.ChannelLogo" alt="" />
+                    }
+                    <span class="guide-number">@schedule.ChannelNumber</span>
+                    <span class="guide-name">@schedule.ChannelName</span>
+                    @if (schedule.ArchiveFollowEnabled || schedule.ArchiveDays.Count > 0)
+                    {
+                        <button class="btn btn-sm guide-compare-toggle" title="Compare archive schedule"
+                                aria-label="@($"Compare archive schedule for {schedule.ChannelName}")"
+                                aria-expanded="@(_expanded.Contains(schedule.ChannelId) ? "true" : "false")" aria-controls="@($"archive-comparison-{schedule.ChannelId}")"
+                                @onclick="() => ToggleComparison(schedule.ChannelId)">
+                            <span aria-hidden="true">@(_expanded.Contains(schedule.ChannelId) ? "\u25b4" : "\u25be")</span>
+                        </button>
+                    }
+                </div>
+                <div class="guide-track" style="width:@(TrackWidth)px;">
+                    @foreach (GuideBlockSpan span in _archiveDates[schedule.ChannelId].Where(span => span.End > WindowStart && span.Start < WindowEnd))
+                    {
+                        double width = SpanWidth(span.Start, span.End);
+                        <div class="guide-archive-date @(width < TinyBand ? "tiny" : "")" style="left:@(X(span.Start))px;width:@(width)px;"
+                             title="@BandLabel(span)" aria-label="@BandLabel(span)">@(width < TinyBand ? null : span.Name)</div>
+                    }
+                    @foreach (GuideBlockSpan span in _blockSpans[schedule.ChannelId].Where(span => span.End > WindowStart && span.Start < WindowEnd))
+                    {
+                        double width = SpanWidth(span.Start, span.End);
+                        <div class="guide-block-band @(span.Name is null ? "normal" : $"band-{BandColor(span.Name)}") @(width < TinyBand ? "tiny" : "")"
+                             style="left:@(X(span.Start))px;width:@(width)px;"
+                             title="@BandLabel(span)" aria-label="@BandLabel(span)">
+                            @if (width >= TinyBand)
+                            {
+                                <span>@(span.Name ?? "Normal scheduling")</span>
+                            }
+                        </div>
+                    }
+                    @foreach (Block block in Blocks(schedule))
+                    {
+                        double width = Width(block);
+
+                        @* Narrow blocks drop their padding and borders, which would otherwise make them wider than their time and cover the next one. *@
+                        <div class="guide-prog @block.Category @(block.IsOnAir ? "on-air" : "") @(width < TinyProgramme ? "tiny" : "")"
+                             style="left:@(X(block.Start))px;width:@(width)px;"
+                             title="@block.Tooltip">
+                            @* Below roughly a word's worth of space the text is just noise. *@
+                            @if (width >= 150 && block.ArtId is not null)
+                            {
+                                <Artwork Id="@block.ArtId" Title="@block.Title" Class="guide-prog-art" Width="64" />
+                            }
+                            <div class="guide-prog-text">
+                                @if (width >= 46)
+                                {
+                                    <span class="guide-prog-title">@block.Title</span>
+                                }
+                                @if (block.Subtitle is not null && width >= 96)
+                                {
+                                    <span class="guide-prog-sub">@block.Subtitle</span>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+            @if (_expanded.Contains(schedule.ChannelId) && (schedule.ArchiveFollowEnabled || schedule.ArchiveDays.Count > 0))
+            {
+                @* What the archive aired at the same times, as plain grey blocks under the channel's own. *@
+                List<ArchiveBlock> archived = ArchiveBlocks(schedule);
+                <div class="guide-row guide-archive-row" id="@($"archive-comparison-{schedule.ChannelId}")" @key="@($"comparison-{schedule.ChannelId}")">
+                    <div class="guide-channel">
+                        <span class="guide-name guide-archive-label" title="What the archive aired at these times">Archived schedule</span>
+                    </div>
+                    <div class="guide-track" style="width:@(TrackWidth)px;">
+                        @if (archived.Count == 0)
+                        {
+                            <span class="guide-archive-empty">No archived schedule for this stretch</span>
+                        }
+                        @foreach (ArchiveBlock block in archived)
+                        {
+                            double width = SpanWidth(block.Start, block.End);
+                            <div class="guide-faux @(width < TinyProgramme ? "tiny" : "")" style="left:@(X(block.Start))px;width:@(width)px;" title="@block.Tooltip">
+                                @if (width >= 46)
+                                {
+                                    <span class="guide-prog-title">@block.Show</span>
+                                }
+                                @if (block.Episode is not null && width >= 96)
+                                {
+                                    <span class="guide-prog-sub">@block.Episode</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        }
+
+        @if (Now >= WindowStart && Now <= WindowEnd)
+        {
+            <div class="guide-playhead" style="left:@(ChannelWidth + X(Now))px;"></div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ChannelSchedule> Schedules { get; set; } = [];
+
+    /// <summary>Channels whose archived schedule row starts open.</summary>
+    [Parameter] public IEnumerable<string> CompareOpen { get; set; } = [];
+
+    private const int ChannelWidth = 200;
+
+    /// <summary>Pixels per hour, coarse to fine.</summary>
+    private static readonly int[] Zooms = [60, 100, 160, 260, 420];
+
+    private static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
+
+    /// <summary>A little history keeps the programme that is currently on air fully visible.</summary>
+    private static readonly TimeSpan LookBehind = TimeSpan.FromMinutes(30);
+
+    // 260 px an hour: half-hour programmes are wide enough to read without zooming.
+    private int _zoom = 3;
+
+    // Below these widths a block's padding and borders would be wider than the block.
+    private const double TinyProgramme = 24;
+    private const double TinyBand = 18;
+
+    private bool AnyFollow => Schedules.Any(schedule => schedule.ArchiveFollowEnabled || schedule.ArchiveDays.Count > 0);
+
+    private double SpanWidth(DateTimeOffset start, DateTimeOffset end) => Math.Max(X(end) - X(start), 1);
+
+    private sealed record ArchiveBlock(DateTimeOffset Start, DateTimeOffset End, string Show, string? Episode, string Tooltip);
+
+    /// <summary>The archived slots behind this window, at the times they're replayed.</summary>
+    private List<ArchiveBlock> ArchiveBlocks(ChannelSchedule schedule)
+    {
+        List<ArchiveBlock> blocks = [];
+        foreach (ArchiveGuideDay day in ArchiveGuideDay.Clip(schedule.ArchiveDays, WindowStart, WindowEnd))
+        {
+            foreach (ArchiveGuideBlock block in day.Blocks.Where(block => block.End > WindowStart && block.Start < WindowEnd))
+            {
+                string show = string.IsNullOrWhiteSpace(block.Show) ? "No archived programme" : block.Show;
+                string? episode = string.IsNullOrWhiteSpace(block.Episode) ? null : block.Episode;
+                List<string> tooltip = [$"Archive {day.Date:yyyy-MM-dd}"];
+                if (block.OriginalStart is { } from && block.OriginalEnd is { } to) tooltip.Add($"{Clock(from)} - {Clock(to)}");
+                tooltip.Add(episode is null ? show : $"{show} — {episode}");
+                if (block.Labels.Count > 0) tooltip.Add($"[{string.Join(" / ", block.Labels)}]");
+                blocks.Add(new ArchiveBlock(block.Start.ToLocalTime(), block.End.ToLocalTime(), show, episode, string.Join("  ", tooltip)));
+            }
+        }
+
+        return blocks;
+    }
+
+    private static string Clock(TimeSpan time) => time >= TimeSpan.FromDays(1) ? "24:00" : time.ToString(@"hh\:mm");
+    private System.Threading.Timer? _tick;
+    private readonly Dictionary<string, IReadOnlyList<GuideBlockSpan>> _blockSpans = [];
+    private readonly Dictionary<string, IReadOnlyList<GuideBlockSpan>> _archiveDates = [];
+    private IReadOnlyList<ChannelSchedule>? _previousSchedules;
+    private readonly HashSet<string> _expanded = [];
+
+    private void ToggleComparison(string channelId)
+    {
+        if (!_expanded.Add(channelId)) _expanded.Remove(channelId);
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(Schedules, _previousSchedules)) return;
+        _previousSchedules = Schedules;
+        _blockSpans.Clear();
+        _archiveDates.Clear();
+        foreach (ChannelSchedule schedule in Schedules)
+        {
+            _blockSpans[schedule.ChannelId] = GuideBlockSpan.FromSchedule(schedule);
+            _archiveDates[schedule.ChannelId] = GuideBlockSpan.ArchiveDates(schedule);
+        }
+    }
+
+    private static string BandLabel(GuideBlockSpan span) =>
+        $"{span.Name ?? "Normal scheduling"}: {span.Start.ToLocalTime():MMM d HH:mm} - {span.End.ToLocalTime():MMM d HH:mm}";
+
+    private static int BandColor(string name)
+    {
+        uint hash = 0;
+        foreach (char character in name) hash = unchecked(hash * 31 + character);
+        return (int)(hash % 4);
+    }
+
+    private int PxPerHour => Zooms[_zoom];
+
+    private DateTimeOffset Now => DateTimeOffset.Now;
+
+    /// <summary>Starts just before now, so the guide opens on what is on air rather than this morning.</summary>
+    private DateTimeOffset WindowStart
+    {
+        get
+        {
+            DateTimeOffset now = Now;
+            DateTimeOffset half = new(now.Year, now.Month, now.Day, now.Hour, now.Minute < 30 ? 0 : 30, 0, now.Offset);
+            return half - LookBehind;
+        }
+    }
+
+    private DateTimeOffset WindowEnd
+    {
+        get
+        {
+            DateTimeOffset floor = WindowStart + TimeSpan.FromHours(4);
+
+            DateTimeOffset last = Schedules.Count == 0
+                ? floor
+                : Schedules.Max(s => s.End.ToLocalTime());
+
+            return last > floor ? last : floor;
+        }
+    }
+
+    private TimeSpan Visible => WindowEnd - WindowStart;
+
+    private double TrackWidth => Math.Round(Visible.TotalHours * PxPerHour);
+
+    protected override void OnInitialized()
+    {
+        _expanded.UnionWith(CompareOpen);
+
+        // The playhead has to move on its own; the schedule itself only changes on a rebuild.
+        _tick = new System.Threading.Timer(_ => InvokeAsync(StateHasChanged), null, Interval, Interval);
+    }
+
+    public void Dispose() => _tick?.Dispose();
+
+    private static string Hours(TimeSpan span) => $"{span.TotalHours:0.#}h";
+
+    private double X(DateTimeOffset moment) =>
+        Math.Round(Math.Max((moment - WindowStart).TotalHours * PxPerHour, 0));
+
+    private double Width(Block block) => Math.Max(X(block.End) - X(block.Start), 2);
+
+    private IEnumerable<DateTimeOffset> Ticks()
+    {
+        TimeSpan step = PxPerHour >= 260 ? TimeSpan.FromMinutes(15)
+            : PxPerHour >= 100 ? TimeSpan.FromMinutes(30)
+            : TimeSpan.FromHours(1);
+
+        for (DateTimeOffset t = WindowStart; t < WindowEnd; t += step)
+        {
+            yield return t;
+        }
+    }
+
+    private static string Category(ScheduleEntry entry) =>
+        entry.Kind == ScheduleEntryKind.Interstitial || entry.IsSlotIntro || entry.IsSlotOutro ? "interstitial"
+        : entry.ProgramOrigin == ProgramOrigin.Anchor ? "anchor"
+        : entry.ProgramOrigin == ProgramOrigin.ArchiveRandom ? "archive-random"
+        : entry.ProgramOrigin == ProgramOrigin.Archive ? "archive"
+        : "normal";
+
+    private sealed record Block(string Title, string? Subtitle, DateTimeOffset Start, DateTimeOffset End, bool IsOnAir, string Category, string? ArtId)
+    {
+        private string CategoryLabel => Category switch
+        {
+            "interstitial" => "Short / Interstitial",
+            "anchor" => "Anchor show",
+            "archive" => "Archive follow",
+            "archive-random" => "Archive follow: random episode",
+            _ => "Normal scheduling"
+        };
+
+        public string Tooltip => $"{Start:HH:mm} – {End:HH:mm}  {Title}{(Subtitle is null ? "" : $" — {Subtitle}")} ({CategoryLabel})";
+    }
+
+    /// <summary>
+    /// One block per programme, not per entry: an episode split around advert breaks arrives as
+    /// several consecutive entries and would otherwise be drawn as several separate programmes.
+    /// </summary>
+    private List<Block> Blocks(ChannelSchedule schedule)
+    {
+        DateTimeOffset from = WindowStart;
+        DateTimeOffset to = WindowEnd;
+        DateTimeOffset now = Now;
+
+        List<Block> blocks = [];
+        ScheduleEntry? runStart = null;
+        ScheduleEntry? runEnd = null;
+        bool stacked = false;
+
+        void Flush()
+        {
+            if (runStart is null || runEnd is null)
+            {
+                return;
+            }
+
+            DateTimeOffset start = runStart.Start.ToLocalTime();
+            DateTimeOffset end = runEnd.End.ToLocalTime();
+
+            if (end > from && start < to)
+            {
+                blocks.Add(new Block(
+                    runStart.Item?.SeriesName ?? runStart.Item?.Title ?? runStart.Source,
+                    // Naming one episode would misrepresent a slot holding several.
+                    stacked || runStart.Item?.SeriesName is null ? null : runStart.Item.Title,
+                    start,
+                    end,
+                    now >= start && now < end,
+                    Category(runStart),
+                    ArtworkLinks.IsValidId(ArtworkLinks.PosterId(runStart.Item)) ? ArtworkLinks.PosterId(runStart.Item) : null));
+            }
+
+            runStart = null;
+            runEnd = null;
+        }
+
+        foreach (ScheduleEntry entry in schedule.Entries.Where(e => e.Kind is ScheduleEntryKind.Program or ScheduleEntryKind.Interstitial).OrderBy(e => e.Start))
+        {
+            // Same episode split by mid-roll, or a later episode stacked into the same slot: one block.
+            if (runStart is not null && runStart.BlockName == entry.BlockName
+                && Category(runStart) == Category(entry)
+                && (entry.ContinuesSlot || runStart.Item?.Id == entry.Item?.Id))
+            {
+                runEnd = entry;
+                stacked = stacked || entry.ContinuesSlot;
+                continue;
+            }
+
+            Flush();
+            runStart = entry;
+            runEnd = entry;
+            stacked = false;
+        }
+
+        Flush();
+        return blocks;
+    }
+}

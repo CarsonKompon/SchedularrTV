@@ -1,0 +1,18 @@
+bin/
+obj/
+.vs/
+*.user
+output/
+state/
+TestResults/
+.env
+
+# Written by the app when run from a checkout: holds API keys entered in App settings.
+settings.json
+logs/
+
+# Engine snapshot test output that differed from the recorded snapshot
+*.received.txt
+
+# Release packaging (CI)
+publish/

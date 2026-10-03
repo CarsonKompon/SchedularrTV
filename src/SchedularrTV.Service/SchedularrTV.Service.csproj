@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>SchedularrTV.Service</RootNamespace>
+    <UserSecretsId>schedularrtv-service</UserSecretsId>
+    <Version Condition="'$(Version)' == ''">0.1.0-dev</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SchedularrTV.Core\SchedularrTV.Core.csproj" />
+    <ProjectReference Include="..\SchedularrTV.Plugins.Abstractions\SchedularrTV.Plugins.Abstractions.csproj" />
+    <ProjectReference Include="..\SchedularrTV.Providers.ErsatzTv\SchedularrTV.Providers.ErsatzTv.csproj" />
+    <ProjectReference Include="..\SchedularrTV.Providers.Jellyfin\SchedularrTV.Providers.Jellyfin.csproj" />
+    <ProjectReference Include="..\SchedularrTV.Providers.FileSystem\SchedularrTV.Providers.FileSystem.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shared with the tray as source, so neither has to reference the other's dependencies. -->
+    <Compile Include="..\Shared\*.cs" LinkBase="Shared" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="4.153.1" />
+    <!-- Windows and macOS natives come with SkiaSharp itself; Linux needs its own package. -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.153.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      A local schedule.yaml is copied for development only, where the app then uses the files beside it.
+      Release builds ship none, so a downloaded copy keeps its data in the per-user folder and starts clean.
+    -->
+    <None Update="config\*.yaml" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+    <None Update="config\schedule.example.yaml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Update="config\schedule.yaml" Condition="'$(Configuration)' == 'Debug'" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+</Project>

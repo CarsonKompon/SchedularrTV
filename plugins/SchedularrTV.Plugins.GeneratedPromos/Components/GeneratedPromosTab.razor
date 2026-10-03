@@ -1,0 +1,192 @@
+@* Channel tab: which generated promos the channel and each of its blocks use, and their templates. *@
+@using SchedularrTV.Core.Scheduling
+@inject ConfigEditor Editor
+
+<div class="card">
+    <div class="card-head"><h2>Generated promos</h2></div>
+    <div class="grid grid-2">
+        <label class="field">
+            <span>Settings for</span>
+            <select value="@_blockIndex" @onchange="SelectScope" aria-label="Settings for">
+                <option value="-1">The whole channel</option>
+                @for (int index = 0; index < Channel.Blocks.Count; index++)
+                {
+                    BlockConfig block = Channel.Blocks[index];
+                    <option value="@index">Block: @block.Name (@ModeName(ModeOf(block.GeneratedPromos, isBlock: true), isBlock: true))</option>
+                }
+            </select>
+        </label>
+        <label class="field">
+            <span>Promos used</span>
+            <select value="@Mode" @onchange="SetMode" aria-label="Promos used">
+                @foreach (string mode in (Block is null ? ChannelModes : BlockModes))
+                {
+                    <option value="@mode">@ModeName(mode, Block is not null)</option>
+                }
+            </select>
+        </label>
+    </div>
+
+    @if (Mode == FromMode)
+    {
+        <label class="field">
+            <span>Channel to match</span>
+            <select value="@Current?.From" @onchange="SetFrom" aria-label="Channel to match">
+                @if (!Others.Any(other => string.Equals(other.Id, Current?.From, StringComparison.OrdinalIgnoreCase)))
+                {
+                    <option value="@Current?.From">@(string.IsNullOrWhiteSpace(Current?.From) ? "Choose a channel" : $"{Current?.From} (missing)")</option>
+                }
+                @foreach (ChannelConfig other in Others)
+                {
+                    <option value="@other.Id">@other.Number - @other.Name</option>
+                }
+            </select>
+        </label>
+        <p class="hint">
+            Always uses the generated promos set up on @(Source?.Name ?? "that channel"), including any later changes to them.
+            {channel} reads as @(Source?.Name ?? "that channel").
+            @if (Source is not null)
+            {
+                <a href="@($"channels/{Uri.EscapeDataString(Source.Id)}")">Edit them on @Source.Name</a>
+            }
+        </p>
+        @if (Source is not null)
+        {
+            <p class="hint">@Summary(Source.GeneratedPromos)</p>
+        }
+    }
+    else if (Mode == InheritMode)
+    {
+        <p class="hint">
+            This block uses the channel's generated promos. @Summary(GeneratedPromoPlanner.Source(Editor.Working, Channel, (BlockConfig?)null)?.Promos)
+        </p>
+    }
+    else if (Mode == OffMode)
+    {
+        <p class="hint">No generated promos air in this block.</p>
+    }
+
+    @foreach (string error in ScopeErrors)
+    {
+        <p class="hint warn" role="alert">@error</p>
+    }
+</div>
+
+@if (Mode == OwnMode)
+{
+    <GeneratedPromosEditor @key="Current" Channel="Channel" Config="Current" ConfigChanged="SetConfig" Changed="Changed"
+                           ErrorScope="@ErrorScope" Scope="@(Block is null ? "this channel" : "this block")" />
+}
+
+@code {
+    [Parameter, EditorRequired] public ChannelConfig Channel { get; set; } = new() { Id = "", Name = "" };
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private const string OwnMode = "own";
+    private const string FromMode = "from";
+    private const string InheritMode = "inherit";
+    private const string OffMode = "off";
+    private static readonly string[] ChannelModes = [OwnMode, FromMode];
+    private static readonly string[] BlockModes = [InheritMode, OwnMode, FromMode, OffMode];
+
+    private int _blockIndex = -1;
+
+    private BlockConfig? Block => _blockIndex >= 0 && _blockIndex < Channel.Blocks.Count ? Channel.Blocks[_blockIndex] : null;
+
+    private GeneratedPromosConfig? Current => Block is { } block ? block.GeneratedPromos : Channel.GeneratedPromos;
+
+    private string Mode => ModeOf(Current, Block is not null);
+
+    private string ErrorScope => Block is { } block
+        ? $"channels.{Channel.Id}.blocks.{block.Name}.plugins.{BuiltInPluginIds.GeneratedPromos}"
+        : $"channels.{Channel.Id}.plugins.{BuiltInPluginIds.GeneratedPromos}";
+
+    private IEnumerable<string> ScopeErrors => Editor.Errors.Where(error =>
+        error.StartsWith($"{ErrorScope}.from", StringComparison.OrdinalIgnoreCase));
+
+    private IEnumerable<ChannelConfig> Others => Editor.Working.Channels
+        .Where(other => !string.Equals(other.Id, Channel.Id, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(other => other.Number);
+
+    private ChannelConfig? Source => Editor.Working.Channels.FirstOrDefault(other =>
+        string.Equals(other.Id, Current?.From, StringComparison.OrdinalIgnoreCase));
+
+    protected override void OnParametersSet()
+    {
+        if (_blockIndex >= Channel.Blocks.Count)
+        {
+            _blockIndex = -1;
+        }
+    }
+
+    private static string ModeOf(GeneratedPromosConfig? config, bool isBlock) => config switch
+    {
+        null => isBlock ? InheritMode : OwnMode,
+        { From.Length: > 0 } => FromMode,
+        { Enabled: false } when isBlock => OffMode,
+        _ => OwnMode
+    };
+
+    private static string ModeName(string mode, bool isBlock) => mode switch
+    {
+        InheritMode => "Same as this channel",
+        FromMode => "Same as another channel",
+        OffMode => "None",
+        _ => isBlock ? "Its own templates" : "This channel's own templates"
+    };
+
+    private static string Summary(GeneratedPromosConfig? config) => config switch
+    {
+        null or { Enabled: false } => "No generated promos are set up there.",
+        { From.Length: > 0 } from => $"Those come from channel '{from.From}'.",
+        { Templates.Count: 0 } => "No templates yet.",
+        _ => $"Templates: {string.Join(", ", config.Templates.Select(template => template.Name))}."
+    };
+
+    private void SelectScope(ChangeEventArgs e) =>
+        _blockIndex = int.TryParse(e.Value?.ToString(), out int index) ? index : -1;
+
+    private async Task SetMode(ChangeEventArgs e)
+    {
+        string mode = e.Value?.ToString() ?? OwnMode;
+        GeneratedPromosConfig? config = mode switch
+        {
+            InheritMode => null,
+            OffMode => new GeneratedPromosConfig { Enabled = false },
+            FromMode => new GeneratedPromosConfig { From = Others.FirstOrDefault()?.Id },
+            // Keeps templates when turning a block that was switched off back on.
+            _ => Current is { From: null or "" } existing ? Enable(existing) : Block is null ? null : new GeneratedPromosConfig()
+        };
+        await SetConfig(config);
+        await Changed.InvokeAsync();
+    }
+
+    private static GeneratedPromosConfig Enable(GeneratedPromosConfig config)
+    {
+        config.Enabled = true;
+        return config;
+    }
+
+    private async Task SetFrom(ChangeEventArgs e)
+    {
+        if (Current is { } config)
+        {
+            config.From = e.Value?.ToString();
+            await Changed.InvokeAsync();
+        }
+    }
+
+    private Task SetConfig(GeneratedPromosConfig? config)
+    {
+        if (Block is { } block)
+        {
+            block.GeneratedPromos = config;
+        }
+        else
+        {
+            Channel.GeneratedPromos = config;
+        }
+
+        return Task.CompletedTask;
+    }
+}

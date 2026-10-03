@@ -1,0 +1,607 @@
+@page "/"
+@implements IDisposable
+@using System.Globalization
+@using SchedularrTV.Providers.Jellyfin
+@inject IEnumerable<DashboardCard> Cards
+@inject ConfigEditor Editor
+@inject ScheduleCoordinator Coordinator
+@inject SchedulerConfigProvider Provider
+@inject JellyfinMediaLibrary Library
+@inject JellyfinClient Jellyfin
+@inject IServiceProvider Services
+
+<PageHeader Title="Dashboard" Eyebrow="Overview">
+    <ChildContent>What is on air across your channels right now.</ChildContent>
+    <Actions>
+        @if (Coordinator.Latest.Count > 0)
+        {
+            <div class="segmented" role="tablist" aria-label="Dashboard view">
+                <button role="tab" aria-selected="@(_view == View.Channels ? "true" : "false")" class="@(_view == View.Channels ? "on" : "")"
+                        @onclick="() => _view = View.Channels"><Icon Name="play" Size="14" />On air</button>
+                <button role="tab" aria-selected="@(_view == View.Guide ? "true" : "false")" class="@(_view == View.Guide ? "on" : "")"
+                        @onclick="() => _view = View.Guide"><Icon Name="calendar" Size="14" />Guide</button>
+            </div>
+        }
+    </Actions>
+</PageHeader>
+
+<div class="stat-grid">
+    <div class="stat">
+        <div class="stat-label"><Icon Name="radio" Size="14" />Channels</div>
+        <div class="stat-value">@Editor.Working.Channels.Count</div>
+        <div class="stat-sub">@Editor.Working.GlobalCollections.Count collection(s)</div>
+    </div>
+    <div class="stat">
+        <div class="stat-label"><Icon Name="play" Size="14" />On air now</div>
+        <div class="stat-value">@OnAirCount</div>
+        <div class="stat-sub">of @Coordinator.Latest.Count scheduled</div>
+    </div>
+    <div class="stat">
+        <div class="stat-label"><Icon Name="history" Size="14" />Last build</div>
+        <div class="stat-value">@(Coordinator.LastBuiltAt?.ToLocalTime().ToString("HH:mm") ?? "—")</div>
+        <div class="stat-sub">@(Coordinator.LastBuiltAt is { } built ? Ago(built) : "never built")</div>
+    </div>
+    <div class="stat @(TotalPadding > TimeSpan.FromSeconds(1) ? "warn" : "ok")">
+        <div class="stat-label"><Icon Name="@(TotalPadding > TimeSpan.FromSeconds(1) ? "alert" : "check-circle")" Size="14" />Dead air</div>
+        @if (Coordinator.Latest.Count == 0)
+        {
+            <div class="stat-value">—</div>
+            <div class="stat-sub">nothing scheduled yet</div>
+        }
+        else
+        {
+            <div class="stat-value">@(TotalPadding > TimeSpan.FromSeconds(1) ? Length(TotalPadding) : "None")</div>
+            <div class="stat-sub">@(TotalPadding > TimeSpan.FromSeconds(1) ? "padding across all channels" : "every slot is filled")</div>
+        }
+    </div>
+</div>
+
+@if (Editor.Warnings.Count > 0)
+{
+    <div class="activity warn">
+        <Icon Name="alert" Size="18" />
+        <div class="activity-body">
+            <div class="activity-title">@Editor.Warnings.Count warning(s)</div>
+            <ul class="activity-detail" style="margin:0;padding-left:18px;">@foreach (string warning in Editor.Warnings) { <li>@warning</li> }</ul>
+        </div>
+    </div>
+}
+
+@if (_serverScan is { } scan)
+{
+    <div class="activity">
+        <div class="spinner spinner-sm"></div>
+        <div class="activity-body" role="status" aria-live="polite">
+            <div class="activity-title">Jellyfin is scanning its library@(scan.Percent is { } scanned ? $" ({scanned:0}%)" : "")</div>
+            <div class="activity-detail">New and changed files reach the scheduler on its next library refresh after the scan.</div>
+            @if (scan.Percent is { } percent)
+            {
+                <progress aria-label="Jellyfin library scan" max="100" value="@percent.ToString("0.#", CultureInfo.InvariantCulture)"></progress>
+            }
+        </div>
+    </div>
+}
+
+@if (Library.Loading is { } loading)
+{
+    <div class="activity">
+        <div class="spinner spinner-sm"></div>
+        <div class="activity-body" role="status" aria-live="polite">
+            <div class="activity-title">Reading the Jellyfin library</div>
+            <div class="activity-detail">
+                @loading.Stage
+                @if (loading.Items > 0)
+                {
+                    <span> &middot; @loading.Items.ToString("N0")@(loading.Total is > 0 && loading.Stage == "Reading items" ? $" of {loading.Total:N0}" : "") items</span>
+                }
+                <span> &middot; @Elapsed(loading.StartedAt)</span>
+            </div>
+            @if (loading.Stage == "Reading items" && loading.Percent is { } percent)
+            {
+                <progress aria-label="Jellyfin library read" max="100" value="@percent.ToString("0.#", CultureInfo.InvariantCulture)"></progress>
+            }
+        </div>
+    </div>
+}
+
+@if (Coordinator.IsBuilding)
+{
+    var progress = Coordinator.Progress;
+    <div class="activity">
+        <div class="spinner spinner-sm"></div>
+        <div class="activity-body" role="status" aria-live="polite">
+            <div class="activity-title">Building schedules</div>
+            @if (progress is not null)
+            {
+                <div class="activity-detail">
+                    @progress.CompletedChannels of @progress.TotalChannels channels complete
+                    @if (progress.ChannelName is not null)
+                    {
+                        <span> &middot; @progress.ChannelName</span>
+                    }
+                    <span> &middot; @progress.Stage</span>
+                    @if (progress.ChannelName is not null && progress.ChannelPercent > 0)
+                    {
+                        <span> (@progress.ChannelPercent%)</span>
+                    }
+                </div>
+                <progress aria-label="Schedule build progress" max="100" value="@progress.Percent.ToString("0.#", CultureInfo.InvariantCulture)"></progress>
+            }
+            else
+            {
+                <div class="activity-detail">Waiting to start</div>
+            }
+        </div>
+    </div>
+}
+
+@* Plugins' activity, such as Generated promos' render queue. *@
+@foreach (DashboardCard card in Cards.OrderBy(card => card.Order))
+{
+    <DynamicComponent Type="card.Component" />
+}
+
+@if (Failures.Count > 0)
+{
+    <div class="activity danger">
+        <Icon Name="alert" Size="18" />
+        <div class="activity-body">
+            <div class="activity-title">@Failures.Count channel(s) could not be rebuilt</div>
+            <div class="activity-detail">
+                Each is still playing the plan it had before the failure. Fix the cause, then rebuild that channel on its own.
+            </div>
+        </div>
+    </div>
+}
+
+@if (_view == View.Guide && Coordinator.Latest.Count > 0)
+{
+    <div class="card">
+        <GuideGrid Schedules="Coordinator.Latest" />
+    </div>
+}
+else
+{
+    <div class="channel-grid">
+        @foreach (ChannelSchedule schedule in Coordinator.Latest.OrderBy(s => s.ChannelNumber))
+        {
+            Listing listing = ListingFor(schedule);
+            <section class="card channel-card" @key="schedule.ChannelId">
+                <div class="channel-card-head">
+                    <div class="logo-tile">
+                        @if (!string.IsNullOrWhiteSpace(schedule.ChannelLogo))
+                        {
+                            <img src="@schedule.ChannelLogo" alt="" />
+                        }
+                        else
+                        {
+                            @schedule.ChannelNumber
+                        }
+                    </div>
+                    <div class="channel-card-title">
+                        <h2>@schedule.ChannelName</h2>
+                        <div class="card-sub">
+                            <span class="channel-number">@schedule.ChannelNumber</span>
+                            @if (schedule.TotalPadding > TimeSpan.FromSeconds(1))
+                            {
+                                <span class="pill pill-warn">@Length(schedule.TotalPadding) padding</span>
+                            }
+                            else
+                            {
+                                <span class="pill pill-ok"><Icon Name="check" Size="12" />No dead air</span>
+                            }
+                        </div>
+                    </div>
+                    <a class="btn btn-sm btn-ghost btn-icon" href="@($"channels/{schedule.ChannelId}")" title="Edit channel" aria-label="@($"Edit {schedule.ChannelName}")">
+                        <Icon Name="pencil" Size="14" />
+                    </a>
+                </div>
+
+                @if (Failures.TryGetValue(schedule.ChannelId, out ChannelBuildFailure? failure))
+                {
+                    <div class="activity danger" style="margin:14px 18px 0;">
+                        <Icon Name="alert" Size="18" />
+                        <div class="activity-body">
+                            <div class="activity-title">Playout build failed at @failure.At.ToLocalTime().ToString("HH:mm:ss")</div>
+                            <div class="activity-detail">@failure.Message</div>
+                            <div class="activity-detail">Still playing the plan from before the failure.</div>
+                        </div>
+                        <button class="btn btn-sm" disabled="@(_rebuilding == schedule.ChannelId)"
+                                @onclick="() => RebuildChannel(schedule.ChannelId)">
+                            <Icon Name="refresh" Size="14" />@(_rebuilding == schedule.ChannelId ? "Rebuilding…" : "Rebuild")
+                        </button>
+                    </div>
+                }
+
+                @if (listing.Feature is { } feature)
+                {
+                    <div class="now-playing">
+                        <div class="now-playing-bg" aria-hidden="true"><Artwork Id="@feature.BackdropId" Title="@feature.Title" Variant="thumb" Width="320" /></div>
+                        <Artwork Id="@feature.ArtId" Title="@feature.Title" Width="180" />
+                        <div class="np-body">
+                            <div class="np-label">
+                                @if (listing.IsLive)
+                                {
+                                    <span class="pill pill-live">Live</span>
+                                    <span>until @feature.End.ToLocalTime().ToString("HH:mm")</span>
+                                }
+                                else
+                                {
+                                    <span class="pill pill-accent">Up next</span>
+                                    <span>at @feature.Start.ToLocalTime().ToString("HH:mm")</span>
+                                }
+                            </div>
+                            <div class="np-title">@feature.Title</div>
+                            @if (feature.Subtitle is not null)
+                            {
+                                <div class="np-sub">@feature.Subtitle</div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(feature.Overview))
+                            {
+                                <div class="np-overview">@feature.Overview</div>
+                            }
+                            @if (listing.IsLive)
+                            {
+                                <div class="np-progress">
+                                    <span>@feature.Start.ToLocalTime().ToString("HH:mm")</span>
+                                    <div class="meter"><span style="width:@(Elapsed(feature).ToString("0.##", CultureInfo.InvariantCulture))%;"></span></div>
+                                    <span>@Remaining(feature) left</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <div class="upnext">
+                    @foreach (UpcomingEntry entry in listing.Next)
+                    {
+                        bool programme = entry.Kind == ScheduleEntryKind.Program;
+                        <div class="upnext-row @(programme ? "" : "muted")">
+                            <span class="upnext-time">@entry.Start.ToLocalTime().ToString("HH:mm")</span>
+                            @if (programme)
+                            {
+                                <Artwork Id="@entry.ArtId" Title="@entry.Title" Class="art-sm" Width="80" />
+                            }
+                            else
+                            {
+                                <span class="kind-dot k-@KindClass(entry.Kind)" title="@entry.Kind"></span>
+                            }
+                            <div class="upnext-text">
+                                <div class="upnext-title">
+                                    @entry.Title
+                                    @if (entry.Parts > 1)
+                                    {
+                                        <span class="pill pill-muted" style="margin-left:6px;">@entry.Parts parts</span>
+                                    }
+                                    @if (entry.Trimmed)
+                                    {
+                                        <span class="pill pill-muted" style="margin-left:6px;">trimmed</span>
+                                    }
+                                </div>
+                                @if (entry.Subtitle is not null)
+                                {
+                                    <div class="upnext-sub">@entry.Subtitle</div>
+                                }
+                                else if (!programme)
+                                {
+                                    <div class="upnext-sub">@entry.Kind</div>
+                                }
+                            </div>
+                            <span class="upnext-len">@Length(entry.Duration)</span>
+                        </div>
+                    }
+                </div>
+
+                <div class="channel-card-foot">
+                    <div class="schedule-strip" aria-label="@($"Schedule from {schedule.Start.ToLocalTime():ddd HH:mm} to {schedule.End.ToLocalTime():ddd HH:mm}")">
+                        @foreach (ScheduleEntry entry in schedule.Entries)
+                        {
+                            double width = entry.Duration / (schedule.End - schedule.Start) * 100;
+                            <div class="schedule-seg seg-@entry.Kind" style="width:@(width.ToString("0.####", CultureInfo.InvariantCulture))%;"
+                                 title="@Tooltip(entry)"></div>
+                        }
+                    </div>
+                    <div class="legend">
+                        <span><span style="background:var(--program);"></span>Programme</span>
+                        <span><span style="background:var(--interstitial);"></span>Short</span>
+                        <span><span style="background:var(--commercial);"></span>Commercial</span>
+                        <span><span style="background:var(--filler);"></span>Filler</span>
+                        <span><span style="background:var(--promo);"></span>Promo</span>
+                        <span><span style="background:#3a4050;"></span>Padding</span>
+                    </div>
+                    <label class="check">
+                        <input type="checkbox" checked="@_detailed.Contains(schedule.ChannelId)"
+                               @onchange="() => ToggleDetail(schedule.ChannelId)" />
+                        <span>Show commercials, filler and promos</span>
+                    </label>
+                </div>
+            </section>
+        }
+
+        @foreach (ChannelBuildFailure failure in Failures.Values
+            .Where(f => !Coordinator.Latest.Any(s => string.Equals(s.ChannelId, f.ChannelId, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(f => f.ChannelName))
+        {
+            <section class="card channel-card" @key="failure.ChannelId">
+                <div class="channel-card-head">
+                    <div class="logo-tile"><Icon Name="alert" Size="20" /></div>
+                    <div class="channel-card-title">
+                        <h2>@failure.ChannelName</h2>
+                        <div class="card-sub"><span class="pill pill-error">Off air</span></div>
+                    </div>
+                </div>
+                <div class="activity danger" style="margin:14px 18px 18px;">
+                    <Icon Name="alert" Size="18" />
+                    <div class="activity-body">
+                        <div class="activity-title">Playout build failed at @failure.At.ToLocalTime().ToString("HH:mm:ss")</div>
+                        <div class="activity-detail">@failure.Message</div>
+                        <div class="activity-detail">This channel has no earlier plan to fall back on, so it is off air.</div>
+                    </div>
+                    <button class="btn btn-sm" disabled="@(_rebuilding == failure.ChannelId)"
+                            @onclick="() => RebuildChannel(failure.ChannelId)">
+                        <Icon Name="refresh" Size="14" />@(_rebuilding == failure.ChannelId ? "Rebuilding…" : "Rebuild")
+                    </button>
+                </div>
+            </section>
+        }
+    </div>
+}
+
+@if (Coordinator.Latest.Count == 0 && !Coordinator.IsBuilding && Failures.Count == 0)
+{
+    <div class="empty">
+        <Icon Name="radio" Size="32" StrokeWidth="1.5" />
+        <div class="empty-title">Nothing on air yet</div>
+        <div>Add a channel and save; the scheduler builds within a few seconds.</div>
+        <div style="margin-top:16px;"><a class="btn btn-primary" href="channels"><Icon Name="plus" Size="14" />Set up a channel</a></div>
+    </div>
+}
+
+@code {
+    private enum View { Channels, Guide }
+
+    private View _view = View.Channels;
+
+    private readonly HashSet<string> _detailed = new(StringComparer.OrdinalIgnoreCase);
+    private string? _rebuilding;
+
+    private IReadOnlyDictionary<string, ChannelBuildFailure> Failures => Coordinator.Failures;
+
+    private TimeSpan TotalPadding => Coordinator.Latest.Aggregate(TimeSpan.Zero, (sum, s) => sum + s.TotalPadding);
+
+    private int OnAirCount
+    {
+        get
+        {
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            return Coordinator.Latest.Count(s => s.Entries.Any(e => e.Kind == ScheduleEntryKind.Program && e.Start <= now && e.End > now));
+        }
+    }
+
+    private async Task RebuildChannel(string channelId)
+    {
+        _rebuilding = channelId;
+
+        try
+        {
+            await Coordinator.RebuildChannelAsync(channelId, CancellationToken.None);
+        }
+        finally
+        {
+            _rebuilding = null;
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Coordinator.StateChanged += OnBuildStateChanged;
+        Library.LoadingChanged += OnBuildStateChanged;
+        _ = PollAsync(_life.Token);
+    }
+
+    public void Dispose()
+    {
+        Coordinator.StateChanged -= OnBuildStateChanged;
+        Library.LoadingChanged -= OnBuildStateChanged;
+        _life.Cancel();
+        _life.Dispose();
+    }
+
+    // Raised from the build's own thread, so hop back to the renderer.
+    private void OnBuildStateChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private readonly CancellationTokenSource _life = new();
+    private JellyfinServerScan? _serverScan;
+
+    /// <summary>Jellyfin has no push for its own scans, so ask while the page is open; this also ticks the elapsed times.</summary>
+    private async Task PollAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(4));
+        do
+        {
+            try
+            {
+                _serverScan = await Jellyfin.GetLibraryScanAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception)
+            {
+                // Unreachable or not configured: the dashboard just doesn't show a scan.
+                _serverScan = null;
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+        while (await SafeTickAsync(timer, cancellationToken));
+    }
+
+    private static async Task<bool> SafeTickAsync(PeriodicTimer timer, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await timer.WaitForNextTickAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    private static string Elapsed(DateTimeOffset since)
+    {
+        TimeSpan elapsed = DateTimeOffset.UtcNow - since;
+        return elapsed.TotalMinutes >= 1 ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds:00}s" : $"{Math.Max(0, (int)elapsed.TotalSeconds)}s";
+    }
+
+    private static string Ago(DateTimeOffset at)
+    {
+        TimeSpan ago = DateTimeOffset.UtcNow - at;
+        return ago.TotalMinutes < 1 ? "just now"
+            : ago.TotalHours < 1 ? $"{(int)ago.TotalMinutes} min ago"
+            : ago.TotalDays < 1 ? $"{(int)ago.TotalHours}h {ago.Minutes}m ago"
+            : at.ToLocalTime().ToString("ddd d MMM");
+    }
+
+    private static double Elapsed(UpcomingEntry entry)
+    {
+        double total = (entry.End - entry.Start).TotalSeconds;
+        return total <= 0 ? 0 : Math.Clamp((DateTimeOffset.UtcNow - entry.Start).TotalSeconds / total * 100, 0, 100);
+    }
+
+    private static string Remaining(UpcomingEntry entry)
+    {
+        TimeSpan left = entry.End - DateTimeOffset.UtcNow;
+        return left.TotalHours >= 1 ? $"{(int)left.TotalHours}h {left.Minutes}m" : $"{Math.Max(0, (int)Math.Ceiling(left.TotalMinutes))}m";
+    }
+
+    private void ToggleDetail(string channelId)
+    {
+        if (!_detailed.Add(channelId))
+        {
+            _detailed.Remove(channelId);
+        }
+    }
+
+    private static string KindClass(ScheduleEntryKind kind)
+    {
+        string name = kind.ToString();
+        return name.EndsWith("Promo", StringComparison.Ordinal) ? "Promo" : name;
+    }
+
+    private static string Tooltip(ScheduleEntry entry) =>
+        $"{entry.Start.ToLocalTime():HH:mm:ss} {entry.Kind} — {Describe(entry)}";
+
+    private static string Length(TimeSpan value) =>
+        value.TotalHours >= 1 ? $"{(int)value.TotalHours}h {value.Minutes:00}m"
+        : value.TotalMinutes >= 1 ? $"{(int)value.TotalMinutes}m {value.Seconds:00}s"
+        : $"{value.TotalSeconds:0}s";
+
+    /// <summary>"S01E03 Futurama - The Series Has Landed", falling back for films and clips.</summary>
+    private static string Describe(ScheduleEntry entry)
+    {
+        if (entry.Item is not { } item)
+        {
+            return entry.Source;
+        }
+
+        if (item.Kind != MediaKind.Episode || string.IsNullOrWhiteSpace(item.SeriesName))
+        {
+            return item.Title;
+        }
+
+        // Specials and loose clips have no numbering, and "S00E00" reads worse than nothing.
+        if (item.SeasonNumber is null && item.EpisodeNumber is null)
+        {
+            return $"{item.SeriesName} - {item.Title}";
+        }
+
+        return $"S{item.SeasonNumber ?? 0:D2}E{item.EpisodeNumber ?? 0:D2} {item.SeriesName} - {item.Title}";
+    }
+
+    /// <summary>Headline (series or film) and the line beneath it (episode code and title).</summary>
+    private static (string Title, string? Subtitle) Split(ScheduleEntry entry)
+    {
+        if (entry.Item is not { } item)
+        {
+            return (entry.Source, null);
+        }
+
+        if (item.Kind != MediaKind.Episode || string.IsNullOrWhiteSpace(item.SeriesName))
+        {
+            return (item.Title, item.PremiereDate is { } premiered && item.Kind == MediaKind.Movie ? premiered.Year.ToString(CultureInfo.InvariantCulture) : null);
+        }
+
+        string code = item.SeasonNumber is null && item.EpisodeNumber is null
+            ? ""
+            : $"S{item.SeasonNumber ?? 0:D2}E{item.EpisodeNumber ?? 0:D2} · ";
+
+        return (item.SeriesName, code + item.Title);
+    }
+
+    private sealed record UpcomingEntry(
+        DateTimeOffset Start,
+        DateTimeOffset End,
+        string Key,
+        string Title,
+        string? Subtitle,
+        string? ArtId,
+        string? BackdropId,
+        string? Overview,
+        int Parts,
+        TimeSpan Duration,
+        bool Trimmed,
+        ScheduleEntryKind Kind);
+
+    private sealed record Listing(UpcomingEntry? Feature, bool IsLive, IReadOnlyList<UpcomingEntry> Next);
+
+    // A mid-rolled feature is one listing in the guide, so showing each of its segments here would
+    // push every other programme out of a short list. Collapse consecutive segments instead.
+    private static List<UpcomingEntry> Merge(IEnumerable<ScheduleEntry> entries) =>
+        entries.Aggregate(new List<UpcomingEntry>(), (acc, e) =>
+        {
+            string key = Describe(e);
+            if (acc.Count > 0 && acc[^1].Key == key && acc[^1].Kind == e.Kind)
+            {
+                acc[^1] = acc[^1] with
+                {
+                    Parts = acc[^1].Parts + 1,
+                    Duration = acc[^1].Duration + e.Duration,
+                    End = e.End
+                };
+            }
+            else
+            {
+                (string title, string? subtitle) = Split(e);
+                acc.Add(new UpcomingEntry(
+                    e.Start, e.End, key, title, subtitle,
+                    ArtworkLinks.PosterId(e.Item),
+                    e.Item?.Id,
+                    e.Item?.Overview,
+                    1, e.Duration, e.IsTrimmed, e.Kind));
+            }
+
+            return acc;
+        });
+
+    private Listing ListingFor(ChannelSchedule schedule)
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        bool detailed = _detailed.Contains(schedule.ChannelId);
+
+        List<UpcomingEntry> programmes = Merge(schedule.Entries
+            .Where(e => e.End > now && e.Kind == ScheduleEntryKind.Program)
+            .Take(80));
+
+        UpcomingEntry? feature = programmes.FirstOrDefault();
+        bool live = feature is not null && feature.Start <= now;
+
+        IEnumerable<UpcomingEntry> next = detailed
+            ? Merge(schedule.Entries.Where(e => e.End > now && (feature is null || e.Start < feature.Start || e.Start >= feature.End)).Take(200)).Take(40)
+            : programmes.Skip(1).Take(5);
+
+        return new Listing(feature, live, next.ToList());
+    }
+}

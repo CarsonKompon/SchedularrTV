@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The tray is a small Avalonia app that runs the server (SchedularrTV.Service) as a child process from a
+    "server" folder beside it. Keeping them in separate processes means the tray's Avalonia/SkiaSharp and the
+    server's SkiaSharp never clash, a tray crash can't take the scheduler down, and the server can also run
+    on its own (headless Linux, systemd, Docker).
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>SchedularrTV</AssemblyName>
+    <RootNamespace>SchedularrTV.Tray</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <Version Condition="'$(Version)' == ''">0.1.0-dev</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
+    <!-- Windows draws the tray menu itself, which needs a theme; macOS and Linux use native menus. -->
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\*.cs" LinkBase="Shared" />
+  </ItemGroup>
+
+  <!-- Development only: build the server too and put it where the tray looks for it. Releases publish it there. -->
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+    <ProjectReference Include="..\SchedularrTV.Service\SchedularrTV.Service.csproj" ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
+
+  <Target Name="CopyServerBuild" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug'">
+    <MSBuild Projects="..\SchedularrTV.Service\SchedularrTV.Service.csproj" Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_ServerAssembly" />
+    </MSBuild>
+    <PropertyGroup>
+      <_ServerOutput>@(_ServerAssembly->'%(RootDir)%(Directory)')</_ServerOutput>
+    </PropertyGroup>
+    <ItemGroup>
+      <_ServerFiles Include="$(_ServerOutput)**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ServerFiles)" DestinationFiles="@(_ServerFiles->'$(OutDir)server\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

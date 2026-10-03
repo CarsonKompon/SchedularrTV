@@ -1,0 +1,48 @@
+@* Poster or still from the media server, over a tinted monogram that stays if there is no image. *@
+
+<div class="art art-@Variant @Class" style="--art-hue:@Hue;">
+    <span class="art-fallback" aria-hidden="true">@Initials</span>
+    @if (Url is { } url)
+    {
+        <img src="@url" alt="" loading="lazy" decoding="async"
+             onload="this.classList.add('loaded')" onerror="this.classList.add('failed')" />
+    }
+</div>
+
+@code {
+    /// <summary>Jellyfin item id; anything else (file-system items, missing ids) shows the monogram.</summary>
+    [Parameter] public string? Id { get; set; }
+    [Parameter] public string? Title { get; set; }
+
+    /// <summary><c>poster</c> (2:3), <c>thumb</c> (16:9) or <c>square</c>.</summary>
+    [Parameter] public string Variant { get; set; } = "poster";
+
+    /// <summary>Requested pixel width; ask for roughly twice the displayed size for sharp HiDPI rendering.</summary>
+    [Parameter] public int Width { get; set; } = 160;
+    [Parameter] public string? Class { get; set; }
+
+    private string? Url => ArtworkLinks.Url(Id, Width);
+
+    private int Hue
+    {
+        get
+        {
+            uint hash = 2166136261;
+            foreach (char c in Title ?? Id ?? "")
+            {
+                hash = unchecked((hash ^ c) * 16777619);
+            }
+
+            return (int)(hash % 360);
+        }
+    }
+
+    private string Initials
+    {
+        get
+        {
+            string[] words = LibraryBrowser.TitleSortKey(Title ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return string.Concat(words.Where(w => char.IsLetterOrDigit(w[0])).Take(2).Select(w => char.ToUpperInvariant(w[0])));
+        }
+    }
+}

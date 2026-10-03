@@ -1,0 +1,371 @@
+@* Context-aware promo settings. *@
+@using SchedularrTV.Core.Query
+@using SchedularrTV.Providers.FileSystem
+@using Microsoft.Extensions.Options
+@inject LibraryBrowser Browser
+@inject IMediaLibrary Library
+@inject IOptions<FileSystemLibraryOptions> MediaFolders
+
+<div class="card">
+    <div class="card-head"><h2>Promos</h2></div>
+    <p class="hint">
+        Station idents and trailers, picked to suit the show either side of each ad break.
+    </p>
+
+    <label class="check">
+        <input type="checkbox" checked="@Config.Enabled"
+               @onchange="e => { Config.Enabled = (bool)(e.Value ?? true); Changed.InvokeAsync(); }" />
+        <span>Enabled</span>
+    </label>
+
+    @if (Config.Enabled)
+    {
+        <h3>Brands</h3>
+        <TagChipPicker Label="Brand folders (any of)"
+                       Hint="Promos are only taken from these folders. Leave all off to follow the channel's advert brands, so a channel using Any Channel, Any Childrens and its own brand pulls promos from all three."
+                       EmptyHint="No commercials library configured."
+                       Available="_brands"
+                       Selected="Config.BaseTags"
+                       SelectedChanged="OnBrandsChanged" />
+
+        <h3>Break before a new show</h3>
+        <p class="hint">Runs in this order, around whatever ads and filler close the gap.</p>
+
+        <PromoSpotEditor Spot="Config.ThisHasBeen" Changed="Changed"
+                         Name="This has been" FolderName="@FolderOf(Config.ThisHasBeen)"
+                         Description="Signs off the show that just finished, first in the break. A slot holding several episodes signs off once, after the last one."
+                         SameSeriesLabel="Skip when the same series plays next" />
+
+        <PromoSpotEditor Spot="Config.UpNext" Changed="Changed" ShowPlacement="true"
+                         Name="Coming up next" FolderName="@FolderOf(Config.UpNext)"
+                         Description="Trails the show that follows, clips and generated promos alike. By default it turns up in any break of the show before it, mid-rolls included, somewhere among the ads."
+                         SameSeriesLabel="Skip when the next programme is the same series" />
+
+        <PromoSpotEditor Spot="Config.NowPlaying" Changed="Changed"
+                         Name="Now playing" FolderName="@FolderOf(Config.NowPlaying)"
+                         Description="Ident for the show about to start. The very last thing before it and any intro."
+                         SameSeriesLabel="Skip when the next programme is the same series" />
+
+        <h3>Break inside a show</h3>
+        <p class="hint">A mid-roll, or the gap between two episodes of the same slot.</p>
+
+        <PromoSpotEditor Spot="Config.YoureWatching" Changed="Changed"
+                         Name="You're watching" FolderName="@FolderOf(Config.YoureWatching)"
+                         Description="Ident on the way into the break." ShowSameSeries="false" />
+
+        <PromoSpotEditor Spot="Config.BackToTheShow" Changed="Changed"
+                         Name="Back to the show" FolderName="@FolderOf(Config.BackToTheShow)"
+                         Description="Bumper on the way back, immediately before the show resumes."
+                         ShowSameSeries="false" />
+
+        <h3>Trailers for later</h3>
+        <p class="hint">
+            Filled into the middle of a break for shows further ahead. The first window wide enough to
+            cover the wait decides which folder is used.
+        </p>
+
+        @foreach (PromoWindow window in Windows.ToList())
+        {
+            <div class="list-row" style="align-items:flex-start;">
+                <div style="width:150px;">
+                    <DurationInput Label="Airing within" Value="window.Within"
+                                   ValueChanged="v => { window.Within = v ?? TimeSpan.FromHours(1); Changed.InvokeAsync(); }" />
+                </div>
+                <div style="flex:1;">
+                    <TagListEditor Label="Folder names accepted" Placeholder="later_today"
+                                   Values="window.PromoTypes" Changed="Changed" />
+                    <label class="check">
+                        <input type="checkbox" checked="@window.IncludeClockVariants"
+                               @onchange="e => { window.IncludeClockVariants = (bool)(e.Value ?? true); Changed.InvokeAsync(); }" />
+                        <span>Use clock folders such as <code>4pm</code> when the time matches</span>
+                    </label>
+                </div>
+                <button class="btn btn-sm btn-danger" @onclick="() => Remove(window)">Remove</button>
+            </div>
+        }
+
+        <button class="btn btn-sm" @onclick="AddWindow">Add window</button>
+
+        <h3>Trailers for later in the week</h3>
+        <p class="hint">
+            Filed under the day and time a show airs, and mixed in among the ads rather than given a
+            place of their own. One only plays when the channel really does run that show then, so a
+            trailer stops on its own once the slot it names has gone.
+        </p>
+
+        <label class="check">
+            <input type="checkbox" checked="@Config.Eventually.Enabled"
+                   @onchange="e => { Config.Eventually.Enabled = (bool)(e.Value ?? true); Changed.InvokeAsync(); }" />
+            <span>Play these</span>
+        </label>
+
+        @if (Config.Eventually.Enabled)
+        {
+            <div class="grid grid-3">
+                <label class="field">
+                    <span>Chance per break</span>
+                    <input type="number" min="0" max="100" step="5" value="@Percent" @onchange="OnChanceChanged" />
+                    <span class="hint">Out of every hundred breaks, roughly how many carry one.</span>
+                </label>
+                <DurationInput Label="Advertise up to" Value="Config.Eventually.Horizon"
+                               ValueChanged="v => { Config.Eventually.Horizon = v ?? TimeSpan.FromDays(7); Changed.InvokeAsync(); }" />
+                <TagListEditor Label="Folder names accepted" Placeholder="eventually"
+                               Values="Config.Eventually.PromoTypes" Changed="Changed" />
+            </div>
+        }
+
+        <details>
+            <summary style="cursor:pointer;color:var(--muted);font-size:12px;margin:12px 0 8px;">Advanced</summary>
+            <div class="grid grid-3">
+                <label class="field">
+                    <span>Base query</span>
+                    <input type="text" value="@Config.BaseQuery" placeholder="tag:&quot;Promo&quot;"
+                           @onchange="e => { Config.BaseQuery = Text(e); Changed.InvokeAsync(); }" />
+                </label>
+                <DurationInput Label="Look ahead" Value="Config.Lookahead"
+                               ValueChanged="v => { Config.Lookahead = v ?? TimeSpan.FromHours(12); Changed.InvokeAsync(); }" />
+                <label class="field">
+                    <span>Max trailers per break</span>
+                    <input type="number" min="0" value="@Config.MaxPerBreak"
+                           @onchange="e => { Config.MaxPerBreak = int.TryParse(e.Value?.ToString(), out int v) ? v : 2; Changed.InvokeAsync(); }" />
+                </label>
+            </div>
+            <label class="field" style="max-width:260px;">
+                <span>"Any show" folder name</span>
+                <input type="text" value="@Config.AnyShowAlias"
+                       @onchange="e => { Config.AnyShowAlias = e.Value?.ToString() ?? string.Empty; Changed.InvokeAsync(); }" />
+            </label>
+        </details>
+
+        <h3>Where to file the clips</h3>
+        <p class="hint">
+            Inside a <code>@PromoFolder</code> folder, the next levels are the show and the promo, in
+            plain English. Everything above it stays an ordinary tag, which is what keeps one channel's
+            promos separate from another's.
+        </p>
+
+        <div class="grid grid-2">
+            <label class="field">
+                <span>Preview for brand</span>
+                <select value="@_brand" @onchange="e => { _brand = e.Value?.ToString() ?? string.Empty; _ = Recount(); }">
+                    @foreach (string brand in _brands)
+                    {
+                        <option value="@brand">@brand</option>
+                    }
+                </select>
+            </label>
+            <label class="field">
+                <span>and show</span>
+                <select value="@_show" @onchange="e => { _show = e.Value?.ToString() ?? string.Empty; _ = Recount(); }">
+                    @foreach (string show in _shows)
+                    {
+                        <option value="@show">@show</option>
+                    }
+                </select>
+            </label>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_show))
+        {
+            <table class="table">
+                <thead>
+                    <tr><th>When it plays</th><th>Folder</th><th style="text-align:right;">Clips</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (PromoPath row in _paths)
+                    {
+                        <tr>
+                            <td>@row.When</td>
+                            <td><code>@row.Path</code></td>
+                            <td style="text-align:right;">@(row.Count is { } c ? c.ToString() : "…")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <p class="hint">
+                Where a row lists more than one folder, any single one of them works. Casing and spacing
+                are free: <code>Up Next</code>, <code>up next</code> and <code>up_next</code> all read the
+                same. Add a clock folder inside one (<code>Coming Up\4pm</code>) to use a clip only when
+                the show starts then; the folder above it covers every other hour. Under
+                <code>Eventually</code> the day goes above the time
+                (<code>Eventually\Saturday\400pm</code>), and either level may be left out. A show folder
+                named <code>@Config.AnyShowAlias</code> stands in for whatever is being promoted.
+            </p>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PromoConfig Config { get; set; } = new();
+    [Parameter] public EventCallback Changed { get; set; }
+
+    /// <summary>Preselects the brand folder when the editor is opened from a channel.</summary>
+    [Parameter] public string? ChannelName { get; set; }
+
+    private sealed record PromoPath(string When, string Path, int? Count);
+
+    private IReadOnlyList<string> _brands = [];
+    private IReadOnlyList<string> _shows = [];
+    private List<PromoPath> _paths = [];
+    private string _brand = string.Empty;
+    private string _show = string.Empty;
+    private string _root = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        CommercialFolders folders = await Browser.GetCommercialFoldersAsync();
+        _brands = folders.Brands;
+        _root = MediaFolders.Value.Folders.FirstOrDefault()?.Path ?? folders.Roots.FirstOrDefault() ?? string.Empty;
+        _shows = [Config.AnyShowAlias, .. (await Browser.GetShowsAsync()).Select(s => s.Name)];
+
+        _brand = _brands.FirstOrDefault(b => string.Equals(b, ChannelName, StringComparison.OrdinalIgnoreCase))
+            ?? _brands.FirstOrDefault()
+            ?? string.Empty;
+
+        _show = _shows.FirstOrDefault() ?? string.Empty;
+        await Recount();
+    }
+
+    /// <summary>
+    /// Builds the folder list from the same query the engine runs, so the counts cannot drift from
+    /// what would actually be selected.
+    /// </summary>
+    private async Task Recount()
+    {
+        if (string.IsNullOrEmpty(_show))
+        {
+            _paths = [];
+            return;
+        }
+
+        List<PromoPath> paths = [];
+
+        foreach (PromoWindow window in Windows.OrderBy(w => w.Within))
+        {
+            foreach (string type in window.PromoTypes)
+            {
+                paths.Add(new PromoPath($"Show airs within {Humanise(window.Within)}", Folder(type), null));
+            }
+        }
+
+        foreach (string type in Config.UpNext.PromoTypes)
+        {
+            paths.Add(new PromoPath("Coming up next", Folder(type), null));
+        }
+
+        foreach (string type in Config.NowPlaying.PromoTypes)
+        {
+            paths.Add(new PromoPath("Now playing", Folder(type), null));
+        }
+
+        foreach (string type in Config.ThisHasBeen.PromoTypes)
+        {
+            paths.Add(new PromoPath("This has been", Folder(type), null));
+        }
+
+        foreach (string type in Config.YoureWatching.PromoTypes)
+        {
+            paths.Add(new PromoPath("Going to a break", Folder(type), null));
+        }
+
+        foreach (string type in Config.BackToTheShow.PromoTypes)
+        {
+            paths.Add(new PromoPath("Returning from a break", Folder(type), null));
+        }
+
+        foreach (string type in Config.Eventually.PromoTypes)
+        {
+            paths.Add(new PromoPath($"Airing within {Humanise(Config.Eventually.Horizon)}", Folder(type), null));
+        }
+
+        _paths = paths;
+        StateHasChanged();
+
+        for (int i = 0; i < _paths.Count; i++)
+        {
+            _paths[i] = _paths[i] with { Count = await CountAsync(_paths[i].Path) };
+            StateHasChanged();
+        }
+    }
+
+    private string Folder(string promoType) =>
+        System.IO.Path.Combine(_root, _brand, PromoFolder, _show, PlainEnglish(promoType));
+
+    private string PromoFolder =>
+        MediaFolders.Value.Folders.FirstOrDefault()?.PromoFolder is { Length: > 0 } name ? name : "Promos";
+
+    /// <summary>Null or empty means "inherit the channel's commercial base tags", resolved by the engine.</summary>
+    private async Task OnBrandsChanged(List<string>? brands)
+    {
+        Config.BaseTags = brands;
+        await Changed.InvokeAsync();
+    }
+
+    /// <summary>The folder a spot reads, so the editor names it the way it is written on disk.</summary>
+    private static string FolderOf(PromoSpotConfig spot) =>
+        spot.PromoTypes.Count > 0 ? PlainEnglish(spot.PromoTypes[0]) : "—";
+
+    /// <summary>Mirrors the folder-name reading, so the path shown is one that would actually match.</summary>
+    private static string PlainEnglish(string promoType) =>
+        string.Join(' ', promoType.Split('_', StringSplitOptions.RemoveEmptyEntries)
+            .Select(word => char.ToUpperInvariant(word[0]) + word[1..]));
+
+    private async Task<int> CountAsync(string folder)
+    {
+        IReadOnlyList<MediaItem> items = await Library.SearchAsync(
+            new FieldExpression("path", ComparisonOperator.Contains, [folder]));
+
+        return items.Count;
+    }
+
+    private static string Humanise(TimeSpan value) => value switch
+    {
+        { TotalDays: >= 1 } => $"{value.TotalDays:0.#}d",
+        { TotalHours: >= 1 } => $"{value.TotalHours:0.#}h",
+        _ => $"{value.TotalMinutes:0}m"
+    };
+
+    private int Percent => (int)Math.Round(Config.Eventually.Chance * 100);
+
+    private async Task OnChanceChanged(ChangeEventArgs e)
+    {
+        int percent = int.TryParse(e.Value?.ToString(), out int value) ? Math.Clamp(value, 0, 100) : 25;
+
+        Config.Eventually.Chance = percent / 100d;
+        await Changed.InvokeAsync();
+    }
+
+    // Surfacing the built-in defaults makes them editable instead of invisible.
+    private List<PromoWindow> Windows
+    {
+        get
+        {
+            if (Config.Windows.Count == 0)
+            {
+                Config.Windows.AddRange(PromoConfig.DefaultWindows.Select(w => new PromoWindow
+                {
+                    Within = w.Within,
+                    PromoTypes = [.. w.PromoTypes],
+                    IncludeClockVariants = w.IncludeClockVariants
+                }));
+            }
+
+            return Config.Windows;
+        }
+    }
+
+    private async Task AddWindow()
+    {
+        Config.Windows.Add(new PromoWindow { Within = TimeSpan.FromHours(1), PromoTypes = [] });
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Remove(PromoWindow window)
+    {
+        Config.Windows.Remove(window);
+        await Changed.InvokeAsync();
+    }
+
+    private static string? Text(ChangeEventArgs e) =>
+        string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString();
+}

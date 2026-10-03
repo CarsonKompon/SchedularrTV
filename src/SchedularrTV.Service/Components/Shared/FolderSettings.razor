@@ -1,0 +1,61 @@
+@* Commercials folders on disk; shared by App settings and the setup wizard. *@
+@using SchedularrTV.Providers.FileSystem
+@using SchedularrTV.Service.Hosting
+
+<p class="hint">
+    Folders on disk holding adverts, bumpers, IDs and promos. Each folder name beneath a root becomes a tag, so
+    <code>Commercials/Nickelodeon/Ads/x.mp4</code> is tagged Commercials, Nickelodeon and Ads, and channels pick their
+    breaks by those names.
+</p>
+@foreach (MediaFolderOptions folder in Form.Folders)
+{
+    <div class="list-row" style="flex-wrap:wrap;gap:8px;align-items:flex-end;">
+        <label class="field" style="flex:2 1 320px;margin:0;">
+            <span>Folder</span>
+            <FilePathPicker Value="@folder.Path" ValueChanged="v => Edit(() => folder.Path = v ?? string.Empty)" Extensions="SettingsFiles.None"
+                            PickFolder="true" Label="a commercials folder" StartIn="Environment.SpecialFolder.MyVideos" />
+        </label>
+        <label class="field" style="flex:1 1 200px;margin:0;">
+            <span>Tags for everything inside</span>
+            <input type="text" value="@string.Join(", ", folder.Tags)" placeholder="Commercials"
+                   @onchange="e => Edit(() => folder.Tags = [.. (e.Value?.ToString() ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)])" />
+        </label>
+        @if (ShowAdvanced)
+        {
+            <label class="field" style="flex:0 1 150px;margin:0;">
+                <span>Promo folder name</span>
+                <input type="text" value="@folder.PromoFolder" placeholder="(none)"
+                       @onchange="e => Edit(() => folder.PromoFolder = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString()!.Trim())" />
+            </label>
+            <label class="check" style="margin:0 0 8px;">
+                <input type="checkbox" checked="@folder.TagFromFolders" @onchange="e => Edit(() => folder.TagFromFolders = e.Value is true)" />
+                <span>Tag from sub-folders</span>
+            </label>
+        }
+        <button class="btn btn-sm btn-danger" type="button" style="margin-bottom:6px;" @onclick="() => Edit(() => Form.Folders.Remove(folder))">Remove</button>
+        @if (!string.IsNullOrWhiteSpace(folder.Path) && !Directory.Exists(folder.Path))
+        {
+            <p class="hint warn" style="flex-basis:100%;margin:0;">This folder can't be found.</p>
+        }
+    </div>
+}
+<button class="btn btn-sm" type="button" @onclick="Add"><Icon Name="plus" Size="14" />Add folder</button>
+
+@code {
+    [Parameter, EditorRequired] public AppSettingsForm Form { get; set; } = default!;
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public bool ShowAdvanced { get; set; } = true;
+
+    private Task Add()
+    {
+        Form.AddFolder();
+        return Changed.InvokeAsync();
+    }
+
+    private Task Edit(Action change)
+    {
+        change();
+        Form.FoldersChanged = Form.IsDirty = true;
+        return Changed.InvokeAsync();
+    }
+}

@@ -1,0 +1,89 @@
+@* Time-locked slots, used for both channel anchors and block anchors. *@
+
+<div class="card" style="background:var(--panel-2);">
+    <div class="card-head">
+        <h2 style="font-size:14px;">@Label (@Anchors.Count)</h2>
+        <div class="spacer"></div>
+        <button class="btn btn-sm" @onclick="Add">Add anchor</button>
+    </div>
+
+    @if (Anchors.Count == 0)
+    {
+        <p class="hint">No anchors. Add one to pin a show to a wall-clock time.</p>
+    }
+
+    @foreach (AnchorConfig anchor in Anchors)
+    {
+        <div class="card" style="background:var(--panel);margin-bottom:10px;">
+            <div class="grid grid-3">
+                <label class="field">
+                    <span>Name</span>
+                    <input type="text" value="@anchor.Name" placeholder="Prime time"
+                           @onchange="e => { anchor.Name = e.Value?.ToString(); Changed.InvokeAsync(); }" />
+                </label>
+                <label class="field">
+                    <span>Time</span>
+                    <input type="time" value="@anchor.Time.ToString(@"hh\:mm")"
+                           @onchange="e => SetTime(anchor, e)" />
+                </label>
+                <label class="field">
+                    <span>Episodes back to back</span>
+                    <input type="number" min="1" value="@anchor.Count"
+                           @onchange="e => { anchor.Count = int.TryParse(e.Value?.ToString(), out int v) ? Math.Max(1, v) : 1; Changed.InvokeAsync(); }" />
+                </label>
+            </div>
+
+            <DayOfWeekPicker Days="anchor.Days" Changed="Changed"
+                             Label="Days (none selected = every day this scope is active)" />
+
+            @{ ContentSelector selector = EnsureSelector(anchor); }
+            <SelectorEditor Selector="selector" Label="What plays" Changed="Changed" />
+
+            <button class="btn btn-sm btn-danger" @onclick="() => Remove(anchor)">Remove anchor</button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<AnchorConfig> Anchors { get; set; } = [];
+    [Parameter] public string Label { get; set; } = "Anchors";
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private async Task Add()
+    {
+        Anchors.Add(new AnchorConfig { Time = new TimeSpan(20, 0, 0), Show = new ContentSelector() });
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Remove(AnchorConfig anchor)
+    {
+        Anchors.Remove(anchor);
+        await Changed.InvokeAsync();
+    }
+
+    private async Task SetTime(AnchorConfig anchor, ChangeEventArgs e)
+    {
+        if (TimeSpan.TryParse(e.Value?.ToString(), out TimeSpan time))
+        {
+            anchor.Time = time;
+            await Changed.InvokeAsync();
+        }
+    }
+
+    // An anchor always edits a single selector; `shows` is only used when several are configured.
+    private static ContentSelector EnsureSelector(AnchorConfig anchor)
+    {
+        if (anchor.Show is not null)
+        {
+            return anchor.Show;
+        }
+
+        if (anchor.Shows.Count > 0)
+        {
+            return anchor.Shows[0];
+        }
+
+        anchor.Show = new ContentSelector();
+        return anchor.Show;
+    }
+}

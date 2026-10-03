@@ -1,0 +1,35 @@
+@* Editor for a TimeSpan? using the same friendly forms the YAML accepts (30m, 1h, 21:00). *@
+
+<label class="field">
+    <span>@Label</span>
+    <input type="text" value="@_text" placeholder="@Placeholder" @onchange="OnChange" />
+</label>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string Placeholder { get; set; } = "e.g. 30m";
+    [Parameter] public TimeSpan? Value { get; set; }
+    [Parameter] public EventCallback<TimeSpan?> ValueChanged { get; set; }
+
+    private string _text = "";
+
+    protected override void OnParametersSet() => _text = DurationText.Format(Value);
+
+    private async Task OnChange(ChangeEventArgs e)
+    {
+        string raw = e.Value?.ToString()?.Trim() ?? string.Empty;
+        _text = raw;
+
+        if (raw.Length == 0)
+        {
+            await ValueChanged.InvokeAsync(null);
+            return;
+        }
+
+        // An unparseable value is left in the box so it can be corrected rather than wiped.
+        if (DurationText.TryParse(raw, out TimeSpan parsed))
+        {
+            await ValueChanged.InvokeAsync(parsed);
+        }
+    }
+}

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The contract between the scheduler and its plugins. Plugins reference only this project (and, through it,
+    SchedularrTV.Core for the domain types). The host loads both into the default context and every plugin
+    shares them, so types like IPlugin or MediaItem are the same type on both sides of the boundary.
+  -->
+  <PropertyGroup>
+    <RootNamespace>SchedularrTV.Plugins</RootNamespace>
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Services, configuration, endpoints and Razor components all come from the shared ASP.NET Core framework. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SchedularrTV.Core\SchedularrTV.Core.csproj" />
+  </ItemGroup>
+
+</Project>

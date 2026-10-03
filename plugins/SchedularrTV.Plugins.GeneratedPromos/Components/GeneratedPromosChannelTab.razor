@@ -1,0 +1,13 @@
+@* The Generated promos plugin's channel tab. The editor's styles are served from the plugin's wwwroot. *@
+
+@if (Context.Channel is { } channel)
+{
+    <link rel="stylesheet" href="plugins/generated-promos/generated-promos.css" />
+    <div class="gp-scope">
+        <GeneratedPromosTab Channel="channel" Changed="Context.NotifyChanged" />
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public PluginEditorContext Context { get; set; } = default!;
+}

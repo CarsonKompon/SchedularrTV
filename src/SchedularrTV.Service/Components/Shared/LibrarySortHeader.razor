@@ -1,0 +1,17 @@
+<th scope="col" style="width:@Width;" aria-sort="@SortDirection">
+    <button type="button" class="library-sort-button" @onclick="() => OnSort.InvokeAsync(Column)"
+            title="@($"Sort by {Label}: {(Sort.Column == Column && !Sort.Descending ? "descending" : "ascending")}")">
+        <span>@Label</span><span class="library-sort-indicator" aria-hidden="true">@Indicator</span>
+    </button>
+</th>
+
+@code {
+    [Parameter, EditorRequired] public LibraryTableSort Sort { get; set; } = default!;
+    [Parameter, EditorRequired] public LibrarySortColumn Column { get; set; }
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string Width { get; set; } = "auto";
+    [Parameter] public EventCallback<LibrarySortColumn> OnSort { get; set; }
+
+    private string SortDirection => Sort.Column != Column ? "none" : Sort.Descending ? "descending" : "ascending";
+    private string Indicator => Sort.Column != Column ? "\u2195" : Sort.Descending ? "\u2193" : "\u2191";
+}

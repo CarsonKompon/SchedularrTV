@@ -1,0 +1,303 @@
+@page "/settings"
+@inherits EditorPage
+@using System.IO
+@using Microsoft.Extensions.Options
+@using SchedularrTV.Providers.FileSystem
+@using SchedularrTV.Providers.Jellyfin
+@inject JellyfinClient Jellyfin
+@inject IOptions<FileSystemLibraryOptions> MediaFolders
+@inject IServiceProvider Services
+@inject LibraryBrowser Browser
+@inject ScheduleCoordinator Coordinator
+@inject IEnumerable<PluginEditorSection> EditorSections
+
+<PageHeader Title="Settings" Eyebrow="System">Global defaults. Channels and blocks override anything here.</PageHeader>
+<UpdateBanner />
+
+<div class="card">
+    <div class="card-head"><h2>General</h2></div>
+    <div class="grid grid-3">
+        <label class="field">
+            <span>Time zone</span>
+            <input type="text" value="@Global.TimeZone" @onchange="OnTimeZoneChanged" />
+        </label>
+        <DurationInput Label="Plan ahead" Value="Global.Horizon"
+                       ValueChanged="v => { Global.Horizon = v ?? TimeSpan.FromHours(48); Editor.MarkDirty(); }" />
+        <DurationInput Label="Rebuild every" Value="Global.RebuildInterval"
+                       ValueChanged="v => { Global.RebuildInterval = v ?? TimeSpan.FromHours(1); Editor.MarkDirty(); }" />
+    </div>
+    <label class="field">
+        <span>Shuffle seed <span style="color:var(--muted);">(change to reshuffle every rotation)</span></span>
+        <input type="text" value="@Global.Seed" @onchange="OnSeedChanged" />
+    </label>
+</div>
+
+<div class="card">
+    <div class="card-head"><h2>Seasonal tags</h2></div>
+    <p class="hint">
+        Added automatically to commercial queries on channels with seasonal matching enabled.
+    </p>
+    <label class="field" style="max-width:260px;">
+        <span>"Any time" tag</span>
+        <input type="text" value="@Temporal.AnyTimeTag"
+               @onchange="e => { Temporal.AnyTimeTag = e.Value?.ToString() ?? string.Empty; Editor.MarkDirty(); }" />
+    </label>
+
+    <div class="row row-wrap">
+        <label class="check" style="margin-right:18px;">
+            <input type="checkbox" checked="@Temporal.IncludeMonth"
+                   @onchange="e => { Temporal.IncludeMonth = (bool)(e.Value ?? true); Editor.MarkDirty(); }" />
+            <span>Month (January)</span>
+        </label>
+        <label class="check" style="margin-right:18px;">
+            <input type="checkbox" checked="@Temporal.IncludeSeason"
+                   @onchange="e => { Temporal.IncludeSeason = (bool)(e.Value ?? true); Editor.MarkDirty(); }" />
+            <span>Season (Winter)</span>
+        </label>
+        <label class="check" style="margin-right:18px;">
+            <input type="checkbox" checked="@Temporal.IncludeExactDate"
+                   @onchange="e => { Temporal.IncludeExactDate = (bool)(e.Value ?? true); Editor.MarkDirty(); }" />
+            <span>Date (12-25)</span>
+        </label>
+        <label class="check" style="margin-right:18px;">
+            <input type="checkbox" checked="@Temporal.IncludeFullDate"
+                   @onchange="e => { Temporal.IncludeFullDate = (bool)(e.Value ?? false); Editor.MarkDirty(); }" />
+            <span>Full date (2026-12-25)</span>
+        </label>
+        <label class="check">
+            <input type="checkbox" checked="@Temporal.IncludeHolidays"
+                   @onchange="e => { Temporal.IncludeHolidays = (bool)(e.Value ?? true); Editor.MarkDirty(); }" />
+            <span>Holidays (Christmas)</span>
+        </label>
+    </div>
+
+    <h3>Holidays</h3>
+    <p class="hint">Leave empty to use the built-in list (Christmas, Halloween, Thanksgiving&hellip;).</p>
+
+    @foreach (HolidayDefinition holiday in Temporal.Holidays.ToList())
+    {
+        <div class="list-row">
+            <input type="text" style="width:180px;" value="@holiday.Name"
+                   @onchange="e => { holiday.Name = e.Value?.ToString() ?? string.Empty; Editor.MarkDirty(); }" />
+            <input type="text" style="width:110px;" placeholder="MM-DD start" value="@holiday.Start"
+                   @onchange="e => { holiday.Start = e.Value?.ToString(); Editor.MarkDirty(); }" />
+            <input type="text" style="width:110px;" placeholder="MM-DD end" value="@holiday.End"
+                   @onchange="e => { holiday.End = e.Value?.ToString(); Editor.MarkDirty(); }" />
+            <div class="spacer"></div>
+            <button class="btn btn-sm btn-danger" @onclick="() => { Temporal.Holidays.Remove(holiday); Editor.MarkDirty(); }">Remove</button>
+        </div>
+    }
+    <button class="btn btn-sm" @onclick="AddHoliday">Add holiday</button>
+    @if (Temporal.Holidays.Count == 0)
+    {
+        <button class="btn btn-sm" style="margin-left:6px;" @onclick="LoadDefaultHolidays">Load defaults to edit</button>
+    }
+</div>
+
+<div class="card">
+    <div class="card-head"><h2>Libraries</h2></div>
+    <p class="hint">
+        Which Jellyfin libraries the scheduler draws from. Unticking one hides its content everywhere,
+        which is the fix for a show that appears twice because a DVR or cache library holds its own copy.
+    </p>
+
+    @if (_libraryError is not null)
+    {
+        <div class="empty">@_libraryError</div>
+    }
+    else if (_libraries is null)
+    {
+        <p class="hint">Loading libraries…</p>
+    }
+    else
+    {
+        @foreach (JellyfinLibrary library in _libraries)
+        {
+            <label class="check" style="display:flex;align-items:baseline;gap:8px;padding:4px 0;">
+                <input type="checkbox" checked="@IsIncluded(library.Name)"
+                       @onchange="e => ToggleLibrary(library.Name, (bool)(e.Value ?? true))" />
+                <span>
+                    @library.Name
+                    <span style="color:var(--muted);">@string.Join(" · ", library.Locations)</span>
+                </span>
+            </label>
+        }
+
+        <p class="hint">Save, then Rescan on the TV Shows page to apply.</p>
+    }
+
+    <h3>Commercials library</h3>
+    <p class="hint">
+        Folders on disk holding adverts, bumpers and promos. Add or change them under
+        <a href="settings/app">App settings</a>.
+    </p>
+
+    @if (MediaFolders.Value.Folders.Count == 0)
+    {
+        <div class="empty">
+            No commercial folders yet. Add them under <a href="settings/app">App settings</a>.
+        </div>
+    }
+    else
+    {
+        @foreach (MediaFolderOptions folder in MediaFolders.Value.Folders)
+        {
+            <div class="list-row">
+                <div>
+                    <div class="title"><code>@folder.Path</code></div>
+                    <div class="meta">
+                        Tagged @string.Join(", ", folder.Tags)
+                        @if (!string.IsNullOrWhiteSpace(folder.PromoFolder))
+                        {
+                            <text> · promos under <code>@folder.PromoFolder</code></text>
+                        }
+                        @if (!Directory.Exists(folder.Path))
+                        {
+                            <text> · </text><span style="color:var(--bad);">folder not found</span>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="row row-wrap" style="align-items:center;gap:10px;">
+            <button class="btn btn-sm" disabled="@_rescanning" @onclick="RescanCommercials">
+                @(_rescanning ? "Rescanning…" : "Rescan and rebuild")
+            </button>
+            @if (_rescanMessage is not null)
+            {
+                <span class="hint" style="margin:0;">@_rescanMessage</span>
+            }
+        </div>
+        <p class="hint">
+            Scans are cached for @Humanise(MediaFolders.Value.CacheDuration), so new clips need a rescan
+            to show up.
+        </p>
+    }
+</div>
+
+<InterstitialsEditor Interstitials="Global.Interstitials" Changed="Editor.MarkDirty" />
+
+@* Promos, Generated promos and any installed plugin's schedule-wide settings. *@
+@foreach (PluginEditorSection section in EditorSections.Where(section => section.Surface == EditorSurface.ScheduleSettings).OrderBy(section => section.Order))
+{
+    <DynamicComponent @key="section.Id" Type="section.Component" Parameters="SectionParameters(section)" />
+}
+
+@code {
+    private SchedulerSettings Global => Editor.Working.Settings;
+    private TemporalTagOptions Temporal => Global.TemporalTags;
+
+    private IReadOnlyList<JellyfinLibrary>? _libraries;
+    private string? _libraryError;
+    private bool _rescanning;
+    private string? _rescanMessage;
+
+    private async Task RescanCommercials()
+    {
+        _rescanning = true;
+        _rescanMessage = null;
+
+        try
+        {
+            // Absent when the Local media folders plugin is disabled.
+            if (Services.GetService<FileSystemMediaLibrary>() is { } commercials)
+            {
+                await commercials.RefreshAsync();
+            }
+
+            // The editor's cached folder lists feed the brand pickers, so they have to follow.
+            await Browser.RefreshAsync();
+
+            // Newly scanned clips only reach viewers once the playouts that reference them are redone.
+            await Coordinator.RebuildAsync(publish: true, replan: true, CancellationToken.None);
+            _rescanMessage = "Rescanned and playouts rebuilt.";
+        }
+        catch (Exception ex)
+        {
+            _rescanMessage = $"Rescan failed: {ex.Message}";
+        }
+        finally
+        {
+            _rescanning = false;
+        }
+    }
+
+    private static string Humanise(TimeSpan value) =>
+        value.TotalHours >= 1 ? $"{value.TotalHours:0.#} hours" : $"{value.TotalMinutes:0} minutes";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _libraries = await Jellyfin.GetLibrariesAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // The rest of settings stays usable when the media server is unreachable.
+            _libraryError = $"Could not reach Jellyfin to list libraries: {ex.Message} Check the connection under App settings.";
+        }
+    }
+
+    private bool IsIncluded(string name) =>
+        !Global.ExcludedLibraries.Contains(name, StringComparer.OrdinalIgnoreCase);
+
+    private void ToggleLibrary(string name, bool include)
+    {
+        Global.ExcludedLibraries.RemoveAll(l => string.Equals(l, name, StringComparison.OrdinalIgnoreCase));
+
+        if (!include)
+        {
+            Global.ExcludedLibraries.Add(name);
+        }
+
+        Editor.MarkDirty();
+    }
+
+    private void OnTimeZoneChanged(ChangeEventArgs e)
+    {
+        string value = e.Value?.ToString() ?? string.Empty;
+        Global.TimeZone = value.Length == 0 ? "UTC" : value;
+        Editor.MarkDirty();
+    }
+
+    private void OnSeedChanged(ChangeEventArgs e)
+    {
+        Global.Seed = e.Value?.ToString() ?? string.Empty;
+        Editor.MarkDirty();
+    }
+
+    private Dictionary<string, object> SectionParameters(PluginEditorSection section) => new()
+    {
+        ["Context"] = new PluginEditorContext
+        {
+            PluginId = section.PluginId,
+            Config = Editor.Working,
+            Changed = Editor.MarkDirty
+        }
+    };
+
+    private void AddHoliday()
+    {
+        Temporal.Holidays.Add(new HolidayDefinition { Name = "New holiday", Start = "01-01", End = "01-02" });
+        Editor.MarkDirty();
+    }
+
+    private void LoadDefaultHolidays()
+    {
+        foreach (HolidayDefinition holiday in TemporalTagOptions.DefaultHolidays)
+        {
+            Temporal.Holidays.Add(new HolidayDefinition
+            {
+                Name = holiday.Name,
+                Start = holiday.Start,
+                End = holiday.End,
+                NthWeekday = holiday.NthWeekday,
+                LeadDays = holiday.LeadDays,
+                TrailDays = holiday.TrailDays
+            });
+        }
+
+        Editor.MarkDirty();
+    }
+}

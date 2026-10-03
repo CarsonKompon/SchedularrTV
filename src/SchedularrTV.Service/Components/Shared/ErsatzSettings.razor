@@ -1,0 +1,159 @@
+@* ErsatzTV Next program and lineup; shared by App settings and the setup wizard. *@
+@using SchedularrTV.Providers.ErsatzTv
+@using SchedularrTV.Service.Hosting
+@inject ErsatzTvProcessSupervisor Ersatz
+@inject IHttpClientFactory HttpClients
+
+<label class="check">
+    <input type="checkbox" checked="@Form.ErsatzManage" @onchange="e => Edit(() => Form.ErsatzManage = e.Value is true)" />
+    <span>Start and stop ErsatzTV Next together with the scheduler</span>
+</label>
+<p class="hint">
+    ErsatzTV starts once the first playouts are written, restarts if it stops or the channel list changes, and is closed
+    (with its transcoders) when the scheduler stops. Leave this off if you run ErsatzTV yourself, e.g. as a service.
+</p>
+<label class="field">
+    <span>ErsatzTV Next program</span>
+    <FilePathPicker Value="@Form.ErsatzExe" ValueChanged="ProgramChosen" Extensions="SettingsFiles.Programs"
+                    Label="the ErsatzTV Next program" Placeholder="@(OperatingSystem.IsWindows() ? @"C:\ErsatzTV\ersatztv.exe" : "/usr/local/bin/ersatztv")"
+                    StartIn="Environment.SpecialFolder.UserProfile" />
+</label>
+@if (Form.ErsatzManage && (string.IsNullOrWhiteSpace(Form.ErsatzExe) || !File.Exists(Form.ErsatzExe)))
+{
+    <p class="hint warn">Choose the ErsatzTV Next program, or ErsatzTV won't be started.</p>
+}
+<div class="grid grid-2">
+    <label class="field">
+        <span>Lineup folder (playouts and guide are written here)</span>
+        <FilePathPicker Value="@Form.ErsatzRoot" ValueChanged="v => Edit(() => Form.ErsatzRoot = v ?? string.Empty)" Extensions="SettingsFiles.None"
+                        PickFolder="true" Label="the lineup folder" Placeholder="@DefaultRoot" StartIn="Environment.SpecialFolder.UserProfile" />
+    </label>
+    <label class="field">
+        <span>Streaming port</span>
+        <input type="number" min="1" max="65535" value="@Form.ErsatzPort"
+               @onchange="e => Edit(() => Form.ErsatzPort = int.TryParse(e.Value?.ToString(), out int port) && port is > 0 and < 65536 ? port : Form.ErsatzPort)" />
+    </label>
+</div>
+<p class="hint">
+    ErsatzTV Next has no config folder of its own: it's started with a <code>lineup.json</code>, and SchedularrTV writes
+    that file, the playouts and the guide into this folder (<code>@DefaultRoot</code> unless you choose another).
+    When it manages ErsatzTV, it starts it with this folder's lineup.
+</p>
+@if (_autoPicked is not null)
+{
+    <p class="hint">Lineup folder set to the one ErsatzTV already uses: <code>@_autoPicked</code>.</p>
+}
+else if (OtherLineups.FirstOrDefault() is { } found)
+{
+    <p class="hint warn">
+        There's already a lineup at <code>@found</code>, beside ErsatzTV. If you start ErsatzTV yourself with that one, use its folder
+        here so it gets the playouts and guide.
+        <button class="btn btn-sm" type="button" style="margin-left:6px;" @onclick="() => Edit(() => Form.ErsatzRoot = found)">Use this folder</button>
+    </p>
+}
+@if (ShowStatus)
+{
+    <div class="row row-wrap" style="gap:8px;align-items:center;">
+        <span class="pill @(Ersatz.IsRunning ? "pill-ok" : "pill-muted")">@(Ersatz.IsRunning ? "Running" : Form.ErsatzInUse.ManageProcess ? "Waiting to start" : "Not managed")</span>
+        <span class="hint" style="margin:0;">
+            Playlist <code>http://localhost:@Form.ErsatzInUse.Lineup.Port/channels.m3u</code> ·
+            guide <code>http://localhost:@Form.ErsatzInUse.Lineup.Port/xmltv.xml</code>
+        </span>
+        <button class="btn btn-sm" type="button" disabled="@_checking" @onclick="CheckGuide">@(_checking ? "Checking…" : "Check guide")</button>
+    </div>
+    @if (_guide is { } guide)
+    {
+        <div class="banner @(guide.Ok ? "banner-ok" : "banner-warn")" style="margin-top:10px;" role="status">
+            <strong>@guide.Summary</strong>
+            @if (guide.Channels.Count > 0)
+            {
+                <ul>
+                    @foreach (GuideChannelCheck channel in guide.Channels)
+                    {
+                        <li>
+                            @channel.Name (<code>@channel.TvgId</code>): @Describe(channel)
+                        </li>
+                    }
+                </ul>
+            }
+            @foreach (string advice in guide.Advice)
+            {
+                <p class="hint" style="margin:6px 0 0;">@advice</p>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public AppSettingsForm Form { get; set; } = default!;
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public bool ShowStatus { get; set; } = true;
+
+    private string? _autoPicked;
+    private bool _checking;
+    private GuideCheckResult? _guide;
+
+    private static string Describe(GuideChannelCheck channel)
+    {
+        if (channel.Listings == 0)
+        {
+            return "no listings";
+        }
+
+        string now = channel.OnNow ? "on now" : "nothing on now";
+        string until = channel.Until is { } end ? $", until {end.ToLocalTime():ddd HH:mm}" : string.Empty;
+        return $"{channel.Listings} listing(s), {now}{until}";
+    }
+
+    /// <summary>Asks ErsatzTV for its playlist and guide the way Jellyfin would, and says what's wrong if they're empty.</summary>
+    private async Task CheckGuide()
+    {
+        _checking = true;
+        try
+        {
+            ErsatzTvOptions options = Form.ErsatzInUse;
+            using HttpClient http = HttpClients.CreateClient();
+            http.Timeout = TimeSpan.FromSeconds(15);
+            _guide = await ErsatzTvGuideCheck.RunAsync(http, $"http://localhost:{options.Lineup.Port}",
+                LineupPublisher.Resolve(Path.GetFullPath(options.ConfigRoot), options.XmltvFolder), DateTimeOffset.Now, CancellationToken.None);
+        }
+        finally
+        {
+            _checking = false;
+        }
+    }
+
+    private string DefaultRoot => SchedularrTV.Hosting.AppPaths.Rooted(Form.DataDirectory, new ErsatzTvOptions().ConfigRoot);
+
+    // Lineups beside the chosen program that aren't the folder chosen here.
+    private IEnumerable<string> OtherLineups =>
+        ErsatzTvLineupFinder.FoldersNear(Form.ErsatzExe)
+            .Where(folder => !string.Equals(Path.TrimEndingDirectorySeparator(folder), Path.TrimEndingDirectorySeparator(Path.GetFullPath(CurrentRoot)),
+                StringComparison.OrdinalIgnoreCase));
+
+    private string CurrentRoot => string.IsNullOrWhiteSpace(Form.ErsatzRoot) ? DefaultRoot : Form.ErsatzRoot;
+
+    /// <summary>
+    /// Choosing the program also picks up the lineup folder ErsatzTV already has beside it, unless a folder other than
+    /// the default was chosen already.
+    /// </summary>
+    private Task ProgramChosen(string? path) => Edit(() =>
+    {
+        Form.ErsatzExe = path ?? string.Empty;
+        _autoPicked = null;
+        bool defaultRoot = string.IsNullOrWhiteSpace(Form.ErsatzRoot)
+            || string.Equals(Path.GetFullPath(Form.ErsatzRoot), Path.GetFullPath(DefaultRoot), StringComparison.OrdinalIgnoreCase);
+        if (defaultRoot && ErsatzTvLineupFinder.FoldersNear(Form.ErsatzExe).FirstOrDefault() is { } found)
+        {
+            Form.ErsatzRoot = found;
+            _autoPicked = found;
+        }
+    });
+
+    private Task Edit(Action change)
+    {
+        change();
+        Form.IsDirty = true;
+        return Changed.InvokeAsync();
+    }
+}

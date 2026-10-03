@@ -1,0 +1,496 @@
+@page "/channels/{ChannelId}"
+@inherits EditorPage
+@inject NavigationManager Nav
+@inject RotationResetter Rotation
+@inject LogoStore Logos
+@inject IEnumerable<PluginEditorSection> EditorSections
+
+@if (_channel is null)
+{
+    <PageHeader Title="Channel not found" Eyebrow="Channels">
+        <a class="back-link" href="channels"><Icon Name="arrow-left" Size="14" />Back to channels</a>
+    </PageHeader>
+}
+else
+{
+    <a class="back-link" href="channels" style="margin-bottom:14px;"><Icon Name="arrow-left" Size="14" />All channels</a>
+    <PageHeader Title="@_channel.Name" Eyebrow="@($"Channel {_channel.Number}")">
+        <Leading>
+            <div class="logo-tile lg">
+                @if (!string.IsNullOrWhiteSpace(_channel.Logo))
+                {
+                    <img src="@_channel.Logo" alt="" />
+                }
+                else
+                {
+                    <Icon Name="tv" Size="26" StrokeWidth="1.6" />
+                }
+            </div>
+        </Leading>
+        <ChildContent>
+            <span class="row row-wrap" style="gap:6px;">
+                <span class="pill pill-muted">@_channel.TvgId</span>
+                <span class="pill pill-muted">@_channel.Blocks.Count block(s)</span>
+                @if (!string.IsNullOrWhiteSpace(_channel.Group))
+                {
+                    <span class="pill pill-muted">@_channel.Group</span>
+                }
+            </span>
+        </ChildContent>
+        <Actions>
+            <button class="btn" type="button" disabled="@(Editor.Working.Channels.Count < 2)"
+                    aria-expanded="@(_copyOpen ? "true" : "false")" @onclick="OpenCopy"><Icon Name="copy" Size="15" />Copy From</button>
+        </Actions>
+    </PageHeader>
+
+    @if (_copyOpen)
+    {
+        <div class="banner banner-warn">
+            <label class="field">
+                <span>Source channel</span>
+                <select @bind="_copySourceId">
+                    <option value="">-- pick a channel --</option>
+                    @foreach (var source in Editor.Working.Channels.Where(channel => channel.Id != _channel.Id).OrderBy(channel => channel.Number))
+                    {
+                        <option value="@source.Id">@source.Number - @source.Name</option>
+                    }
+                </select>
+            </label>
+            <p>Replace this channel's settings? Its name, number, ID, and logo will be kept.</p>
+            <div class="toolbar" style="margin-bottom:0;">
+                <button class="btn btn-primary btn-sm" type="button" disabled="@string.IsNullOrWhiteSpace(_copySourceId)" @onclick="CopyFrom">Copy settings</button>
+                <button class="btn btn-sm" type="button" @onclick="() => _copyOpen = false">Cancel</button>
+            </div>
+            @if (_copyError is not null)
+            {
+                <p role="alert">@_copyError</p>
+            }
+        </div>
+    }
+    @if (_copyMessage is not null)
+    {
+        <div class="banner banner-ok" role="status">@_copyMessage</div>
+    }
+
+    <div @key="_channel">
+    <div class="tabs" role="tablist">
+        @foreach ((string key, string label, string icon) in AllTabs)
+        {
+            <button type="button" role="tab" class="tab @(_tab == key ? "active" : "")" aria-selected="@(_tab == key ? "true" : "false")"
+                    @onclick="() => _tab = key"><Icon Name="@icon" Size="15" />@label</button>
+        }
+    </div>
+
+    @if (_tab == "general")
+    {
+        <div class="card">
+            <div class="grid grid-3">
+                <label class="field">
+                    <span>Name</span>
+                    <input type="text" value="@_channel.Name"
+                           @onchange="e => { _channel.Name = e.Value?.ToString() ?? string.Empty; Editor.MarkDirty(); }" />
+                </label>
+                <label class="field">
+                    <span>Number</span>
+                    <input type="number" value="@_channel.Number"
+                           @onchange="e => { _channel.Number = int.TryParse(e.Value?.ToString(), out int v) ? v : _channel.Number; Editor.MarkDirty(); }" />
+                </label>
+                <label class="field">
+                    <span>Id <span style="color:var(--muted);">(used in URLs)</span></span>
+                    @* Keyed so a rejected rename puts the real id back: the model never changed, so
+                       Blazor would otherwise diff no change and leave the typed text in the box. *@
+                    <input type="text" @key="_idVersion" value="@_channel.Id"
+                           @onchange="e => Rename(e.Value?.ToString())" />
+                    @if (_idError is not null)
+                    {
+                        <span style="color:var(--error);font-size:12px;">@_idError</span>
+                    }
+                </label>
+                <label class="field">
+                    <span>Guide id <span style="color:var(--muted);">(from the channel number)</span></span>
+                    <input type="text" value="@_channel.TvgId" readonly disabled />
+                </label>
+                <label class="field">
+                    <span>Group</span>
+                    <input type="text" value="@_channel.Group"
+                           @onchange="e => { _channel.Group = Text(e); Editor.MarkDirty(); }" />
+                </label>
+                <label class="field">
+                    <span>Time zone <span style="color:var(--muted);">(blank = global)</span></span>
+                    <input type="text" value="@_channel.TimeZone" placeholder="@Editor.Working.Settings.TimeZone"
+                           @onchange="e => { _channel.TimeZone = Text(e); Editor.MarkDirty(); }" />
+                </label>
+            </div>
+
+            <div class="field">
+                <span>Logo</span>
+                <div class="row" style="gap:14px;align-items:flex-start;">
+                    <div class="logo-drop">
+                        <InputFile OnChange="OnLogoSelected" accept="@LogoStore.Accept" title="Drop an image here, or click to choose one" />
+                        @if (string.IsNullOrWhiteSpace(_channel.Logo))
+                        {
+                            <span>Drop an image here<br />or click to choose</span>
+                        }
+                        else
+                        {
+                            <img src="@_channel.Logo" alt="" />
+                        }
+                    </div>
+
+                    <div style="flex:1;">
+                        @if (_logoError is not null)
+                        {
+                            <p style="color:var(--error);font-size:12px;margin:0 0 6px;">@_logoError</p>
+                        }
+                        else
+                        {
+                            <p class="hint" style="margin:0 0 6px;">
+                                PNG, JPEG, GIF or WebP, up to @(LogoStore.MaxBytes / (1024 * 1024))MB.
+                                Shown in the guide and the channel list.
+                            </p>
+                        }
+
+                        <input type="text" value="@_channel.Logo" placeholder="…or paste an image URL"
+                               @onchange="e => { _channel.Logo = Text(e); Editor.MarkDirty(); }" />
+
+                        @if (!string.IsNullOrWhiteSpace(_channel.Logo))
+                        {
+                            <button class="btn btn-sm btn-danger" style="margin-top:6px;" @onclick="RemoveLogo">Remove logo</button>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-head"><h2>Scheduling grid</h2></div>
+            <div class="grid grid-2">
+                <DurationInput Label="Start programmes on a boundary of" Value="_channel.PadToNearest"
+                               ValueChanged="v => { _channel.PadToNearest = v; Editor.MarkDirty(); }" />
+                <DurationInput Label="Longest advert break" Value="_channel.MaxBreak"
+                               ValueChanged="v => { _channel.MaxBreak = v; Editor.MarkDirty(); }" />
+            </div>
+            <p class="hint">
+                Leave the grid blank for back-to-back programming with no advert breaks at all.
+            </p>
+
+            <label class="check">
+                <input type="checkbox" checked="@(_channel.StackToFill ?? false)"
+                       @onchange="e => { _channel.StackToFill = (bool)(e.Value ?? false); Editor.MarkDirty(); }" />
+                <span>Fill a slot with more episodes of the same show</span>
+            </label>
+            <p class="hint">
+                For short-form shows: two 11-minute episodes make a half-hour slot instead of one
+                episode and 19 minutes of adverts. Only whole episodes are added, and the leftover is
+                shared out as breaks between them.
+            </p>
+
+            <label class="field">
+                <span>Grid anchor <span style="color:var(--muted);">(blank = local midnight)</span></span>
+                <input type="datetime-local" value="@AnchorText()" @onchange="SetAnchor" />
+            </label>
+            <p class="hint">
+                Slot boundaries are measured from here, and a rebuild resumes on a boundary rather than
+                at the moment it runs, so regenerating never knocks the schedule off the grid.
+            </p>
+
+            <label class="check">
+                <input type="checkbox" checked="@(_channel.AutoTemporalTags ?? false)"
+                       @onchange="e => { _channel.AutoTemporalTags = (bool)(e.Value ?? false); Editor.MarkDirty(); }" />
+                <span>Match seasonal commercial tags (January, Winter, 12-25, Christmas&hellip;)</span>
+            </label>
+        </div>
+
+        <div class="card">
+            <div class="card-head"><h2>Rotation position</h2></div>
+            <p class="hint">
+                Each collection remembers the last thing it played and carries on from there, so adding
+                episodes or editing a collection will not send the channel back to the first episode.
+            </p>
+            <button class="btn btn-sm btn-danger" disabled="@_resetting" @onclick="ResetRotation">
+                @(_resetting ? "Resetting…" : "Start this channel over")
+            </button>
+            @if (_resetMessage is not null)
+            {
+                <p class="hint" style="margin-top:8px;">@_resetMessage</p>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-head"><h2>Base rotation</h2></div>
+            <p class="hint">Plays whenever no block or anchor claims the time.</p>
+            @if (_channel.BaseRotation is null)
+            {
+                <button class="btn btn-sm" @onclick="() => { _channel.BaseRotation = new ContentSelector(); Editor.MarkDirty(); }">
+                    Add a base rotation
+                </button>
+            }
+            else
+            {
+                <SelectorEditor Selector="_channel.BaseRotation" Label="Fallback programming"
+                                Changed="Editor.MarkDirty"
+                                OnRemove="() => { _channel.BaseRotation = null; Editor.MarkDirty(); }" />
+            }
+        </div>
+    }
+    else if (_tab == "schedule")
+    {
+        <div class="card">
+            <div class="card-head"><h2>Day at a glance</h2></div>
+            <DayTimeline Blocks="_channel.Blocks" AnchorTimes="AnchorTimes" />
+        </div>
+
+        <ChannelBlockList Blocks="_channel.Blocks" Changed="Editor.MarkDirty" />
+
+        <AnchorListEditor Anchors="_channel.Anchors" Label="Channel anchors" Changed="Editor.MarkDirty" />
+    }
+    else if (_tab == "breaks")
+    {
+        @if (_channel.Interstitials is null)
+        {
+            <div class="card">
+                <p>This channel has no interstitial configuration; it inherits the global one.</p>
+                <button class="btn btn-primary" @onclick="() => { _channel.Interstitials = new InterstitialsConfig(); Editor.MarkDirty(); }">
+                    Configure for this channel
+                </button>
+            </div>
+        }
+        else
+        {
+            <InterstitialsEditor Interstitials="_channel.Interstitials" Changed="Editor.MarkDirty" />
+        }
+
+        <div class="card">
+            <div class="card-head"><h2>Commercial brand tags</h2></div>
+            <p class="hint">Shorthand for the tier&nbsp;2 brand tags, matching the folder names under your commercials root.</p>
+            <TagListEditor Label="Tags (any of)" Placeholder="Any Channel"
+                           Values="_commercialTags" Changed="OnTagsChanged" />
+        </div>
+
+        @if (_channel.MidRoll is null)
+        {
+            <div class="card">
+                <p>Mid-roll breaks are off for this channel.</p>
+                <button class="btn btn-primary" @onclick="() => { _channel.MidRoll = new MidRollConfig { Mode = MidRollMode.Auto }; Editor.MarkDirty(); }">
+                    Enable mid-rolls
+                </button>
+            </div>
+        }
+        else
+        {
+            <MidRollEditor Config="_channel.MidRoll" Changed="Editor.MarkDirty" />
+        }
+    }
+    else if (ChannelSections.FirstOrDefault(section => SectionTab(section) == _tab) is { } pluginSection)
+    {
+        @* Promos, Generated Promos, Archive Follow and any installed plugin's channel tab. *@
+        <DynamicComponent @key="pluginSection.Id" Type="pluginSection.Component" Parameters="SectionParameters(pluginSection)" />
+    }
+    </div>
+}
+
+@code {
+    [Parameter] public string ChannelId { get; set; } = "";
+
+    // Plugin tabs slot in among these by their order (Archive Follow 20, Promos 40, Generated Promos 50).
+    private static readonly (string Key, string Label, string Icon, int Order)[] CoreTabs =
+    [
+        ("general", "General", "sliders", 0),
+        ("schedule", "Blocks & anchors", "calendar", 10),
+        ("breaks", "Breaks", "clock", 30)
+    ];
+
+    private IEnumerable<PluginEditorSection> ChannelSections =>
+        EditorSections.Where(section => section.Surface == EditorSurface.Channel);
+
+    private IEnumerable<(string Key, string Label, string Icon)> AllTabs =>
+        CoreTabs
+            .Concat(ChannelSections.Select(section => (SectionTab(section), section.Title, section.Icon ?? "puzzle", section.Order)))
+            .OrderBy(tab => tab.Item4)
+            .Select(tab => (tab.Item1, tab.Item2, tab.Item3));
+
+    private static string SectionTab(PluginEditorSection section) => $"plugin:{section.Id}";
+
+    private Dictionary<string, object> SectionParameters(PluginEditorSection section) => new()
+    {
+        ["Context"] = new PluginEditorContext
+        {
+            PluginId = section.PluginId,
+            Config = Editor.Working,
+            Channel = _channel,
+            Changed = Editor.MarkDirty
+        }
+    };
+
+    private ChannelConfig? _channel;
+    private string _tab = "general";
+    private List<string> _commercialTags = [];
+    private bool _resetting;
+    private string? _resetMessage;
+    private string? _idError;
+    private int _idVersion;
+    private string? _logoError;
+    private bool _copyOpen;
+    private string _copySourceId = "";
+    private string? _copyError;
+    private string? _copyMessage;
+
+    private void OpenCopy()
+    {
+        _copyOpen = !_copyOpen;
+        _copySourceId = "";
+        _copyError = null;
+        _copyMessage = null;
+    }
+
+    private void CopyFrom()
+    {
+        try
+        {
+            string sourceName = Editor.FindChannel(_copySourceId)?.Name ?? _copySourceId;
+            _channel = Editor.CopyChannelSettings(ChannelId, _copySourceId);
+            _commercialTags = _channel.CommercialBaseTags ?? [];
+            _copyOpen = false;
+            _copyMessage = $"Copied settings from {sourceName}. Save to apply.";
+            _idError = null;
+            _logoError = null;
+            _resetMessage = null;
+        }
+        catch (InvalidOperationException exception)
+        {
+            _copyError = exception.Message;
+        }
+    }
+
+    private async Task OnLogoSelected(InputFileChangeEventArgs e)
+    {
+        _logoError = null;
+
+        IBrowserFile file = e.File;
+
+        if (file.Size > LogoStore.MaxBytes)
+        {
+            _logoError = $"That image is {file.Size / (1024 * 1024)}MB; the limit is {LogoStore.MaxBytes / (1024 * 1024)}MB.";
+            return;
+        }
+
+        try
+        {
+            await using Stream content = file.OpenReadStream(LogoStore.MaxBytes);
+
+            // BaseUri is the origin this browser reached the app on, so the URL recorded here is one
+            // a player on the same network can also fetch.
+            _channel!.Logo = await Logos.SaveAsync(_channel.Id, file.Name, content, Nav.BaseUri);
+            Editor.MarkDirty();
+        }
+        catch (Exception ex)
+        {
+            _logoError = ex.Message;
+        }
+    }
+
+    private void RemoveLogo()
+    {
+        // An externally hosted logo is not ours to delete; only clear the reference.
+        if (LogoStore.IsStored(_channel!.Logo))
+        {
+            Logos.Remove(_channel.Id);
+        }
+
+        _channel.Logo = null;
+        _logoError = null;
+        Editor.MarkDirty();
+    }
+
+    private string AnchorText() =>
+        _channel?.ScheduleStart?.ToLocalTime().ToString("yyyy-MM-ddTHH:mm") ?? string.Empty;
+
+    private void SetAnchor(ChangeEventArgs e)
+    {
+        string value = e.Value?.ToString() ?? string.Empty;
+
+        _channel!.ScheduleStart = DateTimeOffset.TryParse(value, out DateTimeOffset parsed)
+            ? parsed
+            : null;
+
+        Editor.MarkDirty();
+    }
+
+    private async Task ResetRotation()
+    {
+        _resetting = true;
+        _resetMessage = null;
+
+        try
+        {
+            await Rotation.ResetAsync(ChannelId);
+            _resetMessage = "Rotation cleared; the channel will start from the top of each collection.";
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException)
+        {
+            _resetMessage = ex.Message;
+        }
+        finally
+        {
+            _resetting = false;
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        _channel = Editor.FindChannel(ChannelId);
+        _commercialTags = _channel?.CommercialBaseTags ?? [];
+    }
+
+    protected override void OnInitialized()
+    {
+        _channel = Editor.FindChannel(ChannelId);
+        _commercialTags = _channel?.CommercialBaseTags ?? [];
+    }
+
+    // A discard or an external reload replaces the whole working copy, so the cached channel has to
+    // be looked up again or the page keeps editing an object nothing else references.
+    protected override void OnEditorChanged()
+    {
+        _channel = Editor.FindChannel(ChannelId);
+        _commercialTags = _channel?.CommercialBaseTags ?? [];
+        _copyMessage = null;
+        base.OnEditorChanged();
+    }
+
+    private List<TimeSpan> AnchorTimes => _channel is null
+        ? []
+        : _channel.Anchors.Select(a => a.Time)
+            .Concat(_channel.Blocks.Where(b => b.IsAnchorSlot && b.Time is not null).Select(b => b.Time!.Value))
+            .Concat(_channel.Blocks.SelectMany(b => b.Anchors).Select(a => a.Time))
+            .ToList();
+
+    private void Rename(string? id)
+    {
+        if (_channel is null || string.IsNullOrWhiteSpace(id) || string.Equals(id, _channel.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (Editor.IsChannelIdTaken(id, ignoring: _channel))
+        {
+            _idError = $"Another channel already uses the id '{id}'.";
+            _idVersion++;
+            return;
+        }
+
+        _idError = null;
+        _channel.Id = id;
+        Editor.MarkDirty();
+        Nav.NavigateTo($"channels/{id}");
+    }
+
+    private void OnTagsChanged()
+    {
+        _channel!.CommercialBaseTags = _commercialTags.Count > 0 ? _commercialTags : null;
+        Editor.MarkDirty();
+    }
+
+    private static string? Text(ChangeEventArgs e) =>
+        string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString();
+}

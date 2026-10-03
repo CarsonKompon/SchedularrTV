@@ -1,0 +1,26 @@
+.follow-source { padding: 4px 0 20px; border-bottom: 1px solid var(--line); }
+.follow-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.follow-heading h2 { margin: 0 0 16px; }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.follow-years { display: grid; grid-template-columns: minmax(80px, 140px) minmax(80px, 140px) auto; gap: 12px; align-items: end; }
+.follow-years .field { margin: 0; }
+.follow-years .btn { justify-self: start; }
+.scan-status { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--muted); margin: 14px 0 0; }
+.scan-status .spinner { width: 18px; height: 18px; border-width: 2px; }
+.banner { margin: 14px 0 0; overflow-wrap: anywhere; }
+.scan-warnings { max-height: 180px; overflow: auto; overflow-wrap: anywhere; }
+details { margin-top: 12px; }
+.follow-options { display: flex; flex-wrap: wrap; gap: 12px 24px; margin-top: 20px; }
+.follow-coverage { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 16px; }
+.coverage-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.coverage-heading h3 { margin: 0; font-size: 15px; }
+.coverage-heading .field { width: 120px; margin: 0; }
+.coverage-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 16px 0; }
+.coverage-counts dt { color: var(--muted); font-size: 12px; }
+.coverage-counts dd { margin: 6px 0 0; font-size: 22px; font-variant-numeric: tabular-nums; }
+.coverage-total { color: var(--muted); font-size: 12px; margin-bottom: 0; }
+.coverage-error { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+    .follow-years { grid-template-columns: 1fr 1fr; }
+    .follow-years .btn { grid-column: 1 / -1; }
+}

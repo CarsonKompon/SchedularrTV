@@ -1,0 +1,52 @@
+@* 24-hour strip showing where a channel's blocks and anchors sit. *@
+
+<div>
+    <div class="timeline" style="height:@(Height)px;">
+        @for (int hour = 0; hour <= 24; hour += 2)
+        {
+            <div class="timeline-hour" style="left:@(hour / 24.0 * 100)%;">@(hour == 24 ? "" : $"{hour:00}")</div>
+        }
+
+        @foreach (BlockConfig block in Windowed)
+        {
+            double start = Fraction(block.Time!.Value);
+            double end = Fraction(block.EndTime!.Value);
+            bool wraps = end <= start;
+
+            <div class="timeline-block @(wraps ? "wrap" : "")"
+                 style="left:@(start * 100)%; width:@((wraps ? 1 - start : end - start) * 100)%;"
+                 title="@block.Name" @onclick="() => Select(block)">@block.Name</div>
+
+            @if (wraps)
+            {
+                <div class="timeline-block wrap" style="left:0; width:@(end * 100)%;"
+                     title="@block.Name" @onclick="() => Select(block)">@block.Name</div>
+            }
+        }
+
+        @foreach (TimeSpan at in AnchorTimes)
+        {
+            <div class="timeline-anchor" style="left:@(Fraction(at) * 100)%;" title="@at"></div>
+        }
+    </div>
+
+    <div class="legend">
+        <span><span style="background:rgba(123,139,255,.6);"></span>Block</span>
+        <span><span style="background:rgba(169,123,255,.6);"></span>Crosses midnight</span>
+        <span><span style="background:var(--warn);"></span>Anchor</span>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<BlockConfig> Blocks { get; set; } = [];
+    [Parameter] public List<TimeSpan> AnchorTimes { get; set; } = [];
+    [Parameter] public int Height { get; set; } = 46;
+    [Parameter] public EventCallback<BlockConfig> OnSelect { get; set; }
+
+    private IEnumerable<BlockConfig> Windowed =>
+        Blocks.Where(b => b is { FollowOnly: false, Time: not null, EndTime: not null });
+
+    private static double Fraction(TimeSpan time) => Math.Clamp(time.TotalHours / 24.0, 0, 1);
+
+    private Task Select(BlockConfig block) => OnSelect.InvokeAsync(block);
+}

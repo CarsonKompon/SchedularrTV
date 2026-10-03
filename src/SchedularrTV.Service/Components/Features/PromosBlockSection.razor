@@ -1,0 +1,23 @@
+@* The Promos plugin's part of the block editor. *@
+
+@if (Context.Block is { } block)
+{
+    <TagListEditor Label="Promo brand tags" Placeholder="Any Channel"
+                   Values="_tags" Changed="OnTagsChanged" />
+    <p class="hint">Leave empty to use the block's commercial brands.</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public PluginEditorContext Context { get; set; } = default!;
+
+    private List<string> _tags = [];
+
+    protected override void OnParametersSet() => _tags = Context.Block?.PromoBaseTags ?? [];
+
+    private Task OnTagsChanged()
+    {
+        Context.Block!.PromoBaseTags = _tags.Count > 0 ? _tags : null;
+        Context.NotifyChanged();
+        return Task.CompletedTask;
+    }
+}

@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>SchedularrTV.Core.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\SchedularrTV.Core\SchedularrTV.Core.csproj" />
+    <ProjectReference Include="..\..\src\SchedularrTV.Service\SchedularrTV.Service.csproj" />
+    <ProjectReference Include="..\..\src\SchedularrTV.Providers.ErsatzTv\SchedularrTV.Providers.ErsatzTv.csproj" />
+    <ProjectReference Include="..\..\src\SchedularrTV.Providers.Jellyfin\SchedularrTV.Providers.Jellyfin.csproj" />
+    <ProjectReference Include="..\..\src\SchedularrTV.Providers.FileSystem\SchedularrTV.Providers.FileSystem.csproj" />
+    <!-- The optional plugins that ship in the all-plugins zip. -->
+    <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.GeneratedPromos\SchedularrTV.Plugins.GeneratedPromos.csproj" />
+    <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.TikTok\SchedularrTV.Plugins.TikTok.csproj" />
+    <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.MiniMax\SchedularrTV.Plugins.MiniMax.csproj" />
+    <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.Piper\SchedularrTV.Plugins.Piper.csproj" />
+    <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.WeatherStar\SchedularrTV.Plugins.WeatherStar.csproj" />
+    <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.AutoChapters\SchedularrTV.Plugins.AutoChapters.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Guards the shipped samples against drifting out of sync with the schema. -->
+    <Content Include="..\..\src\SchedularrTV.Service\config\*.yaml" LinkBase="config" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.0" />
+  </ItemGroup>
+
+</Project>

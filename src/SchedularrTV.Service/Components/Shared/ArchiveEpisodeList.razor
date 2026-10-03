@@ -1,0 +1,188 @@
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+@implements IDisposable
+
+<section class="episode-section">
+    <div class="episode-heading"><h2>Episodes</h2><span>@_filtered.Count.ToString("N0") entries</span></div>
+    <div class="episode-toolbar">
+        <label class="field"><span>Search episodes or shows</span><input type="text" @bind="_search" @bind:event="oninput" @bind:after="Filter" /></label>
+        <label class="field"><span>Assignments</span><select @bind="_view" @bind:after="Filter"><option value="unmatched">Unmatched</option><option value="assigned">Assigned</option></select></label>
+    </div>
+    @if (Loading || _matching)
+    {
+        <p role="status"><span class="spinner"></span> Matching episodes...</p>
+    }
+    else if (_error is not null)
+    {
+        <div class="banner banner-error" role="alert">@_error</div>
+    }
+    else
+    {
+        <div class="episode-scroll" role="list" aria-label="Archive episodes">
+            <Virtualize Items="_filtered" Context="row" ItemSize="88">
+                <div class="episode-row" role="listitem" @key="(row.Archive.Show, row.Archive.Episode)">
+                    <div class="episode-label"><strong title="@row.Archive.Episode">@EpisodeTitle(row.Archive)</strong><span title="@row.Archive.Show">@row.Archive.Show</span><small>@row.Archive.Count.ToString("N0") occurrences</small></div>
+                    <div class="episode-label"><span title="@Status(row)">@Status(row)</span><small>@(row.LibraryShow ?? "No library show")</small></div>
+                    <button class="btn btn-sm" @onclick="() => Select(row)">Assign</button>
+                </div>
+            </Virtualize>
+            @if (_filtered.Count == 0)
+            {
+                <p class="episode-empty">@(Episodes is null && Follow.Episodes.Count == 0 ? "No archive scan" : "No episodes")</p>
+            }
+        </div>
+    }
+    @if (_selected is { } selected)
+    {
+        <div class="episode-picker">
+            <h3>@selected.Archive.Show: @EpisodeTitle(selected.Archive)</h3>
+            <label class="field"><span>Library show</span><input type="text" list="@_showListId" @bind="_targetShow" @bind:after="TargetChanged" /></label>
+            <datalist id="@_showListId">@foreach (string show in _shows) { <option value="@show" /> }</datalist>
+            <label class="field"><span>Episode search</span><input type="text" @bind="_targetSearch" @bind:event="oninput" @bind:after="FilterTargets" /></label>
+            <label class="field"><span>Library episode</span><select size="6" @bind="_targetId">
+                @foreach (MediaItem item in _targets) { <option value="@item.Id">@Label(item)</option> }
+            </select></label>
+            <div class="episode-actions">
+                <button class="btn btn-primary" disabled="@(!_targets.Any(item => item.Id == _targetId))" @onclick="Assign">Assign episode</button>
+                <button class="btn" disabled="@(Assignment(selected) is null)" @onclick="Clear">Clear assignment</button>
+                <button class="btn" @onclick="Close">Close</button>
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ArchiveFollowConfig Follow { get; set; } = null!;
+    [Parameter] public IReadOnlyList<ArchiveEpisode>? Episodes { get; set; }
+    [Parameter] public IReadOnlyList<MediaItem> Library { get; set; } = [];
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private IReadOnlyList<ArchiveEpisode>? _previousEpisodes;
+    private IReadOnlyList<MediaItem>? _previousLibrary;
+    private KeyValuePair<string, string?>[]? _previousShows;
+    private IReadOnlyList<ArchiveEpisodeReview> _unmatched = [];
+    private List<ArchiveEpisodeReview> _filtered = [];
+    private Dictionary<string, MediaItem> _byId = [];
+    private string[] _shows = [];
+    private string _search = string.Empty;
+    private string _view = "unmatched";
+    private bool _matching;
+    private string? _error;
+    private ArchiveEpisodeReview? _selected;
+    private string _targetShow = string.Empty;
+    private string _targetSearch = string.Empty;
+    private string _targetId = string.Empty;
+    private MediaItem[] _targets = [];
+    private readonly string _showListId = $"episode-shows-{Guid.NewGuid():N}";
+    private CancellationTokenSource? _matchingCancellation;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Loading) return;
+        var shows = Follow.Shows.ToArray();
+        if (ReferenceEquals(_previousEpisodes, Episodes) && ReferenceEquals(_previousLibrary, Library)
+            && _previousShows is not null && _previousShows.SequenceEqual(shows))
+        {
+            Filter();
+            return;
+        }
+        _previousEpisodes = Episodes;
+        _previousLibrary = Library;
+        _previousShows = shows;
+        _byId = Library.DistinctBy(item => item.Id).ToDictionary(item => item.Id);
+        _shows = Library.Select(TitleRotation.TitleOf).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
+        _matchingCancellation?.Cancel();
+        var cancellation = new CancellationTokenSource();
+        _matchingCancellation = cancellation;
+        var snapshot = new ArchiveFollowConfig { Shows = new(Follow.Shows, StringComparer.OrdinalIgnoreCase) };
+        var episodes = Episodes ?? [];
+        var library = Library;
+        _matching = true;
+        _error = null;
+        try
+        {
+            var rows = await Task.Run(() => ArchiveEpisodeReview.Unmatched(snapshot, episodes, library, cancellation.Token), cancellation.Token);
+            if (!cancellation.IsCancellationRequested)
+            {
+                _unmatched = rows;
+                Filter();
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        catch (Exception exception) { _error = exception.Message; }
+        finally
+        {
+            if (ReferenceEquals(_matchingCancellation, cancellation))
+            {
+                _matching = false;
+                _matchingCancellation = null;
+            }
+            cancellation.Dispose();
+        }
+    }
+
+    private ArchiveEpisodeAssignment? Assignment(ArchiveEpisodeReview row) => ArchiveEpisodeResolver.Assignment(Follow, row.Archive.Show, row.Archive.Episode);
+    private static string EpisodeTitle(ArchiveEpisode episode) => string.IsNullOrWhiteSpace(episode.Episode) ? "Untitled episode" : episode.Episode;
+    private static string Label(MediaItem item) => item.Kind == MediaKind.Movie ? item.Title
+        : $"{(item.SeasonNumber is { } season && item.EpisodeNumber is { } episode ? $"S{season:D2}E{episode:D2}" : "Unnumbered")} - {item.Title}";
+    private string Status(ArchiveEpisodeReview row) => Assignment(row) is { } assignment
+        ? _byId.TryGetValue(assignment.MediaId, out var item) ? Label(item) : "Assigned episode unavailable"
+        : row.LibraryShow is null ? "Normal scheduling" : "Random episode";
+
+    private void Filter()
+    {
+        var matcher = new ArchiveShowMatcher(_shows);
+        IEnumerable<ArchiveEpisodeReview> rows = _view == "assigned"
+            ? Follow.Episodes.Select(assignment => new ArchiveEpisodeReview(
+                Episodes?.FirstOrDefault(episode => string.Equals(episode.Show, assignment.Show, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(episode.Episode, assignment.Episode, StringComparison.OrdinalIgnoreCase))
+                    ?? new ArchiveEpisode(assignment.Show, assignment.Episode, 0), matcher.Resolve(Follow, assignment.Show)))
+            : _unmatched.Where(row => Assignment(row) is not { } assignment || !_byId.ContainsKey(assignment.MediaId));
+        _filtered = rows.Where(row => row.Archive.Show.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                || row.Archive.Episode.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                || (row.LibraryShow?.Contains(_search, StringComparison.OrdinalIgnoreCase) ?? false))
+            .OrderByDescending(row => row.Archive.Count).ThenBy(row => row.Archive.Show, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(row => row.Archive.Episode, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private void Select(ArchiveEpisodeReview row)
+    {
+        _selected = row;
+        _targetSearch = string.Empty;
+        var assignment = Assignment(row);
+        _targetShow = assignment is not null && _byId.TryGetValue(assignment.MediaId, out var item)
+            ? TitleRotation.TitleOf(item) : row.LibraryShow ?? string.Empty;
+        _targetId = assignment?.MediaId ?? string.Empty;
+        FilterTargets();
+    }
+    private void TargetChanged() { _targetId = string.Empty; FilterTargets(); }
+    private void FilterTargets()
+    {
+        _targets = Library.Where(item => string.Equals(TitleRotation.TitleOf(item), _targetShow, StringComparison.OrdinalIgnoreCase)
+            && Label(item).Contains(_targetSearch, StringComparison.OrdinalIgnoreCase)).OrderBy(item => item.SortKey).ToArray();
+    }
+    private async Task Assign()
+    {
+        if (_selected is null || !_targets.Any(item => item.Id == _targetId)) return;
+        RemoveAssignment();
+        Follow.Episodes.Add(new() { Show = _selected.Archive.Show, Episode = _selected.Archive.Episode, MediaId = _targetId });
+        await Changed.InvokeAsync();
+        Filter();
+        Close();
+    }
+    private async Task Clear()
+    {
+        RemoveAssignment();
+        await Changed.InvokeAsync();
+        Filter();
+        Close();
+    }
+    private void RemoveAssignment()
+    {
+        if (_selected is null) return;
+        Follow.Episodes.RemoveAll(assignment => string.Equals(assignment.Show.Trim(), _selected.Archive.Show.Trim(), StringComparison.OrdinalIgnoreCase)
+            && string.Equals(assignment.Episode.Trim(), _selected.Archive.Episode.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
+    private void Close() => _selected = null;
+    public void Dispose() => _matchingCancellation?.Cancel();
+}

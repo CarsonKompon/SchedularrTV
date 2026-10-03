@@ -1,0 +1,290 @@
+@* Edits one ContentSelector: where the media comes from, ordering and duration bounds. *@
+@inject ConfigEditor Editor
+@inject LibraryBrowser Library
+
+<div class="card" style="background:var(--panel-2);">
+    <div class="card-head">
+        <h2 style="font-size:14px;">@Label</h2>
+        <div class="spacer"></div>
+        @if (OnRemove.HasDelegate)
+        {
+            <button class="btn btn-sm btn-danger" @onclick="OnRemove">Remove</button>
+        }
+    </div>
+
+    <div class="grid grid-2">
+        <label class="field">
+            <span>Source</span>
+            <select value="@_mode" @onchange="OnModeChanged">
+                <option value="collection">Collection</option>
+                <option value="query">Query</option>
+                <option value="include">Picked titles</option>
+            </select>
+        </label>
+
+        <label class="field">
+            <span>Order</span>
+            <select value="@(Selector.Order?.ToString() ?? "")" @onchange="OnOrderChanged">
+                <option value="">@(Inherits ? "Inherit from collection" : "Default (shuffle)")</option>
+                @foreach (PlaybackOrder order in Enum.GetValues<PlaybackOrder>())
+                {
+                    <option value="@order">@Describe(order)</option>
+                }
+            </select>
+        </label>
+    </div>
+
+    <label class="field">
+        <span>How titles take turns</span>
+        <select value="@(Selector.TitleOrder?.ToString() ?? "")" @onchange="OnTitleOrderChanged">
+            <option value="">@(Inherits ? "Inherit from collection" : "All episodes in one pool (no rotation)")</option>
+            <option value="Ordered">Rotate titles &mdash; in the order listed</option>
+            <option value="Shuffle">Rotate titles &mdash; shuffled</option>
+        </select>
+    </label>
+    @if (Inherits)
+    {
+        <p class="hint">Specials are handled by the collection, along with its order and rotation.</p>
+    }
+    else
+    {
+        <label class="check">
+            <input type="checkbox" checked="@Selector.ExcludeSeasons.Contains(0)" @onchange="OnExcludeSpecialsChanged" />
+            <span>Skip specials and extras in every title</span>
+        </label>
+        <p class="hint">
+            Drops season 0 and anything in an unnumbered folder (Specials, Commentaries, Behind the
+            Scenes), without pinning a season list, so new seasons are picked up on their own.
+            A title that names its own seasons is left exactly as written. Films are unaffected.
+        </p>
+    }
+
+    <p class="hint">@TitleOrderHint()</p>
+
+    @if (_mode == "collection")
+    {
+        <label class="field">
+            <span>Collection</span>
+            <select value="@Selector.Collection" @onchange="OnCollectionChanged">
+                <option value="">-- pick a collection --</option>
+                @foreach (string key in Editor.Working.GlobalCollections.Keys.OrderBy(k => k))
+                {
+                    <option value="@key">@key</option>
+                }
+            </select>
+        </label>
+        @if (Editor.Working.GlobalCollections.Count == 0)
+        {
+            <p class="hint">No collections yet — create one on the Collections page.</p>
+        }
+    }
+    else if (_mode == "query")
+    {
+        <label class="field">
+            <span>Query</span>
+            <input type="text" value="@Selector.Query" placeholder="kind == 'Episode' AND duration >= 600"
+                   @onchange="OnQueryChanged" />
+        </label>
+        <p class="hint">e.g. <code>show:'Rugrats'</code> &middot; <code>network:'Teletoon'</code> &middot; <code>kind == 'Movie' AND year &lt; 1990</code></p>
+    }
+    else
+    {
+        <IncludeListEditor Includes="Selector.Include" Changed="Changed" />
+    }
+
+    <details>
+        <summary style="cursor:pointer;color:var(--muted);font-size:12px;margin:8px 0;">Advanced</summary>
+
+        <label class="field">
+            <span>Filter (extra condition)</span>
+            <input type="text" value="@Selector.Filter" placeholder="plot CONTAINS 'christmas'"
+                   @onchange="OnFilterChanged" />
+        </label>
+
+        <label class="field">
+            <span>Filter scope</span>
+            <select value="@Selector.FilterScope" @onchange="OnScopeChanged">
+                <option value="Collection">Narrow this selection</option>
+                <option value="Library">Search the whole library</option>
+            </select>
+        </label>
+
+        <div class="grid grid-2">
+            <DurationInput Label="Minimum duration" Value="Selector.MinDuration"
+                           ValueChanged="v => { Selector.MinDuration = v; Changed.InvokeAsync(); }" />
+            <DurationInput Label="Maximum duration" Value="Selector.MaxDuration"
+                           ValueChanged="v => { Selector.MaxDuration = v; Changed.InvokeAsync(); }" />
+        </div>
+
+        @if (_versionLabels.Count > 0)
+        {
+            <TagChipPicker Label="Avoid these versions"
+                           Available="_versionLabels"
+                           Selected="NullIfEmpty(Selector.Versions?.Exclude)"
+                           SelectedChanged="OnExcludeVersionsChanged"
+                           Hint="For titles held in more than one release. Ignored when it would block every version of an episode, so nothing is ever lost." />
+
+            <TagChipPicker Label="Prefer these versions"
+                           Available="_versionLabels"
+                           Selected="NullIfEmpty(Selector.Versions?.Prefer)"
+                           SelectedChanged="OnPreferVersionsChanged"
+                           Hint="Picked first when a title has several versions. Only one version of a title ever airs, with or without these rules." />
+        }
+    </details>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ContentSelector Selector { get; set; } = new();
+    [Parameter] public string Label { get; set; } = "Content";
+    [Parameter] public string DefaultMode { get; set; } = "collection";
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback OnRemove { get; set; }
+
+    private string _mode = "";
+    private ContentSelector? _bound;
+    private IReadOnlyList<string> _versionLabels = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        BindSelector();
+        _versionLabels = await Library.GetVersionLabelsAsync();
+    }
+
+    private static List<string>? NullIfEmpty(List<string>? values) => values is { Count: > 0 } ? values : null;
+
+    private async Task OnExcludeVersionsChanged(List<string>? values)
+    {
+        Versions().Exclude = values ?? [];
+        DropUnusedVersions();
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnPreferVersionsChanged(List<string>? values)
+    {
+        Versions().Prefer = values ?? [];
+        DropUnusedVersions();
+        await Changed.InvokeAsync();
+    }
+
+    private VersionSelection Versions() => Selector.Versions ??= new VersionSelection();
+
+    // Keeps an untouched selector from writing an empty 'versions:' block into the saved YAML.
+    private void DropUnusedVersions()
+    {
+        if (Selector.Versions is { IsEmpty: true })
+        {
+            Selector.Versions = null;
+        }
+    }
+
+    protected override void OnParametersSet() => BindSelector();
+
+    private void BindSelector()
+    {
+        // Re-detecting on every render would snap the dropdown back to the old source the moment the
+        // user picks a new one, because the new source is still empty at that point.
+        if (!ReferenceEquals(_bound, Selector))
+        {
+            _bound = Selector;
+            _mode = DetectMode();
+        }
+    }
+
+    private string DetectMode()
+    {
+        if (Selector.Include.Count > 0) return "include";
+        if (!string.IsNullOrWhiteSpace(Selector.Query)) return "query";
+        if (!string.IsNullOrWhiteSpace(Selector.Collection)) return "collection";
+        return DefaultMode;
+    }
+
+    private async Task OnModeChanged(ChangeEventArgs e)
+    {
+        _mode = e.Value?.ToString() ?? DefaultMode;
+
+        // Only one source should survive a mode switch, otherwise they would silently union.
+        switch (_mode)
+        {
+            case "collection": Selector.Query = null; Selector.Include.Clear(); break;
+            case "query": Selector.Collection = null; Selector.Include.Clear(); break;
+            default: Selector.Collection = null; Selector.Query = null; break;
+        }
+
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnCollectionChanged(ChangeEventArgs e)
+    {
+        Selector.Collection = Empty(e.Value?.ToString());
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnQueryChanged(ChangeEventArgs e)
+    {
+        Selector.Query = Empty(e.Value?.ToString());
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnFilterChanged(ChangeEventArgs e)
+    {
+        Selector.Filter = Empty(e.Value?.ToString());
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnScopeChanged(ChangeEventArgs e)
+    {
+        Selector.FilterScope = Enum.Parse<FilterScope>(e.Value?.ToString() ?? nameof(FilterScope.Collection));
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnOrderChanged(ChangeEventArgs e)
+    {
+        string value = e.Value?.ToString() ?? "";
+        Selector.Order = string.IsNullOrEmpty(value) ? null : Enum.Parse<PlaybackOrder>(value);
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnTitleOrderChanged(ChangeEventArgs e)
+    {
+        string value = e.Value?.ToString() ?? "";
+        Selector.TitleOrder = string.IsNullOrEmpty(value) ? null : Enum.Parse<TitleOrder>(value);
+        await Changed.InvokeAsync();
+    }
+
+    private async Task OnExcludeSpecialsChanged(ChangeEventArgs e)
+    {
+        if ((bool)(e.Value ?? false))
+        {
+            if (!Selector.ExcludeSeasons.Contains(0))
+            {
+                Selector.ExcludeSeasons.Add(0);
+            }
+        }
+        else
+        {
+            Selector.ExcludeSeasons.Remove(0);
+        }
+
+        await Changed.InvokeAsync();
+    }
+
+    /// <summary>A collection supplies the order and rotation this selector leaves unset.</summary>
+    private bool Inherits => _mode == "collection" && !string.IsNullOrWhiteSpace(Selector.Collection);
+
+    private string TitleOrderHint() => Selector.TitleOrder is not null
+        ? "Titles take turns; the order above applies within each title."
+        : Inherits
+            ? "Taken from the collection. Set it here to override that for this channel or block."
+            : "Without rotation, \"chronological\" sorts every episode of every show together, so the oldest show plays for hours before the next one starts.";
+
+    private static string? Empty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    internal static string Describe(PlaybackOrder order) => order switch
+    {
+        PlaybackOrder.Chronological => "Chronological (by air date)",
+        PlaybackOrder.Random => "Random (repeats allowed)",
+        PlaybackOrder.Shuffle => "Shuffle (no repeats until exhausted)",
+        PlaybackOrder.SeasonEpisode => "Season, Episode",
+        _ => order.ToString()
+    };
+}

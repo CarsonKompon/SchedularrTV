@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!--
+    A minimal plugin showing each part of the contract: settings, a page, and a playout processor that reads
+    per-channel YAML and annotates entries. Package it with:
+
+      dotnet publish samples/SchedularrTV.Plugins.Sample -c Release -o out/sample.hello
+      (zip the out/sample.hello folder and install it from the Plugins page)
+  -->
+  <PropertyGroup>
+    <RootNamespace>SchedularrTV.Plugins.Sample</RootNamespace>
+    <Version>1.0.0</Version>
+    <!-- Lets the plugin's private dependencies be resolved next to it. -->
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The contract is supplied by the scheduler at runtime, so it isn't copied into the plugin. -->
+    <!-- Anything else of the scheduler's that gets copied along is ignored at load time: the host's copy wins. -->
+    <ProjectReference Include="..\..\src\SchedularrTV.Plugins.Abstractions\SchedularrTV.Plugins.Abstractions.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- plugin.json must sit beside the plugin's .dll. Whichever item type the SDK gives it, copy it. -->
+    <Content Update="plugin.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Update="plugin.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

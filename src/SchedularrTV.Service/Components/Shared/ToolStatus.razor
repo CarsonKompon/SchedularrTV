@@ -1,0 +1,24 @@
+@* Whether an external program such as ffmpeg was found, and which one. *@
+
+@if (Checking)
+{
+    <span class="hint" style="display:block;margin:6px 0 0;">Checking…</span>
+}
+else if (Version is not null)
+{
+    <span class="hint" style="display:block;margin:6px 0 0;">
+        <span class="pill pill-ok">Found</span> <code>@Path</code><br />@Version
+    </span>
+}
+else
+{
+    <span class="hint warn" style="display:block;margin:6px 0 0;">
+        <span class="pill pill-error">Not found</span> Tried <code>@Path</code>. Install it, or choose the program above.
+    </span>
+}
+
+@code {
+    [Parameter] public string? Path { get; set; }
+    [Parameter] public string? Version { get; set; }
+    [Parameter] public bool Checking { get; set; }
+}

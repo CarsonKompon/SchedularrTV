@@ -1,0 +1,1488 @@
+@* One generated promo template: settings, voice, music, and a layer canvas drawn by the real renderer. *@
+@using System.Globalization
+@using System.Text.RegularExpressions
+@implements IDisposable
+@inject GeneratedPromoPreview Preview
+@inject TextToSpeechCatalog Voices
+@inject ConfigEditor Editor
+
+<div class="card promo-template">
+    <div class="card-head">
+        <h2>@(string.IsNullOrWhiteSpace(Template.Name) ? "Untitled template" : Template.Name)</h2>
+        @if (!Template.Enabled)
+        {
+            <span class="pill pill-muted">off</span>
+        }
+        <div class="spacer"></div>
+        <button class="btn btn-sm btn-danger" type="button" @onclick="OnRemove">Delete template</button>
+    </div>
+
+    @if (Errors.Count > 0)
+    {
+        <div class="banner banner-error" role="alert">
+            <ul>
+                @foreach (string error in Errors)
+                {
+                    <li>@error</li>
+                }
+            </ul>
+        </div>
+    }
+
+    <div class="grid grid-3">
+        <label class="field">
+            <span>Name</span>
+            <input type="text" value="@Template.Name" @onchange="e => Set(() => Template.Name = Text(e))" />
+        </label>
+        <label class="field">
+            <span>Promo type</span>
+            <select value="@Template.Type" @onchange="e => SetType(Enum.Parse<GeneratedPromoType>(Text(e)))">
+                @foreach (GeneratedPromoType type in Enum.GetValues<GeneratedPromoType>())
+                {
+                    <option value="@type">@TypeName(type)</option>
+                }
+            </select>
+        </label>
+        <label class="field">
+            <span>Length (seconds)</span>
+            <input type="number" min="1" max="120" step="0.5" value="@Number(Template.Duration.TotalSeconds)"
+                   @onchange="e => SetSeconds(e, value => Template.Duration = value, min: 1)" />
+        </label>
+        <label class="field">
+            <span>When to use</span>
+            <select value="@Template.Usage" @onchange="e => Set(() => Template.Usage = Enum.Parse<GeneratedPromoUsage>(Text(e)))">
+                <option value="@GeneratedPromoUsage.Fallback">Only when a show has no promo clip</option>
+                <option value="@GeneratedPromoUsage.Mixed">Also mixed in with real clips</option>
+            </select>
+        </label>
+        @if (Template.Usage == GeneratedPromoUsage.Mixed)
+        {
+            <label class="field">
+                <span>Chance over a real clip (%)</span>
+                <input type="number" min="0" max="100" step="5" value="@Number(Template.MixChance * 100)"
+                       @onchange="e => SetNumber(e, value => Template.MixChance = Math.Clamp(value, 0, 100) / 100)" />
+            </label>
+        }
+        <label class="check template-enabled">
+            <input type="checkbox" checked="@Template.Enabled" @onchange="e => Set(() => Template.Enabled = e.Value is true)" />
+            <span>Template enabled</span>
+        </label>
+    </div>
+
+    <h3>Canvas</h3>
+    <label class="field made-with">
+        <span>Video made with</span>
+        <select value="@(Template.Generator is null ? "canvas" : "generator")" aria-label="Video made with" @onchange="SetMadeWith">
+            <option value="canvas">The canvas editor below</option>
+            <option value="generator">An external program or script</option>
+        </select>
+    </label>
+    <div class="grid grid-3">
+        <label class="field">
+            <span>Output size</span>
+            <select value="@(CustomSize ? CustomValue : $"{Template.Width}x{Template.Height}")" @onchange="SetSize">
+                @foreach ((int width, int height, string label) in Sizes)
+                {
+                    <option value="@($"{width}x{height}")">@label</option>
+                }
+                <option value="@CustomValue">Custom size…</option>
+            </select>
+        </label>
+        <label class="field">
+            <span>Frame rate</span>
+            <select value="@Template.Fps" @onchange="e => Set(() => Template.Fps = int.Parse(Text(e), CultureInfo.InvariantCulture))">
+                @foreach (int fps in (int[])[24, 25, 30, 60])
+                {
+                    <option value="@fps">@fps fps</option>
+                }
+            </select>
+        </label>
+        <div class="field">
+            <span>Background colour</span>
+            <input type="color" aria-label="Background colour" value="@GeneratedPromoEditing.SplitColor(Template.BackgroundColor).Rgb"
+                   @onchange="e => Set(() => Template.BackgroundColor = GeneratedPromoEditing.JoinColor(Text(e), 100))" />
+        </div>
+    </div>
+    @if (CustomSize)
+    {
+        <div class="grid grid-3">
+            <label class="field">
+                <span>Width (px)</span>
+                <input type="number" min="16" max="3840" step="2" value="@Template.Width" @onchange="e => SetCustomSize(e, width: true, max: 3840)" />
+            </label>
+            <label class="field">
+                <span>Height (px)</span>
+                <input type="number" min="16" max="2160" step="2" value="@Template.Height" @onchange="e => SetCustomSize(e, width: false, max: 2160)" />
+            </label>
+        </div>
+    }
+    <div class="field">
+        <span>@(Template.BackgroundClip is null || GeneratedPromoResolver.UsesClip(Template.Generator) ? "Background image or video (optional; videos loop)" : "Fallback background image or video (when the episode file can't be read)")</span>
+        <FilePathPicker Value="@Template.Background" ValueChanged="value => Set(() => Template.Background = value)"
+                        Extensions="BackgroundExtensions" Label="background image or video" Placeholder="D:\Media\Promos\Backgrounds\loop.mp4" />
+    </div>
+    <label class="check">
+        <input type="checkbox" checked="@(Template.BackgroundClip is not null)"
+               @onchange="e => Set(() => Template.BackgroundClip = e.Value is true ? Template.BackgroundClip ?? new GeneratedClipConfig() : null)" />
+        <span>Play a clip from the promoted episode behind the promo</span>
+    </label>
+    @if (Template.BackgroundClip is { } clip)
+    {
+        <div class="grid grid-3">
+            <label class="field">
+                <span>Start into the episode (s; blank picks a spot in the middle)</span>
+                <input type="number" min="0" step="1" value="@(clip.StartAt is { } clipStart ? Number(clipStart.TotalSeconds) : "")"
+                       placeholder="Middle of the episode" @onchange="e => SetOptionalSeconds(e, value => clip.StartAt = value)" />
+            </label>
+            <label class="check template-enabled">
+                <input type="checkbox" checked="@clip.IncludeAudio" @onchange="e => Set(() => clip.IncludeAudio = e.Value is true)" />
+                <span>Include the episode's sound</span>
+            </label>
+            @if (clip.IncludeAudio)
+            {
+                <label class="field">
+                    <span>Episode volume: @($"{clip.Volume:P0}")</span>
+                    <input type="range" min="0" max="100" value="@Number(clip.Volume * 100)"
+                           @onchange="e => SetNumber(e, value => clip.Volume = Math.Clamp(value / 100, 0, 1))" />
+                </label>
+            }
+        </div>
+        @if (clip.IncludeAudio)
+        {
+            <label class="check">
+                <input type="checkbox" checked="@clip.DuckUnderVoice" @onchange="e => Set(() => clip.DuckUnderVoice = e.Value is true)" />
+                <span>Lower the episode's sound while the voice speaks</span>
+            </label>
+        }
+        <p class="hint">
+            Uses the episode this promo is for (the first show listed on Up Next).
+            @(GeneratedPromoResolver.UsesClip(Template.Generator) ? "The program below is handed this clip, so it isn't played behind; only the start time applies." : "")
+            @(_sample ? "The preview shows the fallback background until the channel's schedule is built." : "")
+        </p>
+    }
+    @if (Missing(Template.Background))
+    {
+        <p class="hint warn">The scheduler can't find this file.</p>
+    }
+
+    @if (Template.Generator is { } generator)
+    {
+        <div class="generator" aria-label="External generator">
+            <p class="hint">
+                The program draws the video; the voice-over and music are then mixed on top. Its video is scaled to fit the
+                output size over the background above, so a transparent video (.mov or .webm) shows the background or
+                episode clip through it. It's held on its last frame if shorter than the promo and cut if longer.
+            </p>
+            <div class="grid grid-2">
+                <label class="field">
+                    <span>Program</span>
+                    <input type="text" value="@generator.Command" placeholder="node" @onchange="e => Set(() => generator.Command = Text(e).Trim())" />
+                </label>
+                <label class="field">
+                    <span>Run in folder</span>
+                    <input type="text" value="@generator.WorkingDirectory" placeholder="D:\Media\Promo Generators\My Generator"
+                           @onchange="e => Set(() => generator.WorkingDirectory = Folder(e))" />
+                </label>
+            </div>
+            <label class="field">
+                <span>Arguments (one per line; {shows} and {clip_arguments} expand to the lists below)</span>
+                <textarea rows="5" spellcheck="false" @onchange="e => Set(() => generator.Arguments = Lines(e))">@string.Join('\n', generator.Arguments)</textarea>
+            </label>
+            <div class="grid grid-2">
+                <label class="field">
+                    <span>For each show (one per line)</span>
+                    <textarea rows="4" spellcheck="false" @onchange="e => Set(() => generator.PerShow = Lines(e))">@string.Join('\n', generator.PerShow)</textarea>
+                </label>
+                <label class="field">
+                    <span>When there's an episode clip (one per line; {clip} and {clip_start} work without playing it behind)</span>
+                    <textarea rows="4" spellcheck="false" @onchange="e => Set(() => generator.ClipArguments = Lines(e))">@string.Join('\n', generator.ClipArguments)</textarea>
+                </label>
+            </div>
+            <div class="grid grid-4">
+                @if (Template.Type == GeneratedPromoType.UpNext)
+                {
+                    <label class="field">
+                        <span>Shows passed</span>
+                        <input type="number" min="1" max="10" value="@generator.Shows"
+                               @onchange="e => SetNumber(e, value => generator.Shows = (int)Math.Clamp(value, 1, 10))" />
+                    </label>
+                }
+                <label class="field">
+                    <span>{output} file type</span>
+                    <select value="@generator.OutputExtension" @onchange="e => Set(() => generator.OutputExtension = Text(e))">
+                        @foreach (string extension in (string[])[".mp4", ".mov", ".webm", ".mkv"])
+                        {
+                            <option value="@extension">@extension</option>
+                        }
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Give up after (s)</span>
+                    <input type="number" min="5" max="1800" step="5" value="@Number(generator.Timeout.TotalSeconds)"
+                           @onchange="e => SetSeconds(e, value => generator.Timeout = value, min: 5)" />
+                </label>
+                <label class="check template-enabled">
+                    <input type="checkbox" checked="@generator.KeepAudio" @onchange="e => Set(() => generator.KeepAudio = e.Value is true)" />
+                    <span>Keep its sound</span>
+                </label>
+            </div>
+            @if (generator.KeepAudio)
+            {
+                <div class="grid grid-2">
+                    <label class="field">
+                        <span>Its volume: @($"{generator.Volume:P0}")</span>
+                        <input type="range" min="0" max="100" value="@Number(generator.Volume * 100)"
+                               @onchange="e => SetNumber(e, value => generator.Volume = Math.Clamp(value / 100, 0, 1))" />
+                    </label>
+                    <label class="check template-enabled">
+                        <input type="checkbox" checked="@generator.DuckUnderVoice" @onchange="e => Set(() => generator.DuckUnderVoice = e.Value is true)" />
+                        <span>Lower it while the voice speaks</span>
+                    </label>
+                </div>
+            }
+            <details class="generator-tokens">
+                <summary>Placeholders</summary>
+                <ul>
+                    @foreach ((string token, string meaning) in GeneratedPromoResolver.GeneratorTokens)
+                    {
+                        <li><code>@token</code> @meaning</li>
+                    }
+                </ul>
+                <p class="hint">
+                    Show placeholders use the first show, or each show inside "For each show". If {output} isn't used, the
+                    program must print the finished file's full path as its last line.
+                </p>
+            </details>
+            <p class="hint">
+                @(PreviewIsSample ? "With sample shows" : "With this channel's next shows"), it runs:
+            </p>
+            <pre class="generator-command">@CommandPreview()</pre>
+        </div>
+    }
+    else
+    {
+    <div class="canvas-toolbar">
+        <span class="toolbar-label">Add</span>
+        <button class="btn btn-sm" type="button" @onclick="() => AddLayer(RequiredKind)">@KindName(RequiredKind)</button>
+        <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Text)">Text</button>
+        <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Rect)">Rectangle</button>
+        <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Image)">Image</button>
+        <div class="spacer"></div>
+        <label class="inline-field">
+            <span>Zoom</span>
+            <select value="@Number(_scale)" @onchange="SetZoom">
+                @foreach (double zoom in (double[])[0.25, 1 / 3.0, 0.5, 0.75])
+                {
+                    <option value="@Number(zoom)">@($"{zoom:P0}")</option>
+                }
+            </select>
+        </label>
+    </div>
+
+    @if (!Template.Layers.Any(layer => layer.Kind == RequiredKind))
+    {
+        <div class="banner banner-error">
+            This template needs a “@KindName(RequiredKind)” block to show the promoted show.
+            <button class="btn btn-sm" type="button" @onclick="() => AddLayer(RequiredKind)">Add one</button>
+        </div>
+    }
+
+    <div class="canvas-workspace">
+        <div class="canvas-column">
+            <div class="promo-canvas-scroll">
+                <div class="promo-canvas" role="group" aria-label="Promo canvas"
+                     style="width:@Px(Template.Width * _scale);height:@Px(Template.Height * _scale);@(_still is null ? "" : $"background-image:url('{_still}');")">
+                    @foreach (GeneratedLayer layer in Template.Layers)
+                    {
+                        bool isSelected = ReferenceEquals(layer, _layer);
+                        <div class="layer-box @(isSelected ? "selected" : "") @(VisibleAt(layer) ? "" : "hidden-now")" @key="layer"
+                             style="left:@Px(layer.X * _scale);top:@Px(layer.Y * _scale);width:@Px(layer.Width * _scale);height:@Px(layer.Height * _scale);"
+                             title="@layer.Name" @onpointerdown="e => StartDrag(e, layer, Move)" @onpointerdown:preventDefault="true">
+                            <span class="layer-tag">@Label(layer)</span>
+                            @if (isSelected)
+                            {
+                                @foreach (string handle in Handles)
+                                {
+                                    <span class="handle handle-@handle" aria-hidden="true" @onpointerdown="e => StartDrag(e, layer, handle)"
+                                          @onpointerdown:stopPropagation="true" @onpointerdown:preventDefault="true"></span>
+                                }
+                            }
+                        </div>
+                    }
+                    @if (_drag is not null && _snapX)
+                    {
+                        <div class="snap-guide snap-guide-x" aria-hidden="true"></div>
+                    }
+                    @if (_drag is not null && _snapY)
+                    {
+                        <div class="snap-guide snap-guide-y" aria-hidden="true"></div>
+                    }
+                </div>
+            </div>
+            <div class="timeline">
+                <label class="field">
+                    <span>Preview time: @($"{_time:0.00}")s of @($"{Template.Duration.TotalSeconds:0.#}")s</span>
+                    <input type="range" min="0" max="@Number(Math.Max(0, Template.Duration.TotalSeconds - 0.01))" step="0.05"
+                           value="@Number(_time)" aria-label="Preview time" @oninput="SetTime" />
+                </label>
+            </div>
+            <p class="hint">
+                @(_sample ? "Showing sample shows; once the channel's schedule is built, its real shows are used." : "Showing this channel's real shows.")
+                Drag a box to move it, or a handle to resize it; it snaps to the centre lines unless you hold Alt. Dashed boxes are hidden at this time.
+            </p>
+            @if (_stillError is not null)
+            {
+                <p class="hint warn" role="alert">Preview failed: @_stillError</p>
+            }
+        </div>
+
+        <div class="layer-panel">
+            <h3>Layers <span class="meta">top first</span></h3>
+            <ol class="layer-list">
+                @foreach (GeneratedLayer layer in Enumerable.Reverse(Template.Layers).ToList())
+                {
+                    int index = Template.Layers.IndexOf(layer);
+                    <li class="layer-row @(ReferenceEquals(layer, _layer) ? "selected" : "")" @key="layer">
+                        <button type="button" class="layer-select" aria-pressed="@(ReferenceEquals(layer, _layer) ? "true" : "false")"
+                                @onclick="() => Select(layer)">
+                            <span>@Label(layer)</span>
+                            <small>@KindName(layer.Kind)</small>
+                        </button>
+                        <button class="btn btn-sm" type="button" title="Bring forward" aria-label="Bring @Label(layer) forward"
+                                disabled="@(index == Template.Layers.Count - 1)" @onclick="() => MoveLayer(layer, 1)">↑</button>
+                        <button class="btn btn-sm" type="button" title="Send backward" aria-label="Send @Label(layer) backward"
+                                disabled="@(index == 0)" @onclick="() => MoveLayer(layer, -1)">↓</button>
+                    </li>
+                }
+            </ol>
+            @if (Template.Layers.Count == 0)
+            {
+                <p class="hint">No layers yet.</p>
+            }
+
+            @if (_layer is { } selected)
+            {
+                <div class="inspector" aria-label="Layer settings">
+                    <div class="row">
+                        <h3>@KindName(selected.Kind)</h3>
+                        <div class="spacer"></div>
+                        <button class="btn btn-sm" type="button" @onclick="() => DuplicateLayer(selected)">Duplicate</button>
+                        <button class="btn btn-sm btn-danger" type="button" @onclick="() => RemoveLayer(selected)">Delete</button>
+                    </div>
+                    <label class="field">
+                        <span>Layer name</span>
+                        <input type="text" value="@selected.Name" @onchange="e => Set(() => selected.Name = Text(e))" />
+                    </label>
+
+                    @if (selected.Kind == GeneratedLayerKind.UpNext)
+                    {
+                        <div class="grid grid-2">
+                            <label class="field">
+                                <span>Start from</span>
+                                <select value="@(selected.UpNext?.Offset ?? 0)"
+                                        @onchange="e => Set(() => UpNext(selected).Offset = int.Parse(Text(e), CultureInfo.InvariantCulture))">
+                                    <option value="0">The next show</option>
+                                    <option value="1">The show after it</option>
+                                    <option value="2">Two shows ahead</option>
+                                    <option value="3">Three shows ahead</option>
+                                </select>
+                            </label>
+                            <label class="field">
+                                <span>Shows listed (one per line)</span>
+                                <input type="number" min="1" max="10" value="@(selected.UpNext?.ShowsAhead ?? 1)"
+                                       @onchange="e => SetNumber(e, value => UpNext(selected).ShowsAhead = (int)Math.Clamp(value, 1, 10))" />
+                            </label>
+                        </div>
+                        <label class="check">
+                            <input type="checkbox" checked="@(selected.UpNext?.IncludeTime == true)"
+                                   @onchange="e => Set(() => UpNext(selected).IncludeTime = e.Value is true)" />
+                            <span>Show start times</span>
+                        </label>
+                    }
+                    else if (GeneratedPromoKinds.IsShowLayer(selected.Kind))
+                    {
+                        GeneratedShowOptions show = ShowOptions(selected);
+                        <p class="hint">Each ticked part gets its own line.</p>
+                        <div class="check-stack">
+                            <label class="check">
+                                <input type="checkbox" checked="@show.Title" @onchange="e => Set(() => show.Title = e.Value is true)" />
+                                <span>Show title</span>
+                            </label>
+                            <label class="check">
+                                <input type="checkbox" checked="@show.EpisodeTitle" @onchange="e => Set(() => show.EpisodeTitle = e.Value is true)" />
+                                <span>Episode title</span>
+                            </label>
+                            <label class="check">
+                                <input type="checkbox" checked="@show.Day" @onchange="e => Set(() => show.Day = e.Value is true)" />
+                                <span>Day (Today, Tonight, Tomorrow or weekday)</span>
+                            </label>
+                            <label class="check">
+                                <input type="checkbox" checked="@show.Time" @onchange="e => Set(() => show.Time = e.Value is true)" />
+                                <span>Start time</span>
+                            </label>
+                        </div>
+                    }
+                    else if (selected.Kind == GeneratedLayerKind.Text)
+                    {
+                        <label class="field">
+                            <span>Text ({channel} is the channel name; new lines start new lines)</span>
+                            <textarea rows="2" @onchange="e => Set(() => selected.Text = Text(e))">@selected.Text</textarea>
+                        </label>
+                    }
+                    else if (selected.Kind == GeneratedLayerKind.Image)
+                    {
+                        <div class="field">
+                            <span>Image file</span>
+                            <FilePathPicker Value="@selected.Path" ValueChanged="value => Set(() => selected.Path = value)"
+                                            Extensions="FileBrowsing.Images" Label="image" StartIn="Environment.SpecialFolder.MyPictures"
+                                            Placeholder="D:\Media\Promos\Logos\channel.png" />
+                        </div>
+                        @if (Missing(selected.Path))
+                        {
+                            <p class="hint warn">The scheduler can't find this file.</p>
+                        }
+                    }
+
+                    @if (selected.Kind is GeneratedLayerKind.Text or GeneratedLayerKind.UpNext || GeneratedPromoKinds.IsShowLayer(selected.Kind))
+                    {
+                        <div class="grid grid-2">
+                            <label class="field">
+                                <span>Font</span>
+                                <select value="@FontName(selected.FontFamily)" style="font-family: '@selected.FontFamily'"
+                                        @onchange="e => Set(() => selected.FontFamily = Text(e))">
+                                    @if (!_fonts.Contains(FontName(selected.FontFamily)))
+                                    {
+                                        <option value="@selected.FontFamily">@selected.FontFamily (not installed)</option>
+                                    }
+                                    @foreach (string font in _fonts)
+                                    {
+                                        <option value="@font" style="font-family: '@font'">@font</option>
+                                    }
+                                </select>
+                            </label>
+                            <label class="field">
+                                <span>Largest font size</span>
+                                <input type="number" min="4" max="600" value="@Number(selected.FontSize)"
+                                       @onchange="e => SetNumber(e, value => selected.FontSize = (float)Math.Clamp(value, 4, 600))" />
+                            </label>
+                            <label class="field">
+                                <span>Align</span>
+                                <select value="@selected.Align" @onchange="e => Set(() => selected.Align = Enum.Parse<GeneratedTextAlign>(Text(e)))">
+                                    @foreach (GeneratedTextAlign align in Enum.GetValues<GeneratedTextAlign>())
+                                    {
+                                        <option value="@align">@align</option>
+                                    }
+                                </select>
+                            </label>
+                            <div class="check-stack">
+                                <label class="check">
+                                    <input type="checkbox" checked="@selected.Bold" @onchange="e => Set(() => selected.Bold = e.Value is true)" />
+                                    <span>Bold</span>
+                                </label>
+                                <label class="check">
+                                    <input type="checkbox" checked="@selected.Shadow" @onchange="e => Set(() => selected.Shadow = e.Value is true)" />
+                                    <span>Drop shadow</span>
+                                </label>
+                            </div>
+                        </div>
+                        <p class="hint">Text shrinks to fit its box.</p>
+                    }
+
+                    @if (selected.Kind != GeneratedLayerKind.Image)
+                    {
+                        (string rgb, int alpha) = GeneratedPromoEditing.SplitColor(selected.Color);
+                        <div class="grid grid-2">
+                            <div class="field">
+                                <span>Colour</span>
+                                <input type="color" aria-label="Layer colour" value="@rgb"
+                                       @onchange="e => Set(() => selected.Color = GeneratedPromoEditing.JoinColor(Text(e), alpha))" />
+                            </div>
+                            <label class="field">
+                                <span>Colour transparency: @(100 - alpha)%</span>
+                                <input type="range" min="0" max="100" value="@(100 - alpha)"
+                                       @onchange="e => SetNumber(e, value => selected.Color = GeneratedPromoEditing.JoinColor(rgb, 100 - (int)value))" />
+                            </label>
+                        </div>
+                    }
+                    @if (selected.Kind == GeneratedLayerKind.Rect)
+                    {
+                        <label class="field">
+                            <span>Corner radius</span>
+                            <input type="number" min="0" value="@Number(selected.CornerRadius)"
+                                   @onchange="e => SetNumber(e, value => selected.CornerRadius = (float)Math.Max(0, value))" />
+                        </label>
+                    }
+
+                    <h4>Position (pixels)</h4>
+                    <div class="grid grid-4">
+                        <label class="field"><span>X</span><input type="number" value="@Number(selected.X)" @onchange="e => SetNumber(e, value => selected.X = (float)value)" /></label>
+                        <label class="field"><span>Y</span><input type="number" value="@Number(selected.Y)" @onchange="e => SetNumber(e, value => selected.Y = (float)value)" /></label>
+                        <label class="field"><span>Width</span><input type="number" min="1" value="@Number(selected.Width)" @onchange="e => SetNumber(e, value => selected.Width = (float)Math.Max(1, value))" /></label>
+                        <label class="field"><span>Height</span><input type="number" min="1" value="@Number(selected.Height)" @onchange="e => SetNumber(e, value => selected.Height = (float)Math.Max(1, value))" /></label>
+                    </div>
+                    <label class="field">
+                        <span>Opacity: @($"{selected.Opacity:P0}")</span>
+                        <input type="range" min="0" max="100" value="@Number(selected.Opacity * 100)"
+                               @onchange="e => SetNumber(e, value => selected.Opacity = (float)Math.Clamp(value / 100, 0, 1))" />
+                    </label>
+
+                    <h4>Timing and animation</h4>
+                    <div class="grid grid-2">
+                        <label class="field">
+                            <span>Appears at (s)</span>
+                            <input type="number" min="0" step="0.05" value="@Number(selected.Start.TotalSeconds)"
+                                   @onchange="e => SetSeconds(e, value => selected.Start = value)" />
+                        </label>
+                        <label class="field">
+                            <span>Leaves at (s, blank = end)</span>
+                            <input type="number" min="0" step="0.05" value="@(selected.End is { } end ? Number(end.TotalSeconds) : "")"
+                                   @onchange="e => SetOptionalSeconds(e, value => selected.End = value)" />
+                        </label>
+                        <label class="field">
+                            <span>Enter</span>
+                            <select value="@selected.TransitionIn" @onchange="e => Set(() => selected.TransitionIn = Enum.Parse<GeneratedTransition>(Text(e)))">
+                                @foreach (GeneratedTransition transition in Enum.GetValues<GeneratedTransition>())
+                                {
+                                    <option value="@transition">@Words(transition)</option>
+                                }
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Exit</span>
+                            <select value="@selected.TransitionOut" @onchange="e => Set(() => selected.TransitionOut = Enum.Parse<GeneratedTransition>(Text(e)))">
+                                @foreach (GeneratedTransition transition in Enum.GetValues<GeneratedTransition>())
+                                {
+                                    <option value="@transition">@Words(transition)</option>
+                                }
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Transition length (s)</span>
+                            <input type="number" min="0" max="5" step="0.05" value="@Number(selected.TransitionDuration.TotalSeconds)"
+                                   @onchange="e => SetSeconds(e, value => selected.TransitionDuration = value)" />
+                        </label>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+    }
+
+    <h3>Voice-over</h3>
+    <label class="check">
+        <input type="checkbox" checked="@(Template.Voice is { Enabled: true })" @onchange="ToggleVoice" />
+        <span>Read the listings aloud</span>
+    </label>
+    @if (Template.Voice is { Enabled: true } voice)
+    {
+        ITextToSpeechProvider? provider = Voices.Providers.FirstOrDefault(candidate => string.Equals(candidate.Id, voice.Provider, StringComparison.OrdinalIgnoreCase));
+        IReadOnlyList<TtsVoice> voiceList = VoiceList(provider);
+        IReadOnlyList<string> languages = [.. voiceList.Select(option => option.Language).Distinct().Order()];
+        IReadOnlyList<TtsVoice> shown = ShownVoices(voiceList);
+        string current = VoiceId(voiceList, voice.Voice);
+        <div class="grid grid-3">
+            <label class="field">
+                <span>Voice service</span>
+                <select value="@voice.Provider" @onchange="e => SetProvider(voice, Text(e))">
+                    @foreach (ITextToSpeechProvider candidate in Voices.Providers)
+                    {
+                        <option value="@candidate.Id">@candidate.DisplayName</option>
+                    }
+                </select>
+            </label>
+            <label class="field">
+                <span>Voice@(_voicesLoading ? " (loading…)" : languages.Count > 1 ? $" ({shown.Count} of {voiceList.Count})" : "")</span>
+                <select value="@current" @onchange="e => Set(() => voice.Voice = Text(e))">
+                    @if (!shown.Any(option => option.Id == current))
+                    {
+                        <option value="@voice.Voice">@(string.IsNullOrWhiteSpace(voice.Voice) ? "Choose a voice" : VoiceLabel(voiceList, voice.Voice))</option>
+                    }
+                    @foreach (TtsVoice option in shown)
+                    {
+                        <option value="@option.Id" title="@option.Description">@VoiceLabel(voiceList, option.Id)</option>
+                    }
+                </select>
+            </label>
+            <label class="field">
+                <span>Starts speaking at (s)</span>
+                <input type="number" min="0" step="0.05" value="@Number(voice.Start.TotalSeconds)"
+                       @onchange="e => SetSeconds(e, value => voice.Start = value)" />
+            </label>
+        </div>
+        @if (languages.Count > 1)
+        {
+            <div class="grid grid-2">
+                <label class="field">
+                    <span>Voice language</span>
+                    <select value="@_voiceLanguage" @onchange="e => _voiceLanguage = Text(e)">
+                        <option value="@AllLanguages">All languages</option>
+                        @foreach (string language in languages)
+                        {
+                            <option value="@language">@language</option>
+                        }
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Search voices</span>
+                    <input type="search" value="@_voiceSearch" placeholder="narrator, deep, female…" @oninput="e => _voiceSearch = Text(e)" />
+                </label>
+            </div>
+        }
+        @if (provider?.SetupProblem is { } setup)
+        {
+            <p class="hint warn">@setup</p>
+        }
+        else if (_voiceError is { } voiceError)
+        {
+            <p class="hint warn">Couldn't load the voice list: @voiceError</p>
+        }
+        <div class="grid grid-2">
+            <div class="field">
+                <span>Said first (one is picked for each promo)</span>
+                <PhraseListEditor Values="PreMessages(voice)" Changed="Commit" Label="Opener"
+                                  Placeholder="@GeneratedPromoResolver.DefaultPreMessage(Template.Type)"
+                                  EmptyHint="@($"Says the usual “{GeneratedPromoResolver.DefaultPreMessage(Template.Type)}”")" />
+            </div>
+            <div class="field">
+                <span>Said last ({channel} is the channel name)</span>
+                <PhraseListEditor Values="PostMessages(voice)" Changed="Commit" Label="Closer" Placeholder="Only on {channel}!"
+                                  EmptyHint="Nothing is said after the shows." />
+            </div>
+        </div>
+        <p class="hint">Read-out (one of the variations): <em>@Script()</em></p>
+    }
+
+    <h3>Background music</h3>
+    <label class="check">
+        <input type="checkbox" checked="@(Template.Music is not null)" @onchange="ToggleMusic" />
+        <span>Play a song under the promo</span>
+    </label>
+    @if (Template.Music is { } music)
+    {
+        List<string> songs = Songs(music);
+        <div class="field">
+            <span>Songs (one is picked for each promo; each loops if shorter than the promo)</span>
+            <ol class="song-list">
+                @for (int index = 0; index < songs.Count; index++)
+                {
+                    int position = index;
+                    string song = songs[position];
+                    bool playing = string.Equals(_songPlaying, song, StringComparison.OrdinalIgnoreCase);
+                    bool cutting = string.Equals(_songCutting, song, StringComparison.OrdinalIgnoreCase);
+                    <li @key="position">
+                        <div class="song-row">
+                            <FilePathPicker Value="@song" ValueChanged="value => SetSong(music, position, value)"
+                                            Extensions="FileBrowsing.Audio" Label="song" StartIn="Environment.SpecialFolder.MyMusic" />
+                            <label class="song-start" title="Where in this song the promo starts">
+                                <span>Start (s)</span>
+                                <input type="number" min="0" step="0.5" value="@Number(music.StartFor(song).TotalSeconds)"
+                                       aria-label="@($"Start into {Path.GetFileName(song)} in seconds")"
+                                       @onchange="e => SetSongStart(e, music, song)" />
+                            </label>
+                            <button class="btn btn-sm" type="button" disabled="@(cutting || Missing(song) || string.IsNullOrWhiteSpace(song))"
+                                    title="@($"Play the {Number(Template.Duration.TotalSeconds)} s a promo would use")"
+                                    aria-label="@($"{(playing ? "Stop" : "Play")} {Path.GetFileName(song)} preview")"
+                                    @onclick="() => ToggleSongPreview(music, song)">
+                                @(cutting ? "…" : playing ? "■ Stop" : "▶ Play")
+                            </button>
+                            <button class="btn btn-sm btn-danger" type="button" aria-label="@($"Remove {Path.GetFileName(song)}")"
+                                    @onclick="() => SetSong(music, position, null)">Remove</button>
+                        </div>
+                        @if (Missing(song))
+                        {
+                            <p class="hint warn">The scheduler can't find this file.</p>
+                        }
+                        @if (playing && _songClipUrl is not null)
+                        {
+                            <audio class="song-preview" src="@_songClipUrl" autoplay controls @onended="StopSongPreview"></audio>
+                        }
+                    </li>
+                }
+            </ol>
+            @if (_songError is not null)
+            {
+                <p class="hint warn" role="status">@_songError</p>
+            }
+            <div class="row row-wrap">
+                <FilePathPicker Multiple="true" ButtonText="Add songs…" Extensions="FileBrowsing.Audio" Label="songs"
+                                StartIn="Environment.SpecialFolder.MyMusic" OnPicked="picked => AddSongs(music, picked)" />
+                @if (songs.Count == 0)
+                {
+                    <span class="hint warn" style="margin:0;">Add at least one song.</span>
+                }
+            </div>
+        </div>
+        <div class="grid grid-3">
+            <label class="field">
+                <span>Volume: @($"{music.Volume:P0}")</span>
+                <input type="range" min="0" max="100" value="@Number(music.Volume * 100)"
+                       @onchange="e => SetNumber(e, value => music.Volume = Math.Clamp(value / 100, 0, 1))" />
+            </label>
+            <label class="field">
+                <span>Fade in (s)</span>
+                <input type="number" min="0" step="0.1" value="@Number(music.FadeIn.TotalSeconds)" @onchange="e => SetSeconds(e, value => music.FadeIn = value)" />
+            </label>
+            <label class="field">
+                <span>Fade out (s)</span>
+                <input type="number" min="0" step="0.1" value="@Number(music.FadeOut.TotalSeconds)" @onchange="e => SetSeconds(e, value => music.FadeOut = value)" />
+            </label>
+        </div>
+        <label class="check">
+            <input type="checkbox" checked="@music.DuckUnderVoice" @onchange="e => Set(() => music.DuckUnderVoice = e.Value is true)" />
+            <span>Lower the music while the voice speaks</span>
+        </label>
+    }
+
+    <h3>Preview</h3>
+    <div class="row row-wrap">
+        <button class="btn btn-primary" type="button" disabled="@_rendering" @onclick="RenderVideo">
+            @(_rendering ? "Rendering…" : "Render preview video")
+        </button>
+        <span class="hint" style="margin:0;">Renders the full promo with voice and music, exactly as it will air.</span>
+    </div>
+    @if (_videoMessage is not null)
+    {
+        <p class="hint warn" role="status">@_videoMessage</p>
+    }
+    @if (_videoUrl is not null)
+    {
+        <video class="promo-video" src="@_videoUrl" controls autoplay></video>
+    }
+</div>
+
+@if (_drag is not null)
+{
+    <div class="drag-overlay" @onpointermove="Drag" @onpointerup="EndDrag" @onpointercancel="EndDrag" @onpointerleave="EndDrag"></div>
+}
+
+@code {
+    [Parameter, EditorRequired] public GeneratedPromoTemplate Template { get; set; } = new();
+    [Parameter, EditorRequired] public ChannelConfig Channel { get; set; } = new() { Id = "", Name = "" };
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback OnRemove { get; set; }
+    [Parameter] public string? ErrorScope { get; set; }
+
+    private const string Move = "move";
+    private static readonly string[] Handles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+    private static readonly (int Width, int Height, string Label)[] Sizes =
+    [
+        (1920, 1080, "1920 × 1080 (1080p)"),
+        (1280, 720, "1280 × 720 (720p)"),
+        (3840, 2160, "3840 × 2160 (4K)"),
+        (1440, 1080, "1440 × 1080 (4:3 HD)"),
+        (960, 720, "960 × 720 (4:3)"),
+        (720, 480, "720 × 480 (SD)"),
+        (640, 480, "640 × 480 (4:3 SD)")
+    ];
+
+    private sealed record DragState(GeneratedLayer Layer, string Handle, double StartX, double StartY, float X, float Y, float Width, float Height)
+    {
+        public bool Moved { get; set; }
+    }
+
+    private readonly CancellationTokenSource _life = new();
+    private GeneratedLayer? _layer;
+    private DragState? _drag;
+    // Screen pixels, so snapping feels the same at every zoom.
+    private const double SnapDistance = 8;
+    private bool _snapX;
+    private bool _snapY;
+    private double _scale = 1 / 3.0;
+    private double _time;
+    private string? _still;
+    private string? _stillError;
+    private CancellationTokenSource? _stillCancellation;
+    private bool _sample = true;
+    private bool _customSize;
+    private bool _rendering;
+    private string? _videoUrl;
+    private string? _videoMessage;
+    private string? _songPlaying;
+    private string? _songCutting;
+    private string? _songClipUrl;
+    private string? _songError;
+    private CancellationTokenSource? _songCancellation;
+    private IReadOnlyList<string> _fonts = [];
+    private const string AllLanguages = "*";
+    private const string DefaultLanguage = "English";
+    private IReadOnlyList<TtsVoice> _voiceList = [];
+    private string? _voiceListFor;
+    private bool _voicesLoading;
+    private string? _voiceError;
+    private string _voiceLanguage = DefaultLanguage;
+    private string _voiceSearch = string.Empty;
+
+    private IReadOnlyList<string> Errors => [.. Editor.Errors.Where(error =>
+        error.StartsWith($"{ErrorScope ?? $"channels.{Channel.Id}.plugins.{BuiltInPluginIds.GeneratedPromos}"}.templates.{Template.Name}", StringComparison.OrdinalIgnoreCase))];
+
+    private TimeZoneInfo Zone => GeneratedPromoPreview.Zone(Editor.Working, Channel);
+
+    protected override void OnInitialized()
+    {
+        _fonts = PromoFonts.Installed();
+        _layer = Template.Layers.FirstOrDefault(layer => layer.Kind == GeneratedPromoKinds.RequiredLayer(Template.Type)) ?? Template.Layers.FirstOrDefault();
+        _time = Math.Min(2, Math.Max(0, Template.Duration.TotalSeconds - 0.05));
+        _ = RefreshStill();
+        _ = PrepareStandIn();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (_layer is not null && !Template.Layers.Contains(_layer))
+        {
+            _layer = Template.Layers.FirstOrDefault();
+        }
+
+        _ = LoadVoices();
+    }
+
+    public void Dispose()
+    {
+        _life.Cancel();
+        _life.Dispose();
+    }
+
+    private async Task Commit()
+    {
+        await Changed.InvokeAsync();
+        _ = RefreshStill();
+        _ = PrepareStandIn();
+    }
+
+    private bool NeedsClip => Template.BackgroundClip is not null || GeneratedPromoResolver.UsesClip(Template.Generator);
+
+    private bool PreviewIsSample
+    {
+        get
+        {
+            PreviewListings(out bool sample);
+            return sample;
+        }
+    }
+
+    private async Task PrepareStandIn()
+    {
+        if (!NeedsClip)
+        {
+            return;
+        }
+
+        PreviewListings(out bool sample);
+        if (!sample)
+        {
+            return;
+        }
+
+        try
+        {
+            await Preview.PrepareStandInAsync(Channel, _life.Token);
+        }
+        catch (Exception)
+        {
+            // Without a stand-in the preview keeps its sample shows.
+            return;
+        }
+
+        await InvokeAsync(StateHasChanged);
+        _ = RefreshStill();
+    }
+
+    private Task Set(Action change)
+    {
+        change();
+        return Commit();
+    }
+
+    private Task SetNumber(ChangeEventArgs e, Action<double> apply) =>
+        double.TryParse(Text(e), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ? Set(() => apply(value)) : Task.CompletedTask;
+
+    private Task SetSeconds(ChangeEventArgs e, Action<TimeSpan> apply, double min = 0) =>
+        SetNumber(e, value => apply(TimeSpan.FromSeconds(Math.Round(Math.Max(min, value), 3))));
+
+    private Task SetOptionalSeconds(ChangeEventArgs e, Action<TimeSpan?> apply) =>
+        string.IsNullOrWhiteSpace(Text(e)) ? Set(() => apply(null)) : SetSeconds(e, value => apply(value));
+
+    private async Task RefreshStill()
+    {
+        if (Template.Generator is not null)
+        {
+            return;
+        }
+
+        _stillCancellation?.Cancel();
+        CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(_life.Token);
+        _stillCancellation = cancellation;
+        try
+        {
+            await Task.Delay(120, cancellation.Token);
+            IReadOnlyList<UpNextListing> listings = PreviewListings(out _sample);
+            int width = (int)Math.Min(1600, Template.Width * _scale * 1.5);
+            byte[] jpeg = await Preview.RenderStillAsync(Template, Channel.Name, listings, Zone, TimeSpan.FromSeconds(_time), width, cancellation.Token);
+            if (cancellation.IsCancellationRequested)
+            {
+                return;
+            }
+
+            _still = $"data:image/jpeg;base64,{Convert.ToBase64String(jpeg)}";
+            _stillError = null;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            if (cancellation.IsCancellationRequested) return;
+            _stillError = ex.GetBaseException().Message;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void SetTime(ChangeEventArgs e)
+    {
+        if (double.TryParse(Text(e), NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
+        {
+            _time = value;
+            _ = RefreshStill();
+        }
+    }
+
+    private void SetZoom(ChangeEventArgs e)
+    {
+        if (double.TryParse(Text(e), NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
+        {
+            _scale = value;
+            _ = RefreshStill();
+        }
+    }
+
+    private Task SetSize(ChangeEventArgs e)
+    {
+        if (Text(e) == CustomValue)
+        {
+            _customSize = true;
+            return Task.CompletedTask;
+        }
+
+        string[] parts = Text(e).Split('x');
+        if (parts.Length != 2 || !int.TryParse(parts[0], out int width) || !int.TryParse(parts[1], out int height))
+        {
+            return Task.CompletedTask;
+        }
+
+        _customSize = false;
+        return Set(() => GeneratedPromoEditing.Resize(Template, width, height));
+    }
+
+    private const string CustomValue = "custom";
+
+    private bool CustomSize => _customSize || !Sizes.Any(size => size.Width == Template.Width && size.Height == Template.Height);
+
+    // H.264 needs even dimensions.
+    private Task SetCustomSize(ChangeEventArgs e, bool width, int max) =>
+        double.TryParse(Text(e), NumberStyles.Float, CultureInfo.InvariantCulture, out double value)
+            ? Set(() =>
+            {
+                int size = (int)Math.Clamp(Math.Round(value / 2) * 2, 16, max);
+                GeneratedPromoEditing.Resize(Template, width ? size : Template.Width, width ? Template.Height : size);
+            })
+            : Task.CompletedTask;
+
+    private void Select(GeneratedLayer layer) => _layer = layer;
+
+    private Task AddLayer(GeneratedLayerKind kind)
+    {
+        GeneratedLayer layer = GeneratedPromoEditing.NewLayer(Template, kind);
+        Template.Layers.Add(layer);
+        _layer = layer;
+        return Commit();
+    }
+
+    private Task DuplicateLayer(GeneratedLayer layer)
+    {
+        GeneratedLayer copy = GeneratedPromoEditing.Copy(layer);
+        copy.Name = GeneratedPromoEditing.UniqueName(Template.Layers.Select(existing => existing.Name), layer.Name);
+        copy.X += 20;
+        copy.Y += 20;
+        Template.Layers.Insert(Template.Layers.IndexOf(layer) + 1, copy);
+        _layer = copy;
+        return Commit();
+    }
+
+    private Task RemoveLayer(GeneratedLayer layer)
+    {
+        int index = Template.Layers.IndexOf(layer);
+        Template.Layers.Remove(layer);
+        _layer = Template.Layers.Count == 0 ? null : Template.Layers[Math.Clamp(index - 1, 0, Template.Layers.Count - 1)];
+        return Commit();
+    }
+
+    private Task MoveLayer(GeneratedLayer layer, int delta) => Set(() => GeneratedPromoEditing.Move(Template.Layers, layer, delta));
+
+    private void StartDrag(PointerEventArgs e, GeneratedLayer layer, string handle)
+    {
+        _layer = layer;
+        _drag = new DragState(layer, handle, e.ClientX, e.ClientY, layer.X, layer.Y, layer.Width, layer.Height);
+    }
+
+    private void Drag(PointerEventArgs e)
+    {
+        if (_drag is not { } drag)
+        {
+            return;
+        }
+
+        float dx = (float)((e.ClientX - drag.StartX) / _scale);
+        float dy = (float)((e.ClientY - drag.StartY) / _scale);
+        GeneratedLayer layer = drag.Layer;
+        const float minimum = 8;
+        drag.Moved |= Math.Abs(dx) >= 1 || Math.Abs(dy) >= 1;
+
+        if (drag.Handle == Move)
+        {
+            float x = MathF.Round(drag.X + dx);
+            float y = MathF.Round(drag.Y + dy);
+            (layer.X, layer.Y, _snapX, _snapY) = e.AltKey
+                ? (x, y, false, false)
+                : GeneratedPromoEditing.SnapToCenter(x, y, layer.Width, layer.Height, Template.Width, Template.Height, (float)(SnapDistance / _scale));
+            return;
+        }
+
+        if (drag.Handle.Contains('e'))
+        {
+            layer.Width = MathF.Round(Math.Max(minimum, drag.Width + dx));
+        }
+
+        if (drag.Handle.Contains('w'))
+        {
+            float shift = Math.Min(dx, drag.Width - minimum);
+            layer.X = MathF.Round(drag.X + shift);
+            layer.Width = MathF.Round(drag.Width - shift);
+        }
+
+        if (drag.Handle.Contains('s'))
+        {
+            layer.Height = MathF.Round(Math.Max(minimum, drag.Height + dy));
+        }
+
+        if (drag.Handle.Contains('n'))
+        {
+            float shift = Math.Min(dy, drag.Height - minimum);
+            layer.Y = MathF.Round(drag.Y + shift);
+            layer.Height = MathF.Round(drag.Height - shift);
+        }
+    }
+
+    private async Task EndDrag(PointerEventArgs e)
+    {
+        if (_drag is not { } drag)
+        {
+            return;
+        }
+
+        Drag(e);
+        _drag = null;
+        _snapX = _snapY = false;
+        if (drag.Moved)
+        {
+            await Commit();
+        }
+    }
+
+    private bool VisibleAt(GeneratedLayer layer)
+    {
+        var time = TimeSpan.FromSeconds(_time);
+        return time >= layer.Start && time < (layer.End ?? Template.Duration);
+    }
+
+    private async Task ToggleVoice(ChangeEventArgs e)
+    {
+        await Set(() =>
+        {
+            if (e.Value is true)
+            {
+                // TikTok needs no setup, so it's the default when its plugin is on; otherwise the first voice plugin.
+                Template.Voice ??= Voices.Providers.Any(provider => provider.Id == GeneratedPromoTemplates.DefaultVoiceProvider) || Voices.Providers.Count == 0
+                    ? new GeneratedVoiceConfig { Provider = GeneratedPromoTemplates.DefaultVoiceProvider, Voice = GeneratedPromoTemplates.DefaultVoice }
+                    : new GeneratedVoiceConfig { Provider = Voices.Providers.First().Id, Voice = string.Empty };
+                Template.Voice.Enabled = true;
+            }
+            else if (Template.Voice is not null)
+            {
+                Template.Voice.Enabled = false;
+            }
+        });
+        await LoadVoices();
+    }
+
+    private async Task SetProvider(GeneratedVoiceConfig voice, string id)
+    {
+        voice.Provider = id;
+        _voiceLanguage = DefaultLanguage;
+        _voiceSearch = string.Empty;
+        await LoadVoices();
+        IReadOnlyList<TtsVoice> shown = ShownVoices(_voiceList);
+        voice.Voice = (shown.Count > 0 ? shown : _voiceList).FirstOrDefault()?.Id ?? string.Empty;
+        await Commit();
+    }
+
+    private async Task LoadVoices()
+    {
+        if (Template.Voice is not { Enabled: true } voice || string.Equals(_voiceListFor, voice.Provider, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        string providerId = voice.Provider;
+        _voiceListFor = providerId;
+        _voiceList = [];
+        _voiceError = null;
+        ITextToSpeechProvider? provider = Voices.Providers.FirstOrDefault(candidate => string.Equals(candidate.Id, providerId, StringComparison.OrdinalIgnoreCase));
+        if (provider is null || provider.SetupProblem is not null)
+        {
+            return;
+        }
+
+        _voicesLoading = true;
+        StateHasChanged();
+        try
+        {
+            IReadOnlyList<TtsVoice> list = await provider.GetVoicesAsync(_life.Token);
+            if (_voiceListFor == providerId)
+            {
+                _voiceList = list;
+                // Open on the chosen voice's language so it stays visible; otherwise English.
+                string? language = list.FirstOrDefault(option => option.Id == VoiceId(list, voice.Voice))?.Language;
+                _voiceLanguage = language ?? (list.Any(option => option.Language == DefaultLanguage) ? DefaultLanguage : AllLanguages);
+            }
+        }
+        catch (OperationCanceledException) when (_life.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            _voiceError = ex.GetBaseException().Message;
+            _voiceListFor = null;
+        }
+        finally
+        {
+            _voicesLoading = false;
+        }
+
+        if (!_life.IsCancellationRequested)
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private IReadOnlyList<TtsVoice> VoiceList(ITextToSpeechProvider? provider) =>
+        provider is not null && string.Equals(_voiceListFor, provider.Id, StringComparison.OrdinalIgnoreCase) ? _voiceList : [];
+
+    private IReadOnlyList<TtsVoice> ShownVoices(IReadOnlyList<TtsVoice> list) =>
+        [.. list.Where(option => (_voiceLanguage == AllLanguages || option.Language == _voiceLanguage)
+            && (string.IsNullOrWhiteSpace(_voiceSearch)
+                || $"{option.Name} {option.Id} {option.Description}".Contains(_voiceSearch.Trim(), StringComparison.OrdinalIgnoreCase)))];
+
+    private string VoiceLabel(IReadOnlyList<TtsVoice> list, string id) =>
+        list.FirstOrDefault(option => option.Id == id) is { } option
+            ? _voiceLanguage == AllLanguages && list.Select(item => item.Language).Distinct().Skip(1).Any()
+                ? $"{Words(option.Name)} ({option.Language})"
+                : Words(option.Name)
+            : id;
+
+    private Task ToggleMusic(ChangeEventArgs e) =>
+        Set(() => Template.Music = e.Value is true ? Template.Music ?? new GeneratedMusicConfig() : null);
+
+    private Task SetMadeWith(ChangeEventArgs e) => Set(() =>
+        Template.Generator = Text(e) == "generator" ? Template.Generator ?? new GeneratedScriptConfig() : null);
+
+    private static List<string> Lines(ChangeEventArgs e) =>
+        [.. Text(e).Replace("\r", "").Split('\n').Where(line => line.Trim().Length > 0)];
+
+    private static string? Folder(ChangeEventArgs e) => Optional(e)?.Trim('"');
+
+    private string CommandPreview()
+    {
+        if (Template.Generator is not { } generator)
+        {
+            return string.Empty;
+        }
+
+        IReadOnlyList<UpNextListing> listings = PreviewListings(out _);
+        return GeneratedPromoResolver.Resolve(Template, Channel.Name, listings, Zone, Preview.Now) is { } promo
+            ? ExternalPromoGenerator.Describe(generator, promo.GeneratorArguments)
+            : string.Empty;
+    }
+
+    private static readonly string[] BackgroundExtensions = [.. FileBrowsing.Images, .. FileBrowsing.Videos];
+
+    /// <summary>The editable opener list, folding in the single opener older templates may still carry.</summary>
+    private static List<string> PreMessages(GeneratedVoiceConfig voice)
+    {
+        if (!string.IsNullOrWhiteSpace(voice.PreMessage) && voice.PreMessages.Count == 0) voice.PreMessages = [voice.PreMessage];
+        voice.PreMessage = null;
+        return voice.PreMessages;
+    }
+
+    private static List<string> PostMessages(GeneratedVoiceConfig voice)
+    {
+        if (!string.IsNullOrWhiteSpace(voice.PostMessage) && voice.PostMessages.Count == 0) voice.PostMessages = [voice.PostMessage];
+        voice.PostMessage = null;
+        return voice.PostMessages;
+    }
+
+    /// <summary>
+    /// The editable song list, folding in the single-song form older templates may still carry, and turning the old
+    /// shared start point into a start for each song so new songs begin at 0.
+    /// </summary>
+    private static List<string> Songs(GeneratedMusicConfig music)
+    {
+        if (music.Path is { Length: > 0 })
+        {
+            music.Paths = [.. music.Songs];
+            music.Path = null;
+        }
+
+        if (music.StartAt > TimeSpan.Zero)
+        {
+            foreach (string song in music.Paths.Where(song => !string.IsNullOrWhiteSpace(song)))
+            {
+                SongStarts(music).TryAdd(song, music.StartFor(song));
+            }
+
+            music.StartAt = TimeSpan.Zero;
+        }
+
+        return music.Paths;
+    }
+
+    private static Dictionary<string, TimeSpan> SongStarts(GeneratedMusicConfig music)
+    {
+        // Copies made for previews come back with an ordinal map, so the comparer is restored here.
+        if (music.SongStarts is null || music.SongStarts.Comparer != StringComparer.OrdinalIgnoreCase)
+        {
+            music.SongStarts = music.SongStarts is { } existing
+                ? new Dictionary<string, TimeSpan>(existing, StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, TimeSpan>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        return music.SongStarts;
+    }
+
+    private static void SetStart(GeneratedMusicConfig music, string song, TimeSpan start)
+    {
+        Dictionary<string, TimeSpan> starts = SongStarts(music);
+        if (start > TimeSpan.Zero)
+        {
+            starts[song] = start;
+        }
+        else
+        {
+            starts.Remove(song);
+        }
+
+        // Null rather than empty, so the YAML and the render key stay as they were without per-song starts.
+        if (starts.Count == 0) music.SongStarts = null;
+    }
+
+    private Task SetSong(GeneratedMusicConfig music, int index, string? value) => Set(() =>
+    {
+        List<string> songs = Songs(music);
+        string old = songs[index];
+        TimeSpan start = music.StartFor(old);
+        SetStart(music, old, TimeSpan.Zero);
+        if (string.Equals(_songPlaying, old, StringComparison.OrdinalIgnoreCase)) StopSongPreview();
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            songs.RemoveAt(index);
+        }
+        else
+        {
+            songs[index] = value;
+            // Swapping the file keeps the start the row had.
+            SetStart(music, value, start);
+        }
+    });
+
+    private Task AddSongs(GeneratedMusicConfig music, IReadOnlyList<string> picked) => Set(() =>
+    {
+        List<string> songs = Songs(music);
+        songs.AddRange(picked.Where(song => !songs.Contains(song, StringComparer.OrdinalIgnoreCase)));
+    });
+
+    private async Task SetSongStart(ChangeEventArgs e, GeneratedMusicConfig music, string song)
+    {
+        await SetSeconds(e, value => SetStart(music, song, value));
+        if (string.Equals(_songPlaying, song, StringComparison.OrdinalIgnoreCase))
+        {
+            // Restart so what's heard matches the new start.
+            await PlaySongPreview(music, song);
+        }
+    }
+
+    private Task ToggleSongPreview(GeneratedMusicConfig music, string song)
+    {
+        if (string.Equals(_songPlaying, song, StringComparison.OrdinalIgnoreCase))
+        {
+            StopSongPreview();
+            return Task.CompletedTask;
+        }
+
+        return PlaySongPreview(music, song);
+    }
+
+    private async Task PlaySongPreview(GeneratedMusicConfig music, string song)
+    {
+        StopSongPreview();
+        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_life.Token);
+        _songCancellation = cancellation;
+        _songCutting = song;
+        _songError = null;
+        try
+        {
+            string clip = await Preview.SongClipAsync(GeneratedPromoEditing.Copy(music), song, Template.Duration, cancellation.Token);
+            if (cancellation.IsCancellationRequested) return;
+            _songClipUrl = $"{Preview.FileUrl(clip)}?v={DateTime.UtcNow.Ticks}";
+            _songPlaying = song;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            _songError = $"Couldn't play {Path.GetFileName(song)}: {ex.GetBaseException().Message}";
+        }
+        finally
+        {
+            if (ReferenceEquals(_songCancellation, cancellation)) _songCutting = null;
+        }
+    }
+
+    private void StopSongPreview()
+    {
+        _songCancellation?.Cancel();
+        _songCancellation = null;
+        _songCutting = null;
+        _songPlaying = null;
+        _songClipUrl = null;
+    }
+
+    private string Script()
+    {
+        IReadOnlyList<UpNextListing> listings = PreviewListings(out _);
+        return GeneratedPromoResolver.Resolve(Template, Channel.Name, listings, Zone, Preview.Now)?.Script ?? string.Empty;
+    }
+
+    private async Task RenderVideo()
+    {
+        _rendering = true;
+        _videoMessage = null;
+        try
+        {
+            if (NeedsClip)
+            {
+                await Preview.PrepareStandInAsync(Channel, _life.Token);
+            }
+
+            IReadOnlyList<UpNextListing> listings = PreviewListings(out _sample);
+            GeneratedPromoRender render = await Preview.RenderVideoAsync(GeneratedPromoEditing.Copy(Template), Channel.Name, listings, Zone, _life.Token);
+            _videoUrl = $"{Preview.FileUrl(render.Path)}?v={DateTime.UtcNow.Ticks}";
+            _videoMessage = render.VoiceError is { } error
+                ? $"The voice-over failed, so this preview is silent: {error.GetBaseException().Message}"
+                : null;
+        }
+        catch (OperationCanceledException) when (_life.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            _videoMessage = $"Preview failed: {ex.GetBaseException().Message}";
+        }
+        finally
+        {
+            _rendering = false;
+        }
+    }
+
+    private GeneratedLayerKind RequiredKind => GeneratedPromoKinds.RequiredLayer(Template.Type);
+
+    private Task SetType(GeneratedPromoType type) => Set(() =>
+    {
+        // An opener that was only the old type's usual one follows the type; an empty list already does.
+        if (Template.Voice is { } voice && PreMessages(voice) is [var only] && only == GeneratedPromoResolver.DefaultPreMessage(Template.Type))
+        {
+            voice.PreMessages.Clear();
+        }
+
+        // The placed show block becomes the new type's block, keeping its position and styling.
+        GeneratedLayerKind from = RequiredKind;
+        GeneratedLayerKind to = GeneratedPromoKinds.RequiredLayer(type);
+        foreach (GeneratedLayer layer in Template.Layers.Where(layer => layer.Kind == from && from != to))
+        {
+            layer.Kind = to;
+            layer.UpNext = to == GeneratedLayerKind.UpNext ? layer.UpNext ?? new GeneratedUpNextOptions() : null;
+            layer.Show = GeneratedPromoKinds.IsShowLayer(to) ? GeneratedPromoResolver.DefaultShowOptions(to) : null;
+        }
+
+        Template.Type = type;
+        _layer = Template.Layers.FirstOrDefault(layer => layer.Kind == RequiredKind) ?? _layer;
+    });
+
+    private IReadOnlyList<UpNextListing> PreviewListings(out bool sample) => Preview.Listings(Channel, Template, out sample);
+
+    private static GeneratedShowOptions ShowOptions(GeneratedLayer layer) =>
+        layer.Show ??= GeneratedPromoResolver.DefaultShowOptions(layer.Kind);
+
+    private static string TypeName(GeneratedPromoType type) => type switch
+    {
+        GeneratedPromoType.UpNext => "Up Next",
+        GeneratedPromoType.NowPlaying => "Now Playing",
+        GeneratedPromoType.ThisHasBeen => "This Has Been",
+        GeneratedPromoType.ComingUp => "Coming Up",
+        GeneratedPromoType.YoureWatching => "You're Watching",
+        GeneratedPromoType.BackToTheShow => "Back to the Show",
+        _ => "Eventually"
+    };
+
+    private static GeneratedUpNextOptions UpNext(GeneratedLayer layer) => layer.UpNext ??= new GeneratedUpNextOptions();
+
+    private static string VoiceId(IReadOnlyList<TtsVoice> list, string voice) =>
+        list.Any(option => option.Id == voice)
+            ? voice
+            : list.FirstOrDefault(option => string.Equals(option.Name, voice, StringComparison.OrdinalIgnoreCase))?.Id ?? voice;
+
+    private static bool Missing(string? path) => !string.IsNullOrWhiteSpace(path) && !File.Exists(path);
+
+    private string FontName(string family) =>
+        _fonts.FirstOrDefault(font => string.Equals(font, family, StringComparison.OrdinalIgnoreCase)) ?? family;
+
+    private static string Label(GeneratedLayer layer) => string.IsNullOrWhiteSpace(layer.Name) ? KindName(layer.Kind) : layer.Name;
+
+    private static string KindName(GeneratedLayerKind kind) => kind switch
+    {
+        GeneratedLayerKind.UpNext => "Up Next text",
+        GeneratedLayerKind.NowPlaying => "Now Playing text",
+        GeneratedLayerKind.ThisHasBeen => "This Has Been text",
+        GeneratedLayerKind.ComingUp => "Coming Up text",
+        GeneratedLayerKind.Eventually => "Eventually text",
+        GeneratedLayerKind.YoureWatching => "You're Watching text",
+        GeneratedLayerKind.BackToTheShow => "Back to the Show text",
+        GeneratedLayerKind.Rect => "Rectangle",
+        _ => kind.ToString()
+    };
+
+    private static string Words(object value) =>
+        Regex.Replace(value.ToString()!.Replace('_', ' '), "(?<=[a-z])(?=[A-Z0-9])", " ").ToLowerInvariant() is { Length: > 0 } words
+            ? char.ToUpperInvariant(words[0]) + words[1..]
+            : string.Empty;
+
+    private static string Text(ChangeEventArgs e) => e.Value?.ToString() ?? string.Empty;
+
+    private static string? Optional(ChangeEventArgs e) => string.IsNullOrWhiteSpace(Text(e)) ? null : Text(e).Trim();
+
+    private static string Number(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+
+    private static string Px(double value) => $"{value.ToString("0.##", CultureInfo.InvariantCulture)}px";
+}

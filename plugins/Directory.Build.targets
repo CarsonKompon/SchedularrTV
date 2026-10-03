@@ -1,0 +1,16 @@
+<Project>
+
+  <!--
+    Every plugin needs its plugin.json beside its .dll. It's copied by these targets rather than with
+    CopyToOutputDirectory, which would also copy it into anything referencing the plugin (the test project
+    references all of them, and their manifests would collide there).
+  -->
+  <Target Name="CopyPluginManifest" AfterTargets="Build" Condition="Exists('$(MSBuildProjectDirectory)\plugin.json')">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\plugin.json" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="PublishPluginManifest" AfterTargets="Publish" Condition="Exists('$(MSBuildProjectDirectory)\plugin.json')">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\plugin.json" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

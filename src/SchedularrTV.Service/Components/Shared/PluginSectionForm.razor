@@ -1,0 +1,95 @@
+@* The editor section of a plugin that only declared fields (channelSettings, blockSettings or scheduleSettings)
+   in its manifest: a generated form over its plugins.<id> section at this level. *@
+@inject PluginRegistry Registry
+
+@if (Context.Surface == EditorSurface.Block)
+{
+    @Fields()
+}
+else
+{
+    <div class="card">
+        <div class="card-head"><h2>@Title</h2></div>
+        @Fields()
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public PluginEditorContext Context { get; set; } = default!;
+
+    private PluginSettingsEditor _editor = default!;
+    private List<PluginSetting> _fields = [];
+
+    private string Title => Registry.Find(Context.PluginId)?.Manifest.Name ?? Context.PluginId;
+
+    private RenderFragment Fields() => @<text>
+        @if (Context.Surface != EditorSurface.ScheduleSettings)
+        {
+            <p class="hint">Blank fields use the @(Context.Surface == EditorSurface.Block ? "channel's" : "global") value.</p>
+        }
+        @foreach (PluginSetting field in _fields)
+        {
+            <PluginSettingField Setting="field" Editor="_editor" />
+        }
+    </text>;
+
+    protected override void OnParametersSet()
+    {
+        PluginManifest? manifest = Registry.Find(Context.PluginId)?.Manifest;
+        _fields = Context.Surface switch
+        {
+            EditorSurface.Channel => manifest?.ChannelSettings ?? [],
+            EditorSurface.Block => manifest?.BlockSettings ?? [],
+            _ => manifest?.ScheduleSettings ?? []
+        };
+
+        Dictionary<string, string?> values = new(StringComparer.OrdinalIgnoreCase);
+        foreach ((string key, object? value) in Context.Raw ?? new Dictionary<string, object?>())
+        {
+            values[key] = value switch
+            {
+                bool flag => flag ? "true" : "false",
+                IFormattable number => number.ToString(null, System.Globalization.CultureInfo.InvariantCulture),
+                null => null,
+                _ => value.ToString()
+            };
+        }
+
+        _editor = new PluginSettingsEditor(Context.PluginId, values);
+        _editor.Changed += Save;
+    }
+
+    // Unknown keys (set by hand in the YAML) are kept; the declared fields are written with their types.
+    private void Save()
+    {
+        Dictionary<string, object?> section = new(StringComparer.Ordinal);
+        foreach ((string key, object? value) in Context.Raw ?? new Dictionary<string, object?>())
+        {
+            section[key] = value;
+        }
+
+        foreach (PluginSetting field in _fields)
+        {
+            string? key = section.Keys.FirstOrDefault(existing => string.Equals(existing, field.Key, StringComparison.OrdinalIgnoreCase));
+            if (key is not null)
+            {
+                section.Remove(key);
+            }
+
+            if (_editor.Get(field.Key) is { Length: > 0 } text)
+            {
+                section[field.Key] = Typed(field.Type, text);
+            }
+        }
+
+        Context.Write(section.Count > 0 ? section : null);
+    }
+
+    private static object Typed(PluginSettingType type, string text) => type switch
+    {
+        PluginSettingType.Boolean when bool.TryParse(text, out bool flag) => flag,
+        PluginSettingType.Number when long.TryParse(text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out long whole) => whole,
+        PluginSettingType.Number when double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double fraction) => fraction,
+        _ => text
+    };
+}

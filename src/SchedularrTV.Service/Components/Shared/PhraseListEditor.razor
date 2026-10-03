@@ -1,0 +1,67 @@
+@* Phrases a voice-over picks one of at random; an empty phrase means say nothing that time. *@
+
+<div class="phrase-list">
+    @for (int index = 0; index < Values.Count; index++)
+    {
+        int position = index;
+        <div class="phrase-row" @key="position">
+            @if (Values[position].Length == 0)
+            {
+                <span class="phrase-silent">(say nothing)</span>
+            }
+            else
+            {
+                <input type="text" value="@Values[position]" aria-label="@($"{Label} {position + 1}")"
+                       @onchange="e => Set(position, e.Value?.ToString())" />
+            }
+            <button class="btn btn-sm btn-danger" type="button" aria-label="@($"Remove {Label} {position + 1}")"
+                    @onclick="() => Remove(position)">Remove</button>
+        </div>
+    }
+    @if (Values.Count == 0)
+    {
+        <p class="hint" style="margin:0;">@EmptyHint</p>
+    }
+    <div class="row row-wrap">
+        <button class="btn btn-sm" type="button" @onclick="Add">Add phrase</button>
+        <button class="btn btn-sm" type="button" disabled="@Values.Contains(string.Empty)" @onclick="AddSilence">Add "say nothing"</button>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<string> Values { get; set; } = [];
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public string Label { get; set; } = "Phrase";
+    [Parameter] public string Placeholder { get; set; } = "";
+    [Parameter] public string EmptyHint { get; set; } = "";
+
+    private Task Set(int index, string? value)
+    {
+        // Clearing a typed phrase removes it; silence is added deliberately with its own button.
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Remove(index);
+        }
+
+        Values[index] = value.Trim();
+        return Changed.InvokeAsync();
+    }
+
+    private Task Remove(int index)
+    {
+        Values.RemoveAt(index);
+        return Changed.InvokeAsync();
+    }
+
+    private Task Add()
+    {
+        Values.Add(string.IsNullOrWhiteSpace(Placeholder) ? "New phrase" : Placeholder);
+        return Changed.InvokeAsync();
+    }
+
+    private Task AddSilence()
+    {
+        Values.Add(string.Empty);
+        return Changed.InvokeAsync();
+    }
+}

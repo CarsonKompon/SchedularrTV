@@ -1,0 +1,261 @@
+@implements IDisposable
+@inject LibraryBrowser Library
+@inject ArchiveBrowser Archives
+@inject TimeProvider Clock
+
+<section class="follow-source">
+    <div class="follow-heading">
+        <h2>Archive Follow</h2>
+        <label class="check">
+            <input type="checkbox" @bind="_follow.Enabled" @bind:after="Commit" />
+            <span>Enabled</span>
+        </label>
+    </div>
+    <fieldset disabled="@_scanning">
+        <label class="field">
+            <span>Archive directory</span>
+            <input type="text" @bind="_follow.Directory" @bind:event="oninput" @bind:after="SourceChanged" />
+        </label>
+        @if (!string.IsNullOrWhiteSpace(_follow.Directory))
+        {
+            <p class="hint" style="margin-top:-4px;">
+                <a href="@($"archive?folder={Uri.EscapeDataString(_follow.Directory)}")">View or edit this archive's days</a>
+            </p>
+        }
+        <div class="follow-years">
+            <label class="field">
+                <span>First year</span>
+                <input type="number" min="1" max="9999" @bind="_follow.StartYear" @bind:after="SourceChanged" />
+            </label>
+            <label class="field">
+                <span>Last year</span>
+                <input type="number" min="1" max="9999" @bind="_follow.EndYear" @bind:after="SourceChanged" />
+            </label>
+            <button class="btn btn-primary" disabled="@(string.IsNullOrWhiteSpace(_follow.Directory))" @onclick="Scan">Scan archive</button>
+        </div>
+    </fieldset>
+    <div class="follow-options">
+        <label class="check">
+            <input type="checkbox" @bind="_follow.FollowWeekday" @bind:after="SelectionChanged" />
+            <span>Follow weekday</span>
+        </label>
+        @if (_follow.FollowWeekday)
+        {
+            <label class="check">
+                <input type="checkbox" @bind="_follow.FollowMonth" @bind:after="SelectionChanged" />
+                <span>Follow month</span>
+            </label>
+        }
+    </div>
+    <section class="follow-coverage" aria-label="Archive date coverage">
+        <div class="coverage-heading">
+            <h3>Archive date possibilities</h3>
+            <label class="field">
+                <span>Calendar year</span>
+                <input type="number" min="1" max="9999" @bind="_coverageYear" @bind:after="UpdateCoverage" />
+            </label>
+        </div>
+        <div role="status" aria-live="polite">
+            @if (_coverageLoading)
+            {
+                <p>Counting archive dates...</p>
+            }
+            else if (_coverageError is not null)
+            {
+                <p class="coverage-error">@_coverageError</p>
+            }
+            else if (_coverage is not null)
+            {
+                <dl class="coverage-counts">
+                    <div><dt>Average matches per day</dt><dd>@_coverage.AverageMatches.ToString("N2")</dd></div>
+                    <div><dt>Days with 0 possibilities</dt><dd>@_coverage.ZeroMatches.ToString("N0")</dd></div>
+                    <div><dt>Days with only 1 possibility</dt><dd>@_coverage.OneMatch.ToString("N0")</dd></div>
+                </dl>
+                <p class="coverage-total">@_coverage.Days days in @_coverage.Year &middot; @_dates!.Count.ToString("N0") archive dates</p>
+            }
+        </div>
+    </section>
+    @if (_scanning)
+    {
+        <div class="scan-status" role="status">
+            <span class="spinner"></span><span>Scanning archive...</span>
+            <button class="btn btn-sm" @onclick="CancelScan">Cancel</button>
+        </div>
+    }
+    else if (_scan is not null)
+    {
+        <p class="scan-status" role="status">@_scan.Days.ToString("N0") days &middot; @_scan.Blocks.Count.ToString("N0") blocks &middot; @_scan.Shows.Count.ToString("N0") shows</p>
+    }
+    @if (_error is not null)
+    {
+        <div class="banner banner-error" role="alert">@_error</div>
+    }
+    @if (_scan is { Warnings.Count: > 0 })
+    {
+        <details>
+            <summary>@_scan.Warnings.Count unreadable files</summary>
+            <div class="scan-warnings">@foreach (string warning in _scan.Warnings) { <p>@warning</p> }</div>
+        </details>
+    }
+</section>
+
+<ArchiveMappingList Heading="Blocks" Names="BlockNames" Targets="BlockTargets"
+                    Counts="_scan?.BlockCounts" Assignments="_follow.Blocks" Changed="Commit" />
+<ArchiveMappingList Heading="Shows" Names="ShowNames" Targets="_titles"
+                    Counts="_scan?.ShowCounts" Assignments="_follow.Shows" Automatic="AutomaticShow" Changed="Commit" />
+<ArchiveEpisodeList Follow="_follow" Episodes="_scan?.Episodes" Library="_programmes" Loading="_loadingLibrary" Changed="Commit" />
+
+@code {
+    [Parameter, EditorRequired] public ChannelConfig Channel { get; set; } = null!;
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private ArchiveFollowConfig _follow = new();
+    private ArchiveScan? _scan;
+    private IReadOnlyList<string> _titles = [];
+    private IReadOnlyList<MediaItem> _programmes = [];
+    private bool _loadingLibrary = true;
+    private ArchiveShowMatcher _showMatcher = new([]);
+    private bool _scanning;
+    private string? _error;
+    private CancellationTokenSource? _scanCancellation;
+    private readonly CancellationTokenSource _lifetime = new();
+    private IReadOnlyList<DateOnly>? _dates;
+    private ArchiveCoverage? _coverage;
+    private int _coverageYear;
+    private bool _coverageLoading;
+    private string? _coverageError;
+    private CancellationTokenSource? _coverageCancellation;
+
+    private IReadOnlyList<string> BlockNames => (_scan?.Blocks ?? []).Concat(_follow.Blocks.Keys).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
+    private IReadOnlyList<string> ShowNames => (_scan?.Shows ?? []).Concat(_follow.Shows.Keys).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
+    private IReadOnlyList<string> BlockTargets => Channel.Blocks.Select(block => block.Name).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _follow = Channel.Follow ?? new ArchiveFollowConfig();
+        _scan = Archives.Cached(_follow);
+        _coverageYear = Clock.GetLocalNow().Year;
+        Task coverageTask = RefreshCoverage();
+        try
+        {
+            var shows = await Library.GetShowsAsync(_lifetime.Token);
+            var movies = await Library.GetMoviesAsync(_lifetime.Token);
+            _titles = shows.Select(show => show.Name).Concat(movies.Select(movie => movie.Title))
+                .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
+            _showMatcher = new ArchiveShowMatcher(_titles);
+            _programmes = await Library.GetProgrammesAsync(_lifetime.Token);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception exception)
+        {
+            _error = $"Library unavailable: {exception.Message}";
+        }
+        finally
+        {
+            _loadingLibrary = false;
+        }
+        await coverageTask;
+    }
+
+    private string? AutomaticShow(string name) => _showMatcher.Match(name);
+
+    private async Task SourceChanged()
+    {
+        _scan = Archives.Cached(_follow);
+        _error = null;
+        await Commit();
+        await RefreshCoverage();
+    }
+
+    private async Task SelectionChanged()
+    {
+        UpdateCoverage();
+        await Commit();
+    }
+
+    private void UpdateCoverage()
+    {
+        _coverage = null;
+        if (_coverageYear is < 1 or > 9999)
+        {
+            _coverageError = "Calendar year must be between 1 and 9999.";
+        }
+        else if (_dates is not null)
+        {
+            _coverageError = null;
+            _coverage = ArchiveReader.Coverage(_follow, _dates, _coverageYear);
+        }
+    }
+
+    private async Task RefreshCoverage()
+    {
+        _coverageCancellation?.Cancel();
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        _coverageCancellation = cancellation;
+        _coverageLoading = true;
+        _coverage = null;
+        _dates = null;
+        _coverageError = null;
+        var snapshot = new ArchiveFollowConfig { Directory = _follow.Directory, StartYear = _follow.StartYear, EndYear = _follow.EndYear };
+        try
+        {
+            await Task.Delay(250, cancellation.Token);
+            var dates = await Archives.DatesAsync(snapshot, cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
+            _dates = dates;
+            UpdateCoverage();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception exception)
+        {
+            if (!cancellation.IsCancellationRequested) _coverageError = exception.Message;
+        }
+        finally
+        {
+            if (ReferenceEquals(_coverageCancellation, cancellation))
+            {
+                _coverageCancellation = null;
+                _coverageLoading = false;
+                if (!_lifetime.IsCancellationRequested) StateHasChanged();
+            }
+        }
+    }
+
+    private async Task Commit()
+    {
+        Channel.Follow = _follow;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Scan()
+    {
+        _scanning = true;
+        _error = null;
+        _scanCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        try
+        {
+            var snapshot = new ArchiveFollowConfig { Directory = _follow.Directory, StartYear = _follow.StartYear, EndYear = _follow.EndYear };
+            _scan = await Archives.ScanAsync(snapshot, _scanCancellation.Token);
+            await RefreshCoverage();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception exception)
+        {
+            _error = exception.Message;
+        }
+        finally
+        {
+            _scanning = false;
+            _scanCancellation.Dispose();
+            _scanCancellation = null;
+        }
+    }
+
+    private void CancelScan() => _scanCancellation?.Cancel();
+
+    public void Dispose()
+    {
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+    }
+}

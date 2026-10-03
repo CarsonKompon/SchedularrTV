@@ -1,0 +1,194 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject ConfigEditor Editor
+@inject ScheduleCoordinator Coordinator
+@inject SchedularrTV.Service.Hosting.OnboardingState Onboarding
+@inject SchedularrTV.Service.Hosting.AppSettingsForm SetupStatus
+@inject SchedularrTV.Service.Plugins.PluginRegistry Plugins
+@inject SchedularrTV.Service.Hosting.UpdateChecker Updates
+
+<div class="shell">
+    <nav class="sidebar" aria-label="Main">
+        <a class="brand" href="">
+            <span class="brand-mark"><Icon Name="tv" Size="18" /></span>
+            <span class="brand-text">
+                <span class="brand-name">SchedularrTV</span>
+                <span class="brand-sub">Local TV like it used to be</span>
+                <span class="brand-version" title="Version @SchedularrTV.Service.Hosting.AppRuntime.Version">@VersionBadge</span>
+            </span>
+        </a>
+
+        <div class="nav-section">Overview</div>
+        <NavLink class="nav-item" href="" Match="NavLinkMatch.All"><Icon Name="dashboard" /><span>Dashboard</span></NavLink>
+
+        <div class="nav-section">Programming</div>
+        <NavLink class="nav-item" href="channels"><Icon Name="radio" /><span>Channels</span></NavLink>
+        <NavLink class="nav-item" href="collections"><Icon Name="layers" /><span>Collections</span></NavLink>
+
+        <div class="nav-section">Library</div>
+        <NavLink class="nav-item" href="library/shows"><Icon Name="tv" /><span>TV Shows</span></NavLink>
+        <NavLink class="nav-item" href="library/movies"><Icon Name="film" /><span>Movies</span></NavLink>
+
+        <div class="nav-section">System</div>
+        <NavLink class="nav-item" href="settings" Match="NavLinkMatch.All">
+            <Icon Name="sliders" /><span>Settings</span>
+            @if (Updates.Available is { } update)
+            {
+                <span class="nav-update-dot" title="@($"SchedularrTV {update.Tag} is available")" aria-label="Update available"></span>
+            }
+        </NavLink>
+        <NavLink class="nav-item" href="settings/app"><Icon Name="plug" /><span>App settings</span></NavLink>
+        <NavLink class="nav-item" href="settings/plugins"><Icon Name="puzzle" /><span>Plugins</span></NavLink>
+
+        @if (PluginPages.Any())
+        {
+            <div class="nav-section">Plugins</div>
+            @foreach ((SchedularrTV.Service.Plugins.PluginDescriptor plugin, PluginPage link) in PluginPages)
+            {
+                <NavLink class="nav-item" href="@(link.Path.TrimStart('/'))" title="@($"{link.Title} ({plugin.Manifest.Name})")">
+                    <Icon Name="@(Icon.Exists(link.Icon) ? link.Icon! : "puzzle")" /><span>@(link.Title)</span>
+                </NavLink>
+            }
+        }
+        <NavLink class="nav-item" href="yaml"><Icon Name="code" /><span>YAML</span></NavLink>
+
+        <div class="sidebar-foot">
+            <div class="status-card" role="status" aria-live="polite">
+                <span class="status-dot @StatusClass"></span>
+                <div style="min-width:0;">
+                    <div class="status-title">@StatusTitle</div>
+                    <div class="status-sub">@StatusDetail</div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="content">
+        <div class="content-inner">
+            @if (Editor.SaveError is not null)
+            {
+                <div class="banner banner-error">@Editor.SaveError</div>
+            }
+            @if (Editor.Errors.Count > 0)
+            {
+                <div class="banner banner-error">
+                    <strong>Configuration problems</strong>
+                    <ul>@foreach (string error in Editor.Errors) { <li>@error</li> }</ul>
+                </div>
+            }
+
+            @Body
+        </div>
+    </main>
+</div>
+
+@if (Editor.IsDirty)
+{
+    <div class="save-dock" role="region" aria-label="Unsaved changes">
+        <div class="save-dock-text">
+            <span class="status-dot warn"></span>
+            <span>Unsaved changes</span>
+        </div>
+        <button class="btn btn-sm btn-ghost" @onclick="Editor.Reload"><Icon Name="undo" Size="14" />Discard</button>
+        <button class="btn btn-sm btn-primary" @onclick="Save"><Icon Name="save" Size="14" />Save changes</button>
+    </div>
+}
+
+@if (_saveMessage is not null)
+{
+    <div class="toast" role="status"><Icon Name="check-circle" />@_saveMessage</div>
+}
+
+@if (_showSetup)
+{
+    <SetupWizard OnClose="CloseSetup" />
+}
+
+@code {
+    // "1.0.0" shows as v1.0.0, a nightly ("0.1.0-nightly.42") as nightly 42; the full version is in its tooltip.
+    private static string VersionBadge { get; } = SchedularrTV.Service.Hosting.AppRuntime.Version switch
+    {
+        var version when version.Contains("-nightly.", StringComparison.Ordinal) => $"nightly {version[(version.IndexOf("-nightly.", StringComparison.Ordinal) + 9)..]}",
+        var version when version.Length > 0 && char.IsDigit(version[0]) => $"v{version}",
+        var version => version
+    };
+
+    private string? _saveMessage;
+    private CancellationTokenSource? _toast;
+    private bool _showSetup;
+
+    private IEnumerable<(SchedularrTV.Service.Plugins.PluginDescriptor Plugin, PluginPage Page)> PluginPages => Plugins.Pages;
+
+    protected override void OnInitialized()
+    {
+        Editor.Changed += OnChanged;
+        Coordinator.StateChanged += OnChanged;
+        Onboarding.OpenRequested += OpenSetup;
+        Plugins.Changed += OnChanged; // A plugin switched on or off adds or removes its sidebar pages.
+        Updates.Changed += OnChanged;
+        Editor.Validate();
+
+        // First visit, or still no media library to schedule from. "Skip for now" hides it until the next visit.
+        _showSetup = !SetupStatus.OnboardingCompleted || !SetupStatus.JellyfinConfiguredInUse;
+    }
+
+    private void CloseSetup()
+    {
+        _showSetup = false;
+        Onboarding.NotifyClosed();
+    }
+
+    private void OpenSetup() => InvokeAsync(() =>
+    {
+        _showSetup = true;
+        StateHasChanged();
+    });
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    private string StatusClass =>
+        Editor.Errors.Count > 0 ? "error" : Coordinator.IsBuilding ? "busy" : Editor.IsDirty ? "warn" : "";
+
+    private string StatusTitle =>
+        Editor.Errors.Count > 0 ? $"{Editor.Errors.Count} config problem(s)"
+        : Coordinator.IsBuilding ? "Building schedules"
+        : Editor.IsDirty ? "Unsaved changes"
+        : "On air";
+
+    private string StatusDetail =>
+        Coordinator.IsBuilding && Coordinator.Progress is { } progress ? $"{progress.Percent:0}% complete"
+        : Coordinator.LastBuiltAt is { } built ? $"Last build {built.ToLocalTime():HH:mm}"
+        : "Not built yet";
+
+    private async Task Save()
+    {
+        if (!Editor.Save())
+        {
+            return;
+        }
+
+        _toast?.Cancel();
+        _toast = new CancellationTokenSource();
+        CancellationToken token = _toast.Token;
+        _saveMessage = "Changes saved";
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(3), token);
+            _saveMessage = null;
+        }
+        catch (TaskCanceledException)
+        {
+        }
+    }
+
+    public void Dispose()
+    {
+        Editor.Changed -= OnChanged;
+        Coordinator.StateChanged -= OnChanged;
+        Onboarding.OpenRequested -= OpenSetup;
+        Plugins.Changed -= OnChanged;
+        Updates.Changed -= OnChanged;
+        _toast?.Cancel();
+    }
+}

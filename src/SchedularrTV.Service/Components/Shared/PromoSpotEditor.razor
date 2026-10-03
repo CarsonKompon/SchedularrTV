@@ -1,0 +1,70 @@
+@* One promo slot pinned to a fixed position in a break. *@
+
+<div class="promo-spot">
+    <label class="check">
+        <input type="checkbox" checked="@Spot.Enabled"
+               @onchange="e => { Spot.Enabled = (bool)(e.Value ?? true); Changed.InvokeAsync(); }" />
+        <span><strong>@Name</strong></span>
+    </label>
+
+    <p class="hint promo-spot-body">@Description</p>
+
+    @if (Spot.Enabled)
+    {
+        <div class="promo-spot-body">
+            <p class="hint">Folder: <code>@FolderName</code></p>
+
+            @if (ShowPlacement)
+            {
+                <label class="field" style="max-width:420px;">
+                    <span>Where it plays</span>
+                    <select value="@Spot.Placement" aria-label="@($"Where {Name} plays")"
+                            @onchange="e => { Spot.Placement = Enum.Parse<UpNextPlacement>(e.Value?.ToString() ?? nameof(UpNextPlacement.AnyBreak)); Changed.InvokeAsync(); }">
+                        <option value="@UpNextPlacement.AnyBreak">Any break of the show before, among the ads</option>
+                        <option value="@UpNextPlacement.BeforeShow">Last, right before the show</option>
+                    </select>
+                </label>
+            }
+
+            <details>
+                <summary style="cursor:pointer;color:var(--muted);font-size:12px;margin:4px 0;">Advanced</summary>
+
+                <label class="field" style="max-width:260px;">
+                    <span>Tag that also marks these clips</span>
+                    <input type="text" value="@Spot.Tag"
+                           @onchange="e => { Spot.Tag = e.Value?.ToString() ?? string.Empty; Changed.InvokeAsync(); }" />
+                </label>
+
+                <TagListEditor Label="Folder names accepted" Placeholder="up_next"
+                               Values="Spot.PromoTypes" Changed="Changed" />
+
+                @if (ShowSameSeries)
+                {
+                    <label class="check">
+                        <input type="checkbox" checked="@Spot.SkipWhenSameSeries"
+                               @onchange="e => { Spot.SkipWhenSameSeries = (bool)(e.Value ?? true); Changed.InvokeAsync(); }" />
+                        <span>@SameSeriesLabel</span>
+                    </label>
+                }
+            </details>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PromoSpotConfig Spot { get; set; } = new();
+    [Parameter, EditorRequired] public string Name { get; set; } = string.Empty;
+    [Parameter] public string Description { get; set; } = string.Empty;
+
+    /// <summary>The folder this spot reads, spelled the way it is written on disk.</summary>
+    [Parameter] public string FolderName { get; set; } = string.Empty;
+
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public string SameSeriesLabel { get; set; } = "Skip when the same series plays either side";
+
+    /// <summary>Off for the spots that only ever run when the same series is on both sides.</summary>
+    [Parameter] public bool ShowSameSeries { get; set; } = true;
+
+    /// <summary>Only the Up Next spot can move around the show before it.</summary>
+    [Parameter] public bool ShowPlacement { get; set; }
+}

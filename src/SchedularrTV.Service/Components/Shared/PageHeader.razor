@@ -1,0 +1,29 @@
+<header class="page-header">
+    @if (Leading is not null)
+    {
+        <div class="page-header-leading">@Leading</div>
+    }
+    <div class="page-header-text">
+        @if (!string.IsNullOrEmpty(Eyebrow))
+        {
+            <div class="eyebrow">@Eyebrow</div>
+        }
+        <h1>@Title</h1>
+        @if (ChildContent is not null)
+        {
+            <div class="subtitle">@ChildContent</div>
+        }
+    </div>
+    @if (Actions is not null)
+    {
+        <div class="page-header-actions">@Actions</div>
+    }
+</header>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Eyebrow { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+    [Parameter] public RenderFragment? Leading { get; set; }
+}

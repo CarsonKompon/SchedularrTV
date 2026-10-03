@@ -1,0 +1,220 @@
+name: Build
+
+# Every push to main replaces the "nightly" pre-release; pushing a tag like v1.2.0 publishes a real release.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+# Superseded pull request builds are cancelled; main and tag builds always finish so releases aren't left half-made.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  # Every download starts with this: SchedularrTV-v1.0.0-win-x64.zip for a release, SchedularrTV-nightly-win-x64.zip
+  # for the nightly (and any other build).
+  PREFIX: ${{ startsWith(github.ref, 'refs/tags/v') && format('SchedularrTV-{0}', github.ref_name) || 'SchedularrTV-nightly' }}
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      # Promo rendering and clip probing tests run the real ffmpeg/ffprobe; Chocolatey puts them on the PATH.
+      - name: Install ffmpeg
+        run: choco install ffmpeg --no-progress -y
+      - name: Test
+        run: dotnet test tests/SchedularrTV.Core.Tests/SchedularrTV.Core.Tests.csproj -c Release
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            os: windows-latest
+          - rid: linux-x64
+            os: ubuntu-latest
+          - rid: osx-arm64
+            os: macos-latest
+          - rid: osx-x64
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Version
+        id: version
+        shell: bash
+        # A nightly is numbered just past the latest release (1.0.0 → 1.0.1-nightly.N), so the app's update check
+        # knows it's newer than that release and older than the next one.
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            git fetch --tags --force --quiet || true
+            latest="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)"
+            latest="${latest#v}"; latest="${latest%%-*}"
+            IFS=. read -r major minor patch <<< "${latest:-0.0.0}"
+            version="${major:-0}.${minor:-0}.$(( ${patch:-0} + 1 ))-nightly.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # The tray goes at the top of the folder and the server in "server/" beside it, where the tray looks.
+      - name: Publish
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          out="publish/SchedularrTV"
+          dotnet publish src/SchedularrTV.Tray/SchedularrTV.Tray.csproj -c Release -r ${{ matrix.rid }} --self-contained -p:Version="$VERSION" -o "$out"
+          dotnet publish src/SchedularrTV.Service/SchedularrTV.Service.csproj -c Release -r ${{ matrix.rid }} --self-contained -p:Version="$VERSION" -o "$out/server"
+          rm -f "$out"/*.pdb "$out"/server/*.pdb
+
+      - name: Package (Windows)
+        if: startsWith(matrix.rid, 'win')
+        shell: pwsh
+        run: Compress-Archive -Path publish/SchedularrTV -DestinationPath "${{ env.PREFIX }}-${{ matrix.rid }}.zip"
+
+      - name: Package (Linux)
+        if: startsWith(matrix.rid, 'linux')
+        run: tar -C publish -czf "${{ env.PREFIX }}-${{ matrix.rid }}.tar.gz" SchedularrTV
+
+      # A menu-bar-only .app (LSUIElement), so it shows no Dock icon. Not notarised: see the README for opening it.
+      - name: Package (macOS)
+        if: startsWith(matrix.rid, 'osx')
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          app="publish/SchedularrTV.app"
+          mkdir -p "$app/Contents/MacOS"
+          cp -R publish/SchedularrTV/. "$app/Contents/MacOS/"
+          short="${VERSION%%-*}"
+          cat > "$app/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>SchedularrTV</string>
+            <key>CFBundleDisplayName</key><string>SchedularrTV</string>
+            <key>CFBundleIdentifier</key><string>com.schedularrtv.app</string>
+            <key>CFBundleExecutable</key><string>SchedularrTV</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleVersion</key><string>${VERSION}</string>
+            <key>CFBundleShortVersionString</key><string>${short}</string>
+            <key>LSUIElement</key><true/>
+            <key>LSMinimumSystemVersion</key><string>12.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          EOF
+          # Ad-hoc signatures so Apple silicon will run the two programs; there is no developer certificate.
+          codesign --force --sign - "$app/Contents/MacOS/SchedularrTV" || true
+          codesign --force --sign - "$app/Contents/MacOS/server/SchedularrTV.Service" || true
+          (cd publish && ditto -c -k --sequesterRsrc --keepParent SchedularrTV.app "../${{ env.PREFIX }}-${{ matrix.rid }}.zip")
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SchedularrTV-${{ matrix.rid }}
+          path: |
+            ${{ env.PREFIX }}-${{ matrix.rid }}.zip
+            ${{ env.PREFIX }}-${{ matrix.rid }}.tar.gz
+          if-no-files-found: error
+
+  # The optional plugins (Generated promos, the voices, WeatherStar) aren't in the main download. Each is zipped on its own,
+  # plus one zip of all of them that the Plugins page installs in one go. They're framework-dependent, so one build
+  # serves every system.
+  plugins:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish and package
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            # Numbered as in the build job: just past the latest release.
+            git fetch --tags --force --quiet || true
+            latest="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)"
+            latest="${latest#v}"; latest="${latest%%-*}"
+            IFS=. read -r major minor patch <<< "${latest:-0.0.0}"
+            version="${major:-0}.${minor:-0}.$(( ${patch:-0} + 1 ))-nightly.${GITHUB_RUN_NUMBER}"
+          fi
+          mkdir -p plugins-out zips
+          for project in plugins/*/*.csproj; do
+            dir="$(dirname "$project")"
+            id="$(jq -r .id "$dir/plugin.json")"
+            dotnet publish "$project" -c Release -p:Version="$version" -o "plugins-out/$id"
+            rm -f plugins-out/"$id"/*.pdb
+            # Stamp the release's version, so the Plugins page shows which release a plugin came from.
+            jq --arg v "$version" '.version = $v' "plugins-out/$id/plugin.json" > plugin.json.tmp && mv plugin.json.tmp "plugins-out/$id/plugin.json"
+            (cd plugins-out && zip -qr "../zips/$PREFIX-plugin-$id.zip" "$id")
+          done
+          (cd plugins-out && zip -qr "../zips/$PREFIX-all-plugins.zip" .)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SchedularrTV-plugins
+          path: zips/*.zip
+          if-no-files-found: error
+
+  release:
+    needs: [build, plugins]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    # Never cancelled part-way, or a newer push could leave the nightly deleted but not yet recreated.
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Nightly pre-release
+        if: github.ref == 'refs/heads/main'
+        run: |
+          gh release delete nightly --yes --cleanup-tag || true
+          gh release create nightly dist/* \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "Nightly build" \
+            --notes "Built automatically from ${GITHUB_SHA::7} on main. Download the file for your system, unzip it and run SchedularrTV. For generated promos, their voices and WeatherStar weather channels, also download $PREFIX-all-plugins.zip and install it from the Plugins page (or pick single plugins from the $PREFIX-plugin-*.zip files). These builds are untested snapshots; use a numbered release for anything you rely on."
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        # A release made on GitHub's website creates the tag (which starts this run) along with the release, so it may
+        # already exist: then the downloads are added to it, replacing any of the same name, and its notes are kept.
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
+          fi

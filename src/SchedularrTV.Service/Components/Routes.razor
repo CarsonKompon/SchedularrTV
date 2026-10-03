@@ -1,0 +1,43 @@
+@using SchedularrTV.Service.Plugins
+@implements IDisposable
+@inject PluginRegistry Plugins
+
+<CascadingValue Value="new LocalAccess(IsLocal)" IsFixed="true">
+    <Router AppAssembly="typeof(Program).Assembly" AdditionalAssemblies="Plugins.PageAssemblies">
+        <Found Context="routeData">
+            @* Every loaded plugin's pages are routed, so switching one on needs no restart; while it's off they say so. *@
+            @if (Plugins.OwnerOf(routeData.PageType) is { IsActive: false } off)
+            {
+                <LayoutView Layout="typeof(MainLayout)">
+                    <h1>@off.Manifest.Name is switched off</h1>
+                    <p>
+                        @(off.Blocked ?? $"Switch {off.Manifest.Name} on to use this page.")
+                        <a href="settings/plugins">Plugins</a>
+                    </p>
+                </LayoutView>
+            }
+            else
+            {
+                <RouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)" />
+                <FocusOnNavigate RouteData="routeData" Selector="h1" />
+            }
+        </Found>
+        <NotFound>
+            <LayoutView Layout="typeof(MainLayout)">
+                <h1>Not found</h1>
+                <p>That page does not exist.</p>
+            </LayoutView>
+        </NotFound>
+    </Router>
+</CascadingValue>
+
+@code {
+    /// <summary>Whether the browser is on the same machine as the server; see App.razor.</summary>
+    [Parameter] public bool IsLocal { get; set; }
+
+    protected override void OnInitialized() => Plugins.Changed += OnPluginsChanged;
+
+    private void OnPluginsChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Plugins.Changed -= OnPluginsChanged;
+}

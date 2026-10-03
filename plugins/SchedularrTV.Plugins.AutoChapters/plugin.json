@@ -1,0 +1,62 @@
+{
+  "id": "auto-chapters",
+  "name": "Auto Chapters",
+  "version": "1.0.0",
+  "description": "Finds where programmes with no chapter markers fade to black (and go quiet), and uses those moments for mid-roll breaks instead of cutting at a fixed interval. Programmes are analysed in the background with ffmpeg, those about to air first.",
+  "author": "SchedularrTV",
+  "apiVersion": "1.2",
+  "entryAssembly": "SchedularrTV.Plugins.AutoChapters.dll",
+  "settings": [
+    {
+      "key": "UseForMidRolls",
+      "label": "Use the markers found for mid-roll breaks",
+      "type": "Boolean",
+      "default": "true",
+      "description": "Programmes with chapter markers of their own keep them. Turn this off to analyse programmes without changing where breaks go yet."
+    },
+    {
+      "key": "RequireSilence",
+      "label": "Only count fades to black where the sound drops out too",
+      "type": "Boolean",
+      "default": "true",
+      "description": "Real ad-break points fade picture and sound together; dark scenes with dialogue don't. Turn off for programmes whose breaks keep music playing."
+    },
+    {
+      "key": "MinBlackSeconds",
+      "label": "Shortest fade to black (seconds)",
+      "type": "Number",
+      "placeholder": "0.4",
+      "description": "Black shorter than this is ignored (camera flashes, quick cuts)."
+    },
+    {
+      "key": "BlackThreshold",
+      "label": "How dark counts as black (0 to 1)",
+      "type": "Number",
+      "placeholder": "0.1",
+      "description": "Raise it for programmes whose fades only reach dark grey; lower it if dark scenes are mistaken for breaks."
+    },
+    {
+      "key": "ScanLibrary",
+      "label": "Analyse the whole library in the background",
+      "type": "Boolean",
+      "default": "false",
+      "description": "Off: only programmes in the schedule are analysed, as they come up. On: every episode and movie without chapters is, which can take a long time for a big library."
+    },
+    {
+      "key": "Concurrency",
+      "label": "Programmes analysed at once",
+      "type": "Number",
+      "placeholder": "1",
+      "description": "Each decodes a whole video, so more than 1 or 2 slows everything else on this computer."
+    },
+    {
+      "key": "FfmpegPath",
+      "label": "ffmpeg",
+      "type": "File",
+      "description": "Leave empty to use the ffmpeg set under App settings."
+    }
+  ],
+  "pages": [
+    { "path": "/plugins/auto-chapters", "title": "Auto chapters", "icon": "film" }
+  ]
+}

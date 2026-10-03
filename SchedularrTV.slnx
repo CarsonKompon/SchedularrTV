@@ -1,0 +1,25 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SchedularrTV.Core/SchedularrTV.Core.csproj" />
+    <Project Path="src/SchedularrTV.Plugins.Abstractions/SchedularrTV.Plugins.Abstractions.csproj" />
+    <Project Path="src/SchedularrTV.Providers.ErsatzTv/SchedularrTV.Providers.ErsatzTv.csproj" />
+    <Project Path="src/SchedularrTV.Providers.FileSystem/SchedularrTV.Providers.FileSystem.csproj" />
+    <Project Path="src/SchedularrTV.Providers.Jellyfin/SchedularrTV.Providers.Jellyfin.csproj" />
+    <Project Path="src/SchedularrTV.Service/SchedularrTV.Service.csproj" />
+    <Project Path="src/SchedularrTV.Tray/SchedularrTV.Tray.csproj" />
+  </Folder>
+  <Folder Name="/plugins/">
+    <Project Path="plugins/SchedularrTV.Plugins.AutoChapters/SchedularrTV.Plugins.AutoChapters.csproj" />
+    <Project Path="plugins/SchedularrTV.Plugins.GeneratedPromos/SchedularrTV.Plugins.GeneratedPromos.csproj" />
+    <Project Path="plugins/SchedularrTV.Plugins.MiniMax/SchedularrTV.Plugins.MiniMax.csproj" />
+    <Project Path="plugins/SchedularrTV.Plugins.Piper/SchedularrTV.Plugins.Piper.csproj" />
+    <Project Path="plugins/SchedularrTV.Plugins.TikTok/SchedularrTV.Plugins.TikTok.csproj" />
+    <Project Path="plugins/SchedularrTV.Plugins.WeatherStar/SchedularrTV.Plugins.WeatherStar.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/SchedularrTV.Plugins.Sample/SchedularrTV.Plugins.Sample.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SchedularrTV.Core.Tests/SchedularrTV.Core.Tests.csproj" />
+  </Folder>
+</Solution>

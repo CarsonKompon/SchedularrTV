@@ -1,0 +1,69 @@
+@* One field of a plugin's generated settings form, from the setting's declared type. *@
+
+@switch (Setting.Type)
+{
+    case PluginSettingType.Boolean:
+        <label class="check">
+            <input type="checkbox" checked="@(bool.TryParse(Value, out bool on) && on)" @onchange="@(e => Editor.Set(Setting.Key, e.Value is true ? "true" : "false"))" />
+            <span>@Label</span>
+        </label>
+        break;
+
+    case PluginSettingType.Choice:
+        <label class="field">
+            <span>@Label</span>
+            <select value="@Value" @onchange="e => Editor.Set(Setting.Key, e.Value?.ToString())">
+                <option value="">—</option>
+                @foreach (string option in Setting.Options)
+                {
+                    <option value="@option">@option</option>
+                }
+            </select>
+        </label>
+        break;
+
+    case PluginSettingType.File:
+    case PluginSettingType.Folder:
+        <label class="field">
+            <span>@Label</span>
+            <FilePathPicker Value="@Value" ValueChanged="v => Editor.Set(Setting.Key, v)" Extensions="SettingsFiles.None"
+                            PickFolder="@(Setting.Type == PluginSettingType.Folder)" Label="@Label" Placeholder="@Setting.Placeholder"
+                            StartIn="Environment.SpecialFolder.UserProfile" />
+        </label>
+        break;
+
+    case PluginSettingType.Secret:
+        <label class="field">
+            <span>@Label @(string.IsNullOrEmpty(Value) ? "" : "(saved)")</span>
+            <input type="password" autocomplete="off" placeholder="@(string.IsNullOrEmpty(Value) ? Setting.Placeholder : "•••••••• (leave blank to keep)")"
+                   @onchange="e => { if (!string.IsNullOrEmpty(e.Value?.ToString())) Editor.Set(Setting.Key, e.Value!.ToString()); }" />
+        </label>
+        break;
+
+    case PluginSettingType.Number:
+        <label class="field">
+            <span>@Label</span>
+            <input type="number" value="@Value" placeholder="@Setting.Placeholder" @onchange="e => Editor.Set(Setting.Key, e.Value?.ToString())" />
+        </label>
+        break;
+
+    default:
+        <label class="field">
+            <span>@Label</span>
+            <input type="text" value="@Value" placeholder="@Setting.Placeholder" @onchange="e => Editor.Set(Setting.Key, e.Value?.ToString())" />
+        </label>
+        break;
+}
+@if (!string.IsNullOrWhiteSpace(Setting.Description))
+{
+    <p class="hint">@Setting.Description</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public PluginSetting Setting { get; set; } = default!;
+    [Parameter, EditorRequired] public PluginSettingsEditor Editor { get; set; } = default!;
+
+    private string? Value => Editor.Get(Setting.Key);
+
+    private string Label => string.IsNullOrWhiteSpace(Setting.Label) ? Setting.Key : Setting.Label;
+}

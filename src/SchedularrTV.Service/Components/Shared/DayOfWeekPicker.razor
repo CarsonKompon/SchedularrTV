@@ -1,0 +1,44 @@
+@* Weekday toggles. *@
+
+<div class="field">
+    <span style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">@Label</span>
+    <div class="row row-wrap">
+        @foreach (DayOfWeek day in Order)
+        {
+            <label class="check" style="margin:0 10px 0 0;">
+                <input type="checkbox" checked="@Days.Contains(day)"
+                       @onchange="e => Toggle(day, (bool)(e.Value ?? false))" />
+                <span>@day.ToString()[..3]</span>
+            </label>
+        }
+        @if (Days.Count > 0)
+        {
+            <button class="btn btn-sm" @onclick="Clear">Clear</button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<DayOfWeek> Days { get; set; } = [];
+    [Parameter] public string Label { get; set; } = "Days";
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private static readonly DayOfWeek[] Order =
+    [
+        DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday,
+        DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday
+    ];
+
+    private async Task Toggle(DayOfWeek day, bool on)
+    {
+        if (on && !Days.Contains(day)) { Days.Add(day); }
+        else if (!on) { Days.Remove(day); }
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Clear()
+    {
+        Days.Clear();
+        await Changed.InvokeAsync();
+    }
+}

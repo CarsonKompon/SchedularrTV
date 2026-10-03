@@ -1,0 +1,83 @@
+@* ffmpeg and ffprobe, with whether each was found; shared by App settings and the setup wizard. *@
+@using SchedularrTV.Service.Hosting
+@implements IDisposable
+
+<p class="hint">
+    Needed for generated promos and for reading clip lengths. Leave blank to find it automatically (beside the app, on the
+    PATH, or in the usual Homebrew, winget and package-manager folders).
+</p>
+<div class="grid grid-2">
+    <label class="field">
+        <span>ffmpeg</span>
+        <FilePathPicker Value="@Form.Ffmpeg" ValueChanged="v => Edit(() => Form.Ffmpeg = v ?? string.Empty)" Extensions="SettingsFiles.Programs"
+                        Label="ffmpeg" Placeholder="Find automatically" StartIn="Environment.SpecialFolder.UserProfile" />
+        <ToolStatus Path="@FfmpegPath" Version="@_ffmpegVersion" Checking="_checking" />
+    </label>
+    <label class="field">
+        <span>ffprobe</span>
+        <FilePathPicker Value="@Form.Ffprobe" ValueChanged="v => Edit(() => Form.Ffprobe = v ?? string.Empty)" Extensions="SettingsFiles.Programs"
+                        Label="ffprobe" Placeholder="Find automatically" StartIn="Environment.SpecialFolder.UserProfile" />
+        <ToolStatus Path="@FfprobePath" Version="@_ffprobeVersion" Checking="_checking" />
+    </label>
+</div>
+<p class="hint">
+    Don't have it? <a href="https://ffmpeg.org/download.html" target="_blank" rel="noopener">ffmpeg.org</a>,
+    <code>winget install ffmpeg</code> on Windows, <code>brew install ffmpeg</code> on macOS or your package manager on Linux.
+    Then press <button class="btn btn-sm btn-ghost" type="button" style="display:inline-flex;" @onclick="Check">Check again</button>
+</p>
+
+@code {
+    [Parameter, EditorRequired] public AppSettingsForm Form { get; set; } = default!;
+    [Parameter] public EventCallback Changed { get; set; }
+
+    /// <summary>Raised after checking, with whether both programs run.</summary>
+    [Parameter] public EventCallback<bool> Checked { get; set; }
+
+    private readonly CancellationTokenSource _life = new();
+    private string? _ffmpegVersion;
+    private string? _ffprobeVersion;
+    private bool _checking;
+
+    // A chosen program is checked as chosen; otherwise whatever the server found.
+    private string FfmpegPath => string.IsNullOrWhiteSpace(Form.Ffmpeg) ? ToolLocator.Resolve(null, "ffmpeg", Form.DataDirectory) : Form.Ffmpeg;
+
+    private string FfprobePath => string.IsNullOrWhiteSpace(Form.Ffprobe) ? ToolLocator.Resolve(null, "ffprobe", Form.DataDirectory) : Form.Ffprobe;
+
+    protected override Task OnInitializedAsync() => Check();
+
+    private async Task Edit(Action change)
+    {
+        change();
+        Form.IsDirty = true;
+        await Changed.InvokeAsync();
+        await Check();
+    }
+
+    private async Task Check()
+    {
+        _checking = true;
+        try
+        {
+            Task<string?> ffmpeg = ToolLocator.VersionAsync(FfmpegPath, _life.Token);
+            Task<string?> ffprobe = ToolLocator.VersionAsync(FfprobePath, _life.Token);
+            _ffmpegVersion = await ffmpeg;
+            _ffprobeVersion = await ffprobe;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        finally
+        {
+            _checking = false;
+        }
+
+        await Checked.InvokeAsync(_ffmpegVersion is not null && _ffprobeVersion is not null);
+    }
+
+    public void Dispose()
+    {
+        _life.Cancel();
+        _life.Dispose();
+    }
+}
