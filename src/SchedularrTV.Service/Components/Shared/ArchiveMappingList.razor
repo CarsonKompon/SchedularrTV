@@ -32,6 +32,10 @@
             <button class="btn btn-sm" disabled="@(_selected.Count == 0)" @onclick="Reset">Auto match</button>
         }
     </div>
+    @if (_done is not null)
+    {
+        <p class="hint" role="status" style="margin:4px 0 8px;">@_done Selection cleared.</p>
+    }
     <div class="mapping-header">
         <label><input type="checkbox" aria-label="Select filtered @Heading.ToLowerInvariant()" checked="@(_filtered.Count > 0 && _filtered.All(_selected.Contains))" @onchange="SelectFiltered" /> Select filtered</label>
         <span>@_filtered.Count.ToString("N0") results</span>
@@ -79,6 +83,7 @@
     private string _search = string.Empty;
     private string _target = string.Empty;
     private string _status = "all";
+    private string? _done;
 
     protected override void OnParametersSet()
     {
@@ -105,12 +110,14 @@
 
     private void Select(string name, ChangeEventArgs change)
     {
+        _done = null;
         if (change.Value is true) _selected.Add(name);
         else _selected.Remove(name);
     }
 
     private void SelectFiltered(ChangeEventArgs change)
     {
+        _done = null;
         if (change.Value is true) _selected.UnionWith(_filtered);
         else _selected.ExceptWith(_filtered);
     }
@@ -118,17 +125,31 @@
     private Task Assign() => Apply(Targets.First(target => string.Equals(target, _target, StringComparison.OrdinalIgnoreCase)));
     private Task Unmap() => Apply(null);
 
+    // Each action clears the selection afterwards, so a later assignment can't quietly overwrite the rows just done.
     private async Task Apply(string? target)
     {
         foreach (string name in _selected) Assignments[name] = target;
-        Filter();
+        Done(target is null ? $"Unmapped {Rows(_selected.Count)}." : $"Assigned {Rows(_selected.Count)} to {target}.");
         await Changed.InvokeAsync();
     }
 
     private async Task Reset()
     {
         foreach (string name in _selected) Assignments.Remove(name);
-        Filter();
+        Done($"Set {Rows(_selected.Count)} back to automatic matching.");
         await Changed.InvokeAsync();
     }
+
+    private void Done(string message)
+    {
+        _selected.Clear();
+        _target = string.Empty;
+        _done = message;
+        Filter();
+    }
+
+    private string Rows(int count) => count == 1 ? $"1 {Singular}" : $"{count:N0} {Heading.ToLowerInvariant()}";
+
+    private string Singular => Heading.EndsWith("ies", StringComparison.OrdinalIgnoreCase) ? Heading[..^3].ToLowerInvariant() + "y"
+        : Heading.EndsWith('s') ? Heading[..^1].ToLowerInvariant() : Heading.ToLowerInvariant();
 }
