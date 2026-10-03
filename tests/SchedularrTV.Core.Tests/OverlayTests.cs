@@ -15,13 +15,7 @@ public sealed class OverlayTests : IDisposable
 {
     private readonly string _folder = Path.Combine(Path.GetTempPath(), "overlay-tests-" + Guid.NewGuid().ToString("N"));
 
-    public void Dispose()
-    {
-        if (Directory.Exists(_folder))
-        {
-            Directory.Delete(_folder, recursive: true);
-        }
-    }
+    public void Dispose() => TestFolders.Delete(_folder);
 
     private static readonly DateTimeOffset Eight = new(2026, 10, 3, 20, 0, 0, TimeSpan.Zero);
 

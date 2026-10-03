@@ -16,10 +16,7 @@ public sealed class GeneratedPromoPipelineTests : IDisposable
     private static readonly DateTimeOffset Day = new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero);
     private readonly string _directory = Path.Combine(Path.GetTempPath(), $"generated-promo-pipeline-{Guid.NewGuid():N}");
 
-    public void Dispose()
-    {
-        if (Directory.Exists(_directory)) Directory.Delete(_directory, true);
-    }
+    public void Dispose() => TestFolders.Delete(_directory);
 
     [Theory]
     [InlineData(false, false, false, 1.0)]
