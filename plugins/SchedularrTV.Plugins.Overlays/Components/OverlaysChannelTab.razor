@@ -71,29 +71,47 @@
             }
             else if (_section is { } own)
             {
-                <div class="row row-wrap" style="gap:8px;align-items:end;">
-                    <label class="field" style="margin:0;min-width:220px;">
-                        <span>Add an overlay</span>
-                        <select value="" @onchange="AddPreset" aria-label="Add an overlay">
-                            <option value="">Choose…</option>
-                            @foreach (OverlayPresets.Preset preset in OverlayPresets.All)
-                            {
-                                <option value="@preset.Key">@preset.Name</option>
-                            }
-                        </select>
-                    </label>
+                <div class="row row-wrap" style="gap:8px;">
+                    <div class="dropdown">
+                        <button class="btn btn-primary" type="button" aria-haspopup="menu" aria-expanded="@(_menu == AddMenu ? "true" : "false")"
+                                @onclick="() => Toggle(AddMenu)">
+                            <Icon Name="plus" Size="15" />Add an overlay<Icon Name="chevron-down" Size="14" />
+                        </button>
+                        @if (_menu == AddMenu)
+                        {
+                            <div class="dropdown-scrim" @onclick="() => _menu = null"></div>
+                            <div class="dropdown-menu" role="menu">
+                                @foreach (OverlayPresets.Preset preset in OverlayPresets.All)
+                                {
+                                    <button class="dropdown-item" type="button" role="menuitem" @onclick="() => AddPreset(preset)">
+                                        <Icon Name="@PresetIcon(preset)" Size="15" />
+                                        <span>@preset.Name<small>@preset.Description</small></span>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
                     @if (CopySources.Any())
                     {
-                        <label class="field" style="margin:0;min-width:220px;">
-                            <span>Copy in another channel's</span>
-                            <select value="" @onchange="CopyIn" aria-label="Copy in another channel's overlays">
-                                <option value="">Choose…</option>
-                                @foreach ((ChannelConfig other, int count) in CopySources)
-                                {
-                                    <option value="@other.Id">@other.Number - @other.Name (@count)</option>
-                                }
-                            </select>
-                        </label>
+                        <div class="dropdown">
+                            <button class="btn" type="button" aria-haspopup="menu" aria-expanded="@(_menu == CopyMenu ? "true" : "false")"
+                                    @onclick="() => Toggle(CopyMenu)">
+                                <Icon Name="copy" Size="15" />Copy in another channel's<Icon Name="chevron-down" Size="14" />
+                            </button>
+                            @if (_menu == CopyMenu)
+                            {
+                                <div class="dropdown-scrim" @onclick="() => _menu = null"></div>
+                                <div class="dropdown-menu" role="menu">
+                                    @foreach ((ChannelConfig other, int count) in CopySources)
+                                    {
+                                        <button class="dropdown-item" type="button" role="menuitem" @onclick="() => CopyIn(other)">
+                                            <Icon Name="tv" Size="15" />
+                                            <span>@other.Number - @other.Name<small>@CountText(count)</small></span>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
                     }
                 </div>
                 <p class="hint">
@@ -192,6 +210,15 @@
         _loadedFor = Context.Channel;
         _loadedIndex = _blockIndex;
         _section = OverlayResolver.Read(Block is { } block ? block.Plugins : Channel.Plugins);
+
+        // A channel without a section yet already shows its own overlays (none so far), so it starts with an empty
+        // one to add to. It's only written into the schedule once something is added. (A block without one is
+        // "same as this channel", which needs no section.)
+        if (_section is null && Block is null)
+        {
+            _section = new OverlaysSection();
+        }
+
         _selected = _section?.Overlays.FirstOrDefault();
     }
 
@@ -255,9 +282,25 @@
         }
     }
 
-    private void AddPreset(ChangeEventArgs e)
+    private const string AddMenu = "add";
+    private const string CopyMenu = "copy";
+    private string? _menu;
+
+    private void Toggle(string menu) => _menu = _menu == menu ? null : menu;
+
+    private static string PresetIcon(OverlayPresets.Preset preset) => preset.Key switch
     {
-        if (_section is { } section && OverlayPresets.All.FirstOrDefault(preset => preset.Key == e.Value?.ToString()) is { } preset)
+        "bug-file" => "image",
+        "blank" => "plus",
+        _ => "layers"
+    };
+
+    private static string CountText(int count) => count == 1 ? "1 overlay" : $"{count} overlays";
+
+    private void AddPreset(OverlayPresets.Preset preset)
+    {
+        _menu = null;
+        if (_section is { } section)
         {
             Overlay overlay = preset.Create();
             section.Overlays.Add(overlay);
@@ -266,11 +309,10 @@
         }
     }
 
-    private void CopyIn(ChangeEventArgs e)
+    private void CopyIn(ChannelConfig other)
     {
-        if (_section is { } section
-            && Others.FirstOrDefault(other => other.Id == e.Value?.ToString()) is { } other
-            && OverlayResolver.Read(other.Plugins) is { } theirs)
+        _menu = null;
+        if (_section is { } section && OverlayResolver.Read(other.Plugins) is { } theirs)
         {
             List<Overlay> copies = [.. theirs.Overlays.Select(overlay => overlay.Copy())];
             section.Overlays.AddRange(copies);
