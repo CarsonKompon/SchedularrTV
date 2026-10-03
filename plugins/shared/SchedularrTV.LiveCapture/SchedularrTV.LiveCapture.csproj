@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Shared by the plugins that turn a web page into a live channel (the TV guide channel, and later web page
+    channels): a hidden Chrome/Edge showing the page, its picture encoded with ffmpeg (optionally with another
+    channel's picture in a window, and music or a channel's sound) into an MPEG-TS stream for ErsatzTV.
+
+    Not a plugin itself: each plugin that uses it ships a copy beside its own .dll (it lives in plugins/shared so the
+    release workflow doesn't package it as one).
+  -->
+  <PropertyGroup>
+    <RootNamespace>SchedularrTV.LiveCapture</RootNamespace>
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+</Project>

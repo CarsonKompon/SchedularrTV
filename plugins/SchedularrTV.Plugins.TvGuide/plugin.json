@@ -1,0 +1,47 @@
+{
+  "id": "tv-guide",
+  "name": "TV Guide channel",
+  "version": "1.0.0",
+  "description": "A scrolling listings channel made from your own schedule, in the style of the 1990s Prevue Channel or the 2000s TV Guide Channel, with information, round-the-clock ads or another channel's picture up top and music or a channel's sound. Needs Chrome or Edge on this computer.",
+  "author": "SchedularrTV",
+  "apiVersion": "1.2",
+  "entryAssembly": "SchedularrTV.Plugins.TvGuide.dll",
+  "settings": [
+    {
+      "key": "BrowserPath",
+      "label": "Browser",
+      "type": "File",
+      "description": "Chrome, Edge or Chromium, run hidden to draw the guide. Leave empty to find one automatically."
+    },
+    {
+      "key": "FfmpegPath",
+      "label": "ffmpeg",
+      "type": "File",
+      "description": "Leave empty to use the ffmpeg set under App settings."
+    },
+    {
+      "key": "StreamAddress",
+      "label": "Stream address",
+      "type": "Text",
+      "placeholder": "http://localhost:5252",
+      "description": "How ErsatzTV reaches this scheduler. Leave empty unless ErsatzTV runs on another machine or in a container."
+    },
+    {
+      "key": "FrameRate",
+      "label": "Capture frames per second",
+      "type": "Number",
+      "placeholder": "24",
+      "description": "How often the guide is captured (5 to 30). Higher scrolls more smoothly but uses more CPU; the stream itself is always 30 fps."
+    },
+    {
+      "key": "KeepAliveSeconds",
+      "label": "Keep a guide running after it goes off air (seconds)",
+      "type": "Number",
+      "placeholder": "90",
+      "description": "So back-to-back guide segments don't restart the browser each time."
+    }
+  ],
+  "pages": [
+    { "path": "/plugins/tv-guide", "title": "Guide channels", "icon": "list" }
+  ]
+}

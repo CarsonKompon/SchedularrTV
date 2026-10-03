@@ -1,0 +1,437 @@
+@page "/plugins/tv-guide"
+@* Guide channels: scrolling listings made from the schedule, edited with a live preview. *@
+@implements IDisposable
+@inject GuideStore Store
+@inject GuideSettings Settings
+@inject GuideData Data
+@inject LiveStreamHub Hub
+@inject TimeProvider Clock
+@inject IJSRuntime JS
+
+<div class="page-header">
+    <div>
+        <div class="eyebrow">TV Guide channel</div>
+        <h1>Guide channels</h1>
+        <p class="muted">A scrolling listings channel made from your own schedule, like the Prevue Channel or the TV Guide Channel.</p>
+    </div>
+</div>
+
+@if (BrowserLocator.Find(Settings.BrowserPath) is null)
+{
+    <div class="banner banner-error" role="alert">
+        No Chrome, Edge or Chromium was found on this computer. The guide is drawn by one running hidden; install one, or choose it
+        in this plugin's settings (its gear on the Plugins page).
+    </div>
+}
+@if (_message is not null)
+{
+    <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status">@_message</div>
+}
+
+@foreach (GuideStation guide in _guides)
+{
+    bool editing = ReferenceEquals(guide, _editing);
+    LiveStatus? status = string.IsNullOrEmpty(guide.Id) ? null : Hub.Status(guide.Id);
+    <div class="card" @key="guide">
+        <div class="card-head">
+            <h2>@(string.IsNullOrWhiteSpace(guide.Name) ? "New guide" : guide.Name)</h2>
+            <span class="pill pill-muted">@(guide.Theme == GuideTheme.Prevue ? "Prevue 1990s" : "TV Guide Channel 2000s")</span>
+            @if (status is not null)
+            {
+                <span class="pill pill-ok">On air · @status.Viewers watching</span>
+            }
+            <div class="spacer"></div>
+            @if (_confirmDelete == guide.Id && !string.IsNullOrEmpty(guide.Id))
+            {
+                <button class="btn btn-sm btn-danger" type="button" @onclick="() => Remove(guide)">Delete @(guide.Name)?</button>
+                <button class="btn btn-sm" type="button" @onclick="() => _confirmDelete = null">Keep</button>
+            }
+            else
+            {
+                @if (!editing)
+                {
+                    <button class="btn btn-sm" type="button" @onclick="() => Edit(guide)">Edit</button>
+                }
+                <button class="btn btn-sm btn-ghost" type="button" @onclick="() => AskDelete(guide)">Delete</button>
+            }
+        </div>
+
+        @if (!editing)
+        {
+            <p class="hint" style="margin:0 0 8px;">
+                Schedule it as the show <strong>@guide.Name</strong>: as a channel's base rotation for a 24/7 guide channel, or between
+                programmes (lengths @string.Join(", ", guide.ValidLengths.Select(minutes => minutes + " min"))). Stream: <code>@Settings.LiveUrl(guide.Id)</code>
+            </p>
+            @if (status?.Problem is { } problem)
+            {
+                <p class="hint warn">@problem</p>
+            }
+            @if (status is not null)
+            {
+                <img class="tvg-snapshot" src="@($"plugins/tv-guide/snapshot/{Uri.EscapeDataString(guide.Id)}.jpg?t={_tick}")" alt="What's on air now" />
+            }
+        }
+        else
+        {
+            <div class="tvg-editor">
+                <div class="tvg-form">
+                    <h3>Guide</h3>
+                    <div class="grid grid-2">
+                        <label class="field"><span>Show name</span>
+                            <input type="text" value="@guide.Name" @onchange="e => Change(() => guide.Name = Text(e))" /></label>
+                        <label class="field"><span>Look</span>
+                            <select value="@guide.Theme" @onchange="e => Change(() => guide.Theme = Enum.Parse<GuideTheme>(Text(e)))">
+                                <option value="Prevue">Prevue (1990s)</option>
+                                <option value="TvGuide">TV Guide Channel (2000s)</option>
+                            </select></label>
+                    </div>
+                    <label class="field"><span>Lengths it can be scheduled for (minutes)</span>
+                        <input type="text" value="@(string.Join(", ", guide.Lengths))" @onchange="e => Change(() => guide.Lengths = Lengths(e))" /></label>
+
+                    <h3>Listings</h3>
+                    <div class="grid grid-2">
+                        <label class="field"><span>Time shown</span>
+                            <select value="@guide.HoursShown.ToString(CultureInfo.InvariantCulture)" @onchange="e => Change(() => guide.HoursShown = Number(e, 1.5))">
+                                <option value="1">1 hour</option>
+                                <option value="1.5">1½ hours</option>
+                                <option value="2">2 hours</option>
+                                <option value="3">3 hours</option>
+                            </select></label>
+                        <label class="field"><span>Scroll speed: @((int)guide.ScrollSpeed)</span>
+                            <input type="range" min="0" max="150" step="5" value="@guide.ScrollSpeed.ToString(CultureInfo.InvariantCulture)"
+                                   @oninput="e => Change(() => guide.ScrollSpeed = Number(e, 40))" /></label>
+                        <label class="field"><span>Row height: @guide.RowHeight px</span>
+                            <input type="range" min="36" max="100" step="2" value="@guide.RowHeight"
+                                   @oninput="e => Change(() => guide.RowHeight = (int)Number(e, 54))" /></label>
+                        <label class="field"><span>Text size: @((int)Math.Round(guide.FontScale * 100))%</span>
+                            <input type="range" min="0.7" max="1.6" step="0.05" value="@guide.FontScale.ToString(CultureInfo.InvariantCulture)"
+                                   @oninput="e => Change(() => guide.FontScale = Number(e, 1))" /></label>
+                    </div>
+                    <div class="row row-wrap" style="gap:18px;margin-bottom:8px;">
+                        <label class="check"><input type="checkbox" checked="@guide.ShowLogos" @onchange="e => Change(() => guide.ShowLogos = e.Value is true)" /><span>Channel logos</span></label>
+                        <label class="check"><input type="checkbox" checked="@guide.TwentyFourHourClock" @onchange="e => Change(() => guide.TwentyFourHourClock = e.Value is true)" /><span>24-hour clock</span></label>
+                    </div>
+                    @if (_channels.Count > 0)
+                    {
+                        <div class="field"><span>Channels listed (untick the guide channel itself)</span>
+                            <div class="row row-wrap" style="gap:6px 16px;">
+                                @foreach (GuideRow channel in _channels)
+                                {
+                                    <label class="check" style="margin:0;">
+                                        <input type="checkbox" checked="@(!guide.HiddenChannels.Contains(channel.Number))"
+                                               @onchange="e => Change(() => Toggle(guide.HiddenChannels, channel.Number, e.Value is not true))" />
+                                        <span>@channel.Number @channel.Name</span>
+                                    </label>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <h3>Colours</h3>
+                    <div class="grid grid-2">
+                        @foreach ((string label, Func<string?> get, Action<string?> set, string fallback) in Colours(guide))
+                        {
+                            <div class="field"><span>@label</span>
+                                <div class="row" style="gap:6px;">
+                                    <input type="color" value="@(get() ?? fallback)" @onchange="e => Change(() => set(Text(e)))" style="width:56px;height:34px;padding:2px;" />
+                                    @if (get() is not null)
+                                    {
+                                        <button class="btn btn-sm btn-ghost" type="button" @onclick="() => Change(() => set(null))">Theme's own</button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <h3>Top panel</h3>
+                    <div class="grid grid-2">
+                        <label class="field"><span>Shows</span>
+                            <select value="@guide.Top" @onchange="e => Change(() => guide.Top = Enum.Parse<TopPanel>(Text(e)))">
+                                <option value="Info">Information (clock, message, what's on now)</option>
+                                <option value="Ads">Commercials, round the clock</option>
+                                <option value="Channel">A channel's picture</option>
+                            </select></label>
+                        <label class="field"><span>Height: @guide.TopPercent% of the screen</span>
+                            <input type="range" min="0" max="70" step="1" value="@guide.TopPercent"
+                                   @oninput="e => Change(() => guide.TopPercent = (int)Number(e, 45))" /></label>
+                    </div>
+                    <label class="field"><span>Message <span class="muted">({channel} is the guide's name)</span></span>
+                        <input type="text" value="@guide.Message" @onchange="e => Change(() => guide.Message = Text(e))" /></label>
+                    @if (guide.Top == TopPanel.Ads)
+                    {
+                        <label class="field"><span>Which commercials (a library query)</span>
+                            <input type="text" value="@guide.AdsQuery" @onchange="e => Change(() => guide.AdsQuery = Text(e))" /></label>
+                        <p class="hint">MP4 and WebM files play; the sound is the guide's own (below). Ads are shuffled and loop.</p>
+                    }
+                    @if (guide.Top == TopPanel.Channel)
+                    {
+                        <label class="field"><span>Channel to show</span>
+                            <select value="@(guide.WindowChannel?.ToString(CultureInfo.InvariantCulture) ?? "")" @onchange="e => Change(() => guide.WindowChannel = Channel(e))">
+                                <option value="">Choose…</option>
+                                @foreach (GuideRow channel in _channels)
+                                {
+                                    <option value="@channel.Number">@channel.Number @channel.Name</option>
+                                }
+                            </select></label>
+                    }
+                    @if (guide.Top != TopPanel.Info && guide.Window is null)
+                    {
+                        <p class="hint warn">The top panel is too short for a video window; make it taller.</p>
+                    }
+
+                    <h3>Sound</h3>
+                    <div class="grid grid-2">
+                        <label class="field"><span>Plays</span>
+                            <select value="@guide.Sound" @onchange="e => Change(() => guide.Sound = Enum.Parse<GuideSound>(Text(e)))">
+                                <option value="Music">Music from a folder</option>
+                                <option value="Channel">A channel's sound</option>
+                                <option value="Silence">Nothing</option>
+                            </select></label>
+                        <label class="field"><span>Volume: @((int)Math.Round(guide.Volume * 100))%</span>
+                            <input type="range" min="0" max="1" step="0.05" value="@guide.Volume.ToString(CultureInfo.InvariantCulture)"
+                                   @onchange="e => Change(() => guide.Volume = Number(e, 0.6))" /></label>
+                    </div>
+                    @if (guide.Sound == GuideSound.Music)
+                    {
+                        <label class="field"><span>Music folder <span class="muted">(shuffled)</span></span>
+                            <input type="text" value="@guide.MusicFolder" placeholder="D:\Music\Smooth Jazz" @onchange="e => Change(() => guide.MusicFolder = Text(e))" /></label>
+                        @if (!string.IsNullOrWhiteSpace(guide.MusicFolder) && !Directory.Exists(guide.MusicFolder))
+                        {
+                            <p class="hint warn">That folder doesn't exist on this computer; the guide will be silent.</p>
+                        }
+                    }
+                    @if (guide.Sound == GuideSound.Channel)
+                    {
+                        <label class="field"><span>Channel to listen to</span>
+                            <select value="@(guide.SoundChannel?.ToString(CultureInfo.InvariantCulture) ?? "")" @onchange="e => Change(() => guide.SoundChannel = Channel(e))">
+                                <option value="">@(guide.Top == TopPanel.Channel ? "The one in the window" : "Choose…")</option>
+                                @foreach (GuideRow channel in _channels)
+                                {
+                                    <option value="@channel.Number">@channel.Number @channel.Name</option>
+                                }
+                            </select></label>
+                    }
+
+                    <div class="row" style="gap:8px;margin-top:14px;">
+                        <div class="spacer"></div>
+                        <button class="btn btn-sm" type="button" @onclick="Cancel">Cancel</button>
+                        <button class="btn btn-sm btn-primary" type="button" @onclick="Save">Save</button>
+                    </div>
+                </div>
+
+                <div class="tvg-preview-column">
+                    <div class="tvg-preview">
+                        <iframe name="tvGuidePreview" title="Live preview" src="@PreviewSource(guide)" @onload="PushPreviewAsync"></iframe>
+                    </div>
+                    <p class="hint">Live preview of your changes, with the real listings. A channel window shows where the channel will play.</p>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<div class="row" style="gap:8px;">
+    <button class="btn btn-primary" type="button" disabled="@(_editing is not null)" @onclick="Add">Add a guide channel</button>
+</div>
+
+<div class="card" style="margin-top:16px;">
+    <div class="card-head"><h2>How it works</h2></div>
+    <ul class="hint" style="margin:0;padding-left:18px;line-height:1.6;">
+        <li>Each guide is a show (under TV Shows and in collection pickers), with one "episode" per length.</li>
+        <li><strong>24/7 guide channel:</strong> make the guide a channel's base rotation, with long lengths (30, 60).</li>
+        <li><strong>Between programmes:</strong> add it to a channel's interstitial shows with short lengths (2–5 minutes).</li>
+        <li>The listings come from the schedules as last published; untick the guide's own channel so it doesn't list itself.</li>
+        <li>On air, a hidden browser shows the guide and ffmpeg streams it with the sound you chose, and the window's channel laid in.</li>
+    </ul>
+</div>
+
+<style>
+    .tvg-editor { display: grid; grid-template-columns: minmax(0, 1fr) 660px; gap: 22px; align-items: start; }
+    @@media (max-width: 1300px) { .tvg-editor { grid-template-columns: minmax(0, 1fr); } }
+    .tvg-form h3 { font-size: 13px; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    .tvg-form h3:first-child { margin-top: 0; }
+    .tvg-preview-column { position: sticky; top: 16px; }
+    .tvg-preview { width: 640px; height: 360px; overflow: hidden; border-radius: 10px; background: #000; border: 1px solid var(--line); }
+    .tvg-preview iframe { width: 1280px; height: 720px; border: 0; transform: scale(.5); transform-origin: 0 0; display: block; }
+    .tvg-snapshot { width: 100%; max-width: 640px; border-radius: 10px; display: block; margin-top: 8px; }
+    .hint.warn { color: #ffd08a; }
+</style>
+
+@code {
+    private List<GuideStation> _guides = [];
+    private GuideStation? _editing;
+    private string? _confirmDelete;
+    private IReadOnlyList<GuideRow> _channels = [];
+    private string? _message;
+    private bool _messageOk;
+    private long _tick;
+    private Timer? _refresh;
+
+    protected override void OnInitialized()
+    {
+        Load();
+        _channels = Data.Listings(Clock.GetUtcNow(), TimeSpan.FromMinutes(30));
+        Hub.Changed += OnHubChanged;
+        _refresh = new Timer(_ => InvokeAsync(() => { _tick++; if (Hub.Running.Count > 0) StateHasChanged(); }), null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+    }
+
+    public void Dispose()
+    {
+        Hub.Changed -= OnHubChanged;
+        _refresh?.Dispose();
+    }
+
+    private void OnHubChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void Load()
+    {
+        _guides = [.. Store.Guides.Select(guide => guide.Copy())];
+        _editing = null;
+    }
+
+    private static string PreviewSource(GuideStation guide) =>
+        $"plugins/tv-guide/view/{Uri.EscapeDataString(string.IsNullOrEmpty(guide.Id) ? "preview" : guide.Id)}?preview=true";
+
+    private void Edit(GuideStation guide)
+    {
+        if (_editing is not null)
+        {
+            Load();
+            guide = _guides.FirstOrDefault(candidate => candidate.Id == guide.Id) ?? guide;
+        }
+
+        _editing = guide;
+        _message = null;
+    }
+
+    private void Add()
+    {
+        var guide = new GuideStation { HiddenChannels = [] };
+        _guides.Add(guide);
+        _editing = guide;
+        _message = null;
+    }
+
+    private void Cancel() => Load();
+
+    private void AskDelete(GuideStation guide)
+    {
+        if (string.IsNullOrEmpty(guide.Id))
+        {
+            Load();
+            return;
+        }
+
+        _confirmDelete = guide.Id;
+    }
+
+    private void Remove(GuideStation guide)
+    {
+        _confirmDelete = null;
+        try
+        {
+            Store.Save(Store.Guides.Where(saved => !string.Equals(saved.Id, guide.Id, StringComparison.OrdinalIgnoreCase)));
+            Load();
+            Say($"Deleted {guide.Name}. Channels that used it fill that time with their other programming from the next rebuild.", ok: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Say($"Couldn't delete the guide: {ex.Message}", ok: false);
+        }
+    }
+
+    private void Save()
+    {
+        try
+        {
+            string name = _editing?.Name ?? string.Empty;
+            Store.Save(_guides);
+            Load();
+            Say($"Saved {name}. A guide that's on air starts again with the new settings.", ok: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Say($"Couldn't save: {ex.Message}", ok: false);
+        }
+    }
+
+    private async Task Change(Action change)
+    {
+        change();
+        await PushPreviewAsync();
+    }
+
+    /// <summary>Sends the settings being edited to the preview, which redraws without reloading.</summary>
+    private async Task PushPreviewAsync()
+    {
+        if (_editing is not { } guide)
+        {
+            return;
+        }
+
+        GuideStation shown = guide.Copy();
+        GuideStore.Tidy(shown);
+        if (string.IsNullOrEmpty(shown.Id))
+        {
+            shown.Id = "preview";
+        }
+
+        try
+        {
+            // Looked up afresh each time: Blazor caches the function behind an identifier such as
+            // "tvGuidePreview.postMessage" (bound to the first iframe's window, which is replaced whenever the editor
+            // reopens), and its "is a function" check fails for a function from the iframe's own realm. The default
+            // JSON encoder escapes < > & ' so the settings are a safe script literal.
+            string message = System.Text.Json.JsonSerializer.Serialize(
+                new { type = "tv-guide-settings", settings = GuidePageConfig.For(shown, preview: true) }, System.Text.Json.JsonSerializerOptions.Web);
+            await JS.InvokeVoidAsync("eval", $"document.querySelector('iframe[name=\"tvGuidePreview\"]')?.contentWindow?.postMessage({message}, '*')");
+        }
+        catch (JSException)
+        {
+            // The preview hasn't loaded yet; it sends for the settings again when it has.
+        }
+        catch (InvalidOperationException)
+        {
+            // Prerendering: there's no browser to talk to yet.
+        }
+    }
+
+    private static IEnumerable<(string Label, Func<string?> Get, Action<string?> Set, string Fallback)> Colours(GuideStation guide)
+    {
+        bool prevue = guide.Theme == GuideTheme.Prevue;
+        yield return ("Background", () => guide.Background, value => guide.Background = value, prevue ? "#0b1a6e" : "#1b1464");
+        yield return ("Rows", () => guide.RowColor, value => guide.RowColor = value, prevue ? "#1d3aa8" : "#2f45b8");
+        yield return ("Text", () => guide.TextColor, value => guide.TextColor = value, "#ffffff");
+        yield return ("Highlights", () => guide.AccentColor, value => guide.AccentColor = value, prevue ? "#ffd400" : "#ffcc33");
+    }
+
+    private static void Toggle(List<int> hidden, int number, bool hide)
+    {
+        hidden.Remove(number);
+        if (hide)
+        {
+            hidden.Add(number);
+        }
+    }
+
+    private void Say(string message, bool ok)
+    {
+        _message = message;
+        _messageOk = ok;
+    }
+
+    private static string Text(ChangeEventArgs e) => e.Value?.ToString()?.Trim() ?? string.Empty;
+
+    private static double Number(ChangeEventArgs e, double fallback) =>
+        double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ? value : fallback;
+
+    private static int? Channel(ChangeEventArgs e) =>
+        int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int number) ? number : null;
+
+    private static List<int> Lengths(ChangeEventArgs e) =>
+        [.. Text(e).Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out int minutes) ? minutes : 0)
+            .Where(minutes => minutes is > 0 and <= 1440)
+            .Distinct()
+            .Order()];
+}

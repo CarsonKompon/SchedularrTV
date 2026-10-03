@@ -1,0 +1,170 @@
+using System.Text.Json.Serialization;
+
+namespace SchedularrTV.TvGuide;
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum GuideTheme
+{
+    /// <summary>The 1990s Prevue Channel: a blue scrolling list, a channel box and the programmes after it.</summary>
+    Prevue,
+
+    /// <summary>The 2000s TV Guide Channel: a glossy grid with half-hour columns.</summary>
+    TvGuide
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TopPanel
+{
+    /// <summary>The clock, the date, a message and what's on now.</summary>
+    Info,
+
+    /// <summary>Commercials from the library, round the clock, in the video window.</summary>
+    Ads,
+
+    /// <summary>Another channel's picture in the video window.</summary>
+    Channel
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum GuideSound
+{
+    Music,
+
+    /// <summary>A channel's sound, like the old cable "barker" channels.</summary>
+    Channel,
+
+    Silence
+}
+
+/// <summary>One guide channel: how it looks, what's up top, what it plays, and the lengths it can be scheduled for.</summary>
+public sealed class GuideStation
+{
+    /// <summary>Stable id, used in item ids and addresses; never changes once created.</summary>
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>The show's title, e.g. "Program Guide".</summary>
+    public string Name { get; set; } = "Program Guide";
+
+    public GuideTheme Theme { get; set; } = GuideTheme.Prevue;
+
+    // --- Listings ---
+
+    /// <summary>How far ahead the listings reach.</summary>
+    public double HoursShown { get; set; } = 1.5;
+
+    /// <summary>Scrolling speed, in pixels a second.</summary>
+    public double ScrollSpeed { get; set; } = 40;
+
+    /// <summary>Height of one channel's row, in pixels.</summary>
+    public int RowHeight { get; set; } = 54;
+
+    /// <summary>Text size, 1 being the theme's own.</summary>
+    public double FontScale { get; set; } = 1;
+
+    public bool ShowLogos { get; set; } = true;
+
+    public bool TwentyFourHourClock { get; set; }
+
+    /// <summary>Channel numbers left out of the listings (usually the guide channel itself).</summary>
+    public List<int> HiddenChannels { get; set; } = [];
+
+    // --- Colours: null keeps the theme's own ---
+
+    public string? Background { get; set; }
+
+    public string? RowColor { get; set; }
+
+    public string? TextColor { get; set; }
+
+    public string? AccentColor { get; set; }
+
+    // --- Top panel ---
+
+    public TopPanel Top { get; set; } = TopPanel.Info;
+
+    /// <summary>Share of the screen the top panel takes, in percent; 0 hides it.</summary>
+    public int TopPercent { get; set; } = 45;
+
+    /// <summary>Shown in the top panel; <c>{channel}</c> is the guide's name.</summary>
+    public string Message { get; set; } = "Welcome! Here's what's on.";
+
+    /// <summary>Which library items play as ads, when the top panel shows ads.</summary>
+    public string AdsQuery { get; set; } = "tag:\"Commercials\"";
+
+    /// <summary>The channel whose picture is shown, when the top panel shows a channel.</summary>
+    public int? WindowChannel { get; set; }
+
+    // --- Sound ---
+
+    public GuideSound Sound { get; set; } = GuideSound.Music;
+
+    public string? MusicFolder { get; set; }
+
+    /// <summary>0 to 1.</summary>
+    public double Volume { get; set; } = 0.6;
+
+    /// <summary>The channel to listen to, when the sound is a channel's; empty uses the window's channel.</summary>
+    public int? SoundChannel { get; set; }
+
+    /// <summary>The lengths, in minutes, this guide can be scheduled for; each becomes an "episode".</summary>
+    public List<int> Lengths { get; set; } = [2, 5, 30, 60];
+
+    public GuideStation Copy()
+    {
+        var copy = (GuideStation)MemberwiseClone();
+        copy.HiddenChannels = [.. HiddenChannels];
+        copy.Lengths = [.. Lengths];
+        return copy;
+    }
+
+    [JsonIgnore]
+    public IReadOnlyList<int> ValidLengths => [.. Lengths.Where(minutes => minutes is > 0 and <= 1440).Distinct().Order()];
+
+    [JsonIgnore]
+    public int TopHeight => Math.Clamp(TopPercent, 0, 70) * LiveStream.Height / 100 / 2 * 2;
+
+    /// <summary>
+    /// Where the video window sits in the top panel: the left of it, 16:9, with a margin. The page draws its frame
+    /// and the stream lays the picture over exactly this, so both use this one calculation.
+    /// </summary>
+    [JsonIgnore]
+    public FrameRect? Window
+    {
+        get
+        {
+            const int margin = 22;
+            int height = (TopHeight - (2 * margin)) / 2 * 2;
+            if (Top == TopPanel.Info || height < 90)
+            {
+                return null;
+            }
+
+            int width = height * 16 / 9 / 2 * 2;
+            return new FrameRect(margin, margin, width, height);
+        }
+    }
+
+    /// <summary>The channel heard, when the sound is a channel's.</summary>
+    [JsonIgnore]
+    public int? HeardChannel => Sound == GuideSound.Channel ? SoundChannel ?? (Top == TopPanel.Channel ? WindowChannel : null) : null;
+
+    /// <summary>A safe, lowercase id from a name: letters, digits and dashes.</summary>
+    public static string Slug(string name)
+    {
+        var slug = new System.Text.StringBuilder();
+        foreach (char character in name.ToLowerInvariant())
+        {
+            if (char.IsAsciiLetterOrDigit(character))
+            {
+                slug.Append(character);
+            }
+            else if (slug.Length > 0 && slug[^1] != '-')
+            {
+                slug.Append('-');
+            }
+        }
+
+        string result = slug.ToString().Trim('-');
+        return result.Length == 0 ? "guide" : result.Length > 40 ? result[..40].TrimEnd('-') : result;
+    }
+}

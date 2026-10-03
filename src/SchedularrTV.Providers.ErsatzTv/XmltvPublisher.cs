@@ -107,7 +107,7 @@ public sealed class XmltvPublisher(IOptions<ErsatzTvOptions> options, ILogger<Xm
     /// Collapses the timeline into what a viewer should see in a guide: one entry per programme,
     /// stretched over the ad break that follows it. Nobody wants 40 thirty-second listings per hour.
     /// </summary>
-    internal static IReadOnlyList<GuideEntry> BuildGuide(ChannelSchedule schedule, GuideMode mode)
+    public static IReadOnlyList<GuideEntry> BuildGuide(ChannelSchedule schedule, GuideMode mode)
     {
         List<ScheduleEntry> ordered = schedule.Entries.OrderBy(e => e.Start).ToList();
 

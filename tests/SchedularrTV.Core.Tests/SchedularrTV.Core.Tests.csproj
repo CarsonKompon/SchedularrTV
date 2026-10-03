@@ -19,6 +19,7 @@
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.Piper\SchedularrTV.Plugins.Piper.csproj" />
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.WeatherStar\SchedularrTV.Plugins.WeatherStar.csproj" />
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.AutoChapters\SchedularrTV.Plugins.AutoChapters.csproj" />
+    <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.TvGuide\SchedularrTV.Plugins.TvGuide.csproj" />
   </ItemGroup>
 
   <ItemGroup>

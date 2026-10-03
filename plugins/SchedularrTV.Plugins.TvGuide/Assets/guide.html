@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Program Guide</title>
+<style>
+  :root {
+    --bg: #0b1a6e; --row: #1d3aa8; --text: #ffffff; --accent: #ffd400;
+    --row-h: 54px; --scale: 1; --top-h: 324px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; width: 1280px; height: 720px; overflow: hidden; background: #000; }
+  #screen { position: relative; width: 1280px; height: 720px; overflow: hidden; background: var(--bg); color: var(--text);
+            font-family: Arial, Helvetica, sans-serif; }
+
+  /* Top panel */
+  #top { position: absolute; left: 0; top: 0; width: 1280px; height: var(--top-h); overflow: hidden; }
+  #top.hidden { display: none; }
+  #window { position: absolute; background: #000; overflow: hidden; }
+  #window video { width: 100%; height: 100%; object-fit: contain; background: #000; display: block; }
+  #window-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+                  padding: 12px; font-size: calc(22px * var(--scale)); color: rgba(255,255,255,.6); }
+  #info { position: absolute; top: 0; bottom: 0; right: 0; display: flex; flex-direction: column; justify-content: center;
+          padding: 18px 34px; gap: 6px; overflow: hidden; }
+  #brand { font-weight: 900; font-size: calc(30px * var(--scale)); letter-spacing: .04em; color: var(--accent); text-transform: uppercase; }
+  #clock { font-weight: 900; font-size: calc(64px * var(--scale)); line-height: 1; }
+  #date { font-size: calc(22px * var(--scale)); opacity: .9; }
+  #message { font-size: calc(24px * var(--scale)); margin-top: 8px; }
+  #now-on { font-size: calc(22px * var(--scale)); margin-top: 6px; min-height: 1.3em; color: var(--accent); white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis; transition: opacity .4s; }
+
+  /* Listings */
+  #timebar { position: absolute; left: 0; width: 1280px; overflow: hidden; z-index: 2; }
+  #listings { position: absolute; left: 0; right: 0; bottom: 0; overflow: hidden; }
+  #scroller { position: absolute; left: 0; right: 0; top: 0; will-change: transform; }
+  .row { display: flex; height: var(--row-h); }
+  .empty-note { padding: 30px; font-size: calc(26px * var(--scale)); text-align: center; opacity: .8; }
+
+  /* ---------- Prevue (1990s) ---------- */
+  .theme-prevue #top { background: linear-gradient(180deg, rgba(0,0,0,.35), rgba(0,0,0,.15)); border-bottom: 4px solid var(--accent); }
+  .theme-prevue #window { border: 3px solid #fff; box-shadow: 0 0 0 3px #000; }
+  .theme-prevue #timebar { height: 0; }
+  .theme-prevue #listings { font-weight: 700; }
+  .theme-prevue .row { border-bottom: 3px solid var(--bg); }
+  .theme-prevue .ch { flex: none; width: 190px; background: var(--row); border-right: 3px solid var(--bg); display: flex; align-items: center;
+                      gap: 10px; padding: 0 12px; font-size: calc(20px * var(--scale)); overflow: hidden; }
+  .theme-prevue .ch .num { font-size: calc(28px * var(--scale)); color: var(--accent); min-width: 1.6em; text-align: right; }
+  .theme-prevue .ch .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }
+  .theme-prevue .ch img { height: calc(var(--row-h) - 14px); max-width: 70px; object-fit: contain; }
+  .theme-prevue .progs { flex: 1; display: flex; align-items: center; gap: 28px; padding: 0 16px; white-space: nowrap; overflow: hidden;
+                         font-size: calc(24px * var(--scale)); background: rgba(0,0,0,.18); }
+  .theme-prevue .prog .t { color: var(--accent); margin-right: 8px; }
+  .theme-prevue .prog .sub { font-weight: 400; opacity: .85; margin-left: 8px; }
+  .theme-prevue .header { height: var(--row-h); display: flex; align-items: center; justify-content: center; background: var(--accent);
+                          color: #000; font-weight: 900; font-size: calc(26px * var(--scale)); letter-spacing: .06em; text-transform: uppercase;
+                          border-bottom: 3px solid var(--bg); }
+
+  /* ---------- TV Guide Channel (2000s) ---------- */
+  .theme-tvguide #screen { background: radial-gradient(ellipse at top, #3a2a9e 0%, var(--bg) 60%); font-family: "Trebuchet MS", Arial, sans-serif; }
+  .theme-tvguide #top { background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,0) 60%); }
+  .theme-tvguide #window { border-radius: 14px; border: 2px solid rgba(255,255,255,.55); box-shadow: 0 6px 24px rgba(0,0,0,.6); }
+  .theme-tvguide #brand { font-style: italic; }
+  .theme-tvguide #timebar { height: 44px; display: flex; background: linear-gradient(180deg, #ffffff, #c9d3ff); color: #1b1464;
+                            font-weight: 700; font-size: calc(19px * var(--scale)); border-top: 2px solid rgba(255,255,255,.7); }
+  .theme-tvguide #timebar .lead { flex: none; width: 210px; display: flex; align-items: center; padding: 0 14px; color: var(--bg); }
+  .theme-tvguide #timebar .slots { flex: 1; position: relative; }
+  .theme-tvguide #timebar .slot { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; padding-left: 10px;
+                                  border-left: 2px solid rgba(27,20,100,.25); }
+  .theme-tvguide .row { padding: 3px 0; }
+  .theme-tvguide .ch { flex: none; width: 210px; margin: 0 4px 0 6px; border-radius: 10px; display: flex; align-items: center; gap: 10px;
+                       padding: 0 12px; font-weight: 700; font-size: calc(18px * var(--scale)); overflow: hidden;
+                       background: linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,.06)); }
+  .theme-tvguide .ch .num { color: var(--accent); font-size: calc(22px * var(--scale)); }
+  .theme-tvguide .ch .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .theme-tvguide .ch img { height: calc(var(--row-h) - 18px); max-width: 64px; object-fit: contain; }
+  .theme-tvguide .track { flex: 1; position: relative; margin-right: 6px; }
+  .theme-tvguide .cell { position: absolute; top: 0; bottom: 0; border-radius: 10px; padding: 4px 12px; overflow: hidden;
+                         background: linear-gradient(180deg, color-mix(in srgb, var(--row) 70%, #ffffff), var(--row) 55%);
+                         border: 1px solid rgba(255,255,255,.35); display: flex; flex-direction: column; justify-content: center; }
+  .theme-tvguide .cell .title { font-weight: 700; font-size: calc(18px * var(--scale)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .theme-tvguide .cell .sub { font-size: calc(14px * var(--scale)); opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .theme-tvguide .cell.movie { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 45%, #ffffff), color-mix(in srgb, var(--accent) 60%, var(--row)) 55%); color: #1b1464; }
+  .theme-tvguide .cell .more { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); opacity: .7; }
+</style>
+</head>
+<body>
+<div id="screen">
+  <div id="top">
+    <div id="window"><video id="ad" muted playsinline></video><div id="window-label"></div></div>
+    <div id="info">
+      <div id="brand"></div>
+      <div id="clock"></div>
+      <div id="date"></div>
+      <div id="message"></div>
+      <div id="now-on"></div>
+    </div>
+  </div>
+  <div id="timebar"></div>
+  <div id="listings"><div id="scroller"></div></div>
+</div>
+<script>window.GUIDE = __CONFIG__;</script>
+<script>
+(() => {
+  "use strict";
+  const base = "/plugins/tv-guide";
+  let cfg = window.GUIDE;
+  let rows = [];
+  let offset = 0, loopHeight = 0, lastFrame = performance.now();
+  let ads = [], adIndex = 0, adsKey = "";
+  let nowOnIndex = 0;
+  const $ = id => document.getElementById(id);
+  const esc = text => String(text ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  function clock(date, withPeriod) {
+    if (cfg.clock24) return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    let h = date.getHours() % 12 || 12;
+    const m = String(date.getMinutes()).padStart(2, "0");
+    return withPeriod ? `${h}:${m} ${date.getHours() < 12 ? "AM" : "PM"}` : `${h}:${m}`;
+  }
+
+  function windowStart() {
+    const now = new Date();
+    const start = new Date(now);
+    start.setMinutes(now.getMinutes() < 30 ? 0 : 30, 0, 0);
+    return start;
+  }
+
+  function applyConfig() {
+    const root = document.documentElement.style;
+    const theme = cfg.theme === "TvGuide" ? "tvguide" : "prevue";
+    const defaults = theme === "tvguide"
+      ? { background: "#1b1464", row: "#2f45b8", text: "#ffffff", accent: "#ffcc33" }
+      : { background: "#0b1a6e", row: "#1d3aa8", text: "#ffffff", accent: "#ffd400" };
+    document.body.className = "theme-" + theme;
+    root.setProperty("--bg", cfg.background || defaults.background);
+    root.setProperty("--row", cfg.rowColor || defaults.row);
+    root.setProperty("--text", cfg.textColor || defaults.text);
+    root.setProperty("--accent", cfg.accentColor || defaults.accent);
+    root.setProperty("--row-h", cfg.rowHeight + "px");
+    root.setProperty("--scale", cfg.fontScale);
+    root.setProperty("--top-h", cfg.topHeight + "px");
+
+    const top = $("top"), win = $("window"), info = $("info");
+    top.classList.toggle("hidden", cfg.topHeight <= 0);
+    if (cfg.window) {
+      Object.assign(win.style, { display: "block", left: cfg.window.x + "px", top: cfg.window.y + "px", width: cfg.window.width + "px", height: cfg.window.height + "px" });
+      info.style.left = (cfg.window.x + cfg.window.width + 10) + "px";
+    } else {
+      win.style.display = "none";
+      info.style.left = "0px";
+    }
+
+    $("brand").textContent = cfg.name;
+    $("message").textContent = (cfg.message || "").replaceAll("{channel}", cfg.name);
+    const label = $("window-label");
+    if (cfg.top === "Channel") {
+      label.textContent = cfg.preview ? (cfg.windowChannel ? `Channel ${cfg.windowChannel} plays here` : "Choose a channel to show here") : "";
+    } else {
+      label.textContent = "";
+    }
+
+    const timebarHeight = theme === "tvguide" ? 44 : 0;
+    $("timebar").style.top = cfg.topHeight + "px";
+    $("listings").style.top = (cfg.topHeight + timebarHeight) + "px";
+    playAds();
+    render();
+  }
+
+  async function loadListings() {
+    try {
+      const response = await fetch(`${base}/listings.json?hours=${encodeURIComponent(cfg.hoursShown)}`, { cache: "no-store" });
+      if (response.ok) rows = await response.json();
+    } catch { /* keep what we have */ }
+    render();
+  }
+
+  function visibleRows() {
+    const hidden = new Set(cfg.hidden || []);
+    return rows.filter(row => !hidden.has(row.number));
+  }
+
+  function channelCell(row) {
+    const logo = cfg.showLogos && row.logo ? `<img src="${esc(row.logo)}" alt="" onerror="this.remove()">` : "";
+    return `<div class="ch"><span class="num">${row.number}</span>${logo}<span class="name">${esc(row.name)}</span></div>`;
+  }
+
+  function renderPrevue(start, end) {
+    $("timebar").innerHTML = "";
+    const header = `<div class="header">${esc(clock(start, true))} &ndash; ${esc(clock(end, true))}</div>`;
+    const body = visibleRows().map(row => {
+      const shown = row.listings.filter(item => new Date(item.end) > start && new Date(item.start) < end);
+      const progs = shown.map(item => {
+        const at = new Date(item.start);
+        const time = at < start ? "" : `<span class="t">${esc(clock(at, false))}</span>`;
+        const sub = shown.length === 1 && item.subtitle ? `<span class="sub">"${esc(item.subtitle)}"</span>` : "";
+        return `<span class="prog">${time}${esc(item.title)}${item.movie ? " (Movie)" : ""}${sub}</span>`;
+      }).join("");
+      return `<div class="row">${channelCell(row)}<div class="progs">${progs || "<span class=\"prog\">Off air</span>"}</div></div>`;
+    }).join("");
+    return body ? header + body : "";
+  }
+
+  function renderTvGuide(start, end) {
+    const span = end - start;
+    const slots = [];
+    for (let at = new Date(start); at < end; at = new Date(at.getTime() + 30 * 60000)) {
+      slots.push(`<div class="slot" style="left:${((at - start) / span) * 100}%">${esc(clock(at, true))}</div>`);
+    }
+    $("timebar").innerHTML = `<div class="lead">${esc(start.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }))}</div><div class="slots">${slots.join("")}</div>`;
+    return visibleRows().map(row => {
+      const cells = row.listings.filter(item => new Date(item.end) > start && new Date(item.start) < end).map(item => {
+        const from = Math.max(new Date(item.start), start), to = Math.min(new Date(item.end), end);
+        const left = ((from - start) / span) * 100, width = Math.max(((to - from) / span) * 100 - 0.4, 1);
+        const more = new Date(item.end) > end ? `<span class="more">&#9654;</span>` : "";
+        const sub = item.subtitle ? `<div class="sub">${esc(item.subtitle)}</div>` : "";
+        return `<div class="cell${item.movie ? " movie" : ""}" style="left:${left}%;width:${width}%"><div class="title">${esc(item.title)}</div>${sub}${more}</div>`;
+      }).join("");
+      return `<div class="row">${channelCell(row)}<div class="track">${cells}</div></div>`;
+    }).join("");
+  }
+
+  function render() {
+    const start = windowStart();
+    const end = new Date(start.getTime() + cfg.hoursShown * 3600000);
+    const html = cfg.theme === "TvGuide" ? renderTvGuide(start, end) : renderPrevue(start, end);
+    const scroller = $("scroller");
+    if (!html) {
+      scroller.innerHTML = `<div class="empty-note">${rows.length ? "No channels to list." : "Listings will appear once the schedule has been built."}</div>`;
+      loopHeight = 0;
+      return;
+    }
+
+    // Twice over, so the list can loop without a seam.
+    scroller.innerHTML = `<div class="copy">${html}</div><div class="copy">${html}</div>`;
+    const first = scroller.firstElementChild;
+    loopHeight = first.offsetHeight;
+    if (loopHeight <= $("listings").offsetHeight) {
+      scroller.lastElementChild.remove();
+      loopHeight = 0;
+    }
+    offset = loopHeight ? offset % loopHeight : 0;
+  }
+
+  function scroll(time) {
+    const elapsed = Math.min((time - lastFrame) / 1000, 0.25);
+    lastFrame = time;
+    if (loopHeight > 0 && cfg.scrollSpeed > 0) {
+      offset = (offset + cfg.scrollSpeed * elapsed) % loopHeight;
+    }
+    $("scroller").style.transform = `translateY(${-Math.round(offset)}px)`;
+    requestAnimationFrame(scroll);
+  }
+
+  function tick() {
+    const now = new Date();
+    $("clock").textContent = clock(now, true);
+    $("date").textContent = now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+  }
+
+  // "Now on 5 CARTOON: SpongeBob", a different channel every few seconds.
+  function nowOn() {
+    const list = visibleRows();
+    const element = $("now-on");
+    if (!list.length) { element.textContent = ""; return; }
+    const row = list[nowOnIndex++ % list.length];
+    const now = new Date();
+    const on = row.listings.find(item => new Date(item.start) <= now && new Date(item.end) > now);
+    element.style.opacity = 0;
+    setTimeout(() => {
+      element.textContent = on ? `Now on ${row.number} ${row.name}: ${on.title}` : "";
+      element.style.opacity = 1;
+    }, 400);
+  }
+
+  async function playAds() {
+    const video = $("ad");
+    if (cfg.top !== "Ads" || !cfg.window) {
+      video.pause();
+      video.removeAttribute("src");
+      video.style.display = "none";
+      adsKey = "";
+      return;
+    }
+
+    video.style.display = "block";
+    const key = cfg.adsQuery || "";
+    if (key === adsKey && ads.length) return;
+    adsKey = key;
+    try {
+      const response = await fetch(`${base}/ads/${encodeURIComponent(cfg.id)}.json?query=${encodeURIComponent(key)}`, { cache: "no-store" });
+      ads = response.ok ? await response.json() : [];
+    } catch { ads = []; }
+    for (let i = ads.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [ads[i], ads[j]] = [ads[j], ads[i]]; }
+    adIndex = 0;
+    $("window-label").textContent = ads.length ? "" : (cfg.preview ? "No playable ads match the ads query" : "");
+    nextAd();
+  }
+
+  function nextAd() {
+    const video = $("ad");
+    if (!ads.length || cfg.top !== "Ads") return;
+    video.src = ads[adIndex++ % ads.length].url;
+    video.play().catch(() => setTimeout(nextAd, 500));
+  }
+
+  $("ad").addEventListener("ended", nextAd);
+  $("ad").addEventListener("error", () => setTimeout(nextAd, 300));
+
+  // The editor's live preview sends changed settings straight in.
+  window.addEventListener("message", event => {
+    if (event.data && event.data.type === "tv-guide-settings") {
+      cfg = Object.assign({}, cfg, event.data.settings, { preview: true });
+      applyConfig();
+    }
+  });
+
+  applyConfig();
+  tick();
+  loadListings();
+  setInterval(tick, 1000);
+  setInterval(loadListings, 60000);
+  setInterval(nowOn, 6000);
+  nowOn();
+  requestAnimationFrame(scroll);
+})();
+</script>
+</body>
+</html>
