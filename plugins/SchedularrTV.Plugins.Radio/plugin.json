@@ -42,6 +42,6 @@
     }
   ],
   "pages": [
-    { "path": "/plugins/radio", "title": "Radio channels", "icon": "radio" }
+    { "path": "/plugins/radio", "title": "Radio channels", "icon": "music" }
   ]
 }
