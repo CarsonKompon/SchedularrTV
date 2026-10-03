@@ -328,6 +328,13 @@ public sealed class GeneratedLayer
     /// <summary>Settings for Now Playing, This Has Been, Coming Up and Eventually text blocks.</summary>
     public GeneratedShowOptions? Show { get; set; }
 
+    /// <summary>
+    /// Mutes the episode clip's sound as much as the layer is opaque: as it fades in the clip fades out, and as it cuts
+    /// in the sound cuts out. Null (not false) when off, so templates without it keep their render keys.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? MutesClip { get; set; }
+
     /// <summary>For <see cref="GeneratedLayerKind.Text"/>: has a language model write it, with <see cref="Text"/> as the fallback.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public AiTextConfig? Writer { get; set; }

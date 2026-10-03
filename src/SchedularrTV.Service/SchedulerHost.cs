@@ -121,8 +121,12 @@ public static class SchedulerHost
         // Jellyfin, ErsatzTV and local media options are bound by their plugins, which are loaded even while
         // switched off (binding them here too would bind every list in them twice).
         // Installed plugins live in a plugins folder beside the app, so updating the app keeps them.
+        // From a checkout, every plugin in the repository is loaded from its build output (built first when stale),
+        // and nothing is loaded from (or moved out of) the per-user data folder.
+        string? sourceRoot = fromSource ? SourcePlugins.Root(contentRoot, AppContext.BaseDirectory) : null;
         PluginRegistry plugins = PluginLoader.Load(dataDirectory, builder.Configuration, BuiltInPlugins.All,
-            PluginLoader.ResolveInstallDirectory(args, dataDirectory, fromSource));
+            PluginLoader.ResolveInstallDirectory(args, dataDirectory, fromSource, sourceRoot),
+            sourceRoot is null ? null : SourcePlugins.Prepare(sourceRoot));
         PluginLoader.ConfigureServices(plugins, builder.Services, dataDirectory, builder.Configuration);
         PluginLoader.AddGeneratedEditorSections(plugins, builder.Services);
         builder.Services.AddSingleton(plugins);
@@ -227,22 +231,7 @@ public static class SchedulerHost
     /// Whether this is a build inside a source checkout (dotnet run, an IDE, or the tray started from its own
     /// bin folder) rather than a published download: the solution file sits a few folders above it.
     /// </summary>
-    internal static bool RunningFromSource(string contentRoot)
-    {
-        foreach (string start in new[] { contentRoot, AppContext.BaseDirectory })
-        {
-            DirectoryInfo? directory = new(start);
-            for (int depth = 0; depth < 8 && directory is not null; depth++, directory = directory.Parent)
-            {
-                if (File.Exists(Path.Combine(directory.FullName, "SchedularrTV.slnx")))
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
+    internal static bool RunningFromSource(string contentRoot) => SourcePlugins.Root(contentRoot, AppContext.BaseDirectory) is not null;
 
     /// <summary>
     /// Relative paths in the options are resolved against the data folder rather than whatever the working

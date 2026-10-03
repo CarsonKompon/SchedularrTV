@@ -445,6 +445,17 @@
                         <input type="range" min="0" max="100" value="@Number(selected.Opacity * 100)"
                                @onchange="e => SetNumber(e, value => selected.Opacity = (float)Math.Clamp(value / 100, 0, 1))" />
                     </label>
+                    <label class="check">
+                        <input type="checkbox" checked="@(selected.MutesClip == true)"
+                               @onchange="e => Set(() => selected.MutesClip = e.Value is true ? true : null)" />
+                        <span>Mutes the episode clip (as much as it's showing)</span>
+                    </label>
+                    @if (selected.MutesClip == true)
+                    {
+                        <p class="hint @(Template.BackgroundClip is { IncludeAudio: true } ? string.Empty : "warn")">
+                            @(Template.BackgroundClip is { IncludeAudio: true } ? MutesClipHint : MutesNothingHint)
+                        </p>
+                    }
 
                     <h4>Timing and animation</h4>
                     <div class="grid grid-2">
@@ -700,6 +711,10 @@
     private const string VoicePromptPlaceholder = "Mention it's the Saturday morning marathon";
     private const string LayerPromptPlaceholder = "A five-word tagline teasing the episode";
     private const string LayerStylePlaceholder = "Short and punchy";
+    private const string MutesClipHint =
+        "The episode's sound follows this layer: it fades out as the layer fades in, cuts out if it cuts in, and is turned down by its opacity.";
+    private const string MutesNothingHint =
+        "The episode clip's sound isn't on (under Canvas), so there's nothing for this to mute yet.";
     private int _tries;
     private static readonly string[] Handles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
     private static readonly (int Width, int Height, string Label)[] Sizes =

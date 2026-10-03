@@ -311,6 +311,9 @@ public static partial class GeneratedPromoResolver
             BackgroundStart = clipPath is null ? TimeSpan.Zero : promo.ClipStart,
             BackgroundAudio = clipPath is not null && template.BackgroundClip is { IncludeAudio: true } clip
                 ? new PromoMusic(clipPath, clip.Volume, promo.ClipStart, TimeSpan.FromMilliseconds(300), TimeSpan.FromMilliseconds(600), clip.DuckUnderVoice)
+                {
+                    Levels = ClipLevels(template)
+                }
                 : null,
             OverlayPath = generated,
             OverlayAudio = generated is not null && template.Generator is { KeepAudio: true } generator
@@ -326,6 +329,24 @@ public static partial class GeneratedPromoResolver
             Layers = template.Generator is not null ? []
                 : [.. template.Layers.Select((layer, index) => Layer(layer, promo.LayerLines[index])).OfType<PromoLayer>()]
         };
+    }
+
+    /// <summary>The episode clip's volume curve from the layers that mute it, or null when none do.</summary>
+    public static IReadOnlyList<PromoLevel>? ClipLevels(GeneratedPromoTemplate template)
+    {
+        List<PromoLayer> blockers = template.Generator is not null ? [] : [.. template.Layers
+            .Where(layer => layer.MutesClip == true)
+            .Select(layer => (PromoLayer)new PromoRectLayer
+            {
+                Bounds = SKRect.Empty,
+                Start = layer.Start,
+                End = layer.End,
+                In = Enum.Parse<PromoTransition>(layer.TransitionIn.ToString()),
+                Out = Enum.Parse<PromoTransition>(layer.TransitionOut.ToString()),
+                TransitionDuration = layer.TransitionDuration,
+                Opacity = layer.Opacity
+            })];
+        return blockers.Count == 0 ? null : PromoAudioEnvelope.ForBlockers(blockers, template.Duration);
     }
 
     /// <summary>One song per promo, fixed by its content so a re-render sounds the same.</summary>

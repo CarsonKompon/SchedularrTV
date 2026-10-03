@@ -51,11 +51,17 @@ public static partial class PluginLoader
     /// .app (replacing the app replaces everything in it, and writing into it breaks its signature), and when the app's
     /// folder can't be written to.
     /// </remarks>
-    public static string ResolveInstallDirectory(IReadOnlyList<string> args, string dataDirectory, bool runningFromSource)
+    /// <param name="sourceRoot">A checkout's root: plugins installed while running from it go in its <c>.plugins</c> folder.</param>
+    public static string ResolveInstallDirectory(IReadOnlyList<string> args, string dataDirectory, bool runningFromSource, string? sourceRoot = null)
     {
         if (SchedularrTV.Hosting.AppPaths.Argument(args, PluginsDirectoryArgument) is { Length: > 0 } chosen)
         {
             return Path.GetFullPath(chosen);
+        }
+
+        if (runningFromSource && sourceRoot is not null)
+        {
+            return Path.Combine(sourceRoot, SourcePlugins.InstallFolder);
         }
 
         string programFolder = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
@@ -76,6 +82,11 @@ public static partial class PluginLoader
         string folder = Path.Combine(appFolder, "plugins");
         return CanWrite(folder) ? folder : UserDirectory(dataDirectory);
     }
+
+    private static IEnumerable<string> PluginFolders(string? parent) =>
+        parent is null || !Directory.Exists(parent)
+            ? []
+            : Directory.EnumerateDirectories(parent).Where(path => !Path.GetFileName(path).StartsWith('.'));
 
     private static bool CanWrite(string folder)
     {
@@ -154,15 +165,24 @@ public static partial class PluginLoader
 
     /// <summary>Discovers, resolves and loads; the returned registry's active plugins are ready to configure.</summary>
     /// <param name="installDirectory">Where plugins are installed (see <see cref="ResolveInstallDirectory"/>); the data folder's <c>plugins</c> when null.</param>
-    public static PluginRegistry Load(string dataDirectory, IConfiguration configuration, IReadOnlyList<IBuiltInPlugin> builtIns, string? installDirectory = null)
+    /// <param name="sourcePlugins">
+    /// Running from a checkout: each plugin's build output folder (see <see cref="SourcePlugins"/>), loaded as included
+    /// plugins. The per-user data folder's plugins are then left alone, neither loaded nor moved.
+    /// </param>
+    public static PluginRegistry Load(string dataDirectory, IConfiguration configuration, IReadOnlyList<IBuiltInPlugin> builtIns, string? installDirectory = null,
+        IReadOnlyList<string>? sourcePlugins = null)
     {
         string userDirectory = installDirectory ?? UserDirectory(dataDirectory);
         Directory.CreateDirectory(userDirectory);
-        MoveLegacyPlugins(UserDirectory(dataDirectory), userDirectory);
+        if (sourcePlugins is null)
+        {
+            MoveLegacyPlugins(UserDirectory(dataDirectory), userDirectory);
+        }
+
         ApplyPendingChanges(userDirectory);
 
         // A server run on its own installs into the plugins folder beside it, which is also where shipped plugins would sit.
-        string? bundledDirectory = BundledDirectory() is { } bundled
+        string? bundledDirectory = sourcePlugins is null && BundledDirectory() is { } bundled
             && !string.Equals(Path.GetFullPath(bundled), Path.GetFullPath(userDirectory), StringComparison.OrdinalIgnoreCase) ? bundled : null;
 
         List<PluginDescriptor> plugins = [];
@@ -173,26 +193,26 @@ public static partial class PluginLoader
 
         // Installed plugins can replace a bundled one of the same id (a newer version), never a built-in one.
         Dictionary<string, PluginDescriptor> external = new(StringComparer.OrdinalIgnoreCase);
-        foreach ((string? folder, PluginSource source) in new[] { (bundledDirectory, PluginSource.Bundled), (userDirectory, PluginSource.Installed) })
+        IEnumerable<(string Directory, PluginSource Source)> found =
+            (sourcePlugins ?? []).Select(directory => (directory, PluginSource.Bundled))
+            .Concat(PluginFolders(bundledDirectory).Select(directory => (directory, PluginSource.Bundled)))
+            .Concat(PluginFolders(userDirectory)
+                // In a checkout the repository's own plugins sit in the same folder as installed ones.
+                .Where(directory => sourcePlugins is null || !sourcePlugins.Any(source =>
+                    string.Equals(Path.GetFullPath(source), Path.GetFullPath(directory), StringComparison.OrdinalIgnoreCase)))
+                .Select(directory => (directory, PluginSource.Installed)));
+        foreach ((string directory, PluginSource source) in found)
         {
-            if (folder is null)
+            PluginDescriptor descriptor = Discover(directory, source);
+            if (plugins.Any(plugin => string.Equals(plugin.Id, descriptor.Id, StringComparison.OrdinalIgnoreCase)))
             {
+                descriptor.Status = PluginStatus.Failed;
+                descriptor.Problem = $"'{descriptor.Id}' is the id of a built-in plugin.";
+                plugins.Add(descriptor);
                 continue;
             }
 
-            foreach (string directory in Directory.EnumerateDirectories(folder).Where(path => !Path.GetFileName(path).StartsWith('.')))
-            {
-                PluginDescriptor descriptor = Discover(directory, source);
-                if (plugins.Any(plugin => string.Equals(plugin.Id, descriptor.Id, StringComparison.OrdinalIgnoreCase)))
-                {
-                    descriptor.Status = PluginStatus.Failed;
-                    descriptor.Problem = $"'{descriptor.Id}' is the id of a built-in plugin.";
-                    plugins.Add(descriptor);
-                    continue;
-                }
-
-                external[descriptor.Id] = descriptor;
-            }
+            external[descriptor.Id] = descriptor;
         }
 
         plugins.AddRange(external.Values.OrderBy(plugin => plugin.Manifest.Name, StringComparer.OrdinalIgnoreCase));

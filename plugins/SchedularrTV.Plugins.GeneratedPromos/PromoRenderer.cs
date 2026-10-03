@@ -341,7 +341,10 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             TimeSpan fadeOut = bed.FadeOut > composition.Duration ? composition.Duration : bed.FadeOut;
             chains.Add($"[{index + 1}:a:0]aresample=48000,aformat=channel_layouts=stereo,"
                 + $"volume={Math.Clamp(bed.Volume, 0, 1).ToString("0.###", CultureInfo.InvariantCulture)},"
-                + $"afade=t=in:st=0:d={Seconds(bed.FadeIn)},afade=t=out:st={Seconds(composition.Duration - fadeOut)}:d={Seconds(fadeOut)},apad[bed{index}]");
+                + $"afade=t=in:st=0:d={Seconds(bed.FadeIn)},afade=t=out:st={Seconds(composition.Duration - fadeOut)}:d={Seconds(fadeOut)},"
+                // Layers that block the episode's sound: quoted, since the expression is full of commas.
+                + (bed.Levels is { Count: > 0 } levels ? $"volume='{PromoAudioEnvelope.Expression(levels)}':eval=frame," : string.Empty)
+                + $"apad[bed{index}]");
             if (voiced && bed.DuckUnderVoice)
             {
                 chains.Add($"[bed{index}][key{nextKey++}]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=350[ducked{index}]");

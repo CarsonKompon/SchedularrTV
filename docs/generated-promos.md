@@ -88,6 +88,10 @@ show otherwise), optionally with its sound, which ducks under the voice like mus
 used instead when that file can't be read, such as a Coming Up promo for a show the schedule hasn't
 reached yet.
 
+Any layer can be marked `mutes_clip: true` (**Mutes the episode clip** in the editor): the episode's sound
+then follows it, turned down as much as the layer is opaque. A black box that fades in fades the episode out
+(and back in as it fades away); one that cuts in cuts the sound. Several such layers combine.
+
 ## Promo types
 
 | `type` | Fills | Required layer | Default read-out |

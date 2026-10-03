@@ -44,8 +44,10 @@ survive too. The Plugins page shows the folder in use. Exceptions, which use `<d
 instead:
 
 - the macOS app, where replacing `SchedularrTV.app` would replace everything inside it;
-- running from a source checkout;
 - an app folder the scheduler can't write to.
+
+Run from a source checkout, every plugin in the repository is loaded from its build output instead (see
+[development.md](development.md)), and installed ones go in the checkout's `.plugins/` folder.
 
 Start with `--plugins-dir <folder>` to use another folder. Plugins installed in `<data folder>/plugins/` by
 an earlier version are moved into the app's folder on the next start.

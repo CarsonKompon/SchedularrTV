@@ -68,9 +68,13 @@ Each build publishes the tray to the top of the folder and the server into `serv
 `SchedularrTV-<version>-all-plugins.zip` with all of them, stamped with the release's version. `<version>` is the
 tag (`v1.2.0`) for a release and `nightly` otherwise, and every download starts with `SchedularrTV-<version>-`.
 
-A source checkout loads plugins from the data folder's `plugins` folder (a download uses the `plugins` folder
-beside the app instead). To try the optional plugins from source, publish one there, e.g.
-`dotnet publish plugins/SchedularrTV.Plugins.GeneratedPromos -o "%LOCALAPPDATA%\SchedularrTV\plugins\generated-promos"`
-(or the `plugins` folder beside `config/` when running from the project folder), then restart. macOS builds are
-wrapped in a menu-bar-only `SchedularrTV.app` with ad-hoc signatures; nothing is notarised or
+Run from a source checkout, the scheduler loads every plugin under `plugins/` from the checkout's `.plugins/`
+folder (ignored by git), one folder per project. A Debug build of a plugin (building the solution, say) copies it
+there itself. At startup, any plugin that's missing or older than its sources (or the scheduler it's built
+against) is built first with `dotnet build --no-dependencies`, with progress in the console, and anything built
+but not yet in `.plugins/` is copied over; up-to-date ones start at once. Set `SCHEDULARRTV_BUILD_PLUGINS=false`
+to skip building and load whatever was built last. Nothing is loaded from (or moved out of) the per-user data
+folder's `plugins`; a plugin installed from the Plugins page goes in `.plugins/` too.
+
+macOS builds are wrapped in a menu-bar-only `SchedularrTV.app` with ad-hoc signatures; nothing is notarised or
 code-signed.

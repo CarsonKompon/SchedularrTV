@@ -252,42 +252,22 @@ else
                     </div>
                 }
 
-                <div class="upnext">
-                    @foreach (UpcomingEntry entry in listing.Next)
+                @* The programmes-only list always sizes this area; with breaks shown, the fuller list scrolls inside it,
+                   so the card keeps its height. *@
+                <div class="upnext-frame @(listing.Detailed is null ? string.Empty : "detailed")">
+                    <div class="upnext upnext-size" aria-hidden="@(listing.Detailed is null ? "false" : "true")">
+                        @foreach (UpcomingEntry entry in listing.Next)
+                        {
+                            @Row(entry)
+                        }
+                    </div>
+                    @if (listing.Detailed is { } detailed)
                     {
-                        bool programme = entry.Kind == ScheduleEntryKind.Program;
-                        <div class="upnext-row @(programme ? "" : "muted")">
-                            <span class="upnext-time">@entry.Start.ToLocalTime().ToString("HH:mm")</span>
-                            @if (programme)
+                        <div class="upnext upnext-scroll">
+                            @foreach (UpcomingEntry entry in detailed)
                             {
-                                <Artwork Id="@entry.ArtId" Title="@entry.Title" Class="art-sm" Width="80" />
+                                @Row(entry)
                             }
-                            else
-                            {
-                                <span class="kind-dot k-@KindClass(entry.Kind)" title="@entry.Kind"></span>
-                            }
-                            <div class="upnext-text">
-                                <div class="upnext-title">
-                                    @entry.Title
-                                    @if (entry.Parts > 1)
-                                    {
-                                        <span class="pill pill-muted" style="margin-left:6px;">@entry.Parts parts</span>
-                                    }
-                                    @if (entry.Trimmed)
-                                    {
-                                        <span class="pill pill-muted" style="margin-left:6px;">trimmed</span>
-                                    }
-                                </div>
-                                @if (entry.Subtitle is not null)
-                                {
-                                    <div class="upnext-sub">@entry.Subtitle</div>
-                                }
-                                else if (!programme)
-                                {
-                                    <div class="upnext-sub">@entry.Kind</div>
-                                }
-                            </div>
-                            <span class="upnext-len">@Length(entry.Duration)</span>
                         </div>
                     }
                 </div>
@@ -555,7 +535,47 @@ else
         bool Trimmed,
         ScheduleEntryKind Kind);
 
-    private sealed record Listing(UpcomingEntry? Feature, bool IsLive, IReadOnlyList<UpcomingEntry> Next);
+    /// <param name="Next">The next few programmes.</param>
+    /// <param name="Detailed">With breaks shown: everything coming up in order, breaks and the up-next programme included.</param>
+    private sealed record Listing(UpcomingEntry? Feature, bool IsLive, IReadOnlyList<UpcomingEntry> Next, IReadOnlyList<UpcomingEntry>? Detailed);
+
+    private static RenderFragment Row(UpcomingEntry entry)
+    {
+        bool programme = entry.Kind == ScheduleEntryKind.Program;
+        return @<div class="upnext-row @(programme ? "" : "muted")">
+            <span class="upnext-time">@entry.Start.ToLocalTime().ToString("HH:mm")</span>
+            @if (programme)
+            {
+                <Artwork Id="@entry.ArtId" Title="@entry.Title" Class="art-sm" Width="80" />
+            }
+            else
+            {
+                <span class="kind-dot k-@KindClass(entry.Kind)" title="@entry.Kind"></span>
+            }
+            <div class="upnext-text">
+                <div class="upnext-title">
+                    @entry.Title
+                    @if (entry.Parts > 1)
+                    {
+                        <span class="pill pill-muted" style="margin-left:6px;">@entry.Parts parts</span>
+                    }
+                    @if (entry.Trimmed)
+                    {
+                        <span class="pill pill-muted" style="margin-left:6px;">trimmed</span>
+                    }
+                </div>
+                @if (entry.Subtitle is not null)
+                {
+                    <div class="upnext-sub">@entry.Subtitle</div>
+                }
+                else if (!programme)
+                {
+                    <div class="upnext-sub">@entry.Kind</div>
+                }
+            </div>
+            <span class="upnext-len">@Length(entry.Duration)</span>
+        </div>;
+    }
 
     // A mid-rolled feature is one listing in the guide, so showing each of its segments here would
     // push every other programme out of a short list. Collapse consecutive segments instead.
@@ -598,10 +618,15 @@ else
         UpcomingEntry? feature = programmes.FirstOrDefault();
         bool live = feature is not null && feature.Start <= now;
 
-        IEnumerable<UpcomingEntry> next = detailed
-            ? Merge(schedule.Entries.Where(e => e.End > now && (feature is null || e.Start < feature.Start || e.Start >= feature.End)).Take(200)).Take(40)
-            : programmes.Skip(1).Take(5);
+        // Everything from now in airing order: what's on now in a break, the up-next programme in its place among the
+        // breaks, a live programme's mid-rolls and the rest of it. The live programme itself is shown above, so its
+        // current part is left out.
+        List<UpcomingEntry>? everything = detailed
+            ? [.. Merge(schedule.Entries.Where(e => e.End > now).Take(200))
+                .SkipWhile(entry => live && entry.Kind == ScheduleEntryKind.Program && entry.Start <= now)
+                .Take(40)]
+            : null;
 
-        return new Listing(feature, live, next.ToList());
+        return new Listing(feature, live, [.. programmes.Skip(1).Take(5)], everything);
     }
 }

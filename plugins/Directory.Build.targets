@@ -13,4 +13,22 @@
     <Copy SourceFiles="$(MSBuildProjectDirectory)\plugin.json" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
   </Target>
 
+  <!--
+    A Debug build in a checkout also puts the plugin in the checkout's .plugins/<project> folder, which is where the
+    scheduler loads plugins from when it runs from source. Not on CI, which only needs the build output.
+  -->
+  <PropertyGroup>
+    <SchedularrTvCheckoutPlugins>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\.plugins\$(MSBuildProjectName)'))\</SchedularrTvCheckoutPlugins>
+  </PropertyGroup>
+
+  <Target Name="CopyPluginToCheckout" AfterTargets="Build" DependsOnTargets="CopyPluginManifest"
+          Condition="Exists('$(MSBuildProjectDirectory)\plugin.json') And '$(Configuration)' == 'Debug' And '$(CI)' != 'true' And '$(GITHUB_ACTIONS)' != 'true' And '$(ContinuousIntegrationBuild)' != 'true'">
+    <ItemGroup>
+      <_SchedularrTvPluginOutput Include="$(OutDir)**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_SchedularrTvPluginOutput)"
+          DestinationFiles="@(_SchedularrTvPluginOutput->'$(SchedularrTvCheckoutPlugins)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" ContinueOnError="true" />
+  </Target>
+
 </Project>

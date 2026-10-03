@@ -230,6 +230,34 @@ public sealed class PluginSystemTests : IDisposable
         string chosen = Path.Combine(_data, "elsewhere");
         Assert.Equal(Path.GetFullPath(chosen), PluginLoader.ResolveInstallDirectory([PluginLoader.PluginsDirectoryArgument, chosen], _data, runningFromSource: false));
         Assert.Equal(PluginLoader.UserDirectory(_data), PluginLoader.ResolveInstallDirectory([], _data, runningFromSource: true));
+
+        string checkout = Path.Combine(_data, "repo");
+        Assert.Equal(Path.Combine(checkout, SourcePlugins.InstallFolder), PluginLoader.ResolveInstallDirectory([], _data, runningFromSource: true, checkout));
+    }
+
+    [Fact]
+    public void From_a_checkout_the_repositorys_plugins_load_and_the_data_folders_are_left_alone()
+    {
+        string legacy = PluginLoader.UserDirectory(_data);
+        Directory.CreateDirectory(Path.Combine(legacy, "old"));
+        File.WriteAllText(Path.Combine(legacy, "old", "plugin.json"), """{ "id": "old", "apiVersion": "1.0", "entryAssembly": "old.dll" }""");
+        string built = Path.Combine(_data, "repo", "plugins", "Fresh", "bin", "Debug", "net10.0");
+        Directory.CreateDirectory(built);
+        File.WriteAllText(Path.Combine(built, "plugin.json"), """{ "id": "fresh", "apiVersion": "1.0", "entryAssembly": "Fresh.dll" }""");
+        string installed = Path.Combine(_data, "repo", SourcePlugins.InstallFolder);
+        File.WriteAllText(Path.Combine(_data, "repo", SourcePlugins.SolutionFileName), "<Solution />");
+
+        PluginRegistry registry = PluginLoader.Load(_data, Config(), [], installed, [built]);
+
+        Assert.Equal(PluginSource.Bundled, registry.Find("fresh")!.Source);
+        Assert.Null(registry.Find("old"));
+        Assert.True(Directory.Exists(Path.Combine(legacy, "old")));
+        Assert.Equal(Path.Combine(_data, "repo"), SourcePlugins.Root(built));
+
+        // The tray runs the server from a folder inside its own build output.
+        string sep = Path.DirectorySeparatorChar.ToString();
+        Assert.Equal(("Debug", "net10.0"), SourcePlugins.BuildOf(string.Join(sep, "repo", "src", "SchedularrTV.Tray", "bin", "Debug", "net10.0", "server")));
+        Assert.Equal(("Release", "net10.0"), SourcePlugins.BuildOf(string.Join(sep, "repo", "src", "SchedularrTV.Service", "bin", "Release", "net10.0")));
     }
 
     [Fact]

@@ -619,6 +619,11 @@ progress::-moz-progress-bar { background: var(--accent-gradient); border-radius:
 .np-progress .meter { flex: 1; }
 
 .upnext { padding: 6px 10px 4px; }
+/* With breaks shown, the fuller list scrolls in the room the programmes-only list takes, so the card keeps its height. */
+.upnext-frame { position: relative; }
+.upnext-frame.detailed { min-height: 220px; }
+.upnext-frame.detailed > .upnext-size { visibility: hidden; }
+.upnext-scroll { position: absolute; inset: 0; overflow-y: auto; scrollbar-width: thin; }
 .upnext-row { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 10px; }
 .upnext-row:hover { background: rgba(255, 255, 255, .025); }
 .upnext-time { width: 50px; flex: none; font: 500 12px/1 var(--mono); color: var(--muted); }
