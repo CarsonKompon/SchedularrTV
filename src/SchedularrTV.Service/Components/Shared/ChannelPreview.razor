@@ -1,0 +1,117 @@
+@* A popup that plays a channel live from ErsatzTV, relayed through the scheduler, to check it actually plays. *@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@inject Microsoft.Extensions.Options.IOptions<SchedularrTV.Providers.ErsatzTv.ErsatzTvOptions> Ersatz
+
+<div class="modal-backdrop" @onclick="CloseAsync">
+    <div class="modal modal-wide channel-preview" role="dialog" aria-modal="true" aria-label="@($"Preview of {Name}")" @onclick:stopPropagation="true">
+        <div class="modal-head">
+            <span class="channel-number">@Number</span>
+            <h2>@Name</h2>
+            <div class="spacer"></div>
+            <button class="btn btn-sm btn-icon btn-ghost" type="button" aria-label="Close" @onclick="CloseAsync"><Icon Name="x" Size="15" /></button>
+        </div>
+
+        <div class="channel-preview-screen">
+            <video @ref="_video" controls playsinline></video>
+        </div>
+        <p class="channel-preview-status" @ref="_status" role="status" aria-live="polite"></p>
+        <p class="hint" style="margin:0;">
+            What ErsatzTV is sending right now, as Jellyfin would get it. While this is open it counts as a viewer.
+            To watch in VLC: <code>@DirectUrl</code>
+        </p>
+    </div>
+</div>
+
+<style>
+    .channel-preview-screen { aspect-ratio: 16 / 9; background: #000; border-radius: var(--r-md, 10px); overflow: hidden; }
+    .channel-preview-screen video { width: 100%; height: 100%; display: block; background: #000; }
+    .channel-preview-status { margin: 12px 0 8px; font-size: 13px; color: var(--muted); min-height: 1.4em; }
+    .channel-preview-status[data-kind="ok"] { color: var(--ok, #6fdc9a); }
+    .channel-preview-status[data-kind="error"] { color: var(--danger, #ff8a8a); }
+</style>
+
+@code {
+    [Parameter, EditorRequired] public int Number { get; set; }
+
+    [Parameter] public string Name { get; set; } = string.Empty;
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private ElementReference _video;
+    private ElementReference _status;
+    private IJSObjectReference? _module;
+    private bool _closed;
+
+    /// <summary>The relayed playlist, from the browser's point of view.</summary>
+    private string PlaylistUrl => $"{ErsatzTvPreviewProxy.RoutePrefix}/channel/{Number}.m3u8";
+
+    /// <summary>ErsatzTV's own address for the channel, on the host the browser reached the scheduler by.</summary>
+    private string DirectUrl => $"http://{new Uri(Nav.BaseUri).Host}:{Ersatz.Value.Lineup.Port}/channel/{Number}.m3u8";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/channel-preview.js");
+            if (!_closed)
+            {
+                await _module.InvokeVoidAsync("start", _video, PlaylistUrl, Number, _status);
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        catch (JSException)
+        {
+            // The script reports its own problems in the status line; this is only a failure to load it.
+        }
+    }
+
+    private async Task CloseAsync()
+    {
+        await StopAsync();
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task StopAsync()
+    {
+        if (_closed)
+        {
+            return;
+        }
+
+        _closed = true;
+        if (_module is not null)
+        {
+            try
+            {
+                await _module.InvokeVoidAsync("stop", _video);
+            }
+            catch (Exception ex) when (ex is JSDisconnectedException or JSException or TaskCanceledException)
+            {
+            }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await StopAsync();
+        if (_module is not null)
+        {
+            try
+            {
+                await _module.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+}

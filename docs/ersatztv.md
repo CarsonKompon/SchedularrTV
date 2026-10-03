@@ -46,6 +46,18 @@ with a different lineup; listings there but not in Jellyfin mean Jellyfin hasn't
 Jellyfin, check the XMLTV guide source (Dashboard → Live TV) and run **Dashboard → Scheduled Tasks →
 Refresh Guide**.
 
+## Watching a channel
+
+The play button on each channel on the **Channels** page opens a live preview of what ErsatzTV is sending for
+that channel. The guide can look fine while channels don't play; this checks the picture itself. If the channel
+doesn't start, the preview says why (no such channel in ErsatzTV's lineup, ErsatzTV not answering, or ErsatzTV's
+own error, with more in the scheduler's log).
+
+The stream is relayed through the scheduler (`/api/ersatztv/…`), so it works from any computer that can open
+SchedularrTV, without opening ErsatzTV's port. Browsers that can't play HLS themselves (most besides Safari) use
+[hls.js](https://github.com/video-dev/hls.js), loaded from cdn.jsdelivr.net when a preview first opens. While a
+preview is open it counts as a viewer, like Jellyfin would.
+
 ## What is written
 
 `ConfigRoot` (the **Lineup folder**, `etv/config` in the data folder by default) receives:

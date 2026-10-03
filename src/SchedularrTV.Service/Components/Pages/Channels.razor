@@ -50,6 +50,9 @@
                     </div>
                 </div>
                 <div class="channel-tile-actions" @onclick:stopPropagation="true">
+                    <button class="btn btn-sm btn-icon" title="Watch live" aria-label="@($"Watch {channel.Name} live")" @onclick="() => _previewing = channel">
+                        <Icon Name="play" Size="14" />
+                    </button>
                     <button class="btn btn-sm btn-icon" title="Edit" aria-label="@($"Edit {channel.Name}")" @onclick="() => Open(channel)">
                         <Icon Name="pencil" Size="14" />
                     </button>
@@ -95,6 +98,11 @@
     <ChannelWizard OnCreated="Created" OnCancel="() => _wizardOpen = false" />
 }
 
+@if (_previewing is { } previewing)
+{
+    <ChannelPreview @key="previewing" Number="previewing.Number" Name="@previewing.Name" OnClose="() => _previewing = null" />
+}
+
 @code {
     /// <summary><c>?wizard=1</c> opens the channel wizard, e.g. straight after first-run setup.</summary>
     [SupplyParameterFromQuery(Name = "wizard")] public string? Wizard { get; set; }
@@ -102,6 +110,7 @@
     private string? _confirmDelete;
     private bool _menuOpen;
     private bool _wizardOpen;
+    private ChannelConfig? _previewing;
 
     // Parameters, not initialisation: arriving here from setup while already on this page reuses the component.
     protected override void OnParametersSet()

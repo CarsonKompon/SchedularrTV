@@ -115,6 +115,9 @@ public static class SchedulerHost
         // The host's own HTTP client factory (App settings tests Jellyfin with it) mustn't depend on a plugin adding one.
         builder.Services.AddHttpClient();
 
+        // The Channels page's preview: ErsatzTV takes up to 30 seconds to have a channel ready before it answers.
+        builder.Services.AddHttpClient(ErsatzTvPreviewProxy.ClientName, http => http.Timeout = TimeSpan.FromSeconds(45));
+
         // Jellyfin, ErsatzTV and local media options are bound by their plugins, which are loaded even while
         // switched off (binding them here too would bind every list in them twice).
         // Installed plugins live in a plugins folder beside the app, so updating the app keeps them.
@@ -200,6 +203,7 @@ public static class SchedulerHost
         ServeLogos(app);
 
         app.MapSchedulerApi();
+        app.MapErsatzTvPreview();
         MapPlugins(app, plugins, dataDirectory);
         app.MapRazorComponents<App>()
             .AddInteractiveServerRenderMode()
