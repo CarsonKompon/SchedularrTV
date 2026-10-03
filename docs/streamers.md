@@ -44,6 +44,18 @@ Open **Streamers** in the sidebar and choose **Add a streamer channel**:
 - **When others are live too**: a pop-up card (with their picture, title, game and viewers), scrolling text, or both. Set
   how often, for how long, in which corner, and the wording (`{name}`, `{title}`, `{game}`, `{platform}`, `{viewers}`).
   Someone who has just gone live is mentioned within seconds.
+- **While nobody is live**, the channel plays one of:
+  - **The countdown** (the default).
+  - **A replay with a card now and then.** The recording of whoever streamed last fills the picture. Every few
+    minutes a card says it's a replay of their stream from when, and counts down to the next live stream.
+  - **A framed replay.** The replay plays in a frame marked *REPLAY*, with its title and date, and the countdown (and
+    everyone's next stream) beside it the whole time.
+
+  A replay is the newest saved stream among the channel's streamers: a Twitch past broadcast, or a YouTube stream's
+  recording, at least ten minutes long. It plays from where it has got to (a restart doesn't send it back to the
+  beginning), starts over when it ends, and switches to a newer recording as soon as there is one. Someone going live
+  takes over straight away. A recording that can't be opened (deleted, or subscriber-only) is skipped for the next
+  newest. With nothing to replay, the countdown shows. The rest of this section's settings:
 - **While nobody is live**: the heading, an optional message, colours, whether everyone else's next stream is listed, and
   optional music from a folder.
 

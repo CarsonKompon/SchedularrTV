@@ -64,10 +64,39 @@ public sealed record LiveStreamSpec
     /// </summary>
     public bool PageOnTop { get; init; }
 
+    /// <summary>
+    /// The window's (and a separate sound stream's) streams are recordings rather than live: they're read at their own
+    /// pace (<c>-re</c>), from <see cref="SeekTo"/> when that's set.
+    /// </summary>
+    public bool Recorded { get; init; }
+
+    /// <summary>Where to start a recorded window stream. Not part of <see cref="Fingerprint"/>: it's worked out afresh at each start.</summary>
+    public TimeSpan? SeekTo { get; init; }
+
+    /// <summary>Anything else that should restart the stream when it changes (the same recording starting over, say).</summary>
+    public string? RestartToken { get; init; }
+
     /// <summary>Changes whenever anything that affects the running stream does, so it's started again with the new settings.</summary>
     public string Fingerprint =>
         string.Join('|', PageUrl, Ffmpeg, BrowserPath, CaptureFrameRate, WindowStreamUrl, Window, Audio, MusicFolder,
-            Volume.ToString(CultureInfo.InvariantCulture), AudioStreamUrl, Visualizer, VisualizerRect, PageOnTop);
+            Volume.ToString(CultureInfo.InvariantCulture), AudioStreamUrl, Visualizer, VisualizerRect, PageOnTop, Recorded, RestartToken);
+
+    /// <summary>The options before a window or sound stream's <c>-i</c>.</summary>
+    internal IEnumerable<string> InputOptions()
+    {
+        if (Recorded)
+        {
+            yield return "-re";
+            if (SeekTo is { } seek && seek > TimeSpan.Zero)
+            {
+                yield return "-ss";
+                yield return seek.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
+            }
+        }
+
+        yield return "-thread_queue_size";
+        yield return "1024";
+    }
 }
 
 /// <summary>
@@ -245,7 +274,7 @@ public sealed class LiveStream : IAsyncDisposable
         int? window = null;
         if (spec.WindowStreamUrl is { } windowUrl && spec.Window is not null)
         {
-            arguments.AddRange(["-thread_queue_size", "1024", "-i", windowUrl]);
+            arguments.AddRange([.. spec.InputOptions(), "-i", windowUrl]);
             window = next++;
         }
 
@@ -259,7 +288,7 @@ public sealed class LiveStream : IAsyncDisposable
             }
             else
             {
-                arguments.AddRange(["-thread_queue_size", "1024", "-i", soundUrl]);
+                arguments.AddRange([.. spec.InputOptions(), "-i", soundUrl]);
                 audio = next++;
             }
 

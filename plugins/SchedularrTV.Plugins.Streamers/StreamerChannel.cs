@@ -143,9 +143,29 @@ public sealed class AlsoLiveOptions
     public AlsoLiveOptions Copy() => (AlsoLiveOptions)MemberwiseClone();
 }
 
+public enum ReplayStyle
+{
+    /// <summary>No replays: the countdown.</summary>
+    Off,
+
+    /// <summary>The replay fills the picture; now and then a card says it's a replay, and when the next stream is.</summary>
+    Popup,
+
+    /// <summary>The replay in a frame marked as a replay, with the countdown beside it the whole time.</summary>
+    Framed
+}
+
 /// <summary>What the channel shows while nobody is live.</summary>
 public sealed class OfflineOptions
 {
+    /// <summary>Plays the recording of whoever streamed last (the newest of the channel's streamers') until someone's live.</summary>
+    public ReplayStyle Replay { get; set; } = ReplayStyle.Off;
+
+    /// <summary>For <see cref="ReplayStyle.Popup"/>: how often the card comes round, and for how long.</summary>
+    public int ReplayNoteEveryMinutes { get; set; } = 8;
+
+    public int ReplayNoteSeconds { get; set; } = 12;
+
     public string Heading { get; set; } = "Next stream";
 
     /// <summary>Optional line under the countdown.</summary>

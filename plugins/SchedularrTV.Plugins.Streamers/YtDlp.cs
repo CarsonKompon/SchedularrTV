@@ -134,6 +134,30 @@ public sealed class YtDlp(StreamerSettings settings, ILogger<YtDlp> logger)
         return url;
     }
 
+    /// <summary>
+    /// The address of a recording's picture, and of its sound when that's separate (YouTube keeps them apart above 360p).
+    /// </summary>
+    public async Task<(string Video, string? Audio)> ResolveRecordingAsync(string pageUrl, StreamPlatform platform, CancellationToken cancellationToken)
+    {
+        string program = Executable ?? throw new InvalidOperationException("yt-dlp isn't installed: download it on the Streamers page.");
+        int height = settings.MaxHeight;
+        string format = platform == StreamPlatform.YouTube
+            ? $"bv*[height<={height}][vcodec^=avc1]+ba[acodec^=mp4a]/bv*[height<={height}]+ba/b[height<={height}]/b"
+            : $"best[height<={height}]/best";
+        (int code, string output, string errors) = await RunAsync(program,
+            ["--no-warnings", "--no-playlist", "--no-cache-dir", "-f", format, "-g", pageUrl],
+            TimeSpan.FromSeconds(90), cancellationToken).ConfigureAwait(false);
+        string[] urls = [.. output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(line => line.StartsWith("http", StringComparison.OrdinalIgnoreCase))];
+        if (code != 0 || urls.Length == 0)
+        {
+            string said = errors.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).LastOrDefault() ?? $"exit code {code}";
+            throw new InvalidOperationException($"yt-dlp couldn't open the recording: {said}");
+        }
+
+        return (urls[0], urls.Length > 1 ? urls[1] : null);
+    }
+
     private static async Task<(int Code, string Output, string Errors)> RunAsync(string program, IEnumerable<string> arguments, TimeSpan limit,
         CancellationToken cancellationToken)
     {

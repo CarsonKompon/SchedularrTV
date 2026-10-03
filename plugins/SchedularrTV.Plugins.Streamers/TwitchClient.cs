@@ -31,7 +31,7 @@ public sealed class TwitchClient(IHttpClientFactory http)
     private const string VideosQuery = """
         query($login: String!) {
           user(login: $login) {
-            videos(first: 40, type: ARCHIVE, sort: TIME) { edges { node { createdAt lengthSeconds title } } }
+            videos(first: 40, type: ARCHIVE, sort: TIME) { edges { node { id createdAt lengthSeconds title } } }
           }
         }
         """;
@@ -129,7 +129,7 @@ public sealed class TwitchClient(IHttpClientFactory http)
                 if (Time(node, "createdAt") is { } start)
                 {
                     int seconds = node.TryGetProperty("lengthSeconds", out JsonElement length) && length.TryGetInt32(out int value) ? value : 0;
-                    sessions.Add(new StreamSession(start, TimeSpan.FromSeconds(seconds), Text(node, "title")));
+                    sessions.Add(new StreamSession(start, TimeSpan.FromSeconds(seconds), Text(node, "title"), Text(node, "id")));
                 }
             }
         }

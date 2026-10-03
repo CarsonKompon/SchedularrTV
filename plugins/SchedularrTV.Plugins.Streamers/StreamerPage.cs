@@ -11,11 +11,15 @@ public sealed record StreamerPageConfig(
     AlsoLiveOptions AlsoLive,
     OfflineOptions Offline,
     PixelBox Video,
-    bool Preview)
+    bool Preview,
+    PixelBox ReplayFrame)
 {
     public static StreamerPageConfig For(StreamerChannel channel, bool preview) =>
-        new(channel.Id, channel.Name, channel.Chat, channel.AlsoLive, channel.Offline, StreamerLayout.Video(channel.Chat), preview);
+        new(channel.Id, channel.Name, channel.Chat, channel.AlsoLive, channel.Offline, StreamerLayout.Video(channel.Chat), preview, StreamerLayout.ReplayFrame);
 }
+
+/// <summary>The recording being replayed, as the page shows it.</summary>
+public sealed record ReplayCard(string Name, string Platform, string? Title, string? Avatar, long StartedAt, int Minutes);
 
 /// <summary>A live streamer, as the page shows them.</summary>
 public sealed record LiveCard(string Name, string Platform, string? Title, string? Game, int? Viewers, string? Avatar, long? StartedAt);
@@ -24,10 +28,11 @@ public sealed record LiveCard(string Name, string Platform, string? Title, strin
 public sealed record UpcomingCard(string Name, string Platform, string? Avatar, long? At, int? Minutes, double Confidence, string Kind, string? Title);
 
 /// <summary>
-/// state.json: <c>live</c> (a stream is on, under the page), <c>opening</c> (someone's live but their stream isn't open yet)
-/// or <c>offline</c> (the countdown).
+/// state.json: <c>live</c> (a stream is on, under the page), <c>opening</c> (someone's live but their stream isn't open yet),
+/// <c>replay</c> (nobody's live; a recording is on, under the page) or <c>offline</c> (the countdown).
 /// </summary>
-public sealed record PageState(string Mode, LiveCard? Live, IReadOnlyList<LiveCard> AlsoLive, IReadOnlyList<UpcomingCard> Upcoming, string? Problem, long ServerTime);
+public sealed record PageState(string Mode, LiveCard? Live, IReadOnlyList<LiveCard> AlsoLive, IReadOnlyList<UpcomingCard> Upcoming, string? Problem, long ServerTime,
+    ReplayCard? Replay = null);
 
 /// <summary>chat.json: the live streamer's newest messages. <paramref name="Source"/> changes when the chat does, so the page starts afresh.</summary>
 public sealed record ChatResponse(string? Source, IReadOnlyList<ChatMessage> Messages, string? Problem);
@@ -36,6 +41,9 @@ public sealed record ChatResponse(string? Source, IReadOnlyList<ChatMessage> Mes
 public static class StreamerLayout
 {
     public const int PanelWidth = 320;
+
+    /// <summary>Where a framed replay plays: a 16:9 window on the left, the countdown down the right.</summary>
+    public static PixelBox ReplayFrame { get; } = new(40, 104, 880, 495);
 
     /// <summary>The whole picture, or (with the chat in a panel beside it) a 16:9 box beside the panel.</summary>
     public static PixelBox Video(ChatOptions chat) => !chat.Enabled ? new PixelBox(0, 0, 1280, 720) : chat.Layout switch
@@ -84,6 +92,24 @@ public static class StreamerPage
             BrowserPath = settings.BrowserPath,
             CaptureFrameRate = settings.CaptureFrameRate
         };
+
+        if (onAir is { ActiveKey: null, Replay: { } replay, StreamUrl: { } recording })
+        {
+            // A replay, picked up where it has got to; framed, it sits in the frame's window.
+            PixelBox box = channel.Offline.Replay == ReplayStyle.Framed ? StreamerLayout.ReplayFrame : new PixelBox(0, 0, 1280, 720);
+            return spec with
+            {
+                PageOnTop = true,
+                WindowStreamUrl = recording,
+                Window = new FrameRect(box.X, box.Y, box.Width, box.Height),
+                Audio = LiveAudio.Stream,
+                AudioStreamUrl = onAir.AudioUrl ?? recording,
+                Volume = channel.Volume,
+                Recorded = true,
+                SeekTo = onAir.ReplayPosition(DateTimeOffset.UtcNow),
+                RestartToken = $"replay:{replay.VideoId}:{onAir.Round}"
+            };
+        }
 
         if (onAir?.StreamUrl is { } url)
         {

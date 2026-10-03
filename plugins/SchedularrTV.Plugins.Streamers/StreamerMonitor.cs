@@ -4,7 +4,27 @@ using Microsoft.Extensions.Hosting;
 namespace SchedularrTV.Streamers;
 
 /// <summary>What a channel is airing: the streamer shown (the highest-priority one live) and the address of their video.</summary>
-public sealed record ChannelOnAir(string? ActiveKey, string? StreamUrl, DateTimeOffset? ResolvedAt, string? Problem, DateTimeOffset? TriedAt = null);
+/// <remarks>
+/// While nobody is live it can be a replay instead: <see cref="ReplayKey"/>'s recording <see cref="Replay"/>, playing as
+/// if it had started at <see cref="ReplayFrom"/> (so a restart picks up where it was), with its sound at
+/// <see cref="AudioUrl"/> when that's separate. <see cref="Round"/> counts the times it has started over.
+/// </remarks>
+public sealed record ChannelOnAir(string? ActiveKey, string? StreamUrl, DateTimeOffset? ResolvedAt, string? Problem, DateTimeOffset? TriedAt = null)
+{
+    public string? ReplayKey { get; init; }
+
+    public StreamSession? Replay { get; init; }
+
+    public DateTimeOffset ReplayFrom { get; init; }
+
+    public string? AudioUrl { get; init; }
+
+    public int Round { get; init; }
+
+    /// <summary>How far into the replay it is at <paramref name="now"/>.</summary>
+    public TimeSpan ReplayPosition(DateTimeOffset now) =>
+        Replay is { Length.Ticks: > 0 } replay && now > ReplayFrom ? TimeSpan.FromTicks((now - ReplayFrom).Ticks % replay.Length.Ticks) : TimeSpan.Zero;
+}
 
 /// <summary>
 /// Checks every streamer on the channels every minute or so: who's live (kept in their history, so predictions improve
@@ -237,8 +257,7 @@ public sealed class StreamerMonitor(
 
         if (active is null)
         {
-            _onAir[channel.Id] = new ChannelOnAir(null, null, null, null);
-            return current?.ActiveKey is not null;
+            return await UpdateReplayAsync(channel, current, cancellationToken).ConfigureAwait(false);
         }
 
         bool switched = !string.Equals(current?.ActiveKey, active.Key, StringComparison.OrdinalIgnoreCase);
@@ -273,6 +292,82 @@ public sealed class StreamerMonitor(
 
             _onAir[channel.Id] = new ChannelOnAir(active.Key, null, null, ex.Message, now);
             return switched || current?.StreamUrl is not null;
+        }
+    }
+
+    // Recordings that couldn't be opened (deleted, subscriber-only…), passed over from then on.
+    private readonly ConcurrentDictionary<string, bool> _unplayable = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The newest recording among the channel's streamers (at least ten minutes long, and openable), with its streamer;
+    /// null when there's none.
+    /// </summary>
+    public (StreamerEntry Streamer, StreamSession Recording)? LatestRecording(StreamerChannel channel) =>
+        channel.Streamers
+            .SelectMany(streamer => store.History(streamer.Key)
+                .Where(session => session.VideoId is { } id && session.Length >= TimeSpan.FromMinutes(10) && !_unplayable.ContainsKey(id))
+                .Select(session => (streamer, session)))
+            .OrderByDescending(pair => pair.session.Start)
+            .Select(pair => ((StreamerEntry, StreamSession)?)(pair.streamer, pair.session))
+            .FirstOrDefault();
+
+    /// <summary>
+    /// Nobody's live: the replay of whoever streamed last, when the channel wants one, else the countdown. A replay keeps
+    /// its place across restarts, starts over when it ends, and moves to a newer recording as soon as there is one.
+    /// True when the running channel needs restarting.
+    /// </summary>
+    private async Task<bool> UpdateReplayAsync(StreamerChannel channel, ChannelOnAir? current, CancellationToken cancellationToken)
+    {
+        DateTimeOffset now = clock.GetUtcNow();
+        bool wasShowing = current?.StreamUrl is not null;
+        if (channel.Offline.Replay == ReplayStyle.Off || LatestRecording(channel) is not { } latest)
+        {
+            _onAir[channel.Id] = new ChannelOnAir(null, null, null, null);
+            return wasShowing;
+        }
+
+        (StreamerEntry streamer, StreamSession recording) = latest;
+        bool same = current is { ActiveKey: null, StreamUrl: not null } && current.Replay?.VideoId == recording.VideoId;
+        bool ended = same && now - current!.ReplayFrom >= recording.Length;
+        bool stale = same && current!.ResolvedAt is { } resolved && now - resolved > RefreshAfter(streamer.Platform);
+        if (same && !ended && !stale)
+        {
+            return false;
+        }
+
+        // Starting over is a restart too, so the recording plays from its beginning again.
+        DateTimeOffset from = same && !ended ? current!.ReplayFrom : now;
+        int round = same && ended ? current!.Round + 1 : current?.Round ?? 0;
+        string page = streamer.Platform == StreamPlatform.Twitch
+            ? $"https://www.twitch.tv/videos/{Uri.EscapeDataString(recording.VideoId!)}"
+            : $"https://www.youtube.com/watch?v={Uri.EscapeDataString(recording.VideoId!)}";
+        try
+        {
+            (string video, string? audio) = await ytdlp.ResolveRecordingAsync(page, streamer.Platform, cancellationToken).ConfigureAwait(false);
+            _onAir[channel.Id] = new ChannelOnAir(null, video, now, null, now)
+            {
+                ReplayKey = streamer.Key,
+                Replay = recording,
+                ReplayFrom = from,
+                AudioUrl = audio,
+                Round = round
+            };
+            if (!same)
+            {
+                logger.LogInformation("Streamers: {Channel} is replaying {Streamer}'s stream from {Start}.", channel.Name,
+                    State(streamer.Key)?.Name(streamer) ?? streamer.Handle, recording.Start);
+            }
+
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("Streamers: {Channel} couldn't open the replay {Page}: {Message}", channel.Name, page, ex.Message);
+            _unplayable[recording.VideoId!] = true;
+
+            // The next round tries the next newest recording.
+            _onAir[channel.Id] = new ChannelOnAir(null, null, null, null);
+            return wasShowing;
         }
     }
 

@@ -229,7 +229,7 @@ public sealed class StreamersTests : IDisposable
               "broadcastSettings":{"title":"Ranked grind","game":{"displayName":"Valorant"}},
               "stream":{"id":"1","createdAt":"2026-09-30T10:00:00Z","viewersCount":12345,"game":{"displayName":"Valorant"}},
               "lastBroadcast":{"startedAt":"2026-09-30T10:00:00Z","title":"Ranked grind"},
-              "videos":{"edges":[{"node":{"createdAt":"2026-09-28T18:00:00Z","lengthSeconds":10800,"title":"Old"}}]}}}}
+              "videos":{"edges":[{"node":{"id":"2250001","createdAt":"2026-09-28T18:00:00Z","lengthSeconds":10800,"title":"Old"}}]}}}}
             """);
         JsonElement user = TwitchClient.User(live.RootElement)!.Value;
 
@@ -239,7 +239,7 @@ public sealed class StreamersTests : IDisposable
         Assert.Equal(("Ranked grind", "Valorant", 12345), (snapshot.Title, snapshot.Game, snapshot.Viewers));
         Assert.Equal(new DateTimeOffset(2026, 9, 30, 10, 0, 0, TimeSpan.Zero), snapshot.StartedAt);
         StreamSession past = Assert.Single(TwitchClient.ParseVideos(user));
-        Assert.Equal(TimeSpan.FromHours(3), past.Length);
+        Assert.Equal((TimeSpan.FromHours(3), "2250001"), (past.Length, past.VideoId));
 
         using JsonDocument missing = JsonDocument.Parse("""{"data":{"user":null}}""");
         Assert.Null(TwitchClient.User(missing.RootElement));
@@ -384,6 +384,50 @@ public sealed class StreamersTests : IDisposable
         // A change to how the page looks gives it a new address, so a running channel restarts with it.
         channel.Chat.Style = ChatStyle.Bubbles;
         Assert.NotEqual(offline.PageUrl, StreamerPage.Spec(channel, null, Settings()).PageUrl);
+    }
+
+    [Fact]
+    public void A_replay_plays_from_where_it_has_got_to_under_the_page()
+    {
+        var channel = new StreamerChannel { Id = "fri", Name = "Friday", Number = 900, Offline = new OfflineOptions { Replay = ReplayStyle.Framed } };
+        var recording = new StreamSession(Now.AddDays(-1), TimeSpan.FromHours(3), "Last night", "v123");
+        var onAir = new ChannelOnAir(null, "https://vod.example/video.m3u8", Now, null)
+        {
+            ReplayKey = "twitch:a",
+            Replay = recording,
+            ReplayFrom = DateTimeOffset.UtcNow - TimeSpan.FromHours(4),
+            AudioUrl = "https://vod.example/audio.m4a"
+        };
+
+        LiveStreamSpec spec = StreamerPage.Spec(channel, onAir, Settings());
+        List<string> arguments = [.. LiveStream.Arguments(spec, null)];
+
+        Assert.True(spec.PageOnTop && spec.Recorded);
+        Assert.Equal(new FrameRect(40, 104, 880, 495), spec.Window);
+        Assert.Equal("https://vod.example/audio.m4a", spec.AudioStreamUrl);
+        Assert.InRange(spec.SeekTo!.Value, TimeSpan.FromMinutes(59), TimeSpan.FromMinutes(61));
+        int window = arguments.IndexOf("https://vod.example/video.m3u8");
+        Assert.Equal(new[] { "-re", "-ss" }, new[] { arguments[window - 6], arguments[window - 5] });
+        Assert.Contains("https://vod.example/audio.m4a", arguments);
+
+        // Where it starts isn't a change of settings, but starting over is.
+        Assert.Equal(spec.Fingerprint, (spec with { SeekTo = TimeSpan.Zero }).Fingerprint);
+        Assert.NotEqual(spec.Fingerprint, StreamerPage.Spec(channel, onAir with { Round = 1 }, Settings()).Fingerprint);
+
+        channel.Offline.Replay = ReplayStyle.Popup;
+        Assert.Equal(new FrameRect(0, 0, 1280, 720), StreamerPage.Spec(channel, onAir, Settings()).Window);
+        Assert.Equal(TimeSpan.FromHours(1), onAir.ReplayPosition(onAir.ReplayFrom + TimeSpan.FromHours(7)));
+    }
+
+    [Fact]
+    public void A_recording_found_later_gives_a_seen_stream_its_video_and_real_length()
+    {
+        List<StreamSession> known = [new(Now.AddHours(-5), TimeSpan.FromHours(4))];
+
+        StreamerStore.Merge(known, [new(Now.AddHours(-5).AddMinutes(2), TimeSpan.FromHours(3.5), "Stream", "v9")], Now - StreamerStore.HistoryKept);
+
+        StreamSession session = Assert.Single(known);
+        Assert.Equal(("v9", TimeSpan.FromHours(3.5)), (session.VideoId, session.Length));
     }
 
     [Fact]

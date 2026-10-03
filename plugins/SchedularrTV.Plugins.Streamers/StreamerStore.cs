@@ -115,6 +115,8 @@ public sealed class StreamerStore
         offline.BackgroundColor = IsColour(offline.BackgroundColor) ? offline.BackgroundColor.ToLowerInvariant() : "#0e0e14";
         offline.MusicFolder = string.IsNullOrWhiteSpace(offline.MusicFolder) ? null : offline.MusicFolder.Trim().Trim('"');
         offline.MusicVolume = Math.Clamp(offline.MusicVolume, 0, 2);
+        offline.ReplayNoteEveryMinutes = Math.Clamp(offline.ReplayNoteEveryMinutes, 1, 120);
+        offline.ReplayNoteSeconds = Math.Clamp(offline.ReplayNoteSeconds, 3, 120);
     }
 
     public static bool IsColour(string? value) =>
@@ -172,12 +174,16 @@ public sealed class StreamerStore
                 known.Add(session);
                 changed = true;
             }
-            else if (session.Length > known[same].Length + TimeSpan.FromMinutes(1) || (known[same].Title is null && session.Title is not null))
+            else if (session.Length > known[same].Length + TimeSpan.FromMinutes(1) || (known[same].Title is null && session.Title is not null)
+                     || (session.VideoId is not null && known[same].VideoId != session.VideoId))
             {
+                // A recording's length is the stream's as it really was, so it wins over one seen while live.
                 known[same] = known[same] with
                 {
-                    Length = session.Length > known[same].Length ? session.Length : known[same].Length,
-                    Title = known[same].Title ?? session.Title
+                    Length = session.VideoId is not null && session.Length > TimeSpan.Zero ? session.Length
+                        : session.Length > known[same].Length ? session.Length : known[same].Length,
+                    Title = known[same].Title ?? session.Title,
+                    VideoId = session.VideoId ?? known[same].VideoId
                 };
                 changed = true;
             }

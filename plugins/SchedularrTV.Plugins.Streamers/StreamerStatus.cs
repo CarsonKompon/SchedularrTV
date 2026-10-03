@@ -1,7 +1,8 @@
 namespace SchedularrTV.Streamers;
 
 /// <summary>One past (or current) stream: when it started and how long it ran.</summary>
-public sealed record StreamSession(DateTimeOffset Start, TimeSpan Length, string? Title = null);
+/// <param name="VideoId">Its recording (a Twitch past broadcast, a YouTube video), when there is one to replay.</param>
+public sealed record StreamSession(DateTimeOffset Start, TimeSpan Length, string? Title = null, string? VideoId = null);
 
 /// <summary>What a platform said about a streamer just now.</summary>
 public sealed record StreamerSnapshot

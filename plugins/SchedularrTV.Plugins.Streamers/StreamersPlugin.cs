@@ -127,8 +127,19 @@ public static class StreamerViews
                 next?.Kind == PredictionKind.Scheduled ? state?.Latest?.ScheduledTitle : null);
         })];
 
-        string mode = active is null ? "offline" : onAir?.StreamUrl is not null && string.Equals(onAir.ActiveKey, active.Key, StringComparison.OrdinalIgnoreCase) ? "live" : "opening";
-        return new PageState(mode, live, others, upcoming, active is not null ? onAir?.Problem : null, now.ToUnixTimeMilliseconds());
+        ReplayCard? replay = null;
+        if (active is null && onAir is { ActiveKey: null, StreamUrl: not null, Replay: { } recording, ReplayKey: { } key }
+            && channel.Streamers.FirstOrDefault(streamer => string.Equals(streamer.Key, key, StringComparison.OrdinalIgnoreCase)) is { } who)
+        {
+            StreamerState? state = monitor.State(who.Key);
+            replay = new ReplayCard(state?.Name(who) ?? who.Handle, StreamerHandles.PlatformName(who.Platform), recording.Title, state?.Latest?.Avatar,
+                recording.Start.ToUnixTimeMilliseconds(), (int)recording.Length.TotalMinutes);
+        }
+
+        string mode = active is null
+            ? replay is null ? "offline" : "replay"
+            : onAir?.StreamUrl is not null && string.Equals(onAir.ActiveKey, active.Key, StringComparison.OrdinalIgnoreCase) ? "live" : "opening";
+        return new PageState(mode, live, others, upcoming, active is not null ? onAir?.Problem : null, now.ToUnixTimeMilliseconds(), replay);
     }
 
     private static LiveCard Card(StreamerEntry streamer, StreamerState? state) => new(

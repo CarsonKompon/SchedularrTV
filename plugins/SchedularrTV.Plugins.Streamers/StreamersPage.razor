@@ -85,6 +85,11 @@
             {
                 <span class="pill pill-live">● @Name(active) is live</span>
             }
+            else if (saved is not null && Monitor.OnAir(saved.Id) is { StreamUrl: not null, ReplayKey: { } replayKey }
+                     && saved.Streamers.FirstOrDefault(streamer => streamer.Key == replayKey) is { } replaying)
+            {
+                <span class="pill pill-muted">↺ Replaying @Name(replaying)</span>
+            }
             @if (status is not null)
             {
                 <span class="pill pill-ok">On air · @status.Viewers watching</span>
@@ -274,6 +279,29 @@
 
                     <h3>While nobody is live</h3>
                     <div class="grid grid-2">
+                        <label class="field"><span>Play</span>
+                            <select value="@channel.Offline.Replay" @onchange="e => Change(() => channel.Offline.Replay = Enum.Parse<ReplayStyle>(Text(e)))">
+                                <option value="Off">The countdown</option>
+                                <option value="Popup">A replay of whoever streamed last, with a card now and then</option>
+                                <option value="Framed">A replay of whoever streamed last, framed, with the countdown beside it</option>
+                            </select></label>
+                        @if (channel.Offline.Replay == ReplayStyle.Popup)
+                        {
+                            <div class="grid grid-2">
+                                <label class="field"><span>Card every (minutes)</span>
+                                    <input type="number" min="1" value="@channel.Offline.ReplayNoteEveryMinutes" @onchange="e => Change(() => channel.Offline.ReplayNoteEveryMinutes = Whole(e, 8))" /></label>
+                                <label class="field"><span>For (seconds)</span>
+                                    <input type="number" min="3" value="@channel.Offline.ReplayNoteSeconds" @onchange="e => Change(() => channel.Offline.ReplayNoteSeconds = Whole(e, 12))" /></label>
+                            </div>
+                        }
+                    </div>
+                    @if (channel.Offline.Replay != ReplayStyle.Off)
+                    {
+                        <p class="hint">The newest saved stream among the channel's streamers (a Twitch past broadcast or a YouTube stream recording) plays,
+                            from where it has got to, round and round, until someone goes live or there's a newer one. The countdown below still shows:
+                            @(channel.Offline.Replay == ReplayStyle.Framed ? "beside the replay." : "on the card.") With no recording to play, the countdown fills the picture.</p>
+                    }
+                    <div class="grid grid-2">
                         <label class="field"><span>Heading</span>
                             <input type="text" value="@channel.Offline.Heading" @onchange="e => Change(() => channel.Offline.Heading = Text(e))" /></label>
                         <label class="field"><span>Message <span class="muted">(optional)</span></span>
@@ -304,6 +332,10 @@
                     <div class="row" style="gap:6px;margin-bottom:8px;">
                         <button class="btn btn-sm @(_previewMode == PreviewLive ? "btn-primary" : "")" type="button" @onclick="ShowLiveAsync">Someone's live</button>
                         <button class="btn btn-sm @(_previewMode == PreviewOffline ? "btn-primary" : "")" type="button" @onclick="ShowOfflineAsync">Nobody's live</button>
+                        @if (channel.Offline.Replay != ReplayStyle.Off)
+                        {
+                            <button class="btn btn-sm @(_previewMode == PreviewReplay ? "btn-primary" : "")" type="button" @onclick="ShowReplayAsync">Replay</button>
+                        }
                     </div>
                     <div class="streamer-preview">
                         <iframe name="streamersPreview" title="Live preview" src="@PreviewSource(channel)" @onload="PushPreviewAsync"></iframe>
@@ -359,6 +391,7 @@
 
     private const string PreviewLive = "live";
     private const string PreviewOffline = "offline";
+    private const string PreviewReplay = "replay";
 
     private List<StreamerChannel> _channels = [];
     private StreamerChannel? _editing;
@@ -581,6 +614,12 @@
     private async Task ShowOfflineAsync()
     {
         _previewMode = PreviewOffline;
+        await PushPreviewAsync();
+    }
+
+    private async Task ShowReplayAsync()
+    {
+        _previewMode = PreviewReplay;
         await PushPreviewAsync();
     }
 

@@ -82,6 +82,28 @@
   #ticker .label { position: absolute; left: 0; top: 0; bottom: 0; z-index: 1; background: #e91916; color: #fff; font-weight: 800; letter-spacing: .1em; font-size: 15px; padding: 0 16px; display: flex; align-items: center; }
   #ticker .run { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; white-space: nowrap; font-size: 19px; font-weight: 600; padding-left: 1280px; animation: scroll linear infinite; }
   @keyframes scroll { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+
+  /* Replays: framed (a window in a frame, the countdown beside it) or full picture with a card now and then */
+  #replayframe { position: absolute; border-radius: 14px; box-shadow: 0 0 0 3000px var(--bgc), 0 0 0 4px var(--accent), 0 0 40px 6px color-mix(in srgb, var(--accent) 45%, transparent); }
+  #replaytop { position: absolute; left: 40px; top: 30px; width: 880px; display: flex; align-items: center; gap: 14px; }
+  .replaytag { flex: none; font-size: 15px; font-weight: 800; letter-spacing: .14em; padding: 6px 12px; border-radius: 8px; background: var(--accent); color: #fff; }
+  .replaytag::before { content: "↺ "; }
+  #replaytitle { font-size: 24px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #replaybelow { position: absolute; left: 40px; top: 618px; width: 880px; font-size: 18px; color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #replayside { position: absolute; left: 950px; top: 104px; width: 300px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; }
+  #replayside .avatar { width: 96px; height: 96px; border-radius: 50%; border: 3px solid var(--accent); object-fit: cover; background: rgba(255,255,255,.08); }
+  #replayside .heading { font-size: 14px; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); font-weight: 700; margin-top: 6px; }
+  #replayside .who { font-size: 26px; font-weight: 800; max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #replayside .count { font-size: 46px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.05; }
+  #replayside .when { font-size: 15px; color: var(--soft); }
+  #replayside .list { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; width: 100%; }
+  #replayside .list .other { justify-content: flex-start; }
+  #replaynote { position: absolute; left: 32px; bottom: 32px; width: 520px; display: flex; gap: 14px; align-items: center; padding: 14px 18px 14px 14px; border-radius: 16px;
+    background: rgba(14,14,20,.9); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 12px 40px rgba(0,0,0,.5); transition: opacity .5s, transform .5s; }
+  #replaynote.away { opacity: 0; transform: translateY(16px); }
+  #replaynote img { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; flex: none; background: rgba(255,255,255,.1); }
+  #replaynote .line { font-size: 17px; font-weight: 600; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #replaynote .meta { font-size: 14px; color: var(--soft); margin-top: 3px; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -101,6 +123,20 @@
 </div>
 <div id="opening" class="hidden"><img id="openingAvatar" alt=""><b id="openingName"></b><span id="openingNote"></span></div>
 <div id="fakevideo" class="hidden">The stream</div>
+<div id="replay" class="hidden">
+  <div id="replayframe"></div>
+  <div id="replaytop"><span class="replaytag">REPLAY</span><span id="replaytitle"></span></div>
+  <div id="replaybelow"></div>
+  <div id="replayside">
+    <img class="avatar" id="replayavatar" alt="">
+    <div class="heading" id="replayheading"></div>
+    <div class="who" id="replaywho"></div>
+    <div class="count" id="replaycount"></div>
+    <div class="when" id="replaywhen"></div>
+    <div class="list" id="replayothers"></div>
+  </div>
+</div>
+<div id="replaynote" class="away hidden"><img alt=""><div><span class="replaytag">REPLAY</span><div class="line"></div><div class="meta"></div></div></div>
 <div id="chatpanel" class="hidden"></div>
 <div id="chat" class="hidden"></div>
 <div id="chatnote" class="hidden"></div>
@@ -150,8 +186,18 @@
     panel.style.left = cfg.chat.layout === "PanelLeft" ? "0px" : "960px";
     panel.dataset.on = isPanel ? "1" : "";
     chat.className = `s-${cfg.chat.style}` + (cfg.chat.backgroundOpacity > 0 && !isPanel && cfg.chat.style !== "Bubbles" ? " boxed" : "");
-    const fake = $("fakevideo");
-    Object.assign(fake.style, { left: cfg.video.x + "px", top: cfg.video.y + "px", width: cfg.video.width + "px", height: cfg.video.height + "px" });
+    const frame = cfg.replayFrame;
+    Object.assign($("replayframe").style, { left: frame.x + "px", top: frame.y + "px", width: frame.width + "px", height: frame.height + "px" });
+    placeFake();
+  }
+
+  // The editor's stand-in for the stream (or replay), where the real one would be.
+  function placeFake() {
+    const box = mode === "replay"
+      ? (cfg.offline.replay === "Framed" ? cfg.replayFrame : { x: 0, y: 0, width: 1280, height: 720 })
+      : cfg.video;
+    Object.assign($("fakevideo").style, { left: box.x + "px", top: box.y + "px", width: box.width + "px", height: box.height + "px" });
+    $("fakevideo").textContent = mode === "replay" ? "The replay" : "The stream";
   }
 
   function placePopup() {
@@ -181,13 +227,18 @@
     if (current !== mode) {
       mode = current;
       if (mode !== "live") { clearChat(); hideReminder(); }
+      if (mode === "replay") nextReplayNote = now() + 5000; else hideReplayNote();
+      placeFake();
     }
     $("offline").classList.toggle("hidden", mode !== "offline");
     $("opening").classList.toggle("hidden", mode !== "opening");
+    const framed = mode === "replay" && cfg.offline.replay === "Framed";
+    $("replay").classList.toggle("hidden", !framed);
+    if (framed) renderReplayFrame();
     const showChat = mode === "live" && cfg.chat.enabled;
     $("chat").classList.toggle("hidden", !showChat);
     $("chatpanel").classList.toggle("hidden", !(showChat && $("chatpanel").dataset.on));
-    $("fakevideo").classList.toggle("hidden", !(cfg.preview && mode === "live"));
+    $("fakevideo").classList.toggle("hidden", !(cfg.preview && (mode === "live" || mode === "replay")));
     if (!showChat) $("chatnote").classList.add("hidden");
     if (mode === "opening" && state && state.live) {
       $("openingAvatar").src = state.live.avatar || blank;
@@ -252,22 +303,100 @@
     return `in ${Math.round(minutes / 1440)} days`;
   }
 
-  function tick() {
-    const date = new Date(now());
-    $("clock").textContent = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    if (mode !== "offline") return;
-    const upcoming = (state && state.upcoming) || [];
-    const next = upcoming.find(u => u.at != null);
-    const countdown = $("countdown");
-    if (!next) { countdown.textContent = "—"; return; }
-    let left = Math.floor((next.at - now()) / 1000);
-    if (left <= 0) { countdown.textContent = "Any minute now"; countdown.style.fontSize = "64px"; return; }
-    countdown.style.fontSize = "";
+  function nextStream() {
+    return ((state && state.upcoming) || []).find(u => u.at != null) || null;
+  }
+
+  // "02:13:45", "1d 04:00:00", or null once it's due.
+  function countdownText(at) {
+    let left = Math.floor((at - now()) / 1000);
+    if (left <= 0) return null;
     const d = Math.floor(left / 86400); left -= d * 86400;
     const h = Math.floor(left / 3600); left -= h * 3600;
     const m = Math.floor(left / 60); const s = left - m * 60;
     const pad = n => String(n).padStart(2, "0");
-    countdown.textContent = d > 0 ? `${d}d ${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(h)}:${pad(m)}:${pad(s)}`;
+    return d > 0 ? `${d}d ${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(h)}:${pad(m)}:${pad(s)}`;
+  }
+
+  function tick() {
+    const date = new Date(now());
+    $("clock").textContent = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    const next = nextStream();
+    if (mode === "replay") {
+      const left = next ? countdownText(next.at) : null;
+      $("replaycount").textContent = !next ? "—" : left ?? "Any minute now";
+      $("replaycount").style.fontSize = next && !left ? "30px" : "";
+      if (!$("replaynote").classList.contains("hidden")) $("replaynote").querySelector(".meta").textContent = replayNoteMeta();
+      return;
+    }
+    if (mode !== "offline") return;
+    const countdown = $("countdown");
+    if (!next) { countdown.textContent = "—"; return; }
+    const left = countdownText(next.at);
+    if (!left) { countdown.textContent = "Any minute now"; countdown.style.fontSize = "64px"; return; }
+    countdown.style.fontSize = "";
+    countdown.textContent = left;
+  }
+
+  // ---- Replays ----
+  let nextReplayNote = 0, replayNoteTimer = null;
+
+  function streamedWhen(replay) {
+    const at = new Date(replay.startedAt);
+    const length = replay.minutes >= 90 ? `${Math.round(replay.minutes / 60 * 2) / 2} h` : `${replay.minutes} min`;
+    return `Streamed ${dayName(at)} ${at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} · ${length} · ${replay.platform}`;
+  }
+
+  function renderReplayFrame() {
+    const replay = state && state.replay;
+    if (!replay) return;
+    $("replaytitle").textContent = replay.title ? `${replay.name}: ${replay.title}` : `${replay.name}'s last stream`;
+    $("replaybelow").textContent = streamedWhen(replay) + (cfg.offline.message ? ` · ${cfg.offline.message}` : "");
+    const next = nextStream();
+    $("replayheading").textContent = cfg.offline.heading;
+    $("replayavatar").src = (next && next.avatar) || blank;
+    $("replaywho").textContent = next ? next.name : "No stream expected yet";
+    $("replaywhen").textContent = next ? describeWhen(next) : "";
+    const list = $("replayothers");
+    list.replaceChildren();
+    if (cfg.offline.showEveryone) {
+      for (const u of ((state && state.upcoming) || []).filter(u => u !== next).slice(0, 4)) {
+        const pill = document.createElement("div"); pill.className = "other";
+        const img = document.createElement("img"); img.src = u.avatar || blank; img.alt = "";
+        const text = document.createElement("div");
+        const name = document.createElement("b"); name.textContent = u.name;
+        const at = document.createElement("span"); at.textContent = u.at != null ? relative(u.at) : "no guess yet";
+        text.append(name, at); pill.append(img, text); list.append(pill);
+      }
+    }
+    tick();
+  }
+
+  function replayNoteMeta() {
+    const next = nextStream();
+    if (!next) return "Live streams take over as soon as someone goes live.";
+    const left = countdownText(next.at);
+    return left ? `Next live: ${next.name} in ${left}` : `${next.name} is expected live any minute`;
+  }
+
+  function replayNoteTick() {
+    if (mode !== "replay" || cfg.offline.replay !== "Popup" || replayNoteTimer || !nextReplayNote || now() < nextReplayNote) return;
+    const replay = state && state.replay;
+    nextReplayNote = now() + cfg.offline.replayNoteEveryMinutes * 60000;
+    if (!replay) return;
+    const note = $("replaynote");
+    note.querySelector("img").src = replay.avatar || blank;
+    note.querySelector(".line").textContent = `${replay.name}'s stream from ${dayName(new Date(replay.startedAt))}` + (replay.title ? `: ${replay.title}` : "");
+    note.querySelector(".meta").textContent = replayNoteMeta();
+    note.classList.remove("hidden");
+    requestAnimationFrame(() => note.classList.remove("away"));
+    replayNoteTimer = setTimeout(hideReplayNote, cfg.offline.replayNoteSeconds * 1000);
+  }
+
+  function hideReplayNote() {
+    clearTimeout(replayNoteTimer); replayNoteTimer = null;
+    $("replaynote").classList.add("away");
+    setTimeout(() => { if (!replayNoteTimer) $("replaynote").classList.add("hidden"); }, 600);
   }
 
   // ---- Chat ----
@@ -394,8 +523,10 @@
         { name: "Streamer", platform: "Twitch", avatar: null, at: t + 2 * 3600e3 + 754e3, minutes: 180, confidence: .8, kind: "Weekly", title: null },
         { name: "Another streamer", platform: "YouTube", avatar: null, at: t + 26 * 3600e3, minutes: 120, confidence: .4, kind: "Daily", title: null }
       ],
+      replay: { name: "Streamer", platform: "Twitch", title: "Last night's stream", avatar: null, startedAt: t - 20 * 3600e3, minutes: 214 },
       serverTime: t
     };
+    if (previewMode === "replay") { hideReplayNote(); nextReplayNote = Date.now() + 600; }
     clearChat();
     const lines = [["viewer_one", "#74c0fc", "hello chat!"], ["Mod", "#8ce99a", "Welcome in everyone"], ["someone", "#f783ac", "that was so good"],
       ["lurker42", "#ffd43b", "first time catching a stream live"], ["viewer_one", "#74c0fc", "LET'S GO"]];
@@ -417,7 +548,7 @@
   poll();
   setInterval(poll, 5000);
   setInterval(pollChat, 1500);
-  setInterval(() => { tick(); reminderTick(); }, 1000);
+  setInterval(() => { tick(); reminderTick(); replayNoteTick(); }, 1000);
 })();
 </script>
 </body>

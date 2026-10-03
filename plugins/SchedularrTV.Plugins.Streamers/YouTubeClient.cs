@@ -134,7 +134,7 @@ public sealed partial class YouTubeClient(IHttpClientFactory http)
             : int.TryParse(Text(Child(root, "videoDetails"), "lengthSeconds"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int seconds)
                 ? TimeSpan.FromSeconds(seconds)
                 : TimeSpan.Zero;
-        return new StreamSession(start, length, Text(Child(root, "videoDetails"), "title"));
+        return new StreamSession(start, length, Text(Child(root, "videoDetails"), "title"), Text(Child(root, "videoDetails"), "videoId"));
     }
 
     /// <summary>The video ids on a channel's Live tab, newest first.</summary>
