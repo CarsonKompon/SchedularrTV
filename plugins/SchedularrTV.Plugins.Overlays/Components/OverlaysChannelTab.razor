@@ -1,0 +1,348 @@
+@* Channel tab: the overlays the channel and each of its blocks show (their own, another channel's, or none), and their editor. *@
+
+@if (Context.Channel is { } channel)
+{
+    <link rel="stylesheet" href="plugins/overlays/overlays.css" />
+    <div class="ov-scope">
+        <div class="card">
+            <div class="card-head"><h2>Overlays</h2></div>
+            <div class="grid grid-2">
+                <label class="field">
+                    <span>Settings for</span>
+                    <select value="@_blockIndex" @onchange="SelectScope" aria-label="Settings for">
+                        <option value="-1">The whole channel</option>
+                        @for (int index = 0; index < channel.Blocks.Count; index++)
+                        {
+                            BlockConfig block = channel.Blocks[index];
+                            <option value="@index">Block: @block.Name (@ModeName(ModeOf(OverlayResolver.Read(block.Plugins), isBlock: true), isBlock: true))</option>
+                        }
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Overlays shown</span>
+                    <select value="@Mode" @onchange="SetMode" aria-label="Overlays shown">
+                        @foreach (string mode in Block is null ? ChannelModes : BlockModes)
+                        {
+                            <option value="@mode">@ModeName(mode, Block is not null)</option>
+                        }
+                    </select>
+                </label>
+            </div>
+
+            @if (Mode == FromMode)
+            {
+                <label class="field">
+                    <span>Channel to match</span>
+                    <select value="@_section?.From" @onchange="SetFrom" aria-label="Channel to match">
+                        @if (!Others.Any(other => string.Equals(other.Id, _section?.From, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            <option value="@_section?.From">@(string.IsNullOrWhiteSpace(_section?.From) ? "Choose a channel" : $"{_section?.From} (missing)")</option>
+                        }
+                        @foreach (ChannelConfig other in Others)
+                        {
+                            <option value="@other.Id">@other.Number - @other.Name</option>
+                        }
+                    </select>
+                </label>
+                <p class="hint">
+                    Always shows the overlays set up on @(Source?.Name ?? "that channel"), including any later changes to them, so the two stay the same.
+                    {channel} reads as @(Source?.Name ?? "that channel").
+                    @if (Source is not null)
+                    {
+                        <a href="@($"channels/{Uri.EscapeDataString(Source.Id)}")">Edit them on @Source.Name</a>
+                    }
+                </p>
+                @if (Source is not null)
+                {
+                    <p class="hint">@Summary(OverlayResolver.Read(Source.Plugins))</p>
+                }
+                @if (OverlayResolver.LinkProblem(Context.Config, channel, _section) is { } problem)
+                {
+                    <p class="hint warn" role="alert">@problem</p>
+                }
+            }
+            else if (Mode == InheritMode)
+            {
+                <p class="hint">This block shows the channel's overlays. @Summary(OverlayResolver.Read(channel.Plugins))</p>
+            }
+            else if (Mode == OffMode)
+            {
+                <p class="hint">No overlays show in this block.</p>
+            }
+            else if (_section is { } own)
+            {
+                <div class="row row-wrap" style="gap:8px;align-items:end;">
+                    <label class="field" style="margin:0;min-width:220px;">
+                        <span>Add an overlay</span>
+                        <select value="" @onchange="AddPreset" aria-label="Add an overlay">
+                            <option value="">Choose…</option>
+                            @foreach (OverlayPresets.Preset preset in OverlayPresets.All)
+                            {
+                                <option value="@preset.Key">@preset.Name</option>
+                            }
+                        </select>
+                    </label>
+                    @if (CopySources.Any())
+                    {
+                        <label class="field" style="margin:0;min-width:220px;">
+                            <span>Copy in another channel's</span>
+                            <select value="" @onchange="CopyIn" aria-label="Copy in another channel's overlays">
+                                <option value="">Choose…</option>
+                                @foreach ((ChannelConfig other, int count) in CopySources)
+                                {
+                                    <option value="@other.Id">@other.Number - @other.Name (@count)</option>
+                                }
+                            </select>
+                        </label>
+                    }
+                </div>
+                <p class="hint">
+                    Copying in makes this @(Block is null ? "channel's" : "block's") own copies, changed separately from then on. To keep it the same
+                    as another channel's, choose <em>Same as another channel</em> above instead.
+                </p>
+
+                @if (own.Overlays.Count == 0)
+                {
+                    <div class="empty">No overlays yet. Add one above.</div>
+                }
+                else
+                {
+                    <div class="ov-list">
+                        @for (int index = 0; index < own.Overlays.Count; index++)
+                        {
+                            int position = index;
+                            Overlay overlay = own.Overlays[index];
+                            <div class="ov-item @(ReferenceEquals(overlay, _selected) ? "on" : "")" @key="overlay">
+                                <label class="check" style="margin:0;" title="Shown">
+                                    <input type="checkbox" checked="@overlay.Enabled" @onchange="e => Set(() => overlay.Enabled = e.Value is true)" />
+                                </label>
+                                <button class="ov-item-name" type="button" @onclick="() => _selected = overlay">
+                                    <strong>@overlay.Name</strong>
+                                    <span class="muted">@(overlay.Kind == OverlayKinds.File ? "File" : "Design") · @OverlayDescriptions.When(overlay)</span>
+                                </button>
+                                <div class="spacer"></div>
+                                <button class="btn btn-sm btn-icon" type="button" title="Up" disabled="@(position == 0)" @onclick="() => Move(position, -1)">↑</button>
+                                <button class="btn btn-sm btn-icon" type="button" title="Down" disabled="@(position == own.Overlays.Count - 1)" @onclick="() => Move(position, 1)">↓</button>
+                                <button class="btn btn-sm" type="button" @onclick="() => Duplicate(overlay)">Duplicate</button>
+                                <button class="btn btn-sm btn-ghost" type="button" @onclick="() => Remove(overlay)">Delete</button>
+                            </div>
+                        }
+                    </div>
+                    <p class="hint">Lower in the list draws on top.</p>
+                }
+            }
+        </div>
+
+        @if (Mode == OwnMode && _selected is { } selected && _section?.Overlays.Contains(selected) == true)
+        {
+            <OverlayEditor @key="selected" Overlay="selected" ChannelName="@channel.Name" Changed="Commit" />
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public PluginEditorContext Context { get; set; } = default!;
+
+    private const string OwnMode = "own";
+    private const string FromMode = "from";
+    private const string InheritMode = "inherit";
+    private const string OffMode = "off";
+    private static readonly string[] ChannelModes = [OwnMode, FromMode];
+    private static readonly string[] BlockModes = [InheritMode, OwnMode, FromMode, OffMode];
+
+    private int _blockIndex = -1;
+    private OverlaysSection? _section;
+    private Overlay? _selected;
+    private ChannelConfig? _loadedFor;
+    private int _loadedIndex = -2;
+
+    private ChannelConfig Channel => Context.Channel!;
+
+    private BlockConfig? Block => _blockIndex >= 0 && _blockIndex < Channel.Blocks.Count ? Channel.Blocks[_blockIndex] : null;
+
+    private string Mode => ModeOf(_section, Block is not null);
+
+    private IEnumerable<ChannelConfig> Others => Context.Config.Channels
+        .Where(other => !string.Equals(other.Id, Channel.Id, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(other => other.Number);
+
+    private ChannelConfig? Source => Context.Config.Channels.FirstOrDefault(other => string.Equals(other.Id, _section?.From, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Channels with overlays of their own to copy in.</summary>
+    private IEnumerable<(ChannelConfig Channel, int Count)> CopySources => Others
+        .Select(other => (other, OverlayResolver.Read(other.Plugins) is { From: null or "", Overlays.Count: > 0 } section ? section.Overlays.Count : 0))
+        .Where(pair => pair.Item2 > 0);
+
+    protected override void OnParametersSet()
+    {
+        if (_blockIndex >= Channel.Blocks.Count)
+        {
+            _blockIndex = -1;
+        }
+
+        if (!ReferenceEquals(_loadedFor, Context.Channel) || _loadedIndex != _blockIndex)
+        {
+            Load();
+        }
+    }
+
+    /// <summary>The section being edited, read afresh for the scope chosen.</summary>
+    private void Load()
+    {
+        _loadedFor = Context.Channel;
+        _loadedIndex = _blockIndex;
+        _section = OverlayResolver.Read(Block is { } block ? block.Plugins : Channel.Plugins);
+        _selected = _section?.Overlays.FirstOrDefault();
+    }
+
+    private static string ModeOf(OverlaysSection? section, bool isBlock) => section switch
+    {
+        null => isBlock ? InheritMode : OwnMode,
+        { From.Length: > 0 } => FromMode,
+        { Enabled: false } when isBlock => OffMode,
+        _ => OwnMode
+    };
+
+    private static string ModeName(string mode, bool isBlock) => mode switch
+    {
+        InheritMode => "Same as this channel",
+        FromMode => "Same as another channel",
+        OffMode => "None",
+        _ => isBlock ? "Its own overlays" : "This channel's own overlays"
+    };
+
+    private static string Summary(OverlaysSection? section) => section switch
+    {
+        null or { Enabled: false } => "None are set up there.",
+        { From.Length: > 0 } from => $"Those come from channel '{from.From}'.",
+        { Overlays.Count: 0 } => "None yet.",
+        _ => $"Overlays: {string.Join(", ", section.Overlays.Where(overlay => overlay.Enabled).Select(overlay => overlay.Name))}."
+    };
+
+    private void SelectScope(ChangeEventArgs e)
+    {
+        _blockIndex = int.TryParse(e.Value?.ToString(), out int index) ? index : -1;
+        Load();
+    }
+
+    private void SetMode(ChangeEventArgs e)
+    {
+        string mode = e.Value?.ToString() ?? OwnMode;
+        _section = mode switch
+        {
+            InheritMode => null,
+            OffMode => new OverlaysSection { Enabled = false },
+            FromMode => new OverlaysSection { From = Others.FirstOrDefault()?.Id },
+            // Keeps the overlays when switching a block that was off back on.
+            _ => _section is { From: null or "" } existing ? Enable(existing) : new OverlaysSection()
+        };
+        _selected = _section?.Overlays.FirstOrDefault();
+        Commit();
+    }
+
+    private static OverlaysSection Enable(OverlaysSection section)
+    {
+        section.Enabled = true;
+        return section;
+    }
+
+    private void SetFrom(ChangeEventArgs e)
+    {
+        if (_section is { } section)
+        {
+            section.From = e.Value?.ToString();
+            Commit();
+        }
+    }
+
+    private void AddPreset(ChangeEventArgs e)
+    {
+        if (_section is { } section && OverlayPresets.All.FirstOrDefault(preset => preset.Key == e.Value?.ToString()) is { } preset)
+        {
+            Overlay overlay = preset.Create();
+            section.Overlays.Add(overlay);
+            _selected = overlay;
+            Commit();
+        }
+    }
+
+    private void CopyIn(ChangeEventArgs e)
+    {
+        if (_section is { } section
+            && Others.FirstOrDefault(other => other.Id == e.Value?.ToString()) is { } other
+            && OverlayResolver.Read(other.Plugins) is { } theirs)
+        {
+            List<Overlay> copies = [.. theirs.Overlays.Select(overlay => overlay.Copy())];
+            section.Overlays.AddRange(copies);
+            _selected = copies.FirstOrDefault() ?? _selected;
+            Commit();
+        }
+    }
+
+    private void Duplicate(Overlay overlay)
+    {
+        if (_section is { } section)
+        {
+            Overlay copy = overlay.Copy();
+            copy.Name += " (copy)";
+            section.Overlays.Insert(section.Overlays.IndexOf(overlay) + 1, copy);
+            _selected = copy;
+            Commit();
+        }
+    }
+
+    private void Remove(Overlay overlay)
+    {
+        if (_section is { } section)
+        {
+            section.Overlays.Remove(overlay);
+            if (ReferenceEquals(_selected, overlay))
+            {
+                _selected = section.Overlays.FirstOrDefault();
+            }
+
+            Commit();
+        }
+    }
+
+    private void Move(int index, int delta)
+    {
+        if (_section is { } section && index + delta >= 0 && index + delta < section.Overlays.Count)
+        {
+            (section.Overlays[index], section.Overlays[index + delta]) = (section.Overlays[index + delta], section.Overlays[index]);
+            Commit();
+        }
+    }
+
+    private void Set(Action change)
+    {
+        change();
+        Commit();
+    }
+
+    /// <summary>Writes the section back into the channel or block, so the schedule editor offers to save it.</summary>
+    private void Commit()
+    {
+        if (Block is { } block)
+        {
+            Dictionary<string, object?> sections = block.Plugins ?? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            string key = sections.Keys.FirstOrDefault(existing => string.Equals(existing, OverlayResolver.PluginId, StringComparison.OrdinalIgnoreCase))
+                         ?? OverlayResolver.PluginId;
+            if (_section is null)
+            {
+                sections.Remove(key);
+            }
+            else
+            {
+                sections[key] = _section;
+            }
+
+            block.Plugins = sections.Count > 0 ? sections : null;
+            Context.NotifyChanged();
+        }
+        else
+        {
+            Context.Write(_section);
+        }
+    }
+}

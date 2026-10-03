@@ -124,10 +124,35 @@ public sealed class PlayoutPublisher(
                 };
             }
 
+            item.Graphics = Graphics(entry);
             document.Items.Add(item);
         }
 
         return document;
+    }
+
+    /// <summary>
+    /// Entry annotation holding graphics layers for the item (a JSON array in ErsatzTV's <c>graphics</c> format), such
+    /// as the Overlays plugin's screen bugs and lower thirds.
+    /// </summary>
+    public const string GraphicsAnnotation = "ersatztv.graphics";
+
+    private static System.Text.Json.Nodes.JsonArray? Graphics(ScheduleEntry entry)
+    {
+        if (entry.Annotations?.TryGetValue(GraphicsAnnotation, out string? json) != true || string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            return System.Text.Json.Nodes.JsonNode.Parse(json) is System.Text.Json.Nodes.JsonArray { Count: > 0 } layers ? layers : null;
+        }
+        catch (JsonException)
+        {
+            // A broken annotation costs the item its graphics, not its place in the playout.
+            return null;
+        }
     }
 
     /// <summary>Item attribute marking a stream as live: it's joined where it is, never seeked into.</summary>

@@ -1,0 +1,17 @@
+{
+  "id": "overlays",
+  "name": "Overlays",
+  "version": "1.0.0",
+  "description": "Screen bugs, lower thirds and other graphics over your channels, designed in a visual editor and timed per programme: all the way through, at the start or end, part-way through, every few minutes, or by the clock, with fades. Set them up for a whole channel or just a block, or have a block (or channel) show another channel's, kept in step. Needs ErsatzTV Next with its graphics engine.",
+  "author": "SchedularrTV",
+  "apiVersion": "1.2",
+  "entryAssembly": "SchedularrTV.Plugins.Overlays.dll",
+  "settings": [
+    {
+      "key": "RenderFolder",
+      "label": "Folder for drawn overlays",
+      "type": "Folder",
+      "description": "Where designed overlays are saved as pictures for ErsatzTV to read. Leave empty for the plugin's own data folder; set it when ErsatzTV runs elsewhere and needs a shared folder."
+    }
+  ]
+}

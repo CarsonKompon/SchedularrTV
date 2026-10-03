@@ -60,6 +60,7 @@ slots, programming blocks, ad breaks, bumpers and promos, and hands them to
 | [Configuration](docs/configuration.md) | App settings, the schedule file, commercials on disk, Jellyfin tags |
 | [How scheduling works](docs/scheduling.md) | Blocks and anchors, ad break packing, mid-rolls, the query language, seasonal tags |
 | [Generated promos](docs/generated-promos.md) | Promo templates, voices, music, external generators |
+| [Overlays](docs/overlays.md) | Screen bugs, lower thirds and "up next" graphics, designed visually and timed per programme |
 | [Radio channels](docs/radio.md) | Music from Jellyfin or an internet station, with cover art, lyrics and a visualizer |
 | [IPTV passthrough](docs/iptv.md) | Channels from an IPTV playlist (M3U) and its XMLTV guide, alongside your own |
 | [Web page channels](docs/web-channels.md) | Live web pages as channels: WeatherStar retro weather, a clock, weather radar, the wind globe or any page |

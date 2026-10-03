@@ -86,6 +86,8 @@ your own (`WriteLineup` off), add the `version` line to its channel files yourse
 
 ## Details
 
+- An entry's `ersatztv.graphics` annotation (a JSON array in ErsatzTV's `graphics` format, as the Overlays plugin
+  writes it) becomes the item's graphics layers.
 - Trimmed filler carries `out_point_ms`, so the asset stops on the boundary instead of running long.
 - `Padding` entries become a black, silent `lavfi` item rather than a hole in the timeline.
 - `ErsatzTv:PathMappings` rewrites Jellyfin's media paths to what ErsatzTV sees. It's needed whenever the

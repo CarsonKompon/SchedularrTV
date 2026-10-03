@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!--
+    Overlays: screen bugs, lower thirds and other graphics over a channel or its blocks, designed in a visual editor,
+    timed per programme (all the way through, at the start or end, part-way, every few minutes, or by the clock) and
+    drawn by ErsatzTV Next's graphics engine. Not part of the main download: it ships in the all-plugins zip.
+
+    It builds against the scheduler itself (the editor's shared components, SkiaSharp), so it has to come from the same
+    release as the scheduler it runs in.
+  -->
+  <PropertyGroup>
+    <RootNamespace>SchedularrTV.Overlays</RootNamespace>
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+    <ScopedCssEnabled>false</ScopedCssEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Supplied by the scheduler at runtime (SkiaSharp included), so none of it is copied into the plugin. -->
+    <ProjectReference Include="..\..\src\SchedularrTV.Service\SchedularrTV.Service.csproj" Private="false" ExcludeAssets="runtime;native" />
+    <ProjectReference Include="..\..\src\SchedularrTV.Plugins.Abstractions\SchedularrTV.Plugins.Abstractions.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The editor's stylesheet, served from the plugin's wwwroot. -->
+    <None Include="assets\**" Link="wwwroot\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="SchedularrTV.Plugins" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+</Project>

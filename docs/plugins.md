@@ -7,7 +7,8 @@ loaded at startup.
 Jellyfin, local media folders, ErsatzTV Next, Promos and Archive Follow (off until you switch it on) are
 built-in plugins. Generated promos (which needs Promos), the TikTok, MiniMax and Piper voices for it, and
 [Web page channels](web-channels.md) (live pages such as WeatherStar forecasts, a clock and weather radar), [IPTV passthrough](iptv.md) (channels from an
-M3U playlist and its guide), [Radio channels](radio.md) (music with cover art, lyrics and a visualizer), the [TV Guide channel](tv-guide.md)
+M3U playlist and its guide), [Radio channels](radio.md) (music with cover art, lyrics and a visualizer), [Overlays](overlays.md)
+(screen bugs and lower thirds), the [TV Guide channel](tv-guide.md)
 (scrolling listings in the style of the Prevue Channel or TV Guide Channel) and [Auto Chapters](auto-chapters.md)
 (mid-roll break points found where programmes fade to black) are optional: each release has a
 `SchedularrTV-<version>-all-plugins.zip` with all of them (and a

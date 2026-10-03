@@ -35,6 +35,13 @@ internal sealed class PlayoutItem
 
     [JsonPropertyName("tracks")]
     public PlayoutTracks? Tracks { get; set; }
+
+    /// <summary>
+    /// Graphics layers (screen bugs, lower thirds) composited over the item, bottom to top, in ErsatzTV's own
+    /// format. Passed through from the entry's <c>ersatztv.graphics</c> annotation, as a plugin wrote it.
+    /// </summary>
+    [JsonPropertyName("graphics")]
+    public System.Text.Json.Nodes.JsonArray? Graphics { get; set; }
 }
 
 internal sealed class PlayoutTracks

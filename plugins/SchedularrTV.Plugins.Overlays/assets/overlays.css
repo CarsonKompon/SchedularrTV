@@ -1,0 +1,56 @@
+/* The Overlays plugin's channel tab. Scoped under .ov-scope so nothing leaks into the rest of the app. */
+
+.ov-scope .ov-section { font-size: 13px; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.ov-scope .ov-panel .ov-section:first-child { margin-top: 0; }
+
+.ov-scope .ov-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.ov-scope .ov-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.ov-scope .ov-item.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.ov-scope .ov-item-name { background: none; border: 0; color: inherit; text-align: left; cursor: pointer; padding: 0; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ov-scope .ov-item-name .muted { font-size: 12px; }
+
+.ov-scope .ov-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
+@media (max-width: 1200px) { .ov-scope .ov-workspace { grid-template-columns: minmax(0, 1fr); } }
+.ov-scope .ov-canvas-scroll { max-width: 100%; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: #0b0c0f; }
+.ov-scope .ov-canvas {
+    position: relative; overflow: hidden; background-color: #1a1f2e; background-size: 100% 100%; background-repeat: no-repeat;
+    user-select: none;
+}
+
+.ov-scope .layer-box { position: absolute; border: 1px solid rgba(255,255,255,.35); box-sizing: border-box; cursor: move; touch-action: none; }
+.ov-scope .layer-box:hover { border-color: rgba(255,255,255,.75); }
+.ov-scope .layer-box.selected { border: 2px solid var(--accent); z-index: 2; }
+.ov-scope .layer-tag {
+    position: absolute; left: -1px; top: -18px; font-size: 10px; line-height: 16px; padding: 0 5px; border-radius: 4px 4px 0 0;
+    background: rgba(0,0,0,.65); color: #fff; white-space: nowrap; pointer-events: none;
+}
+.ov-scope .layer-box.selected .layer-tag { background: var(--accent); }
+.ov-scope .handle { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; background: #fff; border: 2px solid var(--accent); border-radius: 3px; }
+.ov-scope .handle-nw { left: 0; top: 0; cursor: nwse-resize; }
+.ov-scope .handle-n { left: 50%; top: 0; cursor: ns-resize; }
+.ov-scope .handle-ne { left: 100%; top: 0; cursor: nesw-resize; }
+.ov-scope .handle-e { left: 100%; top: 50%; cursor: ew-resize; }
+.ov-scope .handle-se { left: 100%; top: 100%; cursor: nwse-resize; }
+.ov-scope .handle-s { left: 50%; top: 100%; cursor: ns-resize; }
+.ov-scope .handle-sw { left: 0; top: 100%; cursor: nesw-resize; }
+.ov-scope .handle-w { left: 0; top: 50%; cursor: ew-resize; }
+.ov-scope .drag-overlay { position: fixed; inset: 0; z-index: 1000; cursor: grabbing; touch-action: none; }
+.ov-scope .snap-guide { position: absolute; z-index: 3; pointer-events: none; border: 0 dashed #ff3da8; }
+.ov-scope .snap-guide-x { left: 50%; top: 0; bottom: 0; border-left-width: 1px; }
+.ov-scope .snap-guide-y { top: 50%; left: 0; right: 0; border-top-width: 1px; }
+
+.ov-scope .ov-layers { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.ov-scope .ov-layer { display: flex; align-items: center; gap: 4px; padding: 4px 6px; border-radius: 6px; border: 1px solid transparent; }
+.ov-scope .ov-layer.on { border-color: var(--accent); }
+.ov-scope .ov-layer-name { flex: 1; min-width: 0; text-align: left; background: none; border: 0; color: inherit; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-scope .ov-layer-name .muted { font-size: 11px; margin-left: 4px; }
+.ov-scope .ov-colour { width: 56px; height: 34px; padding: 2px; }
+
+.ov-scope .ov-anchors { display: grid; grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(3, 22px); gap: 4px; padding: 6px;
+    border: 1px solid var(--line); border-radius: 8px; width: max-content; background: rgba(255,255,255,.03); }
+.ov-scope .ov-anchor { border: 1px solid var(--line); border-radius: 4px; background: transparent; cursor: pointer; }
+.ov-scope .ov-anchor.on { background: var(--accent); border-color: var(--accent); }
+
+.ov-scope .ov-strip { position: relative; height: 22px; border-radius: 6px; background: rgba(255,255,255,.06); border: 1px solid var(--line); overflow: hidden; }
+.ov-scope .ov-strip-on { position: absolute; top: 0; bottom: 0; min-width: 2px; background: var(--accent); opacity: .85; }
+.ov-scope .hint.warn { color: #ffd08a; }

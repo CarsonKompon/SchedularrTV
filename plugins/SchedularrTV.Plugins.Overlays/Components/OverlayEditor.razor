@@ -1,0 +1,501 @@
+@* One overlay: its look (a design on a canvas, or a file placed on the picture) and when it shows. *@
+
+<div class="card">
+    <div class="card-head">
+        <h2>@Overlay.Name</h2>
+        <span class="pill pill-muted">@(Overlay.Kind == OverlayKinds.File ? "File" : "Design")</span>
+    </div>
+
+    <div class="grid grid-2">
+        <label class="field"><span>Name</span>
+            <input type="text" value="@Overlay.Name" @onchange="e => Set(() => Overlay.Name = Text(e, Overlay.Name))" /></label>
+        <label class="field"><span>Look</span>
+            <select value="@Overlay.Kind" @onchange="e => Set(() => Overlay.Kind = Text(e, OverlayKinds.Design))">
+                <option value="design">Designed here (text, pictures, colour)</option>
+                <option value="file">A picture or video file</option>
+            </select></label>
+    </div>
+
+    <div class="ov-workspace">
+        <div class="ov-canvas-column">
+            @if (Overlay.Kind == OverlayKinds.Design)
+            {
+                <div class="ov-canvas-scroll">
+                    <div class="ov-canvas" role="group" aria-label="Overlay canvas"
+                         style="width:@Px(Overlay.Width * Scale);height:@Px(Overlay.Height * Scale);@(_preview is null ? "" : $"background-image:url('{_preview}');")">
+                        @foreach (OverlayLayer layer in Overlay.Layers)
+                        {
+                            bool isSelected = ReferenceEquals(layer, _layer);
+                            <div class="layer-box @(isSelected ? "selected" : "")" @key="layer"
+                                 style="left:@Px(layer.X * Scale);top:@Px(layer.Y * Scale);width:@Px(layer.Width * Scale);height:@Px(layer.Height * Scale);"
+                                 title="@layer.Name" @onpointerdown="e => StartDrag(e, layer, MoveHandle)" @onpointerdown:preventDefault="true">
+                                <span class="layer-tag">@layer.Name</span>
+                                @if (isSelected)
+                                {
+                                    @foreach (string handle in Handles)
+                                    {
+                                        <span class="handle handle-@handle" aria-hidden="true" @onpointerdown="e => StartDrag(e, layer, handle)"
+                                              @onpointerdown:stopPropagation="true" @onpointerdown:preventDefault="true"></span>
+                                    }
+                                }
+                            </div>
+                        }
+                        @if (_drag is not null && _snapX)
+                        {
+                            <div class="snap-guide snap-guide-x" aria-hidden="true"></div>
+                        }
+                        @if (_drag is not null && _snapY)
+                        {
+                            <div class="snap-guide snap-guide-y" aria-hidden="true"></div>
+                        }
+                    </div>
+                </div>
+                <p class="hint">
+                    Shown over a stand-in picture with sample words for {tokens}. Drag a box to move it, or a handle to resize it; it snaps to
+                    the centre lines unless you hold Alt. Lower layers in the list draw on top.
+                </p>
+            }
+            else
+            {
+                <div class="ov-canvas-scroll">
+                    <div class="ov-canvas" style="width:@Px(1920 * Scale);height:@Px(1080 * Scale);@(_preview is null ? "" : $"background-image:url('{_preview}');")"></div>
+                </div>
+                <p class="hint">Where ErsatzTV will put it, over a stand-in picture. Videos show as a box here.</p>
+            }
+            @if (_previewError is not null)
+            {
+                <p class="hint warn" role="alert">Preview failed: @_previewError</p>
+            }
+
+            <h3 class="ov-section">When it shows</h3>
+            <div class="ov-strip" aria-label="When it shows on a 22-minute programme">
+                @foreach ((TimeSpan shownFrom, TimeSpan shownTo) in OverlayDescriptions.Sample(Overlay, SampleLength))
+                {
+                    <span class="ov-strip-on" style="left:@Percent(shownFrom);width:@Percent(shownTo - shownFrom);"></span>
+                }
+            </div>
+            <p class="hint" style="margin-top:4px;">@OverlayDescriptions.When(Overlay). Shown above on a 22-minute programme.</p>
+        </div>
+
+        <div class="ov-panel">
+            @if (Overlay.Kind == OverlayKinds.Design)
+            {
+                <h3 class="ov-section">Canvas</h3>
+                <label class="field"><span>Size</span>
+                    <select value="@($"{Overlay.Width}x{Overlay.Height}")" @onchange="SetSize">
+                        @foreach ((int width, int height, string label) in Sizes)
+                        {
+                            <option value="@($"{width}x{height}")">@label</option>
+                        }
+                    </select></label>
+
+                <h3 class="ov-section">Layers</h3>
+                <div class="row row-wrap" style="gap:6px;margin-bottom:8px;">
+                    <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Text)">+ Text</button>
+                    <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Image)">+ Picture</button>
+                    <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Rect)">+ Colour block</button>
+                </div>
+                <div class="ov-layers">
+                    @for (int index = 0; index < Overlay.Layers.Count; index++)
+                    {
+                        int position = index;
+                        OverlayLayer layer = Overlay.Layers[index];
+                        <div class="ov-layer @(ReferenceEquals(layer, _layer) ? "on" : "")" @key="layer">
+                            <button type="button" class="ov-layer-name" @onclick="() => _layer = layer">@layer.Name <span class="muted">@KindName(layer.Kind)</span></button>
+                            <button class="btn btn-sm btn-icon" type="button" title="Down a layer" disabled="@(position == 0)" @onclick="() => MoveLayer(position, -1)">↑</button>
+                            <button class="btn btn-sm btn-icon" type="button" title="Up a layer" disabled="@(position == Overlay.Layers.Count - 1)" @onclick="() => MoveLayer(position, 1)">↓</button>
+                            <button class="btn btn-sm btn-icon btn-ghost" type="button" title="Delete" @onclick="() => RemoveLayer(layer)">×</button>
+                        </div>
+                    }
+                </div>
+
+                @if (_layer is { } selected && Overlay.Layers.Contains(selected))
+                {
+                    <h3 class="ov-section">@selected.Name</h3>
+                    <label class="field"><span>Name</span>
+                        <input type="text" value="@selected.Name" @onchange="e => Set(() => selected.Name = Text(e, selected.Name))" /></label>
+                    @if (selected.Kind == OverlayLayerKinds.Text)
+                    {
+                        <label class="field"><span>Text</span>
+                            <input type="text" value="@selected.Text" @onchange="e => Set(() => selected.Text = Text(e, string.Empty))" /></label>
+                        <p class="hint" style="margin-top:-6px;">{title} {episode} {season_episode} {year} {channel} {next} {next_time}</p>
+                        <div class="grid grid-2">
+                            <label class="field"><span>Font</span>
+                                <input type="text" value="@selected.FontFamily" @onchange="e => Set(() => selected.FontFamily = Text(e, "Arial"))" /></label>
+                            <label class="field"><span>Size</span>
+                                <input type="number" min="6" max="400" value="@Number(selected.FontSize)" @onchange="e => Set(() => selected.FontSize = (float)Number(e, selected.FontSize))" /></label>
+                            <label class="field"><span>Align</span>
+                                <select value="@selected.Align" @onchange="e => Set(() => selected.Align = Text(e, "left"))">
+                                    <option value="left">Left</option>
+                                    <option value="center">Centre</option>
+                                    <option value="right">Right</option>
+                                </select></label>
+                            <div class="field"><span>Colour</span>
+                                <input type="color" value="@ColourValue(selected.Color)" @onchange="e => Set(() => selected.Color = Text(e, "#ffffff"))" class="ov-colour" /></div>
+                        </div>
+                        <div class="row row-wrap" style="gap:16px;margin-bottom:8px;">
+                            <label class="check"><input type="checkbox" checked="@selected.Bold" @onchange="e => Set(() => selected.Bold = e.Value is true)" /><span>Bold</span></label>
+                            <label class="check"><input type="checkbox" checked="@selected.Shadow" @onchange="e => Set(() => selected.Shadow = e.Value is true)" /><span>Shadow</span></label>
+                        </div>
+                    }
+                    else if (selected.Kind == OverlayLayerKinds.Image)
+                    {
+                        <div class="field"><span>Picture</span>
+                            <FilePathPicker Value="@selected.Path" ValueChanged="value => Set(() => selected.Path = value)" Extensions="FileBrowsing.Images"
+                                            Label="picture" StartIn="Environment.SpecialFolder.MyPictures" Placeholder="D:\Media\Logos\channel.png" /></div>
+                    }
+                    else
+                    {
+                        <div class="grid grid-2">
+                            <div class="field"><span>Colour</span>
+                                <input type="color" value="@ColourValue(selected.Color)" @onchange="e => Set(() => selected.Color = Text(e, "#000000"))" class="ov-colour" /></div>
+                            <label class="field"><span>Corner radius</span>
+                                <input type="number" min="0" max="500" value="@Number(selected.CornerRadius)" @onchange="e => Set(() => selected.CornerRadius = (float)Number(e, 0))" /></label>
+                        </div>
+                    }
+                    <label class="field"><span>Opacity: @selected.Opacity.ToString("0", CultureInfo.InvariantCulture)%</span>
+                        <input type="range" min="0" max="100" step="1" value="@Number(selected.Opacity)" @onchange="e => Set(() => selected.Opacity = Number(e, 100))" /></label>
+                    <div class="grid grid-2">
+                        <label class="field"><span>X</span><input type="number" value="@Number(selected.X)" @onchange="e => Set(() => selected.X = (float)Number(e, selected.X))" /></label>
+                        <label class="field"><span>Y</span><input type="number" value="@Number(selected.Y)" @onchange="e => Set(() => selected.Y = (float)Number(e, selected.Y))" /></label>
+                        <label class="field"><span>Width</span><input type="number" min="1" value="@Number(selected.Width)" @onchange="e => Set(() => selected.Width = (float)Math.Max(1, Number(e, selected.Width)))" /></label>
+                        <label class="field"><span>Height</span><input type="number" min="1" value="@Number(selected.Height)" @onchange="e => Set(() => selected.Height = (float)Math.Max(1, Number(e, selected.Height)))" /></label>
+                    </div>
+                }
+            }
+            else
+            {
+                <h3 class="ov-section">File</h3>
+                <div class="field"><span>Picture or video</span>
+                    <FilePathPicker Value="@Overlay.File" ValueChanged="value => Set(() => Overlay.File = value)" Extensions="MediaExtensions"
+                                    Label="picture or video" StartIn="Environment.SpecialFolder.MyPictures" Placeholder="D:\Media\Logos\bug.png" /></div>
+                <p class="hint" style="margin-top:-6px;">A PNG with transparency, or a video (with an alpha channel, such as a .mov) for an animated bug.</p>
+                <div class="field"><span>Where</span>
+                    <div class="ov-anchors" role="radiogroup" aria-label="Where">
+                        @foreach (string anchor in OverlayAnchors.All)
+                        {
+                            <button type="button" class="ov-anchor @(Overlay.Anchor == anchor ? "on" : "")" title="@anchor.Replace('_', ' ')"
+                                    aria-checked="@(Overlay.Anchor == anchor ? "true" : "false")" role="radio" @onclick="() => Set(() => Overlay.Anchor = anchor)"></button>
+                        }
+                    </div>
+                </div>
+                <label class="field"><span>Width: @Overlay.SizePercent.ToString("0.#", CultureInfo.InvariantCulture)% of the picture</span>
+                    <input type="range" min="2" max="60" step="0.5" value="@Number(Overlay.SizePercent)" @onchange="e => Set(() => Overlay.SizePercent = Number(e, 10))" /></label>
+                <div class="grid grid-2">
+                    <label class="field"><span>Margin across (%)</span>
+                        <input type="number" min="0" max="40" step="0.5" value="@Number(Overlay.MarginXPercent)" @onchange="e => Set(() => Overlay.MarginXPercent = Number(e, 3))" /></label>
+                    <label class="field"><span>Margin up/down (%)</span>
+                        <input type="number" min="0" max="40" step="0.5" value="@Number(Overlay.MarginYPercent)" @onchange="e => Set(() => Overlay.MarginYPercent = Number(e, 4))" /></label>
+                </div>
+                <label class="check"><input type="checkbox" checked="@Overlay.InsidePicture" @onchange="e => Set(() => Overlay.InsidePicture = e.Value is true)" />
+                    <span>Keep inside the picture of letterboxed or 4:3 shows</span></label>
+            }
+
+            <h3 class="ov-section">Overall</h3>
+            <label class="field"><span>Opacity: @Overlay.Opacity.ToString("0", CultureInfo.InvariantCulture)%</span>
+                <input type="range" min="5" max="100" step="1" value="@Number(Overlay.Opacity)" @onchange="e => Set(() => Overlay.Opacity = Number(e, 100))" /></label>
+
+            <h3 class="ov-section">Timing</h3>
+            <label class="field"><span>Shows</span>
+                <select value="@Overlay.When" @onchange="e => Set(() => Overlay.When = Text(e, OverlayWhen.Always))">
+                    <option value="always">All the way through each programme</option>
+                    <option value="start">Once, near the start</option>
+                    <option value="end">Once, near the end</option>
+                    <option value="percent">Once, part-way through</option>
+                    <option value="every">Every few minutes through the programme</option>
+                    <option value="clock">Every few minutes by the clock</option>
+                </select></label>
+            <div class="grid grid-2">
+                @if (Overlay.When is OverlayWhen.Start or OverlayWhen.End or OverlayWhen.Every or OverlayWhen.Clock)
+                {
+                    <label class="field"><span>@OffsetLabel (seconds)</span>
+                        <input type="number" min="0" step="1" value="@Number(Overlay.OffsetSeconds)" @onchange="e => Set(() => Overlay.OffsetSeconds = Number(e, 0))" /></label>
+                }
+                @if (Overlay.When == OverlayWhen.Percent)
+                {
+                    <label class="field"><span>How far through (%)</span>
+                        <input type="number" min="0" max="100" step="1" value="@Number(Overlay.Percent)" @onchange="e => Set(() => Overlay.Percent = Number(e, 50))" /></label>
+                }
+                @if (Overlay.When is OverlayWhen.Every or OverlayWhen.Clock)
+                {
+                    <label class="field"><span>Every (minutes)</span>
+                        <input type="number" min="1" step="1" value="@Number(Overlay.EveryMinutes)" @onchange="e => Set(() => Overlay.EveryMinutes = Math.Max(1, Number(e, 10)))" /></label>
+                }
+                @if (Overlay.When != OverlayWhen.Always)
+                {
+                    <label class="field"><span>Shows for (seconds)</span>
+                        <input type="number" min="1" step="1" value="@Number(Overlay.DurationSeconds)" @onchange="e => Set(() => Overlay.DurationSeconds = Math.Max(1, Number(e, 8)))" /></label>
+                }
+                <label class="field"><span>Fade in and out (seconds each)</span>
+                    <input type="number" min="0" max="10" step="0.1" value="@Number(Overlay.FadeSeconds)" @onchange="e => Set(() => Overlay.FadeSeconds = Math.Clamp(Number(e, 1), 0, 10))" /></label>
+                <label class="field"><span>On</span>
+                    <select value="@Overlay.AppliesTo" @onchange="e => Set(() => Overlay.AppliesTo = Text(e, OverlayAppliesTo.Programmes))">
+                        <option value="programmes">Programmes only</option>
+                        <option value="everything">Everything, breaks too</option>
+                    </select></label>
+            </div>
+            <p class="hint">Times are through the whole programme, so one split by ad breaks still gets it at the right moment. ErsatzTV fades in and
+                out over the same time.</p>
+        </div>
+    </div>
+</div>
+
+@if (_drag is not null)
+{
+    <div class="drag-overlay" @onpointermove="Drag" @onpointerup="EndDrag" @onpointercancel="EndDrag" @onpointerleave="EndDrag"></div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Overlay Overlay { get; set; } = new();
+
+    [Parameter] public string ChannelName { get; set; } = "Channel";
+
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private const string MoveHandle = "move";
+    private const double SnapDistance = 8;
+    private const float PreviewScale = 0.5f;
+    private static readonly string[] Handles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+    private static readonly TimeSpan SampleLength = TimeSpan.FromMinutes(22);
+    private static readonly string[] MediaExtensions = [.. FileBrowsing.Images, ".mov", ".webm", ".mp4", ".mkv"];
+    private static readonly (int Width, int Height, string Label)[] Sizes =
+    [
+        (1920, 1080, "1920 × 1080 (16:9)"),
+        (1280, 720, "1280 × 720 (16:9)"),
+        (1440, 1080, "1440 × 1080 (4:3)"),
+        (720, 480, "720 × 480 (SD)")
+    ];
+
+    private sealed class DragState(OverlayLayer layer, string handle, double startX, double startY)
+    {
+        public OverlayLayer Layer { get; } = layer;
+        public string Handle { get; } = handle;
+        public double StartX { get; } = startX;
+        public double StartY { get; } = startY;
+        public float X { get; } = layer.X;
+        public float Y { get; } = layer.Y;
+        public float Width { get; } = layer.Width;
+        public float Height { get; } = layer.Height;
+        public bool Moved { get; set; }
+    }
+
+    private OverlayLayer? _layer;
+    private DragState? _drag;
+    private bool _snapX;
+    private bool _snapY;
+    private string? _preview;
+    private string? _previewError;
+    private int _previewVersion;
+
+    /// <summary>The canvas is shown about 640 pixels wide.</summary>
+    private double Scale => 640.0 / Math.Max(1, Overlay.Kind == OverlayKinds.File ? 1920 : Overlay.Width);
+
+    private string OffsetLabel => Overlay.When switch
+    {
+        OverlayWhen.Start => "Starts this far in",
+        OverlayWhen.End => "Ends this long before the end",
+        OverlayWhen.Every => "First this far in",
+        _ => "This far past each period"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _layer = Overlay.Layers.FirstOrDefault();
+        await RefreshPreviewAsync();
+    }
+
+    private async Task Set(Action change)
+    {
+        change();
+        await CommitAsync();
+    }
+
+    private async Task CommitAsync()
+    {
+        await Changed.InvokeAsync();
+        await RefreshPreviewAsync();
+    }
+
+    /// <summary>Draws the preview in the background; a newer change's preview wins over an older one still drawing.</summary>
+    private async Task RefreshPreviewAsync()
+    {
+        int version = ++_previewVersion;
+        Overlay snapshot = Overlay.Copy();
+        Dictionary<string, string> tokens = new(OverlayProcessor.SampleTokens) { ["channel"] = ChannelName };
+        try
+        {
+            byte[] png = await Task.Run(() => OverlayRenderer.Preview(snapshot, tokens, PreviewScale));
+            if (version == _previewVersion)
+            {
+                _preview = "data:image/png;base64," + Convert.ToBase64String(png);
+                _previewError = null;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _previewError = ex.Message;
+        }
+    }
+
+    private async Task SetSize(ChangeEventArgs e)
+    {
+        string[] parts = (e.Value?.ToString() ?? "1920x1080").Split('x');
+        if (parts.Length == 2 && int.TryParse(parts[0], out int width) && int.TryParse(parts[1], out int height) && width != Overlay.Width)
+        {
+            // Everything scales with the canvas, so the design keeps its look.
+            float factor = width / (float)Overlay.Width;
+            foreach (OverlayLayer layer in Overlay.Layers)
+            {
+                layer.X *= factor;
+                layer.Y *= height / (float)Overlay.Height;
+                layer.Width *= factor;
+                layer.Height *= height / (float)Overlay.Height;
+                layer.FontSize *= factor;
+            }
+
+            Overlay.Width = width;
+            Overlay.Height = height;
+            await CommitAsync();
+        }
+    }
+
+    private async Task AddLayer(string kind)
+    {
+        var layer = new OverlayLayer
+        {
+            Kind = kind,
+            Name = KindName(kind),
+            X = Overlay.Width * 0.1f,
+            Y = Overlay.Height * 0.75f,
+            Width = kind == OverlayLayerKinds.Image ? Overlay.Width * 0.12f : Overlay.Width * 0.4f,
+            Height = kind == OverlayLayerKinds.Image ? Overlay.Width * 0.12f : Overlay.Height * 0.08f,
+            Text = kind == OverlayLayerKinds.Text ? "{title}" : null,
+            Color = kind == OverlayLayerKinds.Rect ? "#14142b" : "#ffffff",
+            Opacity = kind == OverlayLayerKinds.Rect ? 85 : 100
+        };
+        Overlay.Layers.Add(layer);
+        _layer = layer;
+        await CommitAsync();
+    }
+
+    private async Task RemoveLayer(OverlayLayer layer)
+    {
+        int index = Overlay.Layers.IndexOf(layer);
+        Overlay.Layers.Remove(layer);
+        _layer = Overlay.Layers.Count == 0 ? null : Overlay.Layers[Math.Clamp(index - 1, 0, Overlay.Layers.Count - 1)];
+        await CommitAsync();
+    }
+
+    private async Task MoveLayer(int index, int delta)
+    {
+        if (index + delta < 0 || index + delta >= Overlay.Layers.Count)
+        {
+            return;
+        }
+
+        (Overlay.Layers[index], Overlay.Layers[index + delta]) = (Overlay.Layers[index + delta], Overlay.Layers[index]);
+        await CommitAsync();
+    }
+
+    private void StartDrag(PointerEventArgs e, OverlayLayer layer, string handle)
+    {
+        _layer = layer;
+        _drag = new DragState(layer, handle, e.ClientX, e.ClientY);
+    }
+
+    private void Drag(PointerEventArgs e)
+    {
+        if (_drag is not { } drag)
+        {
+            return;
+        }
+
+        float dx = (float)((e.ClientX - drag.StartX) / Scale);
+        float dy = (float)((e.ClientY - drag.StartY) / Scale);
+        OverlayLayer layer = drag.Layer;
+        const float minimum = 8;
+        drag.Moved |= Math.Abs(dx) >= 1 || Math.Abs(dy) >= 1;
+
+        if (drag.Handle == MoveHandle)
+        {
+            float x = MathF.Round(drag.X + dx);
+            float y = MathF.Round(drag.Y + dy);
+            if (e.AltKey)
+            {
+                (layer.X, layer.Y, _snapX, _snapY) = (x, y, false, false);
+            }
+            else
+            {
+                float snap = (float)(SnapDistance / Scale);
+                float centreX = x + layer.Width / 2 - Overlay.Width / 2f;
+                float centreY = y + layer.Height / 2 - Overlay.Height / 2f;
+                _snapX = Math.Abs(centreX) <= snap;
+                _snapY = Math.Abs(centreY) <= snap;
+                layer.X = _snapX ? MathF.Round((Overlay.Width - layer.Width) / 2) : x;
+                layer.Y = _snapY ? MathF.Round((Overlay.Height - layer.Height) / 2) : y;
+            }
+
+            return;
+        }
+
+        if (drag.Handle.Contains('e'))
+        {
+            layer.Width = MathF.Round(Math.Max(minimum, drag.Width + dx));
+        }
+
+        if (drag.Handle.Contains('w'))
+        {
+            float shift = Math.Min(dx, drag.Width - minimum);
+            layer.X = MathF.Round(drag.X + shift);
+            layer.Width = MathF.Round(drag.Width - shift);
+        }
+
+        if (drag.Handle.Contains('s'))
+        {
+            layer.Height = MathF.Round(Math.Max(minimum, drag.Height + dy));
+        }
+
+        if (drag.Handle.Contains('n'))
+        {
+            float shift = Math.Min(dy, drag.Height - minimum);
+            layer.Y = MathF.Round(drag.Y + shift);
+            layer.Height = MathF.Round(drag.Height - shift);
+        }
+    }
+
+    private async Task EndDrag(PointerEventArgs e)
+    {
+        if (_drag is not { } drag)
+        {
+            return;
+        }
+
+        Drag(e);
+        _drag = null;
+        _snapX = _snapY = false;
+        if (drag.Moved)
+        {
+            await CommitAsync();
+        }
+    }
+
+    private static string KindName(string kind) => kind switch
+    {
+        OverlayLayerKinds.Image => "Picture",
+        OverlayLayerKinds.Rect => "Colour block",
+        _ => "Text"
+    };
+
+    private static string Px(double value) => value.ToString("0.##", CultureInfo.InvariantCulture) + "px";
+
+    private static string Percent(TimeSpan value) => (value.TotalMilliseconds / SampleLength.TotalMilliseconds * 100).ToString("0.###", CultureInfo.InvariantCulture) + "%";
+
+    private static string Number(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+
+    private static string ColourValue(string? value) => value is { Length: 7 } && value[0] == '#' ? value : "#ffffff";
+
+    private static string Text(ChangeEventArgs e, string fallback) => e.Value?.ToString()?.Trim() is { Length: > 0 } text ? text : fallback;
+
+    private static double Number(ChangeEventArgs e, double fallback) =>
+        double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ? value : fallback;
+}
