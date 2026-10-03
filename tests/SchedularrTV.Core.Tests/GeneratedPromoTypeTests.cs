@@ -166,10 +166,13 @@ public sealed class GeneratedPromoTypeTests
         Assert.Equal("Rocket Power", Assert.Single(GeneratedPromoService.Subject(GeneratedPromoType.ComingUp, schedule, promo, 1)).Title);
         Assert.All(schedule.Entries.Where(entry => entry.GeneratedTemplate == "Coming Up"),
             entry => Assert.True(entry.GeneratedTargetAt > entry.End));
+        // A promo in the last break of the built window has no programme after it here.
         Assert.All(schedule.Entries.Where(entry => entry.GeneratedTemplate == "Coming Up"), entry =>
         {
-            ScheduleEntry next = schedule.Entries.First(candidate => candidate.Start >= entry.End && candidate.Kind == ScheduleEntryKind.Program);
-            Assert.NotEqual(next.Item!.SeriesName, entry.GeneratedSubject);
+            if (schedule.Entries.FirstOrDefault(candidate => candidate.Start >= entry.End && candidate.Kind == ScheduleEntryKind.Program) is { } next)
+            {
+                Assert.NotEqual(next.Item!.SeriesName, entry.GeneratedSubject);
+            }
         });
     }
 
