@@ -101,17 +101,21 @@ public sealed class JellyfinMediaLibrary(
                 logger.LogInformation("Excluded {Count} item(s) from {Libraries}.", before - raw.Count, string.Join(", ", excluded));
             }
 
-            Report("Reading collections", raw.Count);
-            Dictionary<string, List<string>> collections = await client.GetCollectionMembershipAsync(cancellationToken).ConfigureAwait(false);
+            Report("Reading collections");
+            Dictionary<string, List<string>> collections = await client
+                .GetCollectionMembershipAsync(cancellationToken, (done, total) => Report("Reading collections", done, total))
+                .ConfigureAwait(false);
             Report("Reading series and seasons", raw.Count);
             Dictionary<string, JellyfinSeriesInfo> series = await client.GetSeriesInfoAsync(cancellationToken).ConfigureAwait(false);
             Dictionary<string, int> seasons = await client.GetSeasonNumbersAsync(cancellationToken).ConfigureAwait(false);
 
             string[] multiVersion = [.. raw.Where(i => i.MediaSourceCount > 1).Select(i => i.Id)];
-            Report("Reading alternate versions", raw.Count);
+            Report("Reading alternate versions", 0, multiVersion.Length);
             Dictionary<string, JellyfinVersion> versions = multiVersion.Length > 0
-                ? await client.GetVersionsAsync(multiVersion, cancellationToken).ConfigureAwait(false)
+                ? await client.GetVersionsAsync(multiVersion, cancellationToken, (done, total) => Report("Reading alternate versions", done, total))
+                    .ConfigureAwait(false)
                 : [];
+            Report("Putting the library together", raw.Count);
 
             Dictionary<string, List<string>> collectionsByItem = new(StringComparer.Ordinal);
             foreach ((string name, List<string> members) in collections)

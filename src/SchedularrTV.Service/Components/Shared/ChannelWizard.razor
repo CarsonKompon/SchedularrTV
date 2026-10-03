@@ -27,10 +27,10 @@
                         @progress.Stage
                         @if (progress.Items > 0)
                         {
-                            <text> · @progress.Items.ToString("N0")@(progress.Total is > 0 && progress.Stage == "Reading items" ? $" of {progress.Total:N0}" : "") items</text>
+                            <text> · @progress.Items.ToString("N0")@(progress.Total is > 0 ? $" of {progress.Total:N0}" : " items")</text>
                         }
                     </span>
-                    @if (progress.Stage == "Reading items" && progress.Percent is { } percent)
+                    @if (progress.Percent is { } percent)
                     {
                         <progress max="100" value="@percent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)"></progress>
                     }

@@ -9,22 +9,30 @@ namespace SchedularrTV.LiveCapture;
 /// <summary>Finds a Chromium-based browser (Chrome, Edge, Chromium, Brave) already on this computer.</summary>
 public static class BrowserLocator
 {
-    public static string? Find(string? configured)
+    public static string? Find(string? configured) => FindAll(configured).FirstOrDefault();
+
+    /// <summary>
+    /// Every browser that could be used, best first: the configured one alone when set, otherwise each one installed,
+    /// so another can be tried when the first won't start.
+    /// </summary>
+    public static IReadOnlyList<string> FindAll(string? configured)
     {
         if (!string.IsNullOrWhiteSpace(configured))
         {
-            return File.Exists(configured) ? configured : null;
+            return File.Exists(configured) ? [configured] : [];
         }
 
+        List<string> found = [];
         foreach (string candidate in Candidates())
         {
-            if (Path.IsPathRooted(candidate) ? File.Exists(candidate) : OnPath(candidate) is not null)
+            string? path = Path.IsPathRooted(candidate) ? (File.Exists(candidate) ? candidate : null) : OnPath(candidate);
+            if (path is not null && !found.Contains(path, StringComparer.OrdinalIgnoreCase))
             {
-                return Path.IsPathRooted(candidate) ? candidate : OnPath(candidate);
+                found.Add(path);
             }
         }
 
-        return null;
+        return found;
     }
 
     private static IEnumerable<string> Candidates()
@@ -98,7 +106,43 @@ public sealed class HeadlessBrowser : IAsyncDisposable
     /// <summary>The browser closed, or the page went away for good (crashed, or the connection to it closed).</summary>
     public bool HasExited => _process.HasExited || _detached;
 
+    /// <summary>
+    /// Ways to start the browser headless, tried in turn when one closes straight away: the current headless mode;
+    /// the plain switch (which some builds take where they refuse the other); and without the sandbox and GPU, which
+    /// some locked-down or remote sessions need.
+    /// </summary>
+    private static readonly string[][] Modes =
+    [
+        ["--headless=new"],
+        ["--headless"],
+        ["--headless=new", "--no-sandbox", "--disable-gpu"]
+    ];
+
+    /// <summary>
+    /// Starts <paramref name="browser"/> on the page, trying each way of starting it headless until one stays open.
+    /// When none does, the error says what the browser printed, so the cause can be seen.
+    /// </summary>
     public static async Task<HeadlessBrowser> StartAsync(string browser, string url, int width, int height, CancellationToken cancellationToken)
+    {
+        List<string> problems = [];
+        foreach (string[] mode in Modes)
+        {
+            try
+            {
+                return await StartAsync(browser, mode, url, width, height, cancellationToken).ConfigureAwait(false);
+            }
+            catch (BrowserClosedException ex)
+            {
+                problems.Add(ex.Message);
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"{Path.GetFileNameWithoutExtension(browser)} closed straight away each time it was started. {problems.LastOrDefault()}".Trim());
+    }
+
+    private static async Task<HeadlessBrowser> StartAsync(string browser, string[] mode, string url, int width, int height,
+        CancellationToken cancellationToken)
     {
         string profile = Path.Combine(Path.GetTempPath(), "schedularrtv-browser", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(profile);
@@ -110,9 +154,9 @@ public sealed class HeadlessBrowser : IAsyncDisposable
             RedirectStandardOutput = true,
             CreateNoWindow = true
         };
-        foreach (string argument in new[]
-                 {
-                     "--headless=new", "--remote-debugging-port=0", $"--user-data-dir={profile}", $"--window-size={width},{height}",
+        foreach (string argument in mode.Concat(
+                 [
+                     "--remote-debugging-port=0", $"--user-data-dir={profile}", $"--window-size={width},{height}",
                      "--no-first-run", "--no-default-browser-check", "--disable-extensions", "--disable-background-networking",
                      "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows",
                      "--mute-audio", "--hide-scrollbars", "--autoplay-policy=no-user-gesture-required",
@@ -121,18 +165,18 @@ public sealed class HeadlessBrowser : IAsyncDisposable
                      // another process detaches it for a moment, and commands sent then fail with "Not attached to an
                      // active page".
                      url
-                 })
+                 ]))
         {
             start.ArgumentList.Add(argument);
         }
 
         Process process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start {browser}.");
-        process.OutputDataReceived += (_, _) => { };
-        process.ErrorDataReceived += (_, _) => { };
+        var browserProcess = new HeadlessBrowser(process, profile);
+        process.OutputDataReceived += (_, e) => browserProcess.Remember(e.Data);
+        process.ErrorDataReceived += (_, e) => browserProcess.Remember(e.Data);
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
-        var browserProcess = new HeadlessBrowser(process, profile);
         try
         {
             await browserProcess.ConnectAsync(cancellationToken).ConfigureAwait(false);
@@ -184,7 +228,12 @@ public sealed class HeadlessBrowser : IAsyncDisposable
             cancellationToken.ThrowIfCancellationRequested();
             if (_process.HasExited)
             {
-                throw new InvalidOperationException($"The browser closed straight away (exit code {_process.ExitCode}).");
+                // A moment for the last of what it printed to arrive.
+                await Task.Delay(200, CancellationToken.None).ConfigureAwait(false);
+                string said = Said();
+                throw new BrowserClosedException(said.Length == 0
+                    ? $"The browser closed straight away (exit code {_process.ExitCode}) without saying why."
+                    : $"The browser closed straight away (exit code {_process.ExitCode}), saying: {said}");
             }
 
             if (DateTime.UtcNow > giveUp)
@@ -234,6 +283,31 @@ public sealed class HeadlessBrowser : IAsyncDisposable
         await _socket.ConnectAsync(new Uri(socketUrl), cancellationToken).ConfigureAwait(false);
         _receiver = Task.Run(() => ReceiveAsync(_life.Token));
     }
+
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _output = new();
+
+    /// <summary>Keeps the last few lines the browser printed, for when it won't start.</summary>
+    private void Remember(string? line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return;
+        }
+
+        _output.Enqueue(line.Trim());
+        while (_output.Count > 12 && _output.TryDequeue(out _))
+        {
+        }
+    }
+
+    private string Said()
+    {
+        string text = string.Join(" | ", _output);
+        return text.Length > 600 ? text[^600..] : text;
+    }
+
+    /// <summary>The browser process ended before it opened its debugging port.</summary>
+    private sealed class BrowserClosedException(string message) : InvalidOperationException(message);
 
     private async Task<JsonNode?> SendAsync(string method, JsonObject? parameters, CancellationToken cancellationToken)
     {

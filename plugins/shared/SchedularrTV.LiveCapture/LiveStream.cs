@@ -467,27 +467,39 @@ public sealed class LiveStream : IAsyncDisposable
                     _browser = null;
                 }
 
-                string? browser = BrowserLocator.Find(Spec.BrowserPath);
-                if (browser is null)
+                IReadOnlyList<string> browsers = BrowserLocator.FindAll(Spec.BrowserPath);
+                if (browsers.Count == 0)
                 {
                     Problem = "No Chrome, Edge or Chromium found. Install one, or choose it in the plugin's settings.";
                     await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 
-                try
+                // Each installed browser in turn: one that won't start headless here (Edge with some policies, say)
+                // shouldn't keep the channel dark when another would.
+                List<string> problems = [];
+                foreach (string browser in browsers)
                 {
-                    _browser = await HeadlessBrowser.StartAsync(browser, Spec.PageUrl, Width, Height, cancellationToken).ConfigureAwait(false);
-                    Interlocked.Exchange(ref _lastFrameAt, Environment.TickCount64);
-                    _startedAt = Environment.TickCount64;
-                    _drawing = false;
-                    _browser.Frame += OnFrame;
-                    _logger.LogInformation("Live channel {Stream}: browser started on {Page}.", Spec.Name, Spec.PageUrl);
+                    try
+                    {
+                        _browser = await HeadlessBrowser.StartAsync(browser, Spec.PageUrl, Width, Height, cancellationToken).ConfigureAwait(false);
+                        Interlocked.Exchange(ref _lastFrameAt, Environment.TickCount64);
+                        _startedAt = Environment.TickCount64;
+                        _drawing = false;
+                        _browser.Frame += OnFrame;
+                        _logger.LogInformation("Live channel {Stream}: {Browser} started on {Page}.", Spec.Name, Path.GetFileName(browser), Spec.PageUrl);
+                        break;
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        problems.Add(ex.Message);
+                        _logger.LogWarning("Live channel {Stream}: {Browser} couldn't show the page: {Message}", Spec.Name, browser, ex.Message);
+                    }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+
+                if (_browser is null)
                 {
-                    Problem = $"The browser couldn't show the page: {ex.Message}";
-                    _logger.LogWarning(ex, "Live channel {Stream}: couldn't start the browser.", Spec.Name);
+                    Problem = $"The browser couldn't show the page: {string.Join(" Then: ", problems)}";
                     await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
                     continue;
                 }

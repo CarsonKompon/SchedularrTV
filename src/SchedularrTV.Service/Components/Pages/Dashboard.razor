@@ -92,11 +92,11 @@
                 @loading.Stage
                 @if (loading.Items > 0)
                 {
-                    <span> &middot; @loading.Items.ToString("N0")@(loading.Total is > 0 && loading.Stage == "Reading items" ? $" of {loading.Total:N0}" : "") items</span>
+                    <span> &middot; @loading.Items.ToString("N0")@(loading.Total is > 0 ? $" of {loading.Total:N0}" : " items")</span>
                 }
                 <span> &middot; @Elapsed(loading.StartedAt)</span>
             </div>
-            @if (loading.Stage == "Reading items" && loading.Percent is { } percent)
+            @if (loading.Percent is { } percent)
             {
                 <progress aria-label="Jellyfin library read" max="100" value="@percent.ToString("0.#", CultureInfo.InvariantCulture)"></progress>
             }

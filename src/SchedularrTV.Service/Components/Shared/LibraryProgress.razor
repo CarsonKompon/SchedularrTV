@@ -1,0 +1,86 @@
+@* How far reading the Jellyfin library has got: shown wherever a page waits for it (the library pages). *@
+@using System.Globalization
+@using SchedularrTV.Providers.Jellyfin
+@implements IDisposable
+@inject IServiceProvider Services
+
+<div class="activity" role="status" aria-live="polite">
+    <div class="spinner spinner-sm"></div>
+    <div class="activity-body">
+        <div class="activity-title">Reading your Jellyfin library</div>
+        @if (_jellyfin?.Loading is { } loading)
+        {
+            <div class="activity-detail">
+                @loading.Stage
+                @if (loading.Items > 0 || loading.Total is > 0)
+                {
+                    <span> &middot; @Count(loading)</span>
+                }
+                <span> &middot; @Elapsed(loading.StartedAt)</span>
+            </div>
+            @if (loading.Percent is { } percent)
+            {
+                <progress aria-label="Library read" max="100" value="@percent.ToString("0.#", CultureInfo.InvariantCulture)"></progress>
+            }
+            else
+            {
+                <progress aria-label="Library read"></progress>
+            }
+        }
+        else
+        {
+            <div class="activity-detail">Getting started&hellip; A large library takes a few minutes the first time; after that it's kept.</div>
+            <progress aria-label="Library read"></progress>
+        }
+    </div>
+</div>
+
+@code {
+    private JellyfinMediaLibrary? _jellyfin;
+    private Timer? _clock;
+
+    protected override void OnInitialized()
+    {
+        _jellyfin = Services.GetService<JellyfinMediaLibrary>();
+        if (_jellyfin is not null)
+        {
+            _jellyfin.LoadingChanged += OnChanged;
+        }
+
+        // The elapsed time keeps moving even while a slow stage reports nothing.
+        _clock = new Timer(_ => OnChanged(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    public void Dispose()
+    {
+        if (_jellyfin is not null)
+        {
+            _jellyfin.LoadingChanged -= OnChanged;
+        }
+
+        _clock?.Dispose();
+    }
+
+    private DateTime _lastPaint;
+
+    // Raised on the loading thread, sometimes many times a second.
+    private void OnChanged()
+    {
+        if (DateTime.UtcNow - _lastPaint < TimeSpan.FromMilliseconds(250))
+        {
+            return;
+        }
+
+        _lastPaint = DateTime.UtcNow;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private static string Count(JellyfinLoadProgress loading) =>
+        loading.Total is > 0 ? $"{loading.Items:N0} of {loading.Total:N0}" : $"{loading.Items:N0} items";
+
+    private static string Elapsed(DateTimeOffset started)
+    {
+        TimeSpan elapsed = DateTimeOffset.UtcNow - started;
+        return elapsed.TotalMinutes >= 1 ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds:00}s" : $"{elapsed.Seconds}s";
+    }
+}

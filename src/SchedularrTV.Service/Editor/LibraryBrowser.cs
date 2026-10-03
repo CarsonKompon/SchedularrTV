@@ -182,6 +182,41 @@ public sealed class LibraryBrowser(IMediaLibrary library, TimeProvider timeProvi
         });
     }
 
+    /// <summary>True from <see cref="WarmUp"/> until the library has been read (or failed to be).</summary>
+    public bool Warming => Volatile.Read(ref _warming) == 1;
+
+    private int _warming;
+
+    /// <summary>
+    /// Reads the library in the background if it isn't already in hand, so the library pages and the channel
+    /// wizard open on it straight away. Open pages are told when it's ready. Never throws.
+    /// </summary>
+    public void WarmUp()
+    {
+        if (Interlocked.Exchange(ref _warming, 1) == 1)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await EnsureAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Not set up yet, or the server is down: the pages say so when they ask.
+                logger?.LogInformation("The library couldn't be read in the background: {Message}", ex.GetBaseException().Message);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _warming, 0);
+                Changed?.Invoke();
+            }
+        });
+    }
+
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         await library.RefreshAsync(cancellationToken).ConfigureAwait(false);

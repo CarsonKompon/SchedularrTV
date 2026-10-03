@@ -23,7 +23,8 @@ public sealed class AppSettingsForm(
     IOptions<FileSystemLibraryOptions> folders,
     IOptions<ErsatzTvOptions> ersatz,
     IHttpClientFactory httpClients,
-    ScheduleRebuildService? rebuilds = null)
+    ScheduleRebuildService? rebuilds = null,
+    SchedularrTV.Service.Editor.LibraryBrowser? library = null)
 {
     public const string OnboardingKey = "Onboarding:Completed";
 
@@ -182,6 +183,11 @@ public sealed class AppSettingsForm(
         if (sourcesChanged)
         {
             rebuilds?.RequestFullRebuild();
+
+            // Read the library now, in the background, rather than when a library page is first opened: right after
+            // setup a schedule with no channels never asks for it, and a large library takes minutes to read.
+            library?.Invalidate();
+            library?.WarmUp();
         }
 
         // Everything else applies as soon as it's saved; only where the server listens needs a fresh start.
@@ -216,7 +222,10 @@ public sealed class AppSettingsForm(
             using HttpClient http = httpClients.CreateClient();
             http.Timeout = TimeSpan.FromSeconds(10);
             using var request = new HttpRequestMessage(HttpMethod.Get, $"{JellyfinUrl.TrimEnd('/')}/System/Info");
-            request.Headers.Add("X-Emby-Token", key);
+            // The same header the Jellyfin source sends. Newer Jellyfin (10.11+) no longer accepts the old X-Emby-Token
+            // header by default, so testing with it refused every key.
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("MediaBrowser",
+                $"Token=\"{key}\", Client=\"SchedularrTV\", Device=\"SchedularrTV\", DeviceId=\"schedularrtv\", Version=\"1.0\"");
             using HttpResponseMessage response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {

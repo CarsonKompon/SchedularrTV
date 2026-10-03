@@ -145,7 +145,8 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
     /// </remarks>
     internal async Task<Dictionary<string, JellyfinVersion>> GetVersionsAsync(
         IReadOnlyList<string> itemIds,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<int, int>? progress = null)
     {
         Dictionary<string, JellyfinVersion> versions = new(StringComparer.Ordinal);
 
@@ -182,6 +183,8 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
 
                 versions[item.Id] = new JellyfinVersion(groupId, name ?? item.Name);
             }
+
+            progress?.Invoke(Math.Min(itemIds.Count, offset + batch.Length), itemIds.Count);
         }
 
         logger.LogInformation("Resolved {Count} alternate version(s) from Jellyfin.", versions.Count);
@@ -314,7 +317,7 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
     }
 
     /// <summary>Maps every collection (BoxSet) to the ids of its members.</summary>
-    internal async Task<Dictionary<string, List<string>>> GetCollectionMembershipAsync(CancellationToken cancellationToken)
+    internal async Task<Dictionary<string, List<string>>> GetCollectionMembershipAsync(CancellationToken cancellationToken, Action<int, int>? progress = null)
     {
         Dictionary<string, List<string>> membership = new(StringComparer.Ordinal);
 
@@ -332,8 +335,11 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
             return membership;
         }
 
+        // One request per collection, so a server with hundreds of them is reported as it goes.
+        int read = 0;
         foreach (JellyfinItem boxSet in boxSets.Items)
         {
+            progress?.Invoke(read++, boxSets.Items.Count);
             string membersUrl = BuildUrl("/Items", new Dictionary<string, string?>
             {
                 ["parentId"] = boxSet.Id,

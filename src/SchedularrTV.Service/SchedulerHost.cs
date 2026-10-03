@@ -175,6 +175,7 @@ public static class SchedulerHost
         builder.Services.AddSingleton<ConfigEditor>();
         builder.Services.AddSingleton<RotationResetter>();
         builder.Services.AddSingleton<LibraryBrowser>();
+        builder.Services.AddHostedService<LibraryWarmup>();
         // Plugins say when their media sources change, so the library pages show it at once.
         builder.Services.AddSingleton<SchedularrTV.Plugins.IMediaLibraryNotifier>(sp => sp.GetRequiredService<LibraryBrowser>());
         builder.Services.AddSingleton<LogoStore>();
