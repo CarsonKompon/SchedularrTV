@@ -68,6 +68,19 @@ public static class UpNextPromo
     }
 
     /// <summary>
+    /// The first programme the schedule airs from <paramref name="at"/> on (within <paramref name="within"/>), for a
+    /// promo with no predicted show. Titles in <paramref name="skip"/> (what's on either side of the promo) are passed over.
+    /// </summary>
+    public static UpNextListing? FirstFrom(ChannelSchedule schedule, DateTimeOffset at, TimeSpan within, IReadOnlyCollection<string> skip)
+    {
+        ScheduleEntry? scheduled = schedule.Entries
+            .Where(entry => entry.Start >= at - TimeSpan.FromSeconds(1) && entry.Start <= at + within && IsListing(entry)
+                && entry.Item is { } item && !skip.Contains(TitleOf(item), StringComparer.OrdinalIgnoreCase))
+            .MinBy(entry => entry.Start);
+        return scheduled?.Item is { } found ? Listing(found, scheduled.Start) : null;
+    }
+
+    /// <summary>
     /// The read-out for an Up Next promo. With <paramref name="variety"/>, the later shows are linked in one of
     /// several ways and whole hours are said as "at 5", so back-to-back promos don't all sound the same.
     /// </summary>

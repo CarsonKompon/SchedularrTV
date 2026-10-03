@@ -6,6 +6,15 @@
   "author": "SchedularrTV",
   "apiVersion": "1.1",
   "entryAssembly": "SchedularrTV.Plugins.GeneratedPromos.dll",
+  "settings": [
+    {
+      "key": "SaveFolder",
+      "label": "Save folder",
+      "type": "Folder",
+      "placeholder": "state/generated-promos in the data folder",
+      "description": "Where rendered promo videos and voice-overs are kept. ErsatzTV must be able to read it. Leave empty for state/generated-promos in the data folder. Changing it doesn't move existing files: copy the old folder across to keep cached voice-overs, so paid voices aren't asked for them again."
+    }
+  ],
   "dependencies": [
     { "id": "promos" },
     { "id": "tts-tiktok", "optional": true },

@@ -294,8 +294,10 @@ internal sealed class PromoBreakPlan(
             : await generated.ComingUpTargetsAsync(context, targets, cursor, promoConfig, cancellationToken).ConfigureAwait(false);
 
         List<ScheduleEntry> entries = [];
-        foreach ((MediaItem promo, PromoTarget? generatedFor, string? template) in PlanComingUp(promos, generatedTargets, cursor, fillTo - cursor))
+        foreach ((MediaItem promo, PromoTarget? promoted, string? template) in PlanComingUp(promos, generatedTargets, cursor, fillTo - cursor))
         {
+            // An open target names whatever the built schedule airs then, so there's no predicted show to record.
+            PromoTarget? generatedFor = promoted is { Open: true } ? null : promoted;
             entries.Add(new ScheduleEntry
             {
                 Start = cursor,
@@ -307,7 +309,7 @@ internal sealed class PromoBreakPlan(
                 PromoTargetId = generatedFor?.DisplayName
                     ?? (promo.Attributes.TryGetValue("show_id", out string? target) ? target : promo.SeriesId),
                 GeneratedTemplate = template,
-                GeneratedTargetAt = generatedFor?.At,
+                GeneratedTargetAt = promoted?.At,
                 GeneratedSubject = generatedFor?.DisplayName
             });
         }
@@ -351,11 +353,12 @@ internal sealed class PromoBreakPlan(
             Item = eventually,
             Source = eventuallyTemplate is null ? "eventually" : "generated eventually",
             BlockName = Block?.Name,
-            PromoTargetId = generatedEventually?.Titles.First()
+            PromoTargetId = generatedEventually?.Titles.FirstOrDefault()
                 ?? (eventually.Attributes.TryGetValue("show_id", out string? eventuallyId) ? eventuallyId : eventually.SeriesId),
             GeneratedTemplate = eventuallyTemplate,
             GeneratedTargetAt = generatedEventually?.At,
-            GeneratedSubject = generatedEventually?.Titles.First()
+            // Empty when only the built schedule can say what airs then.
+            GeneratedSubject = generatedEventually?.Titles.FirstOrDefault()
         }, "eventually-slot");
     }
 

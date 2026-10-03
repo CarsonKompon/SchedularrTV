@@ -58,8 +58,17 @@ public sealed partial class GeneratedPromoService(
     private readonly ConcurrentDictionary<string, Lazy<Task<string>>> _voiceCalls = new(StringComparer.Ordinal);
     private const string PartialPrefix = "partial-";
 
+    /// <summary>
+    /// Where renders go: the folder chosen in the plugin's settings, else the older schedule-file setting
+    /// (<c>generated-promos: path:</c>), else the default.
+    /// </summary>
     public string Root => Path.GetFullPath(
-        config?.Current.Settings.GeneratedPromosPath is { Length: > 0 } configured ? configured : DefaultRoot);
+        _options.SaveFolder is { Length: > 0 } chosen ? chosen
+        : config?.Current.Settings.GeneratedPromosPath is { Length: > 0 } configured ? configured
+        : DefaultRoot);
+
+    /// <summary>Whether the folder comes from the plugin's settings rather than the schedule file or the default.</summary>
+    public bool FolderFromPluginSettings => _options.SaveFolder is { Length: > 0 };
 
     /// <summary>Where files go when the schedule settings don't name a folder.</summary>
     public string DefaultRoot => Path.GetFullPath(_options.OutputPath);
@@ -218,10 +227,21 @@ public sealed partial class GeneratedPromoService(
         {
             GeneratedPromoType.ThisHasBeen or GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow =>
                 UpNextPromo.Previous(schedule, entry.Start) is { } previous ? [previous] : [],
-            GeneratedPromoType.ComingUp or GeneratedPromoType.Eventually =>
-                entry.GeneratedTargetAt is { } at && UpNextPromo.At(schedule, at, entry.GeneratedSubject) is { } target ? [target] : [],
+            GeneratedPromoType.ComingUp or GeneratedPromoType.Eventually when entry.GeneratedTargetAt is { } at =>
+                (string.IsNullOrWhiteSpace(entry.GeneratedSubject)
+                    ? UpNextPromo.FirstFrom(schedule, at, OpenTargetReach, type == GeneratedPromoType.ComingUp ? Around(schedule, entry) : Array.Empty<string>())
+                    : UpNextPromo.At(schedule, at, entry.GeneratedSubject)) is { } target ? [target] : [],
+            GeneratedPromoType.ComingUp or GeneratedPromoType.Eventually => [],
             _ => UpNextPromo.Listings(schedule, entry.End, needed)
         };
+
+    // An airing with no predicted show (a block of several shows, or rotation time) names the first programme from then.
+    private static readonly TimeSpan OpenTargetReach = TimeSpan.FromHours(2);
+
+    // The shows either side of a promo, which a Coming Up shouldn't name (the one after is Up Next's).
+    private static string[] Around(ChannelSchedule schedule, ScheduleEntry entry) =>
+        [.. new[] { UpNextPromo.Previous(schedule, entry.Start)?.Title, UpNextPromo.Listings(schedule, entry.End, 1).FirstOrDefault()?.Title }
+            .OfType<string>()];
 
     /// <summary>Renders one promo, falling back to a silent file when the voice cannot be produced.</summary>
     public async Task<GeneratedPromoRender> RenderAsync(ResolvedGeneratedPromo promo, CancellationToken cancellationToken = default)

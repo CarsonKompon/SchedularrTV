@@ -1,21 +1,29 @@
-@* The Generated promos plugin's schedule-wide settings: where renders go and how long they're kept. *@
+@* The Generated promos plugin's schedule-wide settings: when renders are made and how long they're kept. Where they go
+   is the plugin's own setting (Plugins page); it's shown here. *@
 @using System.IO
 @inject GeneratedPromoService Promos
 
 <div class="card">
     <div class="card-head"><h2>Generated promos</h2></div>
-    <label class="field">
+    <div class="field">
         <span>Save folder</span>
-        <input type="text" value="@Global.GeneratedPromosPath" placeholder="@Promos.DefaultRoot"
-               @onchange="OnPathChanged" />
-    </label>
+        <div><code>@Promos.Root</code></div>
+    </div>
     <p class="hint">
-        Rendered promo videos and voice-overs are kept here. Leave empty to use
-        <code>@Promos.DefaultRoot</code>. Changing it doesn't move existing files; copy the old folder
-        across to keep cached voice-overs so they aren't generated (and paid for) again.
+        Rendered promo videos and voice-overs are kept here. Choose the folder in the Generated promos plugin's settings:
+        its gear on the <a href="plugins">Plugins</a> page.
     </p>
-    @if (!string.IsNullOrWhiteSpace(Global.GeneratedPromosPath) && Path.IsPathFullyQualified(Global.GeneratedPromosPath)
-         && !Directory.Exists(Global.GeneratedPromosPath))
+    @if (!string.IsNullOrWhiteSpace(Global.GeneratedPromosPath))
+    {
+        @* Set in the schedule file by an earlier version; still used until a folder is chosen on the Plugins page. *@
+        <p class="hint">
+            @(Promos.FolderFromPluginSettings
+                ? $"The schedule file also names {Global.GeneratedPromosPath}, from an earlier version; the plugin's setting is used instead."
+                : $"This comes from the schedule file ({Global.GeneratedPromosPath}), set by an earlier version. Choosing a folder on the Plugins page replaces it.")
+            <button class="btn btn-sm btn-ghost" type="button" @onclick="ForgetOldPath">Forget the schedule file's folder</button>
+        </p>
+    }
+    @if (!Directory.Exists(Promos.Root))
     {
         <p class="hint">This folder doesn't exist yet; it will be created on the first render.</p>
     }
@@ -54,10 +62,9 @@
 
     private SchedulerSettings Global => Context.Config.Settings;
 
-    private void OnPathChanged(ChangeEventArgs e)
+    private void ForgetOldPath()
     {
-        string value = (e.Value?.ToString() ?? string.Empty).Trim().Trim('"');
-        Global.GeneratedPromosPath = value.Length == 0 ? null : value;
+        Global.GeneratedPromosPath = null;
         Context.NotifyChanged();
     }
 }

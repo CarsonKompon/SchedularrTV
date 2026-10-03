@@ -88,10 +88,24 @@ public sealed class GeneratedPromoTypeTests
         Assert.All(comingUp, entry =>
         {
             Assert.Equal("Coming Up", entry.GeneratedTemplate);
-            Assert.Equal(Midnight.AddHours(20), entry.GeneratedTargetAt);
-            Assert.Equal("Rocket Power", entry.GeneratedSubject);
             Assert.Equal(TimeSpan.FromSeconds(8), entry.Duration);
         });
+
+        // The anchor is promoted while it's ahead; with nothing fixed ahead, whatever the rotation airs a while later is.
+        Assert.Contains(comingUp, entry => entry.GeneratedSubject is not null);
+        Assert.All(comingUp, entry =>
+        {
+            if (entry.GeneratedSubject is null)
+            {
+                Assert.InRange(entry.GeneratedTargetAt!.Value - entry.End, TimeSpan.FromMinutes(45), TimeSpan.FromHours(3.1));
+            }
+            else
+            {
+                Assert.Equal(Midnight.AddHours(20), entry.GeneratedTargetAt);
+                Assert.Equal("Rocket Power", entry.GeneratedSubject);
+            }
+        });
+        Assert.Contains(comingUp, entry => entry.Start > Midnight.AddHours(20) && entry.GeneratedSubject is null);
         Assert.All(eventually, entry =>
         {
             Assert.Equal("Eventually", entry.GeneratedTemplate);
@@ -157,6 +171,80 @@ public sealed class GeneratedPromoTypeTests
             ScheduleEntry next = schedule.Entries.First(candidate => candidate.Start >= entry.End && candidate.Kind == ScheduleEntryKind.Program);
             Assert.NotEqual(next.Item!.SeriesName, entry.GeneratedSubject);
         });
+    }
+
+    [Fact]
+    public async Task A_rotation_run_channel_still_gets_coming_up_and_eventually_named_from_the_built_schedule()
+    {
+        ChannelConfig channel = Channel(
+            GeneratedPromoTemplates.ForType(GeneratedPromoType.ComingUp),
+            GeneratedPromoTemplates.ForType(GeneratedPromoType.Eventually));
+        channel.Anchors.Clear();
+        channel.BaseRotation!.Include.Add(new ContentInclude { Show = "Rocket Power" });
+
+        ChannelSchedule schedule = await BuildAsync(channel, Monday, TimeSpan.FromHours(10));
+
+        ScheduleEntry[] comingUp = [.. schedule.Entries.Where(entry => entry.GeneratedTemplate == "Coming Up")];
+        ScheduleEntry[] eventually = [.. schedule.Entries.Where(entry => entry.GeneratedTemplate == "Eventually")];
+        Assert.NotEmpty(comingUp);
+        Assert.NotEmpty(eventually);
+        Assert.All(comingUp, entry =>
+        {
+            Assert.Null(entry.GeneratedSubject);
+            Assert.InRange(entry.GeneratedTargetAt!.Value - entry.End, TimeSpan.FromMinutes(45), TimeSpan.FromHours(3.1));
+        });
+        Assert.All(eventually, entry =>
+        {
+            Assert.Null(entry.GeneratedSubject);
+            Assert.InRange(entry.GeneratedTargetAt!.Value - entry.Start, TimeSpan.FromHours(11), TimeSpan.FromHours(47));
+        });
+
+        // Named from what the schedule airs then, never the shows either side of the promo (the next one is Up Next's).
+        int named = 0;
+        foreach (ScheduleEntry entry in comingUp)
+        {
+            if (GeneratedPromoService.Subject(GeneratedPromoType.ComingUp, schedule, entry, 1) is not [UpNextListing listing])
+            {
+                continue;
+            }
+
+            named++;
+            ScheduleEntry previous = schedule.Entries.Last(candidate => candidate.End <= entry.Start && candidate.Kind == ScheduleEntryKind.Program);
+            ScheduleEntry next = schedule.Entries.First(candidate => candidate.Start >= entry.End && candidate.Kind == ScheduleEntryKind.Program);
+            Assert.NotEqual(previous.Item!.SeriesName, listing.Title);
+            Assert.NotEqual(next.Item!.SeriesName, listing.Title);
+            Assert.True(listing.Start >= entry.GeneratedTargetAt!.Value - TimeSpan.FromSeconds(1));
+            Assert.Contains(schedule.Entries, candidate => candidate.Start == listing.Start && candidate.Kind == ScheduleEntryKind.Program);
+        }
+
+        Assert.True(named > 0);
+    }
+
+    [Fact]
+    public void An_open_target_names_the_first_show_from_then_that_is_not_either_side_of_the_promo()
+    {
+        ScheduleEntry Program(int minute, string series) => new()
+        {
+            Start = Monday.AddMinutes(minute), Duration = TimeSpan.FromMinutes(22), Kind = ScheduleEntryKind.Program,
+            Item = TestMedia.Episode(series, 1, minute + 1, TimeSpan.FromMinutes(22), title: $"{series} episode")
+        };
+        var promo = new ScheduleEntry
+        {
+            Start = Monday.AddMinutes(22), Duration = TimeSpan.FromSeconds(8), Kind = ScheduleEntryKind.Promo,
+            GeneratedTemplate = "x", GeneratedTargetAt = Monday.AddMinutes(45)
+        };
+        var schedule = new ChannelSchedule
+        {
+            ChannelId = "zone", ChannelName = "The Zone", Start = Monday, End = Monday.AddHours(3),
+            Entries = [Program(0, "SpongeBob"), promo, Program(30, "Rugrats"), Program(60, "Rugrats"), Program(90, "SpongeBob"), Program(120, "Rocket Power")]
+        };
+
+        UpNextListing later = Assert.Single(GeneratedPromoService.Subject(GeneratedPromoType.ComingUp, schedule, promo, 1));
+        Assert.Equal(("Rocket Power", Monday.AddMinutes(120)), (later.Title, later.Start));
+
+        // An Eventually with no predicted show takes the first programme from its airtime, whatever it is.
+        UpNextListing trailer = Assert.Single(GeneratedPromoService.Subject(GeneratedPromoType.Eventually, schedule, promo, 1));
+        Assert.Equal(("Rugrats", Monday.AddMinutes(60)), (trailer.Title, trailer.Start));
     }
 
     [Fact]

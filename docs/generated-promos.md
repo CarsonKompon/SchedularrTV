@@ -112,6 +112,16 @@ day reads Today, Tonight (from 5pm), Tomorrow or the weekday. Coming Up and Even
 built schedule airs at that time, falling back to the show predicted at build time when the schedule
 doesn't reach that far.
 
+Channels run by their rotation or by long blocks of several shows (no anchor or block opening ahead) get them
+too:
+
+- **Coming Up** picks a time 45 minutes to 3 hours past the break and names the first show the schedule airs from
+  then, skipping the shows either side of the promo.
+- **Eventually** advertises a block of several shows only within the build horizon, and a rotation-run channel
+  gets a time more than 12 hours out, since the schedule has to be built that far to name the show.
+
+If nothing can be named by render time, the slot plays stand-in commercials.
+
 Up Next read-outs link the later shows in varied ways ("Then…", "Followed by… and…") and say whole hours
 as "at 5". Each promo picks one opener and one closer from its lists; the choice is fixed per airing, so
 re-renders sound the same.
@@ -213,9 +223,10 @@ is the fallback whenever the AI's writing leaves out a show, makes up a time, or
 
 ## Caching
 
-Renders and voice-overs are cached by content in the folder set under **Settings → Generated promos**
-(`path` under `settings.plugins.generated-promos`, a full path), or `state/generated-promos` in the data folder when
-unset, so identical promos are made once. Renders are filed as `<channel>/<template>/` or, for templates a
+Renders and voice-overs are cached by content in the **Save folder** from the plugin's settings (its gear on the
+**Plugins** page), or `state/generated-promos` in the data folder when unset, so identical promos are made once.
+(Earlier versions set it in the schedule file, as `path` under `settings.plugins.generated-promos`; that's still
+used until a folder is chosen on the Plugins page.) **Settings → Generated promos** shows the folder in use. Renders are filed as `<channel>/<template>/` or, for templates a
 block defines, `<channel>/<block>/<template>/`; borrowed templates render into the channel that owns
 them. Editor previews go to `_previews/`. Changing the folder doesn't move existing files.
 

@@ -18,6 +18,11 @@ public sealed class GeneratedPromosPlugin : IPlugin, IPluginEndpoints
         services.PostConfigure<GeneratedPromoOptions>(options =>
         {
             options.OutputPath = AppPaths.Rooted(context.AppDataDirectory, options.OutputPath);
+
+            // The save folder from the plugin's own settings (its gear on the Plugins page).
+            options.SaveFolder = context.Configuration["SaveFolder"]?.Trim().Trim('"') is { Length: > 0 } chosen
+                ? AppPaths.Rooted(context.AppDataDirectory, chosen)
+                : null;
             options.FfmpegPath = ToolLocator.Resolve(options.FfmpegPath, "ffmpeg", context.AppDataDirectory);
             options.FfprobePath = ToolLocator.Resolve(options.FfprobePath, "ffprobe", context.AppDataDirectory);
         });

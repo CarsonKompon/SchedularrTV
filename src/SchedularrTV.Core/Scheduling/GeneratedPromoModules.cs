@@ -45,9 +45,41 @@ internal sealed class GeneratedPromoSubstitute : IPromoSpotSubstitute
             }
         }
 
+        // A channel run by its rotation (or deep inside a long block) has no fixed point ahead to promote, so the
+        // promo names whatever the built schedule airs a while from now instead.
+        if (!targets.Any(target => target.At > breakEnd + Epsilon && target.At - cursor <= promos.Lookahead)
+            && OpenTarget(context.BreakSeed, "generated-coming-up-later", breakEnd, LaterFrom, Min(LaterTo, promos.Lookahead)) is { } later)
+        {
+            targets.Add(later);
+        }
+
         return targets;
     }
 
+    // How far past the break an open Coming Up looks: beyond the next show or two (Up Next covers those).
+    private static readonly TimeSpan LaterFrom = TimeSpan.FromMinutes(45);
+    private static readonly TimeSpan LaterTo = TimeSpan.FromHours(3);
+
+    // An open Eventually has to stay inside what the schedule will have built by the time it's rendered.
+    private static readonly TimeSpan BuiltMargin = TimeSpan.FromHours(2);
+
+    private static TimeSpan Min(TimeSpan a, TimeSpan b) => a < b ? a : b;
+
+    private static PromoTarget? OpenTarget(string seed, string salt, DateTimeOffset from, TimeSpan earliest, TimeSpan latest)
+    {
+        if (latest <= earliest)
+        {
+            return null;
+        }
+
+        int minutes = DeterministicRandom.FromSeedText(seed, salt).Next((int)(latest - earliest).TotalMinutes + 1);
+        return new PromoTarget(from + earliest + TimeSpan.FromMinutes(minutes), [], "", Open: true);
+    }
+
+    /// <summary>
+    /// A trailer and the airing it advertises. The airing's <see cref="UpcomingAiring.Titles"/> holds the predicted show,
+    /// or is empty when only the built schedule can say (a block of several shows, or rotation time).
+    /// </summary>
     public async ValueTask<(GeneratedPromoTemplate Template, UpcomingAiring Airing)?> EventuallyAsync(
         BreakContext context, PromoConfig promos, bool clipAvailable, DateTimeOffset cursor, TimeSpan available, CancellationToken cancellationToken)
     {
@@ -56,10 +88,25 @@ internal sealed class GeneratedPromoSubstitute : IPromoSpotSubstitute
             return null;
         }
 
+        // What the schedule will reach by render time (renders happen shortly before the trailer airs).
+        TimeSpan built = context.Config.Settings.Horizon - BuiltMargin;
         ChannelOutlook outlook = await context.Session.GetOutlookAsync(promos.Eventually.Horizon, cancellationToken).ConfigureAwait(false);
-        // Only airings with a single possible title, so the trailer can never name the wrong show.
-        List<UpcomingAiring> airings = [.. outlook.Airings.Where(airing => airing.Titles.Count == 1
-            && airing.At - cursor > promos.Lookahead && airing.At - cursor <= promos.Eventually.Horizon)];
+
+        // A single possible title can be named from the prediction; several (a block of shows) only once the schedule
+        // reaches it, so those stay within the build horizon. Either way the trailer never names the wrong show.
+        List<UpcomingAiring> airings = [.. outlook.Airings
+            .Where(airing => airing.At - cursor > promos.Lookahead && airing.At - cursor <= promos.Eventually.Horizon
+                && (airing.Titles.Count == 1 || (airing.Titles.Count > 1 && airing.At - cursor <= built)))
+            .Select(airing => airing.Titles.Count == 1 ? airing : airing with { Titles = new HashSet<string>() })];
+
+        // Nothing fixed ahead (a rotation-run channel): a time a day or so out, named from the built schedule.
+        if (airings.Count == 0
+            && OpenTarget(context.BreakSeed, "generated-eventually-later", cursor, promos.Lookahead + TimeSpan.FromMinutes(1),
+                Min(built, promos.Eventually.Horizon)) is { } open)
+        {
+            airings.Add(new UpcomingAiring(open.At, open.At.DayOfWeek.ToString().ToLowerInvariant(), new HashSet<string>()));
+        }
+
         if (airings.Count > 0
             && Choose(context, GeneratedPromoType.Eventually, clipAvailable, available, context.From) is { } trailer)
         {

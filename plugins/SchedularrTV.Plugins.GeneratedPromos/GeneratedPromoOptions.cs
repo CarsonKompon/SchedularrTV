@@ -19,4 +19,10 @@ public sealed class GeneratedPromoOptions
 
     /// <summary>Unreferenced renders older than this are deleted when the schedule settings don't say; also clears abandoned writes.</summary>
     public TimeSpan KeepFor { get; set; } = TimeSpan.FromDays(7);
+
+    /// <summary>
+    /// The folder chosen in the plugin's settings on the Plugins page (<c>Plugins:generated-promos:SaveFolder</c>); it
+    /// wins over the older schedule-file setting. Null when none was chosen.
+    /// </summary>
+    public string? SaveFolder { get; set; }
 }

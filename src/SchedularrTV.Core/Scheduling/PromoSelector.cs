@@ -6,7 +6,11 @@ using SchedularrTV.Core.Query;
 namespace SchedularrTV.Core.Scheduling;
 
 /// <summary>Identity of a show an upcoming anchor will air, plus when it airs.</summary>
-public sealed record PromoTarget(DateTimeOffset At, IReadOnlyList<string> ShowIds, string DisplayName);
+/// <param name="Open">
+/// No particular show: a generated promo names whatever the built schedule airs from <paramref name="At"/> on.
+/// Used where the channel's rotation, rather than an anchor or block opening, decides what plays.
+/// </param>
+public sealed record PromoTarget(DateTimeOffset At, IReadOnlyList<string> ShowIds, string DisplayName, bool Open = false);
 
 /// <summary>
 /// Lookahead promo matching (spec 3.2). Inspects upcoming anchors and finds promo assets whose
