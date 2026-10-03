@@ -7,6 +7,8 @@
 @inject IptvFetcher Fetcher
 @inject IptvRefresher Refresher
 @inject RelayHub Hub
+@inject IptvOrgApi IptvOrgLists
+@inject IptvOrgGuides IptvOrgGuides
 
 <div class="page-header">
     <div>
@@ -57,6 +59,35 @@
 
         @if (editing)
         {
+            <div class="iptv-org-box">
+                <strong>Free channels from iptv-org</strong>
+                <span class="muted">Pick a playlist from <a href="https://github.com/iptv-org/iptv" target="_blank" rel="noopener">iptv-org</a> instead of typing an address.</span>
+                <div class="row row-wrap" style="gap:8px;margin-top:8px;">
+                    <select value="@_orgKind" @onchange="PickKindAsync">
+                        <option value="Country">A country</option>
+                        <option value="Category">A category</option>
+                        <option value="Language">A language</option>
+                        <option value="Everything">Everything</option>
+                    </select>
+                    @if (_orgKind != IptvOrgPlaylistKind.Everything)
+                    {
+                        <select value="@_orgCode" style="flex:1;min-width:200px;" @onchange="e => _orgCode = Text(e)">
+                            <option value="">@(_orgLoading ? "Loading…" : "Choose…")</option>
+                            @foreach (IptvOrgChoice choice in _orgChoices)
+                            {
+                                <option value="@choice.Code">@choice.Name</option>
+                            }
+                        </select>
+                    }
+                    <button class="btn btn-sm" type="button" disabled="@(_orgKind != IptvOrgPlaylistKind.Everything && _orgCode.Length == 0)"
+                            @onclick="() => UseIptvOrgAsync(source)">Use this playlist</button>
+                </div>
+                @if (_orgProblem is { } orgProblem)
+                {
+                    <p class="hint warn" style="margin:6px 0 0;">@orgProblem</p>
+                }
+            </div>
+
             <div class="grid grid-2">
                 <label class="field"><span>Name</span>
                     <input type="text" value="@source.Name" placeholder="My provider" @onchange="e => source.Name = Text(e)" /></label>
@@ -66,8 +97,15 @@
             <label class="field"><span>Playlist (M3U) address or file</span>
                 <input type="text" value="@source.PlaylistUrl" placeholder="http://provider.example/get.php?username=…&password=…&type=m3u_plus"
                        @onchange="e => source.PlaylistUrl = Text(e)" /></label>
-            <label class="field"><span>Guide (XMLTV) address or file <span class="muted">(.xml or .xml.gz; empty uses the one the playlist names)</span></span>
-                <input type="text" value="@source.GuideUrl" placeholder="@(_preview?.GuideUrls.FirstOrDefault() ?? "http://provider.example/xmltv.php?username=…&password=…")"
+            <label class="check"><input type="checkbox" checked="@source.IptvOrgGuide" @onchange="e => source.IptvOrgGuide = e.Value is true" />
+                <span>Make the guide with iptv-org/epg</span></label>
+            <p class="hint" style="margin:0 0 10px;">
+                Free listings for the carried channels, grabbed from the TV listings sites <a href="https://github.com/iptv-org/epg" target="_blank" rel="noopener">iptv-org/epg</a>
+                knows for each one (matched by the playlist's tvg-id, else the channel's name). The first time, the plugin sets up the grabber in its own
+                folder (Node.js, unless you have it, and iptv-org/epg: a few hundred MB and a few minutes); after that the guide is grabbed every few hours.
+            </p>
+            <label class="field"><span>Guide (XMLTV) address or file <span class="muted">(.xml or .xml.gz; @(source.IptvOrgGuide ? "optional: fills in channels iptv-org has nothing for" : "empty uses the one the playlist names"))</span></span>
+                <input type="text" value="@source.GuideUrl" placeholder="@(source.IptvOrgGuide ? "" : _preview?.GuideUrls.FirstOrDefault() ?? "http://provider.example/xmltv.php?username=…&password=…")"
                        @onchange="e => source.GuideUrl = Text(e)" /></label>
             <div class="grid grid-2">
                 <label class="field"><span>User agent <span class="muted">(optional)</span></span>
@@ -155,6 +193,34 @@
             {
                 <p class="hint warn">@guideProblem</p>
             }
+            @if (source.IptvOrgGuide && !string.IsNullOrEmpty(source.Id))
+            {
+                IptvOrgStatus org = IptvOrgGuides.Status(source.Id);
+                <div class="row row-wrap" style="gap:8px;align-items:center;margin:0 0 8px;">
+                    <span class="pill pill-muted">iptv-org guide</span>
+                    @if (org.Activity is { } activity)
+                    {
+                        <span class="hint" style="margin:0;">@activity…</span>
+                    }
+                    else if (org.GrabbedAt is { } grabbed)
+                    {
+                        <span class="hint" style="margin:0;">
+                            Listings for @org.Listed of @org.Planned channel(s) with a listings site
+                            @(org.Unknown > 0 ? $"({org.Unknown} more iptv-org has no site for)" : "")
+                            · grabbed @grabbed.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="hint" style="margin:0;">Not grabbed yet.</span>
+                    }
+                    <button class="btn btn-sm btn-ghost" type="button" disabled="@(org.Activity is not null)" @onclick="() => IptvOrgGuides.GrabNow(source.Id)">Grab now</button>
+                </div>
+                @if (org.Problem is { } orgProblem && org.Activity is null)
+                {
+                    <p class="hint warn">@orgProblem</p>
+                }
+            }
             @if (carried.Count > 0)
             {
                 <div class="iptv-carried">
@@ -194,6 +260,7 @@
 
 <div class="row" style="gap:8px;">
     <button class="btn btn-primary" type="button" disabled="@(_editing is not null)" @onclick="Add">Add a provider</button>
+    <button class="btn" type="button" disabled="@(_editing is not null)" @onclick="AddIptvOrgAsync">Add free channels from iptv-org</button>
 </div>
 
 <div class="card" style="margin-top:16px;">
@@ -219,6 +286,7 @@
     .iptv-carried { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 6px 16px; }
     .iptv-carried-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
     .hint.warn { color: #ffd08a; }
+    .iptv-org-box { border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; display: flex; flex-direction: column; }
 </style>
 
 @code {
@@ -235,12 +303,19 @@
     private string? _message;
     private bool _messageOk;
 
+    private IptvOrgPlaylistKind _orgKind = IptvOrgPlaylistKind.Country;
+    private string _orgCode = string.Empty;
+    private IReadOnlyList<IptvOrgChoice> _orgChoices = [];
+    private bool _orgLoading;
+    private string? _orgProblem;
+
     protected override void OnInitialized()
     {
         Load();
         Catalog.Changed += OnChanged;
         Refresher.StateChanged += OnChanged;
         Hub.Changed += OnChanged;
+        IptvOrgGuides.Changed += OnChanged;
     }
 
     public void Dispose()
@@ -248,6 +323,74 @@
         Catalog.Changed -= OnChanged;
         Refresher.StateChanged -= OnChanged;
         Hub.Changed -= OnChanged;
+        IptvOrgGuides.Changed -= OnChanged;
+    }
+
+    /// <summary>A new provider set up for an iptv-org playlist, its picker open on countries.</summary>
+    private async Task AddIptvOrgAsync()
+    {
+        Add();
+        if (_editing is { } source)
+        {
+            source.IptvOrgGuide = true;
+            source.Passthrough = true;
+        }
+
+        _orgCode = string.Empty;
+        await Task.CompletedTask;
+    }
+
+    private async Task PickKindAsync(ChangeEventArgs e)
+    {
+        _orgKind = Enum.TryParse(Text(e), out IptvOrgPlaylistKind kind) ? kind : IptvOrgPlaylistKind.Country;
+        _orgCode = string.Empty;
+        await LoadChoicesAsync();
+    }
+
+    private async Task LoadChoicesAsync()
+    {
+        _orgChoices = [];
+        _orgProblem = null;
+        if (_orgKind == IptvOrgPlaylistKind.Everything)
+        {
+            return;
+        }
+
+        _orgLoading = true;
+        StateHasChanged();
+        try
+        {
+            _orgChoices = _orgKind switch
+            {
+                IptvOrgPlaylistKind.Category => await IptvOrgLists.CategoriesAsync(CancellationToken.None),
+                IptvOrgPlaylistKind.Language => await IptvOrgLists.LanguagesAsync(CancellationToken.None),
+                _ => await IptvOrgLists.CountriesAsync(CancellationToken.None)
+            };
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException or System.Text.Json.JsonException)
+        {
+            _orgProblem = $"Couldn't read iptv-org's lists: {ex.Message}";
+        }
+        finally
+        {
+            _orgLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>Points the provider at the chosen iptv-org playlist, with the iptv-org guide, and reads its channels.</summary>
+    private async Task UseIptvOrgAsync(IptvSource source)
+    {
+        string code = _orgKind == IptvOrgPlaylistKind.Everything ? "index" : _orgCode;
+        string label = _orgKind == IptvOrgPlaylistKind.Everything ? "Everything" : _orgChoices.FirstOrDefault(choice => choice.Code == code)?.Name ?? code;
+        source.PlaylistUrl = IptvOrgApi.PlaylistUrl(_orgKind, code);
+        source.IptvOrgGuide = true;
+        if (string.IsNullOrWhiteSpace(source.Name) || source.Name.StartsWith("iptv-org", StringComparison.Ordinal))
+        {
+            source.Name = $"iptv-org: {label}";
+        }
+
+        await LoadAsync(source);
     }
 
     private void OnChanged() => _ = InvokeAsync(() =>
@@ -281,6 +424,16 @@
         _editing = source;
         _preview = Catalog.Get(source.Id)?.Playlist is { Channels.Count: > 0 } known ? known : null;
         _message = null;
+        LoadChoicesOnce();
+    }
+
+    // The iptv-org picker's list, read the first time an editor opens.
+    private void LoadChoicesOnce()
+    {
+        if (_orgChoices.Count == 0 && !_orgLoading)
+        {
+            _ = LoadChoicesAsync();
+        }
     }
 
     private void Add()
@@ -290,6 +443,7 @@
         _editing = source;
         _preview = null;
         _message = null;
+        LoadChoicesOnce();
     }
 
     /// <summary>A block of numbers after every provider's, so a second provider doesn't land among the first's.</summary>

@@ -75,7 +75,11 @@ public sealed class IptvFetcher(IHttpClientFactory httpClients)
     public async Task<XmltvGuide?> LoadGuideAsync(IptvSource source, Playlist playlist, IReadOnlyList<PlaylistChannel> carried, DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (source.EffectiveGuideUrl(playlist.GuideUrls) is not { } location)
+        // With the iptv-org guide, only an address set here fills in; the playlist's own (often long gone) isn't used.
+        string? location = source.IptvOrgGuide
+            ? string.IsNullOrWhiteSpace(source.GuideUrl) ? null : source.GuideUrl.Trim()
+            : source.EffectiveGuideUrl(playlist.GuideUrls);
+        if (location is null)
         {
             return null;
         }
@@ -107,6 +111,37 @@ public sealed class IptvFetcher(IHttpClientFactory httpClients)
         {
             Delete(path, location);
         }
+    }
+
+    /// <summary>
+    /// A guide grabbed with iptv-org/epg. Its channels are listed under the playlist's own <c>tvg-id</c>s; ones found by
+    /// name (<paramref name="names"/>: guide id → playlist name) are given that name, so they match too. Channels it has
+    /// no listings for are left out, so a provider's guide can fill them in.
+    /// </summary>
+    public static async Task<XmltvGuide> LoadIptvOrgGuideAsync(string file, IReadOnlyDictionary<string, string> names, DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await using FileStream stream = File.OpenRead(file);
+        XmltvGuide guide = await Task.Run(() => XmltvReader.Read(stream,
+            read => new HashSet<string>(read.Channels.Keys, StringComparer.OrdinalIgnoreCase), now - GuideBehind, now + GuideAhead), cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach ((string id, string name) in names)
+        {
+            if (!guide.Channels.TryGetValue(id, out List<string>? known))
+            {
+                guide.Channels[id] = known = [];
+            }
+
+            known.Add(name);
+        }
+
+        foreach (string id in guide.Channels.Keys.Where(id => !guide.Programmes.TryGetValue(id, out List<GuideProgramme>? listings) || listings.Count == 0).ToList())
+        {
+            guide.Channels.Remove(id);
+        }
+
+        return guide;
     }
 
     /// <summary>A local copy of a playlist or guide: a temporary download of a web address, or the file itself.</summary>
@@ -186,7 +221,8 @@ public sealed class IptvRefresher(
     IptvSettings settings,
     IScheduleRepublisher republisher,
     TimeProvider clock,
-    ILogger<IptvRefresher> logger) : BackgroundService
+    ILogger<IptvRefresher> logger,
+    IptvOrg.IptvOrgGuides? iptvOrg = null) : BackgroundService
 {
     private readonly SemaphoreSlim _wake = new(0, 1);
     private volatile bool _refreshing;
@@ -215,6 +251,11 @@ public sealed class IptvRefresher(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         store.Changed += RequestRefresh;
+        if (iptvOrg is not null)
+        {
+            iptvOrg.Grabbed += RequestRefresh;
+        }
+
         try
         {
             while (!stoppingToken.IsCancellationRequested)
@@ -239,6 +280,10 @@ public sealed class IptvRefresher(
         finally
         {
             store.Changed -= RequestRefresh;
+            if (iptvOrg is not null)
+            {
+                iptvOrg.Grabbed -= RequestRefresh;
+            }
         }
     }
 
@@ -293,9 +338,9 @@ public sealed class IptvRefresher(
             try
             {
                 guide = await fetcher.LoadGuideAsync(source, playlist, carried, now, cancellationToken).ConfigureAwait(false);
-                if (guide is null)
+                if (guide is null && !source.IptvOrgGuide)
                 {
-                    guideProblem = "No guide: set a guide address (the playlist doesn't name one).";
+                    guideProblem = "No guide: set a guide address (the playlist doesn't name one), or make one with iptv-org/epg.";
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
@@ -305,6 +350,26 @@ public sealed class IptvRefresher(
 
                 // The last guide read is better than none until the provider's is back.
                 guide = previous?.Guide;
+            }
+
+            // The iptv-org guide comes first; the provider's (if any) fills in the channels it has nothing for.
+            if (source.IptvOrgGuide && iptvOrg?.GuideFile(source.Id) is { } grabbed)
+            {
+                try
+                {
+                    XmltvGuide own = await IptvFetcher.LoadIptvOrgGuideAsync(grabbed, iptvOrg.State(source.Id).Names, now, cancellationToken)
+                        .ConfigureAwait(false);
+                    guide = XmltvGuide.Merge(own, guide);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Xml.XmlException)
+                {
+                    logger.LogWarning("IPTV {Source}: couldn't read the iptv-org guide: {Message}", source.Name, ex.Message);
+                    guideProblem = $"Couldn't read the iptv-org guide: {ex.Message}";
+                }
+            }
+            else if (source.IptvOrgGuide && guide is null)
+            {
+                guideProblem = "The iptv-org guide is being made; listings appear once the first grab finishes.";
             }
         }
 

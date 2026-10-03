@@ -2,7 +2,7 @@
   "id": "iptv",
   "name": "IPTV passthrough",
   "version": "1.0.0",
-  "description": "Live channels from an IPTV playlist (M3U) and its XMLTV guide, added alongside your own channels: same channel list, same guide in Jellyfin. Streams are passed through without re-encoding where possible; HLS and MPEG-TS sources both work.",
+  "description": "Live channels from an IPTV playlist (M3U) and its XMLTV guide, added alongside your own channels: same channel list, same guide in Jellyfin. Streams are passed through without re-encoding where possible; HLS and MPEG-TS sources both work. Free channels from iptv-org's playlists can be picked by country, category or language, and guides made with iptv-org/epg.",
   "author": "SchedularrTV",
   "apiVersion": "1.6",
   "entryAssembly": "SchedularrTV.Plugins.Iptv.dll",
@@ -26,6 +26,33 @@
       "type": "Number",
       "placeholder": "6",
       "description": "How often each playlist and guide is downloaded again (1 to 48)."
+    },
+    {
+      "key": "IptvOrgGrabHours",
+      "label": "iptv-org guides: grab every (hours)",
+      "type": "Number",
+      "placeholder": "12",
+      "description": "For providers whose guide is made with iptv-org/epg (2 to 168). Grabbing scrapes each channel's listings site, so a few times a day is plenty."
+    },
+    {
+      "key": "IptvOrgDays",
+      "label": "iptv-org guides: days of listings",
+      "type": "Number",
+      "placeholder": "2",
+      "description": "1 to 14. More days take longer to grab; the guide is grabbed again well before they run out."
+    },
+    {
+      "key": "IptvOrgConnections",
+      "label": "iptv-org guides: requests at once",
+      "type": "Number",
+      "placeholder": "3",
+      "description": "1 to 20. Higher grabs faster, but some listings sites block busy callers."
+    },
+    {
+      "key": "NodePath",
+      "label": "Node.js (for iptv-org guides)",
+      "type": "File",
+      "description": "Leave empty to use the Node.js installed on this computer (20 or newer), or else download a copy just for this plugin."
     },
     {
       "key": "KeepAliveSeconds",

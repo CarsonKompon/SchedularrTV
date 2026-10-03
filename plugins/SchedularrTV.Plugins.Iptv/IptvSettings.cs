@@ -46,6 +46,23 @@ public sealed class IptvSettings(IPluginContext context)
         }
     }
 
+    public string DataDirectory => context.DataDirectory;
+
+    /// <summary>A Node.js of the user's own for the iptv-org grabber; null finds one (or downloads one).</summary>
+    public string? NodePath => Value("NodePath");
+
+    /// <summary>How often iptv-org guides are grabbed again.</summary>
+    public TimeSpan IptvOrgGrabEvery =>
+        TimeSpan.FromHours(int.TryParse(Value("IptvOrgGrabHours"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int hours) ? Math.Clamp(hours, 2, 168) : 12);
+
+    /// <summary>Days of listings asked for (most sites have a week or two).</summary>
+    public int IptvOrgDays =>
+        int.TryParse(Value("IptvOrgDays"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int days) ? Math.Clamp(days, 1, 14) : 2;
+
+    /// <summary>Listings requests at once; more is quicker, but some sites block busy callers.</summary>
+    public int IptvOrgConnections =>
+        int.TryParse(Value("IptvOrgConnections"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int connections) ? Math.Clamp(connections, 1, 20) : 3;
+
     private int ServerPort => int.TryParse(context.AppConfiguration["Server:Port"], out int port) ? port : 5252;
 
     /// <summary>Where ErsatzTV fetches the relayed streams from: this scheduler on this machine, unless set.</summary>

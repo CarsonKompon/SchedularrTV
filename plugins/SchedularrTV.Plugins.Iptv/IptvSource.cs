@@ -18,6 +18,12 @@ public sealed class IptvSource
     /// <summary>The XMLTV guide (.xml or .xml.gz), a web address or a file; empty to use the one the playlist names.</summary>
     public string? GuideUrl { get; set; }
 
+    /// <summary>
+    /// Makes the guide with iptv-org/epg: listings grabbed from the sites iptv-org knows for each carried channel. A guide
+    /// address set here still fills in channels iptv-org can't; the one the playlist names is then not used.
+    /// </summary>
+    public bool IptvOrgGuide { get; set; }
+
     /// <summary>Sent to the provider for the playlist, guide and streams; some insist on a particular one.</summary>
     public string? UserAgent { get; set; }
 

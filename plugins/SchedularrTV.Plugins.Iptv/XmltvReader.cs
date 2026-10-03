@@ -46,6 +46,41 @@ public sealed class XmltvGuide
         // A guide with listings but no <channel> entries (it happens): trust the tvg-id.
         return channel.TvgId is { } listed && Programmes.ContainsKey(listed) ? listed : null;
     }
+
+    /// <summary>
+    /// Two guides as one: <paramref name="preferred"/>'s listings where it has them, <paramref name="other"/>'s for the
+    /// rest. Either may be null; null when both are.
+    /// </summary>
+    public static XmltvGuide? Merge(XmltvGuide? preferred, XmltvGuide? other)
+    {
+        if (preferred is null || other is null)
+        {
+            return preferred ?? other;
+        }
+
+        var merged = new XmltvGuide();
+        foreach (XmltvGuide guide in new[] { preferred, other })
+        {
+            foreach ((string id, List<string> names) in guide.Channels)
+            {
+                if (merged.Channels.TryGetValue(id, out List<string>? known))
+                {
+                    known.AddRange(names.Where(name => !known.Contains(name, StringComparer.OrdinalIgnoreCase)));
+                }
+                else
+                {
+                    merged.Channels[id] = [.. names];
+                }
+            }
+
+            foreach ((string id, List<GuideProgramme> listings) in guide.Programmes)
+            {
+                merged.Programmes.TryAdd(id, listings);
+            }
+        }
+
+        return merged;
+    }
 }
 
 /// <summary>

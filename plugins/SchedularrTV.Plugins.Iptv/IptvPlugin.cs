@@ -17,6 +17,12 @@ public sealed class IptvPlugin : IPlugin, IPluginEndpoints
         services.AddHttpClient(IptvFetcher.ClientName, http => http.Timeout = TimeSpan.FromMinutes(5));
         services.AddExternalChannels<IptvChannels>();
 
+        // Guides made with iptv-org/epg, and iptv-org's playlists to pick from.
+        services.AddSingleton<IptvOrg.IptvOrgApi>();
+        services.AddSingleton<IptvOrg.IptvOrgTools>();
+        services.AddSingleton<IptvOrg.IptvOrgGuides>();
+        services.AddHostedService(sp => sp.GetRequiredService<IptvOrg.IptvOrgGuides>());
+
         // Also resolvable on its own, so the IPTV page can ask for a refresh.
         services.AddSingleton<IptvRefresher>();
         services.AddHostedService(sp => sp.GetRequiredService<IptvRefresher>());
