@@ -69,6 +69,12 @@ public sealed class LineupPublisher(
                 await File.WriteAllTextAsync(channelConfigPath, DefaultChannelConfig, cancellationToken).ConfigureAwait(false);
                 logger.LogInformation("Created default channel config at {Path}.", channelConfigPath);
             }
+            else
+            {
+                // Configs written before ErsatzTV versioned them are refused by current builds, and the channel
+                // then never plays, so they're brought up to date (the rest of the file is left as it is).
+                await ChannelConfigSchema.UpgradeFileAsync(channelConfigPath, logger, cancellationToken).ConfigureAwait(false);
+            }
 
             lineup.Channels.Add(new LineupChannel
             {
@@ -130,8 +136,9 @@ public sealed class LineupPublisher(
 
     // Written once and never touched again, so every knob worth changing is spelled out rather
     // than left to defaults the user would have to discover in ErsatzTV's schema.
-    private const string DefaultChannelConfig = """
+    internal const string DefaultChannelConfig = """
         {
+          "version": "https://ersatztv.org/channel/version/0.1.0",
           "playout": { "folder": "./playout" },
           "ffmpeg": { "ffmpeg_path": "", "ffprobe_path": "", "disabled_filters": [] },
           "normalization": {

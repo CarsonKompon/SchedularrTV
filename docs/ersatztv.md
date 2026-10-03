@@ -55,10 +55,22 @@ Refresh Guide**.
 | `lineup.json` | Channel list, generated from the schedule so `tvg_id` can't drift from the guide files (`ErsatzTv:WriteLineup`, on by default). | Generated every rebuild; hand edits are overwritten. |
 | `channels/{number}/playout/{start}_{finish}.json` | Playout document ([schema](https://github.com/ErsatzTV/next/blob/main/schema/playout.json)). The compact ISO-8601 file name is how Next finds the window for the current time. | Generated every rebuild. |
 | `xmltv/{tvg_id}.xml` | Guide fragment. Next builds the `<channel>` elements from the lineup and copies the `<programme>` elements from these. | Generated every rebuild. |
-| `channels/{number}/channel.json` | Per-channel encoding settings. | Created once, then left alone: **edit this** for resolution and hardware encoding. |
+| `channels/{number}/channel.json` | Per-channel encoding settings. | Created once, then left alone: **edit this** for resolution and hardware encoding. The only change ever made to it is its schema `version` (see below). |
 | `hls/` | ErsatzTV's segment scratch space. | ErsatzTV. |
 
 Next then serves `/channels.m3u`, `/channel/{n}.m3u8` and `/xmltv.xml`.
+
+## Channel config versions
+
+ErsatzTV Next versions its `channel.json` files, and current builds refuse one without a `version`
+("missing schema version (read as 0.0.0) is no longer supported"). When that happens the guide still
+works but no channel plays: Jellyfin shows the listings and then fails to tune.
+
+On every rebuild, SchedularrTV brings each channel's `channel.json` up to the version it writes
+(`https://ersatztv.org/channel/version/0.1.0`), keeping the original as `channel.json.bak`. Nothing else in the
+file changes, except that a `"format": null` (which used to mean "copy") becomes `"mode": "copy"`, the way 0.1.0
+says it. Files that already have a 0.1 or later version are left alone. If you run ErsatzTV with a lineup of
+your own (`WriteLineup` off), add the `version` line to its channel files yourself.
 
 ## Details
 
