@@ -1,0 +1,529 @@
+@page "/plugins/radio"
+@* Radio stations: music from Jellyfin or an internet station, with its cover, lyrics and a visualizer, edited with a live preview. *@
+@implements IDisposable
+@inject RadioStore Store
+@inject RadioSettings Settings
+@inject RadioHub Hub
+@inject IServiceProvider Services
+@inject IJSRuntime JS
+
+<div class="page-header">
+    <div>
+        <div class="eyebrow">Radio channels</div>
+        <h1>Radio stations</h1>
+        <p class="muted">Music as a channel: songs from your Jellyfin library, or an internet station, with the cover, the lyrics and a
+            visualizer that moves with the sound.</p>
+    </div>
+</div>
+
+@if (BrowserLocator.Find(Settings.BrowserPath) is null)
+{
+    <div class="banner banner-error" role="alert">
+        No Chrome, Edge or Chromium was found on this computer. Stations are drawn by one running hidden; install one, or choose it
+        in this plugin's settings (its gear on the Plugins page).
+    </div>
+}
+@if (_message is not null)
+{
+    <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status">@_message</div>
+}
+
+@foreach (RadioStation station in _stations)
+{
+    bool editing = ReferenceEquals(station, _editing);
+    LiveStatus? status = string.IsNullOrEmpty(station.Id) ? null : Hub.Streams.Status(station.Id);
+    <div class="card" @key="station">
+        <div class="card-head">
+            <h2>@(string.IsNullOrWhiteSpace(station.Name) ? "New station" : station.Name)</h2>
+            <span class="pill pill-muted">@PresetName(station.Preset)</span>
+            <span class="pill pill-muted">@(station.Source == RadioSource.Internet ? "Internet radio" : "Jellyfin music")</span>
+            @if (status is not null)
+            {
+                <span class="pill pill-ok">On air · @status.Viewers watching</span>
+            }
+            <div class="spacer"></div>
+            @if (_confirmDelete == station.Id && !string.IsNullOrEmpty(station.Id))
+            {
+                <button class="btn btn-sm btn-danger" type="button" @onclick="() => Remove(station)">Delete @(station.Name)?</button>
+                <button class="btn btn-sm" type="button" @onclick="() => _confirmDelete = null">Keep</button>
+            }
+            else
+            {
+                @if (!editing)
+                {
+                    <button class="btn btn-sm" type="button" @onclick="() => Edit(station)">Edit</button>
+                }
+                <button class="btn btn-sm btn-ghost" type="button" @onclick="() => AskDelete(station)">Delete</button>
+            }
+        </div>
+
+        @if (!editing)
+        {
+            <p class="muted" style="margin:0 0 8px;">@Describe(station)</p>
+            <p class="hint" style="margin:0 0 8px;">
+                Schedule it as the show <strong>@station.Name</strong>: as a channel's base rotation for a 24/7 music channel, or between
+                programmes (lengths @string.Join(", ", station.ValidLengths.Select(minutes => minutes + " min"))). Stream: <code>@Settings.LiveUrl(station.Id)</code>
+            </p>
+            @if (status?.Problem is { } problem)
+            {
+                <p class="hint warn">@problem</p>
+            }
+            @if (status is not null)
+            {
+                <img class="radio-snapshot" src="@($"plugins/radio/snapshot/{Uri.EscapeDataString(station.Id)}.jpg?t={_tick}")" alt="What's on air now" />
+            }
+        }
+        else
+        {
+            <div class="radio-editor">
+                <div class="radio-form">
+                    <h3>Station</h3>
+                    <div class="grid grid-2">
+                        <label class="field"><span>Show name</span>
+                            <input type="text" value="@station.Name" placeholder="Late Night Radio" @onchange="e => Change(() => station.Name = Text(e))" /></label>
+                        <label class="field"><span>Music from</span>
+                            <select value="@station.Source" @onchange="e => Change(() => station.Source = Enum.Parse<RadioSource>(Text(e)))">
+                                <option value="Jellyfin">The Jellyfin music library</option>
+                                <option value="Internet">An internet radio station</option>
+                            </select></label>
+                    </div>
+                    <label class="field"><span>Lengths it can be scheduled for (minutes)</span>
+                        <input type="text" value="@(string.Join(", ", station.Lengths))" @onchange="e => Change(() => station.Lengths = Lengths(e))" /></label>
+
+                    @if (station.Source == RadioSource.Jellyfin)
+                    {
+                        <h3>Music</h3>
+                        <div class="grid grid-2">
+                            <label class="field"><span>Play</span>
+                                <select value="@station.Pick" @onchange="e => PickAsync(station, Enum.Parse<MusicPick>(Text(e)))">
+                                    <option value="All">Every song</option>
+                                    <option value="Playlist">A playlist</option>
+                                    <option value="Genres">Some genres</option>
+                                    <option value="Artists">Some artists</option>
+                                </select></label>
+                            <label class="check" style="align-self:end;margin-bottom:12px;"><input type="checkbox" checked="@station.Shuffle" @onchange="e => Change(() => station.Shuffle = e.Value is true)" />
+                                <span>Shuffle</span></label>
+                        </div>
+                        @if (_loadingChoices)
+                        {
+                            <p class="hint">Asking Jellyfin…</p>
+                        }
+                        else if (_choicesProblem is { } choicesProblem)
+                        {
+                            <p class="hint warn">@choicesProblem</p>
+                        }
+                        else if (station.Pick == MusicPick.Playlist)
+                        {
+                            <label class="field"><span>Playlist</span>
+                                <select value="@(station.PlaylistId ?? "")" @onchange="e => Change(() => ChoosePlaylist(station, Text(e)))">
+                                    <option value="">Choose…</option>
+                                    @foreach (JellyfinMusicChoice playlist in _choices)
+                                    {
+                                        <option value="@playlist.Id">@playlist.Name @(playlist.Count is { } count ? $"({count})" : "")</option>
+                                    }
+                                </select></label>
+                        }
+                        else if (station.Pick is MusicPick.Genres or MusicPick.Artists)
+                        {
+                            List<string> chosen = station.Pick == MusicPick.Genres ? station.Genres : station.Artists;
+                            <div class="field"><span>@(station.Pick == MusicPick.Genres ? "Genres" : "Artists") <span class="muted">(@chosen.Count chosen)</span></span>
+                                <input type="search" value="@_filter" placeholder="Filter" @oninput="e => _filter = Text(e)" style="margin-bottom:6px;" />
+                                <div class="radio-choices">
+                                    @foreach (JellyfinMusicChoice choice in _choices.Where(choice => _filter.Length == 0 || choice.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase)).Take(300))
+                                    {
+                                        <label class="check" style="margin:0;">
+                                            <input type="checkbox" checked="@chosen.Contains(choice.Name, StringComparer.OrdinalIgnoreCase)"
+                                                   @onchange="e => Change(() => Toggle(chosen, choice.Name, e.Value is true))" />
+                                            <span>@choice.Name</span>
+                                        </label>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <h3>Station</h3>
+                        <label class="field"><span>Stream address <span class="muted">(or an .m3u / .pls playlist)</span></span>
+                            <input type="text" value="@station.StreamUrl" placeholder="https://stream.example.org/radio.mp3" @onchange="e => Change(() => station.StreamUrl = Text(e))" /></label>
+                        <p class="hint">Shoutcast and Icecast stations send the song playing, which is shown with its cover and lyrics as found online.
+                            HLS (.m3u8) stations play without song titles.</p>
+                    }
+                    <label class="check"><input type="checkbox" checked="@station.LookUpOnline" @onchange="e => Change(() => station.LookUpOnline = e.Value is true)" />
+                        <span>Look up covers and lyrics online when there are none (iTunes, LRCLIB)</span></label>
+
+                    <h3>Look</h3>
+                    <div class="radio-presets">
+                        @foreach (RadioPreset preset in Enum.GetValues<RadioPreset>())
+                        {
+                            <button type="button" class="radio-preset @(station.Preset == preset ? "on" : "")" @onclick="() => Change(() => station.Preset = preset)">
+                                <strong>@PresetName(preset)</strong>
+                                <span>@PresetBlurb(preset)</span>
+                            </button>
+                        }
+                    </div>
+                    <div class="grid grid-2">
+                        <label class="field"><span>Visualizer</span>
+                            <select value="@station.Visualizer" @onchange="e => Change(() => station.Visualizer = Enum.Parse<RadioVisualizer>(Text(e)))">
+                                <option value="Bars">Bars</option>
+                                <option value="Wave">Waveform</option>
+                                <option value="Spectrum">Spectrum</option>
+                                <option value="Scope">Oscilloscope</option>
+                                <option value="None">None</option>
+                            </select></label>
+                        <label class="field"><span>Background</span>
+                            <select value="@station.Background" @onchange="e => Change(() => station.Background = Enum.Parse<RadioBackground>(Text(e)))">
+                                <option value="BlurredArt">The cover, blurred</option>
+                                <option value="Gradient">A moving gradient</option>
+                                <option value="Solid">A colour</option>
+                            </select></label>
+                        <div class="field"><span>Accent colour</span>
+                            <input type="color" value="@station.AccentColor" @onchange="e => Change(() => station.AccentColor = Text(e))" style="width:56px;height:34px;padding:2px;" /></div>
+                        @if (station.Background != RadioBackground.BlurredArt)
+                        {
+                            <div class="field"><span>Background colour</span>
+                                <input type="color" value="@station.BackgroundColor" @onchange="e => Change(() => station.BackgroundColor = Text(e))" style="width:56px;height:34px;padding:2px;" /></div>
+                        }
+                    </div>
+                    <div class="row row-wrap" style="gap:18px;margin-bottom:8px;">
+                        <label class="check"><input type="checkbox" checked="@station.ShowArt" @onchange="e => Change(() => station.ShowArt = e.Value is true)" /><span>Cover</span></label>
+                        <label class="check"><input type="checkbox" checked="@station.ShowLyrics" @onchange="e => Change(() => station.ShowLyrics = e.Value is true)" /><span>Lyrics</span></label>
+                        <label class="check"><input type="checkbox" checked="@station.ShowUpNext" @onchange="e => Change(() => station.ShowUpNext = e.Value is true)" /><span>Up next</span></label>
+                        <label class="check"><input type="checkbox" checked="@station.ShowClock" @onchange="e => Change(() => station.ShowClock = e.Value is true)" /><span>Clock</span></label>
+                    </div>
+                    <label class="field"><span>Message along the bottom <span class="muted">(optional)</span></span>
+                        <input type="text" value="@station.Message" maxlength="300" placeholder="You're listening to Late Night Radio" @onchange="e => Change(() => station.Message = Text(e))" /></label>
+                    @if (station.ShowLyrics)
+                    {
+                        <label class="field"><span>Lyrics timing: @(station.LyricsOffset == 0 ? "as given" : station.LyricsOffset > 0 ? $"{station.LyricsOffset:0.#} s earlier" : $"{-station.LyricsOffset:0.#} s later")</span>
+                            <input type="range" min="-5" max="5" step="0.25" value="@station.LyricsOffset.ToString(CultureInfo.InvariantCulture)"
+                                   @onchange="e => Change(() => station.LyricsOffset = Number(e, 0))" /></label>
+                    }
+
+                    <h3>Sound</h3>
+                    <label class="field"><span>Volume: @((int)Math.Round(station.Volume * 100))%</span>
+                        <input type="range" min="0" max="1.5" step="0.05" value="@station.Volume.ToString(CultureInfo.InvariantCulture)"
+                               @onchange="e => Change(() => station.Volume = Number(e, 1))" /></label>
+
+                    <div class="row" style="gap:8px;margin-top:14px;">
+                        <div class="spacer"></div>
+                        <button class="btn btn-sm" type="button" @onclick="Cancel">Cancel</button>
+                        <button class="btn btn-sm btn-primary" type="button" disabled="@(!CanSave(station))" @onclick="Save">Save</button>
+                    </div>
+                </div>
+
+                <div class="radio-preview-column">
+                    <div class="radio-preview">
+                        <iframe name="radioPreview" title="Live preview" src="@PreviewSource(station)" @onload="PushPreviewAsync"></iframe>
+                    </div>
+                    <p class="hint">Live preview of your changes, with a song from the library. The dashed box is where the visualizer moves
+                        with the music on air.</p>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<div class="row" style="gap:8px;">
+    <button class="btn btn-primary" type="button" disabled="@(_editing is not null)" @onclick="Add">Add a station</button>
+</div>
+
+<div class="card" style="margin-top:16px;">
+    <div class="card-head"><h2>How it works</h2></div>
+    <ul class="hint" style="margin:0;padding-left:18px;line-height:1.6;">
+        <li>Each station is a show (under TV Shows and in collection pickers), with one "episode" per length.</li>
+        <li><strong>A 24/7 music channel:</strong> make the station a channel's base rotation, with long lengths (30, 60).</li>
+        <li><strong>Between programmes:</strong> add it to a channel's interstitial shows with short lengths (3–5 minutes).</li>
+        <li>On air, the songs play one after another from Jellyfin (or the station is relayed), a hidden browser draws the page, and
+            ffmpeg draws the visualizer from the sound itself, so it's always in step.</li>
+        <li>Lyrics come from Jellyfin (timed where the files have them), else from LRCLIB online.</li>
+    </ul>
+</div>
+
+<style>
+    .radio-editor { display: grid; grid-template-columns: minmax(0, 1fr) 660px; gap: 22px; align-items: start; }
+    @@media (max-width: 1300px) { .radio-editor { grid-template-columns: minmax(0, 1fr); } }
+    .radio-form h3 { font-size: 13px; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    .radio-form h3:first-child { margin-top: 0; }
+    .radio-preview-column { position: sticky; top: 16px; }
+    .radio-preview { width: 640px; height: 360px; overflow: hidden; border-radius: 10px; background: #000; border: 1px solid var(--line); }
+    .radio-preview iframe { width: 1280px; height: 720px; border: 0; transform: scale(.5); transform-origin: 0 0; display: block; }
+    .radio-snapshot { width: 100%; max-width: 640px; border-radius: 10px; display: block; margin-top: 8px; }
+    .radio-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-bottom: 12px; }
+    .radio-preset { text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
+    .radio-preset strong { display: block; margin-bottom: 4px; }
+    .radio-preset span { font-size: 12px; color: var(--muted); }
+    .radio-preset.on { border-color: var(--accent, #6f7fff); box-shadow: 0 0 0 1px var(--accent, #6f7fff); }
+    .radio-choices { display: flex; flex-wrap: wrap; gap: 6px 16px; max-height: 220px; overflow-y: auto; }
+    .hint.warn { color: #ffd08a; }
+</style>
+
+@code {
+    private List<RadioStation> _stations = [];
+    private RadioStation? _editing;
+    private string? _confirmDelete;
+    private string? _message;
+    private bool _messageOk;
+    private long _tick;
+    private Timer? _refresh;
+    private IReadOnlyList<JellyfinMusicChoice> _choices = [];
+    private MusicPick? _choicesFor;
+    private bool _loadingChoices;
+    private string? _choicesProblem;
+    private string _filter = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        Load();
+        Hub.Streams.Changed += OnHubChanged;
+        _refresh = new Timer(_ => InvokeAsync(() => { _tick++; if (Hub.Streams.Running.Count > 0) StateHasChanged(); }), null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+    }
+
+    public void Dispose()
+    {
+        Hub.Streams.Changed -= OnHubChanged;
+        _refresh?.Dispose();
+    }
+
+    private void OnHubChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void Load()
+    {
+        _stations = [.. Store.Stations.Select(station => station.Copy())];
+        _editing = null;
+        _choices = [];
+        _choicesFor = null;
+        _filter = string.Empty;
+    }
+
+    private static string PreviewSource(RadioStation station) =>
+        $"plugins/radio/view/{Uri.EscapeDataString(string.IsNullOrEmpty(station.Id) ? "preview" : station.Id)}?preview=true";
+
+    private static string PresetName(RadioPreset preset) => preset switch
+    {
+        RadioPreset.NowPlaying => "Now Playing",
+        RadioPreset.Karaoke => "Karaoke",
+        RadioPreset.Vinyl => "Vinyl",
+        RadioPreset.RetroFm => "Retro FM",
+        _ => "Minimal"
+    };
+
+    private static string PresetBlurb(RadioPreset preset) => preset switch
+    {
+        RadioPreset.NowPlaying => "Big cover, the song and its lyrics, visualizer along the bottom.",
+        RadioPreset.Karaoke => "The lyrics, big and centred, over the blurred cover.",
+        RadioPreset.Vinyl => "A spinning record with the cover as its label.",
+        RadioPreset.RetroFm => "A hi-fi tuner's glowing display and spectrum.",
+        _ => "The cover filling the screen, the song in a corner."
+    };
+
+    private static string Describe(RadioStation station)
+    {
+        string music = station.Source == RadioSource.Internet
+            ? station.StreamUrl ?? "No station address"
+            : station.Pick switch
+            {
+                MusicPick.Playlist => $"The playlist {station.PlaylistName ?? station.PlaylistId ?? "(none chosen)"}",
+                MusicPick.Genres => $"Genres: {string.Join(", ", station.Genres)}",
+                MusicPick.Artists => $"Artists: {string.Join(", ", station.Artists)}",
+                _ => "Every song in the library"
+            } + (station.Shuffle ? ", shuffled" : "");
+        return $"{music} · {PresetName(station.Preset)} · visualizer: {station.Visualizer}";
+    }
+
+    private static bool CanSave(RadioStation station) => station.Source switch
+    {
+        RadioSource.Internet => Uri.TryCreate(station.StreamUrl, UriKind.Absolute, out Uri? uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps),
+        _ => station.Pick switch
+        {
+            MusicPick.Playlist => !string.IsNullOrEmpty(station.PlaylistId),
+            MusicPick.Genres => station.Genres.Count > 0,
+            MusicPick.Artists => station.Artists.Count > 0,
+            _ => true
+        }
+    };
+
+    private void Edit(RadioStation station)
+    {
+        if (_editing is not null)
+        {
+            Load();
+            station = _stations.FirstOrDefault(candidate => candidate.Id == station.Id) ?? station;
+        }
+
+        _editing = station;
+        _message = null;
+        _ = LoadChoicesAsync(station.Pick);
+    }
+
+    private void Add()
+    {
+        var station = new RadioStation();
+        _stations.Add(station);
+        _editing = station;
+        _message = null;
+    }
+
+    private void Cancel() => Load();
+
+    private void AskDelete(RadioStation station)
+    {
+        if (string.IsNullOrEmpty(station.Id))
+        {
+            Load();
+            return;
+        }
+
+        _confirmDelete = station.Id;
+    }
+
+    private void Remove(RadioStation station)
+    {
+        _confirmDelete = null;
+        try
+        {
+            Store.Save(Store.Stations.Where(saved => !string.Equals(saved.Id, station.Id, StringComparison.OrdinalIgnoreCase)));
+            Load();
+            Say($"Deleted {station.Name}. Channels that used it fill that time with their other programming from the next rebuild.", ok: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Say($"Couldn't delete the station: {ex.Message}", ok: false);
+        }
+    }
+
+    private void Save()
+    {
+        try
+        {
+            string name = _editing?.Name ?? string.Empty;
+            Store.Save(_stations);
+            Load();
+            Say($"Saved {name}. A station that's on air starts again with the new settings.", ok: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Say($"Couldn't save: {ex.Message}", ok: false);
+        }
+    }
+
+    private async Task PickAsync(RadioStation station, MusicPick pick)
+    {
+        station.Pick = pick;
+        _filter = string.Empty;
+        await PushPreviewAsync();
+        await LoadChoicesAsync(pick);
+    }
+
+    /// <summary>The playlists, genres or artists to choose from, asked of Jellyfin when the choice needs them.</summary>
+    private async Task LoadChoicesAsync(MusicPick pick)
+    {
+        if (pick == MusicPick.All || _choicesFor == pick)
+        {
+            return;
+        }
+
+        if (Services.GetService<JellyfinClient>() is not { } jellyfin)
+        {
+            _choicesProblem = "Jellyfin isn't set up (App settings).";
+            return;
+        }
+
+        _loadingChoices = true;
+        _choicesProblem = null;
+        StateHasChanged();
+        try
+        {
+            _choices = pick switch
+            {
+                MusicPick.Playlist => await jellyfin.GetMusicPlaylistsAsync(CancellationToken.None),
+                MusicPick.Genres => await jellyfin.GetMusicGenresAsync(CancellationToken.None),
+                _ => await jellyfin.GetMusicArtistsAsync(CancellationToken.None)
+            };
+            _choicesFor = pick;
+            if (_choices.Count == 0)
+            {
+                _choicesProblem = pick == MusicPick.Playlist ? "Jellyfin has no music playlists." : "Jellyfin has none.";
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _choicesProblem = $"Couldn't ask Jellyfin: {ex.Message}";
+        }
+        finally
+        {
+            _loadingChoices = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void ChoosePlaylist(RadioStation station, string id)
+    {
+        station.PlaylistId = id.Length == 0 ? null : id;
+        station.PlaylistName = _choices.FirstOrDefault(choice => choice.Id == id)?.Name;
+    }
+
+    private async Task Change(Action change)
+    {
+        change();
+        await PushPreviewAsync();
+    }
+
+    /// <summary>Sends the settings being edited to the preview, which redraws without reloading.</summary>
+    private async Task PushPreviewAsync()
+    {
+        if (_editing is not { } station)
+        {
+            return;
+        }
+
+        RadioStation shown = station.Copy();
+        RadioStore.Tidy(shown);
+        if (string.IsNullOrEmpty(shown.Id))
+        {
+            shown.Id = "preview";
+        }
+
+        try
+        {
+            // Looked up afresh each time (the iframe is replaced whenever the editor reopens). The default JSON encoder
+            // escapes < > & ' so the settings are a safe script literal.
+            string message = System.Text.Json.JsonSerializer.Serialize(
+                new { type = "radio-settings", settings = RadioPageConfig.For(shown, preview: true) }, System.Text.Json.JsonSerializerOptions.Web);
+            await JS.InvokeVoidAsync("eval", $"document.querySelector('iframe[name=\"radioPreview\"]')?.contentWindow?.postMessage({message}, '*')");
+        }
+        catch (JSException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    private static void Toggle(List<string> list, string value, bool on)
+    {
+        list.RemoveAll(existing => string.Equals(existing, value, StringComparison.OrdinalIgnoreCase));
+        if (on)
+        {
+            list.Add(value);
+        }
+    }
+
+    private void Say(string message, bool ok)
+    {
+        _message = message;
+        _messageOk = ok;
+    }
+
+    private static string Text(ChangeEventArgs e) => e.Value?.ToString()?.Trim() ?? string.Empty;
+
+    private static double Number(ChangeEventArgs e, double fallback) =>
+        double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ? value : fallback;
+
+    private static List<int> Lengths(ChangeEventArgs e) =>
+        [.. Text(e).Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out int minutes) ? minutes : 0)
+            .Where(minutes => minutes is > 0 and <= 1440)
+            .Distinct()
+            .Order()];
+}

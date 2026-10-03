@@ -49,10 +49,18 @@ public sealed record LiveStreamSpec
 
     public string? AudioStreamUrl { get; init; }
 
+    /// <summary>
+    /// ffmpeg filters that draw the sound as a picture (<c>showwaves</c>, <c>showfreqs</c>…), laid over the page at
+    /// <see cref="VisualizerRect"/>, in step with what's heard. Black in their picture is see-through.
+    /// </summary>
+    public string? Visualizer { get; init; }
+
+    public FrameRect? VisualizerRect { get; init; }
+
     /// <summary>Changes whenever anything that affects the running stream does, so it's started again with the new settings.</summary>
     public string Fingerprint =>
         string.Join('|', PageUrl, Ffmpeg, BrowserPath, CaptureFrameRate, WindowStreamUrl, Window, Audio, MusicFolder,
-            Volume.ToString(CultureInfo.InvariantCulture), AudioStreamUrl);
+            Volume.ToString(CultureInfo.InvariantCulture), AudioStreamUrl, Visualizer, VisualizerRect);
 }
 
 /// <summary>
@@ -264,21 +272,29 @@ public sealed class LiveStream : IAsyncDisposable
             audioFilter = $"[{audio}:a]anull[a]";
         }
 
-        string page = $"[0:v]scale={Width}:{Height}:force_original_aspect_ratio=decrease,pad={Width}:{Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={OutputFrameRate}";
-        string video;
+        List<string> graph = [$"[0:v]scale={Width}:{Height}:force_original_aspect_ratio=decrease,pad={Width}:{Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={OutputFrameRate}[page]"];
+        string current = "[page]";
         if (window is { } windowInput && spec.Window is { } rect)
         {
-            video = $"{page}[page];"
-                    + $"[{windowInput}:v]setpts=PTS-STARTPTS,scale={rect.Width}:{rect.Height}:force_original_aspect_ratio=decrease,"
-                    + $"pad={rect.Width}:{rect.Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={OutputFrameRate}[window];"
-                    + $"[page][window]overlay={rect.X}:{rect.Y}:eof_action=pass:shortest=0,format=yuv420p[v]";
-        }
-        else
-        {
-            video = $"{page},format=yuv420p[v]";
+            graph.Add($"[{windowInput}:v]setpts=PTS-STARTPTS,scale={rect.Width}:{rect.Height}:force_original_aspect_ratio=decrease,"
+                      + $"pad={rect.Width}:{rect.Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={OutputFrameRate}[window]");
+            graph.Add($"{current}[window]overlay={rect.X}:{rect.Y}:eof_action=pass:shortest=0[windowed]");
+            current = "[windowed]";
         }
 
-        arguments.AddRange(["-filter_complex", $"{video};{audioFilter}", "-map", "[v]", "-map", "[a]"]);
+        if (spec.Visualizer is { Length: > 0 } visualizer && spec.VisualizerRect is { } box)
+        {
+            // The sound is split: one copy is heard, the other drawn. Black in the drawing is made see-through.
+            audioFilter = audioFilter[..^"[a]".Length] + ",asplit=2[a][drawn]";
+            graph.Add($"[drawn]{visualizer},scale={box.Width}:{box.Height},format=rgba,colorkey=0x000000:0.08:0.12[visual]");
+            graph.Add($"{current}[visual]overlay={box.X}:{box.Y}:eof_action=pass:shortest=0[visualized]");
+            current = "[visualized]";
+        }
+
+        graph.Add($"{current}format=yuv420p[v]");
+        graph.Add(audioFilter);
+
+        arguments.AddRange(["-filter_complex", string.Join(';', graph), "-map", "[v]", "-map", "[a]"]);
         arguments.AddRange(
         [
             "-r", OutputFrameRate.ToString(CultureInfo.InvariantCulture),

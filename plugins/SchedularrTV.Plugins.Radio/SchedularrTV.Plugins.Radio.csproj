@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!--
+    Radio channels: music from the Jellyfin library, or an internet radio station, shown as a channel with the song's
+    cover, its lyrics and a visualizer drawn from the sound, in one of several looks. Not part of the main download: it
+    ships in the all-plugins zip of each release.
+
+    It reads the Jellyfin music library, so it builds against the scheduler itself (like the TV guide channel) and has
+    to come from the same release as the scheduler it runs in.
+  -->
+  <PropertyGroup>
+    <RootNamespace>SchedularrTV.Radio</RootNamespace>
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+    <ScopedCssEnabled>false</ScopedCssEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Supplied by the scheduler at runtime, so none of it is copied into the plugin. -->
+    <ProjectReference Include="..\..\src\SchedularrTV.Service\SchedularrTV.Service.csproj" Private="false" ExcludeAssets="runtime;native" />
+    <ProjectReference Include="..\..\src\SchedularrTV.Plugins.Abstractions\SchedularrTV.Plugins.Abstractions.csproj" Private="false" />
+
+    <!-- Shared with the other live page channels; shipped beside this plugin's .dll. -->
+    <ProjectReference Include="..\shared\SchedularrTV.LiveCapture\SchedularrTV.LiveCapture.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The station's page (HTML, CSS and script in one file), served from the plugin. -->
+    <EmbeddedResource Include="Assets\radio.html" LogicalName="radio.html" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="SchedularrTV.Plugins" />
+    <Using Include="SchedularrTV.LiveCapture" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+</Project>

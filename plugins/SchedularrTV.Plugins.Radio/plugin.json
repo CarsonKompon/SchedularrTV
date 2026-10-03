@@ -1,0 +1,47 @@
+{
+  "id": "radio",
+  "name": "Radio channels",
+  "version": "1.0.0",
+  "description": "Music as a channel: songs from your Jellyfin library, or an internet radio station, shown with the cover, the lyrics and a visualizer that moves with the sound, in one of five looks. A 24/7 music channel, or music between shows. Needs Chrome or Edge on this computer.",
+  "author": "SchedularrTV",
+  "apiVersion": "1.2",
+  "entryAssembly": "SchedularrTV.Plugins.Radio.dll",
+  "settings": [
+    {
+      "key": "BrowserPath",
+      "label": "Browser",
+      "type": "File",
+      "description": "Chrome, Edge or Chromium, run hidden to draw the stations. Leave empty to find one automatically."
+    },
+    {
+      "key": "FfmpegPath",
+      "label": "ffmpeg",
+      "type": "File",
+      "description": "Leave empty to use the ffmpeg set under App settings."
+    },
+    {
+      "key": "StreamAddress",
+      "label": "Stream address",
+      "type": "Text",
+      "placeholder": "http://localhost:5252",
+      "description": "How ErsatzTV reaches this scheduler. Leave empty unless ErsatzTV runs on another machine or in a container."
+    },
+    {
+      "key": "FrameRate",
+      "label": "Capture frames per second",
+      "type": "Number",
+      "placeholder": "20",
+      "description": "How often the page is captured (5 to 30). The visualizer is always drawn at 30 fps from the sound."
+    },
+    {
+      "key": "KeepAliveSeconds",
+      "label": "Keep a station running after it goes off air (seconds)",
+      "type": "Number",
+      "placeholder": "90",
+      "description": "So back-to-back radio segments don't restart the station each time."
+    }
+  ],
+  "pages": [
+    { "path": "/plugins/radio", "title": "Radio channels", "icon": "radio" }
+  ]
+}

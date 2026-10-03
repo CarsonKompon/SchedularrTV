@@ -21,6 +21,7 @@
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.AutoChapters\SchedularrTV.Plugins.AutoChapters.csproj" />
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.TvGuide\SchedularrTV.Plugins.TvGuide.csproj" />
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.Iptv\SchedularrTV.Plugins.Iptv.csproj" />
+    <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.Radio\SchedularrTV.Plugins.Radio.csproj" />
   </ItemGroup>
 
   <ItemGroup>

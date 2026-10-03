@@ -9,7 +9,7 @@ namespace SchedularrTV.Providers.Jellyfin;
 /// <summary>
 /// Thin Jellyfin REST wrapper. Only the read paths the scheduler needs are implemented.
 /// </summary>
-public sealed class JellyfinClient(IHttpClientFactory httpClientFactory, IOptions<JellyfinOptions> options, ILogger<JellyfinClient> logger)
+public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory, IOptions<JellyfinOptions> options, ILogger<JellyfinClient> logger)
 {
     public const string HttpClientName = "jellyfin";
 
@@ -417,11 +417,29 @@ public sealed class JellyfinClient(IHttpClientFactory httpClientFactory, IOption
 
         // Jellyfin accepts the api key in the Authorization header; keeping it out of the query
         // string avoids leaking it into proxy/access logs.
-        request.Headers.Authorization = new AuthenticationHeaderValue(
-            "MediaBrowser",
-            $"Token=\"{_options.ApiKey}\", Client=\"SchedularrTV\", Device=\"SchedularrTV\", DeviceId=\"schedularrtv\", Version=\"1.0\"");
+        request.Headers.Authorization = Authorization();
 
         return request;
+    }
+
+    private AuthenticationHeaderValue Authorization() => new(
+        "MediaBrowser",
+        $"Token=\"{_options.ApiKey}\", Client=\"SchedularrTV\", Device=\"SchedularrTV\", DeviceId=\"schedularrtv\", Version=\"1.0\"");
+
+    /// <summary>Like <see cref="GetAsync{T}"/>, but a missing item (404) is null rather than an error worth logging.</summary>
+    private async Task<T?> GetIfFoundAsync<T>(string url, CancellationToken cancellationToken) where T : class
+    {
+        if (string.IsNullOrWhiteSpace(_options.BaseUrl) || string.IsNullOrWhiteSpace(_options.ApiKey))
+        {
+            return null;
+        }
+
+        using HttpRequestMessage request = CreateRequest(url);
+        HttpClient httpClient = httpClientFactory.CreateClient(HttpClientName);
+        using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadFromJsonAsync<T>(JsonOptions, cancellationToken).ConfigureAwait(false)
+            : null;
     }
 
     private string BuildUrl(string path, Dictionary<string, string?> query)
