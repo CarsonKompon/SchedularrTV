@@ -1,0 +1,67 @@
+{
+  "id": "local-ai",
+  "name": "Local AI writer",
+  "version": "1.0.0",
+  "description": "A free language model that runs on this computer and writes promo voice-overs and on-screen text naturally (\"Coming up next, SpongeBob, followed by even more SpongeBob!\"), even joking about the episode. No account or API costs. Or use a model from Ollama or LM Studio.",
+  "author": "SchedularrTV",
+  "website": "https://github.com/SciSharp/LLamaSharp",
+  "apiVersion": "1.5",
+  "entryAssembly": "SchedularrTV.Plugins.LocalAi.dll",
+  "settingsComponent": "SchedularrTV.Writing.LocalAi.LocalAiPanel",
+  "settings": [
+    {
+      "key": "Threads",
+      "label": "Processor threads",
+      "type": "Number",
+      "description": "How many processor threads the built-in model uses while writing. Leave empty to use half of them, so the rest of the computer stays responsive.",
+      "placeholder": "Half of them"
+    },
+    {
+      "key": "UnloadAfterMinutes",
+      "label": "Free memory after (minutes)",
+      "type": "Number",
+      "description": "The built-in model is let go of after this long without writing anything, and loaded again (a few seconds) when it's next needed.",
+      "default": "10"
+    },
+    {
+      "key": "ModelFile",
+      "label": "Your own model file",
+      "type": "File",
+      "description": "Any instruction-tuned GGUF file, used when \"Your own model file\" is chosen below. Small (1 to 4 billion parameter) models are quick enough."
+    },
+    {
+      "key": "ModelsFolder",
+      "label": "Models folder",
+      "type": "Folder",
+      "description": "Where downloaded models go. Leave empty for the plugin's own data folder."
+    },
+    {
+      "key": "ServerKind",
+      "label": "Server type",
+      "type": "Choice",
+      "options": [ "Ollama", "OpenAI-compatible" ],
+      "default": "Ollama",
+      "description": "Optional: a model served by Ollama, or by anything with an OpenAI-style API (LM Studio, llama.cpp's server, LocalAI...). It shows up as a second writer, \"Local AI server\"."
+    },
+    {
+      "key": "ServerUrl",
+      "label": "Server address",
+      "type": "Text",
+      "placeholder": "http://localhost:11434",
+      "description": "Leave empty for the usual address: http://localhost:11434 for Ollama, http://localhost:1234 for LM Studio."
+    },
+    {
+      "key": "ServerModel",
+      "label": "Server model",
+      "type": "Text",
+      "placeholder": "qwen3.5:2b",
+      "description": "The model's name on the server. The server writer stays off until one is named; use Find models below to pick one."
+    },
+    {
+      "key": "ServerApiKey",
+      "label": "Server API key",
+      "type": "Secret",
+      "description": "Only if the server asks for one."
+    }
+  ]
+}

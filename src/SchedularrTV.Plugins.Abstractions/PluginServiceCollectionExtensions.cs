@@ -4,6 +4,7 @@ using SchedularrTV.Core.Media;
 using SchedularrTV.Core.Publishing;
 using SchedularrTV.Plugins.Playout;
 using SchedularrTV.Plugins.Speech;
+using SchedularrTV.Plugins.Writing;
 
 namespace SchedularrTV.Plugins;
 
@@ -46,6 +47,14 @@ public static class PluginServiceCollectionExtensions
         where TProvider : class, ITextToSpeechProvider
     {
         services.AddSingleton<ITextToSpeechProvider, TProvider>();
+        return services;
+    }
+
+    /// <summary>A language model that writes voice-overs and on-screen text; see <see cref="ITextGenerator"/>.</summary>
+    public static IServiceCollection AddTextGenerator<TGenerator>(this IServiceCollection services)
+        where TGenerator : class, ITextGenerator
+    {
+        services.AddSingleton<ITextGenerator, TGenerator>();
         return services;
     }
 

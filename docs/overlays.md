@@ -52,6 +52,11 @@ Text can hold tokens, filled in for each programme:
 | `{next}` | What's on next |
 | `{next_time}` | When that starts |
 
+With the [Local AI writer](local-ai.md) plugin, a text box can be **AI-written** for each programme: say what you
+want ("a cheeky one-liner about the episode") and a free model on your computer writes it from the show, episode,
+its description and what's next. Captions are written in the background for the next day and a half of
+programmes; until one is ready (or if the AI's writing doesn't pass its checks) the box shows its usual text.
+
 A **file** overlay is a picture or video file (a PNG with transparency, or a video with an alpha channel for an
 animated bug), placed at one of nine positions with its width and margins as percents of the picture. *Keep inside
 the picture* keeps it off the black bars of letterboxed and 4:3 shows.

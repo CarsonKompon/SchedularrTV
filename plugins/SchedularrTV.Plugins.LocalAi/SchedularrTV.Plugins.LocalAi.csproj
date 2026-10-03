@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!--
+    Local AI: a free language model that runs on this computer (or an Ollama / LM Studio server) and writes promo
+    voice-overs and on-screen text in a natural way. Not part of the main download: it ships in the all-plugins zip.
+
+    Only LLamaSharp's managed library is bundled. Its native engine (llama.cpp, a few tens of MB for each kind of
+    computer) is downloaded from NuGet for this computer alone from the plugin's settings, as are the models, so the
+    plugin zip stays small.
+  -->
+  <PropertyGroup>
+    <RootNamespace>SchedularrTV.Writing.LocalAi</RootNamespace>
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+    <ScopedCssEnabled>false</ScopedCssEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Keep in step with LlamaEngine.BackendVersion: the downloaded engine must match the managed library. -->
+    <PackageReference Include="LLamaSharp" Version="0.27.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Supplied by the scheduler at runtime, so it isn't copied into the plugin. -->
+    <ProjectReference Include="..\..\src\SchedularrTV.Plugins.Abstractions\SchedularrTV.Plugins.Abstractions.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="SchedularrTV.Plugins" />
+    <Using Include="SchedularrTV.Plugins.Writing" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+</Project>

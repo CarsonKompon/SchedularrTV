@@ -31,6 +31,7 @@ public static class PluginServiceGate
         typeof(IExternalChannelSource),
         typeof(IChannelViewers),
         typeof(ITextToSpeechProvider),
+        typeof(SchedularrTV.Plugins.Writing.ITextGenerator),
         typeof(PlannerFeature),
         typeof(IScheduleFinisher),
         typeof(DashboardCard),

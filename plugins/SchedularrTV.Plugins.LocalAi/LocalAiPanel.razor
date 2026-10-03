@@ -1,0 +1,330 @@
+@* Shown in the Local AI writer's settings dialog under its fields: the engine and models to download, a model to use,
+   models on a server, and a box to try it. Downloads carry on when the dialog is closed. *@
+@implements IDisposable
+@inject IServiceProvider Services
+
+<div class="local-ai-panel">
+    <h3>Built-in AI</h3>
+    @if (LocalAiPaths.RuntimeId() is null)
+    {
+        <p class="hint warn">The built-in AI can't run on this kind of computer. Use an Ollama or LM Studio server instead (above).</p>
+    }
+    else if (Downloads is { } downloads)
+    {
+        <div class="local-ai-row">
+            <div class="local-ai-text">
+                <strong>AI engine</strong>
+                <span class="hint">llama.cpp for this computer, about 30 to 120 MB, from NuGet.</span>
+            </div>
+            @if (downloads.Progress(LocalAiDownloads.EngineKey) is { } engineDone)
+            {
+                <progress max="1" value="@Fraction(engineDone)"></progress>
+                <span class="hint">@Percent(engineDone)</span>
+                <button class="btn btn-sm" type="button" @onclick="() => downloads.Cancel(LocalAiDownloads.EngineKey)">Stop</button>
+            }
+            else if (downloads.EngineInstalled)
+            {
+                <span class="pill pill-ok">Installed</span>
+            }
+            else
+            {
+                <button class="btn btn-sm btn-primary" type="button" @onclick="downloads.StartEngine">Download</button>
+            }
+        </div>
+        @if (downloads.Error(LocalAiDownloads.EngineKey) is { } engineError)
+        {
+            <p class="hint warn">Couldn't download the engine: @engineError</p>
+        }
+
+        <p class="hint" style="margin:12px 0 6px;">Models (each is downloaded once, into <code>@ModelsFolder</code>):</p>
+        <div class="local-ai-list">
+            @foreach (LocalAiModel model in LocalAiModels.All)
+            {
+                string file = Path.Combine(ModelsFolder, model.File);
+                bool have = File.Exists(file);
+                bool chosen = string.Equals(ChosenModel, model.Id, StringComparison.OrdinalIgnoreCase);
+                <div class="local-ai-row">
+                    <div class="local-ai-text">
+                        <strong>@model.Name</strong>
+                        <span class="hint">@model.Description @Size(model.Size).</span>
+                    </div>
+                    @if (downloads.Progress(model.Id) is { } done)
+                    {
+                        <progress max="1" value="@Fraction(done)"></progress>
+                        <span class="hint">@Percent(done)</span>
+                        <button class="btn btn-sm" type="button" @onclick="() => downloads.Cancel(model.Id)">Stop</button>
+                    }
+                    else if (!have)
+                    {
+                        <button class="btn btn-sm @(chosen ? "btn-primary" : string.Empty)" type="button" @onclick="() => downloads.StartModel(model, ModelsFolder)">Download</button>
+                    }
+                    else if (chosen)
+                    {
+                        <span class="pill pill-ok">In use</span>
+                    }
+                    else
+                    {
+                        <button class="btn btn-sm" type="button" @onclick="() => Choose(model.Id)">Use this</button>
+                        <button class="btn btn-sm btn-ghost" type="button" title="Delete the downloaded file" @onclick="() => Remove(file)">Delete</button>
+                    }
+                </div>
+                @if (downloads.Error(model.Id) is { } modelError)
+                {
+                    <p class="hint warn">Couldn't download @model.Name: @modelError</p>
+                }
+            }
+            <div class="local-ai-row">
+                <div class="local-ai-text">
+                    <strong>Your own model file</strong>
+                    <span class="hint">@(OwnFile is { } own ? Path.GetFileName(own) : ChooseFileFirst)</span>
+                </div>
+                @if (string.Equals(ChosenModel, LocalAiModels.Custom, StringComparison.OrdinalIgnoreCase))
+                {
+                    <span class="pill pill-ok">In use</span>
+                }
+                else
+                {
+                    <button class="btn btn-sm" type="button" disabled="@(OwnFile is null)" @onclick="() => Choose(LocalAiModels.Custom)">Use this</button>
+                }
+            </div>
+        </div>
+        <p class="hint" style="margin-top:8px;">
+            Downloads carry on if you close this window. A model you choose here is used once you save.
+        </p>
+    }
+
+    <h3 style="margin-top:18px;">Server</h3>
+    <div class="row row-wrap" style="gap:8px;align-items:center;">
+        <button class="btn btn-sm" type="button" disabled="@_finding" @onclick="FindModels">@(_finding ? "Looking…" : "Find models on the server")</button>
+        <span class="hint" style="margin:0;">Uses the server type and address above (saved or not).</span>
+    </div>
+    @if (_serverModels is { Count: > 0 } models)
+    {
+        <div class="row row-wrap" style="gap:6px;margin-top:8px;">
+            @foreach (string name in models)
+            {
+                bool picked = string.Equals(Editor.Get(ServerModelKey) ?? Saved.ServerModel, name, StringComparison.OrdinalIgnoreCase);
+                <button class="btn btn-sm @(picked ? "btn-primary" : string.Empty)" type="button" @onclick="() => Editor.Set(ServerModelKey, name)">@name</button>
+            }
+        </div>
+    }
+    else if (_serverModels is not null)
+    {
+        <p class="hint">The server has no models yet. With Ollama, run <code>ollama pull qwen3.5:2b</code> first.</p>
+    }
+    @if (_serverMessage is not null)
+    {
+        <p class="hint warn">@_serverMessage</p>
+    }
+
+    <h3 style="margin-top:18px;">Try it</h3>
+    <p class="hint" style="margin:0 0 6px;">Uses the saved settings: save first to try a change.</p>
+    <div class="row row-wrap" style="gap:8px;margin-bottom:6px;">
+        <select value="@_tryWith" @onchange="e => _tryWith = e.Value?.ToString() ?? LlamaTextGenerator.GeneratorId" aria-label="Writer to try">
+            <option value="@LlamaTextGenerator.GeneratorId">Built in</option>
+            <option value="@ServerTextGenerator.GeneratorId">Server</option>
+        </select>
+    </div>
+    <textarea rows="3" style="width:100%;" value="@_tryPrompt" @onchange="e => _tryPrompt = e.Value?.ToString() ?? string.Empty" aria-label="What to ask"></textarea>
+    <div class="row row-wrap" style="gap:8px;align-items:center;margin-top:6px;">
+        <button class="btn btn-sm" type="button" disabled="@_trying" @onclick="RunTry">@(_trying ? "Writing…" : "Write it")</button>
+        @if (_tryTime is { } took)
+        {
+            <span class="hint" style="margin:0;">@TookText(took)</span>
+        }
+    </div>
+    @if (_tryReply is not null)
+    {
+        <blockquote class="local-ai-reply">@_tryReply</blockquote>
+    }
+    @if (_tryError is not null)
+    {
+        <p class="hint warn" role="status">@_tryError</p>
+    }
+</div>
+
+<style>
+    .local-ai-panel { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 14px; }
+    .local-ai-panel h3 { font-size: 13px; margin: 0 0 8px; }
+    .local-ai-list { border: 1px solid var(--line); border-radius: 8px; }
+    .local-ai-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    .local-ai-list .local-ai-row:last-child { border-bottom: 0; }
+    .local-ai-panel > .local-ai-row { border: 1px solid var(--line); border-radius: 8px; }
+    .local-ai-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+    .local-ai-text .hint { margin: 0; }
+    .local-ai-row progress { width: 120px; }
+    .local-ai-reply { margin: 8px 0 0; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,.05); white-space: pre-line; }
+    .local-ai-panel .hint.warn { color: #ffd08a; }
+</style>
+
+@code {
+    [Parameter] public PluginSettingsEditor Editor { get; set; } = default!;
+
+    private const string ModelKey = "Model";
+    private const string ModelFileKey = "ModelFile";
+    private const string ModelsFolderKey = "ModelsFolder";
+    private const string ServerModelKey = "ServerModel";
+    private const string DefaultTry =
+        "Write the announcer's voice-over for an Up Next promo on the channel \"The Zone\": SpongeBob SquarePants is next, then more SpongeBob SquarePants at 6:30, then Rugrats at 7. At most 25 words.";
+
+    private readonly CancellationTokenSource _closing = new();
+    private LocalAiDownloads? _downloads;
+    private bool _finding;
+    private IReadOnlyList<string>? _serverModels;
+    private string? _serverMessage;
+    private string _tryWith = LlamaTextGenerator.GeneratorId;
+    private string _tryPrompt = DefaultTry;
+    private bool _trying;
+    private string? _tryReply;
+    private string? _tryError;
+    private TimeSpan? _tryTime;
+    private bool _tryLoaded;
+    private DateTime _lastPaint;
+
+    private LocalAiDownloads? Downloads => _downloads;
+
+    private LocalAiOptions Saved => Services.GetService<IOptions<LocalAiOptions>>()?.Value ?? new LocalAiOptions();
+
+    private LocalAiPaths Paths => Services.GetService<LocalAiPaths>() ?? new LocalAiPaths(Path.GetTempPath());
+
+    private string ChosenModel => Editor.Get(ModelKey) ?? Saved.Model;
+
+    private string ModelsFolder => Paths.ModelsFolder(Editor.Get(ModelsFolderKey) ?? Saved.ModelsFolder);
+
+    protected override void OnInitialized()
+    {
+        _downloads = Services.GetService<LocalAiDownloads>();
+        if (_downloads is not null)
+        {
+            _downloads.Changed += OnDownloadChanged;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_downloads is not null)
+        {
+            _downloads.Changed -= OnDownloadChanged;
+        }
+
+        _closing.Cancel();
+        _closing.Dispose();
+    }
+
+    // Progress arrives on download threads; it's painted a few times a second.
+    private void OnDownloadChanged()
+    {
+        if (DateTime.UtcNow - _lastPaint < TimeSpan.FromMilliseconds(250))
+        {
+            return;
+        }
+
+        _lastPaint = DateTime.UtcNow;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void Choose(string id) => Editor.Set(ModelKey, id);
+
+    private void Remove(string file)
+    {
+        try
+        {
+            File.Delete(file);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _tryError = $"Couldn't delete {Path.GetFileName(file)}: {ex.Message} (it may be in use; try again in a few minutes).";
+        }
+    }
+
+    private async Task FindModels()
+    {
+        _finding = true;
+        _serverMessage = null;
+        _serverModels = null;
+        try
+        {
+            if (Services.GetService<ServerTextGenerator>() is not { } server)
+            {
+                return;
+            }
+
+            // What's in the fields now, so an address can be tried before it's saved.
+            LocalAiOptions saved = Saved;
+            var settings = new LocalAiOptions
+            {
+                ServerKind = Editor.Get("ServerKind") ?? saved.ServerKind,
+                ServerUrl = Editor.Get("ServerUrl") ?? saved.ServerUrl,
+                ServerApiKey = Editor.Get("ServerApiKey") ?? saved.ServerApiKey
+            };
+            _serverModels = await server.ListModelsAsync(settings, _closing.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _serverMessage = $"Couldn't ask the server for its models: {ex.GetBaseException().Message}";
+        }
+        finally
+        {
+            _finding = false;
+        }
+    }
+
+    private async Task RunTry()
+    {
+        _trying = true;
+        _tryReply = null;
+        _tryError = null;
+        _tryTime = null;
+        try
+        {
+            ITextGenerator? generator = _tryWith == ServerTextGenerator.GeneratorId
+                ? Services.GetService<ServerTextGenerator>()
+                : Services.GetService<LlamaTextGenerator>();
+            if (generator is null)
+            {
+                _tryError = "The writer isn't available; is the plugin switched on?";
+                return;
+            }
+
+            if (generator.SetupProblem is { } problem)
+            {
+                _tryError = problem;
+                return;
+            }
+
+            _tryLoaded = _tryWith == LlamaTextGenerator.GeneratorId && Services.GetService<LlamaEngine>()?.Loaded is null;
+            var started = DateTime.UtcNow;
+            _tryReply = await generator.GenerateAsync(
+                new TextGenerationRequest("You write short, lively copy for a TV channel. Reply with only the words asked for.", _tryPrompt),
+                _closing.Token);
+            _tryTime = DateTime.UtcNow - started;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _tryError = ex.GetBaseException().Message;
+        }
+        finally
+        {
+            _trying = false;
+        }
+    }
+
+    private const string ChooseFileFirst = "Choose a GGUF file in Your own model file above first.";
+
+    private string? OwnFile => (Editor.Get(ModelFileKey) ?? Saved.ModelFile) is { Length: > 0 } own && own.Trim().Length > 0 ? own.Trim() : null;
+
+    private string TookText(TimeSpan took) =>
+        $"Took {took.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture)} s{(_tryLoaded ? ", including loading the model" : string.Empty)}.";
+
+    private static string Fraction(double value) => Math.Clamp(value, 0, 1).ToString("0.###", CultureInfo.InvariantCulture);
+
+    private static string Percent(double value) => $"{(int)(Math.Clamp(value, 0, 1) * 100)}%";
+
+    private static string Size(long bytes) => bytes >= 1_000_000_000 ? $"{bytes / 1_000_000_000.0:0.0} GB" : $"{bytes / 1_000_000.0:0} MB";
+}

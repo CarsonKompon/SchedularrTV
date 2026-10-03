@@ -8,7 +8,7 @@ Jellyfin, local media folders, ErsatzTV Next, Promos and Archive Follow (off unt
 built-in plugins. Generated promos (which needs Promos), the TikTok, MiniMax and Piper voices for it, and
 [Web page channels](web-channels.md) (live pages such as WeatherStar forecasts, a clock and weather radar), [IPTV passthrough](iptv.md) (channels from an
 M3U playlist and its guide), [Radio channels](radio.md) (music with cover art, lyrics and a visualizer), [Overlays](overlays.md)
-(screen bugs and lower thirds), the [TV Guide channel](tv-guide.md)
+(screen bugs and lower thirds), the [Local AI writer](local-ai.md) (natural, AI-written voice-overs and captions), the [TV Guide channel](tv-guide.md)
 (scrolling listings in the style of the Prevue Channel or TV Guide Channel) and [Auto Chapters](auto-chapters.md)
 (mid-roll break points found where programmes fade to black) are optional: each release has a
 `SchedularrTV-<version>-all-plugins.zip` with all of them (and a
@@ -140,6 +140,7 @@ service. These helpers fill the scheduler's extension points:
 | Extra details on library items (chapter markers found in the file, say) | `services.AddMediaEnricher<T>()` (API 1.2) | `IMediaEnricher` |
 | Output (another playout engine, M3U files…) | `services.AddPlayoutOutput<T>()` | `IPlayoutPublisher` |
 | Voice for generated promos | `services.AddSpeechProvider<T>()` | `ITextToSpeechProvider` |
+| Language model that writes voice-overs and captions (see [local-ai.md](local-ai.md)) | `services.AddTextGenerator<T>()` (API 1.5) | `ITextGenerator` |
 | Changes to what's sent to outputs | `services.AddPlayoutProcessor<T>()` | `IPlayoutProcessor` |
 | Whole channels with their own schedule, published alongside the scheduler's (IPTV, say) | `services.AddExternalChannels<T>()` (API 1.3); inject `IScheduleRepublisher` to publish again when they change | `IExternalChannelSource` |
 | Who's watching which channel | `services.AddChannelViewers<T>()` | `IChannelViewers` |
@@ -229,7 +230,7 @@ reason, and none of its registrations are kept.
 
 ## Roadmap
 
-Plugin API 1.4 covers sources, media enrichers, outputs, voices, publish-time playout changes, external channels, settings, pages, endpoints
+Plugin API 1.5 covers sources, media enrichers, outputs, voices, text writers, publish-time playout changes, external channels, settings, pages, endpoints
 and schedule editor sections. Promos, generated promos and Archive Follow use extension points inside the
 planner that are internal for now (see [engine-extension-points.md](engine-extension-points.md)).
 Planned next:

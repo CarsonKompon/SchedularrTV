@@ -196,6 +196,14 @@ makes new voice-overs; cached ones are left in place.
 If text-to-speech fails, a silent version plays until it is retried. A voice-over longer than the promo
 is sped up, at most 1.35x.
 
+### AI-written voice-overs and captions
+
+With the [Local AI writer](local-ai.md) plugin, **Have AI word it naturally** in the Voice-over section has a free
+model on your computer write each read-out from the promo's shows ("followed by even more SpongeBob!"), optionally
+joking about the episode from its description. A **Text** layer can be AI-written the same way. The usual wording
+is the fallback whenever the AI's writing leaves out a show, makes up a time, or no model is set up. Both take a
+`writer:` section in the YAML; see [local-ai.md](local-ai.md).
+
 ## Caching
 
 Renders and voice-overs are cached by content in the folder set under **Settings → Generated promos**

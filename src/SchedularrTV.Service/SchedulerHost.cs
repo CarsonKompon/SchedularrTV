@@ -175,6 +175,14 @@ public static class SchedulerHost
         builder.Services.AddSingleton<SchedularrTV.Plugins.IMediaLibraryNotifier>(sp => sp.GetRequiredService<LibraryBrowser>());
         builder.Services.AddSingleton<LogoStore>();
 
+        // Language models from the writer plugins (Local AI) word voice-overs and captions; what they write is kept here.
+        builder.Services.AddSingleton<SchedularrTV.Service.Writing.TextGeneratorCatalog>();
+        builder.Services.AddSingleton(sp => new SchedularrTV.Service.Writing.AiTextWriter(
+            sp.GetRequiredService<SchedularrTV.Service.Writing.TextGeneratorCatalog>(),
+            Path.Combine(dataDirectory, "ai-text"),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<SchedularrTV.Service.Writing.AiTextWriter>>()));
+
         builder.Services.AddCors(cors => cors.AddDefaultPolicy(policy => policy
             .WithOrigins(builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? [])
             .AllowAnyHeader()

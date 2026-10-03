@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using SkiaSharp;
 using SchedularrTV.Core.Configuration;
+using SchedularrTV.Service.Writing;
 
 namespace SchedularrTV.GeneratedPromos;
 
@@ -26,6 +27,12 @@ public sealed record ResolvedGeneratedPromo(
 
     /// <summary>External generator arguments with <see cref="GeneratedPromoResolver.OutputToken"/> left for the render to fill in.</summary>
     public IReadOnlyList<string> GeneratorArguments { get; init; } = [];
+
+    /// <summary>When an AI writes the voice-over: what it's asked. <see cref="Script"/> is the usual read-out it falls back on.</summary>
+    public AiTextJob? ScriptJob { get; init; }
+
+    /// <summary>AI-written text layers by index; <see cref="LayerLines"/> holds their usual text until they're written.</summary>
+    public IReadOnlyDictionary<int, AiTextJob> LayerJobs { get; init; } = new Dictionary<int, AiTextJob>();
 }
 
 public static partial class GeneratedPromoResolver
@@ -86,6 +93,31 @@ public static partial class GeneratedPromoResolver
             : null;
 
         string identity = JsonSerializer.Serialize(new { Version = 1, Template = template, Lines = lines, Script = script }, KeyJson);
+
+        // AI-written words aren't known yet, so the promo is keyed by what the writer is asked (which takes in what it
+        // may say about the shows); templates without AI writing keep the keys they had.
+        AiTextJob? scriptJob = script is null ? null : GeneratedPromoWriting.Voice(template, channelName, used, zone, promoTime, script, variety);
+        Dictionary<int, AiTextJob> layerJobs = [];
+        for (int index = 0; index < template.Layers.Count; index++)
+        {
+            if (GeneratedPromoWriting.Layer(template, template.Layers[index], index, channelName, used, zone, promoTime,
+                    string.Join('\n', lines[index]), variety) is { } layerJob)
+            {
+                layerJobs[index] = layerJob;
+            }
+        }
+
+        List<AiTextJob> jobs = [.. layerJobs.OrderBy(entry => entry.Key).Select(entry => entry.Value)];
+        if (scriptJob is not null)
+        {
+            jobs.Insert(0, scriptJob);
+        }
+
+        foreach (AiTextJob job in jobs)
+        {
+            identity += $"|ai|{AiTextRules.Identity(job)}";
+        }
+
         (string Path, TimeSpan Start)? clip = Clip(template, used[0]);
         if (clip is { } source)
         {
@@ -105,7 +137,9 @@ public static partial class GeneratedPromoResolver
         {
             ClipPath = clip?.Path,
             ClipStart = clip?.Start ?? TimeSpan.Zero,
-            GeneratorArguments = arguments
+            GeneratorArguments = arguments,
+            ScriptJob = scriptJob,
+            LayerJobs = layerJobs
         };
     }
 

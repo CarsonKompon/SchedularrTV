@@ -12,9 +12,10 @@ public static class PluginApi
     /// <remarks>
     /// 1.1 added editor sections (<c>channelSettings</c>, <c>blockSettings</c>, <c>scheduleSettings</c>). 1.2 added
     /// media enrichers (<c>AddMediaEnricher</c>). 1.3 added external channels (<c>AddExternalChannels</c>) and
-    /// <c>IScheduleRepublisher</c>. 1.4 added <c>IMediaLibraryNotifier</c>.
+    /// <c>IScheduleRepublisher</c>. 1.4 added <c>IMediaLibraryNotifier</c>. 1.5 added text generators
+    /// (<c>AddTextGenerator</c>).
     /// </remarks>
-    public static readonly Version Version = new(1, 4);
+    public static readonly Version Version = new(1, 5);
 
     public static bool IsCompatible(Version wanted) => wanted.Major == Version.Major && wanted.Minor <= Version.Minor;
 }

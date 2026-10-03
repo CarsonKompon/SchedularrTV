@@ -198,7 +198,23 @@ public sealed class OverlayLayer
     /// <summary>0 to 100.</summary>
     public double Opacity { get; set; } = 100;
 
-    public OverlayLayer Copy() => (OverlayLayer)MemberwiseClone();
+    /// <summary>For text: has a language model write it for each programme, with <see cref="Text"/> as the fallback.</summary>
+    public AiTextConfig? Writer { get; set; }
+
+    public OverlayLayer Copy()
+    {
+        var copy = (OverlayLayer)MemberwiseClone();
+        copy.Writer = Writer is null ? null : new AiTextConfig
+        {
+            Generator = Writer.Generator,
+            Prompt = Writer.Prompt,
+            Style = Writer.Style,
+            UseDescriptions = Writer.UseDescriptions,
+            MaxWords = Writer.MaxWords,
+            Chance = Writer.Chance
+        };
+        return copy;
+    }
 }
 
 /// <summary>The overlays a channel or block shows, after following blocks to channels and links to other channels.</summary>

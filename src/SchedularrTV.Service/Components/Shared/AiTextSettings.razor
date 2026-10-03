@@ -1,0 +1,159 @@
+@* How a language model writes one thing (a voice-over, a caption): shared by the Generated promos and Overlays editors. *@
+@using System.Globalization
+@using SchedularrTV.Plugins.Writing
+@using SchedularrTV.Service.Writing
+@implements IDisposable
+@inject TextGeneratorCatalog Generators
+
+<div class="ai-text">
+    @if (Generators.Generators.Count == 0)
+    {
+        <p class="hint warn">
+            No AI writer is installed and switched on, so the usual wording is used for now. Install the Local AI plugin
+            from the Plugins page (it's free and runs on this computer).
+        </p>
+    }
+    <div class="grid @(Compact ? string.Empty : "grid-2")">
+        <label class="field">
+            <span>Written by</span>
+            <select value="@(Config.Generator ?? string.Empty)" @onchange="SetGenerator">
+                <option value="">The first AI writer that's ready</option>
+                @foreach (ITextGenerator generator in Generators.Generators)
+                {
+                    <option value="@generator.Id">@(generator.DisplayName + (generator.SetupProblem is null ? string.Empty : NeedsSetup))</option>
+                }
+            </select>
+        </label>
+        <label class="field">
+            <span>How it should sound</span>
+            <input type="text" value="@Config.Style" placeholder="@StylePlaceholder" @onchange="e => Set(() => Config.Style = Optional(e))" />
+        </label>
+    </div>
+    <label class="field">
+        <span>@PromptLabel</span>
+        <textarea rows="2" placeholder="@PromptPlaceholder" @onchange="e => Set(() => Config.Prompt = Optional(e))">@Config.Prompt</textarea>
+    </label>
+    <div class="grid @(Compact ? "grid-2" : "grid-3")">
+        <label class="field">
+            <span>At most (words)</span>
+            <input type="number" min="0" max="200" value="@(Config.MaxWords > 0 ? Config.MaxWords.ToString(CultureInfo.InvariantCulture) : string.Empty)"
+                   placeholder="@WordsPlaceholder" @onchange="SetWords" />
+        </label>
+        <label class="field">
+            <span>Written by AI @Percent(Config.Chance)% of the time</span>
+            <input type="range" min="0" max="100" step="5" value="@Percent(Config.Chance)" @onchange="SetChance" />
+        </label>
+        <label class="check" style="align-self:end;margin-bottom:10px;">
+            <input type="checkbox" checked="@Config.UseDescriptions" @onchange="e => Set(() => Config.UseDescriptions = e.Value is true)" />
+            <span>Tell it what the episode is about</span>
+        </label>
+    </div>
+    <p class="hint">
+        Whenever it can't be used (no AI writer set up, or what it writes leaves out a show or makes up a time) the usual
+        wording is used instead. @(Config.Chance < 1 ? RestOfTheTime : string.Empty)
+    </p>
+
+    @if (Try is not null)
+    {
+        <div class="row row-wrap" style="gap:10px;align-items:center;">
+            <button class="btn btn-sm" type="button" disabled="@_trying" @onclick="RunTry">@(_trying ? "Writing…" : "Try it")</button>
+            <span class="hint" style="margin:0;">@TryHint</span>
+        </div>
+        @if (_result is { } result)
+        {
+            <blockquote class="ai-text-sample">@result.Text</blockquote>
+            <p class="hint @(result.Written ? string.Empty : "warn")" role="status">
+                @(result.Written ? "Written by AI. Each airing gets its own." : $"The usual wording would be used: {result.Problem ?? "it wasn't written"}.")
+            </p>
+        }
+    }
+</div>
+
+<style>
+    .ai-text { border-left: 3px solid var(--accent); padding: 4px 0 2px 12px; margin: 6px 0 12px; }
+    .ai-text-sample { margin: 8px 0 4px; padding: 8px 12px; border-radius: 8px; background: rgba(255,255,255,.05); white-space: pre-line; font-style: italic; }
+</style>
+
+@code {
+    [Parameter, EditorRequired] public AiTextConfig Config { get; set; } = new();
+
+    [Parameter] public EventCallback Changed { get; set; }
+
+    [Parameter] public string PromptLabel { get; set; } = "What to write";
+
+    [Parameter] public string PromptPlaceholder { get; set; } = string.Empty;
+
+    [Parameter] public string StylePlaceholder { get; set; } = "An excitable late-90s cartoon channel announcer";
+
+    /// <summary>Shown in the empty word limit: what it is when not set.</summary>
+    [Parameter] public string WordsPlaceholder { get; set; } = "Automatic";
+
+    /// <summary>Writes a sample with the settings as they are; null hides the button.</summary>
+    [Parameter] public Func<CancellationToken, Task<AiTextResult>>? Try { get; set; }
+
+    [Parameter] public string TryHint { get; set; } = "Writes one now, with what this would air with.";
+
+    /// <summary>For narrow panels (a layer's settings): fields stacked rather than side by side.</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    private const string NeedsSetup = " (needs setting up)";
+    private const string RestOfTheTime = "It's also used the rest of the time.";
+    private readonly CancellationTokenSource _life = new();
+    private bool _trying;
+    private AiTextResult? _result;
+
+    public void Dispose()
+    {
+        _life.Cancel();
+        _life.Dispose();
+    }
+
+    private async Task Set(Action change)
+    {
+        change();
+        _result = null;
+        await Changed.InvokeAsync();
+    }
+
+    private Task SetGenerator(ChangeEventArgs e) => Set(() => Config.Generator = Optional(e));
+
+    private Task SetWords(ChangeEventArgs e) =>
+        Set(() => Config.MaxWords = int.TryParse(e.Value?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int words)
+            ? Math.Clamp(words, 0, 200)
+            : 0);
+
+    private Task SetChance(ChangeEventArgs e) =>
+        double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double percent)
+            ? Set(() => Config.Chance = Math.Clamp(percent, 0, 100) / 100)
+            : Task.CompletedTask;
+
+    private async Task RunTry()
+    {
+        if (Try is null)
+        {
+            return;
+        }
+
+        _trying = true;
+        _result = null;
+        try
+        {
+            _result = await Try(_life.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _result = new AiTextResult(string.Empty, false, ex.GetBaseException().Message);
+        }
+        finally
+        {
+            _trying = false;
+        }
+    }
+
+    private static string? Optional(ChangeEventArgs e) => e.Value?.ToString()?.Trim() is { Length: > 0 } text ? text : null;
+
+    private static string Percent(double chance) => ((int)Math.Round(Math.Clamp(chance, 0, 1) * 100)).ToString(CultureInfo.InvariantCulture);
+}

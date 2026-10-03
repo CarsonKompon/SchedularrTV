@@ -35,7 +35,8 @@ public sealed partial class GeneratedPromoService(
     TimeProvider clock,
     ILogger<GeneratedPromoService> logger,
     SchedulerConfigProvider? config = null,
-    IChannelViewers? viewers = null) : BackgroundService, IScheduleFinisher
+    IChannelViewers? viewers = null,
+    SchedularrTV.Service.Writing.AiTextWriter? writer = null) : BackgroundService, IScheduleFinisher
 {
     private const double MaxTempo = 1.35;
 
@@ -226,6 +227,10 @@ public sealed partial class GeneratedPromoService(
     public async Task<GeneratedPromoRender> RenderAsync(ResolvedGeneratedPromo promo, CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(Root);
+
+        // An AI-written voice-over or caption is written now (or taken from what was written before); the usual words
+        // stand in wherever it can't be.
+        promo = await GeneratedPromoWriting.WriteAsync(promo, writer, cancellationToken).ConfigureAwait(false);
         GeneratedPromoTemplate template = promo.Template;
         string? audio = null;
         Exception? voiceError = null;

@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.JSInterop;
 using SkiaSharp;
 using SchedularrTV.Core.Configuration;
 using SchedularrTV.Service;
@@ -177,6 +178,8 @@ public sealed class GeneratedPromoEditorTests : IDisposable
         services.AddSingleton<IOptions<GeneratedPromoOptions>>(Options.Create(new GeneratedPromoOptions { OutputPath = Path.Combine(_directory, "renders") }));
         services.AddSingleton<SchedulerConfigProvider>();
         services.AddSingleton<ConfigEditor>();
+        // The canvas measures itself through JavaScript, but only after rendering in a browser, which never happens here.
+        services.AddSingleton<IJSRuntime, NoJavaScript>();
         services.AddHttpClient();
         services.AddSingleton<ITextToSpeechProvider, TikTokTextToSpeech>();
         services.AddSingleton<TextToSpeechCatalog>();
@@ -193,5 +196,14 @@ public sealed class GeneratedPromoEditorTests : IDisposable
         string error = await process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
         Assert.True(process.ExitCode == 0, error);
+    }
+
+    private sealed class NoJavaScript : IJSRuntime
+    {
+        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args) =>
+            throw new NotSupportedException();
+
+        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken cancellationToken, object?[]? args) =>
+            throw new NotSupportedException();
     }
 }

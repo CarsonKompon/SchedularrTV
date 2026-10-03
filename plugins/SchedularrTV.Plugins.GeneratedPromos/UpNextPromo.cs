@@ -4,8 +4,12 @@ using SchedularrTV.Core.Scheduling;
 
 namespace SchedularrTV.GeneratedPromos;
 
-/// <summary>A programme a promo names; <paramref name="Path"/> and <paramref name="Runtime"/> locate its file for background clips.</summary>
-public sealed record UpNextListing(string Title, DateTimeOffset Start, string? Episode = null, string? Path = null, TimeSpan? Runtime = null);
+/// <summary>
+/// A programme a promo names; <paramref name="Path"/> and <paramref name="Runtime"/> locate its file for background
+/// clips, and <paramref name="Overview"/> (what the episode is about) lets an AI-written voice-over talk about it.
+/// </summary>
+public sealed record UpNextListing(string Title, DateTimeOffset Start, string? Episode = null, string? Path = null, TimeSpan? Runtime = null,
+    string? Overview = null);
 
 /// <summary>Reads programmes from a schedule and phrases them for a voice-over.</summary>
 public static class UpNextPromo
@@ -155,7 +159,8 @@ public static class UpNextPromo
     private static string TitleOf(MediaItem item) => string.IsNullOrWhiteSpace(item.SeriesName) ? item.Title : item.SeriesName;
 
     public static UpNextListing Listing(MediaItem item, DateTimeOffset start) =>
-        new(TitleOf(item), start, EpisodeOf(item), item.Path, item.Duration > TimeSpan.Zero ? item.Duration : null);
+        new(TitleOf(item), start, EpisodeOf(item), item.Path, item.Duration > TimeSpan.Zero ? item.Duration : null,
+            string.IsNullOrWhiteSpace(item.Overview) ? null : item.Overview.Trim());
 
     private static string? EpisodeOf(MediaItem item) =>
         !string.IsNullOrWhiteSpace(item.SeriesName) && !string.Equals(item.Title, item.SeriesName, StringComparison.OrdinalIgnoreCase)

@@ -337,6 +337,16 @@
                             <span>Text ({channel} is the channel name; new lines start new lines)</span>
                             <textarea rows="2" @onchange="e => Set(() => selected.Text = Text(e))">@selected.Text</textarea>
                         </label>
+                        <label class="check">
+                            <input type="checkbox" checked="@(selected.Writer is not null)"
+                                   @onchange="e => Set(() => selected.Writer = e.Value is true ? selected.Writer ?? new AiTextConfig() : null)" />
+                            <span>Have AI write it (the text above is the fallback)</span>
+                        </label>
+                        @if (selected.Writer is { } layerWriter)
+                        {
+                            <AiTextSettings Config="layerWriter" Changed="Commit" Compact="true" PromptPlaceholder="@LayerPromptPlaceholder"
+                                            StylePlaceholder="@LayerStylePlaceholder" WordsPlaceholder="8" Try="@(token => TryLayer(selected, token))" />
+                        }
                     }
                     else if (selected.Kind == GeneratedLayerKind.Image)
                     {
@@ -559,7 +569,19 @@
                                   EmptyHint="Nothing is said after the shows." />
             </div>
         </div>
-        <p class="hint">Read-out (one of the variations): <em>@Script()</em></p>
+        <p class="hint">@(voice.Writer is null ? ReadOutLabel : UsualReadOutLabel) <em>@Script()</em></p>
+
+        <label class="check">
+            <input type="checkbox" checked="@(voice.Writer is not null)"
+                   @onchange="e => Set(() => voice.Writer = e.Value is true ? voice.Writer ?? new AiTextConfig() : null)" />
+            <span>Have AI word it naturally (and say something about the episode)</span>
+        </label>
+        @if (voice.Writer is { } voiceWriter)
+        {
+            <AiTextSettings Config="voiceWriter" Changed="Commit" PromptLabel="Anything else it should do (optional)"
+                            PromptPlaceholder="@VoicePromptPlaceholder" WordsPlaceholder="@VoiceWords(voice)" Try="@TryVoice"
+                            TryHint="Writes one with this channel's next shows (a new one each time)." />
+        }
     }
 
     <h3 class="ed-section">Background music</h3>
@@ -673,6 +695,12 @@
     [Parameter] public string? ErrorScope { get; set; }
 
     private const string Move = "move";
+    private const string ReadOutLabel = "Read-out (one of the variations):";
+    private const string UsualReadOutLabel = "Usual read-out, used when the AI's isn't:";
+    private const string VoicePromptPlaceholder = "Mention it's the Saturday morning marathon";
+    private const string LayerPromptPlaceholder = "A five-word tagline teasing the episode";
+    private const string LayerStylePlaceholder = "Short and punchy";
+    private int _tries;
     private static readonly string[] Handles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
     private static readonly (int Width, int Height, string Label)[] Sizes =
     [
@@ -733,7 +761,12 @@
     protected override void OnInitialized()
     {
         _fonts = PromoFonts.Installed();
-        _layer = Template.Layers.FirstOrDefault(layer => layer.Kind == GeneratedPromoKinds.RequiredLayer(Template.Type)) ?? Template.Layers.FirstOrDefault();
+        if (Preview.Writer is { } writer)
+        {
+            writer.Written += OnWritten;
+        }
+
+        _layer =Template.Layers.FirstOrDefault(layer => layer.Kind == GeneratedPromoKinds.RequiredLayer(Template.Type)) ?? Template.Layers.FirstOrDefault();
         _time = Math.Min(2, Math.Max(0, Template.Duration.TotalSeconds - 0.05));
         _ = RefreshStill();
         _ = PrepareStandIn();
@@ -760,6 +793,11 @@
 
     public void Dispose()
     {
+        if (Preview.Writer is { } writer)
+        {
+            writer.Written -= OnWritten;
+        }
+
         _life.Cancel();
         _life.Dispose();
     }
@@ -1309,6 +1347,43 @@
     {
         IReadOnlyList<UpNextListing> listings = PreviewListings(out _);
         return GeneratedPromoResolver.Resolve(Template, Channel.Name, listings, Zone, Preview.Now)?.Script ?? string.Empty;
+    }
+
+    /// <summary>The word limit the voice-over gets when none is set, worked out from the promo's length.</summary>
+    private string VoiceWords(GeneratedVoiceConfig voice) =>
+        $"About {AiTextRules.SpokenWords(Template.Duration - voice.Start - TimeSpan.FromMilliseconds(300))}, from the length";
+
+    // Each try gets its own seed, so it can be heard several ways; what airs is written per airing.
+    private async Task<AiTextResult> TryVoice(CancellationToken token)
+    {
+        ResolvedGeneratedPromo? promo = Preview.Resolve(Template, Channel, Zone);
+        if (Preview.Writer is not { } writer || promo?.ScriptJob is not { } job)
+        {
+            return new AiTextResult(promo?.Script ?? string.Empty, false, "the AI writer isn't available here");
+        }
+
+        return await writer.TryAsync(job with { Seed = $"{job.Seed}|try|{++_tries}" }, token);
+    }
+
+    private async Task<AiTextResult> TryLayer(GeneratedLayer layer, CancellationToken token)
+    {
+        ResolvedGeneratedPromo? promo = Preview.Resolve(Template, Channel, Zone);
+        int index = Template.Layers.IndexOf(layer);
+        if (Preview.Writer is not { } writer || promo is null || !promo.LayerJobs.TryGetValue(index, out AiTextJob? job))
+        {
+            return new AiTextResult(layer.Text ?? string.Empty, false, "the AI writer isn't available here");
+        }
+
+        return await writer.TryAsync(job with { Seed = $"{job.Seed}|try|{++_tries}" }, token);
+    }
+
+    // A caption the AI finished writing shows in the preview straight away.
+    private void OnWritten(AiTextJob job, AiTextResult result)
+    {
+        if (job.Source == GeneratedPromoWriting.Source && result.Written && Template.Layers.Any(layer => layer.Writer is not null))
+        {
+            _ = InvokeAsync(RefreshStill);
+        }
     }
 
     private async Task RenderVideo()

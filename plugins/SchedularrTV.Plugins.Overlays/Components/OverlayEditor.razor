@@ -2,6 +2,7 @@
    Generated promos template editor: the canvas fills the width with its layers on the right, and the rest under it. *@
 @using Microsoft.JSInterop
 @inject IJSRuntime JS
+@inject IServiceProvider Services
 
 <div class="card visual-editor">
     <div class="card-head">
@@ -187,6 +188,17 @@
                             <label class="field"><span>Text</span>
                                 <input type="text" value="@selected.Text" @onchange="e => Set(() => selected.Text = Text(e, string.Empty))" /></label>
                             <p class="hint">{title} {episode} {season_episode} {year} {channel} {next} {next_time}</p>
+                            <label class="check">
+                                <input type="checkbox" checked="@(selected.Writer is not null)"
+                                       @onchange="e => Set(() => selected.Writer = e.Value is true ? selected.Writer ?? new AiTextConfig() : null)" />
+                                <span>Have AI write it for each programme (the text above is the fallback)</span>
+                            </label>
+                            @if (selected.Writer is { } layerWriter)
+                            {
+                                <AiTextSettings Config="layerWriter" Changed="CommitAsync" Compact="true" PromptPlaceholder="@LayerPromptPlaceholder"
+                                                StylePlaceholder="@LayerStylePlaceholder" WordsPlaceholder="8" Try="@(token => TryLayer(selected, token))"
+                                                TryHint="Writes one for a sample episode." />
+                            }
 
                             <h4>Text style</h4>
                             <div class="grid grid-2">
@@ -310,6 +322,9 @@
     private const string DefaultAlign = "left";
     private const string White = "#ffffff";
     private const string Black = "#000000";
+    private const string LayerPromptPlaceholder = "A cheeky one-liner about the episode";
+    private const string LayerStylePlaceholder = "Short and punchy";
+    private int _tries;
 
     // Screen pixels, so snapping feels the same however wide the canvas is drawn.
     private const double SnapDistance = 8;
@@ -609,6 +624,16 @@
         {
             await CommitAsync();
         }
+    }
+
+    /// <summary>A caption written now for a sample episode, a different one each try.</summary>
+    private async Task<AiTextResult> TryLayer(OverlayLayer layer, CancellationToken token)
+    {
+        Dictionary<string, string> tokens = new(OverlayProcessor.SampleTokens) { ["channel"] = ChannelName };
+        AiTextJob job = OverlayWriting.Job(Overlay, layer, tokens, OverlayWriting.SampleOverview, $"sample|{++_tries}", DateTimeOffset.UtcNow);
+        return Services.GetService<AiTextWriter>() is { } writer
+            ? await writer.TryAsync(job, token)
+            : new AiTextResult(job.Fallback, false, "the AI writer isn't available here");
     }
 
     /// <summary>Font families the renderer can draw with, including fonts installed for the current user only.</summary>

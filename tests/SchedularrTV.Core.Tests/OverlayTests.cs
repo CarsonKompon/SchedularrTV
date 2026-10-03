@@ -7,6 +7,7 @@ using SchedularrTV.Core.Scheduling;
 using SchedularrTV.Overlays;
 using SchedularrTV.Plugins.Playout;
 using SchedularrTV.Providers.ErsatzTv;
+using SchedularrTV.Service.Writing;
 using Xunit;
 
 namespace SchedularrTV.Core.Tests;
@@ -278,6 +279,37 @@ public sealed class OverlayTests : IDisposable
         SkiaSharp.SKRect box = OverlayRenderer.FileBox(overlay, 1000, 500, aspect: 0.5f);
 
         Assert.Equal((850f, 400f, 100f, 50f), (box.Left, box.Top, box.Width, box.Height));
+    }
+
+    [Fact]
+    public async Task An_AI_written_caption_shows_its_usual_text_until_it_is_written_and_then_its_own()
+    {
+        (SchedulerConfig config, ChannelConfig cartoons, _) = Channels();
+        var layer = new OverlayLayer { Kind = OverlayLayerKinds.Text, Text = "{title}", Writer = new AiTextConfig() };
+        var overlay = new Overlay { Name = "Caption", Layers = [layer] };
+        cartoons.Plugins = Section(new OverlaysSection { Overlays = [overlay] });
+        var schedule = new ChannelSchedule
+        {
+            ChannelId = "cartoons", ChannelName = "Cartoons", ChannelNumber = 1, Start = Eight, End = Eight.AddMinutes(22),
+            Entries = [Episode()]
+        };
+        var generator = new AiWritingTests.FakeGenerator(_ => "Toons is on, stay tuned");
+        var writer = new AiTextWriter(new TextGeneratorCatalog([generator]), Path.Combine(_folder, "ai"), TimeProvider.System,
+            NullLogger<AiTextWriter>.Instance);
+        var processor = new OverlayProcessor(new OverlayRenderer(_folder), NullLogger<OverlayProcessor>.Instance, writer);
+        string Drawn(ChannelSchedule processed) =>
+            (string)JsonNode.Parse(processed.Entries[0].Annotations![PlayoutPublisher.GraphicsAnnotation])![0]!["source"]!["path"]!;
+
+        string usual = Drawn(await processor.ProcessAsync(new PlayoutContext(config, cartoons, schedule), CancellationToken.None));
+
+        ScheduleEntry entry = schedule.Entries[0];
+        AiTextResult written = await writer.WriteAsync(OverlayWriting.Job(overlay, layer, OverlayProcessor.Tokens(entry, null, cartoons),
+            entry.Item!.Overview, entry.Item.Id, entry.Start));
+        Assert.True(written.Written, written.Problem);
+
+        string own = Drawn(await processor.ProcessAsync(new PlayoutContext(config, cartoons, schedule), CancellationToken.None));
+        Assert.NotEqual(usual, own);
+        Assert.Equal(1, generator.Calls);
     }
 
     [Fact]

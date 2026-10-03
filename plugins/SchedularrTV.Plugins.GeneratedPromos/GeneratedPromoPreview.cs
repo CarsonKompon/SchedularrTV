@@ -93,6 +93,13 @@ public sealed class GeneratedPromoPreview(
 
     public DateTimeOffset Now => clock.GetUtcNow();
 
+    /// <summary>The AI writer, when the scheduler provides one (it always does; tools and tests may not).</summary>
+    public SchedularrTV.Service.Writing.AiTextWriter? Writer => services.GetService<SchedularrTV.Service.Writing.AiTextWriter>();
+
+    /// <summary>The template's AI jobs for the editor's "Try it", with what it would air with right now.</summary>
+    public ResolvedGeneratedPromo? Resolve(GeneratedPromoTemplate template, ChannelConfig channel, TimeZoneInfo zone) =>
+        GeneratedPromoResolver.Resolve(template, channel.Name, Listings(channel, template, out _), zone, clock.GetUtcNow());
+
     public static TimeZoneInfo Zone(SchedulerConfig config, ChannelConfig channel) =>
         SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(channel.TimeZone) ? config.Settings.TimeZone : channel.TimeZone);
 
@@ -109,6 +116,9 @@ public sealed class GeneratedPromoPreview(
     {
         ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(template, channelName, listings, zone, airsAt ?? clock.GetUtcNow())
             ?? throw new InvalidOperationException("The preview needs at least one upcoming programme.");
+
+        // AI-written captions show once they're written (the usual text until then; the editor redraws when they are).
+        promo = GeneratedPromoWriting.Peek(promo, Writer);
         PromoComposition composition = GeneratedPromoResolver.Compose(promo);
         if (composition.BackgroundPath is { } background && !PromoRenderer.IsImage(background))
         {

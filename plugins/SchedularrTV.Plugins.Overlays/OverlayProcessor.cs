@@ -4,6 +4,7 @@ using SchedularrTV.Core.Configuration;
 using SchedularrTV.Core.Media;
 using SchedularrTV.Core.Scheduling;
 using SchedularrTV.Plugins.Playout;
+using SchedularrTV.Service.Writing;
 
 namespace SchedularrTV.Overlays;
 
@@ -12,10 +13,36 @@ namespace SchedularrTV.Overlays;
 /// layer (the drawn PNG or the file, where it sits, when it fades in and out) in the entry's <c>ersatztv.graphics</c>
 /// annotation, which the ErsatzTV output writes into the playout.
 /// </summary>
-public sealed class OverlayProcessor(OverlayRenderer renderer, ILogger<OverlayProcessor> logger) : IPlayoutProcessor
+public sealed class OverlayProcessor : IPlayoutProcessor
 {
     /// <summary>The ErsatzTV output's annotation for graphics layers.</summary>
     public const string GraphicsAnnotation = "ersatztv.graphics";
+
+    private readonly OverlayRenderer renderer;
+    private readonly ILogger<OverlayProcessor> logger;
+    private readonly AiTextWriter? writer;
+
+    /// <param name="writer">Writes AI-written text layers; without it they show their usual text.</param>
+    /// <param name="republisher">Publishes again when AI-written captions are ready, so they replace the usual text.</param>
+    public OverlayProcessor(OverlayRenderer renderer, ILogger<OverlayProcessor> logger, AiTextWriter? writer = null,
+        IScheduleRepublisher? republisher = null)
+    {
+        this.renderer = renderer;
+        this.logger = logger;
+        this.writer = writer;
+        if (writer is not null && republisher is not null)
+        {
+            // Captions are written in the background (each publish uses what's ready); a finished one is put on air
+            // with the next publish, and requests close together are combined.
+            writer.Written += (job, result) =>
+            {
+                if (job.Source == OverlayWriting.Source && result.Written)
+                {
+                    republisher.RequestRepublish();
+                }
+            };
+        }
+    }
 
     public string Name => OverlayResolver.PluginId;
 
@@ -67,7 +94,7 @@ public sealed class OverlayProcessor(OverlayRenderer renderer, ILogger<OverlayPr
                 try
                 {
                     tokens ??= Tokens(entry, Next(ordered, index), resolved.Owner);
-                    if (Layer(overlay, showing, tokens) is { } layer)
+                    if (Layer(Written(overlay, entry, tokens), showing, tokens) is { } layer)
                     {
                         layers.Add(layer);
                     }
@@ -141,6 +168,32 @@ public sealed class OverlayProcessor(OverlayRenderer renderer, ILogger<OverlayPr
         }
 
         return layer;
+    }
+
+    /// <summary>
+    /// The overlay with its AI-written text layers filled in where they're written; the rest keep their usual text
+    /// (and are queued, for programmes coming up soon).
+    /// </summary>
+    private Overlay Written(Overlay overlay, ScheduleEntry entry, IReadOnlyDictionary<string, string> tokens)
+    {
+        if (writer is null || overlay.Kind == OverlayKinds.File || !overlay.Layers.Any(OverlayWriting.Writes))
+        {
+            return overlay;
+        }
+
+        Overlay copy = overlay.Copy();
+        bool soon = entry.Start - DateTimeOffset.UtcNow < OverlayWriting.Lookahead;
+        string identity = entry.Item?.Id ?? tokens.GetValueOrDefault("title") ?? string.Empty;
+        foreach (OverlayLayer layer in copy.Layers.Where(OverlayWriting.Writes))
+        {
+            AiTextJob job = OverlayWriting.Job(overlay, layer, tokens, entry.Item?.Overview, identity, entry.Start);
+            AiTextResult result = writer.Peek(job, queue: soon);
+
+            // Written text has no {tokens} left in it; the usual text is filled in as the renderer would.
+            layer.Text = result.Text;
+        }
+
+        return copy;
     }
 
     private static Dictionary<string, string> WithGraphics(IReadOnlyDictionary<string, string>? annotations, JsonArray layers)
