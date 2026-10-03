@@ -63,6 +63,7 @@ plugins:
         fade_in: 300ms
         fade_out: 1s
         duck_under_voice: true
+        duck_under_clip: true   # dips while the episode clip's sound plays (needs background_clip with include_audio)
       layers:
       - { name: Panel, kind: rect, x: 110, y: 250, width: 1220, height: 580, color: '#96000000', corner_radius: 28 }
       - { name: Next, kind: up_next, x: 180, y: 420, width: 1060, height: 170, font_size: 132, transition_in: zoom }

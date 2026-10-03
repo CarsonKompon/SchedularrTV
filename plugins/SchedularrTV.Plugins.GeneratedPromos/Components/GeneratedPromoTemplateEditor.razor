@@ -674,6 +674,15 @@
             <input type="checkbox" checked="@music.DuckUnderVoice" @onchange="e => Set(() => music.DuckUnderVoice = e.Value is true)" />
             <span>Lower the music while the voice speaks</span>
         </label>
+        <label class="check">
+            <input type="checkbox" checked="@(music.DuckUnderClip == true)"
+                   @onchange="e => Set(() => music.DuckUnderClip = e.Value is true ? true : null)" />
+            <span>Lower the music while the episode clip's sound plays</span>
+        </label>
+        @if (music.DuckUnderClip == true && Template.BackgroundClip is not { IncludeAudio: true })
+        {
+            <p class="hint warn">@ClipSoundOff</p>
+        }
     }
 
     <h3 class="ed-section">Preview</h3>
@@ -713,6 +722,8 @@
     private const string LayerStylePlaceholder = "Short and punchy";
     private const string MutesClipHint =
         "The episode's sound follows this layer: it fades out as the layer fades in, cuts out if it cuts in, and is turned down by its opacity.";
+    private const string ClipSoundOff =
+        "The episode clip's sound isn't on (under Canvas, tick Include the episode's sound), so the music has nothing to dip under.";
     private const string MutesNothingHint =
         "The episode clip's sound isn't on (under Canvas), so there's nothing for this to mute yet.";
     private int _tries;

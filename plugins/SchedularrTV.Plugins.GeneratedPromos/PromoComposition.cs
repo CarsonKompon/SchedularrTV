@@ -111,6 +111,9 @@ public sealed record PromoMusic(string Path, double Volume, TimeSpan StartAt, Ti
     /// null leaves it at full volume. Layers that mute the episode clip make these.
     /// </summary>
     public IReadOnlyList<PromoLevel>? Levels { get; init; }
+
+    /// <summary>For the music: dips while the episode clip's sound (<see cref="PromoComposition.BackgroundAudio"/>) is playing.</summary>
+    public bool DuckUnderBackground { get; init; }
 }
 
 /// <summary>A sound's level (0 to 1) at a point in the promo.</summary>

@@ -226,6 +226,13 @@ public sealed class GeneratedMusicConfig
 
     /// <summary>Lowers the music while the voice-over is speaking.</summary>
     public bool DuckUnderVoice { get; set; } = true;
+
+    /// <summary>
+    /// Lowers the music while the episode clip's sound is playing. Null (not false) when off, so templates without it
+    /// keep their render keys.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? DuckUnderClip { get; set; }
 }
 
 public sealed class GeneratedClipConfig

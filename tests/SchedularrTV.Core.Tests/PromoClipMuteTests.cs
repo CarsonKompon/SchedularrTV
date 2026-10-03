@@ -69,6 +69,52 @@ public sealed class PromoClipMuteTests
     }
 
     [Fact]
+    public async Task Music_can_dip_under_the_episode_clip_with_the_voice_and_a_muting_layer_too()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "clip-duck-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            string Tone(string name, int frequency)
+            {
+                string path = Path.Combine(folder, name);
+                var info = new ProcessStartInfo("ffmpeg") { RedirectStandardError = true, UseShellExecute = false };
+                foreach (string argument in (string[])["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", $"sine=f={frequency}:d=2", path])
+                {
+                    info.ArgumentList.Add(argument);
+                }
+
+                using Process process = Process.Start(info)!;
+                process.StandardError.ReadToEnd();
+                process.WaitForExit();
+                return path;
+            }
+
+            string song = Tone("song.wav", 440);
+            string episode = Tone("episode.wav", 220);
+            var composition = new PromoComposition
+            {
+                Width = 160, Height = 90, Duration = TimeSpan.FromSeconds(1.5),
+                AudioPath = Tone("voice.wav", 660),
+                Music = new PromoMusic(song, 0.5, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, DuckUnderVoice: true) { DuckUnderBackground = true },
+                BackgroundAudio = new PromoMusic(episode, 0.6, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, DuckUnderVoice: true)
+                {
+                    Levels = PromoAudioEnvelope.ForBlockers([Box(0.5, 1.0, PromoTransition.Fade, fade: 0.2)], TimeSpan.FromSeconds(1.5))
+                }
+            };
+
+            string output = Path.Combine(folder, "promo.mp4");
+            await new PromoRenderer().RenderAsync(composition, output);
+
+            Assert.True(new FileInfo(output).Length > 0);
+        }
+        finally
+        {
+            TestFolders.Delete(folder);
+        }
+    }
+
+    [Fact]
     public async Task Ffmpeg_reads_the_volume_curve()
     {
         IReadOnlyList<PromoLevel> points = PromoAudioEnvelope.ForBlockers([Box(0.2, 0.8, PromoTransition.Fade, fade: 0.2)], TimeSpan.FromSeconds(1));

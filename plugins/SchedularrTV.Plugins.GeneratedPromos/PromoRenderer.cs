@@ -335,6 +335,11 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         List<string> chains = [keys == 0 ? $"{voice}[voice]" : $"{voice},asplit={keys + 1}[voice]{string.Concat(Enumerable.Range(0, keys).Select(key => $"[key{key}]"))}"];
         List<string> mix = ["[voice]"];
         int nextKey = 0;
+
+        // The music can also dip under the episode clip's sound: the clip (as loud as it plays, after its own volume
+        // and any layers muting it) is split off to drive the music's compressor.
+        int clip = composition.BackgroundAudio is { } background ? Array.IndexOf(beds, background) : -1;
+        bool musicUnderClip = clip >= 0 && composition.Music is { DuckUnderBackground: true } && Array.IndexOf(beds, composition.Music) is >= 0;
         for (int index = 0; index < beds.Length; index++)
         {
             PromoMusic bed = beds[index];
@@ -344,16 +349,22 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
                 + $"afade=t=in:st=0:d={Seconds(bed.FadeIn)},afade=t=out:st={Seconds(composition.Duration - fadeOut)}:d={Seconds(fadeOut)},"
                 // Layers that block the episode's sound: quoted, since the expression is full of commas.
                 + (bed.Levels is { Count: > 0 } levels ? $"volume='{PromoAudioEnvelope.Expression(levels)}':eval=frame," : string.Empty)
-                + $"apad[bed{index}]");
+                + (musicUnderClip && index == clip ? $"apad,asplit=2[bed{index}][clipkey]" : $"apad[bed{index}]"));
+            string label = $"[bed{index}]";
             if (voiced && bed.DuckUnderVoice)
             {
-                chains.Add($"[bed{index}][key{nextKey++}]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=350[ducked{index}]");
-                mix.Add($"[ducked{index}]");
+                chains.Add($"{label}[key{nextKey++}]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=350[ducked{index}]");
+                label = $"[ducked{index}]";
             }
-            else
+
+            if (musicUnderClip && ReferenceEquals(bed, composition.Music))
             {
-                mix.Add($"[bed{index}]");
+                // Gentler than under the voice: the episode's sound comes and goes, and the music should ease with it.
+                chains.Add($"{label}[clipkey]sidechaincompress=threshold=0.03:ratio=6:attack=40:release=600[underclip{index}]");
+                label = $"[underclip{index}]";
             }
+
+            mix.Add(label);
         }
 
         string sound = beds.Length == 0
