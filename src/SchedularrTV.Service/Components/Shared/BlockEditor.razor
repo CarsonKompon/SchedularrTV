@@ -15,7 +15,10 @@
             <span class="pill pill-muted">anchor slot</span>
         }
         <div class="spacer"></div>
-        <button class="btn btn-sm btn-danger" @onclick="OnRemove">Delete block</button>
+        @if (Removable)
+        {
+            <button class="btn btn-sm btn-danger" @onclick="OnRemove">Delete block</button>
+        }
     </div>
 
     @* Archive Follow maps archived slots onto blocks like this one; off without the plugin unless already set. *@
@@ -190,6 +193,12 @@
     [Parameter] public EventCallback Changed { get; set; }
     [Parameter] public EventCallback OnRemove { get; set; }
 
+    /// <summary>Shows the delete button; off where the block isn't in a channel yet (the new channel wizard).</summary>
+    [Parameter] public bool Removable { get; set; } = true;
+
+    /// <summary>The block's channel, for one not added to a channel yet; otherwise it's found in the schedule.</summary>
+    [Parameter] public ChannelConfig? Channel { get; set; }
+
     private List<string> _commercialTags = [];
 
     private BlockSchedule Schedule => Block.Schedule ??= new BlockSchedule { Repeat = RepeatModifier.Yearly };
@@ -203,7 +212,7 @@
         {
             PluginId = section.PluginId,
             Config = Editor.Working,
-            Channel = Editor.Working.Channels.FirstOrDefault(channel => channel.Blocks.Contains(Block)),
+            Channel = Channel ?? Editor.Working.Channels.FirstOrDefault(channel => channel.Blocks.Contains(Block)),
             Block = Block,
             Changed = () => Changed.InvokeAsync()
         }

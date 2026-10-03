@@ -35,8 +35,9 @@
     {
         <div class="episode-picker">
             <h3>@selected.Archive.Show: @EpisodeTitle(selected.Archive)</h3>
-            <label class="field"><span>Library show</span><input type="text" list="@_showListId" @bind="_targetShow" @bind:after="TargetChanged" /></label>
-            <datalist id="@_showListId">@foreach (string show in _shows) { <option value="@show" /> }</datalist>
+            <div class="field"><span>Library show</span>
+                <TitlePicker Options="_shows" Value="@_targetShow" AriaLabel="Library show" Placeholder="Type a show…"
+                             OnCommitted="ChooseShow" /></div>
             <label class="field"><span>Episode search</span><input type="text" @bind="_targetSearch" @bind:event="oninput" @bind:after="FilterTargets" /></label>
             <label class="field"><span>Library episode</span><select size="6" @bind="_targetId">
                 @foreach (MediaItem item in _targets) { <option value="@item.Id">@Label(item)</option> }
@@ -73,7 +74,6 @@
     private string _targetSearch = string.Empty;
     private string _targetId = string.Empty;
     private MediaItem[] _targets = [];
-    private readonly string _showListId = $"episode-shows-{Guid.NewGuid():N}";
     private CancellationTokenSource? _matchingCancellation;
 
     protected override async Task OnParametersSetAsync()
@@ -156,6 +156,13 @@
         FilterTargets();
     }
     private void TargetChanged() { _targetId = string.Empty; FilterTargets(); }
+
+    private void ChooseShow(string show)
+    {
+        if (string.Equals(show, _targetShow, StringComparison.Ordinal)) return;
+        _targetShow = show;
+        TargetChanged();
+    }
     private void FilterTargets()
     {
         _targets = Library.Where(item => string.Equals(TitleRotation.TitleOf(item), _targetShow, StringComparison.OrdinalIgnoreCase)

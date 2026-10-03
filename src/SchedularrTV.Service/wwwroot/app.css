@@ -682,6 +682,8 @@ progress::-moz-progress-bar { background: var(--accent-gradient); border-radius:
 .selection-count strong { color: var(--text); }
 
 .media-table-wrap { border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel); overflow-x: auto; box-shadow: var(--shadow); }
+/* Tables with suggestion lists in their cells: the lists need to spill out of the table rather than be cut off. */
+.media-table-wrap.allow-popups { overflow: visible; }
 .media-table td { padding-top: 8px; padding-bottom: 8px; }
 .media-title { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .media-name { font-weight: 550; font-size: 14px; }

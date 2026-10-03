@@ -22,10 +22,8 @@
     <div class="mapping-actions">
         <label class="field mapping-target">
             <span>Assign selected to</span>
-            <input type="text" list="@_targetId" @bind="_target" @bind:event="oninput" />
-            <datalist id="@_targetId">
-                @foreach (string target in Targets) { <option value="@target"></option> }
-            </datalist>
+            <TitlePicker Options="Targets" Value="@_target" ValueChanged="v => _target = v" AriaLabel="Assign selected to"
+                         Placeholder="Type a show to assign…" />
         </label>
         <button class="btn btn-sm" disabled="@(_selected.Count == 0 || !Targets.Contains(_target, StringComparer.OrdinalIgnoreCase))" @onclick="Assign">Assign</button>
         <button class="btn btn-sm" disabled="@(_selected.Count == 0)" @onclick="Unmap">Unmap</button>
@@ -76,7 +74,6 @@
     [Parameter] public EventCallback Changed { get; set; }
 
     private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
-    private readonly string _targetId = $"mapping-target-{Guid.NewGuid():N}";
     private List<string> _filtered = [];
     private HashSet<string> _availableTargets = new(StringComparer.OrdinalIgnoreCase);
     private string _search = string.Empty;

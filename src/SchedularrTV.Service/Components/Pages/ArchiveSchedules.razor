@@ -162,14 +162,8 @@ else
                     }
                     else
                     {
-                        <datalist id="archive-show-names">
-                            @foreach (string name in ShowSuggestions)
-                            {
-                                <option value="@name"></option>
-                            }
-                        </datalist>
 
-                        <div class="media-table-wrap" style="margin-top:12px;">
+                        <div class="media-table-wrap allow-popups" style="margin-top:12px;">
                             <table class="table archive-rows">
                                 <thead>
                                     <tr>
@@ -192,8 +186,8 @@ else
                                                        @onchange="e => Edit(() => row.Time = Text(e))" /></td>
                                             <td><input type="text" inputmode="numeric" placeholder="next row" value="@row.EndTime" aria-label="Ends"
                                                        @onchange="e => Edit(() => row.EndTime = Optional(e))" /></td>
-                                            <td><input type="text" list="archive-show-names" value="@row.Show" aria-label="Show"
-                                                       @onchange="e => Edit(() => row.Show = Text(e))" /></td>
+                                            <td><TitlePicker Options="ShowSuggestions" Value="@row.Show" AriaLabel="Show" Placeholder="Show"
+                                                             OnCommitted="value => Edit(() => row.Show = value.Trim())" /></td>
                                             <td><input type="text" value="@row.Episode" placeholder="Episode title or S01E02" aria-label="Episode"
                                                        @onchange="e => Edit(() => row.Episode = Optional(e))" /></td>
                                             <td><input type="text" value="@string.Join(", ", row.Blocks)" placeholder="Morning" aria-label="Blocks"

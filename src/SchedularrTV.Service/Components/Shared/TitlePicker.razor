@@ -1,0 +1,270 @@
+@* A text box that suggests shows and movies as you type, with their posters. Every title is searched (not just
+   the first few hundred), best matches first: names starting with what's typed, then words starting with it, then
+   anywhere in the name. Arrow keys and Enter pick; Escape closes. Typing a name that isn't listed still works. *@
+@inject LibraryBrowser Library
+
+<div class="title-picker @Class">
+    <input type="text" value="@Value" placeholder="@Placeholder" aria-label="@AriaLabel" autocomplete="off" spellcheck="false"
+           role="combobox" aria-autocomplete="list" aria-expanded="@(Showing ? "true" : "false")" aria-controls="@_listId"
+           @oninput="OnInput" @onfocus="OnFocus" @onblur="OnBlur" @onkeydown="OnKey" @onchange="OnChange" />
+    @if (Showing)
+    {
+        @* Mouse down rather than click, and without taking focus, so the box doesn't close before the pick lands. *@
+        <ul class="title-picker-list" id="@_listId" role="listbox" @onmousedown:preventDefault="true">
+            @for (int index = 0; index < _matches.Count; index++)
+            {
+                int position = index;
+                TitleChoice choice = _matches[position];
+                <li class="title-picker-option @(position == _active ? "active" : string.Empty)" role="option"
+                    aria-selected="@(position == _active ? "true" : "false")" @key="choice.Name"
+                    @onmousedown="() => Pick(choice.Name)" @onmouseenter="() => _active = position">
+                    @if (Thumbnails)
+                    {
+                        <Artwork Id="@choice.ArtId" Title="@choice.Name" Class="title-picker-art" Width="72" />
+                    }
+                    <div class="title-picker-text">
+                        <div class="title-picker-name">
+                            @foreach ((string part, bool hit) in Parts(choice.Name))
+                            {
+                                @if (hit)
+                                {
+                                    <mark>@part</mark>
+                                }
+                                else
+                                {
+                                    @part
+                                }
+                            }
+                        </div>
+                        @if (choice.Detail is { Length: > 0 } detail)
+                        {
+                            <div class="title-picker-detail">@detail</div>
+                        }
+                    </div>
+                </li>
+            }
+            @if (_more > 0)
+            {
+                <li class="title-picker-more" role="presentation">@_more.ToString("N0") more: keep typing to narrow it down</li>
+            }
+        </ul>
+    }
+</div>
+
+<style>
+    .title-picker { position: relative; min-width: 0; flex: 1; }
+    .title-picker > input { width: 100%; }
+    .title-picker-list {
+        position: absolute; z-index: 60; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none;
+        max-height: 340px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px;
+        background: var(--panel-2); box-shadow: 0 14px 40px rgba(0, 0, 0, .45);
+    }
+    .title-picker-option { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 7px; cursor: pointer; }
+    .title-picker-option.active { background: rgba(255, 255, 255, .07); }
+    .title-picker-option.active .title-picker-name { color: var(--text); }
+    .title-picker-art { width: 30px; flex: none; border-radius: 5px; }
+    .title-picker-text { min-width: 0; flex: 1; }
+    .title-picker-name { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .title-picker-name mark { background: none; color: var(--accent); font-weight: 600; }
+    .title-picker-detail { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .title-picker-more { padding: 7px 8px 5px; font-size: 11.5px; color: var(--muted); border-top: 1px solid var(--line); margin-top: 4px; }
+</style>
+
+@code {
+    /// <summary>The titles to suggest. Ones that are shows or movies in the library get their poster and year.</summary>
+    [Parameter] public IEnumerable<string> Options { get; set; } = [];
+
+    [Parameter] public string? Value { get; set; }
+
+    /// <summary>Every change to the text, typed or picked.</summary>
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+
+    /// <summary>A suggestion was picked (clicked, or chosen with Enter).</summary>
+    [Parameter] public EventCallback<string> OnPicked { get; set; }
+
+    /// <summary>The text was committed by leaving the box or pressing Enter, picked or typed (like a text box's change).</summary>
+    [Parameter] public EventCallback<string> OnCommitted { get; set; }
+
+    [Parameter] public string? Placeholder { get; set; } = "Type to search…";
+
+    [Parameter] public string? AriaLabel { get; set; } = "Title";
+
+    /// <summary>Posters beside the suggestions; off for lists that aren't titles (Jellyfin collections, say).</summary>
+    [Parameter] public bool Thumbnails { get; set; } = true;
+
+    [Parameter] public string? Class { get; set; }
+
+    private const int Shown = 60;
+
+    private sealed record TitleChoice(string Name, string? ArtId, string? Detail);
+
+    private readonly string _listId = $"title-picker-{Guid.NewGuid():N}";
+    private Dictionary<string, (string? ArtId, string? Detail)> _known = new(StringComparer.OrdinalIgnoreCase);
+    private List<TitleChoice> _matches = [];
+    private int _more;
+    private int _active = -1;
+    private bool _open;
+
+    private bool Showing => _open && _matches.Count > 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Thumbnails)
+        {
+            return;
+        }
+
+        try
+        {
+            // Posters and a line of detail for whatever's a show or film in the library; other names just show as text.
+            Dictionary<string, (string?, string?)> known = new(StringComparer.OrdinalIgnoreCase);
+            foreach (LibraryShow show in await Library.GetShowsAsync())
+            {
+                known.TryAdd(show.Name, (show.Id, Join(show.Year?.ToString(), $"{show.EpisodeCount:N0} episodes", show.Networks.FirstOrDefault())));
+            }
+
+            foreach (LibraryMovie movie in await Library.GetMoviesAsync())
+            {
+                known.TryAdd(movie.Title, (movie.Id, Join("Movie", movie.Year?.ToString(), movie.Runtime)));
+            }
+
+            _known = known;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Without the library the names still work; they just have no posters.
+        }
+    }
+
+    private static string? Join(params string?[] parts) =>
+        string.Join(" · ", parts.Where(part => !string.IsNullOrWhiteSpace(part))) is { Length: > 0 } text ? text : null;
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        Value = e.Value?.ToString() ?? string.Empty;
+        _open = true;
+        Search();
+        await ValueChanged.InvokeAsync(Value);
+    }
+
+    private void OnFocus()
+    {
+        _open = true;
+        Search();
+    }
+
+    private void OnBlur()
+    {
+        _open = false;
+        _active = -1;
+    }
+
+    private Task OnChange(ChangeEventArgs e) => OnCommitted.InvokeAsync(e.Value?.ToString() ?? string.Empty);
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown":
+                _open = true;
+                if (_matches.Count == 0) Search();
+                _active = _matches.Count == 0 ? -1 : (_active + 1) % _matches.Count;
+                break;
+            case "ArrowUp":
+                _active = _matches.Count == 0 ? -1 : (_active <= 0 ? _matches.Count - 1 : _active - 1);
+                break;
+            case "Enter":
+                if (Showing && _active >= 0 && _active < _matches.Count)
+                {
+                    await Pick(_matches[_active].Name);
+                }
+                else
+                {
+                    _open = false;
+                    await OnCommitted.InvokeAsync(Value ?? string.Empty);
+                }
+
+                break;
+            case "Escape":
+                _open = false;
+                _active = -1;
+                break;
+        }
+    }
+
+    private async Task Pick(string name)
+    {
+        Value = name;
+        _open = false;
+        _active = -1;
+        await ValueChanged.InvokeAsync(name);
+        await OnPicked.InvokeAsync(name);
+        await OnCommitted.InvokeAsync(name);
+    }
+
+    /// <summary>Every option that matches, best first; only the first few are drawn.</summary>
+    private void Search()
+    {
+        string typed = (Value ?? string.Empty).Trim();
+        List<(string Name, int Rank)> ranked = [];
+        foreach (string name in Options.Where(option => !string.IsNullOrWhiteSpace(option)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            int rank = Rank(name, typed);
+            if (rank >= 0)
+            {
+                ranked.Add((name, rank));
+            }
+        }
+
+        List<string> ordered = [.. ranked
+            .OrderBy(entry => entry.Rank)
+            .ThenBy(entry => LibraryBrowser.TitleSortKey(entry.Name), StringComparer.OrdinalIgnoreCase)
+            .Select(entry => entry.Name)];
+        _more = Math.Max(0, ordered.Count - Shown);
+        _matches = [.. ordered.Take(Shown).Select(name => _known.TryGetValue(name, out var info)
+            ? new TitleChoice(name, info.ArtId, info.Detail)
+            : new TitleChoice(name, null, null))];
+
+        // An exact match is picked out, so Enter keeps what was typed.
+        _active = typed.Length > 0 && _matches.Count > 0 ? 0 : -1;
+    }
+
+    /// <summary>0 when the name (or the name without "The") starts with it, 1 when a word does, 2 anywhere; -1 not at all.</summary>
+    private static int Rank(string name, string typed)
+    {
+        if (typed.Length == 0)
+        {
+            return 0;
+        }
+
+        if (name.StartsWith(typed, StringComparison.OrdinalIgnoreCase)
+            || LibraryBrowser.TitleSortKey(name).StartsWith(typed, StringComparison.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        int at = name.IndexOf(typed, StringComparison.OrdinalIgnoreCase);
+        if (at < 0)
+        {
+            return -1;
+        }
+
+        return !char.IsLetterOrDigit(name[at - 1]) ? 1 : 2;
+    }
+
+    /// <summary>The name in pieces, the first match of what's typed marked.</summary>
+    private IEnumerable<(string Part, bool Hit)> Parts(string name)
+    {
+        string typed = (Value ?? string.Empty).Trim();
+        int at = typed.Length == 0 ? -1 : name.IndexOf(typed, StringComparison.OrdinalIgnoreCase);
+        if (at < 0)
+        {
+            yield return (name, false);
+            yield break;
+        }
+
+        if (at > 0) yield return (name[..at], false);
+        yield return (name.Substring(at, typed.Length), true);
+        if (at + typed.Length < name.Length) yield return (name[(at + typed.Length)..], false);
+    }
+}

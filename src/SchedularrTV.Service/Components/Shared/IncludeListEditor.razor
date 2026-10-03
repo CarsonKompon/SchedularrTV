@@ -80,17 +80,12 @@
             <option value="movie">Movie</option>
             <option value="collection">Jellyfin collection</option>
         </select>
-        <input type="text" list="include-options" placeholder="type to search…" value="@_pending"
-               @oninput="e => _pending = e.Value?.ToString() ?? string.Empty" />
+        @* Picking a suggestion adds it straight away; a name typed out is added with the button (or Enter). *@
+        <TitlePicker @key="_pickerKind" Options="_options" Value="@_pending" ValueChanged="v => _pending = v" OnPicked="AddPicked"
+                     Thumbnails="@(_pickerKind != CollectionKind)" AriaLabel="@($"Add a {_pickerKind}")"
+                     Placeholder="@(_pickerKind == CollectionKind ? SearchCollections : SearchTitles)" />
         <button class="btn btn-sm" @onclick="Add">Add</button>
     </div>
-
-    <datalist id="include-options">
-        @foreach (string option in _options.Take(200))
-        {
-            <option value="@option"></option>
-        }
-    </datalist>
 </div>
 
 @if (_editing is not null)
@@ -145,6 +140,16 @@
 @code {
     [Parameter, EditorRequired] public List<ContentInclude> Includes { get; set; } = [];
     [Parameter] public EventCallback Changed { get; set; }
+
+    private const string CollectionKind = "collection";
+    private const string SearchTitles = "Type a name to search the library…";
+    private const string SearchCollections = "Type a collection name…";
+
+    private Task AddPicked(string name)
+    {
+        _pending = name;
+        return Add();
+    }
 
     private string _pickerKind = "show";
     private string _pending = "";
