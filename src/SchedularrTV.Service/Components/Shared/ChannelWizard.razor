@@ -246,22 +246,8 @@
                 </label>
                 @if (_addBlock)
                 {
-                    <div class="grid grid-3">
-                        <label class="field">
-                            <span>Block name</span>
-                            <input type="text" value="@_blockName" @oninput="e => _blockName = e.Value?.ToString() ?? string.Empty" />
-                        </label>
-                        <label class="field">
-                            <span>Starts</span>
-                            <input type="time" value="@Clock(_blockStart)" @onchange="e => _blockStart = ParseClock(e, _blockStart)" />
-                        </label>
-                        <label class="field">
-                            <span>Ends</span>
-                            <input type="time" value="@Clock(_blockEnd)" @onchange="e => _blockEnd = ParseClock(e, _blockEnd)" />
-                        </label>
-                    </div>
-                    <DayOfWeekPicker Days="_blockDays" Label="On these days" Changed="StateHasChanged" />
-                    <IncludeListEditor Includes="_blockIncludes" Changed="StateHasChanged" />
+                    @* The same editor as a channel's Blocks tab, so every option is here, not just a few. *@
+                    <BlockEditor Block="_block" Channel="Draft" Removable="false" Changed="StateHasChanged" />
                 }
                 break;
 
@@ -274,7 +260,7 @@
                     <li><Icon Name="megaphone" Size="15" /><span>@BreakSummary()</span></li>
                     @if (_addBlock)
                     {
-                        <li><Icon Name="layers" Size="15" /><span>Block “@_blockName.Trim()”, @Clock(_blockStart)–@Clock(_blockEnd) on @DaysSummary(), with @_blockIncludes.Count title(s)</span></li>
+                        <li><Icon Name="layers" Size="15" /><span>Block “@_block.Name.Trim()”, @BlockTimes() @DaysSummary(), with @BlockTitles() title(s)</span></li>
                     }
                 </ul>
                 <p class="hint">
@@ -375,11 +361,31 @@
     private bool _seasonal;
 
     private bool _addBlock;
-    private string _blockName = "Saturday Morning Cartoons";
-    private TimeSpan _blockStart = TimeSpan.FromHours(7);
-    private TimeSpan _blockEnd = TimeSpan.FromHours(11);
-    private readonly List<DayOfWeek> _blockDays = [DayOfWeek.Saturday];
-    private readonly List<ContentInclude> _blockIncludes = [];
+
+    // A starting point the full block editor then changes: Saturday morning cartoons, one pool to fill in.
+    private readonly BlockConfig _block = new()
+    {
+        Name = "Saturday Morning Cartoons",
+        Time = TimeSpan.FromHours(7),
+        EndTime = TimeSpan.FromHours(11),
+        Recurrence = Recurrence.DaysOfWeek,
+        Days = [DayOfWeek.Saturday],
+        Shows = [new ContentSelector { Order = PlaybackOrder.Shuffle, ExcludeSeasons = [0] }]
+    };
+
+    private ChannelConfig? _draft;
+
+    /// <summary>The channel as it will be, for the block editor's plugin sections, which ask which channel a block is on.</summary>
+    private ChannelConfig Draft
+    {
+        get
+        {
+            _draft ??= new ChannelConfig { Id = Editor.NextChannelId(), Name = _name.Trim(), Number = _number };
+            _draft.Name = _name.Trim();
+            _draft.Number = _number;
+            return _draft;
+        }
+    }
 
     private IReadOnlyList<string> _jellyfinCollections = [];
     private int _showCount;
@@ -437,10 +443,11 @@
         1 when _source == Source.Titles && _includes.Count == 0 => "Add at least one show or movie, or choose another option.",
         1 when _source == Source.JellyfinCollection && string.IsNullOrWhiteSpace(_jellyfinCollection) => "Choose a Jellyfin collection.",
         1 when _source == Source.SavedCollection && string.IsNullOrWhiteSpace(_savedCollection) => "Choose a saved collection.",
-        4 when _addBlock && string.IsNullOrWhiteSpace(_blockName) => "Give the block a name.",
-        4 when _addBlock && _blockStart == _blockEnd => "The block's start and end times must differ.",
-        4 when _addBlock && _blockDays.Count == 0 => "Choose at least one day for the block.",
-        4 when _addBlock && _blockIncludes.Count == 0 => "Add at least one title to the block, or untick “Add a block now”.",
+        4 when _addBlock && string.IsNullOrWhiteSpace(_block.Name) => "Give the block a name.",
+        4 when _addBlock && !_block.FollowOnly && _block.Time is null => "Choose when the block starts.",
+        4 when _addBlock && _block.Time is not null && _block.Time == _block.EndTime => "The block's start and end times must differ.",
+        4 when _addBlock && _block.Recurrence == Recurrence.DaysOfWeek && _block.Days.Count == 0 => "Choose at least one day for the block.",
+        4 when _addBlock && !_block.Shows.Any(HasContent) => "Give the block something to play, or untick “Add a block now”.",
         _ => null
     };
 
@@ -490,7 +497,7 @@
     {
         var channel = new ChannelConfig
         {
-            Id = Editor.NextChannelId(),
+            Id = Draft.Id,
             Name = _name.Trim(),
             Number = _number,
             Group = "SchedularrTV",
@@ -529,15 +536,15 @@
 
         if (_addBlock)
         {
-            channel.Blocks.Add(new BlockConfig
+            _block.Name = _block.Name.Trim();
+            _block.Shows.RemoveAll(selector => !HasContent(selector));
+            if (_block.Recurrence == Recurrence.DaysOfWeek && _block.Days.Count == 7)
             {
-                Name = _blockName.Trim(),
-                Time = _blockStart,
-                EndTime = _blockEnd,
-                Recurrence = _blockDays.Count == 7 ? Recurrence.Daily : Recurrence.DaysOfWeek,
-                Days = _blockDays.Count == 7 ? [] : [.. _blockDays],
-                Shows = [Selector(new ContentSelector { Include = [.. _blockIncludes] })]
-            });
+                _block.Recurrence = Recurrence.Daily;
+                _block.Days.Clear();
+            }
+
+            channel.Blocks.Add(_block);
         }
 
         return channel;
@@ -592,8 +599,23 @@
         : $"Commercials from {(_brands is { Count: > 0 } ? string.Join(", ", _brands) : "every brand")}"
           + (_seasonal ? ", seasonal adverts on" : "");
 
-    private string DaysSummary() =>
-        _blockDays.Count == 7 ? "every day" : string.Join(", ", _blockDays.Order().Select(day => day.ToString()[..3]));
+    private string DaysSummary() => _block.Recurrence switch
+    {
+        Recurrence.DaysOfWeek when _block.Days.Count < 7 => "on " + string.Join(", ", _block.Days.Order().Select(day => day.ToString()[..3])),
+        Recurrence.SpecificDate => $"on {_block.Schedule?.Date ?? "a set date"}",
+        _ => "every day"
+    };
+
+    private string BlockTimes() =>
+        _block.FollowOnly ? "following the archive" :
+        _block.Time is not { } start ? string.Empty :
+        _block.EndTime is { } end ? $"{Clock(start)}–{Clock(end)}" : $"from {Clock(start)}";
+
+    private int BlockTitles() => _block.Shows.Sum(selector => Math.Max(selector.Include.Count, HasContent(selector) ? 1 : 0));
+
+    /// <summary>A pool that picks something: titles, a query or a saved collection.</summary>
+    private static bool HasContent(ContentSelector selector) =>
+        selector.Include.Count > 0 || !string.IsNullOrWhiteSpace(selector.Query) || !string.IsNullOrWhiteSpace(selector.Collection);
 
     private static string Clock(TimeSpan time) => $"{(int)time.TotalHours % 24:00}:{time.Minutes:00}";
 
