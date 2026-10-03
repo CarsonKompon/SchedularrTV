@@ -244,11 +244,10 @@ public static partial class AiTextRules
         string known = string.Join(' ', job.Facts.Select(fact => $"{fact.Label} {fact.Value}")
             .Concat([job.Fallback, job.Channel, job.Config.Prompt ?? string.Empty, job.Purpose])
             .Concat(job.MustSay));
-        HashSet<string> numbers = [.. NumberPattern().Matches(known).Select(match => match.Value.TrimStart('0') is { Length: > 0 } digits ? digits : "0")];
+        HashSet<string> numbers = KnownNumbers(known);
         foreach (Match number in NumberPattern().Matches(text))
         {
-            string digits = number.Value.TrimStart('0') is { Length: > 0 } trimmed ? trimmed : "0";
-            if (!numbers.Contains(digits))
+            if (!numbers.Contains(Digits(number.Value)))
             {
                 return $"it made up the number {number.Value}";
             }
@@ -360,6 +359,69 @@ public static partial class AiTextRules
     [GeneratedRegex(@"\s+")]
     private static partial Regex SpacePattern();
 
-    [GeneratedRegex(@"\d+")]
+    /// <summary>
+    /// Puts back the colon in a time written as "230" when the job gave it as "2:30", so a voice says "two thirty"
+    /// rather than "two hundred and thirty". Everything else is left as written.
+    /// </summary>
+    public static string Tidy(string text, AiTextJob job)
+    {
+        string known = string.Join(' ', job.Facts.Select(fact => fact.Value).Append(job.Fallback));
+        Dictionary<string, string> times = new(StringComparer.Ordinal);
+        foreach (Match time in TimePattern().Matches(known))
+        {
+            times.TryAdd(Digits(time.Value), time.Value.Replace('.', ':'));
+        }
+
+        return times.Count == 0
+            ? text
+            : SquashedTimePattern().Replace(text, match => times.TryGetValue(Digits(match.Value), out string? time) ? time : match.Value);
+    }
+
+    [GeneratedRegex(@"\b\d{1,2}[:.]\d{2}\b")]
+    private static partial Regex TimePattern();
+
+    [GeneratedRegex(@"\b\d{3,4}\b")]
+    private static partial Regex SquashedTimePattern();
+
+    /// <summary>
+    /// The numbers the writing may use, as digits only: every number given, and every way of writing a time given.
+    /// "2:30" may come back as 2:30, 2.30, 230, 14:30, or just 2 or 30; "at 5" as 5, 5:00, 500 or 17:00.
+    /// </summary>
+    private static HashSet<string> KnownNumbers(string known)
+    {
+        HashSet<string> numbers = new(StringComparer.Ordinal);
+        foreach (Match match in NumberPattern().Matches(known))
+        {
+            numbers.Add(Digits(match.Value));
+            string[] parts = match.Value.Split(':', '.');
+            if (!int.TryParse(parts[0], System.Globalization.NumberStyles.None, CultureInfo.InvariantCulture, out int hour) || hour > 24)
+            {
+                continue;
+            }
+
+            string minutes = parts.Length > 1 ? parts[1] : "00";
+            foreach (int clock in (int[])[hour, hour < 12 ? hour + 12 : hour - 12])
+            {
+                if (clock is < 0 or > 24)
+                {
+                    continue;
+                }
+
+                string h = clock.ToString(CultureInfo.InvariantCulture);
+                numbers.Add(Digits(h));
+                numbers.Add(Digits(h + minutes));
+                numbers.Add(Digits(minutes));
+            }
+        }
+
+        return numbers;
+    }
+
+    /// <summary>A number as digits alone without leading zeros: "02:30" and "230" are both "230".</summary>
+    private static string Digits(string number) =>
+        string.Concat(number.Where(char.IsAsciiDigit)).TrimStart('0') is { Length: > 0 } digits ? digits : "0";
+
+    // A time ("2:30", "2.30") counts as one number, so it's checked as a whole.
+    [GeneratedRegex(@"\d{1,2}[:.]\d{2}(?!\d)|\d+")]
     private static partial Regex NumberPattern();
 }

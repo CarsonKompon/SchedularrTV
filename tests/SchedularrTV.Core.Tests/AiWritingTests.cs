@@ -88,6 +88,24 @@ public sealed class AiWritingTests : IDisposable
     }
 
     [Fact]
+    public void A_time_given_may_be_written_any_usual_way_and_a_squashed_one_gets_its_colon_back()
+    {
+        AiTextJob job = UpNextJob() with
+        {
+            Facts = [new("Next", "SpongeBob SquarePants, right after this break"), new("Then", "Rugrats, at 2:30"), new("Day", "Today")],
+            Fallback = "Coming up next... SpongeBob SquarePants. Then Rugrats at 2:30!"
+        };
+
+        foreach (string time in (string[])["2:30", "2.30", "230", "14:30", "2"])
+        {
+            Assert.Null(AiTextRules.Check($"SpongeBob SquarePants, then Rugrats at {time}!", job));
+        }
+
+        Assert.Contains("number 3:30", AiTextRules.Check("SpongeBob SquarePants, then Rugrats at 3:30!", job));
+        Assert.Equal("SpongeBob SquarePants, then Rugrats at 2:30!", AiTextRules.Tidy("SpongeBob SquarePants, then Rugrats at 230!", job));
+    }
+
+    [Fact]
     public void The_request_carries_the_facts_style_and_limit_and_the_same_job_asks_the_same_way()
     {
         AiTextJob job = UpNextJob(new AiTextConfig { Style = "A pirate", Prompt = "Mention the weekend", MaxWords = 20 });

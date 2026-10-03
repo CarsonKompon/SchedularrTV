@@ -237,7 +237,7 @@ public sealed class AiTextWriter : IDisposable
             problem = AiTextRules.Check(text, job);
             if (problem is null)
             {
-                return new AiTextResult(text, true);
+                return new AiTextResult(AiTextRules.Tidy(text, job), true);
             }
 
             _logger.LogDebug("{Writer}'s writing for {Purpose} was set aside ({Problem}): {Text}", generator.DisplayName, job.Purpose, problem, text);
