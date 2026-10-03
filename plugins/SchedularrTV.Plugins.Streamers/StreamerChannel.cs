@@ -85,6 +85,9 @@ public sealed class ChatOptions
     /// <summary>A message fades this long after it arrives; 0 keeps it until it scrolls away.</summary>
     public int FadeAfterSeconds { get; set; } = 45;
 
+    /// <summary>Twitch chat: BetterTTV, FrankerFaceZ and 7TV emotes (global and the channel's own) shown as pictures.</summary>
+    public bool ThirdPartyEmotes { get; set; } = true;
+
     // Every member is a value or immutable (the box is a record), so a shallow copy is a full one.
     public ChatOptions Copy() => (ChatOptions)MemberwiseClone();
 }

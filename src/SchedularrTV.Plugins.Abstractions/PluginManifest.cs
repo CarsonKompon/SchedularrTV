@@ -13,9 +13,10 @@ public static class PluginApi
     /// 1.1 added editor sections (<c>channelSettings</c>, <c>blockSettings</c>, <c>scheduleSettings</c>). 1.2 added
     /// media enrichers (<c>AddMediaEnricher</c>). 1.3 added external channels (<c>AddExternalChannels</c>) and
     /// <c>IScheduleRepublisher</c>. 1.4 added <c>IMediaLibraryNotifier</c>. 1.5 added text generators
-    /// (<c>AddTextGenerator</c>).
+    /// (<c>AddTextGenerator</c>). 1.6 added <c>IExternalChannelSource.EditPath</c>, which lists external channels on the
+    /// Channels page and dashboard.
     /// </remarks>
-    public static readonly Version Version = new(1, 5);
+    public static readonly Version Version = new(1, 6);
 
     public static bool IsCompatible(Version wanted) => wanted.Major == Version.Major && wanted.Minor <= Version.Minor;
 }

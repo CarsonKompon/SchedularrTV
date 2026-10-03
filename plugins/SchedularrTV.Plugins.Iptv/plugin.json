@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Live channels from an IPTV playlist (M3U) and its XMLTV guide, added alongside your own channels: same channel list, same guide in Jellyfin. Streams are passed through without re-encoding where possible; HLS and MPEG-TS sources both work.",
   "author": "SchedularrTV",
-  "apiVersion": "1.3",
+  "apiVersion": "1.6",
   "entryAssembly": "SchedularrTV.Plugins.Iptv.dll",
   "settings": [
     {

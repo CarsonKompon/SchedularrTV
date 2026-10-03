@@ -23,6 +23,7 @@ public sealed class StreamersPlugin : IPlugin, IPluginEndpoints
         services.AddSingleton<YouTubeClient>();
         services.AddSingleton<YtDlp>();
         services.AddSingleton<StreamerChat>();
+        services.AddSingleton<ThirdPartyEmotes>();
         services.AddSingleton<StreamerMonitor>();
         services.AddHostedService(sp => sp.GetRequiredService<StreamerMonitor>());
         services.AddSingleton(sp =>
@@ -61,16 +62,26 @@ public sealed class StreamersPlugin : IPlugin, IPluginEndpoints
                 : Results.NotFound());
 
         // The live streamer's chat, newer than the last message the page has.
-        endpoints.MapGet(prefix + "/chat/{id}.json", (string id, long? after, StreamerStore store, StreamerMonitor monitor, StreamerChat chat) =>
+        endpoints.MapGet(prefix + "/chat/{id}.json", (string id, long? after, StreamerStore store, StreamerMonitor monitor, StreamerChat chat,
+            ThirdPartyEmotes emotes) =>
         {
             if (store.Find(id) is not { Chat.Enabled: true } channel || monitor.Active(channel) is not { } active)
             {
                 return Results.Json(new ChatResponse(null, [], null), StreamerPage.Json);
             }
 
-            ChatSource? source = chat.For(active, monitor.State(active.Key));
-            return Results.Json(new ChatResponse(source is null ? null : $"{source.Key}/{source.Target}", source?.After(after ?? 0) ?? [], source?.Problem),
-                StreamerPage.Json);
+            StreamerState? state = monitor.State(active.Key);
+            ChatSource? source = chat.For(active, state);
+            IReadOnlyList<ChatMessage> messages = source?.After(after ?? 0) ?? [];
+
+            // BetterTTV, FrankerFaceZ and 7TV emotes are words in Twitch chat; they're made pictures here, per channel's choice.
+            if (channel.Chat.ThirdPartyEmotes && active.Platform == StreamPlatform.Twitch && messages.Count > 0)
+            {
+                IReadOnlyDictionary<string, string> known = emotes.For(state?.Latest?.UserId);
+                messages = [.. messages.Select(message => message with { Parts = ThirdPartyEmotes.Apply(message.Parts, known) })];
+            }
+
+            return Results.Json(new ChatResponse(source is null ? null : $"{source.Key}/{source.Target}", messages, source?.Problem), StreamerPage.Json);
         });
 
         // What ErsatzTV plays: the channel's live MPEG-TS, started on demand.

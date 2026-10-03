@@ -13,8 +13,37 @@
       "type": "Folder",
       "placeholder": "state/generated-promos in the data folder",
       "description": "Where rendered promo videos and voice-overs are kept. ErsatzTV must be able to read it. Leave empty for state/generated-promos in the data folder. Changing it doesn't move existing files: copy the old folder across to keep cached voice-overs, so paid voices aren't asked for them again."
+    },
+    {
+      "key": "LeadTimeMinutes",
+      "label": "Start rendering when a promo airs within (minutes)",
+      "type": "Number",
+      "placeholder": "60",
+      "description": "0 renders the whole playout ahead. Promos further out wait, so a rebuild or edit before then doesn't leave renders behind that never air. Allow time for the queue to finish: a slot whose promo isn't ready airs ordinary commercials of the same length."
+    },
+    {
+      "key": "WatchedOnly",
+      "label": "Only render for channels someone is watching",
+      "type": "Boolean",
+      "default": "true",
+      "description": "Uses ErsatzTV's stream activity, so paid voices are only spent on channels with a viewer. Other channels air stand-in commercials in each promo slot. Tuning in starts rendering within about 30 seconds, so the first few slots may still be stand-ins."
+    },
+    {
+      "key": "KeepVideosDays",
+      "label": "Keep unused videos for (days)",
+      "type": "Number",
+      "placeholder": "7",
+      "description": "0 keeps them forever. Videos a schedule still uses are never removed."
+    },
+    {
+      "key": "KeepAudioDays",
+      "label": "Keep voice-overs for (days)",
+      "type": "Number",
+      "placeholder": "7",
+      "description": "0 keeps them forever. Counted from when a voice-over was last used, so lines that keep airing stay cached; paid voices are only asked again after one has gone unused this long."
     }
   ],
+  "settingsComponent": "SchedularrTV.GeneratedPromos.Components.GeneratedPromosSettingsSection",
   "dependencies": [
     { "id": "promos" },
     { "id": "tts-tiktok", "optional": true },

@@ -21,6 +21,14 @@ public sealed class StreamerChannels(StreamerStore store, StreamerMonitor monito
 
     public string Name => "Streamers";
 
+    /// <summary>The channel opened for editing on the Streamers page.</summary>
+    public string? EditPath(ChannelSchedule schedule) =>
+        schedule.ChannelId.StartsWith(IdPrefix, StringComparison.Ordinal)
+            ? $"plugins/streamers?edit={Uri.EscapeDataString(schedule.ChannelId[IdPrefix.Length..])}"
+            : "plugins/streamers";
+
+    private const string IdPrefix = "streamers-";
+
     /// <summary>True when another channel already has this one's number, so it's left out.</summary>
     public bool NumberTaken(StreamerChannel channel) => _taken.Contains(channel.Number);
 
@@ -130,7 +138,7 @@ public sealed class StreamerChannels(StreamerStore store, StreamerMonitor monito
 
         return new ChannelSchedule
         {
-            ChannelId = $"streamers-{channel.Id}",
+            ChannelId = IdPrefix + channel.Id,
             ChannelName = channel.Name,
             ChannelNumber = channel.Number,
             ChannelTvgId = $"streamers.{channel.Id}",

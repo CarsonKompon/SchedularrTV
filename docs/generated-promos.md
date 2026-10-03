@@ -221,19 +221,28 @@ joking about the episode from its description. A **Text** layer can be AI-writte
 is the fallback whenever the AI's writing leaves out a show, makes up a time, or no model is set up. Both take a
 `writer:` section in the YAML; see [local-ai.md](local-ai.md).
 
+## Plugin settings
+
+All of these are in the plugin's settings (its gear on the **Plugins** page):
+
+| Setting | Default | |
+| --- | --- | --- |
+| Save folder | `state/generated-promos` in the data folder | Where renders and voice-overs are cached (see below); the settings show the folder in use |
+| Start rendering when a promo airs within | 60 minutes | `0` renders the whole playout ahead. Further out waits, so a rebuild doesn't leave unused renders |
+| Only render for channels someone is watching | On | Uses ErsatzTV's stream activity, so paid voices are only spent on watched channels; others air stand-ins |
+| Keep unused videos for | 7 days | `0` = forever. Videos a schedule still uses are never removed |
+| Keep voice-overs for | 7 days | `0` = forever. Counted from last use, so a line that keeps airing is never requested again |
+
+Earlier versions kept these in the schedule file (`path`, `lead_time`, `watched_only`, `keep_videos` and `keep_audio`
+under `settings.plugins.generated-promos`). Those values still apply until the plugin's settings are saved; opening
+them fills in any that differ from the defaults, so saving keeps them.
+
 ## Caching
 
-Renders and voice-overs are cached by content in the **Save folder** from the plugin's settings (its gear on the
-**Plugins** page), or `state/generated-promos` in the data folder when unset, so identical promos are made once.
-(Earlier versions set it in the schedule file, as `path` under `settings.plugins.generated-promos`; that's still
-used until a folder is chosen on the Plugins page.) **Settings → Generated promos** shows the folder in use. Renders are filed as `<channel>/<template>/` or, for templates a
-block defines, `<channel>/<block>/<template>/`; borrowed templates render into the channel that owns
-them. Editor previews go to `_previews/`. Changing the folder doesn't move existing files.
-
-**Keep unused videos for** and **Keep voice-overs for** (`keep_videos` / `keep_audio` under
-`settings.plugins.generated-promos`, 7 days by default, `0` = forever) decide when cached files are deleted:
-videos once no schedule has used them for that long, voice-overs once they haven't been reused for that
-long, so a line that keeps airing is never requested again.
+Renders and voice-overs are cached by content in the **Save folder**, so identical promos are made once. Renders are
+filed as `<channel>/<template>/` or, for templates a block defines, `<channel>/<block>/<template>/`; borrowed templates
+render into the channel that owns them. Editor previews go to `_previews/`. Changing the folder doesn't move existing
+files.
 
 Output is H.264 (`medium`, CRF 22, `animation` tune) with 128k AAC.
 

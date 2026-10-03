@@ -157,15 +157,16 @@
 @if (_view == View.Guide && Coordinator.Latest.Count > 0)
 {
     <div class="card">
-        <GuideGrid Schedules="Coordinator.Latest" />
+        <GuideGrid Schedules="AllSchedules" />
     </div>
 }
 else
 {
     <div class="channel-grid">
-        @foreach (ChannelSchedule schedule in Coordinator.Latest.OrderBy(s => s.ChannelNumber))
+        @foreach (ChannelSchedule schedule in AllSchedules.OrderBy(s => s.ChannelNumber))
         {
             Listing listing = ListingFor(schedule);
+            ExternalChannel? external = ExternalFor(schedule);
             <section class="card channel-card" @key="schedule.ChannelId">
                 <div class="channel-card-head">
                     <div class="logo-tile">
@@ -182,7 +183,11 @@ else
                         <h2>@schedule.ChannelName</h2>
                         <div class="card-sub">
                             <span class="channel-number">@schedule.ChannelNumber</span>
-                            @if (schedule.TotalPadding > TimeSpan.FromSeconds(1))
+                            @if (external is not null)
+                            {
+                                <span class="pill pill-muted" title="Made by a plugin, and set up on its page">@external.Source</span>
+                            }
+                            else if (schedule.TotalPadding > TimeSpan.FromSeconds(1))
                             {
                                 <span class="pill pill-warn">@Length(schedule.TotalPadding) padding</span>
                             }
@@ -192,9 +197,18 @@ else
                             }
                         </div>
                     </div>
-                    <a class="btn btn-sm btn-ghost btn-icon" href="@($"channels/{schedule.ChannelId}")" title="Edit channel" aria-label="@($"Edit {schedule.ChannelName}")">
-                        <Icon Name="pencil" Size="14" />
-                    </a>
+                    @if (external is null)
+                    {
+                        <a class="btn btn-sm btn-ghost btn-icon" href="@($"channels/{schedule.ChannelId}")" title="Edit channel" aria-label="@($"Edit {schedule.ChannelName}")">
+                            <Icon Name="pencil" Size="14" />
+                        </a>
+                    }
+                    else if (external.EditPath is { } editPath)
+                    {
+                        <a class="btn btn-sm btn-ghost btn-icon" href="@editPath" title="@($"Edit on the {external.Source} page")" aria-label="@($"Edit {schedule.ChannelName}")">
+                            <Icon Name="pencil" Size="14" />
+                        </a>
+                    }
                 </div>
 
                 @if (Failures.TryGetValue(schedule.ChannelId, out ChannelBuildFailure? failure))
@@ -346,6 +360,12 @@ else
     private string? _rebuilding;
 
     private IReadOnlyDictionary<string, ChannelBuildFailure> Failures => Coordinator.Failures;
+
+    // The scheduler's own channels and the plugins' (IPTV, streamers…), which are set up on their plugin's page.
+    private IReadOnlyList<ChannelSchedule> AllSchedules => [.. Coordinator.Latest, .. Coordinator.External.Select(external => external.Schedule)];
+
+    private ExternalChannel? ExternalFor(ChannelSchedule schedule) =>
+        Coordinator.External.FirstOrDefault(external => ReferenceEquals(external.Schedule, schedule));
 
     private TimeSpan TotalPadding => Coordinator.Latest.Aggregate(TimeSpan.Zero, (sum, s) => sum + s.TotalPadding);
 

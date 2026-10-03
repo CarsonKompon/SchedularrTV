@@ -185,6 +185,33 @@ public sealed class StreamersTests : IDisposable
         Assert.NotNull(parts[1].Image);
     }
 
+    [Fact]
+    public void BetterTtv_FrankerFaceZ_and_7tv_emotes_are_read_from_their_public_lists()
+    {
+        using JsonDocument bttvGlobal = JsonDocument.Parse("""[{"id":"54fa8f1401e468494b85b537","code":":tf:"}]""");
+        using JsonDocument bttvUser = JsonDocument.Parse("""{"channelEmotes":[{"id":"a1","code":"catJAM"}],"sharedEmotes":[{"id":"b2","code":"PepeLaugh"}]}""");
+        using JsonDocument ffz = JsonDocument.Parse("""{"room":{"set":9},"sets":{"9":{"emoticons":[{"name":"OMEGALUL","urls":{"1":"https://cdn.frankerfacez.com/emote/1/1","2":"https://cdn.frankerfacez.com/emote/1/2"}},{"name":"Old","urls":{"1":"//cdn.frankerfacez.com/emote/2/1"}}]}}}""");
+        using JsonDocument seventv = JsonDocument.Parse("""{"emote_set":{"emotes":[{"name":"Clap","data":{"host":{"url":"//cdn.7tv.app/emote/x9"}}}]}}""");
+
+        Assert.Equal((":tf:", "https://cdn.betterttv.net/emote/54fa8f1401e468494b85b537/2x"), Assert.Single(ThirdPartyEmotes.BetterTtv(bttvGlobal.RootElement)));
+        Assert.Equal(new[] { "catJAM", "PepeLaugh" }, ThirdPartyEmotes.BetterTtv(bttvUser.RootElement).Select(emote => emote.Name));
+        Assert.Equal(new[] { "https://cdn.frankerfacez.com/emote/1/2", "https://cdn.frankerfacez.com/emote/2/1" },
+            ThirdPartyEmotes.FrankerFaceZ(ffz.RootElement).Select(emote => emote.Url));
+        Assert.Equal(("Clap", "https://cdn.7tv.app/emote/x9/2x.webp"), Assert.Single(ThirdPartyEmotes.SevenTv(seventv.RootElement)));
+    }
+
+    [Fact]
+    public void Third_party_emote_names_become_pictures_without_touching_the_rest()
+    {
+        var emotes = new Dictionary<string, string> { ["catJAM"] = "https://cdn/cat", ["Clap"] = "https://cdn/clap" };
+        IReadOnlyList<ChatPart> parts = [new("so good catJAM  catJAMs "), new("Kappa", "https://twitch/kappa"), new(" Clap")];
+
+        IReadOnlyList<ChatPart> shown = ThirdPartyEmotes.Apply(parts, emotes);
+
+        Assert.Equal(new[] { "so good ", "catJAM", "  catJAMs ", "Kappa", " ", "Clap" }, shown.Select(part => part.Text));
+        Assert.Equal(new[] { null, "https://cdn/cat", null, "https://twitch/kappa", null, "https://cdn/clap" }, shown.Select(part => part.Image));
+    }
+
     [Theory]
     [InlineData("PING :tmi.twitch.tv")]
     [InlineData(":tmi.twitch.tv 001 justinfan123 :Welcome, GLHF!")]
@@ -198,7 +225,7 @@ public sealed class StreamersTests : IDisposable
     public void Twitch_says_who_is_live_and_their_past_broadcasts()
     {
         using JsonDocument live = JsonDocument.Parse("""
-            {"data":{"user":{"login":"shroud","displayName":"shroud","profileImageURL":"https://img/150.png",
+            {"data":{"user":{"id":"37402112","login":"shroud","displayName":"shroud","profileImageURL":"https://img/150.png",
               "broadcastSettings":{"title":"Ranked grind","game":{"displayName":"Valorant"}},
               "stream":{"id":"1","createdAt":"2026-09-30T10:00:00Z","viewersCount":12345,"game":{"displayName":"Valorant"}},
               "lastBroadcast":{"startedAt":"2026-09-30T10:00:00Z","title":"Ranked grind"},
@@ -208,6 +235,7 @@ public sealed class StreamersTests : IDisposable
 
         StreamerSnapshot snapshot = TwitchClient.ParseStatus(user);
         Assert.True(snapshot.Live);
+        Assert.Equal("37402112", snapshot.UserId);
         Assert.Equal(("Ranked grind", "Valorant", 12345), (snapshot.Title, snapshot.Game, snapshot.Viewers));
         Assert.Equal(new DateTimeOffset(2026, 9, 30, 10, 0, 0, TimeSpan.Zero), snapshot.StartedAt);
         StreamSession past = Assert.Single(TwitchClient.ParseVideos(user));

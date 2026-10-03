@@ -8,6 +8,9 @@ public sealed record StreamerSnapshot
 {
     public required bool Live { get; init; }
 
+    /// <summary>Twitch: the channel's numeric id, which BetterTTV, FrankerFaceZ and 7TV know it by.</summary>
+    public string? UserId { get; init; }
+
     public string? DisplayName { get; init; }
 
     public string? Avatar { get; init; }

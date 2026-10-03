@@ -25,4 +25,19 @@ public sealed class GeneratedPromoOptions
     /// wins over the older schedule-file setting. Null when none was chosen.
     /// </summary>
     public string? SaveFolder { get; set; }
+
+    // The rest of the plugin's own settings (Plugins page). Null when not set there: the older schedule-file setting
+    // (settings.plugins.generated-promos) applies, else its default.
+
+    /// <summary>Promos are only rendered once they air within this; zero renders everything ahead.</summary>
+    public TimeSpan? LeadTime { get; set; }
+
+    /// <summary>Renders only for channels someone is watching.</summary>
+    public bool? WatchedOnly { get; set; }
+
+    /// <summary>Unused videos are deleted after this; zero keeps them.</summary>
+    public TimeSpan? KeepVideos { get; set; }
+
+    /// <summary>Voice-overs not reused for this long are deleted; zero keeps them.</summary>
+    public TimeSpan? KeepAudio { get; set; }
 }

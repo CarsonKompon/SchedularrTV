@@ -72,6 +72,11 @@ public sealed class ScheduleCoordinator(
 
     public IReadOnlyList<ChannelSchedule> Latest => _latest;
 
+    private IReadOnlyList<ExternalChannel> _external = [];
+
+    /// <summary>The plugins' whole channels (IPTV and the like) as last published, for the Channels page and dashboard.</summary>
+    public IReadOnlyList<ExternalChannel> External => _external;
+
     /// <summary>Channels whose last build failed, keyed by channel id.</summary>
     public IReadOnlyDictionary<string, ChannelBuildFailure> Failures => _failures;
 
@@ -471,6 +476,12 @@ public sealed class ScheduleCoordinator(
         List<IExternalChannelSource> sources = [.. externalSources ?? []];
         if (sources.Count == 0)
         {
+            if (_external.Count > 0)
+            {
+                _external = [];
+                StateChanged?.Invoke();
+            }
+
             return [];
         }
 
@@ -480,6 +491,7 @@ public sealed class ScheduleCoordinator(
         HashSet<string> ids = new(own.Select(schedule => schedule.ChannelId), StringComparer.OrdinalIgnoreCase);
         HashSet<string> guideIds = new(own.Select(schedule => schedule.TvgId), StringComparer.OrdinalIgnoreCase);
         List<ChannelSchedule> added = [];
+        List<ExternalChannel> listed = [];
 
         foreach (IExternalChannelSource source in sources)
         {
@@ -507,10 +519,27 @@ public sealed class ScheduleCoordinator(
                 ids.Add(schedule.ChannelId);
                 guideIds.Add(schedule.TvgId);
                 added.Add(schedule);
+                listed.Add(new ExternalChannel(schedule, source.Name, EditPathOf(source, schedule)));
             }
         }
 
+        _external = listed;
+        StateChanged?.Invoke();
         return added;
+    }
+
+    // A plugin's answer, made relative to the app; one that throws (or a plugin built before 1.6) gives no Edit button.
+    private string? EditPathOf(IExternalChannelSource source, ChannelSchedule schedule)
+    {
+        try
+        {
+            return source.EditPath(schedule)?.Trim().TrimStart('/') is { Length: > 0 } path ? path : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogDebug(ex, "{Source} couldn't say where {Channel} is set up.", source.Name, schedule.ChannelName);
+            return null;
+        }
     }
 
     /// <summary>

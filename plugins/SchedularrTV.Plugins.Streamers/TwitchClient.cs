@@ -20,7 +20,7 @@ public sealed class TwitchClient(IHttpClientFactory http)
     private const string StatusQuery = """
         query($login: String!) {
           user(login: $login) {
-            login displayName profileImageURL(width: 150)
+            id login displayName profileImageURL(width: 150)
             broadcastSettings { title game { displayName } }
             stream { id createdAt viewersCount game { displayName } }
             lastBroadcast { startedAt title }
@@ -108,6 +108,7 @@ public sealed class TwitchClient(IHttpClientFactory http)
         return new StreamerSnapshot
         {
             Live = live,
+            UserId = Text(user, "id"),
             DisplayName = Text(user, "displayName") ?? Text(user, "login"),
             Avatar = Text(user, "profileImageURL"),
             Title = Text(settings, "title"),

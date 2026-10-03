@@ -238,6 +238,8 @@
                                 <input type="range" min="0" max="1" step="0.05" value="@channel.Chat.BackgroundOpacity.ToString(CultureInfo.InvariantCulture)"
                                        @onchange="e => Change(() => channel.Chat.BackgroundOpacity = Number(e, 0.45))" /></label>
                         </div>
+                        <label class="check"><input type="checkbox" checked="@channel.Chat.ThirdPartyEmotes" @onchange="e => Change(() => channel.Chat.ThirdPartyEmotes = e.Value is true)" />
+                            <span>BetterTTV, FrankerFaceZ and 7TV emotes in Twitch chat (global ones and the streamer's own)</span></label>
                     }
 
                     <h3>When others are live too</h3>
@@ -352,6 +354,9 @@
 </style>
 
 @code {
+    /// <summary><c>?edit=&lt;id&gt;</c> opens that channel for editing (the Edit button on the Channels page and dashboard).</summary>
+    [SupplyParameterFromQuery(Name = "edit")] public string? EditId { get; set; }
+
     private const string PreviewLive = "live";
     private const string PreviewOffline = "offline";
 
@@ -374,6 +379,15 @@
         Hub.Streams.Changed += OnChanged;
         Monitor.Checked += OnChanged;
         _refresh = new Timer(_ => InvokeAsync(() => { _tick++; if (Hub.Streams.Running.Count > 0) StateHasChanged(); }), null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (EditId is { Length: > 0 } id && _channels.FirstOrDefault(channel => string.Equals(channel.Id, id, StringComparison.OrdinalIgnoreCase)) is { } wanted
+            && !ReferenceEquals(_editing, wanted))
+        {
+            Edit(wanted);
+        }
     }
 
     protected override async Task OnInitializedAsync()

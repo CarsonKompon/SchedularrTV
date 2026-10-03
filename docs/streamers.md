@@ -9,8 +9,8 @@ listed in priority order:
 - While nobody is live, the channel shows a countdown to the soonest expected stream, predicted from each streamer's past
   streams, and when everyone else is expected.
 
-Each streamer channel is a channel of its own in ErsatzTV (and Jellyfin's guide), alongside your others. It isn't on the
-**Channels** page.
+Each streamer channel is a channel of its own in ErsatzTV (and Jellyfin's guide), alongside your others. It's listed on the
+**Channels** page and the dashboard (marked *Streamers*), where Edit opens it on the Streamers page.
 
 No API keys or accounts are needed: the plugin reads Twitch and YouTube the way their own sites do. That's unofficial, so a
 change on their side can break something until the plugin is updated.
@@ -38,7 +38,9 @@ Open **Streamers** in the sidebar and choose **Add a streamer channel**:
 - **Chat**: over the stream (right, left, or a bottom corner), in a panel beside it (the stream shrinks to fit), or in a box of
   your own. Looks: Classic, Bubbles, Minimal (outlined text), or your own HTML template per message, with `{author}`,
   `{message}`, `{color}`, `{platform}` and `{time}`. Also set the text size, how many messages show, how long before each fades,
-  and the backing's opacity. Twitch emotes, YouTube emoji and Super Chats are shown.
+  and the backing's opacity. Twitch emotes, YouTube emoji and Super Chats are shown, and in Twitch chat so are
+  BetterTTV, FrankerFaceZ and 7TV emotes (their global sets and the streamer's own), read from those services' public
+  APIs with no key or login. Switch that off with **BetterTTV, FrankerFaceZ and 7TV emotes**.
 - **When others are live too**: a pop-up card (with their picture, title, game and viewers), scrolling text, or both. Set
   how often, for how long, in which corner, and the wording (`{name}`, `{title}`, `{game}`, `{platform}`, `{viewers}`).
   Someone who has just gone live is mentioned within seconds.

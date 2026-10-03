@@ -1,6 +1,8 @@
 @page "/channels"
 @inherits EditorPage
 @inject NavigationManager Nav
+@inject ScheduleCoordinator Coordinator
+@inject TimeProvider Clock
 
 <PageHeader Title="Channels" Eyebrow="Programming">
     <ChildContent>Each channel becomes an ErsatzTV channel and a Jellyfin guide entry.</ChildContent>
@@ -28,8 +30,61 @@
 </PageHeader>
 
 <div class="tile-grid">
-    @foreach (ChannelConfig channel in Editor.Working.Channels.OrderBy(c => c.Number))
+    @foreach ((ChannelConfig? own, ExternalChannel? external) in Tiles())
     {
+        if (external is not null)
+        {
+            ChannelSchedule schedule = external.Schedule;
+            string? onNow = OnNow(schedule);
+            <article class="card channel-tile" @key="schedule.ChannelId" @onclick="() => OpenExternal(external)">
+                <div class="channel-tile-head">
+                    <div class="logo-tile lg">
+                        @if (!string.IsNullOrWhiteSpace(schedule.ChannelLogo))
+                        {
+                            <img src="@schedule.ChannelLogo" alt="" />
+                        }
+                        else
+                        {
+                            <Icon Name="plug" Size="24" StrokeWidth="1.6" />
+                        }
+                    </div>
+                    <div style="flex:1;min-width:0;">
+                        <h2>@schedule.ChannelName</h2>
+                        <div class="row">
+                            <span class="channel-number">@schedule.ChannelNumber</span>
+                            <span class="pill pill-muted" title="Made by a plugin">@external.Source</span>
+                        </div>
+                    </div>
+                    <div class="channel-tile-actions" @onclick:stopPropagation="true">
+                        <button class="btn btn-sm btn-icon" title="Watch live" aria-label="@($"Watch {schedule.ChannelName} live")"
+                                @onclick="() => _previewing = (schedule.ChannelNumber, schedule.ChannelName)">
+                            <Icon Name="play" Size="14" />
+                        </button>
+                        @if (external.EditPath is not null)
+                        {
+                            <button class="btn btn-sm btn-icon" title="@($"Edit on the {external.Source} page")" aria-label="@($"Edit {schedule.ChannelName}")"
+                                    @onclick="() => OpenExternal(external)">
+                                <Icon Name="pencil" Size="14" />
+                            </button>
+                        }
+                    </div>
+                </div>
+
+                <div class="meta-row">
+                    <span class="meta-chip"><Icon Name="plug" Size="13" />Set up in <strong>@external.Source</strong></span>
+                    @if (!string.IsNullOrWhiteSpace(schedule.ChannelGroup))
+                    {
+                        <span class="meta-chip">Group <strong>@schedule.ChannelGroup</strong></span>
+                    }
+                </div>
+                @if (onNow is not null)
+                {
+                    <p class="hint" style="margin:0;">On now: <strong>@onNow</strong></p>
+                }
+            </article>
+        }
+        else if (own is { } channel)
+        {
         <article class="card channel-tile" @key="channel" @onclick="() => Open(channel)">
             <div class="channel-tile-head">
                 <div class="logo-tile lg">
@@ -50,7 +105,7 @@
                     </div>
                 </div>
                 <div class="channel-tile-actions" @onclick:stopPropagation="true">
-                    <button class="btn btn-sm btn-icon" title="Watch live" aria-label="@($"Watch {channel.Name} live")" @onclick="() => _previewing = channel">
+                    <button class="btn btn-sm btn-icon" title="Watch live" aria-label="@($"Watch {channel.Name} live")" @onclick="() => _previewing = (channel.Number, channel.Name)">
                         <Icon Name="play" Size="14" />
                     </button>
                     <button class="btn btn-sm btn-icon" title="Edit" aria-label="@($"Edit {channel.Name}")" @onclick="() => Open(channel)">
@@ -81,6 +136,7 @@
 
             <DayTimeline Blocks="channel.Blocks" AnchorTimes="AnchorTimes(channel)" />
         </article>
+        }
     }
 
     <div class="card new-tile">
@@ -103,6 +159,11 @@
     <ChannelPreview @key="previewing" Number="previewing.Number" Name="@previewing.Name" OnClose="() => _previewing = null" />
 }
 
+@if (Coordinator.External.Count > 0)
+{
+    <p class="hint" style="margin-top:12px;">Channels marked with a plugin's name are made by that plugin and set up on its page; Edit takes you there.</p>
+}
+
 @code {
     /// <summary><c>?wizard=1</c> opens the channel wizard, e.g. straight after first-run setup.</summary>
     [SupplyParameterFromQuery(Name = "wizard")] public string? Wizard { get; set; }
@@ -110,7 +171,42 @@
     private string? _confirmDelete;
     private bool _menuOpen;
     private bool _wizardOpen;
-    private ChannelConfig? _previewing;
+    private (int Number, string Name)? _previewing;
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        Coordinator.StateChanged += OnCoordinatorChanged;
+    }
+
+    public override void Dispose()
+    {
+        Coordinator.StateChanged -= OnCoordinatorChanged;
+        base.Dispose();
+    }
+
+    private void OnCoordinatorChanged() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>The schedule file's channels and the plugins' (IPTV, streamers…) together, by number.</summary>
+    private IEnumerable<(ChannelConfig? Own, ExternalChannel? External)> Tiles() =>
+        Editor.Working.Channels.Select(channel => (channel.Number, (ChannelConfig?)channel, (ExternalChannel?)null))
+            .Concat(Coordinator.External.Select(external => (external.Schedule.ChannelNumber, (ChannelConfig?)null, (ExternalChannel?)external)))
+            .OrderBy(tile => tile.Item1)
+            .Select(tile => (tile.Item2, tile.Item3));
+
+    private string? OnNow(ChannelSchedule schedule)
+    {
+        DateTimeOffset now = Clock.GetUtcNow();
+        return schedule.Entries.FirstOrDefault(entry => entry.Start <= now && entry.End > now)?.Item?.Title;
+    }
+
+    private void OpenExternal(ExternalChannel external)
+    {
+        if (external.EditPath is { } path)
+        {
+            Nav.NavigateTo(path);
+        }
+    }
 
     // Parameters, not initialisation: arriving here from setup while already on this page reuses the component.
     protected override void OnParametersSet()

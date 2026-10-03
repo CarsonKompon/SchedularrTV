@@ -23,6 +23,10 @@ public sealed class GeneratedPromosPlugin : IPlugin, IPluginEndpoints
             options.SaveFolder = context.Configuration["SaveFolder"]?.Trim().Trim('"') is { Length: > 0 } chosen
                 ? AppPaths.Rooted(context.AppDataDirectory, chosen)
                 : null;
+            options.LeadTime = Minutes(context.Configuration["LeadTimeMinutes"]);
+            options.WatchedOnly = bool.TryParse(context.Configuration["WatchedOnly"], out bool watchedOnly) ? watchedOnly : null;
+            options.KeepVideos = Days(context.Configuration["KeepVideosDays"]);
+            options.KeepAudio = Days(context.Configuration["KeepAudioDays"]);
             options.FfmpegPath = ToolLocator.Resolve(options.FfmpegPath, "ffmpeg", context.AppDataDirectory);
             options.FfprobePath = ToolLocator.Resolve(options.FfprobePath, "ffprobe", context.AppDataDirectory);
         });
@@ -36,8 +40,18 @@ public sealed class GeneratedPromosPlugin : IPlugin, IPluginEndpoints
 
         services.AddSingleton(new DashboardCard(typeof(RenderQueueCard), Order: 10));
         services.AddChannelEditorTab<GeneratedPromosChannelTab>(context, "Generated Promos", order: 50, icon: "sparkles");
-        services.AddScheduleSettingsSection<GeneratedPromosSettingsSection>(context, "Generated promos", order: 50);
     }
+
+    // Plugin settings are text; a negative or unreadable number counts as not set.
+    private static TimeSpan? Minutes(string? text) =>
+        double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double minutes) && minutes >= 0
+            ? TimeSpan.FromMinutes(minutes)
+            : null;
+
+    private static TimeSpan? Days(string? text) =>
+        double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double days) && days >= 0
+            ? TimeSpan.FromDays(days)
+            : null;
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints, IPluginContext context)
     {

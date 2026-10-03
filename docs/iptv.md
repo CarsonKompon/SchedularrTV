@@ -40,7 +40,8 @@ pass on. Off, each channel is re-encoded to its `channel.json` settings, like yo
   (30 seconds by default). That also matters for providers that allow only one connection at a time.
 - Playlists and guides are read again every 6 hours (see the settings), when you save, and on **Refresh now**. The
   channels are published again each time, and on every schedule rebuild.
-- Carried channels aren't on the Channels page and aren't planned: they're the provider's schedule, as it is.
+- Carried channels aren't planned: they're the provider's schedule, as it is. They're listed on the Channels page and
+  the dashboard (marked *IPTV*), where Edit brings you back to the IPTV page.
 
 ## Channel numbers
 

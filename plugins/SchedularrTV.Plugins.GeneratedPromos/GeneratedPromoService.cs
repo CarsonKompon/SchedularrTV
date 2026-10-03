@@ -128,13 +128,25 @@ public sealed partial class GeneratedPromoService(
         }
     }
 
+    // Each of these is the plugin's own setting (Plugins page), else what an earlier version kept in the schedule file
+    // (or its default).
+
+    /// <summary>How long before a promo airs it's rendered; zero renders the whole playout ahead.</summary>
+    public TimeSpan LeadTime(SchedulerSettings settings) => _options.LeadTime ?? settings.GeneratedPromosLeadTime;
+
+    public bool WatchedOnly(SchedulerSettings settings) => _options.WatchedOnly ?? settings.GeneratedPromosWatchedOnly;
+
+    public TimeSpan KeepVideos(SchedulerSettings? settings) => _options.KeepVideos ?? settings?.GeneratedPromosKeepVideos ?? _options.KeepFor;
+
+    public TimeSpan KeepAudio(SchedulerSettings? settings) => _options.KeepAudio ?? settings?.GeneratedPromosKeepAudio ?? TimeSpan.Zero;
+
     // Rendering far ahead wastes work on slots a later rebuild replaces, leaving orphaned files behind.
-    private static bool WithinLead(SchedulerSettings settings, DateTimeOffset airsAt, DateTimeOffset now) =>
-        settings.GeneratedPromosLeadTime <= TimeSpan.Zero || airsAt - now <= settings.GeneratedPromosLeadTime;
+    private bool WithinLead(SchedulerSettings settings, DateTimeOffset airsAt, DateTimeOffset now) =>
+        LeadTime(settings) is var lead && (lead <= TimeSpan.Zero || airsAt - now <= lead);
 
     // Unknown counts as watched, so a playout target that can't report viewers still gets its promos.
     private bool Watched(SchedulerSettings settings, int channelNumber) =>
-        !settings.GeneratedPromosWatchedOnly || viewers?.IsWatched(channelNumber) != false;
+        !WatchedOnly(settings) || viewers?.IsWatched(channelNumber) != false;
 
     /// <summary>Returns the same schedule instances when nothing needs to change.</summary>
     public IReadOnlyList<ChannelSchedule> Prepare(SchedulerConfig config, IReadOnlyList<ChannelSchedule> schedules, DateTimeOffset now)
@@ -588,8 +600,8 @@ public sealed partial class GeneratedPromoService(
         }
 
         // Without schedule settings (tools, tests) paid voice-overs are never thrown away.
-        TimeSpan keepVideos = config?.Current.Settings.GeneratedPromosKeepVideos ?? _options.KeepFor;
-        TimeSpan keepAudio = config?.Current.Settings.GeneratedPromosKeepAudio ?? TimeSpan.Zero;
+        TimeSpan keepVideos = KeepVideos(config?.Current.Settings);
+        TimeSpan keepAudio = KeepAudio(config?.Current.Settings);
 
         foreach (string file in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories))
         {

@@ -1,70 +1,72 @@
-@* The Generated promos plugin's schedule-wide settings: when renders are made and how long they're kept. Where they go
-   is the plugin's own setting (Plugins page); it's shown here. *@
+@* Shown under the Generated promos plugin's settings on the Plugins page: where renders are going now, and any values an
+   earlier version kept in the schedule file, brought across so saving keeps them. *@
+@using System.Globalization
 @using System.IO
+@using Microsoft.Extensions.Options
 @inject GeneratedPromoService Promos
+@inject SchedulerConfigProvider Config
+@inject IOptions<GeneratedPromoOptions> Options
 
-<div class="card">
-    <div class="card-head"><h2>Generated promos</h2></div>
-    <div class="field">
-        <span>Save folder</span>
-        <div><code>@Promos.Root</code></div>
-    </div>
-    <p class="hint">
-        Rendered promo videos and voice-overs are kept here. Choose the folder in the Generated promos plugin's settings:
-        its gear on the <a href="plugins">Plugins</a> page.
-    </p>
-    @if (!string.IsNullOrWhiteSpace(Global.GeneratedPromosPath))
-    {
-        @* Set in the schedule file by an earlier version; still used until a folder is chosen on the Plugins page. *@
-        <p class="hint">
-            @(Promos.FolderFromPluginSettings
-                ? $"The schedule file also names {Global.GeneratedPromosPath}, from an earlier version; the plugin's setting is used instead."
-                : $"This comes from the schedule file ({Global.GeneratedPromosPath}), set by an earlier version. Choosing a folder on the Plugins page replaces it.")
-            <button class="btn btn-sm btn-ghost" type="button" @onclick="ForgetOldPath">Forget the schedule file's folder</button>
-        </p>
-    }
-    @if (!Directory.Exists(Promos.Root))
-    {
-        <p class="hint">This folder doesn't exist yet; it will be created on the first render.</p>
-    }
-    <DurationInput Label="Start rendering when a promo airs within (0 = render the whole playout ahead)" Placeholder="1h"
-                   Value="Global.GeneratedPromosLeadTime"
-                   ValueChanged="v => { Global.GeneratedPromosLeadTime = v ?? TimeSpan.FromHours(1); Context.NotifyChanged(); }" />
-    <p class="hint">
-        Promos further out wait until they come within this window, so a rebuild or edit before then doesn't leave
-        renders behind that will never air. Allow enough time for the queue to finish; a slot whose promo isn't ready
-        airs ordinary commercials of the same length instead.
-    </p>
-    <label class="check">
-        <input type="checkbox" checked="@Global.GeneratedPromosWatchedOnly"
-               @onchange="e => { Global.GeneratedPromosWatchedOnly = (bool)(e.Value ?? true); Context.NotifyChanged(); }" />
-        <span>Only render for channels someone is watching</span>
-    </label>
-    <p class="hint">
-        Uses ErsatzTV's stream activity, so paid voices are only spent on channels with a viewer. Other channels air
-        stand-in commercials in each promo slot. Tuning in starts rendering within about 30 seconds, so the first
-        few slots may still be stand-ins.
-    </p>
-    <div class="grid grid-2">
-        <DurationInput Label="Keep unused videos for (0 = forever)" Placeholder="7d" Value="Global.GeneratedPromosKeepVideos"
-                       ValueChanged="v => { Global.GeneratedPromosKeepVideos = v ?? TimeSpan.FromDays(7); Context.NotifyChanged(); }" />
-        <DurationInput Label="Keep voice-overs for (0 = forever)" Placeholder="7d" Value="Global.GeneratedPromosKeepAudio"
-                       ValueChanged="v => { Global.GeneratedPromosKeepAudio = v ?? TimeSpan.FromDays(7); Context.NotifyChanged(); }" />
-    </div>
-    <p class="hint">
-        Videos the schedule still uses are never removed. A voice-over's time counts from when it was last used, so lines
-        that keep airing stay cached; paid voices are only requested again after they've gone unused this long.
-    </p>
+<div class="field">
+    <span>Save folder in use</span>
+    <div><code>@Promos.Root</code></div>
 </div>
+@if (!Directory.Exists(Promos.Root))
+{
+    <p class="hint">This folder doesn't exist yet; it will be created on the first render.</p>
+}
+@if (_brought.Count > 0)
+{
+    <p class="hint">
+        Filled in from the schedule file, where an earlier version kept them: @string.Join(", ", _brought).
+        Save to keep them here; the schedule file's copies are ignored from then on.
+    </p>
+}
 
 @code {
-    [Parameter, EditorRequired] public PluginEditorContext Context { get; set; } = default!;
+    [Parameter, EditorRequired] public PluginSettingsEditor Editor { get; set; } = default!;
 
-    private SchedulerSettings Global => Context.Config.Settings;
+    private readonly List<string> _brought = [];
 
-    private void ForgetOldPath()
+    protected override void OnInitialized()
     {
-        Global.GeneratedPromosPath = null;
-        Context.NotifyChanged();
+        // A setting never saved here still follows the schedule file. Where that says something other than the default,
+        // it's filled in, so saving the plugin's settings doesn't quietly change it.
+        GeneratedPromoOptions saved = Options.Value;
+        SchedulerSettings old = Config.Current.Settings;
+        var defaults = new SchedulerSettings();
+
+        if (saved.SaveFolder is null && old.GeneratedPromosPath is { Length: > 0 } path)
+        {
+            Bring("SaveFolder", path, "the save folder");
+        }
+
+        if (saved.LeadTime is null && old.GeneratedPromosLeadTime != defaults.GeneratedPromosLeadTime)
+        {
+            Bring("LeadTimeMinutes", Number(old.GeneratedPromosLeadTime.TotalMinutes), "when to start rendering");
+        }
+
+        if (saved.WatchedOnly is null && old.GeneratedPromosWatchedOnly != defaults.GeneratedPromosWatchedOnly)
+        {
+            Bring("WatchedOnly", old.GeneratedPromosWatchedOnly ? "true" : "false", "only rendering for watched channels");
+        }
+
+        if (saved.KeepVideos is null && old.GeneratedPromosKeepVideos != defaults.GeneratedPromosKeepVideos)
+        {
+            Bring("KeepVideosDays", Number(old.GeneratedPromosKeepVideos.TotalDays), "how long unused videos are kept");
+        }
+
+        if (saved.KeepAudio is null && old.GeneratedPromosKeepAudio != defaults.GeneratedPromosKeepAudio)
+        {
+            Bring("KeepAudioDays", Number(old.GeneratedPromosKeepAudio.TotalDays), "how long voice-overs are kept");
+        }
     }
+
+    private void Bring(string key, string value, string what)
+    {
+        Editor.Set(key, value);
+        _brought.Add(what);
+    }
+
+    private static string Number(double value) => Math.Round(value, 3).ToString(CultureInfo.InvariantCulture);
 }

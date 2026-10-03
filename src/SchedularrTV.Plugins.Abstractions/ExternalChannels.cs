@@ -4,8 +4,9 @@ namespace SchedularrTV.Plugins.Playout;
 
 /// <summary>
 /// Channels a plugin supplies whole, with their schedule already made (an IPTV playlist and its guide, say), published
-/// to the outputs alongside the scheduler's own channels: the same lineup, playouts and guide. They aren't planned,
-/// aren't in the schedule file and don't appear on the Channels page. Register one with
+/// to the outputs alongside the scheduler's own channels: the same lineup, playouts and guide. They aren't planned
+/// and aren't in the schedule file; the Channels page and dashboard list them, with an Edit button that goes to
+/// <see cref="EditPath"/>. Register one with
 /// <see cref="PluginServiceCollectionExtensions.AddExternalChannels{T}"/>.
 /// </summary>
 /// <remarks>
@@ -19,6 +20,13 @@ public interface IExternalChannelSource
     string Name { get; }
 
     ValueTask<IReadOnlyList<ChannelSchedule>> GetSchedulesAsync(ExternalChannelRequest request, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Where one of these channels is set up: a page of the plugin's, relative to the app (<c>plugins/iptv</c>, say). The
+    /// channel is listed on the Channels page and the dashboard with an Edit button that goes there. Null for none
+    /// (API 1.6; older plugins have none).
+    /// </summary>
+    string? EditPath(ChannelSchedule schedule) => null;
 }
 
 /// <param name="Now">The time of the publish.</param>

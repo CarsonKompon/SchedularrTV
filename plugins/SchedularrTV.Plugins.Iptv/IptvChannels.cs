@@ -26,6 +26,9 @@ public sealed class IptvChannels(SourceStore store, IptvCatalog catalog, IptvSet
 
     public string Name => "IPTV";
 
+    /// <summary>Carried channels are chosen and numbered on the IPTV page.</summary>
+    public string? EditPath(ChannelSchedule schedule) => "plugins/iptv";
+
     /// <summary>Every carried channel of every enabled source, with its number and guide match.</summary>
     public IReadOnlyList<CarriedChannel> Carried()
     {

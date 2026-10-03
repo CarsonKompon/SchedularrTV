@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "A channel of your favourite Twitch and YouTube streamers, in priority order: whoever is live is shown (the highest in the list wins), with their chat and pop-ups when the others are live too. While nobody is live, a countdown to the next stream, predicted from their past ones. No API keys needed. Needs Chrome or Edge on this computer, and yt-dlp (downloaded for you).",
   "author": "SchedularrTV",
-  "apiVersion": "1.3",
+  "apiVersion": "1.6",
   "entryAssembly": "SchedularrTV.Plugins.Streamers.dll",
   "settings": [
     {
