@@ -1,4 +1,5 @@
 @page "/library/movies"
+@implements IDisposable
 @inject ConfigEditor Editor
 @inject LibraryBrowser Library
 @inject NavigationManager Nav
@@ -202,9 +203,22 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        Library.Changed += OnLibraryChanged;
         _movies = await Library.GetMoviesAsync();
         _loading = false;
     }
+
+    public void Dispose() => Library.Changed -= OnLibraryChanged;
+
+    private void OnLibraryChanged() => _ = InvokeAsync(async () =>
+    {
+        if (!Library.Updating)
+        {
+            _movies = await Library.GetMoviesAsync();
+        }
+
+        StateHasChanged();
+    });
 
     private void SetView(string view) =>
         Nav.NavigateTo(Nav.GetUriWithQueryParameter("view", view == "grid" ? null : view), replace: true);

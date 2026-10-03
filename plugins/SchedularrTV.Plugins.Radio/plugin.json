@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Music as a channel: songs from your Jellyfin library, or an internet radio station, shown with the cover, the lyrics and a visualizer that moves with the sound, in one of five looks. A 24/7 music channel, or music between shows. Needs Chrome or Edge on this computer.",
   "author": "SchedularrTV",
-  "apiVersion": "1.2",
+  "apiVersion": "1.4",
   "entryAssembly": "SchedularrTV.Plugins.Radio.dll",
   "settings": [
     {

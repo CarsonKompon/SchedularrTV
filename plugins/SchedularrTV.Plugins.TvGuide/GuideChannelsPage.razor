@@ -378,7 +378,7 @@
             string name = _editing?.Name ?? string.Empty;
             Store.Save(_guides);
             Load();
-            Say($"Saved {name}. A guide that's on air starts again with the new settings.", ok: true);
+            Say($"Saved {name}. It's under TV Shows now (and in the show pickers). A guide that's on air starts again with the new settings.", ok: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

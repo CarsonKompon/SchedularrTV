@@ -10,7 +10,14 @@ public sealed class RadioPlugin : IPlugin, IPluginEndpoints
 {
     public void ConfigureServices(IServiceCollection services, IPluginContext context)
     {
-        services.AddSingleton(new RadioStore(context.DataDirectory));
+        services.AddSingleton(sp =>
+        {
+            var store = new RadioStore(context.DataDirectory);
+
+            // Each station is a show: TV Shows and the pickers show a new or renamed one at once.
+            store.Changed += () => sp.GetService<IMediaLibraryNotifier>()?.LibraryChanged();
+            return store;
+        });
         services.AddSingleton(new RadioSettings(context));
         services.AddSingleton<RadioPlayers>();
         services.AddSingleton<RadioSound>();

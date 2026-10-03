@@ -497,7 +497,8 @@
         {
             Store.Save(_channels);
             Load();
-            Say($"Saved {name}. If it's on air, it starts again with the new settings.", ok: true);
+            Say($"Saved {name}. It's under TV Shows now (and in the show pickers). If it's on air, it starts again with the new settings; "
+                + "channels already airing it show a new name in their guide from their next rebuild.", ok: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

@@ -62,7 +62,8 @@ public sealed record CommercialFolders(
 /// Cached because the browse pages re-query on every keystroke, and grouping 17k items per
 /// keystroke would make the UI crawl.
 /// </remarks>
-public sealed class LibraryBrowser(IMediaLibrary library, TimeProvider timeProvider)
+public sealed class LibraryBrowser(IMediaLibrary library, TimeProvider timeProvider, ILogger<LibraryBrowser>? logger = null)
+    : SchedularrTV.Plugins.IMediaLibraryNotifier
 {
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
 
@@ -124,14 +125,69 @@ public sealed class LibraryBrowser(IMediaLibrary library, TimeProvider timeProvi
         return _episodesByShow.TryGetValue(seriesId, out List<LibraryEpisode>? episodes) ? episodes : [];
     }
 
+    /// <summary>
+    /// Raised when what the browse pages show may have changed (the library was re-read, or is stale), so open pages
+    /// load it again.
+    /// </summary>
+    public event Action? Changed;
+
+    /// <summary>True while the library is being re-read after a plugin said it changed, for a "updating" hint.</summary>
+    public bool Updating => Volatile.Read(ref _updating) == 1;
+
+    private int _updating;
+    private int _changePending;
+    private long _generation;
+
     /// <summary>Re-reads the library on next use: a media source was switched on or off, or its settings changed.</summary>
-    public void Invalidate() => _builtAt = DateTimeOffset.MinValue;
+    public void Invalidate()
+    {
+        Interlocked.Increment(ref _generation);
+        _builtAt = DateTimeOffset.MinValue;
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// A plugin's media source changed (a web channel, guide or station saved): re-read straight away, in the
+    /// background, then tell the open pages. Saves close together become one re-read.
+    /// </summary>
+    public void LibraryChanged()
+    {
+        Interlocked.Increment(ref _generation);
+        _builtAt = DateTimeOffset.MinValue;
+        if (Interlocked.Exchange(ref _changePending, 1) == 1)
+        {
+            return;
+        }
+
+        Interlocked.Exchange(ref _updating, 1);
+        Changed?.Invoke();
+        _ = Task.Run(async () =>
+        {
+            // A moment for the saves of one edit to land together.
+            await Task.Delay(TimeSpan.FromMilliseconds(300)).ConfigureAwait(false);
+            Interlocked.Exchange(ref _changePending, 0);
+            try
+            {
+                await EnsureAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Couldn't re-read the library after a plugin changed it.");
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _updating, 0);
+                Changed?.Invoke();
+            }
+        });
+    }
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         await library.RefreshAsync(cancellationToken).ConfigureAwait(false);
         _builtAt = DateTimeOffset.MinValue;
         await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        Changed?.Invoke();
     }
 
     private async Task EnsureAsync(CancellationToken cancellationToken)
@@ -149,6 +205,7 @@ public sealed class LibraryBrowser(IMediaLibrary library, TimeProvider timeProvi
                 return;
             }
 
+            long generation = Interlocked.Read(ref _generation);
             IReadOnlyList<MediaItem> all = await library
                 .SearchAsync(QueryExpression.All, cancellationToken)
                 .ConfigureAwait(false);
@@ -221,7 +278,8 @@ public sealed class LibraryBrowser(IMediaLibrary library, TimeProvider timeProvi
                         .ToList(),
                     StringComparer.Ordinal);
 
-            _builtAt = timeProvider.GetUtcNow();
+            // Changed while it was being read: what was read may already be out of date, so the next use reads again.
+            _builtAt = Interlocked.Read(ref _generation) == generation ? timeProvider.GetUtcNow() : DateTimeOffset.MinValue;
         }
         finally
         {

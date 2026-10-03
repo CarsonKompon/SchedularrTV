@@ -9,7 +9,14 @@ public sealed class TvGuidePlugin : IPlugin, IPluginEndpoints
 {
     public void ConfigureServices(IServiceCollection services, IPluginContext context)
     {
-        services.AddSingleton(new GuideStore(context.DataDirectory));
+        services.AddSingleton(sp =>
+        {
+            var store = new GuideStore(context.DataDirectory);
+
+            // Each guide is a show: TV Shows and the pickers show a new or renamed one at once.
+            store.Changed += () => sp.GetService<IMediaLibraryNotifier>()?.LibraryChanged();
+            return store;
+        });
         services.AddSingleton(new GuideSettings(context));
         services.AddSingleton<GuideData>();
         services.AddSingleton<WindowFeed>();

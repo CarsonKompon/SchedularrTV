@@ -9,7 +9,14 @@ public sealed class WebChannelsPlugin : IPlugin, IPluginEndpoints
 {
     public void ConfigureServices(IServiceCollection services, IPluginContext context)
     {
-        services.AddSingleton(new ChannelStore(context.DataDirectory, context.AppDataDirectory));
+        services.AddSingleton(sp =>
+        {
+            var store = new ChannelStore(context.DataDirectory, context.AppDataDirectory);
+
+            // Each channel is a show: TV Shows and the pickers show a new or renamed one at once.
+            store.Changed += () => sp.GetService<IMediaLibraryNotifier>()?.LibraryChanged();
+            return store;
+        });
         services.AddSingleton(new WebChannelSettings(context));
         services.AddSingleton(sp =>
         {

@@ -1,4 +1,5 @@
 @page "/library/shows"
+@implements IDisposable
 @inject ConfigEditor Editor
 @inject LibraryBrowser Library
 @inject NavigationManager Nav
@@ -12,6 +13,10 @@
         else
         {
             <span>@_shows.Count.ToString("N0") shows &middot; @_shows.Sum(s => s.EpisodeCount).ToString("N0") episodes</span>
+            @if (Library.Updating)
+            {
+                <span class="pill pill-muted" style="margin-left:8px;"><span class="spinner spinner-sm"></span> Updating…</span>
+            }
         }
     </ChildContent>
     <Actions>
@@ -344,9 +349,23 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        Library.Changed += OnLibraryChanged;
         Load(await Library.GetShowsAsync());
         _loading = false;
     }
+
+    public void Dispose() => Library.Changed -= OnLibraryChanged;
+
+    /// <summary>A show was added or renamed (a plugin's channel saved, say): shown without leaving the page.</summary>
+    private void OnLibraryChanged() => _ = InvokeAsync(async () =>
+    {
+        if (!Library.Updating && !_refreshing)
+        {
+            Load(await Library.GetShowsAsync());
+        }
+
+        StateHasChanged();
+    });
 
     private void Load(IReadOnlyList<LibraryShow> shows)
     {

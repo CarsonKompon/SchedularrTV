@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "A scrolling listings channel made from your own schedule, in the style of the 1990s Prevue Channel or the 2000s TV Guide Channel, with information, round-the-clock ads or another channel's picture up top and music or a channel's sound. Needs Chrome or Edge on this computer.",
   "author": "SchedularrTV",
-  "apiVersion": "1.2",
+  "apiVersion": "1.4",
   "entryAssembly": "SchedularrTV.Plugins.TvGuide.dll",
   "settings": [
     {

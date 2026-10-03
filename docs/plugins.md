@@ -142,6 +142,7 @@ service. These helpers fill the scheduler's extension points:
 | Changes to what's sent to outputs | `services.AddPlayoutProcessor<T>()` | `IPlayoutProcessor` |
 | Whole channels with their own schedule, published alongside the scheduler's (IPTV, say) | `services.AddExternalChannels<T>()` (API 1.3); inject `IScheduleRepublisher` to publish again when they change | `IExternalChannelSource` |
 | Who's watching which channel | `services.AddChannelViewers<T>()` | `IChannelViewers` |
+| Tell the library pages a media source changed (a show added or renamed), so they update at once | inject `IMediaLibraryNotifier` (API 1.4) and call `LibraryChanged()` | |
 | HTTP endpoints | implement `IPluginEndpoints` on the plugin class | |
 
 `IPluginContext` gives the plugin its manifest, its own settings (`Configuration`), the whole app
@@ -227,7 +228,7 @@ reason, and none of its registrations are kept.
 
 ## Roadmap
 
-Plugin API 1.3 covers sources, media enrichers, outputs, voices, publish-time playout changes, external channels, settings, pages, endpoints
+Plugin API 1.4 covers sources, media enrichers, outputs, voices, publish-time playout changes, external channels, settings, pages, endpoints
 and schedule editor sections. Promos, generated promos and Archive Follow use extension points inside the
 planner that are internal for now (see [engine-extension-points.md](engine-extension-points.md)).
 Planned next:
