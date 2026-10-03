@@ -34,6 +34,17 @@ public sealed class LiveStreamHub(Func<string, LiveStreamSpec?> resolve, Func<Ti
 
     public LiveStatus? Status(string id) => Running.FirstOrDefault(status => string.Equals(status.Id, id, StringComparison.OrdinalIgnoreCase));
 
+    private readonly Dictionary<string, (string Problem, DateTimeOffset At)> _failures = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Why a channel's stream last stopped by itself (ffmpeg gave up), and when; null when it hasn't.</summary>
+    public (string Problem, DateTimeOffset At)? LastFailure(string id)
+    {
+        lock (_failures)
+        {
+            return _failures.TryGetValue(id, out var failure) ? failure : null;
+        }
+    }
+
     public byte[]? Snapshot(string id)
     {
         lock (_running)
@@ -104,7 +115,15 @@ public sealed class LiveStreamHub(Func<string, LiveStreamSpec?> resolve, Func<Ti
 
             LiveStreamSpec spec = resolve(id) ?? throw new InvalidOperationException($"There's no channel '{id}'.");
             LiveStream stream = await LiveStream.StartAsync(spec, logger, cancellationToken).ConfigureAwait(false);
-            stream.Stopped += ended => _ = RemoveAsync(ended);
+            stream.Stopped += ended =>
+            {
+                lock (_failures)
+                {
+                    _failures[ended.Spec.Id] = (ended.Problem ?? "ffmpeg stopped without saying why.", DateTimeOffset.UtcNow);
+                }
+
+                _ = RemoveAsync(ended);
+            };
             if (stream.Ended)
             {
                 // ffmpeg died before Stopped was hooked up.

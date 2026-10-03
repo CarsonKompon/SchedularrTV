@@ -407,7 +407,8 @@ public sealed class StreamersTests : IDisposable
         Assert.Equal("https://vod.example/audio.m4a", spec.AudioStreamUrl);
         Assert.InRange(spec.SeekTo!.Value, TimeSpan.FromMinutes(59), TimeSpan.FromMinutes(61));
         int window = arguments.IndexOf("https://vod.example/video.m3u8");
-        Assert.Equal(new[] { "-re", "-ss" }, new[] { arguments[window - 6], arguments[window - 5] });
+        Assert.Equal("-ss", arguments[window - 5]);
+        Assert.DoesNotContain("-re", arguments);
         Assert.Contains("https://vod.example/audio.m4a", arguments);
 
         // Where it starts isn't a change of settings, but starting over is.

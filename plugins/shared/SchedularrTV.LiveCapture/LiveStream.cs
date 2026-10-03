@@ -65,8 +65,9 @@ public sealed record LiveStreamSpec
     public bool PageOnTop { get; init; }
 
     /// <summary>
-    /// The window's (and a separate sound stream's) streams are recordings rather than live: they're read at their own
-    /// pace (<c>-re</c>), from <see cref="SeekTo"/> when that's set.
+    /// The window's (and a separate sound stream's) streams are recordings rather than live, started at
+    /// <see cref="SeekTo"/>. They aren't read with <c>-re</c>: the page's frames, fed in at the clock's pace, already
+    /// hold the whole stream to real time, and <c>-re</c> after a seek makes some ffmpegs wait out the skipped part first.
     /// </summary>
     public bool Recorded { get; init; }
 
@@ -84,14 +85,10 @@ public sealed record LiveStreamSpec
     /// <summary>The options before a window or sound stream's <c>-i</c>.</summary>
     internal IEnumerable<string> InputOptions()
     {
-        if (Recorded)
+        if (Recorded && SeekTo is { } seek && seek > TimeSpan.Zero)
         {
-            yield return "-re";
-            if (SeekTo is { } seek && seek > TimeSpan.Zero)
-            {
-                yield return "-ss";
-                yield return seek.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
-            }
+            yield return "-ss";
+            yield return seek.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
         }
 
         yield return "-thread_queue_size";
@@ -228,6 +225,14 @@ public sealed class LiveStream : IAsyncDisposable
             if (!string.IsNullOrWhiteSpace(line.Data))
             {
                 _logger.LogDebug("ffmpeg ({Stream}): {Line}", Spec.Id, line.Data);
+                lock (_said)
+                {
+                    _said.Enqueue(line.Data.Trim());
+                    while (_said.Count > 12)
+                    {
+                        _said.Dequeue();
+                    }
+                }
             }
         };
         _ffmpeg.BeginErrorReadLine();
@@ -316,7 +321,8 @@ public sealed class LiveStream : IAsyncDisposable
             // the window's stream goes over that, and the page itself (see-through where it draws nothing) over both.
             graph.Add($"[0:v]scale={Width}:{Height}:force_original_aspect_ratio=decrease,pad={Width}:{Height}:(ow-iw)/2:(oh-ih)/2:color=black@0,"
                       + $"setsar=1,fps={OutputFrameRate},format=rgba,split=2[pagetop][pagebase]");
-            graph.Add($"[pagebase]drawbox=x=0:y=0:w=iw:h=ih:color=0x0b0d12@1:t=fill,format=yuv420p[base]");
+            // Filled after the change to yuv420p: older ffmpegs' drawbox only takes YUV pictures.
+            graph.Add($"[pagebase]format=yuv420p,drawbox=x=0:y=0:w=iw:h=ih:color=0x0b0d12@1:t=fill[base]");
             current = "[base]";
         }
         else
@@ -445,7 +451,8 @@ public sealed class LiveStream : IAsyncDisposable
         {
             if (!cancellationToken.IsCancellationRequested)
             {
-                _logger.LogWarning("Live channel {Stream}: ffmpeg stopped taking frames.", Spec.Name);
+                _logger.LogWarning("Live channel {Stream}: ffmpeg stopped taking frames. It said: {Said}", Spec.Name, Said());
+                Problem = $"ffmpeg stopped: {Said()}";
                 End();
             }
         }
@@ -485,8 +492,23 @@ public sealed class LiveStream : IAsyncDisposable
 
         if (!cancellationToken.IsCancellationRequested)
         {
-            _logger.LogWarning("Live channel {Stream}: ffmpeg ended (exit code {Code}).", Spec.Name, _ffmpeg.HasExited ? _ffmpeg.ExitCode : -1);
+            // A moment for its last words to arrive.
+            await Task.Delay(300, CancellationToken.None).ConfigureAwait(false);
+            _logger.LogWarning("Live channel {Stream}: ffmpeg ended (exit code {Code}). It said: {Said}", Spec.Name,
+                _ffmpeg.HasExited ? _ffmpeg.ExitCode : -1, Said());
+            Problem = $"ffmpeg stopped: {Said()}";
             End();
+        }
+    }
+
+    // The last lines ffmpeg printed (warnings and errors only), for when it stops.
+    private readonly Queue<string> _said = new();
+
+    private string Said()
+    {
+        lock (_said)
+        {
+            return _said.Count == 0 ? "nothing" : string.Join(" | ", _said.TakeLast(5));
         }
     }
 

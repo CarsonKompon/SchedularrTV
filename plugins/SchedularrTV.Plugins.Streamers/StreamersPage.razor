@@ -143,6 +143,10 @@
             {
                 <p class="hint warn">@problem</p>
             }
+            else if (status is null && Hub.Streams.LastFailure(saved.Id) is { } failure && DateTimeOffset.UtcNow - failure.At < TimeSpan.FromMinutes(30))
+            {
+                <p class="hint warn">The channel's stream stopped at @failure.At.ToLocalTime().ToString("t", CultureInfo.CurrentCulture): @failure.Problem</p>
+            }
             <p class="hint" style="margin:8px 0 0;">Its own channel in ErsatzTV (not on the Channels page). Stream: <code>@Settings.LiveUrl(saved.Id)</code></p>
             @if (status is not null)
             {
