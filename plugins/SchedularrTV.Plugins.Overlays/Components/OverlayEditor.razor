@@ -121,17 +121,17 @@
                         <p class="hint" style="margin-top:-6px;">{title} {episode} {season_episode} {year} {channel} {next} {next_time}</p>
                         <div class="grid grid-2">
                             <label class="field"><span>Font</span>
-                                <input type="text" value="@selected.FontFamily" @onchange="e => Set(() => selected.FontFamily = Text(e, "Arial"))" /></label>
+                                <input type="text" value="@selected.FontFamily" @onchange="e => Set(() => selected.FontFamily = Text(e, DefaultFont))" /></label>
                             <label class="field"><span>Size</span>
                                 <input type="number" min="6" max="400" value="@Number(selected.FontSize)" @onchange="e => Set(() => selected.FontSize = (float)Number(e, selected.FontSize))" /></label>
                             <label class="field"><span>Align</span>
-                                <select value="@selected.Align" @onchange="e => Set(() => selected.Align = Text(e, "left"))">
+                                <select value="@selected.Align" @onchange="e => Set(() => selected.Align = Text(e, DefaultAlign))">
                                     <option value="left">Left</option>
                                     <option value="center">Centre</option>
                                     <option value="right">Right</option>
                                 </select></label>
                             <div class="field"><span>Colour</span>
-                                <input type="color" value="@ColourValue(selected.Color)" @onchange="e => Set(() => selected.Color = Text(e, "#ffffff"))" class="ov-colour" /></div>
+                                <input type="color" value="@ColourValue(selected.Color)" @onchange="e => Set(() => selected.Color = Text(e, White))" class="ov-colour" /></div>
                         </div>
                         <div class="row row-wrap" style="gap:16px;margin-bottom:8px;">
                             <label class="check"><input type="checkbox" checked="@selected.Bold" @onchange="e => Set(() => selected.Bold = e.Value is true)" /><span>Bold</span></label>
@@ -148,7 +148,7 @@
                     {
                         <div class="grid grid-2">
                             <div class="field"><span>Colour</span>
-                                <input type="color" value="@ColourValue(selected.Color)" @onchange="e => Set(() => selected.Color = Text(e, "#000000"))" class="ov-colour" /></div>
+                                <input type="color" value="@ColourValue(selected.Color)" @onchange="e => Set(() => selected.Color = Text(e, Black))" class="ov-colour" /></div>
                             <label class="field"><span>Corner radius</span>
                                 <input type="number" min="0" max="500" value="@Number(selected.CornerRadius)" @onchange="e => Set(() => selected.CornerRadius = (float)Number(e, 0))" /></label>
                         </div>
@@ -253,6 +253,12 @@
     [Parameter] public EventCallback Changed { get; set; }
 
     private const string MoveHandle = "move";
+
+    // Named rather than written into the markup: a quoted string inside an attribute's own quotes ends the attribute.
+    private const string DefaultFont = "Arial";
+    private const string DefaultAlign = "left";
+    private const string White = "#ffffff";
+    private const string Black = "#000000";
     private const double SnapDistance = 8;
     private const float PreviewScale = 0.5f;
     private static readonly string[] Handles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];

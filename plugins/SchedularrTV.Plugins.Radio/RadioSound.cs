@@ -431,6 +431,7 @@ public readonly record struct IcyChunk(byte[]? Audio, string? Title);
 /// </summary>
 public sealed class IcyReader(int interval)
 {
+    private readonly int _interval = interval;
     private int _untilMeta = interval;
     private int _metaLeft = -1;
     private readonly List<byte> _meta = [];
@@ -438,7 +439,7 @@ public sealed class IcyReader(int interval)
     public IEnumerable<IcyChunk> Read(ReadOnlySpan<byte> data)
     {
         List<IcyChunk> chunks = [];
-        if (interval <= 0)
+        if (_interval <= 0)
         {
             chunks.Add(new IcyChunk(data.ToArray(), null));
             return chunks;
@@ -480,7 +481,7 @@ public sealed class IcyReader(int interval)
                 }
 
                 _metaLeft = -1;
-                _untilMeta = interval;
+                _untilMeta = _interval;
             }
         }
 

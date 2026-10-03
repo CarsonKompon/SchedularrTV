@@ -8,7 +8,7 @@ public sealed class OverlaysPlugin : IPlugin
 {
     public void ConfigureServices(IServiceCollection services, IPluginContext context)
     {
-        services.AddSingleton(_ =>
+        services.AddSingleton(provider =>
         {
             var renderer = new OverlayRenderer(() => context.Configuration["RenderFolder"]?.Trim().Trim('"') is { Length: > 0 } configured
                 ? configured
