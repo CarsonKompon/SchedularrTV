@@ -299,6 +299,25 @@
                             </div>
                         }
                     </div>
+                    @if (channel.Offline.Replay == ReplayStyle.Framed)
+                    {
+                        PixelBox frame = StreamerLayout.ReplayBox(channel.Offline.ReplayFrame);
+                        <div class="grid grid-3">
+                            <label class="field"><span>Replay size: @frame.Width × @frame.Height</span>
+                                <input type="range" min="320" max="1280" step="16" value="@frame.Width" @onchange="e => Change(() => SetFrame(channel.Offline, 2, e))" /></label>
+                            <label class="field"><span>From the left</span>
+                                <input type="number" min="0" value="@frame.X" @onchange="e => Change(() => SetFrame(channel.Offline, 0, e))" /></label>
+                            <label class="field"><span>From the top</span>
+                                <input type="number" min="0" value="@frame.Y" @onchange="e => Change(() => SetFrame(channel.Offline, 1, e))" /></label>
+                        </div>
+                        <div class="row row-wrap" style="gap:6px;margin-bottom:8px;">
+                            <button class="btn btn-sm btn-ghost" type="button" @onclick="() => Change(() => FrameAt(channel.Offline, 0))">Left</button>
+                            <button class="btn btn-sm btn-ghost" type="button" @onclick="() => Change(() => FrameAt(channel.Offline, 1))">Centre</button>
+                            <button class="btn btn-sm btn-ghost" type="button" @onclick="() => Change(() => FrameAt(channel.Offline, 2))">Right</button>
+                            <span class="hint" style="margin:0;align-self:center;">16:9, in pixels on the 1280×720 picture. The countdown sits beside it when there's room,
+                                else in a card over its corner.</span>
+                        </div>
+                    }
                     @if (channel.Offline.Replay != ReplayStyle.Off)
                     {
                         <p class="hint">The newest saved stream among the channel's streamers (a Twitch past broadcast or a YouTube stream recording) plays,
@@ -675,6 +694,26 @@
             2 => box with { Width = Whole(e, box.Width) },
             _ => box with { Height = Whole(e, box.Height) }
         };
+    }
+
+    /// <summary>Sets the framed replay's left (0), top (1) or width (2); the height follows (16:9).</summary>
+    private static void SetFrame(OfflineOptions offline, int part, ChangeEventArgs e)
+    {
+        PixelBox box = StreamerLayout.ReplayBox(offline.ReplayFrame);
+        offline.ReplayFrame = StreamerLayout.ReplayBox(part switch
+        {
+            0 => box with { X = Whole(e, box.X) },
+            1 => box with { Y = Whole(e, box.Y) },
+            _ => box with { Width = Whole(e, box.Width) }
+        });
+    }
+
+    /// <summary>Moves the framed replay to the left (0), centre (1) or right (2), centred top to bottom.</summary>
+    private static void FrameAt(OfflineOptions offline, int where)
+    {
+        PixelBox box = StreamerLayout.ReplayBox(offline.ReplayFrame);
+        int x = where switch { 0 => 40, 1 => (1280 - box.Width) / 2, _ => 1280 - 40 - box.Width };
+        offline.ReplayFrame = StreamerLayout.ReplayBox(box with { X = x, Y = (720 - box.Height) / 2 });
     }
 
     private void Say(string message, bool ok)

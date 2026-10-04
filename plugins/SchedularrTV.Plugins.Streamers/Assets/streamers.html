@@ -98,6 +98,10 @@
   #replayside .when { font-size: 15px; color: var(--soft); }
   #replayside .list { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; width: 100%; }
   #replayside .list .other { justify-content: flex-start; }
+  #replayside.compact { left: auto !important; top: auto !important; right: 24px; bottom: 24px; width: 300px !important; padding: 14px;
+    background: rgba(14,14,20,.88); border: 1px solid rgba(255,255,255,.12); border-radius: 16px; box-shadow: 0 12px 40px rgba(0,0,0,.5); gap: 4px; }
+  #replayside.compact .avatar, #replayside.compact .list, #replayside.compact .when { display: none; }
+  #replayside.compact .count { font-size: 34px; }
   #replaynote { position: absolute; left: 32px; bottom: 32px; width: 520px; display: flex; gap: 14px; align-items: center; padding: 14px 18px 14px 14px; border-radius: 16px;
     background: rgba(14,14,20,.9); border: 1px solid rgba(255,255,255,.12); box-shadow: 0 12px 40px rgba(0,0,0,.5); transition: opacity .5s, transform .5s; }
   #replaynote.away { opacity: 0; transform: translateY(16px); }
@@ -186,9 +190,24 @@
     panel.style.left = cfg.chat.layout === "PanelLeft" ? "0px" : "960px";
     panel.dataset.on = isPanel ? "1" : "";
     chat.className = `s-${cfg.chat.style}` + (cfg.chat.backgroundOpacity > 0 && !isPanel && cfg.chat.style !== "Bubbles" ? " boxed" : "");
-    const frame = cfg.replayFrame;
-    Object.assign($("replayframe").style, { left: frame.x + "px", top: frame.y + "px", width: frame.width + "px", height: frame.height + "px" });
+    placeReplayFrame();
     placeFake();
+  }
+
+  // The framed replay's pieces around its window: the title above, the date below, the countdown beside it when there's
+  // room (on whichever side has more), else in a card over the replay's corner.
+  function placeReplayFrame() {
+    const f = cfg.replayFrame, px = n => n + "px";
+    Object.assign($("replayframe").style, { left: px(f.x), top: px(f.y), width: px(f.width), height: px(f.height) });
+    const top = $("replaytop"), below = $("replaybelow"), side = $("replayside");
+    Object.assign(top.style, { left: px(f.x), width: px(f.width), top: px(Math.max(12, f.y - 70)) });
+    top.classList.toggle("hidden", f.y < 60);
+    Object.assign(below.style, { left: px(f.x), width: px(f.width), top: px(f.y + f.height + 14) });
+    below.classList.toggle("hidden", f.y + f.height + 40 > 720);
+    const right = 1280 - (f.x + f.width) - 60, left = f.x - 60;
+    side.classList.toggle("compact", Math.max(right, left) < 240);
+    if (right >= left) Object.assign(side.style, { left: px(f.x + f.width + 30), width: px(Math.min(right, 360)), top: px(f.y) });
+    else Object.assign(side.style, { left: px(Math.max(30, f.x - 30 - Math.min(left, 360))), width: px(Math.min(left, 360)), top: px(f.y) });
   }
 
   // The editor's stand-in for the stream (or replay), where the real one would be.

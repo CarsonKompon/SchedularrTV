@@ -166,6 +166,12 @@ public sealed class OfflineOptions
 
     public int ReplayNoteSeconds { get; set; } = 12;
 
+    /// <summary>
+    /// For <see cref="ReplayStyle.Framed"/>: where the replay's window sits on the 1280×720 picture. It's always 16:9, so its
+    /// height follows from its width; the countdown goes beside it when there's room, else in a card over it.
+    /// </summary>
+    public PixelBox ReplayFrame { get; set; } = new(40, 104, 864, 486);
+
     public string Heading { get; set; } = "Next stream";
 
     /// <summary>Optional line under the countdown.</summary>

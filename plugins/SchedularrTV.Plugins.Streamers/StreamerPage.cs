@@ -15,7 +15,8 @@ public sealed record StreamerPageConfig(
     PixelBox ReplayFrame)
 {
     public static StreamerPageConfig For(StreamerChannel channel, bool preview) =>
-        new(channel.Id, channel.Name, channel.Chat, channel.AlsoLive, channel.Offline, StreamerLayout.Video(channel.Chat), preview, StreamerLayout.ReplayFrame);
+        new(channel.Id, channel.Name, channel.Chat, channel.AlsoLive, channel.Offline, StreamerLayout.Video(channel.Chat), preview,
+            StreamerLayout.ReplayBox(channel.Offline.ReplayFrame));
 }
 
 /// <summary>The recording being replayed, as the page shows it.</summary>
@@ -42,8 +43,17 @@ public static class StreamerLayout
 {
     public const int PanelWidth = 320;
 
-    /// <summary>Where a framed replay plays: a 16:9 window on the left, the countdown down the right.</summary>
-    public static PixelBox ReplayFrame { get; } = new(40, 104, 864, 486);
+    /// <summary>
+    /// Where a framed replay plays: the channel's box made 16:9 (height from width), even-sized (as the video must be),
+    /// at least 320 wide and on the picture.
+    /// </summary>
+    public static PixelBox ReplayBox(PixelBox? asked)
+    {
+        PixelBox box = asked ?? new PixelBox(40, 104, 864, 486);
+        int width = Math.Clamp(box.Width, 320, 1280) / 2 * 2;
+        int height = width * 9 / 16 / 2 * 2;
+        return new PixelBox(Math.Clamp(box.X, 0, 1280 - width), Math.Clamp(box.Y, 0, 720 - height), width, height);
+    }
 
     /// <summary>The whole picture, or (with the chat in a panel beside it) a 16:9 box beside the panel.</summary>
     public static PixelBox Video(ChatOptions chat) => !chat.Enabled ? new PixelBox(0, 0, 1280, 720) : chat.Layout switch
@@ -96,7 +106,7 @@ public static class StreamerPage
         if (onAir is { ActiveKey: null, Replay: { } replay, StreamUrl: { } recording })
         {
             // A replay, picked up where it has got to; framed, it sits in the frame's window.
-            PixelBox box = channel.Offline.Replay == ReplayStyle.Framed ? StreamerLayout.ReplayFrame : new PixelBox(0, 0, 1280, 720);
+            PixelBox box = channel.Offline.Replay == ReplayStyle.Framed ? StreamerLayout.ReplayBox(channel.Offline.ReplayFrame) : new PixelBox(0, 0, 1280, 720);
             return spec with
             {
                 PageOnTop = true,

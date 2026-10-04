@@ -117,6 +117,7 @@ public sealed class StreamerStore
         offline.MusicVolume = Math.Clamp(offline.MusicVolume, 0, 2);
         offline.ReplayNoteEveryMinutes = Math.Clamp(offline.ReplayNoteEveryMinutes, 1, 120);
         offline.ReplayNoteSeconds = Math.Clamp(offline.ReplayNoteSeconds, 3, 120);
+        offline.ReplayFrame = StreamerLayout.ReplayBox(offline.ReplayFrame);
     }
 
     public static bool IsColour(string? value) =>

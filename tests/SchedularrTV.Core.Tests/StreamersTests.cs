@@ -435,6 +435,16 @@ public sealed class StreamersTests : IDisposable
         Assert.Equal(TimeSpan.FromHours(1), onAir.ReplayPosition(onAir.ReplayFrom + TimeSpan.FromHours(7)));
     }
 
+    [Theory]
+    [InlineData(40, 104, 864, 40, 104, 864, 486)]
+    [InlineData(500, 600, 641, 500, 360, 640, 360)]
+    [InlineData(-10, 0, 99999, 0, 0, 1280, 720)]
+    [InlineData(1200, 0, 100, 960, 0, 320, 180)]
+    public void A_framed_replay_is_16_by_9_even_sized_and_on_the_picture(int x, int y, int width, int expectedX, int expectedY, int expectedWidth, int expectedHeight)
+    {
+        Assert.Equal(new PixelBox(expectedX, expectedY, expectedWidth, expectedHeight), StreamerLayout.ReplayBox(new PixelBox(x, y, width, 1)));
+    }
+
     [Fact]
     public void A_recording_found_later_gives_a_seen_stream_its_video_and_real_length()
     {
