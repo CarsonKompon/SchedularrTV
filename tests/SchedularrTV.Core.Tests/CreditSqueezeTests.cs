@@ -297,6 +297,28 @@ public sealed class CreditSqueezeTests
     }
 
     [Fact]
+    public void Episodes_without_known_credits_can_have_their_end_squeezed()
+    {
+        TimeSpan ninety = TimeSpan.FromSeconds(90);
+        List<SqueezePlan> plans = SqueezePlanner.Plan(Day(), "toons", "Toons", TimeZoneInfo.Utc, _ => new CreditSqueezeSection(), item => item.CreditsStart,
+            assumedCredits: ninety);
+
+        // SpongeBob's marked credits, Rugrats' outro, and now Hey Arnold's last 90 seconds (Rocket Power has nothing after it).
+        Assert.Equal(new[] { 0, 3, 5 }, plans.Select(plan => plan.Index));
+        Assert.Equal((TimeSpan.FromMinutes(22) - ninety, ninety), (plans[2].From, plans[2].Job.Length));
+
+        // A channel's own setting wins; zero turns it off.
+        Assert.Equal(2, SqueezePlanner.Plan(Day(), "toons", "Toons", TimeZoneInfo.Utc, _ => new CreditSqueezeSection { AssumedCreditsSeconds = 0 },
+            item => item.CreditsStart, assumedCredits: ninety).Count);
+
+        // Only the part of an episode that plays to its end.
+        MediaItem episode = Episode("Hey Arnold", 2);
+        Assert.Null(SqueezePlanner.Assumed(Programme(episode, Noon, TimeSpan.FromMinutes(10)), episode, ninety));
+        Assert.Equal(TimeSpan.FromMinutes(22) - ninety,
+            SqueezePlanner.Assumed(Programme(episode, Noon, TimeSpan.FromMinutes(22)), episode, ninety));
+    }
+
+    [Fact]
     public void A_background_video_loops_under_the_frame()
     {
         SqueezeJob job = Plan(Day(), new CreditSqueezeSection { BackgroundPath = "/backgrounds/loop.mp4" })[0].Job;

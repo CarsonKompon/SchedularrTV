@@ -198,6 +198,11 @@
             <label class="field"><span>Episodes' end credits: @Percent(section.CreditsChance)</span>
                 <input type="range" min="0" max="1" step="0.05" value="@section.CreditsChance.ToString(CultureInfo.InvariantCulture)"
                        @onchange="e => Set(() => section.CreditsChance = Number(e, 1))" /></label>
+            <label class="field"><span>Episodes without known credits: squeeze their last (seconds)</span>
+                <input type="number" min="0" max="600" step="5" value="@section.AssumedCreditsSeconds?.ToString(CultureInfo.InvariantCulture)" placeholder="@AssumedPlaceholder"
+                       @onchange="e => Set(() => section.AssumedCreditsSeconds = Seconds(e))" /></label>
+            <p class="hint" style="margin-top:-4px;">For shows Jellyfin hasn't found credits for and with no Credits chapter. Empty uses the plugin's setting; 0 leaves them alone.
+                Only the part of an episode that plays to its end is squeezed.</p>
             <label class="field"><span>Shows' own outros: @Percent(section.OutroChance) <span class="muted">(unless set below)</span></span>
                 <input type="range" min="0" max="1" step="0.05" value="@section.OutroChance.ToString(CultureInfo.InvariantCulture)"
                        @onchange="e => Set(() => section.OutroChance = Number(e, 1))" /></label>
@@ -720,6 +725,14 @@
 
     private const string DefaultFont = "Arial";
 
+    private string AssumedText(CreditSqueezeSection section) => $"{section.AssumedCredits(Settings.AssumedCredits).TotalSeconds:0} seconds";
+
+    private string AssumedPlaceholder =>
+        Settings.AssumedCredits > TimeSpan.Zero ? $"{Settings.AssumedCredits.TotalSeconds:0} (the plugin's setting)" : "Off (the plugin's setting)";
+
+    private static double? Seconds(ChangeEventArgs e) =>
+        double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ? Math.Clamp(value, 0, 600) : null;
+
     private static IReadOnlyList<string>? _fonts;
 
     private static IReadOnlyList<string> Fonts => _fonts ??= SqueezeRenderer.InstalledFonts();
@@ -765,7 +778,8 @@
         SqueezePlan? plan;
         if (_show is { } show)
         {
-            if (SqueezePlanner.PreviewFor(schedule.Entries, show, trial, _everywhere, Channel.Id, Channel.Name, zone, Credits.CreditsOf, PreviewLength) is not { } found)
+            if (SqueezePlanner.PreviewFor(schedule.Entries, show, trial, _everywhere, Channel.Id, Channel.Name, zone, Credits.CreditsOf, PreviewLength,
+                    Settings.AssumedCredits) is not { } found)
             {
                 _previewProblem = $"The channel's schedule doesn't air {show} with something after it right now.";
                 return;
@@ -775,21 +789,30 @@
             _previewNote = found.Source switch
             {
                 SqueezePlanner.PreviewSource.Outro => $"From {show}'s own outro.",
-                SqueezePlanner.PreviewSource.Credits => $"From an episode's marked credits.",
+                SqueezePlanner.PreviewSource.Credits => "From an episode's marked credits.",
+                SqueezePlanner.PreviewSource.Assumed => $"From the last {AssumedText(trial)} of an episode, as its credits aren't known.",
                 _ => Credits.Status().Waiting > 0
                     ? "From the last 20 seconds of an episode: Jellyfin is still being asked where its credits start."
-                    : "From the last 20 seconds of an episode: where its credits start isn't known, so it won't be squeezed on air."
+                    : "From the last 20 seconds of an episode: its credits aren't known, so it's only squeezed on air if you set how much of the end to squeeze (under How often)."
             };
         }
         else
         {
-            plan = SqueezePlanner.Plan(schedule.Entries, Channel.Id, Channel.Name, zone, _ => trial, Credits.CreditsOf, _everywhere).FirstOrDefault();
+            plan = SqueezePlanner.Plan(schedule.Entries, Channel.Id, Channel.Name, zone, _ => trial, Credits.CreditsOf, _everywhere, Settings.AssumedCredits)
+                .FirstOrDefault();
             if (plan is null)
             {
-                _previewProblem = Credits.Status() is { Waiting: > 0 } asking
-                    ? $"Nothing to preview yet: Jellyfin is still being asked about {asking.Waiting} episodes. Or pick a show above to preview it against the end of an episode."
-                    : "Nothing to preview: no programme on the schedule has marked credits or an outro of its own. Pick a show above to preview it against the end of an episode.";
-                return;
+                // Nothing marked: show the layout against the end of the first show's episode anyway.
+                string? first = SqueezePlanner.ShowsOn(schedule.Entries).FirstOrDefault();
+                if (first is null || SqueezePlanner.PreviewFor(schedule.Entries, first, trial, _everywhere, Channel.Id, Channel.Name, zone, Credits.CreditsOf,
+                        PreviewLength, Settings.AssumedCredits) is not { } any)
+                {
+                    _previewProblem = "Nothing to preview: the channel's schedule has no episode with something after it.";
+                    return;
+                }
+
+                plan = any.Plan;
+                _previewNote = $"No credits are known on the schedule yet, so this is the end of a {first} episode.";
             }
         }
 

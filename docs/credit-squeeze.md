@@ -19,6 +19,11 @@ It ships in `SchedularrTV-<version>-all-plugins.zip`; install it on the **Plugin
   bumpers set under *Titles*, or the *Outro* on a collection. When a show's outro is squeezed, its episode's credits
   play as they are, so there's only one squeeze per programme.
 
+- **A set length for the rest:** for episodes with none of the above, **Squeeze the last seconds of episodes without
+  known credits** (in the plugin's settings, off by default) squeezes that much of their end anyway. A channel or block
+  can set its own under *How often* (empty uses the plugin's, 0 turns it off). Only the part of an episode that plays
+  to its end is squeezed.
+
 Credits are left alone when nothing follows them on the channel, when they'd start in the first minute of the part that
 plays, when they're shorter than 8 seconds, or when they're longer than the channel's limit (4 minutes by default).
 
@@ -97,6 +102,7 @@ plugins:
     background_path: D:\Media\Backgrounds\loop.mp4
     promos: [up_next, coming_up]
     credits_chance: 0.75
+    assumed_credits_seconds: 45   # episodes without known credits: squeeze their last 45 seconds
     outro_chance: 1
     outros:
       Rugrats: 0.5
@@ -145,6 +151,7 @@ In the guide, a squeeze is part of the programme whose credits it is.
 | Save folder | `plugin-data/credit-squeeze/renders` | ErsatzTV must be able to read it |
 | Make squeezes when they air within | 240 minutes | |
 | Only make squeezes for channels someone is watching | On | |
+| Squeeze the last seconds of episodes without known credits | 0 (off) | 0–600; channels and blocks can set their own |
 | Keep unused squeezes for | 3 days | |
 | Ask Jellyfin for credits segments | On | |
 | Squeeze resolution | 720p | or 1080p |

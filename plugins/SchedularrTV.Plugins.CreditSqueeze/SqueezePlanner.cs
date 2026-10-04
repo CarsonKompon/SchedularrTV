@@ -74,7 +74,8 @@ public static class SqueezePlanner
         TimeZoneInfo zone,
         Func<ScheduleEntry, CreditSqueezeSection?> settings,
         Func<MediaItem, TimeSpan?> creditsOf,
-        CreditSqueezeSection? everywhere = null)
+        CreditSqueezeSection? everywhere = null,
+        TimeSpan assumedCredits = default)
     {
         List<SqueezePlan> plans = [];
         for (int index = 0; index < entries.Count; index++)
@@ -109,7 +110,8 @@ public static class SqueezePlanner
                 }
 
                 TimeSpan end = entry.InPoint + entry.Duration;
-                if (creditsOf(item) is not { } credits || credits < entry.InPoint + LeastBefore || credits >= end
+                TimeSpan? known = creditsOf(item) ?? Assumed(entry, item, section.AssumedCredits(assumedCredits));
+                if (known is not { } credits || credits < entry.InPoint + LeastBefore || credits >= end
                     || end - credits > section.LongestCredits || !Rolls(channelId, entry, "credits", section.CreditsChance))
                 {
                     continue;
@@ -293,6 +295,26 @@ public static class SqueezePlanner
             || DeterministicRandom.FromSeedText(channelId, entry.Start.UtcDateTime.ToString("O", CultureInfo.InvariantCulture), "credit-squeeze", what)
                 .Next(10_000) < (int)Math.Round(Math.Clamp(chance, 0, 1) * 10_000));
 
+    /// <summary>
+    /// Where the credits are taken to start in an episode whose credits aren't known: <paramref name="length"/> before
+    /// its end. Only for the part of it that plays to the end (not one cut short by a break); null when it's off.
+    /// </summary>
+    public static TimeSpan? Assumed(ScheduleEntry entry, MediaItem item, TimeSpan length)
+    {
+        if (length <= TimeSpan.Zero)
+        {
+            return null;
+        }
+
+        TimeSpan end = entry.InPoint + entry.Duration;
+        if (item.Duration > TimeSpan.Zero && end < item.Duration - TimeSpan.FromSeconds(2))
+        {
+            return null;
+        }
+
+        return end - length;
+    }
+
     /// <summary>The shows a schedule airs (that a programme follows), for picking one to preview.</summary>
     public static List<string> ShowsOn(IReadOnlyList<ScheduleEntry> entries)
     {
@@ -309,7 +331,7 @@ public static class SqueezePlanner
     }
 
     /// <summary>How a preview of a show's squeeze was found.</summary>
-    public enum PreviewSource { Credits, Outro, LastSeconds }
+    public enum PreviewSource { Credits, Outro, Assumed, LastSeconds }
 
     /// <summary>
     /// A squeeze of <paramref name="show"/> for the editor's preview, whatever the odds: its outro if it plays one, else an
@@ -317,8 +339,10 @@ public static class SqueezePlanner
     /// against the end of the show). Null when the schedule doesn't air the show with something after it.
     /// </summary>
     public static (SqueezePlan Plan, PreviewSource Source)? PreviewFor(IReadOnlyList<ScheduleEntry> entries, string show, CreditSqueezeSection section,
-        CreditSqueezeSection? everywhere, string channelId, string channelName, TimeZoneInfo zone, Func<MediaItem, TimeSpan?> creditsOf, TimeSpan length)
+        CreditSqueezeSection? everywhere, string channelId, string channelName, TimeZoneInfo zone, Func<MediaItem, TimeSpan?> creditsOf, TimeSpan length,
+        TimeSpan assumedCredits = default)
     {
+        (int Index, int Next, TimeSpan From)? assumed = null;
         (int Index, int Next)? fallback = null;
         for (int index = 0; index < entries.Count; index++)
         {
@@ -342,7 +366,22 @@ public static class SqueezePlanner
                 return (Build(entries, index, next, credits, creditsLength, false, section, everywhere, channelId, channelName, zone), PreviewSource.Credits);
             }
 
+            if (assumed is null && Assumed(entry, item, section.AssumedCredits(assumedCredits)) is { } guess && guess >= entry.InPoint + LeastBefore
+                && end - guess >= Shortest)
+            {
+                assumed = (index, next, guess);
+            }
+
             fallback ??= (index, next);
+        }
+
+        if (assumed is { } taken)
+        {
+            ScheduleEntry episodeAssumed = entries[taken.Index];
+            TimeSpan stop = episodeAssumed.InPoint + episodeAssumed.Duration;
+            TimeSpan assumedLength = stop - taken.From < length ? stop - taken.From : length;
+            return (Build(entries, taken.Index, taken.Next, taken.From, assumedLength, false, section, everywhere, channelId, channelName, zone),
+                PreviewSource.Assumed);
         }
 
         if (fallback is not { } last)

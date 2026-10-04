@@ -28,7 +28,7 @@ public sealed class CreditSqueezeProcessor(SqueezeRenderer renderer, CreditsMark
         CreditSqueezeSection? everywhere = PluginSettings.Read<CreditSqueezeSection>(context.Config.Settings.Plugins, CreditSqueezeSection.PluginId);
         TimeZoneInfo zone = SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(channel.TimeZone) ? context.Config.Settings.TimeZone : channel.TimeZone);
         List<SqueezePlan> plans = SqueezePlanner.Plan(schedule.Entries, channel.Id, schedule.ChannelName, zone,
-            entry => context.Settings<CreditSqueezeSection>(CreditSqueezeSection.PluginId, entry), credits.CreditsOf, everywhere);
+            entry => context.Settings<CreditSqueezeSection>(CreditSqueezeSection.PluginId, entry), credits.CreditsOf, everywhere, settings.AssumedCredits);
         if (plans.Count == 0)
         {
             return ValueTask.FromResult(schedule);

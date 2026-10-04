@@ -137,6 +137,16 @@ public sealed class CreditSqueezeSection
     /// <summary>Each show's own odds for its outro, by show name.</summary>
     public Dictionary<string, double> Outros { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// For episodes whose credits aren't known, how many seconds of their end to squeeze anyway: null for the plugin's
+    /// setting, zero to leave them be.
+    /// </summary>
+    public double? AssumedCreditsSeconds { get; set; }
+
+    /// <summary>How much of the end of an episode without known credits is squeezed (zero: none).</summary>
+    public TimeSpan AssumedCredits(TimeSpan pluginDefault) =>
+        AssumedCreditsSeconds is { } seconds ? TimeSpan.FromSeconds(Math.Clamp(seconds, 0, 600)) : pluginDefault;
+
     /// <summary>Credits longer than this play as they are (a long credits roll is rarely just credits).</summary>
     public TimeSpan LongestCredits { get; set; } = TimeSpan.FromMinutes(4);
 

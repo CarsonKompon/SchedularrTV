@@ -30,6 +30,12 @@ public sealed class CreditSqueezeSettings(IPluginContext context)
     /// <summary>Squeezes are only made for channels someone is watching (ErsatzTV says who is).</summary>
     public bool WatchedOnly => !bool.TryParse(Value("WatchedOnly"), out bool watched) || watched;
 
+    /// <summary>
+    /// For episodes whose credits aren't known: squeeze this much of their end anyway (zero: leave them be). A channel
+    /// or block can set its own.
+    /// </summary>
+    public TimeSpan AssumedCredits => TimeSpan.FromSeconds(Number("AssumedCreditsSeconds", 0, 0, 600));
+
     public (int Width, int Height) Size => Value("Resolution") == "1080p" ? (1920, 1080) : (1280, 720);
 
     public string Ffmpeg

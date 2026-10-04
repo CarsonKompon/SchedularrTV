@@ -42,6 +42,13 @@
       "description": "Jellyfin 10.10 and newer keep where the credits are (its \"Outro\" media segments) when a segment provider such as Intro Skipper has found them. Chapters named \"Credits\" are always used."
     },
     {
+      "key": "AssumedCreditsSeconds",
+      "label": "Squeeze the last seconds of episodes without known credits",
+      "type": "Number",
+      "placeholder": "0",
+      "description": "0 to 600 seconds; 0 leaves them alone. For shows Jellyfin hasn't found credits for (and with no Credits chapter). A channel or block can set its own in its Credit Squeeze tab."
+    },
+    {
       "key": "Resolution",
       "label": "Squeeze resolution",
       "type": "Choice",
