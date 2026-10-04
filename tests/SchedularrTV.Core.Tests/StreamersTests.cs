@@ -357,7 +357,8 @@ public sealed class StreamersTests : IDisposable
             new(Now.AddHours(3.5), Now.AddHours(3.6), "D (expected)", null, 2)
         ];
 
-        ChannelSchedule schedule = StreamerChannels.Build(channel, "http://localhost:5252/plugins/streamers/live/fri.ts", slots, Now, Now.AddHours(12));
+        ChannelSchedule schedule = StreamerChannels.Build(channel, "http://localhost:5252/plugins/streamers/live/fri.ts", slots, Now, Now.AddHours(12),
+            "https://img.example/top-streamer.png");
 
         Assert.Equal(Now.AddMinutes(-30), schedule.Start);
         Assert.Equal(new[] { "A: live", "B (expected)", "C (expected)", "Offline" }, schedule.Entries.Select(entry => entry.Item!.Title));
@@ -370,7 +371,7 @@ public sealed class StreamersTests : IDisposable
             Assert.Equal("http://localhost:5252/plugins/streamers/live/fri.ts", entry.Item!.Path);
             Assert.Equal("true", entry.Item.Attributes["ersatztv.live"]);
         });
-        Assert.Equal((900, "streamers.fri"), (schedule.ChannelNumber, schedule.ChannelTvgId));
+        Assert.Equal((900, "streamers.fri", "https://img.example/top-streamer.png"), (schedule.ChannelNumber, schedule.ChannelTvgId, schedule.ChannelLogo));
     }
 
     [Fact]

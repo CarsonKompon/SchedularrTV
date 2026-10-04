@@ -8,6 +8,8 @@
 @inject StreamersHub Hub
 @inject YtDlp YtDlp
 @inject IJSRuntime JS
+@inject SchedularrTV.Service.Editor.LogoStore Logos
+@inject NavigationManager Nav
 
 <div class="page-header">
     <div>
@@ -68,6 +70,10 @@
     StreamerEntry? active = saved is null ? null : Monitor.Active(saved);
     <div class="card" @key="channel">
         <div class="card-head">
+            @if (ShownLogo(channel) is { } cardLogo)
+            {
+                <img class="streamer-channel-logo" src="@cardLogo" alt="" />
+            }
             <h2>@(string.IsNullOrWhiteSpace(channel.Name) ? "New channel" : channel.Name)</h2>
             @if (channel.Number > 0)
             {
@@ -167,6 +173,40 @@
                             <input type="text" value="@channel.Group" placeholder="Streamers" @onchange="e => Change(() => channel.Group = Text(e))" /></label>
                     </div>
                     <label class="check"><input type="checkbox" checked="@channel.Enabled" @onchange="e => Change(() => channel.Enabled = e.Value is true)" /><span>On</span></label>
+
+                    <div class="field">
+                        <span>Logo</span>
+                        <div class="row" style="gap:14px;align-items:flex-start;">
+                            <div class="logo-drop">
+                                <InputFile OnChange="e => OnLogoSelected(channel, e)" accept="@SchedularrTV.Service.Editor.LogoStore.Accept" title="Drop an image here, or click to choose one" />
+                                @if (ShownLogo(channel) is { } logo)
+                                {
+                                    <img src="@logo" alt="" />
+                                }
+                                else
+                                {
+                                    <span>Drop an image here<br />or click to choose</span>
+                                }
+                            </div>
+                            <div style="flex:1;">
+                                @if (_logoError is not null)
+                                {
+                                    <p class="hint warn" style="margin:0 0 6px;">@_logoError</p>
+                                }
+                                else
+                                {
+                                    <p class="hint" style="margin:0 0 6px;">
+                                        Shown in the guide and channel lists. PNG, JPEG, GIF or WebP. @(channel.Logo is null ? "Without one, the top streamer's picture is used." : "")
+                                    </p>
+                                }
+                                <input type="text" value="@channel.Logo" placeholder="…or paste an image URL" @onchange="e => Change(() => channel.Logo = Optional(e))" />
+                                @if (channel.Logo is not null)
+                                {
+                                    <button class="btn btn-sm btn-ghost" type="button" style="margin-top:6px;" @onclick="() => RemoveLogo(channel)">Use the top streamer's picture</button>
+                                }
+                            </div>
+                        </div>
+                    </div>
 
                     <h3>Streamers <span class="muted" style="text-transform:none;letter-spacing:0;">(highest priority first)</span></h3>
                     @for (int index = 0; index < channel.Streamers.Count; index++)
@@ -404,6 +444,7 @@
     .streamer-row .what { font-size: 13px; color: var(--muted); }
     .streamer-row .rank, .streamer-edit-row .rank { color: var(--muted); font-weight: 700; text-align: center; }
     .streamer-edit-row { display: grid; grid-template-columns: 22px 110px minmax(0, 1.3fr) minmax(0, 1fr) auto auto auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+    .streamer-channel-logo { width: 34px; height: 34px; border-radius: 8px; object-fit: contain; background: rgba(255,255,255,.05); flex: none; }
     .pill-live { background: rgba(233, 25, 22, .18); color: #ff6b6b; border-color: rgba(233, 25, 22, .3); }
     .hint.warn { color: #ffd08a; }
 </style>
@@ -696,6 +737,55 @@
         };
     }
 
+    private string? _logoError;
+
+    /// <summary>The picture the channel shows: its own, else its top streamer's.</summary>
+    private string? ShownLogo(StreamerChannel channel) =>
+        channel.Logo ?? channel.Streamers.Select(streamer => Monitor.State(streamer.Key)?.Latest?.Avatar).FirstOrDefault(avatar => avatar is not null);
+
+    /// <summary>Keeps an uploaded logo with the scheduler's own channel logos, served to players like theirs.</summary>
+    private async Task OnLogoSelected(StreamerChannel channel, InputFileChangeEventArgs e)
+    {
+        _logoError = null;
+        IBrowserFile file = e.File;
+        if (file.Size > SchedularrTV.Service.Editor.LogoStore.MaxBytes)
+        {
+            _logoError = $"That image is {file.Size / (1024 * 1024)}MB; the limit is {SchedularrTV.Service.Editor.LogoStore.MaxBytes / (1024 * 1024)}MB.";
+            return;
+        }
+
+        if (string.IsNullOrEmpty(channel.Id))
+        {
+            // A new channel gets its id now, so its logo's file is named after it.
+            channel.Id = StreamerChannel.Slug(string.IsNullOrWhiteSpace(channel.Name) ? "streamers" : channel.Name);
+        }
+
+        try
+        {
+            await using Stream content = file.OpenReadStream(SchedularrTV.Service.Editor.LogoStore.MaxBytes);
+
+            // The address this browser reached the app on, so players on the same network can fetch it too.
+            channel.Logo = await Logos.SaveAsync($"streamers-{channel.Id}", file.Name, content, Nav.BaseUri);
+            await PushPreviewAsync();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            _logoError = ex.Message;
+        }
+    }
+
+    private void RemoveLogo(StreamerChannel channel)
+    {
+        // A logo hosted elsewhere isn't ours to delete; only the reference goes.
+        if (SchedularrTV.Service.Editor.LogoStore.IsStored(channel.Logo) && !string.IsNullOrEmpty(channel.Id))
+        {
+            Logos.Remove($"streamers-{channel.Id}");
+        }
+
+        channel.Logo = null;
+        _logoError = null;
+    }
+
     /// <summary>Sets the framed replay's left (0), top (1) or width (2); the height follows (16:9).</summary>
     private static void SetFrame(OfflineOptions offline, int part, ChangeEventArgs e)
     {
@@ -723,6 +813,8 @@
     }
 
     private static string Text(ChangeEventArgs e) => e.Value?.ToString()?.Trim() ?? string.Empty;
+
+    private static string? Optional(ChangeEventArgs e) => Text(e) is { Length: > 0 } text ? text : null;
 
     private static double Number(ChangeEventArgs e, double fallback) =>
         double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ? value : fallback;

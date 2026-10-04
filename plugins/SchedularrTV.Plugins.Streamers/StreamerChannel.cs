@@ -204,6 +204,9 @@ public sealed class StreamerChannel
 
     public string? Group { get; set; }
 
+    /// <summary>The channel's picture in the guide and channel lists (an uploaded image's address, or any image URL). Empty uses the top streamer's.</summary>
+    public string? Logo { get; set; }
+
     public bool Enabled { get; set; } = true;
 
     /// <summary>In priority order: the first one live is the one shown.</summary>
@@ -224,6 +227,7 @@ public sealed class StreamerChannel
         Name = Name,
         Number = Number,
         Group = Group,
+        Logo = Logo,
         Enabled = Enabled,
         Streamers = [.. Streamers.Select(streamer => streamer.Copy())],
         Volume = Volume,

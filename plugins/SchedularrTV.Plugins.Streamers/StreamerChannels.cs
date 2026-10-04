@@ -43,11 +43,15 @@ public sealed class StreamerChannels(StreamerStore store, StreamerMonitor monito
                 continue;
             }
 
-            schedules.Add(Build(channel, settings.LiveUrl(channel.Id), Slots(channel, request.Now, request.Until), request.Now, request.Until));
+            schedules.Add(Build(channel, settings.LiveUrl(channel.Id), Slots(channel, request.Now, request.Until), request.Now, request.Until, Logo(channel)));
         }
 
         return ValueTask.FromResult<IReadOnlyList<ChannelSchedule>>(schedules);
     }
+
+    /// <summary>The channel's own picture, else its top streamer's (as their platform shows it); null when neither is known yet.</summary>
+    public string? Logo(StreamerChannel channel) =>
+        channel.Logo ?? channel.Streamers.Select(streamer => monitor.State(streamer.Key)?.Latest?.Avatar).FirstOrDefault(avatar => avatar is not null);
 
     /// <summary>Who's live now and who's expected before <paramref name="until"/>, in the channel's priority order.</summary>
     public IReadOnlyList<GuideSlot> Slots(StreamerChannel channel, DateTimeOffset now, DateTimeOffset until)
@@ -96,7 +100,8 @@ public sealed class StreamerChannels(StreamerStore store, StreamerMonitor monito
     /// The channel's schedule from now to <paramref name="until"/>: the slots placed by priority (a lower-priority one only
     /// fills what's left around the others), and "Offline" in the gaps, all playing the channel's one live stream.
     /// </summary>
-    public static ChannelSchedule Build(StreamerChannel channel, string streamUrl, IReadOnlyList<GuideSlot> slots, DateTimeOffset now, DateTimeOffset until)
+    public static ChannelSchedule Build(StreamerChannel channel, string streamUrl, IReadOnlyList<GuideSlot> slots, DateTimeOffset now, DateTimeOffset until,
+        string? logo = null)
     {
         DateTimeOffset floor = new(now.Ticks - now.Ticks % TimeSpan.TicksPerMinute, now.Offset);
         DateTimeOffset start = slots.Where(slot => slot.Priority < 0 && slot.Start < floor).Select(slot => Minute(slot.Start)).DefaultIfEmpty(floor).Min();
@@ -143,6 +148,7 @@ public sealed class StreamerChannels(StreamerStore store, StreamerMonitor monito
             ChannelNumber = channel.Number,
             ChannelTvgId = $"streamers.{channel.Id}",
             ChannelGroup = channel.Group ?? "Streamers",
+            ChannelLogo = logo ?? channel.Logo,
             Start = start,
             End = end,
             Entries = entries

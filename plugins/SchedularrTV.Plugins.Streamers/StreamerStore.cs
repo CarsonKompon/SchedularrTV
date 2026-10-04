@@ -93,6 +93,7 @@ public sealed class StreamerStore
         channel.Streamers = streamers;
         channel.Number = Math.Clamp(channel.Number, 1, 99_999);
         channel.Group = string.IsNullOrWhiteSpace(channel.Group) ? null : channel.Group.Trim();
+        channel.Logo = string.IsNullOrWhiteSpace(channel.Logo) ? null : channel.Logo.Trim();
         channel.Volume = Math.Clamp(channel.Volume, 0, 2);
 
         ChatOptions chat = channel.Chat;

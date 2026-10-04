@@ -381,7 +381,7 @@ public sealed class StreamerMonitor(
         IEnumerable<string> next = Upcoming(channel).Select(pair => pair.Prediction is { } prediction
             ? $"{pair.Streamer.Key}@{prediction.At.ToUnixTimeSeconds() / 600}"
             : pair.Streamer.Key);
-        return $"{channel.Number}|{channel.Name}|{live}|{string.Join(',', next)}";
+        return $"{channel.Number}|{channel.Name}|{channel.Logo}|{live}|{string.Join(',', next)}";
     }
 
     public override void Dispose()

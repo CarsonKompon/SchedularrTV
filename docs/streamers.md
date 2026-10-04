@@ -30,6 +30,8 @@ The plugin ships in `SchedularrTV-<version>-all-plugins.zip`; install it on the 
 
 Open **Streamers** in the sidebar and choose **Add a streamer channel**:
 
+- **Logo**: drop an image on it (or paste an image address) for the guide and channel lists. Without one, the top
+  streamer's profile picture is used.
 - **Name, number and group**: the channel in ErsatzTV. A number another channel already has leaves this one out
   (the page says *Number is taken*).
 - **Streamers**: Twitch or YouTube, and who. For Twitch, a name or a link (`xqc`, `https://twitch.tv/xqc`). For YouTube, a handle,
