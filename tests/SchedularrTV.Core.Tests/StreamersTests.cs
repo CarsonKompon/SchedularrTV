@@ -403,7 +403,7 @@ public sealed class StreamersTests : IDisposable
         List<string> arguments = [.. LiveStream.Arguments(spec, null)];
 
         Assert.True(spec.PageOnTop && spec.Recorded);
-        Assert.Equal(new FrameRect(40, 104, 880, 495), spec.Window);
+        Assert.Equal(new FrameRect(40, 104, 864, 486), spec.Window);
         Assert.Equal("https://vod.example/audio.m4a", spec.AudioStreamUrl);
         Assert.InRange(spec.SeekTo!.Value, TimeSpan.FromMinutes(59), TimeSpan.FromMinutes(61));
         int window = arguments.IndexOf("https://vod.example/video.m3u8");

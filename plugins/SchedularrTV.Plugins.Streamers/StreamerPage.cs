@@ -43,7 +43,7 @@ public static class StreamerLayout
     public const int PanelWidth = 320;
 
     /// <summary>Where a framed replay plays: a 16:9 window on the left, the countdown down the right.</summary>
-    public static PixelBox ReplayFrame { get; } = new(40, 104, 880, 495);
+    public static PixelBox ReplayFrame { get; } = new(40, 104, 864, 486);
 
     /// <summary>The whole picture, or (with the chat in a panel beside it) a 16:9 box beside the panel.</summary>
     public static PixelBox Video(ChatOptions chat) => !chat.Enabled ? new PixelBox(0, 0, 1280, 720) : chat.Layout switch

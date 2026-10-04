@@ -227,6 +227,11 @@ public sealed class LiveStream : IAsyncDisposable
                 _logger.LogDebug("ffmpeg ({Stream}): {Line}", Spec.Id, line.Data);
                 lock (_said)
                 {
+                    if (_firstError is null && LooksLikeError(line.Data))
+                    {
+                        _firstError = line.Data.Trim();
+                    }
+
                     _said.Enqueue(line.Data.Trim());
                     while (_said.Count > 12)
                     {
@@ -272,8 +277,18 @@ public sealed class LiveStream : IAsyncDisposable
         List<string> arguments =
         [
             "-hide_banner", "-loglevel", "warning", "-nostdin",
-            "-f", "image2pipe", "-c:v", spec.PageOnTop ? "png" : "mjpeg", "-framerate", Math.Clamp(spec.CaptureFrameRate, 5, 30).ToString(CultureInfo.InvariantCulture), "-i", "pipe:0"
+            "-f", "image2pipe", "-c:v", spec.PageOnTop ? "png" : "mjpeg", "-framerate", Math.Clamp(spec.CaptureFrameRate, 5, 30).ToString(CultureInfo.InvariantCulture)
         ];
+
+        // A PNG can come as RGBA or RGB (the browser drops the alpha channel when a picture is fully opaque, and the
+        // placeholder is ffmpeg's own). Rebuilding the whole filter graph for that, mid-stream, fails with "Invalid
+        // argument" once the window's stream is in it; the page's first filter (scale) copes with the change by itself.
+        if (spec.PageOnTop)
+        {
+            arguments.AddRange(["-reinit_filter", "0"]);
+        }
+
+        arguments.AddRange(["-i", "pipe:0"]);
 
         int next = 1;
         int? window = null;
@@ -331,9 +346,12 @@ public sealed class LiveStream : IAsyncDisposable
             current = "[page]";
         }
 
-        if (window is { } windowInput && spec.Window is { } rect)
+        if (window is { } windowInput && spec.Window is { } asked)
         {
-            graph.Add($"[{windowInput}:v]setpts=PTS-STARTPTS,scale={rect.Width}:{rect.Height}:force_original_aspect_ratio=decrease,"
+            // Even sizes only: 4:2:0 video can't be an odd number of pixels high or wide, and scale rounds such a size up,
+            // past the pad that should hold it ("Padded dimensions cannot be smaller than input dimensions").
+            FrameRect rect = asked with { Width = Math.Max(2, asked.Width / 2 * 2), Height = Math.Max(2, asked.Height / 2 * 2) };
+            graph.Add($"[{windowInput}:v]setpts=PTS-STARTPTS,scale={rect.Width}:{rect.Height}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
                       + $"pad={rect.Width}:{rect.Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={OutputFrameRate}[window]");
             graph.Add($"{current}[window]overlay={rect.X}:{rect.Y}:eof_action=pass:shortest=0[windowed]");
             current = "[windowed]";
@@ -504,13 +522,27 @@ public sealed class LiveStream : IAsyncDisposable
     // The last lines ffmpeg printed (warnings and errors only), for when it stops.
     private readonly Queue<string> _said = new();
 
+    // The first error it gave (usually the cause; what follows is the fallout), then its last few lines.
     private string Said()
     {
         lock (_said)
         {
-            return _said.Count == 0 ? "nothing" : string.Join(" | ", _said.TakeLast(5));
+            if (_said.Count == 0)
+            {
+                return "nothing";
+            }
+
+            string? cause = _firstError;
+            IEnumerable<string> last = _said.TakeLast(3).Where(line => line != cause);
+            return string.Join(" | ", (cause is null ? [] : new[] { cause }).Concat(last));
         }
     }
+
+    private string? _firstError;
+
+    private static bool LooksLikeError(string line) =>
+        line.Contains("rror", StringComparison.Ordinal) || line.Contains("Invalid", StringComparison.Ordinal)
+        || line.Contains("failed", StringComparison.OrdinalIgnoreCase) || line.Contains("not ", StringComparison.Ordinal);
 
     private void Broadcast(byte[] chunk)
     {
