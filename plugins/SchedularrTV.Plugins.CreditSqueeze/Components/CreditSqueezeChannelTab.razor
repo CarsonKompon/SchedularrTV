@@ -517,7 +517,11 @@
         Inherited
     }
 
-    protected override void OnInitialized() => _ = RefreshAsync();
+    protected override void OnInitialized()
+    {
+        _ = RefreshAsync();
+        _ = LoadLibraryTitlesAsync();
+    }
 
     /// <summary>Keeps the lookup and render status current while the tab is open.</summary>
     private async Task RefreshAsync()
@@ -612,7 +616,11 @@
     private SchedularrTV.Service.Editor.LibraryBrowser? Library =>
         Services.GetService(typeof(SchedularrTV.Service.Editor.LibraryBrowser)) as SchedularrTV.Service.Editor.LibraryBrowser;
 
-    protected override async Task OnInitializedAsync()
+    /// <summary>
+    /// Fills the show picker in the background. (Awaiting it in OnInitializedAsync would hold back OnParametersSet, and
+    /// with it the whole tab, until the library answered.)
+    /// </summary>
+    private async Task LoadLibraryTitlesAsync()
     {
         if (Library is not { } library)
         {
@@ -621,14 +629,18 @@
 
         try
         {
-            IReadOnlyList<SchedularrTV.Service.Editor.LibraryShow> shows = await library.GetShowsAsync();
-            IReadOnlyList<SchedularrTV.Service.Editor.LibraryMovie> movies = await library.GetMoviesAsync();
+            IReadOnlyList<SchedularrTV.Service.Editor.LibraryShow> shows = await library.GetShowsAsync(_stop.Token);
+            IReadOnlyList<SchedularrTV.Service.Editor.LibraryMovie> movies = await library.GetMoviesAsync(_stop.Token);
             _libraryTitles = [.. shows.Select(show => show.Name).Concat(movies.Select(movie => movie.Title))
                 .Where(name => !string.IsNullOrWhiteSpace(name)).Distinct(StringComparer.OrdinalIgnoreCase)];
+            await InvokeAsync(StateHasChanged);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException and not ObjectDisposedException)
         {
             // The picker still offers what the channel airs.
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
         }
     }
 
