@@ -33,6 +33,12 @@ Channels opt in: nothing is squeezed until it's turned on in a channel's **Credi
 this channel**), or for one of its blocks. The tab sets, for the whole channel or for each block (*Same as this
 channel*, *Its own settings* or *No squeezes*):
 
+- **Templates:** a channel (or block) can save several looks. *Main* is its own; **+ New from this one** saves a copy of
+  the selected look as a new template, to change from there. Each squeeze picks one of the looks at random, by its
+  **weight** (the buttons show each one's share), and the same airing always gets the same one. A template can be
+  renamed, switched off (**In use**) or deleted, and a weight of 0 keeps a look out. **Layout**, **Play in the panel** and
+  **Look** belong to the selected template, and **Render a preview video** uses it. **How often** and shows' own layouts
+  are the channel's, whichever look is picked (a show's own layout replaces the picked look's layout, keeping the rest).
 - **Layout:**
   - **Style:** *Side by side* is the classic one: the credits shrink against one edge (left, right, top or bottom)
     and the panel slides in from the far edge to fill the rest. As they end, they grow back to fill the picture and
@@ -123,6 +129,15 @@ plugins:
     credits_volume: 1
     show_later: true
     animate: true
+    weight: 2                  # Main's share against the templates
+    templates:                 # more looks, one picked at random per squeeze
+      - name: Framed
+        enabled: true
+        weight: 1
+        style: framed
+        heading: Stay tuned
+        accent_color: '#5cc8ff'
+        promos: [coming_up]
 ```
 
 Layouts for every channel go under `settings`. That section only holds shows' layouts; it never turns a channel on:

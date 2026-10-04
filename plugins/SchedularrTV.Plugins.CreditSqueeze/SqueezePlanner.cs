@@ -151,8 +151,11 @@ public static class SqueezePlanner
         CreditSqueezeSection section, CreditSqueezeSection? everywhere, string channelId, string channelName, TimeZoneInfo zone)
     {
         MediaItem item = entries[index].Item!;
+
+        // The section's own look, or one of its templates, picked for this airing.
+        SqueezeLook look = section.LookFor(channelId, entries[index].Start);
         List<SqueezeListing> later = [];
-        if (section.ShowLater)
+        if (look.ShowLater)
         {
             string nextTitle = ShowOf(entries[next].Item!);
             for (int after = NextProgramme(entries, next) ?? entries.Count; after < entries.Count && later.Count < 2; after = NextProgramme(entries, after) ?? entries.Count)
@@ -166,42 +169,42 @@ public static class SqueezePlanner
             }
         }
 
-        (ScheduleEntry? promoEntry, SqueezePromo? promoKind, bool pending) = PickPromoEntry(entries, index, next, section.Promos, channelId);
+        (ScheduleEntry? promoEntry, SqueezePromo? promoKind, bool pending) = PickPromoEntry(entries, index, next, look.Promos, channelId);
         MediaItem? promo = pending ? null : promoEntry?.Item;
 
         // The panel says what the promo in it is for: the next programme, or (Coming Up, Eventually) the airing it promotes.
         SqueezeListing nextListing = Listing(entries[next], zone);
-        string heading = section.HeadingFor(null);
+        string heading = look.HeadingFor(null);
         if (promo is not null && promoKind is { } kind)
         {
-            heading = section.HeadingFor(kind);
+            heading = look.HeadingFor(kind);
             nextListing = Subject(entries, promoEntry!, kind, zone, entries[index].Start) ?? nextListing;
         }
 
         string? ending = whole ? ShowBefore(entries, index) : ShowOf(item);
-        SqueezeLayoutChoice layout = section.LayoutFor(ending, everywhere);
+        SqueezeLayoutChoice layout = section.LayoutFor(ending, everywhere, look);
 
         // No promo of the wanted kinds ready nearby: the channel's generated promos may make one (tried in a seeded order).
         // One the schedule is still making is waited for first (see Pending), then made here if it isn't ready in time.
         IReadOnlyList<SqueezePromo>? make = null;
-        if (promo is null && section.Promos.Count > 0)
+        if (promo is null && look.Promos.Count > 0)
         {
             DeterministicRandom random = DeterministicRandom.FromSeedText(channelId, entries[index].Start.ToString("O"), "credit-squeeze-make");
-            make = [.. section.Promos.Distinct().OrderBy(_ => random.Next(10000))];
+            make = [.. look.Promos.Distinct().OrderBy(_ => random.Next(10000))];
         }
 
         return new SqueezePlan(index, from, whole, new SqueezeJob(item.Path!, from, length, nextListing, later, channelName,
-            heading, section.AccentColor, section.BackgroundColor, Math.Clamp(section.CreditsVolume, 0, 2), section.Animate,
+            heading, look.AccentColor, look.BackgroundColor, Math.Clamp(look.CreditsVolume, 0, 2), look.Animate,
             layout.Side, Math.Clamp(layout.SplitPercent, SqueezeLayout.MinSplit, SqueezeLayout.MaxSplit), promo?.Path, promo?.Duration ?? TimeSpan.Zero,
-            layout.Style, string.IsNullOrWhiteSpace(section.BackgroundPath) ? null : section.BackgroundPath.Trim(),
+            layout.Style, string.IsNullOrWhiteSpace(look.BackgroundPath) ? null : look.BackgroundPath.Trim(),
             layout.CreditsFit, layout.CreditsText, layout.PanelFit, layout.PanelText,
             layout.CreditsText ? ending : null,
-            layout.CreditsText ? section.CreditsCaption : null,
-            layout.CreditsText && !string.IsNullOrWhiteSpace(section.CreditsLine) ? section.CreditsLine.Trim() : null,
-            string.IsNullOrWhiteSpace(section.HeadingFont) ? "Arial" : section.HeadingFont,
-            string.IsNullOrWhiteSpace(section.TextFont) ? "Arial" : section.TextFont,
+            layout.CreditsText ? look.CreditsCaption : null,
+            layout.CreditsText && !string.IsNullOrWhiteSpace(look.CreditsLine) ? look.CreditsLine.Trim() : null,
+            string.IsNullOrWhiteSpace(look.HeadingFont) ? "Arial" : look.HeadingFont,
+            string.IsNullOrWhiteSpace(look.TextFont) ? "Arial" : look.TextFont,
             make, make is null ? null : channelId, make is null ? null : entries[index].BlockName, make is null ? default : entries[next].Start,
-            make?.Select(made => section.HeadingFor(made)).ToList()), pending);
+            make?.Select(made => look.HeadingFor(made)).ToList()), pending);
     }
 
     // How far ahead each kind of promo is looked for.

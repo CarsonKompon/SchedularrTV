@@ -323,6 +323,33 @@ public sealed class CreditSqueezeTests
     }
 
     [Fact]
+    public void Each_squeeze_picks_one_of_the_saved_looks_by_weight()
+    {
+        CreditSqueezeSection section = new() { Heading = "Next up", AccentColor = "#ff0000" };
+        section.Templates.Add(new SqueezeTemplate { Name = "Framed", Style = SqueezeStyle.Framed, Heading = "Stay tuned", AccentColor = "#00ff00" });
+        section.Templates.Add(new SqueezeTemplate { Name = "Unused", Enabled = false, Heading = "Never" });
+
+        List<ScheduleEntry> entries = [.. Enumerable.Range(0, 200).Select(index => Programme(Episode("Show", index), Noon.AddMinutes(30 * index)))];
+        List<SqueezeLook> picks = [.. entries.Select(entry => section.LookFor("toons", entry.Start))];
+
+        // Both enabled looks get picked, about evenly; the one that's off never is; the same airing always gets the same one.
+        Assert.InRange(picks.Count(look => look is SqueezeTemplate), 60, 140);
+        Assert.DoesNotContain(picks, look => look is SqueezeTemplate { Name: "Unused" });
+        Assert.Equal(picks, entries.Select(entry => section.LookFor("toons", entry.Start)));
+
+        // A weight of 0 keeps a look out.
+        section.Weight = 0;
+        Assert.All(entries.Take(20), entry => Assert.IsType<SqueezeTemplate>(section.LookFor("toons", entry.Start)));
+
+        // The squeeze takes everything about its look from the one picked.
+        SqueezeJob job = Plan(Day(), section)[0].Job;
+        Assert.Equal(("Stay tuned", "#00ff00", SqueezeStyle.Framed), (job.Heading, job.AccentColor, job.Style));
+
+        // Previewing one template uses only it.
+        Assert.Equal("Next up", Plan(Day(), section.WithOnly(new SqueezeLook { Heading = "Next up" }))[0].Job.Heading);
+    }
+
+    [Fact]
     public void Episodes_without_known_credits_can_have_their_end_squeezed()
     {
         TimeSpan ninety = TimeSpan.FromSeconds(90);

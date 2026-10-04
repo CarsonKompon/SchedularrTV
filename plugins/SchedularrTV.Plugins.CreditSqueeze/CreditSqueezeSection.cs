@@ -81,52 +81,68 @@ public sealed class SqueezeLayoutChoice
 /// a block without its own uses the channel's. The schedule-wide section (under <c>settings</c>) only holds layouts for
 /// particular shows on every channel.
 /// </summary>
-public sealed class CreditSqueezeSection
+public sealed class CreditSqueezeSection : SqueezeLook
 {
     public const string PluginId = "credit-squeeze";
+
+    /// <summary>The name of the section's own look among its templates.</summary>
+    public const string MainLook = "Main";
 
     /// <summary>On when the section is in the schedule (a channel is only squeezed once it's turned on there).</summary>
     public bool Enabled { get; set; } = true;
 
-    public SqueezeStyle Style { get; set; } = SqueezeStyle.SideBySide;
+    /// <summary>
+    /// More looks saved alongside the section's own; each squeeze picks one of them (or the section's own) at random,
+    /// by their weights, seeded by the airing.
+    /// </summary>
+    public List<SqueezeTemplate> Templates { get; set; } = [];
 
-    /// <summary>Which side the credits go to; the panel takes the rest.</summary>
-    public CreditsSide Side { get; set; } = CreditsSide.Left;
+    /// <summary>The looks a squeeze may pick from: the section's own and its enabled templates, any with a weight.</summary>
+    public IReadOnlyList<SqueezeLook> Looks()
+    {
+        List<SqueezeLook> looks = [.. new SqueezeLook[] { this }.Concat(Templates.Where(template => template.Enabled)).Where(look => look.Weight > 0)];
+        return looks.Count > 0 ? looks : new List<SqueezeLook> { this };
+    }
 
-    /// <summary>How much of the picture the credits take (of its width, or of its height for top and bottom), 30 to 80 (percent).</summary>
-    public int SplitPercent { get; set; } = 60;
+    /// <summary>The look for a squeeze airing at <paramref name="at"/> on the channel, picked by weight (always the same for the same airing).</summary>
+    public SqueezeLook LookFor(string channelId, DateTimeOffset at)
+    {
+        IReadOnlyList<SqueezeLook> looks = Looks();
+        if (looks.Count == 1)
+        {
+            return looks[0];
+        }
 
-    public SqueezeFit CreditsFit { get; set; } = SqueezeFit.Letterbox;
+        double total = looks.Sum(look => look.Weight);
+        double roll = SchedularrTV.Core.Ordering.DeterministicRandom.FromSeedText(channelId, at.UtcDateTime.ToString("O"), "credit-squeeze", "look").Next(1_000_000)
+                      / 1_000_000.0 * total;
+        foreach (SqueezeLook look in looks)
+        {
+            roll -= look.Weight;
+            if (roll < 0)
+            {
+                return look;
+            }
+        }
 
-    public bool CreditsText { get; set; }
+        return looks[^1];
+    }
 
-    public SqueezeFit PanelFit { get; set; } = SqueezeFit.Letterbox;
-
-    public bool PanelText { get; set; } = true;
-
-    /// <summary>Over the ending show's name, when the credits have text.</summary>
-    public string CreditsCaption { get; set; } = "You've been watching";
-
-    /// <summary>A line of the channel's own under the ending show's name, if any.</summary>
-    public string? CreditsLine { get; set; }
-
-    /// <summary>An installed font for the headings.</summary>
-    public string HeadingFont { get; set; } = "Arial";
-
-    /// <summary>An installed font for the rest of the text.</summary>
-    public string TextFont { get; set; } = "Arial";
+    /// <summary>A copy that only ever uses <paramref name="look"/> (for previewing one template).</summary>
+    public CreditSqueezeSection WithOnly(SqueezeLook look)
+    {
+        CreditSqueezeSection copy = Copy();
+        look.CopyLookTo(copy);
+        copy.Weight = 1;
+        copy.Templates = [];
+        return copy;
+    }
 
     /// <summary>
     /// Shows whose end credits want a layout of their own (credits that run in a corner, say), by show name. They win over
     /// the schedule-wide ones for the same show.
     /// </summary>
     public Dictionary<string, SqueezeLayoutChoice> Shows { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// The kinds of promo that may play in the panel, one picked at random from those the schedule airs nearby (library
-    /// clips and generated promos alike). None, or none nearby: the panel shows the next programme's picture.
-    /// </summary>
-    public List<SqueezePromo> Promos { get; set; } = [];
 
     /// <summary>The odds (0–1) an episode whose end credits are marked gets them squeezed.</summary>
     public double CreditsChance { get; set; } = 1;
@@ -149,47 +165,6 @@ public sealed class CreditSqueezeSection
 
     /// <summary>Credits longer than this play as they are (a long credits roll is rarely just credits).</summary>
     public TimeSpan LongestCredits { get; set; } = TimeSpan.FromMinutes(4);
-
-    /// <summary>Over the panel when it's about the next programme (an Up Next promo, or no promo).</summary>
-    public string Heading { get; set; } = "Up next";
-
-    /// <summary>Over the panel while a Coming Up promo plays there.</summary>
-    public string ComingUpHeading { get; set; } = "Coming up";
-
-    /// <summary>Over the panel while an Eventually promo (a trailer for later in the week) plays there.</summary>
-    public string EventuallyHeading { get; set; } = "Eventually";
-
-    /// <summary>Over the panel while the next programme's Now Playing ident plays there.</summary>
-    public string NowPlayingHeading { get; set; } = "Next";
-
-    /// <summary>The panel's heading for the kind of promo in it (none: the next programme's).</summary>
-    public string HeadingFor(SqueezePromo? kind)
-    {
-        string? heading = kind switch
-        {
-            SqueezePromo.ComingUp => ComingUpHeading,
-            SqueezePromo.Eventually => EventuallyHeading,
-            SqueezePromo.NowPlaying => NowPlayingHeading,
-            _ => Heading
-        };
-        return string.IsNullOrWhiteSpace(heading) ? Heading : heading.Trim();
-    }
-
-    public string AccentColor { get; set; } = "#ff5c8a";
-
-    public string BackgroundColor { get; set; } = "#0b0d14";
-
-    /// <summary>A picture or video behind everything (a video loops); empty for <see cref="BackgroundColor"/>.</summary>
-    public string? BackgroundPath { get; set; }
-
-    /// <summary>The credits' own sound, 0 (silent) to 1.</summary>
-    public double CreditsVolume { get; set; } = 1;
-
-    /// <summary>Lists the two programmes after the next one too.</summary>
-    public bool ShowLater { get; set; } = true;
-
-    /// <summary>The credits shrink into place (and, side by side, grow back at the end), rather than start there.</summary>
-    public bool Animate { get; set; } = true;
 
     /// <summary>The odds for a show's outro: its own, else <see cref="OutroChance"/>.</summary>
     public double OutroChanceFor(string? show)
@@ -227,28 +202,10 @@ public sealed class CreditSqueezeSection
 
     /// <summary>
     /// The layout for a show's credits: its own here, else its own on every channel (<paramref name="everywhere"/>), else
-    /// this section's.
+    /// the look's (<paramref name="look"/>, or this section's own).
     /// </summary>
-    public SqueezeLayoutChoice LayoutFor(string? show, CreditSqueezeSection? everywhere = null) =>
-        ShowLayout(show) ?? everywhere?.ShowLayout(show) ?? OwnLayout();
-
-    /// <summary>This section's own layout (for every show), as a copy.</summary>
-    public SqueezeLayoutChoice OwnLayout() => new()
-    {
-        Style = Style, Side = Side, SplitPercent = SplitPercent, CreditsFit = CreditsFit, CreditsText = CreditsText, PanelFit = PanelFit, PanelText = PanelText
-    };
-
-    /// <summary>Makes <paramref name="layout"/> this section's own layout.</summary>
-    public void UseLayout(SqueezeLayoutChoice layout)
-    {
-        Style = layout.Style;
-        Side = layout.Side;
-        SplitPercent = layout.SplitPercent;
-        CreditsFit = layout.CreditsFit;
-        CreditsText = layout.CreditsText;
-        PanelFit = layout.PanelFit;
-        PanelText = layout.PanelText;
-    }
+    public SqueezeLayoutChoice LayoutFor(string? show, CreditSqueezeSection? everywhere = null, SqueezeLook? look = null) =>
+        ShowLayout(show) ?? everywhere?.ShowLayout(show) ?? (look ?? this).OwnLayout();
 
     public CreditSqueezeSection Copy()
     {
@@ -256,6 +213,7 @@ public sealed class CreditSqueezeSection
         copy.Outros = new Dictionary<string, double>(Outros, StringComparer.OrdinalIgnoreCase);
         copy.Shows = Shows.ToDictionary(pair => pair.Key, pair => pair.Value.Copy(), StringComparer.OrdinalIgnoreCase);
         copy.Promos = [.. Promos];
+        copy.Templates = [.. Templates.Select(template => template.Copy())];
         return copy;
     }
 }

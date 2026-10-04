@@ -61,7 +61,42 @@
             }
             else
             {
-            <h3 class="cs-heading">Layout</h3>
+            SqueezeLook look = Look(section);
+            <h3 class="cs-heading">Templates</h3>
+            <div class="cs-templates">
+                <button type="button" class="cs-template @(_template < 0 ? "active" : "")" @onclick="() => SelectTemplate(-1)">
+                    @CreditSqueezeSection.MainLook<span class="cs-weight">@WeightText(section, section)</span></button>
+                @for (int index = 0; index < section.Templates.Count; index++)
+                {
+                    int at = index;
+                    SqueezeTemplate template = section.Templates[at];
+                    <button type="button" class="cs-template @(_template == at ? "active" : "") @(template.Enabled ? "" : "off")" @onclick="() => SelectTemplate(at)">
+                        @template.Name<span class="cs-weight">@WeightText(section, template)</span></button>
+                }
+                <button type="button" class="btn btn-sm" @onclick="() => AddTemplate(section)">+ New from this one</button>
+            </div>
+            <div class="grid grid-3" style="align-items:end;">
+                @if (look is SqueezeTemplate editing)
+                {
+                    <label class="field"><span>Name</span>
+                        <input type="text" value="@editing.Name" @onchange="e => Set(() => editing.Name = Text(e, editing.Name))" /></label>
+                }
+                <label class="field"><span>How often it's picked (weight)</span>
+                    <input type="number" min="0" max="100" step="0.5" value="@look.Weight.ToString(CultureInfo.InvariantCulture)"
+                           @onchange="e => Set(() => look.Weight = Math.Clamp(Number(e, 1), 0, 100))" /></label>
+                @if (look is SqueezeTemplate current)
+                {
+                    <div class="row row-wrap" style="gap:10px;align-items:center;margin-bottom:10px;">
+                        <label class="check" style="margin:0;"><input type="checkbox" checked="@current.Enabled" @onchange="e => Set(() => current.Enabled = e.Value is true)" />
+                            <span>In use</span></label>
+                        <button type="button" class="btn btn-sm btn-ghost" @onclick="() => DeleteTemplate(section)">Delete</button>
+                    </div>
+                }
+            </div>
+            <p class="hint" style="margin-top:-4px;">Each squeeze picks one of these looks at random, by weight (the same airing always gets the same one). Layout and Look below are
+                the selected one's; a weight of 0 keeps it out. How often, and shows' own layouts, are the channel's whichever is picked.</p>
+
+            <h3 class="cs-heading">Layout <span class="cs-of">(@LookName(section))</span></h3>
             <div class="cs-layout">
                 <div>
                     @{
@@ -157,7 +192,7 @@
                         <div class="row row-wrap" style="gap:4px 16px;">
                             @foreach (SqueezePromo kind in Enum.GetValues<SqueezePromo>())
                             {
-                                <label class="check" style="margin:0;"><input type="checkbox" checked="@section.Promos.Contains(kind)" @onchange="e => Set(() => TogglePromo(section, kind, e.Value is true))" />
+                                <label class="check" style="margin:0;"><input type="checkbox" checked="@look.Promos.Contains(kind)" @onchange="e => Set(() => TogglePromo(look, kind, e.Value is true))" />
                                     <span>@PromoName(kind)</span></label>
                             }
                         </div>
@@ -168,8 +203,8 @@
                         which makes previews take a little longer. With none ticked, or none to be had, the panel shows the next programme's picture.</p>
                 </div>
                 <div class="cs-preview">
-                    <img src="@FramePreview(section, choice)" alt="How the squeeze is laid out" />
-                    <span class="hint">The layout once the credits are in place, with stand-in names; the credits play in the black box.@(SqueezeRenderer.IsVideo(section.BackgroundPath) ? " The background video plays behind it." : "")</span>
+                    <img src="@FramePreview(look, choice)" alt="How the squeeze is laid out" />
+                    <span class="hint">The layout once the credits are in place, with stand-in names; the credits play in the black box.@(SqueezeRenderer.IsVideo(look.BackgroundPath) ? " The background video plays behind it." : "")</span>
                 </div>
             </div>
             <div class="row row-wrap" style="gap:8px;align-items:center;margin-bottom:6px;">
@@ -195,15 +230,80 @@
                 <p class="hint warn">@lookupProblem</p>
             }
 
-            <h3 class="cs-heading">How often</h3>
+            <h3 class="cs-heading">Look <span class="cs-of">(@LookName(section))</span></h3>
+            <div class="grid grid-3">
+                <label class="field"><span>Heading (next programme, Up Next)</span>
+                    <input type="text" value="@look.Heading" @onchange="e => Set(() => look.Heading = Text(e, DefaultHeading))" /></label>
+                <div class="field"><span>Accent colour</span>
+                    <input type="color" value="@look.AccentColor" @onchange="e => Set(() => look.AccentColor = Text(e, look.AccentColor))" style="width:56px;height:34px;padding:2px;" /></div>
+                <div class="field"><span>Background colour</span>
+                    <input type="color" value="@look.BackgroundColor" @onchange="e => Set(() => look.BackgroundColor = Text(e, look.BackgroundColor))" style="width:56px;height:34px;padding:2px;" /></div>
+            </div>
+            <div class="grid grid-3">
+                <label class="field"><span>Heading with a Coming Up promo</span>
+                    <input type="text" value="@look.ComingUpHeading" @onchange="e => Set(() => look.ComingUpHeading = Text(e, look.Heading))" /></label>
+                <label class="field"><span>With an Eventually promo</span>
+                    <input type="text" value="@look.EventuallyHeading" @onchange="e => Set(() => look.EventuallyHeading = Text(e, look.Heading))" /></label>
+                <label class="field"><span>With a Now Playing ident</span>
+                    <input type="text" value="@look.NowPlayingHeading" @onchange="e => Set(() => look.NowPlayingHeading = Text(e, look.Heading))" /></label>
+            </div>
+            <div class="grid grid-2">
+                <label class="field"><span>Heading font</span>
+                    <select value="@FontName(look.HeadingFont)" style="font-family: '@look.HeadingFont'" @onchange="e => Set(() => look.HeadingFont = Text(e, DefaultFont))">
+                        @if (!Fonts.Contains(FontName(look.HeadingFont)))
+                        {
+                            <option value="@look.HeadingFont">@look.HeadingFont (not installed)</option>
+                        }
+                        @foreach (string font in Fonts)
+                        {
+                            <option value="@font" style="font-family: '@font'">@font</option>
+                        }
+                    </select></label>
+                <label class="field"><span>Text font</span>
+                    <select value="@FontName(look.TextFont)" style="font-family: '@look.TextFont'" @onchange="e => Set(() => look.TextFont = Text(e, DefaultFont))">
+                        @if (!Fonts.Contains(FontName(look.TextFont)))
+                        {
+                            <option value="@look.TextFont">@look.TextFont (not installed)</option>
+                        }
+                        @foreach (string font in Fonts)
+                        {
+                            <option value="@font" style="font-family: '@font'">@font</option>
+                        }
+                    </select></label>
+                <label class="field"><span>Over the ending show (when the credits have text)</span>
+                    <input type="text" value="@look.CreditsCaption" @onchange="e => Set(() => look.CreditsCaption = e.Value?.ToString()?.Trim() ?? string.Empty)" /></label>
+                <label class="field"><span>Your line under it (optional)</span>
+                    <input type="text" value="@look.CreditsLine" @onchange="e => Set(() => look.CreditsLine = Blank(e.Value?.ToString()))" /></label>
+            </div>
+            <div class="field"><span>Background picture or video (optional; a video loops). Behind the panel side by side, behind both boxes framed.</span>
+                <FilePathPicker Value="@look.BackgroundPath" ValueChanged="value => Set(() => look.BackgroundPath = Blank(value))"
+                                Extensions="BackgroundExtensions" Label="background picture or video" Placeholder="D:\Media\Backgrounds\loop.mp4" /></div>
+            <div class="grid grid-2">
+                <label class="field"><span>Credits' sound: @Percent(look.CreditsVolume)</span>
+                    <input type="range" min="0" max="1" step="0.05" value="@look.CreditsVolume.ToString(CultureInfo.InvariantCulture)"
+                           @onchange="e => Set(() => look.CreditsVolume = Number(e, 1))" /></label>
+            </div>
+            <div class="row row-wrap" style="gap:18px;">
+                <label class="check"><input type="checkbox" checked="@look.ShowLater" @onchange="e => Set(() => look.ShowLater = e.Value is true)" />
+                    <span>Also list the next two programmes after it</span></label>
+                <label class="check"><input type="checkbox" checked="@look.Animate" @onchange="e => Set(() => look.Animate = e.Value is true)" />
+                    <span>Shrink the credits into place (side by side, they grow back at the end)</span></label>
+            </div>
+
+            <h3 class="cs-heading">How often <span class="cs-of">(@(Block is null ? "the channel" : "this block"), whichever template)</span></h3>
             <label class="field"><span>Episodes' end credits: @Percent(section.CreditsChance)</span>
                 <input type="range" min="0" max="1" step="0.05" value="@section.CreditsChance.ToString(CultureInfo.InvariantCulture)"
                        @onchange="e => Set(() => section.CreditsChance = Number(e, 1))" /></label>
-            <label class="field"><span>Episodes without known credits: squeeze their last (seconds)</span>
-                <input type="number" min="0" max="600" step="5" value="@section.AssumedCreditsSeconds?.ToString(CultureInfo.InvariantCulture)" placeholder="@AssumedPlaceholder"
-                       @onchange="e => Set(() => section.AssumedCreditsSeconds = Seconds(e))" /></label>
-            <p class="hint" style="margin-top:-4px;">For shows Jellyfin hasn't found credits for and with no Credits chapter. Empty uses the plugin's setting; 0 leaves them alone.
-                Only the part of an episode that plays to its end is squeezed.</p>
+            <div class="grid grid-2">
+                <label class="field"><span>Episodes without known credits: squeeze their last (seconds)</span>
+                    <input type="number" min="0" max="600" step="5" value="@section.AssumedCreditsSeconds?.ToString(CultureInfo.InvariantCulture)" placeholder="@AssumedPlaceholder"
+                           @onchange="e => Set(() => section.AssumedCreditsSeconds = Seconds(e))" /></label>
+                <label class="field"><span>Leave credits longer than (minutes) as they are</span>
+                    <input type="number" min="1" max="15" value="@section.LongestCredits.TotalMinutes.ToString("0.#", CultureInfo.InvariantCulture)"
+                           @onchange="e => Set(() => section.LongestCredits = TimeSpan.FromMinutes(Math.Clamp(Number(e, 4), 0.5, 15)))" /></label>
+            </div>
+            <p class="hint" style="margin-top:-4px;">Without known credits: for shows Jellyfin hasn't found credits for and with no Credits chapter. Empty uses the plugin's setting;
+                0 leaves them alone. Only the part of an episode that plays to its end is squeezed.</p>
             <label class="field"><span>Shows' own outros: @Percent(section.OutroChance) <span class="muted">(unless set below)</span></span>
                 <input type="range" min="0" max="1" step="0.05" value="@section.OutroChance.ToString(CultureInfo.InvariantCulture)"
                        @onchange="e => Set(() => section.OutroChance = Number(e, 1))" /></label>
@@ -237,69 +337,6 @@
             {
                 <p class="hint">None of the channel's shows has an outro of its own (set under Titles, or on a collection with <em>Outro</em>).</p>
             }
-
-            <h3 class="cs-heading">Look</h3>
-            <div class="grid grid-3">
-                <label class="field"><span>Heading (next programme, Up Next)</span>
-                    <input type="text" value="@section.Heading" @onchange="e => Set(() => section.Heading = Text(e, DefaultHeading))" /></label>
-                <div class="field"><span>Accent colour</span>
-                    <input type="color" value="@section.AccentColor" @onchange="e => Set(() => section.AccentColor = Text(e, section.AccentColor))" style="width:56px;height:34px;padding:2px;" /></div>
-                <div class="field"><span>Background colour</span>
-                    <input type="color" value="@section.BackgroundColor" @onchange="e => Set(() => section.BackgroundColor = Text(e, section.BackgroundColor))" style="width:56px;height:34px;padding:2px;" /></div>
-            </div>
-            <div class="grid grid-3">
-                <label class="field"><span>Heading with a Coming Up promo</span>
-                    <input type="text" value="@section.ComingUpHeading" @onchange="e => Set(() => section.ComingUpHeading = Text(e, section.Heading))" /></label>
-                <label class="field"><span>With an Eventually promo</span>
-                    <input type="text" value="@section.EventuallyHeading" @onchange="e => Set(() => section.EventuallyHeading = Text(e, section.Heading))" /></label>
-                <label class="field"><span>With a Now Playing ident</span>
-                    <input type="text" value="@section.NowPlayingHeading" @onchange="e => Set(() => section.NowPlayingHeading = Text(e, section.Heading))" /></label>
-            </div>
-            <div class="grid grid-2">
-                <label class="field"><span>Heading font</span>
-                    <select value="@FontName(section.HeadingFont)" style="font-family: '@section.HeadingFont'" @onchange="e => Set(() => section.HeadingFont = Text(e, DefaultFont))">
-                        @if (!Fonts.Contains(FontName(section.HeadingFont)))
-                        {
-                            <option value="@section.HeadingFont">@section.HeadingFont (not installed)</option>
-                        }
-                        @foreach (string font in Fonts)
-                        {
-                            <option value="@font" style="font-family: '@font'">@font</option>
-                        }
-                    </select></label>
-                <label class="field"><span>Text font</span>
-                    <select value="@FontName(section.TextFont)" style="font-family: '@section.TextFont'" @onchange="e => Set(() => section.TextFont = Text(e, DefaultFont))">
-                        @if (!Fonts.Contains(FontName(section.TextFont)))
-                        {
-                            <option value="@section.TextFont">@section.TextFont (not installed)</option>
-                        }
-                        @foreach (string font in Fonts)
-                        {
-                            <option value="@font" style="font-family: '@font'">@font</option>
-                        }
-                    </select></label>
-                <label class="field"><span>Over the ending show (when the credits have text)</span>
-                    <input type="text" value="@section.CreditsCaption" @onchange="e => Set(() => section.CreditsCaption = e.Value?.ToString()?.Trim() ?? string.Empty)" /></label>
-                <label class="field"><span>Your line under it (optional)</span>
-                    <input type="text" value="@section.CreditsLine" @onchange="e => Set(() => section.CreditsLine = Blank(e.Value?.ToString()))" /></label>
-            </div>
-            <div class="field"><span>Background picture or video (optional; a video loops). Behind the panel side by side, behind both boxes framed.</span>
-                <FilePathPicker Value="@section.BackgroundPath" ValueChanged="value => Set(() => section.BackgroundPath = Blank(value))"
-                                Extensions="BackgroundExtensions" Label="background picture or video" Placeholder="D:\Media\Backgrounds\loop.mp4" /></div>
-            <div class="grid grid-2">
-                <label class="field"><span>Credits' sound: @Percent(section.CreditsVolume)</span>
-                    <input type="range" min="0" max="1" step="0.05" value="@section.CreditsVolume.ToString(CultureInfo.InvariantCulture)"
-                           @onchange="e => Set(() => section.CreditsVolume = Number(e, 1))" /></label>
-                <label class="field"><span>Leave credits longer than (minutes) as they are</span>
-                    <input type="number" min="1" max="15" value="@section.LongestCredits.TotalMinutes.ToString("0.#", CultureInfo.InvariantCulture)"
-                           @onchange="e => Set(() => section.LongestCredits = TimeSpan.FromMinutes(Math.Clamp(Number(e, 4), 0.5, 15)))" /></label>
-            </div>
-            <div class="row row-wrap" style="gap:18px;">
-                <label class="check"><input type="checkbox" checked="@section.ShowLater" @onchange="e => Set(() => section.ShowLater = e.Value is true)" />
-                    <span>Also list the next two programmes after it</span></label>
-                <label class="check"><input type="checkbox" checked="@section.Animate" @onchange="e => Set(() => section.Animate = e.Value is true)" />
-                    <span>Shrink the credits into place (side by side, they grow back at the end)</span></label>
-            </div>
             }
         }
     </div>
@@ -341,6 +378,13 @@
         .cs-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
         .cs-fields:disabled { opacity: .55; }
         .cs-lookup { margin: 4px 0 0; }
+        .cs-of { text-transform: none; letter-spacing: 0; font-weight: 400; }
+        .cs-templates { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+        .cs-template { display: inline-flex; gap: 8px; align-items: center; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line);
+            background: transparent; color: inherit; cursor: pointer; font: inherit; }
+        .cs-template.active { border-color: var(--accent, #7aa2ff); background: color-mix(in srgb, var(--accent, #7aa2ff) 18%, transparent); }
+        .cs-template.off { opacity: .55; }
+        .cs-weight { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
     </style>
 }
 
@@ -398,6 +442,7 @@
         }
 
         _everywhere = Read(Context.Config.Settings.Plugins);
+        _template = -1;
         _previewUrl = null;
         _previewProblem = null;
         _previewNote = null;
@@ -566,7 +611,7 @@
     {
         if (_show is null)
         {
-            return (section.OwnLayout(), LayoutHome.Section);
+            return (Look(section).OwnLayout(), LayoutHome.Section);
         }
 
         if (section.ShowLayout(_show) is { } here)
@@ -579,7 +624,7 @@
             return (everywhere, LayoutHome.Everywhere);
         }
 
-        return (section.LayoutFor(null), LayoutHome.Inherited);
+        return (Look(section).OwnLayout(), LayoutHome.Inherited);
     }
 
     private void ChangeLayout(CreditSqueezeSection section, Action<SqueezeLayoutChoice> change)
@@ -590,7 +635,7 @@
         switch (home)
         {
             case LayoutHome.Section:
-                section.UseLayout(choice);
+                Look(section).UseLayout(choice);
                 Commit();
                 break;
             case LayoutHome.Here:
@@ -610,7 +655,7 @@
             return;
         }
 
-        SqueezeLayoutChoice start = section.LayoutFor(show, _everywhere).Copy();
+        SqueezeLayoutChoice start = section.LayoutFor(show, _everywhere, Look(section)).Copy();
         if (everywhere)
         {
             _everywhere ??= new CreditSqueezeSection { Enabled = false };
@@ -714,30 +759,85 @@
         _ => "Now Playing"
     };
 
-    private static void TogglePromo(CreditSqueezeSection section, SqueezePromo kind, bool on)
+    private static void TogglePromo(SqueezeLook look, SqueezePromo kind, bool on)
     {
-        section.Promos.Remove(kind);
+        look.Promos.Remove(kind);
         if (on)
         {
-            section.Promos.Add(kind);
+            look.Promos.Add(kind);
         }
     }
 
     /// <summary>A stand-in squeeze with this section's look, for the layout preview.</summary>
-    private SqueezeJob Sample(CreditSqueezeSection section, SqueezeLayoutChoice layout) => new(
+    private SqueezeJob Sample(SqueezeLook look, SqueezeLayoutChoice layout) => new(
         string.Empty, TimeSpan.Zero, PreviewLength,
         new SqueezeListing("The Next Show", "An Episode Title", "8:30 PM", null),
-        section.ShowLater
+        look.ShowLater
             ? new[] { new SqueezeListing("Another Show", null, "9 PM", null), new SqueezeListing("The Late Movie", null, "9:30 PM", null) }
             : Array.Empty<SqueezeListing>(),
-        Channel.Name, section.Heading, section.AccentColor, section.BackgroundColor, section.CreditsVolume, section.Animate,
-        layout.Side, layout.SplitPercent, Style: layout.Style, BackgroundPath: Blank(section.BackgroundPath),
+        Channel.Name, look.Heading, look.AccentColor, look.BackgroundColor, look.CreditsVolume, look.Animate,
+        layout.Side, layout.SplitPercent, Style: layout.Style, BackgroundPath: Blank(look.BackgroundPath),
         CreditsFit: layout.CreditsFit, CreditsText: layout.CreditsText, PanelFit: layout.PanelFit, PanelText: layout.PanelText,
         EndingShow: layout.CreditsText ? _show ?? "The Show That's Ending" : null,
-        CreditsCaption: section.CreditsCaption, CreditsLine: Blank(section.CreditsLine),
-        HeadingFont: section.HeadingFont, TextFont: section.TextFont);
+        CreditsCaption: look.CreditsCaption, CreditsLine: Blank(look.CreditsLine),
+        HeadingFont: look.HeadingFont, TextFont: look.TextFont);
 
     private const string DefaultFont = "Arial";
+
+    // The template being edited: -1 for the section's own look.
+    private int _template = -1;
+
+    /// <summary>The look being edited: the selected template, else the section's own.</summary>
+    private SqueezeLook Look(CreditSqueezeSection section) =>
+        _template >= 0 && _template < section.Templates.Count ? section.Templates[_template] : section;
+
+    private string LookName(CreditSqueezeSection section) => Look(section) is SqueezeTemplate template ? template.Name : CreditSqueezeSection.MainLook;
+
+    /// <summary>A look's share of the squeezes, as shown on its button.</summary>
+    private static string WeightText(CreditSqueezeSection section, SqueezeLook look)
+    {
+        if (look is SqueezeTemplate { Enabled: false })
+        {
+            return "off";
+        }
+
+        IReadOnlyList<SqueezeLook> looks = section.Looks();
+        double total = looks.Sum(candidate => candidate.Weight);
+        return looks.Contains(look) && total > 0 ? $"{Math.Round(look.Weight / total * 100)}%" : "0%";
+    }
+
+    private void SelectTemplate(int index)
+    {
+        _template = index;
+        _frameKey = null;
+        _previewNote = null;
+        _previewProblem = null;
+    }
+
+    /// <summary>A new template, starting as a copy of the one being edited.</summary>
+    private void AddTemplate(CreditSqueezeSection section)
+    {
+        int number = section.Templates.Count + 2;
+        string name = $"Look {number}";
+        while (section.Templates.Any(template => string.Equals(template.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            name = $"Look {++number}";
+        }
+
+        section.Templates.Add(SqueezeTemplate.Of(Look(section), name));
+        _template = section.Templates.Count - 1;
+        Commit();
+    }
+
+    private void DeleteTemplate(CreditSqueezeSection section)
+    {
+        if (_template >= 0 && _template < section.Templates.Count)
+        {
+            section.Templates.RemoveAt(_template);
+            _template = -1;
+            Commit();
+        }
+    }
 
     private string AssumedText(CreditSqueezeSection section) => $"{section.AssumedCredits(Settings.AssumedCredits).TotalSeconds:0} seconds";
 
@@ -755,9 +855,9 @@
         Fonts.FirstOrDefault(font => string.Equals(font, family, StringComparison.OrdinalIgnoreCase)) ?? family;
 
     /// <summary>The layout preview as an image address, drawn again only when the look changes.</summary>
-    private string FramePreview(CreditSqueezeSection section, SqueezeLayoutChoice layout)
+    private string FramePreview(SqueezeLook look, SqueezeLayoutChoice layout)
     {
-        SqueezeJob sample = Sample(section, layout);
+        SqueezeJob sample = Sample(look, layout);
         string key = SqueezeRenderer.Key(sample);
         if (key != _frameKey)
         {
@@ -783,7 +883,8 @@
             return;
         }
 
-        CreditSqueezeSection trial = section.Copy();
+        // Previews the selected template's look (whichever an airing would pick).
+        CreditSqueezeSection trial = section.WithOnly(Look(section));
         trial.Enabled = true;
         trial.CreditsChance = 1;
         trial.OutroChance = 1;
