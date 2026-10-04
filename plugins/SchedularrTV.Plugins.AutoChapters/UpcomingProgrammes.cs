@@ -21,7 +21,7 @@ public sealed class UpcomingProgrammes(ChapterScanner scanner, TimeProvider? clo
         scanner.QueueSoon(context.Schedule.Entries
             .Where(entry => entry.Kind == ScheduleEntryKind.Program && entry.Item is not null && !entry.IsSlotIntro && !entry.IsSlotOutro
                 && entry.End > now && entry.Start < now + Horizon)
-            .Select(entry => (entry.Item!, entry.Start)));
+            .Select(entry => (entry.Item!, entry.Start)), context.Schedule.ChannelNumber);
         return ValueTask.FromResult(context.Schedule);
     }
 }

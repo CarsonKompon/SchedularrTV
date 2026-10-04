@@ -1,10 +1,15 @@
 using Microsoft.Extensions.Hosting;
+using SchedularrTV.Core.Publishing;
 using SchedularrTV.Core.Query;
 
 namespace SchedularrTV.AutoChapters;
 
 /// <summary>One programme waiting to be analysed.</summary>
-public sealed record ScanRequest(string Path, string Title, TimeSpan Duration, DateTimeOffset? AirsAt = null);
+public sealed record ScanRequest(string Path, string Title, TimeSpan Duration, DateTimeOffset? AirsAt = null)
+{
+    /// <summary>The channels (by number) it's about to air on, so ones someone is watching go first.</summary>
+    public HashSet<int> Channels { get; init; } = [];
+}
 
 /// <summary>
 /// Analyses programmes in the background, one (or a few) at a time: those in the schedule first, soonest first,
@@ -53,18 +58,41 @@ public sealed class ChapterScanner(
         }
     }
 
-    /// <summary>Programmes about to air go first, in airing order; anything already analysed is skipped.</summary>
-    public void QueueSoon(IEnumerable<(MediaItem Item, DateTimeOffset AirsAt)> upcoming)
+    /// <summary>
+    /// Programmes about to air go first, in airing order (those on a channel someone is watching ahead of the rest);
+    /// anything already analysed is skipped.
+    /// </summary>
+    public void QueueSoon(IEnumerable<(MediaItem Item, DateTimeOffset AirsAt)> upcoming, int? channelNumber = null)
     {
         int added = 0;
         lock (_gate)
         {
             foreach ((MediaItem item, DateTimeOffset airsAt) in upcoming)
             {
-                if (ChapterEnricher.Wants(item) && store.Find(item.Path) is null && _queued.Add(item.Path!))
+                if (!ChapterEnricher.Wants(item) || store.Find(item.Path) is not null)
                 {
-                    _soon.Add(new ScanRequest(item.Path!, Name(item), item.Duration, airsAt));
+                    continue;
+                }
+
+                if (_queued.Add(item.Path!))
+                {
+                    var request = new ScanRequest(item.Path!, Name(item), item.Duration, airsAt);
+                    if (channelNumber is { } number)
+                    {
+                        request.Channels.Add(number);
+                    }
+
+                    _soon.Add(request);
                     added++;
+                }
+                else if (channelNumber is { } number && _soon.FirstOrDefault(waiting => waiting.Path == item.Path) is { } waiting)
+                {
+                    // Already waiting (for another channel, or from the library): note this channel too, and the sooner airing.
+                    waiting.Channels.Add(number);
+                    if (waiting.AirsAt is null || airsAt < waiting.AirsAt)
+                    {
+                        _soon[_soon.IndexOf(waiting)] = waiting with { AirsAt = airsAt };
+                    }
                 }
             }
 
@@ -169,13 +197,18 @@ public sealed class ChapterScanner(
                 return;
             }
 
+            // Asked as each one's picked, so tuning in moves a channel's programmes up straight away.
+            IChannelViewers? viewers = services.GetService<IChannelViewers>();
             ScanRequest? next;
             lock (_gate)
             {
                 if (_soon.Count > 0)
                 {
-                    next = _soon[0];
-                    _soon.RemoveAt(0);
+                    Dictionary<int, bool> watched = [];
+                    bool IsWatched(int number) => watched.TryGetValue(number, out bool known) ? known : watched[number] = viewers!.IsWatched(number) == true;
+                    int pick = viewers is null ? -1 : _soon.FindIndex(waiting => waiting.Channels.Any(IsWatched));
+                    next = _soon[pick < 0 ? 0 : pick];
+                    _soon.RemoveAt(pick < 0 ? 0 : pick);
                 }
                 else
                 {

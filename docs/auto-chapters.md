@@ -12,7 +12,8 @@ It's optional: install `SchedularrTV-<version>-plugin-auto-chapters.zip` (or the
 ## How it works
 
 1. **Programmes about to air come first.** Each time the schedule is published, programmes airing in the
-   next two days that have no chapter markers are queued, soonest first. **Analyse the whole library**
+   next two days that have no chapter markers are queued, soonest first, with those on a channel someone is watching
+   (going by ErsatzTV's stream activity) ahead of the rest. **Analyse the whole library**
    on the **Auto chapters** page, or the plugin's **Analyse the whole library in the background** setting,
    queues every other episode and movie too.
 2. **Each file is analysed once,** in the background at low priority. ffmpeg decodes the file at a small
