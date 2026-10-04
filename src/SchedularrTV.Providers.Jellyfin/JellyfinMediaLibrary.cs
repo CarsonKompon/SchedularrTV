@@ -202,6 +202,12 @@ public sealed class JellyfinMediaLibrary(
 
         versions.TryGetValue(item.Id, out JellyfinVersion? version);
 
+        // A chapter named for the credits marks where they start (in the second half, so "Opening Credits" doesn't count).
+        if (CreditsChapter(item) is { } credits)
+        {
+            attributes[MediaItem.CreditsStartAttribute] = credits.TotalSeconds.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
         return new MediaItem
         {
             Id = item.Id,
@@ -231,6 +237,28 @@ public sealed class JellyfinMediaLibrary(
             VersionGroupId = version?.GroupId,
             VersionName = version?.Name
         };
+    }
+
+    /// <summary>Where a chapter named for the end credits ("Credits", "End Credits", "Outro", "Ending") starts, if one does.</summary>
+    internal static TimeSpan? CreditsChapter(JellyfinItem item) =>
+        CreditsChapter(TimeSpan.FromTicks(item.RunTimeTicks ?? 0),
+            (item.Chapters ?? []).Select(chapter => (TimeSpan.FromTicks(chapter.StartPositionTicks), chapter.Name)));
+
+    /// <summary>Where the chapter named for the end credits starts, among chapters (start, name) of an item this long.</summary>
+    public static TimeSpan? CreditsChapter(TimeSpan runtime, IEnumerable<(TimeSpan Start, string? Name)> chapters)
+    {
+        foreach ((TimeSpan start, string? named) in chapters)
+        {
+            string name = named?.Trim() ?? string.Empty;
+            bool credits = name.Contains("credit", StringComparison.OrdinalIgnoreCase) || name.Contains("outro", StringComparison.OrdinalIgnoreCase)
+                           || name.Equals("ending", StringComparison.OrdinalIgnoreCase) || name.Equals("ED", StringComparison.Ordinal);
+            if (credits && !name.Contains("open", StringComparison.OrdinalIgnoreCase) && runtime > TimeSpan.Zero && start > runtime / 2 && start < runtime)
+            {
+                return start;
+            }
+        }
+
+        return null;
     }
 
     internal static int? ResolveSeasonNumber(JellyfinItem item, IReadOnlyDictionary<string, int> seasons)

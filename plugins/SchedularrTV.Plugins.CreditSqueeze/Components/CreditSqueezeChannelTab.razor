@@ -1,0 +1,868 @@
+@* Channel tab: how often the channel (or each block) squeezes its credits and its shows' outros, and how the squeeze looks. *@
+@inject SqueezeRenderer Renderer
+@inject CreditsMarkers Credits
+@inject ScheduleCoordinator Coordinator
+@inject CreditSqueezeSettings Settings
+@implements IDisposable
+
+@if (Context.Channel is { } channel)
+{
+    <div class="card">
+        <div class="card-head"><h2>Credit Squeeze</h2></div>
+        <p class="hint" style="margin-top:0;">
+            As the end credits roll, they shrink into a box and the rest of the picture says what's on next, with its picture and time.
+            Credits are found from chapters named for them, or Jellyfin's media segments (Jellyfin 10.10 and newer, with a segment provider such as
+            Intro Skipper). A show's own outro (an end card played after its episode) can be squeezed too.
+        </p>
+        <div class="grid grid-2">
+            <label class="field">
+                <span>Settings for</span>
+                <select value="@_blockIndex" @onchange="SelectScope">
+                    <option value="-1">The whole channel</option>
+                    @for (int index = 0; index < channel.Blocks.Count; index++)
+                    {
+                        BlockConfig block = channel.Blocks[index];
+                        <option value="@index">Block: @block.Name (@ModeName(ModeOf(Read(block.Plugins), isBlock: true)))</option>
+                    }
+                </select>
+            </label>
+            @if (Block is not null)
+            {
+                <label class="field">
+                    <span>This block</span>
+                    <select value="@Mode" @onchange="SetMode">
+                        <option value="@InheritMode">@ModeName(InheritMode)</option>
+                        <option value="@OwnMode">@ModeName(OwnMode)</option>
+                        <option value="@OffMode">@ModeName(OffMode)</option>
+                    </select>
+                </label>
+            }
+        </div>
+
+        @if (Mode == InheritMode)
+        {
+            <p class="hint">This block squeezes as the channel does.</p>
+        }
+        else if (Mode == OffMode)
+        {
+            <p class="hint">No credits are squeezed in this block.</p>
+        }
+        else if (_section is { } section)
+        {
+            @if (Block is null)
+            {
+                <label class="check"><input type="checkbox" checked="@section.Enabled" @onchange="e => Set(() => section.Enabled = e.Value is true)" />
+                    <span>Squeeze credits on this channel</span></label>
+            }
+
+            @if (Block is null && !section.Enabled)
+            {
+                <p class="hint">Off. Turn it on to set it up; a block can also be turned on by itself, below <em>Settings for</em>.</p>
+            }
+            else
+            {
+            <h3 class="cs-heading">Layout</h3>
+            <div class="cs-layout">
+                <div>
+                    @{
+                        (SqueezeLayoutChoice choice, LayoutHome home) = Current(section);
+                        bool editable = home != LayoutHome.Inherited;
+                    }
+                    <label class="field"><span>Layout for</span>
+                        <select value="@(_show ?? string.Empty)" @onchange="SelectShow">
+                            <option value="">Every show (and the preview below picks the first squeeze)</option>
+                            @foreach (string show in ShowsFor(section))
+                            {
+                                <option value="@show">@(show + ShowMark(section, show))</option>
+                            }
+                        </select></label>
+
+                    @if (_show is { } picked)
+                    {
+                        <div class="cs-scope">
+                            @if (home == LayoutHome.Inherited)
+                            {
+                                <span class="hint" style="margin:0;">@picked uses @(Block is null ? "the channel's" : "the block's") layout.</span>
+                                <span class="row row-wrap" style="gap:6px;">
+                                    <button class="btn btn-sm" type="button" @onclick="() => GiveOwnLayout(section, false)">Give it its own here</button>
+                                    <button class="btn btn-sm" type="button" @onclick="() => GiveOwnLayout(section, true)">Give it its own on every channel</button>
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="hint" style="margin:0;">@picked has its own layout @HomeName(home). Changes below are to it.</span>
+                                <span class="row row-wrap" style="gap:6px;">
+                                    @if (home == LayoutHome.Here)
+                                    {
+                                        <button class="btn btn-sm" type="button" @onclick="() => MoveLayout(section, true)">Use it on every channel</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-sm" type="button" @onclick="() => MoveLayout(section, false)">Only use it here</button>
+                                    }
+                                    <button class="btn btn-sm btn-ghost" type="button" @onclick="() => RemoveLayout(section)">Remove</button>
+                                </span>
+                            }
+                        </div>
+                    }
+
+                    <fieldset class="cs-fields" disabled="@(!editable)">
+                        <div class="grid grid-3">
+                            <label class="field"><span>Style</span>
+                                <select value="@choice.Style" @onchange="e => ChangeLayout(section, layout => SetStyle(layout, Parse(e, SqueezeStyle.SideBySide)))">
+                                    <option value="SideBySide">Side by side</option>
+                                    <option value="Framed">Framed, on a background</option>
+                                </select></label>
+                            <label class="field"><span>Credits on the</span>
+                                <select value="@choice.Side" @onchange="e => ChangeLayout(section, layout => layout.Side = Parse(e, CreditsSide.Left))">
+                                    <option value="Left">Left</option>
+                                    <option value="Right">Right</option>
+                                    @if (choice.Style == SqueezeStyle.SideBySide)
+                                    {
+                                        <option value="Top">Top</option>
+                                        <option value="Bottom">Bottom</option>
+                                    }
+                                </select></label>
+                            <label class="field"><span>Credits' share: @choice.SplitPercent%</span>
+                                <input type="range" min="@SqueezeLayout.MinSplit" max="@SqueezeLayout.MaxSplit" step="1" value="@choice.SplitPercent"
+                                       @onchange="e => ChangeLayout(section, layout => layout.SplitPercent = (int)Math.Round(Number(e, 60)))" /></label>
+                        </div>
+                    </fieldset>
+                    <p class="hint">@StyleHint(choice)</p>
+                    <div class="field"><span>Play in the panel</span>
+                        <div class="row row-wrap" style="gap:4px 16px;">
+                            @foreach (SqueezePromo kind in Enum.GetValues<SqueezePromo>())
+                            {
+                                <label class="check" style="margin:0;"><input type="checkbox" checked="@section.Promos.Contains(kind)" @onchange="e => Set(() => TogglePromo(section, kind, e.Value is true))" />
+                                    <span>@PromoName(kind)</span></label>
+                            }
+                        </div>
+                    </div>
+                    <p class="hint">One of the ticked kinds is picked at random from what the schedule airs nearby: library promo clips and generated promos
+                        alike. It plays in the panel's picture once the credits are in place, with its own sound over theirs. With none ticked, or none
+                        nearby, the panel shows the next programme's picture.</p>
+                </div>
+                <div class="cs-preview">
+                    <img src="@FramePreview(section, choice)" alt="How the squeeze is laid out" />
+                    <span class="hint">The layout once the credits are in place, with stand-in names; the credits play in the black box.@(SqueezeRenderer.IsVideo(section.BackgroundPath) ? " The background video plays behind it." : "")</span>
+                </div>
+            </div>
+            <div class="row row-wrap" style="gap:8px;align-items:center;margin-bottom:6px;">
+                <button class="btn btn-sm" type="button" disabled="@_previewing" @onclick="() => RenderPreviewAsync(section)">
+                    @(_previewing ? "Making a preview…" : PreviewButton)
+                </button>
+                @if (_previewProblem is { } previewProblem)
+                {
+                    <span class="hint warn" style="margin:0;">@previewProblem</span>
+                }
+                else if (_previewNote is { } previewNote)
+                {
+                    <span class="hint" style="margin:0;">@previewNote</span>
+                }
+            </div>
+            @if (_previewUrl is { } previewUrl)
+            {
+                <video class="cs-video" src="@previewUrl" controls autoplay muted></video>
+            }
+            <p class="hint cs-lookup">@LookupText(_lookup)</p>
+            @if (_lookup.Problem is { } lookupProblem)
+            {
+                <p class="hint warn">@lookupProblem</p>
+            }
+
+            <h3 class="cs-heading">How often</h3>
+            <label class="field"><span>Episodes' end credits: @Percent(section.CreditsChance)</span>
+                <input type="range" min="0" max="1" step="0.05" value="@section.CreditsChance.ToString(CultureInfo.InvariantCulture)"
+                       @onchange="e => Set(() => section.CreditsChance = Number(e, 1))" /></label>
+            <label class="field"><span>Shows' own outros: @Percent(section.OutroChance) <span class="muted">(unless set below)</span></span>
+                <input type="range" min="0" max="1" step="0.05" value="@section.OutroChance.ToString(CultureInfo.InvariantCulture)"
+                       @onchange="e => Set(() => section.OutroChance = Number(e, 1))" /></label>
+
+            @if (OutroShows(channel, section) is { Count: > 0 } shows)
+            {
+                <div class="cs-outros">
+                    @foreach (string show in shows)
+                    {
+                        bool own = section.Outros.Keys.Any(name => string.Equals(name, show, StringComparison.OrdinalIgnoreCase));
+                        double chance = section.OutroChanceFor(show);
+                        <div class="cs-outro" @key="show">
+                            <span class="cs-show">@show</span>
+                            <input type="range" min="0" max="1" step="0.05" value="@chance.ToString(CultureInfo.InvariantCulture)"
+                                   @onchange="e => Set(() => SetOutro(section, show, Number(e, chance)))" />
+                            <span class="cs-value @(own ? "" : "muted")">@Percent(chance)</span>
+                            @if (own)
+                            {
+                                <button class="btn btn-sm btn-ghost" type="button" title="Use the setting above" @onclick="() => Set(() => ClearOutro(section, show))">Reset</button>
+                            }
+                            else
+                            {
+                                <span class="cs-reset-space"></span>
+                            }
+                        </div>
+                    }
+                </div>
+                <p class="hint">Each show with its own outro (set under Titles, or on a collection). A show not set here uses the setting above.</p>
+            }
+            else
+            {
+                <p class="hint">None of the channel's shows has an outro of its own (set under Titles, or on a collection with <em>Outro</em>).</p>
+            }
+
+            <h3 class="cs-heading">Look</h3>
+            <div class="grid grid-3">
+                <label class="field"><span>Heading</span>
+                    <input type="text" value="@section.Heading" @onchange="e => Set(() => section.Heading = Text(e, DefaultHeading))" /></label>
+                <div class="field"><span>Accent colour</span>
+                    <input type="color" value="@section.AccentColor" @onchange="e => Set(() => section.AccentColor = Text(e, section.AccentColor))" style="width:56px;height:34px;padding:2px;" /></div>
+                <div class="field"><span>Background colour</span>
+                    <input type="color" value="@section.BackgroundColor" @onchange="e => Set(() => section.BackgroundColor = Text(e, section.BackgroundColor))" style="width:56px;height:34px;padding:2px;" /></div>
+            </div>
+            <div class="field"><span>Background picture or video (optional; a video loops). Behind the panel side by side, behind both boxes framed.</span>
+                <FilePathPicker Value="@section.BackgroundPath" ValueChanged="value => Set(() => section.BackgroundPath = Blank(value))"
+                                Extensions="BackgroundExtensions" Label="background picture or video" Placeholder="D:\Media\Backgrounds\loop.mp4" /></div>
+            <div class="grid grid-2">
+                <label class="field"><span>Credits' sound: @Percent(section.CreditsVolume)</span>
+                    <input type="range" min="0" max="1" step="0.05" value="@section.CreditsVolume.ToString(CultureInfo.InvariantCulture)"
+                           @onchange="e => Set(() => section.CreditsVolume = Number(e, 1))" /></label>
+                <label class="field"><span>Leave credits longer than (minutes) as they are</span>
+                    <input type="number" min="1" max="15" value="@section.LongestCredits.TotalMinutes.ToString("0.#", CultureInfo.InvariantCulture)"
+                           @onchange="e => Set(() => section.LongestCredits = TimeSpan.FromMinutes(Math.Clamp(Number(e, 4), 0.5, 15)))" /></label>
+            </div>
+            <div class="row row-wrap" style="gap:18px;">
+                <label class="check"><input type="checkbox" checked="@section.ShowLater" @onchange="e => Set(() => section.ShowLater = e.Value is true)" />
+                    <span>Also list the next two programmes after it</span></label>
+                <label class="check"><input type="checkbox" checked="@section.Animate" @onchange="e => Set(() => section.Animate = e.Value is true)" />
+                    <span>Shrink the credits into place (side by side, they grow back at the end)</span></label>
+            </div>
+            }
+        }
+    </div>
+
+    <div class="card">
+        <div class="card-head"><h2>Squeezes</h2></div>
+        @{
+            SqueezeQueueStatus status = Renderer.Status;
+            (int marked, int asked) = Credits.Coverage();
+        }
+        <p class="hint" style="margin:0 0 6px;">
+            @StatusText(status) They're made once they air within a few hours@(Settings.WatchedOnly ? ", and only while someone is watching the channel" : "")
+            (the plugin's settings). One that's ready in time plays in place of the credits; one that isn't, the credits (or outro) play as they are.
+        </p>
+        <p class="hint" style="margin:0;">
+            Jellyfin knows where the credits are for @marked of the @asked episodes asked about so far (chapters named "Credits" count too, and aren't asked about).
+        </p>
+        @if (status.Problem is { } problem)
+        {
+            <p class="hint warn">The last squeeze couldn't be made: @problem</p>
+        }
+    </div>
+
+    <style>
+        .cs-heading { font-size: 13px; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+        .cs-outros { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+        .cs-outro { display: grid; grid-template-columns: minmax(140px, 260px) 1fr 52px 64px; gap: 10px; align-items: center; }
+        .cs-show { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .cs-value { text-align: right; font-variant-numeric: tabular-nums; }
+        .hint.warn { color: #ffd08a; }
+        .cs-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
+        @@media (max-width: 1100px) { .cs-layout { grid-template-columns: minmax(0, 1fr); } }
+        .cs-preview img { width: 100%; border-radius: 8px; display: block; border: 1px solid var(--line); }
+        .cs-video { width: 100%; max-width: 640px; border-radius: 8px; display: block; margin-bottom: 8px; background: #000; }
+        .cs-preview img { background: #000; }
+        .cs-scope { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin: -4px 0 10px; }
+        .cs-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+        .cs-fields:disabled { opacity: .55; }
+        .cs-lookup { margin: 4px 0 0; }
+    </style>
+}
+
+@code {
+    [Parameter, EditorRequired] public PluginEditorContext Context { get; set; } = default!;
+
+    private const string OwnMode = "own";
+    private const string InheritMode = "inherit";
+    private const string OffMode = "off";
+    private const string DefaultHeading = "Up next";
+
+    private static string StatusText(SqueezeQueueStatus status) =>
+        $"{status.Made} made since the scheduler started"
+        + (status.Waiting > 0 ? $", {status.Waiting} waiting" : "")
+        + (status.Rendering is { } rendering ? $"; making {rendering} now" : "") + ".";
+
+    private int _blockIndex = -1;
+    private CreditSqueezeSection? _section;
+    private ChannelConfig? _loadedFor;
+    private int _loadedIndex = -2;
+
+    private ChannelConfig Channel => Context.Channel!;
+
+    private BlockConfig? Block => _blockIndex >= 0 && _blockIndex < Channel.Blocks.Count ? Channel.Blocks[_blockIndex] : null;
+
+    private string Mode => Block is null ? OwnMode : ModeOf(_section, isBlock: true);
+
+    protected override void OnParametersSet()
+    {
+        if (_blockIndex >= Channel.Blocks.Count)
+        {
+            _blockIndex = -1;
+        }
+
+        if (!ReferenceEquals(_loadedFor, Context.Channel) || _loadedIndex != _blockIndex)
+        {
+            Load();
+        }
+    }
+
+    private static CreditSqueezeSection? Read(Dictionary<string, object?>? plugins) =>
+        PluginSettings.Read<CreditSqueezeSection>(plugins, CreditSqueezeSection.PluginId);
+
+    private void Load()
+    {
+        _loadedFor = Context.Channel;
+        _loadedIndex = _blockIndex;
+        _section = Read(Block is { } block ? block.Plugins : Channel.Plugins);
+
+        // Channels opt in: one without a section isn't squeezed, and starts off here. It's only written into the schedule
+        // once something's changed.
+        if (_section is null && Block is null)
+        {
+            _section = new CreditSqueezeSection { Enabled = false };
+        }
+
+        _everywhere = Read(Context.Config.Settings.Plugins);
+        _previewUrl = null;
+        _previewProblem = null;
+        _previewNote = null;
+
+        // Ask Jellyfin about the episodes on the channel now, so the preview (and the status below it) has answers, even
+        // before the channel's turned on.
+        if (Schedule() is { } schedule)
+        {
+            Credits.LookUp(schedule.Entries.Where(entry => entry.Kind == ScheduleEntryKind.Program && !entry.IsSlotOutro && entry.Item is not null)
+                .Select(entry => entry.Item!).DistinctBy(item => item.Id));
+        }
+
+        _lookup = Credits.Status();
+    }
+
+    private bool _previewing;
+    private string? _previewUrl;
+    private string? _previewProblem;
+    private string? _previewNote;
+    private string? _frameKey;
+    private string? _frameData;
+    private string? _show;
+    private CreditSqueezeSection? _everywhere;
+    private CreditsLookupStatus _lookup = new(0, TimeSpan.Zero, 0, 0, false, null);
+    private readonly CancellationTokenSource _stop = new();
+
+    private static readonly TimeSpan PreviewLength = TimeSpan.FromSeconds(20);
+
+    private static readonly string[] BackgroundExtensions =
+        [.. SchedularrTV.Service.Editor.FileBrowsing.Images, .. SchedularrTV.Service.Editor.FileBrowsing.Videos];
+
+    /// <summary>Where the layout being edited lives.</summary>
+    private enum LayoutHome
+    {
+        /// <summary>The channel's (or block's) own layout, for every show.</summary>
+        Section,
+
+        /// <summary>A show's layout in this channel (or block).</summary>
+        Here,
+
+        /// <summary>A show's layout on every channel.</summary>
+        Everywhere,
+
+        /// <summary>A show without a layout of its own: it's shown, not edited.</summary>
+        Inherited
+    }
+
+    protected override void OnInitialized() => _ = RefreshAsync();
+
+    /// <summary>Keeps the lookup and render status current while the tab is open.</summary>
+    private async Task RefreshAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_stop.Token))
+            {
+                CreditsLookupStatus now = Credits.Status();
+                if (now != _lookup || now.Waiting > 0 || Renderer.Status.Rendering is not null)
+                {
+                    _lookup = now;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    public void Dispose()
+    {
+        _stop.Cancel();
+        _stop.Dispose();
+    }
+
+    private ChannelSchedule? Schedule() =>
+        Coordinator.Latest.FirstOrDefault(candidate => string.Equals(candidate.ChannelId, Channel.Id, StringComparison.OrdinalIgnoreCase));
+
+    private static string LookupText(CreditsLookupStatus status)
+    {
+        if (!status.CanAsk)
+        {
+            return "Jellyfin isn't being asked where credits start (it isn't set up, or asking is off in the plugin's settings), so only chapters named Credits are used.";
+        }
+
+        string known = $"Jellyfin knows where the credits start for {status.Marked} of the {status.Asked} episodes asked about.";
+        if (status.Waiting > 0)
+        {
+            string left = status.Remaining < TimeSpan.FromMinutes(1) ? "under a minute" : $"about {Math.Ceiling(status.Remaining.TotalMinutes)} minutes";
+            return $"Asking Jellyfin about {status.Waiting} more episodes ({left} left). {known}";
+        }
+
+        if (status.Asked >= 20 && status.Marked == 0)
+        {
+            return known + " None yet: Jellyfin only knows once a segment provider (such as the Intro Skipper plugin, with credits detection on) has gone through the episodes.";
+        }
+
+        return known;
+    }
+
+    private static string HomeName(LayoutHome home) => home == LayoutHome.Everywhere ? "on every channel" : "here";
+
+    private string PreviewButton => _show is { } show ? $"Render a preview of {show}" : "Render a preview video";
+
+    private static TEnum Parse<TEnum>(ChangeEventArgs e, TEnum fallback) where TEnum : struct, Enum =>
+        Enum.TryParse(e.Value?.ToString(), out TEnum value) ? value : fallback;
+
+    private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static void SetStyle(SqueezeLayoutChoice layout, SqueezeStyle style)
+    {
+        layout.Style = style;
+
+        // Framed boxes sit side by side; top and bottom are only for side by side.
+        if (style == SqueezeStyle.Framed && layout.Side is CreditsSide.Top or CreditsSide.Bottom)
+        {
+            layout.Side = layout.Side == CreditsSide.Top ? CreditsSide.Left : CreditsSide.Right;
+        }
+    }
+
+    private static string StyleHint(SqueezeLayoutChoice choice) => choice.Style == SqueezeStyle.Framed
+        ? "Framed: the credits and the panel's picture sit in two boxes on the background, with the channel's name over the credits."
+        : choice.Side is CreditsSide.Top or CreditsSide.Bottom
+            ? "Side by side: the credits shrink into a band along the edge, the panel fills the rest, and they grow back to the whole picture as they end."
+            : "Side by side: the credits shrink to one side, the panel fills the rest, and they grow back to the whole picture as they end.";
+
+    private void SelectShow(ChangeEventArgs e)
+    {
+        _show = e.Value?.ToString() is { Length: > 0 } show ? show : null;
+        _previewNote = null;
+        _previewProblem = null;
+    }
+
+    /// <summary>The shows to pick from: what the channel airs, and any already given a layout.</summary>
+    private List<string> ShowsFor(CreditSqueezeSection section)
+    {
+        HashSet<string> shows = new(StringComparer.OrdinalIgnoreCase);
+        if (Schedule() is { } schedule)
+        {
+            shows.UnionWith(SqueezePlanner.ShowsOn(schedule.Entries));
+        }
+
+        shows.UnionWith(section.Shows.Keys);
+        if (_everywhere is not null)
+        {
+            shows.UnionWith(_everywhere.Shows.Keys);
+        }
+
+        return [.. shows.Order(StringComparer.CurrentCultureIgnoreCase)];
+    }
+
+    private string ShowMark(CreditSqueezeSection section, string show) =>
+        section.ShowLayout(show) is not null ? "  (own layout here)" : _everywhere?.ShowLayout(show) is not null ? "  (own layout, every channel)" : "";
+
+    /// <summary>The layout being edited (or, for a show without its own, the one it uses), and where it lives.</summary>
+    private (SqueezeLayoutChoice Choice, LayoutHome Home) Current(CreditSqueezeSection section)
+    {
+        if (_show is null)
+        {
+            return (new SqueezeLayoutChoice { Style = section.Style, Side = section.Side, SplitPercent = section.SplitPercent }, LayoutHome.Section);
+        }
+
+        if (section.ShowLayout(_show) is { } here)
+        {
+            return (here, LayoutHome.Here);
+        }
+
+        if (_everywhere?.ShowLayout(_show) is { } everywhere)
+        {
+            return (everywhere, LayoutHome.Everywhere);
+        }
+
+        return (section.LayoutFor(null), LayoutHome.Inherited);
+    }
+
+    private void ChangeLayout(CreditSqueezeSection section, Action<SqueezeLayoutChoice> change)
+    {
+        (SqueezeLayoutChoice choice, LayoutHome home) = Current(section);
+        change(choice);
+        choice.SplitPercent = Math.Clamp(choice.SplitPercent, SqueezeLayout.MinSplit, SqueezeLayout.MaxSplit);
+        switch (home)
+        {
+            case LayoutHome.Section:
+                section.Style = choice.Style;
+                section.Side = choice.Side;
+                section.SplitPercent = choice.SplitPercent;
+                Commit();
+                break;
+            case LayoutHome.Here:
+                Commit();
+                break;
+            case LayoutHome.Everywhere:
+                CommitEverywhere();
+                break;
+        }
+    }
+
+    /// <summary>Gives the picked show a layout of its own, starting from the one it uses now.</summary>
+    private void GiveOwnLayout(CreditSqueezeSection section, bool everywhere)
+    {
+        if (_show is not { } show)
+        {
+            return;
+        }
+
+        SqueezeLayoutChoice start = section.LayoutFor(show, _everywhere).Copy();
+        if (everywhere)
+        {
+            _everywhere ??= new CreditSqueezeSection { Enabled = false };
+            RemoveShow(_everywhere.Shows, show);
+            _everywhere.Shows[show] = start;
+            CommitEverywhere();
+        }
+        else
+        {
+            RemoveShow(section.Shows, show);
+            section.Shows[show] = start;
+            Commit();
+        }
+    }
+
+    /// <summary>Moves the picked show's layout between this channel and every channel.</summary>
+    private void MoveLayout(CreditSqueezeSection section, bool everywhere)
+    {
+        if (_show is not { } show || Current(section) is not { Home: LayoutHome.Here or LayoutHome.Everywhere } current)
+        {
+            return;
+        }
+
+        SqueezeLayoutChoice layout = current.Choice.Copy();
+        RemoveShow(section.Shows, show);
+        if (_everywhere is not null)
+        {
+            RemoveShow(_everywhere.Shows, show);
+        }
+
+        if (everywhere)
+        {
+            _everywhere ??= new CreditSqueezeSection { Enabled = false };
+            _everywhere.Shows[show] = layout;
+        }
+        else
+        {
+            section.Shows[show] = layout;
+        }
+
+        Commit();
+        CommitEverywhere();
+    }
+
+    private void RemoveLayout(CreditSqueezeSection section)
+    {
+        if (_show is not { } show)
+        {
+            return;
+        }
+
+        // The nearest one goes: this channel's, else every channel's.
+        if (section.ShowLayout(show) is not null)
+        {
+            RemoveShow(section.Shows, show);
+            Commit();
+        }
+        else if (_everywhere is not null)
+        {
+            RemoveShow(_everywhere.Shows, show);
+            CommitEverywhere();
+        }
+    }
+
+    private static void RemoveShow(Dictionary<string, SqueezeLayoutChoice> shows, string show)
+    {
+        foreach (string key in shows.Keys.Where(name => string.Equals(name, show, StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            shows.Remove(key);
+        }
+    }
+
+    /// <summary>
+    /// Writes the layouts for every channel into the schedule's settings. That section is off (so it never turns a channel
+    /// on by itself) and only its shows' layouts are used.
+    /// </summary>
+    private void CommitEverywhere()
+    {
+        Dictionary<string, object?> sections = Context.Config.Settings.Plugins ?? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        string key = sections.Keys.FirstOrDefault(existing => string.Equals(existing, CreditSqueezeSection.PluginId, StringComparison.OrdinalIgnoreCase))
+                     ?? CreditSqueezeSection.PluginId;
+        if (_everywhere is null || _everywhere.Shows.Count == 0)
+        {
+            sections.Remove(key);
+        }
+        else
+        {
+            _everywhere.Enabled = false;
+            sections[key] = _everywhere;
+        }
+
+        Context.Config.Settings.Plugins = sections.Count > 0 ? sections : null;
+        Context.NotifyChanged();
+    }
+
+    private static string PromoName(SqueezePromo kind) => kind switch
+    {
+        SqueezePromo.UpNext => "Up Next",
+        SqueezePromo.ComingUp => "Coming Up",
+        SqueezePromo.Eventually => "Eventually",
+        _ => "Now Playing"
+    };
+
+    private static void TogglePromo(CreditSqueezeSection section, SqueezePromo kind, bool on)
+    {
+        section.Promos.Remove(kind);
+        if (on)
+        {
+            section.Promos.Add(kind);
+        }
+    }
+
+    /// <summary>A stand-in squeeze with this section's look, for the layout preview.</summary>
+    private SqueezeJob Sample(CreditSqueezeSection section, SqueezeLayoutChoice layout) => new(
+        string.Empty, TimeSpan.Zero, PreviewLength,
+        new SqueezeListing("The Next Show", "An Episode Title", "8:30 PM", null),
+        section.ShowLater
+            ? new[] { new SqueezeListing("Another Show", null, "9 PM", null), new SqueezeListing("The Late Movie", null, "9:30 PM", null) }
+            : Array.Empty<SqueezeListing>(),
+        Channel.Name, section.Heading, section.AccentColor, section.BackgroundColor, section.CreditsVolume, section.Animate,
+        layout.Side, layout.SplitPercent, Style: layout.Style, BackgroundPath: Blank(section.BackgroundPath));
+
+    /// <summary>The layout preview as an image address, drawn again only when the look changes.</summary>
+    private string FramePreview(CreditSqueezeSection section, SqueezeLayoutChoice layout)
+    {
+        SqueezeJob sample = Sample(section, layout);
+        string key = SqueezeRenderer.Key(sample);
+        if (key != _frameKey)
+        {
+            _frameKey = key;
+            _frameData = "data:image/png;base64," + Convert.ToBase64String(SqueezeRenderer.SampleFrame(sample));
+        }
+
+        return _frameData!;
+    }
+
+    /// <summary>
+    /// A real squeeze from the channel's current schedule, whatever the odds, made with these settings and cut to 20
+    /// seconds: of the picked show (its outro, else its marked credits, else the last seconds of an episode), or else the
+    /// first credits or outro there is.
+    /// </summary>
+    private async Task RenderPreviewAsync(CreditSqueezeSection section)
+    {
+        _previewProblem = null;
+        _previewNote = null;
+        if (Schedule() is not { } schedule)
+        {
+            _previewProblem = "The channel hasn't been built yet; save it first.";
+            return;
+        }
+
+        CreditSqueezeSection trial = section.Copy();
+        trial.Enabled = true;
+        trial.CreditsChance = 1;
+        trial.OutroChance = 1;
+        trial.Outros.Clear();
+        TimeZoneInfo zone = SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(Channel.TimeZone) ? Context.Config.Settings.TimeZone : Channel.TimeZone);
+        SqueezePlan? plan;
+        if (_show is { } show)
+        {
+            if (SqueezePlanner.PreviewFor(schedule.Entries, show, trial, _everywhere, Channel.Id, Channel.Name, zone, Credits.CreditsOf, PreviewLength) is not { } found)
+            {
+                _previewProblem = $"The channel's schedule doesn't air {show} with something after it right now.";
+                return;
+            }
+
+            plan = found.Plan;
+            _previewNote = found.Source switch
+            {
+                SqueezePlanner.PreviewSource.Outro => $"From {show}'s own outro.",
+                SqueezePlanner.PreviewSource.Credits => $"From an episode's marked credits.",
+                _ => Credits.Status().Waiting > 0
+                    ? "From the last 20 seconds of an episode: Jellyfin is still being asked where its credits start."
+                    : "From the last 20 seconds of an episode: where its credits start isn't known, so it won't be squeezed on air."
+            };
+        }
+        else
+        {
+            plan = SqueezePlanner.Plan(schedule.Entries, Channel.Id, Channel.Name, zone, _ => trial, Credits.CreditsOf, _everywhere).FirstOrDefault();
+            if (plan is null)
+            {
+                _previewProblem = Credits.Status() is { Waiting: > 0 } asking
+                    ? $"Nothing to preview yet: Jellyfin is still being asked about {asking.Waiting} episodes. Or pick a show above to preview it against the end of an episode."
+                    : "Nothing to preview: no programme on the schedule has marked credits or an outro of its own. Pick a show above to preview it against the end of an episode.";
+                return;
+            }
+        }
+
+        _previewing = true;
+        StateHasChanged();
+        try
+        {
+            SqueezeJob job = plan.Job with { Length = plan.Job.Length < PreviewLength ? plan.Job.Length : PreviewLength };
+            string name = await Renderer.PreviewAsync(job, Channel.Id, CancellationToken.None);
+            _previewUrl = $"api/credit-squeeze/preview/{Uri.EscapeDataString(name)}";
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            _previewProblem = $"Couldn't make the preview: {ex.Message}";
+        }
+        finally
+        {
+            _previewing = false;
+        }
+    }
+
+    private static string ModeOf(CreditSqueezeSection? section, bool isBlock) => section switch
+    {
+        null => isBlock ? InheritMode : OwnMode,
+        { Enabled: false } when isBlock => OffMode,
+        _ => OwnMode
+    };
+
+    private static string ModeName(string mode) => mode switch
+    {
+        InheritMode => "Same as this channel",
+        OffMode => "No squeezes",
+        _ => "Its own settings"
+    };
+
+    private void SelectScope(ChangeEventArgs e)
+    {
+        _blockIndex = int.TryParse(e.Value?.ToString(), out int index) ? index : -1;
+        Load();
+    }
+
+    private void SetMode(ChangeEventArgs e)
+    {
+        _section = (e.Value?.ToString() ?? OwnMode) switch
+        {
+            InheritMode => null,
+            OffMode => new CreditSqueezeSection { Enabled = false },
+            // A block starts from the channel's settings.
+            _ => Enable((Read(Channel.Plugins) ?? new CreditSqueezeSection()).Copy())
+        };
+        Commit();
+    }
+
+    private static CreditSqueezeSection Enable(CreditSqueezeSection section)
+    {
+        section.Enabled = true;
+        return section;
+    }
+
+    /// <summary>
+    /// The shows on this channel with an outro of their own (under Titles, or set on a collection the channel plays), plus
+    /// any already given odds here.
+    /// </summary>
+    private List<string> OutroShows(ChannelConfig channel, CreditSqueezeSection section)
+    {
+        HashSet<string> shows = new(StringComparer.OrdinalIgnoreCase);
+        foreach ((string title, TitleDefaults defaults) in Context.Config.Titles)
+        {
+            if (defaults.Bumpers.Any(bumper => bumper.Position == BumperPosition.Outro))
+            {
+                shows.Add(title);
+            }
+        }
+
+        IEnumerable<ContentSelector> selectors = channel.Blocks.SelectMany(block => block.Shows)
+            .Concat(channel.BaseRotation is { } rotation ? new[] { rotation } : Array.Empty<ContentSelector>());
+        foreach (ContentInclude include in selectors.SelectMany(selector => selector.Include))
+        {
+            if (include.Show is { Length: > 0 } show && (!string.IsNullOrWhiteSpace(include.Outro) || include.Bumpers.Any(bumper => bumper.Position == BumperPosition.Outro)))
+            {
+                shows.Add(show);
+            }
+        }
+
+        shows.UnionWith(section.Outros.Keys);
+        return [.. shows.Order(StringComparer.CurrentCultureIgnoreCase)];
+    }
+
+    private static void SetOutro(CreditSqueezeSection section, string show, double chance)
+    {
+        ClearOutro(section, show);
+        section.Outros[show] = Math.Clamp(chance, 0, 1);
+    }
+
+    private static void ClearOutro(CreditSqueezeSection section, string show)
+    {
+        foreach (string key in section.Outros.Keys.Where(name => string.Equals(name, show, StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            section.Outros.Remove(key);
+        }
+    }
+
+    private void Set(Action change)
+    {
+        change();
+        Commit();
+    }
+
+    /// <summary>Writes the section back into the channel or block, so the schedule editor offers to save it.</summary>
+    private void Commit()
+    {
+        if (Block is { } block)
+        {
+            Dictionary<string, object?> sections = block.Plugins ?? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            string key = sections.Keys.FirstOrDefault(existing => string.Equals(existing, CreditSqueezeSection.PluginId, StringComparison.OrdinalIgnoreCase))
+                         ?? CreditSqueezeSection.PluginId;
+            if (_section is null)
+            {
+                sections.Remove(key);
+            }
+            else
+            {
+                sections[key] = _section;
+            }
+
+            block.Plugins = sections.Count > 0 ? sections : null;
+            Context.NotifyChanged();
+        }
+        else
+        {
+            Context.Write(_section);
+        }
+    }
+
+    private static string Percent(double value) => $"{Math.Round(value * 100)}%";
+
+    private static double Number(ChangeEventArgs e, double fallback) =>
+        double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ? value : fallback;
+
+    private static string Text(ChangeEventArgs e, string fallback) => e.Value?.ToString()?.Trim() is { Length: > 0 } text ? text : fallback;
+}

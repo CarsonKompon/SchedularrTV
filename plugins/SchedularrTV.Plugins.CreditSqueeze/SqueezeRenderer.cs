@@ -1,0 +1,747 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.Hosting;
+using SchedularrTV.Providers.Jellyfin;
+using SkiaSharp;
+
+namespace SchedularrTV.CreditSqueeze;
+
+/// <summary>What the squeeze renderer is up to, for the editor.</summary>
+public sealed record SqueezeQueueStatus(int Waiting, string? Rendering, int Made, string? Problem);
+
+/// <summary>
+/// Makes the squeezes: a picture of the frame (the next programme's art, title and time, the ones after it) drawn once,
+/// the credits played into its box with ffmpeg, the credits' own sound kept. Made shortly before they air (soonest
+/// first), kept by content, so the same squeeze is made once; ones no schedule has used for a few days are deleted.
+/// </summary>
+public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProvider services, TimeProvider clock, ILogger<SqueezeRenderer> logger)
+    : BackgroundService
+{
+    private static readonly TimeSpan Settle = TimeSpan.FromSeconds(0.9);
+    private static readonly TimeSpan RetryAfter = TimeSpan.FromMinutes(30);
+
+    private readonly PriorityQueue<SqueezeJob, DateTimeOffset> _queue = new();
+    private readonly HashSet<string> _queued = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _failed = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _used = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _wake = new(0, int.MaxValue);
+    private readonly Lock _gate = new();
+    private string? _rendering;
+    private int _made;
+    private string? _problem;
+    private DateTimeOffset _cleanedAt = DateTimeOffset.MinValue;
+
+    /// <summary>Raised when a squeeze has been made, so schedules are published again with it.</summary>
+    public event Action? Made;
+
+    public SqueezeQueueStatus Status
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return new SqueezeQueueStatus(_queue.Count, _rendering, _made, _problem);
+            }
+        }
+    }
+
+    private static readonly JsonSerializerOptions HashJson = new(JsonSerializerDefaults.Web);
+
+    /// <summary>A squeeze's name, from everything that shows in it.</summary>
+    public static string Key(SqueezeJob job)
+    {
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(job, HashJson)));
+        return Convert.ToHexString(hash, 0, 12).ToLowerInvariant();
+    }
+
+    private string PathOf(SqueezeJob job) => Path.Combine(settings.SaveFolder, Key(job) + ".mp4");
+
+    /// <summary>The squeeze's file when it's been made; null while it hasn't.</summary>
+    public string? Ready(SqueezeJob job)
+    {
+        string path = PathOf(job);
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        _used[path] = clock.GetUtcNow();
+        return path;
+    }
+
+    // A squeeze waiting for its generated promo is made without it once it's this close to airing.
+    private static readonly TimeSpan StopWaitingForPromo = TimeSpan.FromMinutes(20);
+
+    /// <summary>
+    /// Asks for a squeeze airing at <paramref name="airsAt"/>; it's made once that's within the lead time (and, when
+    /// <paramref name="waitForPromo"/>, only once it's nearly on, in case its promo is made meanwhile).
+    /// </summary>
+    public void Want(SqueezeJob job, DateTimeOffset airsAt, bool waitForPromo = false)
+    {
+        DateTimeOffset now = clock.GetUtcNow();
+        string key = Key(job);
+        if (airsAt < now || airsAt - now > (waitForPromo ? StopWaitingForPromo : settings.LeadTime)
+            || (_failed.TryGetValue(key, out DateTimeOffset failed) && now - failed < RetryAfter))
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (!_queued.Add(key))
+            {
+                return;
+            }
+
+            _queue.Enqueue(job, airsAt);
+        }
+
+        _wake.Release();
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await _wake.WaitAsync(TimeSpan.FromMinutes(30), stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            Cleanup();
+            while (Next() is { } job)
+            {
+                string key = Key(job);
+                try
+                {
+                    await RenderAsync(job, PathOf(job), stoppingToken).ConfigureAwait(false);
+                    lock (_gate)
+                    {
+                        _made++;
+                        _problem = null;
+                    }
+
+                    Made?.Invoke();
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+                {
+                    _failed[key] = clock.GetUtcNow();
+                    lock (_gate)
+                    {
+                        _problem = ex.Message;
+                    }
+
+                    logger.LogWarning("Credit squeeze: couldn't make the squeeze of {Source}: {Message}", Path.GetFileName(job.SourcePath), ex.Message);
+                }
+                finally
+                {
+                    lock (_gate)
+                    {
+                        _queued.Remove(key);
+                        _rendering = null;
+                    }
+                }
+            }
+        }
+    }
+
+    private SqueezeJob? Next()
+    {
+        lock (_gate)
+        {
+            if (!_queue.TryDequeue(out SqueezeJob? job, out _))
+            {
+                return null;
+            }
+
+            _rendering = $"{job.Next.Title} (after {Path.GetFileNameWithoutExtension(job.SourcePath)})";
+            return job;
+        }
+    }
+
+    private string PreviewFolder => Path.Combine(settings.SaveFolder, "_previews");
+
+    /// <summary>Makes a preview of a squeeze for the editor, replacing the channel's last one; returns its file name.</summary>
+    public async Task<string> PreviewAsync(SqueezeJob job, string channelId, CancellationToken cancellationToken)
+    {
+        string name = $"{new string([.. channelId.Where(char.IsAsciiLetterOrDigit)])}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.mp4";
+        Directory.CreateDirectory(PreviewFolder);
+        foreach (string old in Directory.EnumerateFiles(PreviewFolder, $"{new string([.. channelId.Where(char.IsAsciiLetterOrDigit)])}-*.mp4"))
+        {
+            TryDelete(old);
+        }
+
+        await RenderAsync(job, Path.Combine(PreviewFolder, name), cancellationToken).ConfigureAwait(false);
+        return name;
+    }
+
+    /// <summary>A preview by its file name; null for anything else.</summary>
+    public string? PreviewFile(string name) =>
+        name.Length > 0 && name.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '.') && !name.Contains("..", StringComparison.Ordinal)
+        && Path.Combine(PreviewFolder, name) is var path && File.Exists(path)
+            ? path
+            : null;
+
+    /// <summary>The frame alone (no video), at preview size, for the editor to show as settings change.</summary>
+    public static byte[] SampleFrame(SqueezeJob job) => DrawFrame(job, 640, 360, art: null);
+
+    /// <summary>Makes a squeeze into <paramref name="output"/>: animated in, or (if this ffmpeg can't) starting in its box.</summary>
+    public async Task RenderAsync(SqueezeJob job, string output, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+        (int width, int height) = settings.Size;
+        byte[]? art = await ArtAsync(job.Next.ImageId, cancellationToken).ConfigureAwait(false);
+        string panel = output + ".frame.png";
+        string temp = output + ".making.mp4";
+        if (IsVideo(job.BackgroundPath) && !File.Exists(job.BackgroundPath))
+        {
+            throw new InvalidOperationException($"The background video isn't there: {job.BackgroundPath}");
+        }
+
+        await File.WriteAllBytesAsync(panel, DrawFrame(job, width, height, art), cancellationToken).ConfigureAwait(false);
+        bool creditsAudio = await HasAudioAsync(job.SourcePath, cancellationToken).ConfigureAwait(false);
+        bool promoAudio = job.PromoPath is { } promo && await HasAudioAsync(promo, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            string? failure = null;
+            foreach (bool animate in job.Animate ? new[] { true, false } : new[] { false })
+            {
+                (int code, string errors, _) = await RunAsync(settings.Ffmpeg, Arguments(job, panel, temp, width, height, animate, creditsAudio, promoAudio),
+                    cancellationToken).ConfigureAwait(false);
+                if (code == 0 && File.Exists(temp))
+                {
+                    File.Move(temp, output, overwrite: true);
+                    return;
+                }
+
+                failure = errors.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault(line => line.Length > 0) ?? $"exit code {code}";
+            }
+
+            throw new InvalidOperationException($"ffmpeg couldn't make it: {failure}");
+        }
+        finally
+        {
+            TryDelete(panel);
+            TryDelete(temp);
+        }
+    }
+
+    /// <summary>When the promo starts: once the credits have shrunk into place.</summary>
+    public static readonly TimeSpan PromoStart = TimeSpan.FromSeconds(1.2);
+
+    // The credits' sound while a promo with its own plays.
+    private const double UnderPromo = 0.15;
+
+    /// <summary>
+    /// The ffmpeg command: the frame looped as the background, the credits scaled into their box (shrinking from the
+    /// whole picture over the first second when <paramref name="animate"/>), the promo (if any) in the panel's picture
+    /// once they're in place, and the sound: the credits' at the chosen volume, dipped under the promo's while it plays.
+    /// </summary>
+    /// <param name="creditsAudio">The credits have sound.</param>
+    /// <param name="promoAudio">The promo has sound.</param>
+    public static IReadOnlyList<string> Arguments(SqueezeJob job, string framePath, string output, int width, int height, bool animate,
+        bool creditsAudio = true, bool promoAudio = true)
+    {
+        string N(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+        SqueezeLayout layout = job.Layout(width, height);
+        int boxX = layout.Credits.X, boxY = layout.Credits.Y, boxW = layout.Credits.Width, boxH = layout.Credits.Height;
+        string length = N(job.Length.TotalSeconds);
+        bool promo = job.PromoPath is not null && job.PromoLength > TimeSpan.Zero && job.Length > PromoStart + TimeSpan.FromSeconds(2);
+        promoAudio &= promo;
+        bool backgroundVideo = IsVideo(job.BackgroundPath);
+        int promoInput = 2;
+        int backgroundInput = promo ? 3 : 2;
+
+        // The background: the frame itself, or (with a background video) the frame laid over the video, which loops.
+        string video = backgroundVideo
+            ? $"[{backgroundInput}:v]setpts=PTS-STARTPTS,scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1,fps=30,format=yuv420p[bgv];"
+              + "[bgv][0:v]overlay=0:0:format=auto,format=yuv420p[bg]"
+            : "[0:v]format=yuv420p[bg]";
+
+        // The promo, fitted into the picture slot from the moment the credits are in place; the frame shows through after it ends.
+        Rect slot = layout.Picture;
+        string start = N(PromoStart.TotalSeconds);
+        video += promo
+            ? $";[{promoInput}:v]setpts=PTS-STARTPTS+{start}/TB,scale={slot.Width}:{slot.Height}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1[promo];"
+              + $"[bg][promo]overlay=x='{slot.X}+({slot.Width}-w)/2':y='{slot.Y}+({slot.Height}-h)/2':eof_action=pass:shortest=0[panelled]"
+            : ";[bg]null[panelled]";
+
+        // The credits on top: they shrink in from the whole picture and (side by side) grow back out over the last moment.
+        if (animate)
+        {
+            string d = N(Settle.TotalSeconds);
+            string l = N(job.Length.TotalSeconds);
+
+            // Quoted, so the commas in it don't split the filter graph.
+            string into = $"if(gte(t,{d}),1,(t/{d})*(t/{d})*(3-2*(t/{d})))";
+            string outOf = $"if(gte({l}-t,{d}),1,(({l}-t)/{d})*(({l}-t)/{d})*(3-2*(({l}-t)/{d})))";
+            string e = layout.Style == SqueezeStyle.SideBySide ? $"min({into},{outOf})" : into;
+            video += $";[1:v]setpts=PTS-STARTPTS,scale=w='trunc(({width}+({boxW}-{width})*{e})/2)*2':h='trunc(({height}+({boxH}-{height})*{e})/2)*2'"
+                     + ":force_original_aspect_ratio=decrease:force_divisible_by=2:eval=frame,setsar=1[box];"
+                     + $"[panelled][box]overlay=x='({width}/2+({boxX}+{boxW}/2-{width}/2)*{e})-w/2':y='({height}/2+({boxY}+{boxH}/2-{height}/2)*{e})-h/2'"
+                     + ":eval=frame:eof_action=pass:shortest=0,format=yuv420p[v]";
+        }
+        else
+        {
+            video += $";[1:v]setpts=PTS-STARTPTS,scale={boxW}:{boxH}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1[box];"
+                     + $"[panelled][box]overlay=x='{boxX}+({boxW}-w)/2':y='{boxY}+({boxH}-h)/2':eof_action=pass:shortest=0,format=yuv420p[v]";
+        }
+
+        List<string> arguments =
+        [
+            "-y", "-hide_banner", "-loglevel", "error", "-nostdin",
+            "-loop", "1", "-framerate", "30", "-t", length, "-i", framePath,
+            "-ss", N(job.SourceStart.TotalSeconds), "-t", length, "-i", job.SourcePath
+        ];
+        if (promo)
+        {
+            arguments.AddRange(["-i", job.PromoPath!]);
+        }
+
+        if (backgroundVideo)
+        {
+            arguments.AddRange(["-stream_loop", "-1", "-t", length, "-i", job.BackgroundPath!]);
+        }
+
+        // The sound: the credits' (dipped while a promo talks over them), the promo's from when it starts, or both mixed.
+        string volume = N(job.CreditsVolume);
+        string promoEnd = N((PromoStart + job.PromoLength).TotalSeconds);
+        string? audio = (creditsAudio, promoAudio) switch
+        {
+            (true, true) => $"[1:a]asetpts=PTS-STARTPTS,volume='if(between(t,{start},{promoEnd}),{N(job.CreditsVolume * UnderPromo)},{volume})':eval=frame[ca];"
+                            + $"[2:a]asetpts=PTS-STARTPTS,adelay={(int)PromoStart.TotalMilliseconds}:all=1[pa];"
+                            + "[ca][pa]amix=inputs=2:duration=first:normalize=0,aresample=48000[a]",
+            (false, true) => $"[2:a]asetpts=PTS-STARTPTS,adelay={(int)PromoStart.TotalMilliseconds}:all=1,apad,aresample=48000[a]",
+            (true, false) => $"[1:a]asetpts=PTS-STARTPTS,volume={volume},aresample=48000[a]",
+            _ => null
+        };
+
+        arguments.AddRange(["-filter_complex", audio is null ? video : $"{video};{audio}", "-map", "[v]"]);
+        if (audio is not null)
+        {
+            arguments.AddRange(["-map", "[a]", "-c:a", "aac", "-b:a", "160k", "-ac", "2"]);
+        }
+
+        arguments.AddRange(
+        [
+            "-t", length, "-r", "30",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+            "-movflags", "+faststart", output
+        ]);
+        return arguments;
+    }
+
+    private static readonly string[] PictureTypes = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"];
+
+    /// <summary>A background that's a video (anything set that isn't a picture), played under the frame.</summary>
+    public static bool IsVideo(string? path) =>
+        !string.IsNullOrWhiteSpace(path) && !PictureTypes.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+
+    private static bool IsPicture(string? path) =>
+        !string.IsNullOrWhiteSpace(path) && PictureTypes.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+
+    private static readonly ConcurrentDictionary<string, bool> HasSound = new(StringComparer.Ordinal);
+
+    /// <summary>Whether a file has a sound track (asked of ffprobe, beside ffmpeg; assumed so when it can't say).</summary>
+    private async Task<bool> HasAudioAsync(string path, CancellationToken cancellationToken)
+    {
+        if (HasSound.TryGetValue(path, out bool known))
+        {
+            return known;
+        }
+
+        string ffmpeg = settings.Ffmpeg;
+        string ffprobe = Path.IsPathRooted(ffmpeg)
+            ? Path.Combine(Path.GetDirectoryName(ffmpeg)!, OperatingSystem.IsWindows() ? "ffprobe.exe" : "ffprobe")
+            : "ffprobe";
+        try
+        {
+            (int code, _, string output) = await RunAsync(ffprobe,
+                ["-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", path], cancellationToken).ConfigureAwait(false);
+            bool has = code != 0 || output.Trim().Length > 0;
+            if (code == 0)
+            {
+                HasSound[path] = has;
+            }
+
+            return has;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>The next programme's picture from Jellyfin: a landscape still, else its backdrop, else its poster.</summary>
+    private async Task<byte[]?> ArtAsync(string? itemId, CancellationToken cancellationToken)
+    {
+        if (itemId is null || services.GetService<JellyfinClient>() is not { } jellyfin)
+        {
+            return null;
+        }
+
+        foreach (string type in new[] { "Thumb", "Backdrop", "Primary" })
+        {
+            try
+            {
+                if (await jellyfin.GetImageAsync(itemId, type, 800, cancellationToken).ConfigureAwait(false) is { Content.Length: > 0 } image)
+                {
+                    return image.Content;
+                }
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
+            {
+                logger.LogDebug(ex, "Credit squeeze: no {Type} picture for {Item}.", type, itemId);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The frame around the credits: background, the box's border, and the side panel's up-next card.</summary>
+    public static byte[] DrawFrame(SqueezeJob job, int width, int height, byte[]? art)
+    {
+        float scale = width / 1280f;
+        var info = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul);
+        using SKSurface surface = SKSurface.Create(info);
+        SKCanvas canvas = surface.Canvas;
+        canvas.Scale(scale);
+
+        SKColor background = Colour(job.BackgroundColor, new SKColor(0x0b, 0x0d, 0x14));
+        SKColor accent = Colour(job.AccentColor, new SKColor(0xff, 0x5c, 0x8a));
+        SKColor soft = SKColors.White.WithAlpha(180);
+
+        // The background: a picture, else the colour's gradient; with a background video it's left clear for the video.
+        if (IsVideo(job.BackgroundPath))
+        {
+            canvas.Clear(SKColors.Transparent);
+        }
+        else
+        {
+            using (var shader = SKShader.CreateLinearGradient(new SKPoint(0, 0), new SKPoint(1280, 720),
+                       [background, Mix(background, accent, 0.18f), background], null, SKShaderTileMode.Clamp))
+            using (var paint = new SKPaint { Shader = shader })
+            {
+                canvas.DrawRect(0, 0, 1280, 720, paint);
+            }
+
+            if (IsPicture(job.BackgroundPath) && File.Exists(job.BackgroundPath))
+            {
+                try
+                {
+                    using SKImage? backdrop = SKImage.FromEncodedData(job.BackgroundPath);
+                    if (backdrop is not null)
+                    {
+                        Cover(canvas, backdrop, SKRect.Create(0, 0, 1280, 720));
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+
+        // Drawn at 1280×720 and scaled, so the layout is worked out at that size.
+        SqueezeLayout layout = job.Layout();
+        SKRect Sk(Rect rect) => SKRect.Create(rect.X, rect.Y, rect.Width, rect.Height);
+        SKRect box = Sk(layout.Credits);
+        SKRect words = Sk(layout.Text);
+        bool framed = layout.Style == SqueezeStyle.Framed;
+
+        if (framed)
+        {
+            // The credits' box: black (the credits are fitted inside it) with an accent edge and a glow.
+            using (var glow = new SKPaint { Color = accent.WithAlpha(90), IsAntialias = true, ImageFilter = SKImageFilter.CreateBlur(18, 18) })
+            {
+                canvas.DrawRoundRect(Inflate(box, 6), 16, 16, glow);
+            }
+
+            using (var black = new SKPaint { Color = SKColors.Black, IsAntialias = true })
+            {
+                canvas.DrawRoundRect(Inflate(box, 4), 12, 12, black);
+            }
+
+            using (var edge = new SKPaint { Color = accent, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 3 })
+            {
+                canvas.DrawRoundRect(Inflate(box, 4), 12, 12, edge);
+            }
+
+            Text(canvas, job.ChannelName.ToUpperInvariant(), box.Left, box.Top - 24, 18, soft, bold: true, width: box.Width);
+        }
+        else
+        {
+            // Side by side: the credits' whole strip is black (they're 16:9 in it), with a thin accent line where it meets the panel.
+            SKRect strip = layout.TextBeside ? SKRect.Create(0, box.Top, 1280, box.Height) : SKRect.Create(box.Left, 0, box.Width, 720);
+            using (var black = new SKPaint { Color = SKColors.Black })
+            {
+                canvas.DrawRect(strip, black);
+            }
+
+            using var line = new SKPaint { Color = accent, StrokeWidth = 3, IsAntialias = true };
+            SKRect panelRect = Sk(layout.Panel);
+            if (layout.TextBeside)
+            {
+                float edgeY = strip.Top <= 0 ? strip.Bottom : strip.Top;
+                canvas.DrawLine(0, edgeY, 1280, edgeY, line);
+            }
+            else
+            {
+                float edgeX = panelRect.Left >= strip.Right ? strip.Right : strip.Left;
+                canvas.DrawLine(edgeX, 0, edgeX, 720, line);
+            }
+        }
+
+        // The heading: above the picture, or (a short panel) at the top of the words beside it.
+        SKRect picture = Sk(layout.Picture);
+        float x = layout.TextBeside ? words.Left : picture.Left;
+        float y;
+        if (layout.TextBeside)
+        {
+            Text(canvas, job.Heading.ToUpperInvariant(), x, words.Top + 20, 20, accent, bold: true, width: words.Width);
+            y = words.Top + 28;
+        }
+        else
+        {
+            Text(canvas, job.Heading.ToUpperInvariant(), x, picture.Top - 16, 22, accent, bold: true, width: picture.Width);
+            y = picture.Bottom + 12;
+        }
+
+        // The picture slot, where a promo plays (over the next programme's picture, which shows before and after it).
+        using (SKImage? image = art is null ? null : SKImage.FromEncodedData(art))
+        {
+            canvas.Save();
+            canvas.ClipRoundRect(new SKRoundRect(picture, 12, 12), antialias: true);
+            if (image is not null)
+            {
+                Cover(canvas, image, picture);
+            }
+            else
+            {
+                using var stand = new SKPaint { Color = Mix(background, accent, 0.35f) };
+                canvas.DrawRect(picture, stand);
+            }
+
+            canvas.Restore();
+        }
+
+        // Smaller text for a narrow panel.
+        float size = Math.Clamp(words.Width / 12f, 18, 32);
+        y = Wrapped(canvas, job.Next.Title, x, y, size, SKColors.White, words.Width, maxLines: 2);
+        if (job.Next.Episode is { Length: > 0 } episode)
+        {
+            y = Wrapped(canvas, episode, x, y + 4, Math.Min(20, size), soft, words.Width, maxLines: 1, bold: false);
+        }
+
+        float whenSize = Math.Min(24, size);
+        Text(canvas, $"at {job.Next.When}", x, y + whenSize + 6, whenSize, accent, bold: true, width: words.Width);
+        y += whenSize + 6;
+
+        if (job.Later.Count > 0)
+        {
+            if (framed)
+            {
+                // Along the bottom, under both boxes.
+                float laterY = Math.Max(box.Bottom, y) + 50;
+                if (laterY < 700)
+                {
+                    Text(canvas, "LATER", 48, laterY, 16, accent, bold: true, width: 120);
+                    float laterX = 130;
+                    foreach (SqueezeListing later in job.Later)
+                    {
+                        Text(canvas, $"{later.When}  {later.Title}", laterX, laterY, 18, soft, bold: false, width: 520);
+                        laterX += 560;
+                    }
+                }
+            }
+            else
+            {
+                // In the words' column, as long as there's room left in it.
+                float laterY = y + 40;
+                foreach (SqueezeListing later in job.Later)
+                {
+                    if (laterY > words.Bottom)
+                    {
+                        break;
+                    }
+
+                    Text(canvas, $"Later  {later.When}  {later.Title}", x, laterY, 16, soft, bold: false, width: words.Width);
+                    laterY += 24;
+                }
+            }
+        }
+
+        using SKImage snapshot = surface.Snapshot();
+        using SKData data = snapshot.Encode(SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
+    }
+
+    private static SKRect Inflate(SKRect rect, float by)
+    {
+        rect.Inflate(by, by);
+        return rect;
+    }
+
+    private static void Cover(SKCanvas canvas, SKImage image, SKRect bounds)
+    {
+        float scale = Math.Max(bounds.Width / image.Width, bounds.Height / image.Height);
+        var destination = SKRect.Create(bounds.MidX - image.Width * scale / 2, bounds.MidY - image.Height * scale / 2, image.Width * scale, image.Height * scale);
+        canvas.DrawImage(image, destination, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
+    }
+
+    private static SKFont Font(float size, bool bold) =>
+        new(SKTypeface.FromFamilyName("Arial", bold ? SKFontStyle.Bold : SKFontStyle.Normal) ?? SKTypeface.Default, size)
+        {
+            Edging = SKFontEdging.Antialias,
+            Subpixel = true
+        };
+
+    /// <summary>One line, shortened with "…" to fit <paramref name="width"/>; <paramref name="y"/> is its baseline.</summary>
+    private static void Text(SKCanvas canvas, string text, float x, float y, float size, SKColor colour, bool bold, float width)
+    {
+        using SKFont font = Font(size, bold);
+        using var paint = new SKPaint { Color = colour, IsAntialias = true };
+        canvas.DrawText(Fit(text, font, paint, width), x, y, SKTextAlign.Left, font, paint);
+    }
+
+    /// <summary>Text over up to <paramref name="maxLines"/> lines from <paramref name="top"/>; returns where it ends.</summary>
+    private static float Wrapped(SKCanvas canvas, string text, float x, float top, float size, SKColor colour, float width, int maxLines, bool bold = true)
+    {
+        using SKFont font = Font(size, bold);
+        using var paint = new SKPaint { Color = colour, IsAntialias = true };
+        List<string> lines = [];
+        string current = string.Empty;
+        foreach (string word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string tried = current.Length == 0 ? word : $"{current} {word}";
+            if (font.MeasureText(tried, paint) <= width || current.Length == 0)
+            {
+                current = tried;
+                continue;
+            }
+
+            lines.Add(current);
+            current = word;
+        }
+
+        if (current.Length > 0)
+        {
+            lines.Add(current);
+        }
+
+        if (lines.Count > maxLines)
+        {
+            lines = [.. lines.Take(maxLines - 1), string.Join(' ', lines.Skip(maxLines - 1))];
+        }
+
+        float y = top;
+        foreach (string line in lines)
+        {
+            y += size * 1.12f;
+            canvas.DrawText(Fit(line, font, paint, width), x, y, SKTextAlign.Left, font, paint);
+        }
+
+        return y;
+    }
+
+    private static string Fit(string text, SKFont font, SKPaint paint, float width)
+    {
+        if (font.MeasureText(text, paint) <= width)
+        {
+            return text;
+        }
+
+        string shorter = text;
+        while (shorter.Length > 1 && font.MeasureText(shorter + "…", paint) > width)
+        {
+            shorter = shorter[..^1];
+        }
+
+        return shorter.TrimEnd() + "…";
+    }
+
+    private static SKColor Colour(string? text, SKColor fallback) => SKColor.TryParse(text, out SKColor colour) ? colour : fallback;
+
+    private static SKColor Mix(SKColor a, SKColor b, float amount) => new(
+        (byte)(a.Red + (b.Red - a.Red) * amount),
+        (byte)(a.Green + (b.Green - a.Green) * amount),
+        (byte)(a.Blue + (b.Blue - a.Blue) * amount));
+
+    private static async Task<(int Code, string Errors, string Output)> RunAsync(string program, IEnumerable<string> arguments, CancellationToken cancellationToken)
+    {
+        var start = new ProcessStartInfo(program) { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, CreateNoWindow = true };
+        foreach (string argument in arguments)
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        using Process process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start ffmpeg ({program}).");
+        Task<string> errors = process.StandardError.ReadToEndAsync(cancellationToken);
+        Task<string> output = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        limit.CancelAfter(TimeSpan.FromMinutes(20));
+        try
+        {
+            await process.WaitForExitAsync(limit.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+            }
+
+            throw;
+        }
+
+        return (process.ExitCode, await errors.ConfigureAwait(false), await output.ConfigureAwait(false));
+    }
+
+    /// <summary>Deletes squeezes no schedule has used for a while (and leftovers of interrupted renders).</summary>
+    private void Cleanup()
+    {
+        DateTimeOffset now = clock.GetUtcNow();
+        if (now - _cleanedAt < TimeSpan.FromHours(1) || !Directory.Exists(settings.SaveFolder))
+        {
+            return;
+        }
+
+        _cleanedAt = now;
+        foreach (string file in Directory.EnumerateFiles(settings.SaveFolder))
+        {
+            DateTimeOffset last = _used.TryGetValue(file, out DateTimeOffset used) ? used : File.GetLastWriteTimeUtc(file);
+            if (now - last > settings.KeepFor)
+            {
+                TryDelete(file);
+                _used.TryRemove(file, out _);
+            }
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    public override void Dispose()
+    {
+        _wake.Dispose();
+        base.Dispose();
+    }
+}

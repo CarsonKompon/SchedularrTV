@@ -145,3 +145,21 @@ internal sealed class JellyfinChapter
     [JsonPropertyName("Name")]
     public string? Name { get; set; }
 }
+
+internal sealed class JellyfinMediaSegments
+{
+    [JsonPropertyName("Items")]
+    public List<JellyfinMediaSegment>? Items { get; set; }
+}
+
+internal sealed class JellyfinMediaSegment
+{
+    [JsonPropertyName("Type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("StartTicks")]
+    public long StartTicks { get; set; }
+
+    [JsonPropertyName("EndTicks")]
+    public long EndTicks { get; set; }
+}

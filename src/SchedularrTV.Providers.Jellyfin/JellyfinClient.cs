@@ -221,6 +221,24 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
     /// A title's extras, which are the only place an intro or outro can be found. Needs a user
     /// context: the unscoped endpoint rejects the request outright.
     /// </summary>
+    /// <summary>
+    /// Where an item's end credits are, from Jellyfin's media segments (Jellyfin 10.10 and newer, with a segment provider
+    /// such as Intro Skipper): the start and end of its first <c>Outro</c> segment. Null when there's none, or Jellyfin is
+    /// older.
+    /// </summary>
+    public async Task<(TimeSpan Start, TimeSpan End)?> GetCreditsSegmentAsync(string itemId, CancellationToken cancellationToken)
+    {
+        JellyfinMediaSegments? segments = await GetIfFoundAsync<JellyfinMediaSegments>(
+                BuildUrl($"/MediaSegments/{Uri.EscapeDataString(itemId)}", new Dictionary<string, string?> { ["includeSegmentTypes"] = "Outro" }),
+                cancellationToken)
+            .ConfigureAwait(false);
+        JellyfinMediaSegment? outro = segments?.Items?
+            .Where(segment => string.Equals(segment.Type, "Outro", StringComparison.OrdinalIgnoreCase) && segment.EndTicks > segment.StartTicks)
+            .OrderBy(segment => segment.StartTicks)
+            .FirstOrDefault();
+        return outro is null ? null : (TimeSpan.FromTicks(outro.StartTicks), TimeSpan.FromTicks(outro.EndTicks));
+    }
+
     public async Task<IReadOnlyList<JellyfinExtra>> GetSpecialFeaturesAsync(string itemId, CancellationToken cancellationToken)
     {
         string? userId = _options.UserId ?? await FirstUserIdAsync(cancellationToken).ConfigureAwait(false);

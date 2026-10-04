@@ -8,6 +8,19 @@ namespace SchedularrTV.Core.Media;
 /// </summary>
 public sealed class MediaItem
 {
+    /// <summary>
+    /// Attribute: where the end credits start, in seconds (a chapter named for them, or a credits marker a plugin found).
+    /// </summary>
+    public const string CreditsStartAttribute = "credits_start";
+
+    /// <summary>Where the end credits start, when that's known.</summary>
+    public TimeSpan? CreditsStart =>
+        Attributes.TryGetValue(CreditsStartAttribute, out string? text)
+        && double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double seconds)
+        && seconds > 0
+            ? TimeSpan.FromSeconds(seconds)
+            : null;
+
     public required string Id { get; init; }
 
     public required string Title { get; init; }

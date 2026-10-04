@@ -1,0 +1,58 @@
+{
+  "id": "credit-squeeze",
+  "name": "Credit squeeze",
+  "version": "1.0.0",
+  "description": "As a show's end credits roll, they shrink into a box and the rest of the picture says what's on next (with its picture and time, and what's after it), like network TV. Credits are found from chapters named for them, or Jellyfin's media segments (Jellyfin 10.10+ with a segment provider such as Intro Skipper). Shows' own outros can be squeezed too. Each channel and block sets the odds.",
+  "author": "SchedularrTV",
+  "apiVersion": "1.6",
+  "entryAssembly": "SchedularrTV.Plugins.CreditSqueeze.dll",
+  "settings": [
+    {
+      "key": "SaveFolder",
+      "label": "Save folder",
+      "type": "Folder",
+      "placeholder": "plugin-data/credit-squeeze/renders",
+      "description": "Where squeezes are made. ErsatzTV must be able to read it."
+    },
+    {
+      "key": "LeadTimeMinutes",
+      "label": "Make squeezes when they air within (minutes)",
+      "type": "Number",
+      "placeholder": "240",
+      "description": "15 to 2880. Credits play as they are until their squeeze is ready."
+    },
+    {
+      "key": "WatchedOnly",
+      "label": "Only make squeezes for channels someone is watching",
+      "type": "Boolean",
+      "default": "true",
+      "description": "Uses ErsatzTV's stream activity. Tuning in starts making the channel's squeezes; credits whose squeeze isn't ready in time play as they are."
+    },
+    {
+      "key": "KeepDays",
+      "label": "Keep unused squeezes for (days)",
+      "type": "Number",
+      "placeholder": "3"
+    },
+    {
+      "key": "UseSegments",
+      "label": "Ask Jellyfin for credits segments",
+      "type": "Boolean",
+      "default": "true",
+      "description": "Jellyfin 10.10 and newer keep where the credits are (its \"Outro\" media segments) when a segment provider such as Intro Skipper has found them. Chapters named \"Credits\" are always used."
+    },
+    {
+      "key": "Resolution",
+      "label": "Squeeze resolution",
+      "type": "Choice",
+      "default": "720p",
+      "options": [ "720p", "1080p" ]
+    },
+    {
+      "key": "FfmpegPath",
+      "label": "ffmpeg",
+      "type": "File",
+      "description": "Leave empty to use the ffmpeg set under App settings."
+    }
+  ]
+}

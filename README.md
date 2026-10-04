@@ -78,6 +78,7 @@ Optional extras, installed from the **Plugins** page (each release has a `Schedu
 | [Streamer channels](docs/streamers.md) | Twitch and YouTube streamers in priority order, with chat, "also live" pop-ups, replays and a countdown to the next stream |
 | [Web page channels](docs/web-channels.md) | Live web pages as channels: WeatherStar retro weather, a clock, weather radar, the wind globe or any page |
 | [TV Guide channel](docs/tv-guide.md) | A scrolling Prevue / TV Guide Channel-style listings channel from your own schedule |
+| [Credit squeeze](docs/credit-squeeze.md) | As the end credits roll they shrink into a box beside what's on next, like network TV |
 | [Auto Chapters](docs/auto-chapters.md) | Mid-roll breaks at the fades to black in files without chapter markers |
 | [Archive Follow](docs/archive-follow.md) | Replaying historical schedules (built in, off until you switch it on) |
 

@@ -10,7 +10,8 @@ built-in plugins. Generated promos (which needs Promos), the TikTok, MiniMax and
 M3U playlist and its guide), [Streamer channels](streamers.md) (Twitch and YouTube streamers, with chat and a countdown to the next
 stream), [Radio channels](radio.md) (music with cover art, lyrics and a visualizer), [Overlays](overlays.md)
 (screen bugs and lower thirds), the [Local AI writer](local-ai.md) (natural, AI-written voice-overs and captions), the [TV Guide channel](tv-guide.md)
-(scrolling listings in the style of the Prevue Channel or TV Guide Channel) and [Auto Chapters](auto-chapters.md)
+(scrolling listings in the style of the Prevue Channel or TV Guide Channel), [Credit squeeze](credit-squeeze.md) (end credits
+shrunk beside what's on next) and [Auto Chapters](auto-chapters.md)
 (mid-roll break points found where programmes fade to black) are optional: each release has a
 `SchedularrTV-<version>-all-plugins.zip` with all of them (and a
 `SchedularrTV-<version>-plugin-<id>.zip` for each), installed from the **Plugins** page. Generated promos is built
