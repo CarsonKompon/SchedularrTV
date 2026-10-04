@@ -59,20 +59,27 @@ slots, programming blocks, ad breaks, bumpers and promos, and hands them to
 | [Installation](docs/installation.md) | Downloads, first run, the data folder, updating, running headless or under systemd |
 | [Configuration](docs/configuration.md) | App settings, the schedule file, commercials on disk, Jellyfin tags |
 | [How scheduling works](docs/scheduling.md) | Blocks and anchors, ad break packing, mid-rolls, the query language, seasonal tags |
-| [Generated promos](docs/generated-promos.md) | Promo templates, voices, music, external generators |
-| [Overlays](docs/overlays.md) | Screen bugs, lower thirds and "up next" graphics, designed visually and timed per programme |
-| [Local AI writer](docs/local-ai.md) | A free model on your own computer that words promo voice-overs and captions naturally, fit for more long-form promos |
-| [Radio channels](docs/radio.md) | Music from Jellyfin or an internet station, with cover art, lyrics and a visualizer |
-| [IPTV passthrough](docs/iptv.md) | Channels from an IPTV playlist (M3U) and its XMLTV guide, alongside your own |
-| [Streamer channels](docs/streamers.md) | Twitch and YouTube streamers in priority order, with chat, "also live" pop-ups and a countdown to the next stream |
-| [Web page channels](docs/web-channels.md) | Live web pages as channels: WeatherStar retro weather, a clock, weather radar, the wind globe or any page |
-| [TV Guide channel](docs/tv-guide.md) | A scrolling Prevue / TV Guide Channel-style listings channel from your own schedule |
-| [Auto Chapters](docs/auto-chapters.md) | Mid-roll breaks at the fades to black in files without chapter markers |
-| [Archive Follow](docs/archive-follow.md) | Replaying historical schedules |
 | [ErsatzTV Next](docs/ersatztv.md) | What is published and how ErsatzTV is managed |
 | [Plugins](docs/plugins.md) | Installing plugins and writing your own |
 | [REST API](docs/rest-api.md) | Endpoints for scripting |
 | [Development](docs/development.md) | Building from source, tests, releases |
+
+## Plugins
+
+Optional extras, installed from the **Plugins** page (each release has a `SchedularrTV-<version>-all-plugins.zip` with all of them).
+
+| Plugin | What it does |
+| --- | --- |
+| [Generated promos](docs/generated-promos.md) | Promo templates, voices, music, external generators |
+| [Overlays](docs/overlays.md) | Screen bugs, lower thirds and "up next" graphics, designed visually and timed per programme |
+| [Local AI writer](docs/local-ai.md) | A free model on your own computer that words promo voice-overs and captions naturally, fit for more long-form promos |
+| [Radio channels](docs/radio.md) | Music from Jellyfin or an internet station, with cover art, lyrics and a visualizer |
+| [IPTV passthrough](docs/iptv.md) | Channels from an IPTV playlist (M3U) and its XMLTV guide, or free channels from iptv-org with guides from iptv-org/epg |
+| [Streamer channels](docs/streamers.md) | Twitch and YouTube streamers in priority order, with chat, "also live" pop-ups, replays and a countdown to the next stream |
+| [Web page channels](docs/web-channels.md) | Live web pages as channels: WeatherStar retro weather, a clock, weather radar, the wind globe or any page |
+| [TV Guide channel](docs/tv-guide.md) | A scrolling Prevue / TV Guide Channel-style listings channel from your own schedule |
+| [Auto Chapters](docs/auto-chapters.md) | Mid-roll breaks at the fades to black in files without chapter markers |
+| [Archive Follow](docs/archive-follow.md) | Replaying historical schedules (built in, off until you switch it on) |
 
 ## Building from source
 
