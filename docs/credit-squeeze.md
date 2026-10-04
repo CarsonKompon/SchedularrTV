@@ -72,7 +72,11 @@ channel*, *Its own settings* or *No squeezes*):
   from the breaks before it), *Now Playing* (its ident), *Coming Up* (later today) and *Eventually* (later in the week).
   One is picked at random from what the schedule airs nearby, library promo clips and generated promos alike. It plays
   once the credits are in place, fading up from black (and back down as it ends), with the credits' sound dipped under
-  its own. The next programme's picture is only shown when there's no promo at all. A generated promo not made yet is waited
+  its own. The next programme's picture is only shown when there's no promo at all. A promo longer than the credits
+  plays on after them: as the credits end it grows from its slot to fill the picture and plays to its end. The extra
+  time comes from the end of the break that follows (its last clips are cut short or dropped), so the next programme
+  still starts on time; if the break is too short, the promo is cut off at the end of it.
+  **Render a preview video** runs as long as the promo needs (20 seconds when there's no promo). A generated promo not made yet is waited
   for until 20 minutes before the squeeze airs. With none nearby (or a generated one not ready in time), and the
   Generated Promos plugin on, the channel's own templates make one of a ticked kind for the panel, if it has a template
   of that kind. This happens for previews too, so they take a little longer. With none ticked, or none to be had, the

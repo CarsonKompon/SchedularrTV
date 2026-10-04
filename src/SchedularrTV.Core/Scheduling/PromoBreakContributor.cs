@@ -128,6 +128,9 @@ internal sealed class PromoBreakPlan(
 
     public (ScheduleEntry Entry, string Salt)? Held { get; private set; }
 
+    /// <summary>A programme in its own right, not a show's intro or outro clip: what a break follows or promotes.</summary>
+    private static bool IsShow(ScheduleEntry entry) => entry.Kind == ScheduleEntryKind.Program && !entry.IsSlotIntro && !entry.IsSlotOutro;
+
     public async ValueTask ReserveAsync(CancellationToken cancellationToken)
     {
         DateTimeOffset from = context.From;
@@ -148,7 +151,7 @@ internal sealed class PromoBreakPlan(
         if (context.ContinuesSlot)
         {
             // The same show is on either side, so the break is bookended rather than handed over.
-            ScheduleEntry? playing = Entries.LastOrDefault(e => e.Kind == ScheduleEntryKind.Program);
+            ScheduleEntry? playing = Entries.LastOrDefault(IsShow);
             List<string> showIds = ShowIdsOf(playing?.Item);
             TimeSpan free = to - from;
 
@@ -214,7 +217,7 @@ internal sealed class PromoBreakPlan(
             {
                 _thisHasBeen = await ReserveSignOffAsync(free, cancellationToken).ConfigureAwait(false);
 
-                List<string> finishedIds = ShowIdsOf(Entries.LastOrDefault(e => e.Kind == ScheduleEntryKind.Program)?.Item);
+                List<string> finishedIds = ShowIdsOf(Entries.LastOrDefault(IsShow)?.Item);
                 bool sameShow = promoConfig.ThisHasBeen.SkipWhenSameSeries && _upcoming is not null
                     && _upcoming.ShowIds.Intersect(finishedIds, StringComparer.OrdinalIgnoreCase).Any();
                 if (promoConfig.ThisHasBeen.Enabled && finishedIds.Count > 0 && !sameShow
@@ -502,7 +505,7 @@ internal sealed class PromoBreakPlan(
             return null;
         }
 
-        ScheduleEntry? finished = Entries.LastOrDefault(e => e.Kind == ScheduleEntryKind.Program);
+        ScheduleEntry? finished = Entries.LastOrDefault(IsShow);
         List<string> showIds = ShowIdsOf(finished?.Item);
 
         if (showIds.Count == 0)
@@ -525,7 +528,7 @@ internal sealed class PromoBreakPlan(
 
     private bool ContinuesSameSeries(IReadOnlyList<string> showIds)
     {
-        string? previousSeries = Entries.LastOrDefault(e => e.Kind == ScheduleEntryKind.Program)?.Item?.SeriesName;
+        string? previousSeries = Entries.LastOrDefault(IsShow)?.Item?.SeriesName;
         return previousSeries is not null && showIds.Contains(previousSeries, StringComparer.OrdinalIgnoreCase);
     }
 

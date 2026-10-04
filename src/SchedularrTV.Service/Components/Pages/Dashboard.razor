@@ -374,7 +374,7 @@ else
         get
         {
             DateTimeOffset now = DateTimeOffset.UtcNow;
-            return Coordinator.Latest.Count(s => s.Entries.Any(e => e.Kind == ScheduleEntryKind.Program && e.Start <= now && e.End > now));
+            return Coordinator.Latest.Count(s => s.Entries.Any(e => IsShow(e) && e.Start <= now && e.End > now));
         }
     }
 
@@ -553,7 +553,11 @@ else
         int Parts,
         TimeSpan Duration,
         bool Trimmed,
-        ScheduleEntryKind Kind);
+        ScheduleEntryKind Kind,
+        bool SlotClip = false);
+
+    /// <summary>A programme in its own right: not a show's intro or outro clip (or its credit squeeze), which only bookend it.</summary>
+    private static bool IsShow(ScheduleEntry entry) => entry.Kind == ScheduleEntryKind.Program && !entry.IsSlotIntro && !entry.IsSlotOutro;
 
     /// <param name="Next">The next few programmes.</param>
     /// <param name="Detailed">With breaks shown: everything coming up in order, breaks and the up-next programme included.</param>
@@ -561,7 +565,7 @@ else
 
     private static RenderFragment Row(UpcomingEntry entry)
     {
-        bool programme = entry.Kind == ScheduleEntryKind.Program;
+        bool programme = entry.Kind == ScheduleEntryKind.Program && !entry.SlotClip;
         return @<div class="upnext-row @(programme ? "" : "muted")">
             <span class="upnext-time">@entry.Start.ToLocalTime().ToString("HH:mm")</span>
             @if (programme)
@@ -615,12 +619,18 @@ else
             else
             {
                 (string title, string? subtitle) = Split(e);
+                bool slotClip = e.IsSlotIntro || e.IsSlotOutro;
+                if (slotClip)
+                {
+                    subtitle = e.Source == "credit squeeze" ? "Credit squeeze" : e.IsSlotIntro ? "Show intro" : "Show outro";
+                }
+
                 acc.Add(new UpcomingEntry(
                     e.Start, e.End, key, title, subtitle,
                     ArtworkLinks.PosterId(e.Item),
                     e.Item?.Id,
                     e.Item?.Overview,
-                    1, e.Duration, e.IsTrimmed, e.Kind));
+                    1, e.Duration, e.IsTrimmed, e.Kind, slotClip));
             }
 
             return acc;
@@ -631,9 +641,16 @@ else
         DateTimeOffset now = DateTimeOffset.UtcNow;
         bool detailed = _detailed.Contains(schedule.ChannelId);
 
-        List<UpcomingEntry> programmes = Merge(schedule.Entries
-            .Where(e => e.End > now && e.Kind == ScheduleEntryKind.Program)
-            .Take(80));
+        IEnumerable<ScheduleEntry> shows = schedule.Entries.Where(e => e.End > now && IsShow(e)).Take(80);
+
+        // A show's outro (or its credit squeeze) on now still belongs to it: the show stays live until it's over.
+        if (schedule.Entries.FirstOrDefault(e => e.Start <= now && e.End > now) is { IsSlotOutro: true } outro
+            && schedule.Entries.LastOrDefault(e => IsShow(e) && e.End <= outro.Start) is { } ending)
+        {
+            shows = shows.Prepend(ending with { Duration = outro.End - ending.Start });
+        }
+
+        List<UpcomingEntry> programmes = Merge(shows);
 
         UpcomingEntry? feature = programmes.FirstOrDefault();
         bool live = feature is not null && feature.Start <= now;
@@ -643,7 +660,7 @@ else
         // current part is left out.
         List<UpcomingEntry>? everything = detailed
             ? [.. Merge(schedule.Entries.Where(e => e.End > now).Take(200))
-                .SkipWhile(entry => live && entry.Kind == ScheduleEntryKind.Program && entry.Start <= now)
+                .SkipWhile(entry => live && entry.Kind == ScheduleEntryKind.Program && !entry.SlotClip && entry.Start <= now)
                 .Take(40)]
             : null;
 

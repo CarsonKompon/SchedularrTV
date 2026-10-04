@@ -19,7 +19,7 @@ public sealed class UpcomingProgrammes(ChapterScanner scanner, TimeProvider? clo
     {
         DateTimeOffset now = (clock ?? TimeProvider.System).GetUtcNow();
         scanner.QueueSoon(context.Schedule.Entries
-            .Where(entry => entry.Kind == ScheduleEntryKind.Program && entry.Item is not null
+            .Where(entry => entry.Kind == ScheduleEntryKind.Program && entry.Item is not null && !entry.IsSlotIntro && !entry.IsSlotOutro
                 && entry.End > now && entry.Start < now + Horizon)
             .Select(entry => (entry.Item!, entry.Start)));
         return ValueTask.FromResult(context.Schedule);

@@ -353,6 +353,39 @@ public sealed class CreditSqueezeTests
     }
 
     [Fact]
+    public void A_promo_longer_than_the_credits_plays_on_full_screen_taking_time_from_the_break()
+    {
+        List<ScheduleEntry> day = Day();
+        SqueezePlan plan = Plan(day, new CreditSqueezeSection())[0];
+        SqueezeJob job = plan.Job with { PromoPath = "/promos/long.mp4", PromoLength = TimeSpan.FromSeconds(90) };
+
+        // The break after SpongeBob's credits (8 minutes of ads) has room, less a second.
+        Assert.Equal(TimeSpan.FromMinutes(8) - TimeSpan.FromSeconds(1), job.MaxExtra);
+        SqueezeJob fitted = SqueezeRenderer.FittedToPromo(job);
+        Assert.Equal((TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(31.2)), (fitted.Length, fitted.Extra));
+
+        // After the credits, the promo grows from its slot to fill the picture and plays to its end, sound and all.
+        List<string> arguments = [.. SqueezeRenderer.Arguments(fitted, "frame.png", "out.mp4", 1280, 720, animate: true)];
+        string graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+        Assert.Contains("[v0][promo]overlay", graph, StringComparison.Ordinal);
+        Assert.Contains("amix=inputs=2:duration=longest", graph, StringComparison.Ordinal);
+        Assert.Equal("91.2", arguments[^14]);
+        Assert.Equal("60", arguments[arguments.IndexOf("/media/SpongeBob/1.mkv") - 2]);
+
+        // In the schedule, it runs on into the break, whose end is cut short; the next programme starts on time.
+        List<ScheduleEntry> applied = SqueezePlanner.Apply(day, [plan], _ => "/renders/squeeze.mp4", _ => TimeSpan.FromSeconds(31.2));
+        ScheduleEntry squeeze = applied.Single(entry => entry.Source == "credit squeeze");
+        ScheduleEntry ads = applied[applied.IndexOf(squeeze) + 1];
+        Assert.Equal(TimeSpan.FromSeconds(91.2), squeeze.Duration);
+        Assert.Equal((squeeze.End, TimeSpan.FromMinutes(8) - TimeSpan.FromSeconds(31.2), true), (ads.Start, ads.Duration, ads.IsTrimmed));
+        Assert.Equal(Noon.AddMinutes(30), applied.First(entry => entry.Item?.SeriesName == "Rugrats").Start);
+
+        // A preview runs as long as its promo: a short one cuts the credits short, and with none it's 20 seconds.
+        Assert.Equal(TimeSpan.FromSeconds(11.2), SqueezeRenderer.FittedToPromo(job with { PromoLength = TimeSpan.FromSeconds(10), FitToPromo = true }).Total);
+        Assert.Equal(TimeSpan.FromSeconds(20), SqueezeRenderer.FittedToPromo(plan.Job with { FitToPromo = true }).Total);
+    }
+
+    [Fact]
     public void Episodes_without_known_credits_can_have_their_end_squeezed()
     {
         TimeSpan ninety = TimeSpan.FromSeconds(90);

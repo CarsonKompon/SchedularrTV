@@ -496,7 +496,10 @@
     private CreditsLookupStatus _lookup = new(0, TimeSpan.Zero, 0, 0, false, null);
     private readonly CancellationTokenSource _stop = new();
 
-    private static readonly TimeSpan PreviewLength = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan PreviewLength = SqueezeRenderer.PreviewLength;
+
+    // The most credits a preview takes (cut to its promo's length, or to 20 seconds without one, when it's made).
+    private static readonly TimeSpan PreviewCredits = TimeSpan.FromMinutes(1);
 
     private static readonly string[] BackgroundExtensions =
         [.. SchedularrTV.Service.Editor.FileBrowsing.Images, .. SchedularrTV.Service.Editor.FileBrowsing.Videos];
@@ -689,7 +692,7 @@
     /// For a show the schedule doesn't air now: one of its episodes from the library, followed by the channel's next
     /// programme (or something else), so its squeeze can be previewed all the same.
     /// </summary>
-    private async Task<List<ScheduleEntry>?> StandInAsync(string show, ChannelSchedule schedule)
+    private async Task<List<ScheduleEntry>?> StandInAsync(string show, ChannelSchedule schedule, (string Path, TimeSpan Length)? outro = null)
     {
         if (Library is not { } library)
         {
@@ -717,11 +720,57 @@
             return null;
         }
 
-        return
-        [
-            new ScheduleEntry { Start = start, Duration = episode.Duration, Kind = ScheduleEntryKind.Program, Item = episode, BlockName = null },
-            new ScheduleEntry { Start = start + episode.Duration, Duration = following.Duration, Kind = ScheduleEntryKind.Program, Item = following }
-        ];
+        List<ScheduleEntry> entries = [new ScheduleEntry { Start = start, Duration = episode.Duration, Kind = ScheduleEntryKind.Program, Item = episode }];
+        DateTimeOffset at = start + episode.Duration;
+        if (outro is { } own)
+        {
+            // The show's own outro, played after its episode as it airs.
+            MediaItem clip = new() { Id = $"outro:{own.Path}", Title = $"{show} outro", Duration = own.Length, Path = own.Path };
+            entries.Add(new ScheduleEntry { Start = at, Duration = own.Length, Kind = ScheduleEntryKind.Program, Item = clip, IsSlotOutro = true });
+            at += own.Length;
+        }
+
+        entries.Add(new ScheduleEntry { Start = at, Duration = following.Duration, Kind = ScheduleEntryKind.Program, Item = following });
+        return entries;
+    }
+
+    /// <summary>
+    /// The outro a show plays after its episodes, as set up (under Titles, or on a collection this channel plays), with how
+    /// long it runs; null when it has none (or its length can't be read).
+    /// </summary>
+    private async Task<(string Path, TimeSpan Length)?> ConfiguredOutroAsync(string show)
+    {
+        List<string> paths = [];
+        foreach ((string title, TitleDefaults defaults) in Context.Config.Titles)
+        {
+            if (string.Equals(title, show, StringComparison.OrdinalIgnoreCase))
+            {
+                paths.AddRange(defaults.Bumpers.Where(bumper => bumper.Position == BumperPosition.Outro).SelectMany(bumper => bumper.Clips).Select(clip => clip.Path));
+            }
+        }
+
+        IEnumerable<ContentSelector> selectors = Channel.Blocks.SelectMany(block => block.Shows)
+            .Concat(Channel.BaseRotation is { } rotation ? new[] { rotation } : Array.Empty<ContentSelector>());
+        foreach (ContentInclude include in selectors.SelectMany(selector => selector.Include)
+                     .Where(include => string.Equals(include.Show, show, StringComparison.OrdinalIgnoreCase)))
+        {
+            if (!string.IsNullOrWhiteSpace(include.Outro))
+            {
+                paths.Add(include.Outro);
+            }
+
+            paths.AddRange(include.Bumpers.Where(bumper => bumper.Position == BumperPosition.Outro).SelectMany(bumper => bumper.Clips).Select(clip => clip.Path));
+        }
+
+        foreach (string path in paths.Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(File.Exists))
+        {
+            if (await Renderer.DurationAsync(path, CancellationToken.None) is { } length)
+            {
+                return (path, length);
+            }
+        }
+
+        return null;
     }
 
     /// <summary>The shows to pick from: what the channel airs, and any already given a layout.</summary>
@@ -1032,12 +1081,21 @@
         SqueezePlan? plan;
         if (_show is { } show)
         {
-            // From the schedule when it airs the show, else from one of its episodes in the library.
-            var found = SqueezePlanner.PreviewFor(schedule.Entries, show, trial, _everywhere, Channel.Id, Channel.Name, zone, Credits.CreditsOf, PreviewLength,
+            // From the schedule when it airs the show (with its outro), else from one of its episodes in the library, followed by
+            // its outro if it has one set up (the schedule only plays a new outro once it's been rebuilt).
+            var found = SqueezePlanner.PreviewFor(schedule.Entries, show, trial, _everywhere, Channel.Id, Channel.Name, zone, Credits.CreditsOf, PreviewCredits,
                 Settings.AssumedCredits);
+            if (found is not { Source: SqueezePlanner.PreviewSource.Outro } && await ConfiguredOutroAsync(show) is { } outro)
+            {
+                found = await StandInAsync(show, schedule, outro) is { } withOutro
+                    ? SqueezePlanner.PreviewFor(withOutro, show, trial, _everywhere, Channel.Id, Channel.Name, zone, Credits.CreditsOf, PreviewCredits,
+                        Settings.AssumedCredits) ?? found
+                    : found;
+            }
+
             if (found is null && await StandInAsync(show, schedule) is { } standIn)
             {
-                found = SqueezePlanner.PreviewFor(standIn, show, trial, _everywhere, Channel.Id, Channel.Name, zone, Credits.CreditsOf, PreviewLength,
+                found = SqueezePlanner.PreviewFor(standIn, show, trial, _everywhere, Channel.Id, Channel.Name, zone, Credits.CreditsOf, PreviewCredits,
                     Settings.AssumedCredits);
             }
 
@@ -1054,8 +1112,8 @@
                 SqueezePlanner.PreviewSource.Credits => "From an episode's marked credits.",
                 SqueezePlanner.PreviewSource.Assumed => $"From the last {AssumedText(trial)} of an episode, as its credits aren't known.",
                 _ => Credits.Status().Waiting > 0
-                    ? "From the last 20 seconds of an episode: Jellyfin is still being asked where its credits start."
-                    : "From the last 20 seconds of an episode: its credits aren't known, so it's only squeezed on air if you set how much of the end to squeeze (under How often)."
+                    ? "From the end of an episode: Jellyfin is still being asked where its credits start."
+                    : "From the end of an episode: its credits aren't known, so it's only squeezed on air if you set how much of the end to squeeze (under How often)."
             };
         }
         else
@@ -1067,7 +1125,7 @@
                 // Nothing marked: show the layout against the end of the first show's episode anyway.
                 string? first = SqueezePlanner.ShowsOn(schedule.Entries).FirstOrDefault();
                 if (first is null || SqueezePlanner.PreviewFor(schedule.Entries, first, trial, _everywhere, Channel.Id, Channel.Name, zone, Credits.CreditsOf,
-                        PreviewLength, Settings.AssumedCredits) is not { } any)
+                        PreviewCredits, Settings.AssumedCredits) is not { } any)
                 {
                     _previewProblem = "Nothing to preview: the channel's schedule has no episode with something after it.";
                     return;
@@ -1083,7 +1141,10 @@
         StateHasChanged();
         try
         {
-            SqueezeJob job = plan.Job with { Length = plan.Job.Length < PreviewLength ? plan.Job.Length : PreviewLength };
+            // As long as its promo needs (the renderer knows once it has it, made or not), else the usual 20 seconds.
+            SqueezeJob job = plan.Job.PromoPath is not null || plan.Job.WantsMadePromo
+                ? plan.Job with { FitToPromo = true }
+                : plan.Job with { Length = plan.Job.Length < PreviewLength ? plan.Job.Length : PreviewLength };
             string name = await Renderer.PreviewAsync(job, Channel.Id, CancellationToken.None);
             _previewUrl = $"api/credit-squeeze/preview/{Uri.EscapeDataString(name)}";
         }

@@ -50,7 +50,7 @@ public sealed class CreditSqueezeProcessor(SqueezeRenderer renderer, CreditsMark
             }
 
             return null;
-        });
+        }, plan => renderer.ExtraOf(plan.Job));
 
         return ValueTask.FromResult(schedule with { Entries = entries });
     }

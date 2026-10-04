@@ -46,8 +46,14 @@ public sealed record SqueezeJob(
     string? ChannelId = null,
     string? BlockName = null,
     DateTimeOffset NextStart = default,
-    IReadOnlyList<string>? MakeHeadings = null)
+    IReadOnlyList<string>? MakeHeadings = null,
+    TimeSpan MaxExtra = default,
+    bool FitToPromo = false,
+    TimeSpan Extra = default)
 {
+    /// <summary>How long the squeeze runs: its credits, then (with <see cref="Extra"/>) the rest of its promo, full screen.</summary>
+    public TimeSpan Total => Length + Extra;
+
     /// <summary>
     /// With no promo found in the schedule: the kinds (in the order to try) to have the channel's generated promos make
     /// one of for the panel, if it has templates for them. Null or empty for none.
@@ -204,7 +210,8 @@ public static class SqueezePlanner
             string.IsNullOrWhiteSpace(look.HeadingFont) ? "Arial" : look.HeadingFont,
             string.IsNullOrWhiteSpace(look.TextFont) ? "Arial" : look.TextFont,
             make, make is null ? null : channelId, make is null ? null : entries[index].BlockName, make is null ? default : entries[next].Start,
-            make?.Select(made => look.HeadingFor(made)).ToList()), pending);
+            make?.Select(made => look.HeadingFor(made)).ToList(),
+            BreakRoom(entries, index, next)), pending);
     }
 
     // How far ahead each kind of promo is looked for.
@@ -315,18 +322,80 @@ public static class SqueezePlanner
     /// The schedule with each plan's credits replaced by its squeeze (<paramref name="rendered"/> gives a plan's file, or
     /// null while it isn't made yet, leaving those credits as they are). Every entry keeps its place; nothing moves.
     /// </summary>
-    public static List<ScheduleEntry> Apply(IReadOnlyList<ScheduleEntry> entries, IReadOnlyList<SqueezePlan> plans, Func<SqueezePlan, string?> rendered)
+    public static List<ScheduleEntry> Apply(IReadOnlyList<ScheduleEntry> entries, IReadOnlyList<SqueezePlan> plans, Func<SqueezePlan, string?> rendered,
+        Func<SqueezePlan, TimeSpan>? extraOf = null)
     {
         Dictionary<int, SqueezePlan> byIndex = plans.ToDictionary(plan => plan.Index);
+
+        // A squeeze that runs on past its credits (its promo plays to the end) takes that time from the end of the break
+        // after it: the last clips there are cut short, or dropped, so the next programme still starts on time.
+        Dictionary<int, TimeSpan> extras = [];
+        Dictionary<int, TimeSpan?> breakChanges = [];
+        foreach (SqueezePlan plan in plans)
+        {
+            TimeSpan extra = extraOf?.Invoke(plan) ?? TimeSpan.Zero;
+            if (extra <= TimeSpan.Zero || rendered(plan) is null || NextProgramme(entries, plan.Index) is not { } next)
+            {
+                continue;
+            }
+
+            extra = extra < BreakRoom(entries, plan.Index, next) ? extra : BreakRoom(entries, plan.Index, next);
+            if (extra <= TimeSpan.Zero)
+            {
+                continue;
+            }
+
+            extras[plan.Index] = extra;
+            TimeSpan remaining = extra;
+            for (int at = next - 1; at > plan.Index && remaining > TimeSpan.Zero; at--)
+            {
+                if (entries[at].Kind == ScheduleEntryKind.Program)
+                {
+                    continue;
+                }
+
+                if (entries[at].Duration <= remaining)
+                {
+                    breakChanges[at] = null;
+                    remaining -= entries[at].Duration;
+                }
+                else
+                {
+                    breakChanges[at] = entries[at].Duration - remaining;
+                    remaining = TimeSpan.Zero;
+                }
+            }
+        }
+
         List<ScheduleEntry> result = new(entries.Count + plans.Count);
+        TimeSpan shift = TimeSpan.Zero;
         for (int index = 0; index < entries.Count; index++)
         {
-            ScheduleEntry entry = entries[index];
+            ScheduleEntry entry = shift == TimeSpan.Zero ? entries[index] : entries[index] with { Start = entries[index].Start + shift };
+            if (breakChanges.TryGetValue(index, out TimeSpan? kept))
+            {
+                if (kept is not { } duration)
+                {
+                    shift -= entry.Duration;
+                    continue;
+                }
+
+                shift -= entry.Duration - duration;
+                result.Add(entry with
+                {
+                    Duration = duration, IsTrimmed = true, SourceDuration = entry.SourceDuration ?? entry.Item?.Duration ?? entry.Duration
+                });
+                continue;
+            }
+
             if (!byIndex.TryGetValue(index, out SqueezePlan? plan) || rendered(plan) is not { } file || entry.Item is not { } item)
             {
                 result.Add(entry);
                 continue;
             }
+
+            TimeSpan over = extras.GetValueOrDefault(index);
+            shift += over;
 
             MediaItem squeezed = new()
             {
@@ -338,7 +407,7 @@ public static class SqueezePlanner
                 SeasonNumber = item.SeasonNumber,
                 EpisodeNumber = item.EpisodeNumber,
                 Overview = item.Overview,
-                Duration = plan.Job.Length,
+                Duration = plan.Job.Length + over,
                 Path = file,
                 Attributes = new Dictionary<string, string> { ["credit_squeeze.source"] = item.Id }
             };
@@ -347,7 +416,7 @@ public static class SqueezePlanner
             ScheduleEntry squeeze = entry with
             {
                 Start = entry.Start + (plan.From - entry.InPoint),
-                Duration = plan.Job.Length,
+                Duration = plan.Job.Length + over,
                 Item = squeezed,
                 InPoint = TimeSpan.Zero,
                 IsTrimmed = false,
@@ -391,6 +460,24 @@ public static class SqueezePlanner
         }
 
         return end - length;
+    }
+
+    /// <summary>
+    /// How far a squeeze of entry <paramref name="index"/> may run past its credits: the clips in the break before the
+    /// next programme (<paramref name="next"/>), less a second, as that's where the time comes from.
+    /// </summary>
+    public static TimeSpan BreakRoom(IReadOnlyList<ScheduleEntry> entries, int index, int next)
+    {
+        TimeSpan room = TimeSpan.Zero;
+        for (int at = index + 1; at < next; at++)
+        {
+            if (entries[at].Kind != ScheduleEntryKind.Program)
+            {
+                room += entries[at].Duration;
+            }
+        }
+
+        return room > TimeSpan.FromSeconds(1) ? room - TimeSpan.FromSeconds(1) : TimeSpan.Zero;
     }
 
     /// <summary>The shows a schedule airs (that a programme follows), for picking one to preview.</summary>

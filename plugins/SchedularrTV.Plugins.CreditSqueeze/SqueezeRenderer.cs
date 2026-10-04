@@ -202,6 +202,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
     {
         Directory.CreateDirectory(Path.GetDirectoryName(output)!);
         job = await WithMadePromoAsync(job, cancellationToken).ConfigureAwait(false);
+        job = FittedToPromo(job);
         (int width, int height) = settings.Size;
         byte[]? art = PlaysPromo(job) ? null : await ArtAsync(job.Next.ImageId, cancellationToken).ConfigureAwait(false);
         string panel = output + ".frame.png";
@@ -224,6 +225,19 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
                 if (code == 0 && File.Exists(temp))
                 {
                     File.Move(temp, output, overwrite: true);
+
+                    // How far it runs past its credits, for the schedule to make room for.
+                    string extra = ExtraPath(output);
+                    if (job.Extra > TimeSpan.Zero)
+                    {
+                        await File.WriteAllTextAsync(extra, job.Extra.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture), cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        TryDelete(extra);
+                    }
+
                     return;
                 }
 
@@ -237,6 +251,48 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
             TryDelete(panel);
             TryDelete(temp);
         }
+    }
+
+    private static string ExtraPath(string output) => Path.ChangeExtension(output, ".extra");
+
+    /// <summary>How far a made squeeze runs past its credits (its promo playing on, full screen); zero when it doesn't.</summary>
+    public TimeSpan ExtraOf(SqueezeJob job)
+    {
+        try
+        {
+            string path = ExtraPath(PathOf(job));
+            return File.Exists(path) && double.TryParse(File.ReadAllText(path).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds)
+                ? TimeSpan.FromSeconds(Math.Max(0, seconds))
+                : TimeSpan.Zero;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return TimeSpan.Zero;
+        }
+    }
+
+    /// <summary>
+    /// The squeeze's length set by its promo: a preview (<see cref="SqueezeJob.FitToPromo"/>) runs just as long as the
+    /// promo needs, rather than a set 20 seconds; and a promo longer than the credits plays on to its end, growing to
+    /// fill the picture as they finish (on air, as far as the break after it has room for).
+    /// </summary>
+    public static SqueezeJob FittedToPromo(SqueezeJob job)
+    {
+        if (!PlaysPromo(job))
+        {
+            // A preview without a promo after all: the usual 20 seconds.
+            return job.FitToPromo && job.Length > PreviewLength ? job with { Length = PreviewLength } : job;
+        }
+
+        TimeSpan wanted = PromoStart + job.PromoLength;
+        if (job.FitToPromo && wanted < job.Length)
+        {
+            job = job with { Length = wanted };
+        }
+
+        TimeSpan over = wanted - job.Length;
+        TimeSpan allowed = job.FitToPromo ? over : (over < job.MaxExtra ? over : job.MaxExtra);
+        return over > TimeSpan.Zero && allowed > TimeSpan.FromSeconds(0.5) ? job with { Extra = allowed } : job;
     }
 
     /// <summary>
@@ -304,6 +360,9 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
     /// <summary>When the promo starts: once the credits have shrunk into place.</summary>
     public static readonly TimeSpan PromoStart = TimeSpan.FromSeconds(1.2);
 
+    /// <summary>How long a preview without a promo runs.</summary>
+    public static readonly TimeSpan PreviewLength = TimeSpan.FromSeconds(20);
+
     // How long the promo takes to fade up from black, and back down.
     private static readonly TimeSpan PromoFade = TimeSpan.FromSeconds(0.4);
 
@@ -328,8 +387,12 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         SqueezeLayout layout = job.Layout(width, height);
         int boxX = layout.Credits.X, boxY = layout.Credits.Y, boxW = layout.Credits.Width, boxH = layout.Credits.Height;
         string length = N(job.Length.TotalSeconds);
+        string total = N(job.Total.TotalSeconds);
         bool promo = PlaysPromo(job);
         promoAudio &= promo;
+
+        // A promo longer than the credits plays on after them, growing from its slot to fill the picture as they end.
+        bool runsOn = promo && job.Extra > TimeSpan.Zero;
         bool backgroundVideo = IsVideo(job.BackgroundPath);
         int promoInput = 2;
         int backgroundInput = promo ? 3 : 2;
@@ -346,15 +409,19 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         // It fades up from black (the frame leaves its slot black when there's a promo) and back down as it ends.
         string fades = $",fade=t=in:st={start}:d={N(PromoFade.TotalSeconds)}";
         TimeSpan promoEnds = PromoStart + job.PromoLength;
-        if (promoEnds <= job.Length)
+        if (promoEnds <= job.Total)
         {
             fades += $",fade=t=out:st={N((promoEnds - PromoFade).TotalSeconds)}:d={N(PromoFade.TotalSeconds)}";
         }
 
-        video += promo
+        video += promo && !runsOn
             ? $";[{promoInput}:v]setpts=PTS-STARTPTS+{start}/TB,{Fitted(job.PanelFit, slot.Width, slot.Height)}{fades}[promo];"
               + $"[bg][promo]overlay=x='{slot.X}+({slot.Width}-w)/2':y='{slot.Y}+({slot.Height}-h)/2':eof_action=pass:shortest=0[panelled]"
             : ";[bg]null[panelled]";
+
+        // Running on, the promo goes over everything instead (added below): in its slot until the credits are nearly done,
+        // then growing to fill the picture as they end.
+        string credited = runsOn ? "[v0]" : "[v]";
 
         // The credits on top: they shrink in from the whole picture and (side by side) grow back out over the last moment.
         if (animate)
@@ -365,7 +432,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
             // Quoted, so the commas in it don't split the filter graph.
             string into = $"if(gte(t,{d}),1,(t/{d})*(t/{d})*(3-2*(t/{d})))";
             string outOf = $"if(gte({l}-t,{d}),1,(({l}-t)/{d})*(({l}-t)/{d})*(3-2*(({l}-t)/{d})))";
-            string e = layout.Style == SqueezeStyle.SideBySide ? $"min({into},{outOf})" : into;
+            string e = layout.Style == SqueezeStyle.SideBySide && !runsOn ? $"min({into},{outOf})" : into;
             string w = $"w='trunc(({width}+({boxW}-{width})*{e})/2)*2'";
             string h = $"h='trunc(({height}+({boxH}-{height})*{e})/2)*2'";
             video += job.CreditsFit switch
@@ -391,7 +458,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
                     CreditsSide.Bottom => ("0", $"-(1-{e})*{panelH}"),
                     _ => ($"(1-{e})*{panelW}", "0")
                 };
-                video += $";color=c=black:s={width}x{height}:r=30:d={length}[stagebase];"
+                video += $";color=c=black:s={width}x{height}:r=30:d={total}[stagebase];"
                          + $"[stagebase][panelled]overlay=x='{x}':y='{y}':eval=frame:shortest=1[stage]";
             }
             else
@@ -400,18 +467,35 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
             }
 
             video += $";[stage][box]overlay=x='({width}/2+({boxX}+{boxW}/2-{width}/2)*{e})-w/2':y='({height}/2+({boxY}+{boxH}/2-{height}/2)*{e})-h/2'"
-                     + ":eval=frame:eof_action=pass:shortest=0,format=yuv420p[v]";
+                     + $":eval=frame:eof_action=pass:shortest=0,format=yuv420p{credited}";
         }
         else
         {
             video += $";[1:v]setpts=PTS-STARTPTS,{Fitted(job.CreditsFit, boxW, boxH)}[box];"
-                     + $"[panelled][box]overlay=x='{boxX}+({boxW}-w)/2':y='{boxY}+({boxH}-h)/2':eof_action=pass:shortest=0,format=yuv420p[v]";
+                     + $"[panelled][box]overlay=x='{boxX}+({boxW}-w)/2':y='{boxY}+({boxH}-h)/2':eof_action=pass:shortest=0,format=yuv420p{credited}";
+        }
+
+        if (runsOn)
+        {
+            // g: 0 while the promo's in its slot, easing to 1 (the whole picture) over the moment before the credits end.
+            string l = N(job.Length.TotalSeconds);
+            string d = N(Settle.TotalSeconds);
+            string a = N((job.Length - Settle).TotalSeconds);
+            string g = animate
+                ? $"if(lt(t,{a}),0,if(gte(t,{l}),1,((t-{a})/{d})*((t-{a})/{d})*(3-2*((t-{a})/{d}))))"
+                : $"gte(t,{l})";
+            string fit = job.PanelFit == SqueezeFit.Squeeze ? string.Empty : ":force_original_aspect_ratio=decrease:force_divisible_by=2";
+            double centreX = slot.X + slot.Width / 2.0, centreY = slot.Y + slot.Height / 2.0;
+            video += $";[{promoInput}:v]setpts=PTS-STARTPTS+{start}/TB,"
+                     + $"scale=w='trunc(({slot.Width}+({width}-{slot.Width})*{g})/2)*2':h='trunc(({slot.Height}+({height}-{slot.Height})*{g})/2)*2'{fit}:eval=frame,setsar=1{fades}[promo];"
+                     + $"[v0][promo]overlay=x='({N(centreX)}+({width}/2-{N(centreX)})*{g})-w/2':y='({N(centreY)}+({height}/2-{N(centreY)})*{g})-h/2'"
+                     + ":eval=frame:eof_action=pass:shortest=0,format=yuv420p[v]";
         }
 
         List<string> arguments =
         [
             "-y", "-hide_banner", "-loglevel", "error", "-nostdin",
-            "-loop", "1", "-framerate", "30", "-t", length, "-i", framePath,
+            "-loop", "1", "-framerate", "30", "-t", total, "-i", framePath,
             "-ss", N(job.SourceStart.TotalSeconds), "-t", length, "-i", job.SourcePath
         ];
         if (promo)
@@ -421,7 +505,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
 
         if (backgroundVideo)
         {
-            arguments.AddRange(["-stream_loop", "-1", "-t", length, "-i", job.BackgroundPath!]);
+            arguments.AddRange(["-stream_loop", "-1", "-t", total, "-i", job.BackgroundPath!]);
         }
 
         // The sound: the credits' (dipped while a promo talks over them), the promo's from when it starts, or both mixed.
@@ -431,9 +515,9 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         {
             (true, true) => $"[1:a]asetpts=PTS-STARTPTS,volume='if(between(t,{start},{promoEnd}),{N(job.CreditsVolume * UnderPromo)},{volume})':eval=frame[ca];"
                             + $"[2:a]asetpts=PTS-STARTPTS,adelay={(int)PromoStart.TotalMilliseconds}:all=1[pa];"
-                            + "[ca][pa]amix=inputs=2:duration=first:normalize=0,aresample=48000[a]",
+                            + $"[ca][pa]amix=inputs=2:duration={(runsOn ? "longest" : "first")}:normalize=0,aresample=48000[a]",
             (false, true) => $"[2:a]asetpts=PTS-STARTPTS,adelay={(int)PromoStart.TotalMilliseconds}:all=1,apad,aresample=48000[a]",
-            (true, false) => $"[1:a]asetpts=PTS-STARTPTS,volume={volume},aresample=48000[a]",
+            (true, false) => $"[1:a]asetpts=PTS-STARTPTS,volume={volume},{(runsOn ? "apad," : "")}aresample=48000[a]",
             _ => null
         };
 
@@ -445,7 +529,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
 
         arguments.AddRange(
         [
-            "-t", length, "-r", "30",
+            "-t", total, "-r", "30",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
             "-movflags", "+faststart", output
         ]);
@@ -498,6 +582,27 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
             return true;
+        }
+    }
+
+    /// <summary>How long a video runs (asked of ffprobe); null when it can't say.</summary>
+    public async Task<TimeSpan?> DurationAsync(string path, CancellationToken cancellationToken)
+    {
+        string ffmpeg = settings.Ffmpeg;
+        string ffprobe = Path.IsPathRooted(ffmpeg)
+            ? Path.Combine(Path.GetDirectoryName(ffmpeg)!, OperatingSystem.IsWindows() ? "ffprobe.exe" : "ffprobe")
+            : "ffprobe";
+        try
+        {
+            (int code, _, string output) = await RunAsync(ffprobe, ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", path],
+                cancellationToken).ConfigureAwait(false);
+            return code == 0 && double.TryParse(output.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds) && seconds > 0
+                ? TimeSpan.FromSeconds(seconds)
+                : null;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return null;
         }
     }
 
