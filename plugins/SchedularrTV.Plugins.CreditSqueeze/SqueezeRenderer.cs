@@ -435,15 +435,23 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
             string e = layout.Style == SqueezeStyle.SideBySide && !runsOn ? $"min({into},{outOf})" : into;
             string w = $"w='trunc(({width}+({boxW}-{width})*{e})/2)*2'";
             string h = $"h='trunc(({height}+({boxH}-{height})*{e})/2)*2'";
+            // Squeezed or cropped, the credits still start (and, side by side, end) as they play full screen: kept whole,
+            // with bars, so the cut from the episode is seamless. They ease from that into their stretched or cropped
+            // fit as they shrink, on a black picture the size of their box at that moment, which holds the bars and
+            // trims what's outside it.
+            string rw = $"({width}+({boxW}-{width})*{e})";
+            string rh = $"({height}+({boxH}-{height})*{e})";
+            string wholeW = $"min({rw},{rh}*dar)";
+            string wholeH = $"min({rh},{rw}/dar)";
+            string masked = $";color=c=black:s={width}x{height}:r=30:d={length},scale={w}:{h}:eval=frame[cmask];"
+                            + "[1:v]setpts=PTS-STARTPTS,scale=w='{0}':h='{1}':eval=frame,setsar=1[fitted];"
+                            + "[cmask][fitted]overlay=x='(main_w-overlay_w)/2':y='(main_h-overlay_h)/2':eval=frame:shortest=1,setsar=1[box]";
             video += job.CreditsFit switch
             {
-                SqueezeFit.Squeeze => $";[1:v]setpts=PTS-STARTPTS,scale={w}:{h}:eval=frame,setsar=1[box]",
-
-                // Cropped as it shrinks: the credits cover a black picture the size of their box at that moment, which
-                // trims what's outside it.
-                SqueezeFit.Crop => $";color=c=black:s={width}x{height}:r=30:d={length},scale={w}:{h}:eval=frame[cmask];"
-                                   + $"[1:v]setpts=PTS-STARTPTS,scale={w}:{h}:force_original_aspect_ratio=increase:force_divisible_by=2:eval=frame,setsar=1[cover];"
-                                   + "[cmask][cover]overlay=x='(main_w-overlay_w)/2':y='(main_h-overlay_h)/2':eval=frame:shortest=1,setsar=1[box]",
+                SqueezeFit.Squeeze => masked.Replace("{0}", $"trunc(({wholeW}+({rw}-{wholeW})*{e})/2)*2", StringComparison.Ordinal)
+                    .Replace("{1}", $"trunc(({wholeH}+({rh}-{wholeH})*{e})/2)*2", StringComparison.Ordinal),
+                SqueezeFit.Crop => masked.Replace("{0}", $"trunc(({wholeW}+(max({rw},{rh}*dar)-{wholeW})*{e})/2)*2", StringComparison.Ordinal)
+                    .Replace("{1}", "trunc(ow/dar/2)*2", StringComparison.Ordinal),
                 _ => $";[1:v]setpts=PTS-STARTPTS,scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2:eval=frame,setsar=1[box]"
             };
             // The panel comes in with them (and, side by side, goes with them), so nothing of it shows around credits that

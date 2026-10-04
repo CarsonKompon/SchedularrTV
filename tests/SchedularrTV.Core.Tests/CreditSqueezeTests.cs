@@ -305,7 +305,13 @@ public sealed class CreditSqueezeTests
         // Shrinking while cropped: trimmed by a black picture the size of the box at each moment.
         graph = string.Join(' ', SqueezeRenderer.Arguments(cropped, "frame.png", "out.mp4", 1280, 720, animate: true));
         Assert.Contains("color=c=black:s=1280x720", graph, StringComparison.Ordinal);
-        Assert.Contains("[cmask][cover]overlay", graph, StringComparison.Ordinal);
+        Assert.Contains("[cmask][fitted]overlay", graph, StringComparison.Ordinal);
+
+        // ...starting from the whole picture with bars (as the episode played), easing to cropped as it shrinks.
+        Assert.Contains("min((1280+(768-1280)*", graph, StringComparison.Ordinal);
+        Assert.Contains("h='trunc(ow/dar/2)*2'", graph, StringComparison.Ordinal);
+        string squeezing = string.Join(' ', SqueezeRenderer.Arguments(squeezed, "frame.png", "out.mp4", 1280, 720, animate: true));
+        Assert.Contains("[cmask][fitted]overlay", squeezing, StringComparison.Ordinal);
 
         // With text, the credits leave room for it under them.
         SqueezeLayout captioned = (cropped with { CreditsText = true }).Layout();
