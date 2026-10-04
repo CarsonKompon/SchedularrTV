@@ -393,12 +393,18 @@ public sealed class SchedulingEngine(
         }
     }
 
+    /// <summary>
+    /// The break time a stack keeps room for: a full-length break between each of its segments, and at least the
+    /// shortest break at its end (which takes whatever's left of the slot anyway). Reserving a full break at the end
+    /// too turned away a second eleven-minute episode from a half hour, which then aired as one episode and eighteen
+    /// minutes of adverts.
+    /// </summary>
     private static TimeSpan StackBreakReserve(IReadOnlyList<MediaItem> stack, MidRollConfig? midRoll)
     {
         if (midRoll is null || midRoll.Mode == MidRollMode.None || midRoll.MaxBreakLength < midRoll.MinBreak
             || midRoll.MaxBreakLength <= TimeSpan.Zero) return TimeSpan.Zero;
         int segments = MidRollPlanner.SplitStack(stack, midRoll, TimeSpan.MaxValue).Count;
-        return TimeSpan.FromTicks(midRoll.MaxBreakLength.Ticks * segments);
+        return TimeSpan.FromTicks(midRoll.MaxBreakLength.Ticks * Math.Max(0, segments - 1)) + midRoll.MinBreak;
     }
 
     /// <summary>Lays a slot's programmes out, sharing the leftover time between them as breaks.</summary>

@@ -192,6 +192,28 @@ public class StackToFillTests
     }
 
     [Fact]
+    public async Task Two_eleven_and_a_half_minute_episodes_share_a_half_hour_with_breaks()
+    {
+        // 23 minutes of programme leaves 7 for a full four-minute mid-roll and the end break; reserving a full break at
+        // the end as well used to turn the second episode away, leaving one episode and 18 minutes of adverts.
+        List<MediaItem> media = [.. Enumerable.Range(1, 10).Select(e => TestMedia.Episode("Hungry", 1, e, TimeSpan.FromMinutes(11.5), collection: "Kids")),
+            .. Enumerable.Range(0, 60).Select(i => TestMedia.Filler($"ad-{i}", TimeSpan.FromSeconds(30), "Commercials", "Any Time"))];
+        var channel = new ChannelConfig
+        {
+            Id = "adults", Name = "Adults", PadToNearest = TimeSpan.FromMinutes(30), StackToFill = true,
+            BaseRotation = new() { Query = "collection:'Kids'", Order = PlaybackOrder.SeasonEpisode },
+            MidRoll = new() { Mode = MidRollMode.Auto, TargetSegment = TimeSpan.FromMinutes(14), MaxBreakLength = TimeSpan.FromMinutes(4), MinBreak = TimeSpan.FromSeconds(30) },
+            Interstitials = new() { Commercials = new() { Query = "tag:'Commercials'" }, Filler = new() { Fallback = false } }
+        };
+        var schedule = await new SchedulingEngine(new FakeMediaLibrary(media), new InMemoryPlaybackStateStore())
+            .BuildAsync(new SchedulerConfig(), channel, Day, Day.AddHours(1));
+
+        var first = schedule.Entries.Where(entry => entry.Kind == ScheduleEntryKind.Program && entry.Start < Day.AddMinutes(30)).ToArray();
+        Assert.Equal(2, first.Length);
+        Assert.Equal(TimeSpan.FromMinutes(23), TimeSpan.FromTicks(first.Sum(entry => entry.Duration.Ticks)));
+    }
+
+    [Fact]
     public async Task An_episode_is_never_stacked_twice_in_the_same_slot()
     {
         // Only three episodes for a grid that could hold five: the pool wraps mid-slot.
