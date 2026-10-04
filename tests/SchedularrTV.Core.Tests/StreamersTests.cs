@@ -124,13 +124,28 @@ public sealed class StreamersTests : IDisposable
     }
 
     [Fact]
-    public void An_announced_stream_beats_any_habit()
+    public void An_announced_stream_beats_a_later_habit()
     {
         DateTimeOffset announced = Now.AddHours(5);
 
         StreamPrediction prediction = StreamPredictor.Next(Saturdays(6), Now, TimeZoneInfo.Utc, announced)!;
 
         Assert.Equal((announced, PredictionKind.Scheduled, 1.0), (prediction.At, prediction.Kind, prediction.Confidence));
+    }
+
+    [Fact]
+    public void A_habit_well_before_an_announced_stream_is_expected_first()
+    {
+        // Saturdays at 8pm as usual; next Tuesday's special announced.
+        DateTimeOffset announced = new(2026, 10, 6, 18, 0, 0, TimeSpan.Zero);
+
+        StreamPrediction first = StreamPredictor.Next(Saturdays(6), Now, TimeZoneInfo.Utc, announced)!;
+        Assert.Equal((new DateTimeOffset(2026, 10, 3, 20, 0, 0, TimeSpan.Zero), PredictionKind.Weekly), (first.At, first.Kind));
+
+        // Announced for that Saturday a little earlier than usual: the same stream, at the announced time.
+        DateTimeOffset early = new(2026, 10, 3, 18, 30, 0, TimeSpan.Zero);
+        StreamPrediction same = StreamPredictor.Next(Saturdays(6), Now, TimeZoneInfo.Utc, early)!;
+        Assert.Equal((early, PredictionKind.Scheduled), (same.At, same.Kind));
     }
 
     [Fact]

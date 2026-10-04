@@ -86,7 +86,9 @@ History is kept for 10 weeks in `plugin-data/streamers/history.json`. Recent wee
 
 The prediction for a streamer is, in order:
 
-1. An **announced stream**: YouTube's scheduled (upcoming) stream, or the next segment of their Twitch schedule.
+1. An **announced stream**: YouTube's scheduled (upcoming) stream, or the next segment of their Twitch schedule. If their
+   usual habit (below) comes more than three hours before it, that's shown first; a habit closer to the announced time is
+   taken to be the same stream, at the announced time.
 2. A **weekly habit**: they usually stream on this weekday around this time (days run from 4am, so a stream at 12:30am
    counts with the evening before). A slot they've already streamed in today isn't predicted again.
 3. A **daily habit**, for streamers who stream most days.

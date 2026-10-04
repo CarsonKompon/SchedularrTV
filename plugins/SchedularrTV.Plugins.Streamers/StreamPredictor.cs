@@ -44,23 +44,30 @@ public static class StreamPredictor
         List<StreamSession> past = [.. history.Where(session => session.Start <= now).OrderBy(session => session.Start)];
         TimeSpan? usualLength = Median(past.Select(session => session.Length).Where(length => length > TimeSpan.Zero));
 
+        StreamPrediction? habit = null;
+        if (past.Count >= 2)
+        {
+            List<Slot> starts = [.. past.Select(session => Slot.Of(session, now, zone))];
+            double spanDays = Math.Max(7, (now - past[0].Start).TotalDays);
+            habit = Habit(starts, past, now, zone, spanDays, weekly: true)
+                    ?? (IsDaily(starts, spanDays) ? Habit(starts, past, now, zone, spanDays, weekly: false) : null);
+        }
+
         if (scheduled is { } announced && announced > now - Grace)
         {
-            return new StreamPrediction(announced, usualLength, 1, PredictionKind.Scheduled);
+            // An announced stream is the answer, unless the streamer's usual habit comes well before it (a stream on their
+            // usual Thursday, with Saturday's special announced): then that's expected first. A habit close to the
+            // announced time is the same stream, and the announced time is the more exact.
+            return habit is { } usual && usual.At < announced - SameStream
+                ? usual
+                : new StreamPrediction(announced, usualLength, 1, PredictionKind.Scheduled);
         }
 
-        if (past.Count < 2)
-        {
-            return null;
-        }
-
-        List<Slot> starts = [.. past.Select(session => Slot.Of(session, now, zone))];
-        double spanDays = Math.Max(7, (now - past[0].Start).TotalDays);
-
-        return Habit(starts, past, now, zone, spanDays, weekly: true)
-               ?? (IsDaily(starts, spanDays) ? Habit(starts, past, now, zone, spanDays, weekly: false) : null)
-               ?? Interval(past, now, usualLength);
+        return habit ?? (past.Count >= 2 ? Interval(past, now, usualLength) : null);
     }
+
+    // A predicted and an announced start this close are taken to be the same stream.
+    private static readonly TimeSpan SameStream = TimeSpan.FromHours(3);
 
     /// <summary>Streams on most days of the span (at least half of them).</summary>
     private static bool IsDaily(List<Slot> starts, double spanDays) =>
