@@ -37,7 +37,23 @@ public enum SqueezePromo
     NowPlaying
 }
 
-/// <summary>How a squeeze is laid out: its style, which side the credits go to, and how much of the picture they take.</summary>
+/// <summary>How a video is fitted into its part of the squeeze.</summary>
+public enum SqueezeFit
+{
+    /// <summary>Keeps its shape inside the part, with bars (or the background) around it.</summary>
+    Letterbox,
+
+    /// <summary>Stretched to fill the part exactly.</summary>
+    Squeeze,
+
+    /// <summary>Keeps its shape and fills the part, trimming its edges.</summary>
+    Crop
+}
+
+/// <summary>
+/// How a squeeze is laid out: its style, which side the credits go to, how much of the picture they take, and for each
+/// side, how its video is fitted and whether there's text around it.
+/// </summary>
 public sealed class SqueezeLayoutChoice
 {
     public SqueezeStyle Style { get; set; } = SqueezeStyle.SideBySide;
@@ -46,6 +62,16 @@ public sealed class SqueezeLayoutChoice
 
     /// <summary>How much of the picture the credits take (of its width, or of its height for top and bottom), 30 to 80 (percent).</summary>
     public int SplitPercent { get; set; } = 60;
+
+    public SqueezeFit CreditsFit { get; set; } = SqueezeFit.Letterbox;
+
+    /// <summary>Text with the credits: what's ending ("You've been watching …") and the channel's own line.</summary>
+    public bool CreditsText { get; set; }
+
+    public SqueezeFit PanelFit { get; set; } = SqueezeFit.Letterbox;
+
+    /// <summary>The up-next text around the panel's video; off, the panel is just the video on the background.</summary>
+    public bool PanelText { get; set; } = true;
 
     public SqueezeLayoutChoice Copy() => (SqueezeLayoutChoice)MemberwiseClone();
 }
@@ -69,6 +95,26 @@ public sealed class CreditSqueezeSection
 
     /// <summary>How much of the picture the credits take (of its width, or of its height for top and bottom), 30 to 80 (percent).</summary>
     public int SplitPercent { get; set; } = 60;
+
+    public SqueezeFit CreditsFit { get; set; } = SqueezeFit.Letterbox;
+
+    public bool CreditsText { get; set; }
+
+    public SqueezeFit PanelFit { get; set; } = SqueezeFit.Letterbox;
+
+    public bool PanelText { get; set; } = true;
+
+    /// <summary>Over the ending show's name, when the credits have text.</summary>
+    public string CreditsCaption { get; set; } = "You've been watching";
+
+    /// <summary>A line of the channel's own under the ending show's name, if any.</summary>
+    public string? CreditsLine { get; set; }
+
+    /// <summary>An installed font for the headings.</summary>
+    public string HeadingFont { get; set; } = "Arial";
+
+    /// <summary>An installed font for the rest of the text.</summary>
+    public string TextFont { get; set; } = "Arial";
 
     /// <summary>
     /// Shows whose end credits want a layout of their own (credits that run in a corner, say), by show name. They win over
@@ -151,7 +197,25 @@ public sealed class CreditSqueezeSection
     /// this section's.
     /// </summary>
     public SqueezeLayoutChoice LayoutFor(string? show, CreditSqueezeSection? everywhere = null) =>
-        ShowLayout(show) ?? everywhere?.ShowLayout(show) ?? new SqueezeLayoutChoice { Style = Style, Side = Side, SplitPercent = SplitPercent };
+        ShowLayout(show) ?? everywhere?.ShowLayout(show) ?? OwnLayout();
+
+    /// <summary>This section's own layout (for every show), as a copy.</summary>
+    public SqueezeLayoutChoice OwnLayout() => new()
+    {
+        Style = Style, Side = Side, SplitPercent = SplitPercent, CreditsFit = CreditsFit, CreditsText = CreditsText, PanelFit = PanelFit, PanelText = PanelText
+    };
+
+    /// <summary>Makes <paramref name="layout"/> this section's own layout.</summary>
+    public void UseLayout(SqueezeLayoutChoice layout)
+    {
+        Style = layout.Style;
+        Side = layout.Side;
+        SplitPercent = layout.SplitPercent;
+        CreditsFit = layout.CreditsFit;
+        CreditsText = layout.CreditsText;
+        PanelFit = layout.PanelFit;
+        PanelText = layout.PanelText;
+    }
 
     public CreditSqueezeSection Copy()
     {

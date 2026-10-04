@@ -32,9 +32,19 @@ public sealed record SqueezeJob(
     string? PromoPath = null,
     TimeSpan PromoLength = default,
     SqueezeStyle Style = SqueezeStyle.SideBySide,
-    string? BackgroundPath = null)
+    string? BackgroundPath = null,
+    SqueezeFit CreditsFit = SqueezeFit.Letterbox,
+    bool CreditsText = false,
+    SqueezeFit PanelFit = SqueezeFit.Letterbox,
+    bool PanelText = true,
+    string? EndingShow = null,
+    string? CreditsCaption = null,
+    string? CreditsLine = null,
+    string HeadingFont = "Arial",
+    string TextFont = "Arial")
 {
-    public SqueezeLayout Layout(int width = 1280, int height = 720) => SqueezeLayout.Of(Style, Side, SplitPercent, width, height);
+    public SqueezeLayout Layout(int width = 1280, int height = 720) =>
+        SqueezeLayout.Of(Style, Side, SplitPercent, width, height, CreditsFit, CreditsText, PanelText);
 }
 
 /// <summary>
@@ -144,11 +154,18 @@ public static class SqueezePlanner
         }
 
         (MediaItem? promo, bool pending) = PickPromo(entries, index, next, section.Promos, channelId);
-        SqueezeLayoutChoice layout = section.LayoutFor(whole ? ShowBefore(entries, index) : ShowOf(item), everywhere);
+        string? ending = whole ? ShowBefore(entries, index) : ShowOf(item);
+        SqueezeLayoutChoice layout = section.LayoutFor(ending, everywhere);
         return new SqueezePlan(index, from, whole, new SqueezeJob(item.Path!, from, length, Listing(entries[next], zone), later, channelName,
             section.Heading, section.AccentColor, section.BackgroundColor, Math.Clamp(section.CreditsVolume, 0, 2), section.Animate,
             layout.Side, Math.Clamp(layout.SplitPercent, SqueezeLayout.MinSplit, SqueezeLayout.MaxSplit), promo?.Path, promo?.Duration ?? TimeSpan.Zero,
-            layout.Style, string.IsNullOrWhiteSpace(section.BackgroundPath) ? null : section.BackgroundPath.Trim()), pending);
+            layout.Style, string.IsNullOrWhiteSpace(section.BackgroundPath) ? null : section.BackgroundPath.Trim(),
+            layout.CreditsFit, layout.CreditsText, layout.PanelFit, layout.PanelText,
+            layout.CreditsText ? ending : null,
+            layout.CreditsText ? section.CreditsCaption : null,
+            layout.CreditsText && !string.IsNullOrWhiteSpace(section.CreditsLine) ? section.CreditsLine.Trim() : null,
+            string.IsNullOrWhiteSpace(section.HeadingFont) ? "Arial" : section.HeadingFont,
+            string.IsNullOrWhiteSpace(section.TextFont) ? "Arial" : section.TextFont), pending);
     }
 
     // How far ahead each kind of promo is looked for.

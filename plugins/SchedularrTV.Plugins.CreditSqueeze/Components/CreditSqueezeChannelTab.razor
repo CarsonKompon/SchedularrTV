@@ -127,6 +127,30 @@
                                 <input type="range" min="@SqueezeLayout.MinSplit" max="@SqueezeLayout.MaxSplit" step="1" value="@choice.SplitPercent"
                                        @onchange="e => ChangeLayout(section, layout => layout.SplitPercent = (int)Math.Round(Number(e, 60)))" /></label>
                         </div>
+                        <div class="grid grid-2">
+                            <div class="cs-side">
+                                <strong>Credits side</strong>
+                                <label class="field"><span>Fit the credits</span>
+                                    <select value="@choice.CreditsFit" @onchange="e => ChangeLayout(section, layout => layout.CreditsFit = Parse(e, SqueezeFit.Letterbox))">
+                                        <option value="Letterbox">Letterbox (whole, with bars)</option>
+                                        <option value="Squeeze">Squeeze (stretch to fill)</option>
+                                        <option value="Crop">Crop (fill, trim the edges)</option>
+                                    </select></label>
+                                <label class="check"><input type="checkbox" checked="@choice.CreditsText" @onchange="e => ChangeLayout(section, layout => layout.CreditsText = e.Value is true)" />
+                                    <span>Text with the credits (what's ending, and your line)</span></label>
+                            </div>
+                            <div class="cs-side">
+                                <strong>Up-next side</strong>
+                                <label class="field"><span>Fit its video</span>
+                                    <select value="@choice.PanelFit" @onchange="e => ChangeLayout(section, layout => layout.PanelFit = Parse(e, SqueezeFit.Letterbox))">
+                                        <option value="Letterbox">Letterbox (whole, background around it)</option>
+                                        <option value="Squeeze">Squeeze (stretch to fill)</option>
+                                        <option value="Crop">Crop (fill, trim the edges)</option>
+                                    </select></label>
+                                <label class="check"><input type="checkbox" checked="@choice.PanelText" @onchange="e => ChangeLayout(section, layout => layout.PanelText = e.Value is true)" />
+                                    <span>Up-next text around it (off: just the video)</span></label>
+                            </div>
+                        </div>
                     </fieldset>
                     <p class="hint">@StyleHint(choice)</p>
                     <div class="field"><span>Play in the panel</span>
@@ -217,6 +241,34 @@
                 <div class="field"><span>Background colour</span>
                     <input type="color" value="@section.BackgroundColor" @onchange="e => Set(() => section.BackgroundColor = Text(e, section.BackgroundColor))" style="width:56px;height:34px;padding:2px;" /></div>
             </div>
+            <div class="grid grid-2">
+                <label class="field"><span>Heading font</span>
+                    <select value="@FontName(section.HeadingFont)" style="font-family: '@section.HeadingFont'" @onchange="e => Set(() => section.HeadingFont = Text(e, DefaultFont))">
+                        @if (!Fonts.Contains(FontName(section.HeadingFont)))
+                        {
+                            <option value="@section.HeadingFont">@section.HeadingFont (not installed)</option>
+                        }
+                        @foreach (string font in Fonts)
+                        {
+                            <option value="@font" style="font-family: '@font'">@font</option>
+                        }
+                    </select></label>
+                <label class="field"><span>Text font</span>
+                    <select value="@FontName(section.TextFont)" style="font-family: '@section.TextFont'" @onchange="e => Set(() => section.TextFont = Text(e, DefaultFont))">
+                        @if (!Fonts.Contains(FontName(section.TextFont)))
+                        {
+                            <option value="@section.TextFont">@section.TextFont (not installed)</option>
+                        }
+                        @foreach (string font in Fonts)
+                        {
+                            <option value="@font" style="font-family: '@font'">@font</option>
+                        }
+                    </select></label>
+                <label class="field"><span>Over the ending show (when the credits have text)</span>
+                    <input type="text" value="@section.CreditsCaption" @onchange="e => Set(() => section.CreditsCaption = e.Value?.ToString()?.Trim() ?? string.Empty)" /></label>
+                <label class="field"><span>Your line under it (optional)</span>
+                    <input type="text" value="@section.CreditsLine" @onchange="e => Set(() => section.CreditsLine = Blank(e.Value?.ToString()))" /></label>
+            </div>
             <div class="field"><span>Background picture or video (optional; a video loops). Behind the panel side by side, behind both boxes framed.</span>
                 <FilePathPicker Value="@section.BackgroundPath" ValueChanged="value => Set(() => section.BackgroundPath = Blank(value))"
                                 Extensions="BackgroundExtensions" Label="background picture or video" Placeholder="D:\Media\Backgrounds\loop.mp4" /></div>
@@ -270,6 +322,8 @@
         .cs-video { width: 100%; max-width: 640px; border-radius: 8px; display: block; margin-bottom: 8px; background: #000; }
         .cs-preview img { background: #000; }
         .cs-scope { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin: -4px 0 10px; }
+        .cs-side { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; }
+        .cs-side .check { margin: 0; }
         .cs-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
         .cs-fields:disabled { opacity: .55; }
         .cs-lookup { margin: 4px 0 0; }
@@ -493,7 +547,7 @@
     {
         if (_show is null)
         {
-            return (new SqueezeLayoutChoice { Style = section.Style, Side = section.Side, SplitPercent = section.SplitPercent }, LayoutHome.Section);
+            return (section.OwnLayout(), LayoutHome.Section);
         }
 
         if (section.ShowLayout(_show) is { } here)
@@ -517,9 +571,7 @@
         switch (home)
         {
             case LayoutHome.Section:
-                section.Style = choice.Style;
-                section.Side = choice.Side;
-                section.SplitPercent = choice.SplitPercent;
+                section.UseLayout(choice);
                 Commit();
                 break;
             case LayoutHome.Here:
@@ -660,7 +712,20 @@
             ? new[] { new SqueezeListing("Another Show", null, "9 PM", null), new SqueezeListing("The Late Movie", null, "9:30 PM", null) }
             : Array.Empty<SqueezeListing>(),
         Channel.Name, section.Heading, section.AccentColor, section.BackgroundColor, section.CreditsVolume, section.Animate,
-        layout.Side, layout.SplitPercent, Style: layout.Style, BackgroundPath: Blank(section.BackgroundPath));
+        layout.Side, layout.SplitPercent, Style: layout.Style, BackgroundPath: Blank(section.BackgroundPath),
+        CreditsFit: layout.CreditsFit, CreditsText: layout.CreditsText, PanelFit: layout.PanelFit, PanelText: layout.PanelText,
+        EndingShow: layout.CreditsText ? _show ?? "The Show That's Ending" : null,
+        CreditsCaption: section.CreditsCaption, CreditsLine: Blank(section.CreditsLine),
+        HeadingFont: section.HeadingFont, TextFont: section.TextFont);
+
+    private const string DefaultFont = "Arial";
+
+    private static IReadOnlyList<string>? _fonts;
+
+    private static IReadOnlyList<string> Fonts => _fonts ??= SqueezeRenderer.InstalledFonts();
+
+    private static string FontName(string family) =>
+        Fonts.FirstOrDefault(font => string.Equals(font, family, StringComparison.OrdinalIgnoreCase)) ?? family;
 
     /// <summary>The layout preview as an image address, drawn again only when the look changes.</summary>
     private string FramePreview(CreditSqueezeSection section, SqueezeLayoutChoice layout)

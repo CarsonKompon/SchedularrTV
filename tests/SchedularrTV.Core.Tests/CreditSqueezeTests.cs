@@ -235,6 +235,11 @@ public sealed class CreditSqueezeTests
             foreach (CreditsSide side in Enum.GetValues<CreditsSide>())
             {
                 Assert.True(SqueezeRenderer.DrawFrame(job with { Style = style, Side = side }, 640, 360, art: null).Length > 500);
+                Assert.True(SqueezeRenderer.DrawFrame(job with
+                {
+                    Style = style, Side = side, CreditsFit = SqueezeFit.Crop, CreditsText = true, EndingShow = "SpongeBob", CreditsLine = "Thanks for watching",
+                    PanelFit = SqueezeFit.Squeeze, PanelText = false, HeadingFont = "No Such Font"
+                }, 640, 360, art: null).Length > 500);
             }
         }
     }
@@ -251,6 +256,44 @@ public sealed class CreditSqueezeTests
         Assert.True(layout.Text.X > layout.Picture.Right);
         Assert.True(layout.Picture.Y >= layout.Panel.Y && layout.Picture.Bottom <= layout.Panel.Bottom);
         Assert.All(new[] { layout.Credits, layout.Picture, layout.Text }, rect => Assert.True(rect.Width % 2 == 0 && rect.Height % 2 == 0));
+    }
+
+    [Fact]
+    public void Each_side_is_letterboxed_squeezed_or_cropped_and_can_go_without_text()
+    {
+        SqueezeJob job = Plan(Day(), new CreditSqueezeSection { Animate = false })[0].Job;
+
+        // Squeezed or cropped, the credits fill their whole column.
+        SqueezeJob squeezed = job with { CreditsFit = SqueezeFit.Squeeze };
+        Assert.Equal(new Rect(0, 0, 768, 720), squeezed.Layout().Credits);
+        string graph = string.Join(' ', SqueezeRenderer.Arguments(squeezed, "frame.png", "out.mp4", 1280, 720, animate: false));
+        Assert.Contains("scale=768:720,setsar=1", graph, StringComparison.Ordinal);
+
+        SqueezeJob cropped = job with { CreditsFit = SqueezeFit.Crop };
+        graph = string.Join(' ', SqueezeRenderer.Arguments(cropped, "frame.png", "out.mp4", 1280, 720, animate: false));
+        Assert.Contains("scale=768:720:force_original_aspect_ratio=increase:force_divisible_by=2,crop=768:720", graph, StringComparison.Ordinal);
+
+        // Shrinking while cropped: trimmed by a black picture the size of the box at each moment.
+        graph = string.Join(' ', SqueezeRenderer.Arguments(cropped, "frame.png", "out.mp4", 1280, 720, animate: true));
+        Assert.Contains("color=c=black:s=1280x720", graph, StringComparison.Ordinal);
+        Assert.Contains("[cmask][cover]overlay", graph, StringComparison.Ordinal);
+
+        // With text, the credits leave room for it under them.
+        SqueezeLayout captioned = (cropped with { CreditsText = true }).Layout();
+        Assert.Equal(new Rect(0, 0, 768, 600), captioned.Credits);
+        Assert.True(captioned.Caption.Y >= captioned.Credits.Bottom && !captioned.Caption.IsEmpty);
+        Assert.True((job with { CreditsText = true }).Layout().Caption.Y >= job.Layout().Credits.Y);
+
+        // The up-next side as just its video: the whole panel, no words.
+        SqueezeLayout bare = (job with { PanelText = false }).Layout();
+        Assert.Equal(bare.Panel, bare.Picture);
+        Assert.True(bare.Text.IsEmpty);
+        Assert.True((job with { Style = SqueezeStyle.Framed, PanelText = false }).Layout() is { } framed && framed.Picture.Height == framed.Credits.Height);
+
+        // The promo is fitted the same way.
+        SqueezeJob promo = job with { PromoPath = "/promos/up-next.mp4", PromoLength = TimeSpan.FromSeconds(15), PanelFit = SqueezeFit.Crop, PanelText = false };
+        graph = string.Join(' ', SqueezeRenderer.Arguments(promo, "frame.png", "out.mp4", 1280, 720, animate: false));
+        Assert.Contains("scale=512:720:force_original_aspect_ratio=increase:force_divisible_by=2,crop=512:720", graph, StringComparison.Ordinal);
     }
 
     [Fact]

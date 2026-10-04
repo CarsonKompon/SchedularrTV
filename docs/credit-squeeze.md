@@ -34,6 +34,14 @@ channel*, *Its own settings* or *No squeezes*):
     panel's picture in two boxes on a background, with the channel's name over the credits (left or right only).
   - **Credits on the** side, and their **share** of the picture (30–80%: of the width, or of the height for top and
     bottom).
+  - Each side has its own options:
+    - **Fit:** *Letterbox* keeps the video whole, with bars around it (black on the credits' side, the background on
+      the up-next side). *Squeeze* stretches it to fill its side exactly. *Crop* fills its side and trims the edges.
+    - **Credits side text:** what's ending ("You've been watching" over the show's name, both editable under *Look*)
+      and a line of your own. It goes under the credits, or beside them for top and bottom.
+    - **Up-next side text:** turn it off and the up-next side is just its video (the promo, else the next programme's
+      picture) on the background, with no heading or listings.
+  - These are part of the layout, so a show with its own layout can have its own fit and text too.
   - **Layout for:** *Every show*, or a show the channel airs. Some shows' credits run in a corner or need more room, so
     a show can have its own layout, either just on this channel (or block) or on every channel. Pick the show, then
     **Give it its own here** or **…on every channel**. **Use it on every channel** / **Only use it here** move it
@@ -56,7 +64,8 @@ channel*, *Its own settings* or *No squeezes*):
   - **Episodes' end credits:** the odds an episode with marked credits gets squeezed.
   - **Shows' own outros:** the odds for outros, with a slider for each show on the channel that has one. A show left
     alone uses the overall setting; **Reset** puts it back.
-- **Look:** the heading ("Up next"), accent and background colours, a background picture or video (a video loops;
+- **Look:** the heading ("Up next"), the heading and text fonts (any font installed on the server, as in the
+  generated promos editor), the credits' caption and your own line, accent and background colours, a background picture or video (a video loops;
   side by side it's behind the panel, framed it's behind both boxes), the credits' volume, the longest credits to
   squeeze, whether the next two programmes are listed too, and whether the credits shrink into place over the first
   second (or start in their box).
@@ -72,6 +81,14 @@ plugins:
     style: side_by_side        # or framed
     side: right                # left, right, top, bottom
     split_percent: 60
+    credits_fit: letterbox     # letterbox, squeeze, crop
+    credits_text: true
+    panel_fit: crop
+    panel_text: false          # just the video on the up-next side
+    credits_caption: You've been watching
+    credits_line: Thanks for watching Toons!
+    heading_font: Bebas Neue
+    text_font: Segoe UI
     shows:                     # shows with their own layout on this channel
       SpongeBob SquarePants:
         style: framed

@@ -270,7 +270,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         Rect slot = layout.Picture;
         string start = N(PromoStart.TotalSeconds);
         video += promo
-            ? $";[{promoInput}:v]setpts=PTS-STARTPTS+{start}/TB,scale={slot.Width}:{slot.Height}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1[promo];"
+            ? $";[{promoInput}:v]setpts=PTS-STARTPTS+{start}/TB,{Fitted(job.PanelFit, slot.Width, slot.Height)}[promo];"
               + $"[bg][promo]overlay=x='{slot.X}+({slot.Width}-w)/2':y='{slot.Y}+({slot.Height}-h)/2':eof_action=pass:shortest=0[panelled]"
             : ";[bg]null[panelled]";
 
@@ -284,14 +284,25 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
             string into = $"if(gte(t,{d}),1,(t/{d})*(t/{d})*(3-2*(t/{d})))";
             string outOf = $"if(gte({l}-t,{d}),1,(({l}-t)/{d})*(({l}-t)/{d})*(3-2*(({l}-t)/{d})))";
             string e = layout.Style == SqueezeStyle.SideBySide ? $"min({into},{outOf})" : into;
-            video += $";[1:v]setpts=PTS-STARTPTS,scale=w='trunc(({width}+({boxW}-{width})*{e})/2)*2':h='trunc(({height}+({boxH}-{height})*{e})/2)*2'"
-                     + ":force_original_aspect_ratio=decrease:force_divisible_by=2:eval=frame,setsar=1[box];"
-                     + $"[panelled][box]overlay=x='({width}/2+({boxX}+{boxW}/2-{width}/2)*{e})-w/2':y='({height}/2+({boxY}+{boxH}/2-{height}/2)*{e})-h/2'"
+            string w = $"w='trunc(({width}+({boxW}-{width})*{e})/2)*2'";
+            string h = $"h='trunc(({height}+({boxH}-{height})*{e})/2)*2'";
+            video += job.CreditsFit switch
+            {
+                SqueezeFit.Squeeze => $";[1:v]setpts=PTS-STARTPTS,scale={w}:{h}:eval=frame,setsar=1[box]",
+
+                // Cropped as it shrinks: the credits cover a black picture the size of their box at that moment, which
+                // trims what's outside it.
+                SqueezeFit.Crop => $";color=c=black:s={width}x{height}:r=30:d={length},scale={w}:{h}:eval=frame[cmask];"
+                                   + $"[1:v]setpts=PTS-STARTPTS,scale={w}:{h}:force_original_aspect_ratio=increase:force_divisible_by=2:eval=frame,setsar=1[cover];"
+                                   + "[cmask][cover]overlay=x='(main_w-overlay_w)/2':y='(main_h-overlay_h)/2':eval=frame:shortest=1,setsar=1[box]",
+                _ => $";[1:v]setpts=PTS-STARTPTS,scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2:eval=frame,setsar=1[box]"
+            };
+            video += $";[panelled][box]overlay=x='({width}/2+({boxX}+{boxW}/2-{width}/2)*{e})-w/2':y='({height}/2+({boxY}+{boxH}/2-{height}/2)*{e})-h/2'"
                      + ":eval=frame:eof_action=pass:shortest=0,format=yuv420p[v]";
         }
         else
         {
-            video += $";[1:v]setpts=PTS-STARTPTS,scale={boxW}:{boxH}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1[box];"
+            video += $";[1:v]setpts=PTS-STARTPTS,{Fitted(job.CreditsFit, boxW, boxH)}[box];"
                      + $"[panelled][box]overlay=x='{boxX}+({boxW}-w)/2':y='{boxY}+({boxH}-h)/2':eof_action=pass:shortest=0,format=yuv420p[v]";
         }
 
@@ -339,7 +350,15 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         return arguments;
     }
 
-    private static readonly string[] PictureTypes = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"];
+    /// <summary>A video fitted into <paramref name="width"/>×<paramref name="height"/>: kept whole with room around it, stretched, or trimmed.</summary>
+    private static string Fitted(SqueezeFit fit, int width, int height) => fit switch
+    {
+        SqueezeFit.Squeeze => $"scale={width}:{height},setsar=1",
+        SqueezeFit.Crop => $"scale={width}:{height}:force_original_aspect_ratio=increase:force_divisible_by=2,crop={width}:{height},setsar=1",
+        _ => $"scale={width}:{height}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1"
+    };
+
+    private static readonly string[] PictureTypes =[".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"];
 
     /// <summary>A background that's a video (anything set that isn't a picture), played under the frame.</summary>
     public static bool IsVideo(string? path) =>
@@ -455,6 +474,8 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         SKRect box = Sk(layout.Credits);
         SKRect words = Sk(layout.Text);
         bool framed = layout.Style == SqueezeStyle.Framed;
+        string headingFont = job.HeadingFont;
+        string textFont = job.TextFont;
 
         if (framed)
         {
@@ -474,12 +495,13 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
                 canvas.DrawRoundRect(Inflate(box, 4), 12, 12, edge);
             }
 
-            Text(canvas, job.ChannelName.ToUpperInvariant(), box.Left, box.Top - 24, 18, soft, bold: true, width: box.Width);
+            Text(canvas, job.ChannelName.ToUpperInvariant(), box.Left, box.Top - 24, 18, soft, bold: true, width: box.Width, family: headingFont);
         }
         else
         {
-            // Side by side: the credits' whole strip is black (they're 16:9 in it), with a thin accent line where it meets the panel.
-            SKRect strip = layout.TextBeside ? SKRect.Create(0, box.Top, 1280, box.Height) : SKRect.Create(box.Left, 0, box.Width, 720);
+            // Side by side: the credits' whole strip is black (bars around them when letterboxed), with a thin accent line
+            // where it meets the panel.
+            SKRect strip = Sk(layout.Strip);
             using (var black = new SKPaint { Color = SKColors.Black })
             {
                 canvas.DrawRect(strip, black);
@@ -499,81 +521,120 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
             }
         }
 
-        // The heading: above the picture, or (a short panel) at the top of the words beside it.
-        SKRect picture = Sk(layout.Picture);
-        float x = layout.TextBeside ? words.Left : picture.Left;
-        float y;
-        if (layout.TextBeside)
+        // The credits' own words: what's ending, and the channel's line.
+        float captionBottom = box.Bottom;
+        if (!layout.Caption.IsEmpty)
         {
-            Text(canvas, job.Heading.ToUpperInvariant(), x, words.Top + 20, 20, accent, bold: true, width: words.Width);
-            y = words.Top + 28;
-        }
-        else
-        {
-            Text(canvas, job.Heading.ToUpperInvariant(), x, picture.Top - 16, 22, accent, bold: true, width: picture.Width);
-            y = picture.Bottom + 12;
+            SKRect caption = Sk(layout.Caption);
+            float cy = caption.Top;
+            float captionSize = Math.Clamp(caption.Width / 14f, 18, 30);
+            if (!string.IsNullOrWhiteSpace(job.EndingShow))
+            {
+                if (!string.IsNullOrWhiteSpace(job.CreditsCaption))
+                {
+                    Text(canvas, job.CreditsCaption.ToUpperInvariant(), caption.Left, cy + 16, 15, accent, bold: true, width: caption.Width, family: headingFont);
+                    cy += 20;
+                }
+
+                cy = Wrapped(canvas, job.EndingShow, caption.Left, cy, captionSize, SKColors.White, caption.Width, maxLines: 2, family: textFont);
+            }
+
+            if (job.CreditsLine is { Length: > 0 } own && cy + 22 <= caption.Bottom + 4)
+            {
+                cy = Wrapped(canvas, own, caption.Left, cy + 4, Math.Min(18, captionSize), soft, caption.Width, maxLines: 2, bold: false, family: textFont);
+            }
+
+            captionBottom = Math.Max(captionBottom, cy);
         }
 
-        // The picture slot, where a promo plays (over the next programme's picture, which shows before and after it).
+        // The picture slot, where a promo plays (over the next programme's picture, which shows before and after it). A
+        // panel that's just its video, side by side, fills it edge to edge.
+        SKRect picture = Sk(layout.Picture);
+        bool bare = layout.Text.IsEmpty;
+        float corner = bare && !framed ? 0 : 12;
         using (SKImage? image = art is null ? null : SKImage.FromEncodedData(art))
         {
             canvas.Save();
-            canvas.ClipRoundRect(new SKRoundRect(picture, 12, 12), antialias: true);
+            canvas.ClipRoundRect(new SKRoundRect(picture, corner, corner), antialias: true);
             if (image is not null)
             {
-                Cover(canvas, image, picture);
+                Place(canvas, image, picture, job.PanelFit);
             }
             else
             {
                 using var stand = new SKPaint { Color = Mix(background, accent, 0.35f) };
-                canvas.DrawRect(picture, stand);
+                canvas.DrawRect(job.PanelFit == SqueezeFit.Letterbox ? Contain(16 / 9f, picture) : picture, stand);
             }
 
             canvas.Restore();
         }
 
-        // Smaller text for a narrow panel.
-        float size = Math.Clamp(words.Width / 12f, 18, 32);
-        y = Wrapped(canvas, job.Next.Title, x, y, size, SKColors.White, words.Width, maxLines: 2);
-        if (job.Next.Episode is { Length: > 0 } episode)
+        if (framed && bare)
         {
-            y = Wrapped(canvas, episode, x, y + 4, Math.Min(20, size), soft, words.Width, maxLines: 1, bold: false);
+            // Two boxes alike: the panel's picture gets the same edge as the credits'.
+            using var edge = new SKPaint { Color = accent.WithAlpha(150), IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2 };
+            canvas.DrawRoundRect(Inflate(picture, 4), 12, 12, edge);
         }
 
-        float whenSize = Math.Min(24, size);
-        Text(canvas, $"at {job.Next.When}", x, y + whenSize + 6, whenSize, accent, bold: true, width: words.Width);
-        y += whenSize + 6;
-
-        if (job.Later.Count > 0)
+        if (!bare)
         {
-            if (framed)
+            // The heading: above the picture, or (a short panel) at the top of the words beside it.
+            float x = layout.TextBeside ? words.Left : picture.Left;
+            float y;
+            if (layout.TextBeside)
             {
-                // Along the bottom, under both boxes.
-                float laterY = Math.Max(box.Bottom, y) + 50;
-                if (laterY < 700)
-                {
-                    Text(canvas, "LATER", 48, laterY, 16, accent, bold: true, width: 120);
-                    float laterX = 130;
-                    foreach (SqueezeListing later in job.Later)
-                    {
-                        Text(canvas, $"{later.When}  {later.Title}", laterX, laterY, 18, soft, bold: false, width: 520);
-                        laterX += 560;
-                    }
-                }
+                Text(canvas, job.Heading.ToUpperInvariant(), x, words.Top + 20, 20, accent, bold: true, width: words.Width, family: headingFont);
+                y = words.Top + 28;
             }
             else
             {
-                // In the words' column, as long as there's room left in it.
-                float laterY = y + 40;
-                foreach (SqueezeListing later in job.Later)
-                {
-                    if (laterY > words.Bottom)
-                    {
-                        break;
-                    }
+                Text(canvas, job.Heading.ToUpperInvariant(), x, picture.Top - 16, 22, accent, bold: true, width: picture.Width, family: headingFont);
+                y = picture.Bottom + 12;
+            }
 
-                    Text(canvas, $"Later  {later.When}  {later.Title}", x, laterY, 16, soft, bold: false, width: words.Width);
-                    laterY += 24;
+            // Smaller text for a narrow panel.
+            float size = Math.Clamp(words.Width / 12f, 18, 32);
+            y = Wrapped(canvas, job.Next.Title, x, y, size, SKColors.White, words.Width, maxLines: 2, family: textFont);
+            if (job.Next.Episode is { Length: > 0 } episode)
+            {
+                y = Wrapped(canvas, episode, x, y + 4, Math.Min(20, size), soft, words.Width, maxLines: 1, bold: false, family: textFont);
+            }
+
+            float whenSize = Math.Min(24, size);
+            Text(canvas, $"at {job.Next.When}", x, y + whenSize + 6, whenSize, accent, bold: true, width: words.Width, family: headingFont);
+            y += whenSize + 6;
+
+            if (job.Later.Count > 0)
+            {
+                if (framed)
+                {
+                    // Along the bottom, under both boxes.
+                    float laterY = Math.Max(captionBottom, y) + 50;
+                    if (laterY < 700)
+                    {
+                        Text(canvas, "LATER", 48, laterY, 16, accent, bold: true, width: 120, family: headingFont);
+                        float laterX = 130;
+                        foreach (SqueezeListing later in job.Later)
+                        {
+                            Text(canvas, $"{later.When}  {later.Title}", laterX, laterY, 18, soft, bold: false, width: 520, family: textFont);
+                            laterX += 560;
+                        }
+                    }
+                }
+                else
+                {
+                    // In the words' column, as long as there's room left in it.
+                    float laterY = y + 40;
+                    foreach (SqueezeListing later in job.Later)
+                    {
+                        if (laterY > words.Bottom)
+                        {
+                            break;
+                        }
+
+                        Text(canvas, $"Later  {later.When}  {later.Title}", x, laterY, 16, soft, bold: false, width: words.Width, family: textFont);
+                        laterY += 24;
+                    }
                 }
             }
         }
@@ -596,25 +657,65 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         canvas.DrawImage(image, destination, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
     }
 
-    private static SKFont Font(float size, bool bold) =>
-        new(SKTypeface.FromFamilyName("Arial", bold ? SKFontStyle.Bold : SKFontStyle.Normal) ?? SKTypeface.Default, size)
+    /// <summary>An image in <paramref name="bounds"/>: kept whole (centred), stretched, or covering it.</summary>
+    private static void Place(SKCanvas canvas, SKImage image, SKRect bounds, SqueezeFit fit)
+    {
+        var sampling = new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
+        switch (fit)
         {
-            Edging = SKFontEdging.Antialias,
-            Subpixel = true
-        };
+            case SqueezeFit.Squeeze:
+                canvas.DrawImage(image, bounds, sampling);
+                break;
+            case SqueezeFit.Crop:
+                Cover(canvas, image, bounds);
+                break;
+            default:
+                canvas.DrawImage(image, Contain(image.Width / (float)image.Height, bounds), sampling);
+                break;
+        }
+    }
+
+    /// <summary>The largest box of this shape that fits in <paramref name="bounds"/>, centred.</summary>
+    private static SKRect Contain(float aspect, SKRect bounds)
+    {
+        float width = Math.Min(bounds.Width, bounds.Height * aspect);
+        float height = width / aspect;
+        return SKRect.Create(bounds.MidX - width / 2, bounds.MidY - height / 2, width, height);
+    }
+
+    /// <summary>The installed fonts the squeeze can be drawn in.</summary>
+    public static IReadOnlyList<string> InstalledFonts() =>
+    [
+        .. SKFontManager.Default.GetFontFamilies()
+            .Where(family => !string.IsNullOrWhiteSpace(family) && family[0] != '@')
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+    ];
+
+    private static readonly ConcurrentDictionary<(string Family, bool Bold), SKTypeface> Typefaces = new();
+
+    private static SKFont Font(string family, float size, bool bold)
+    {
+        SKTypeface typeface = Typefaces.GetOrAdd((family, bold), key =>
+            SKTypeface.FromFamilyName(key.Family, key.Bold ? SKFontStyle.Bold : SKFontStyle.Normal)
+            ?? SKTypeface.FromFamilyName("Arial", key.Bold ? SKFontStyle.Bold : SKFontStyle.Normal)
+            ?? SKTypeface.Default);
+        return new SKFont(typeface, size) { Edging = SKFontEdging.Antialias, Subpixel = true };
+    }
 
     /// <summary>One line, shortened with "…" to fit <paramref name="width"/>; <paramref name="y"/> is its baseline.</summary>
-    private static void Text(SKCanvas canvas, string text, float x, float y, float size, SKColor colour, bool bold, float width)
+    private static void Text(SKCanvas canvas, string text, float x, float y, float size, SKColor colour, bool bold, float width, string family = "Arial")
     {
-        using SKFont font = Font(size, bold);
+        using SKFont font = Font(family, size, bold);
         using var paint = new SKPaint { Color = colour, IsAntialias = true };
         canvas.DrawText(Fit(text, font, paint, width), x, y, SKTextAlign.Left, font, paint);
     }
 
     /// <summary>Text over up to <paramref name="maxLines"/> lines from <paramref name="top"/>; returns where it ends.</summary>
-    private static float Wrapped(SKCanvas canvas, string text, float x, float top, float size, SKColor colour, float width, int maxLines, bool bold = true)
+    private static float Wrapped(SKCanvas canvas, string text, float x, float top, float size, SKColor colour, float width, int maxLines, bool bold = true,
+        string family = "Arial")
     {
-        using SKFont font = Font(size, bold);
+        using SKFont font = Font(family, size, bold);
         using var paint = new SKPaint { Color = colour, IsAntialias = true };
         List<string> lines = [];
         string current = string.Empty;
