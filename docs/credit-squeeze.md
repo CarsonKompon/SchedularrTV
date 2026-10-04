@@ -35,7 +35,8 @@ channel*, *Its own settings* or *No squeezes*):
 
 - **Layout:**
   - **Style:** *Side by side* is the classic one: the credits shrink against one edge (left, right, top or bottom)
-    and the panel fills the rest. As they end, they grow back to fill the picture. *Framed* puts the credits and the
+    and the panel slides in from the far edge to fill the rest. As they end, they grow back to fill the picture and
+    the panel slides away. (Framed, the background and panel fade up as the credits shrink into their box.) *Framed* puts the credits and the
     panel's picture in two boxes on a background, with the channel's name over the credits (left or right only).
   - **Credits on the** side, and their **share** of the picture (30–80%: of the width, or of the height for top and
     bottom).
@@ -63,8 +64,13 @@ channel*, *Its own settings* or *No squeezes*):
   from the breaks before it), *Now Playing* (its ident), *Coming Up* (later today) and *Eventually* (later in the week).
   One is picked at random from what the schedule airs nearby, library promo clips and generated promos alike. It plays
   once the credits are in place, with the credits' sound dipped under its own. A generated promo not made yet is waited
-  for until 20 minutes before the squeeze airs. With none ticked, or none nearby, the panel shows the next programme's
-  picture.
+  for until 20 minutes before the squeeze airs. With none nearby (or a generated one not ready in time), and the
+  Generated Promos plugin on, the channel's own templates make one of a ticked kind for the panel, if it has a template
+  of that kind. This happens for previews too, so they take a little longer. With none ticked, or none to be had, the
+  panel shows the next programme's picture.
+  The panel's heading follows the promo in it: *Up next* for the next programme (or no promo), *Coming up* and
+  *Eventually* for those promos, which also name the airing they're for (with its day, when it isn't today), and *Next*
+  for a Now Playing ident. Each heading can be changed under *Look*.
 - **How often:**
   - **Episodes' end credits:** the odds an episode with marked credits gets squeezed.
   - **Shows' own outros:** the odds for outros, with a slider for each show on the channel that has one. A show left
@@ -109,6 +115,9 @@ plugins:
       Hey Arnold!: 0
     longest_credits: 4m
     heading: Up next
+    coming_up_heading: Coming up
+    eventually_heading: Eventually
+    now_playing_heading: Next
     accent_color: '#ff5c8a'
     background_color: '#0b0d14'
     credits_volume: 1

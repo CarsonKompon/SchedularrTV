@@ -147,6 +147,7 @@ service. These helpers fill the scheduler's extension points:
 | Language model that writes voice-overs and captions (see [local-ai.md](local-ai.md)) | `services.AddTextGenerator<T>()` (API 1.5) | `ITextGenerator` |
 | Changes to what's sent to outputs | `services.AddPlayoutProcessor<T>()` | `IPlayoutProcessor` |
 | Whole channels with their own schedule, published alongside the scheduler's (IPTV, say) | `services.AddExternalChannels<T>()` (API 1.3); inject `IScheduleRepublisher` to publish again when they change. They're listed on the Channels page and dashboard; implement `EditPath` (API 1.6) to give them an Edit button that opens your page | `IExternalChannelSource` |
+| A promo made now from a channel's generated promo templates (for a credit squeeze's panel, say) | Ask for `IPromoMaker` with `GetService` (API 1.7); it's there when the Generated Promos plugin is | `IPromoMaker` |
 | Who's watching which channel | `services.AddChannelViewers<T>()` | `IChannelViewers` |
 | Tell the library pages a media source changed (a show added or renamed), so they update at once | inject `IMediaLibraryNotifier` (API 1.4) and call `LibraryChanged()` | |
 | HTTP endpoints | implement `IPluginEndpoints` on the plugin class | |
@@ -234,7 +235,7 @@ reason, and none of its registrations are kept.
 
 ## Roadmap
 
-Plugin API 1.6 covers sources, media enrichers, outputs, voices, text writers, publish-time playout changes, external channels, settings, pages, endpoints
+Plugin API 1.7 covers sources, media enrichers, outputs, voices, text writers, publish-time playout changes, external channels, promos made on request, settings, pages, endpoints
 and schedule editor sections. Promos, generated promos and Archive Follow use extension points inside the
 planner that are internal for now (see [engine-extension-points.md](engine-extension-points.md)).
 Planned next:

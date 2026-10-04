@@ -150,7 +150,30 @@ public sealed class CreditSqueezeSection
     /// <summary>Credits longer than this play as they are (a long credits roll is rarely just credits).</summary>
     public TimeSpan LongestCredits { get; set; } = TimeSpan.FromMinutes(4);
 
+    /// <summary>Over the panel when it's about the next programme (an Up Next promo, or no promo).</summary>
     public string Heading { get; set; } = "Up next";
+
+    /// <summary>Over the panel while a Coming Up promo plays there.</summary>
+    public string ComingUpHeading { get; set; } = "Coming up";
+
+    /// <summary>Over the panel while an Eventually promo (a trailer for later in the week) plays there.</summary>
+    public string EventuallyHeading { get; set; } = "Eventually";
+
+    /// <summary>Over the panel while the next programme's Now Playing ident plays there.</summary>
+    public string NowPlayingHeading { get; set; } = "Next";
+
+    /// <summary>The panel's heading for the kind of promo in it (none: the next programme's).</summary>
+    public string HeadingFor(SqueezePromo? kind)
+    {
+        string? heading = kind switch
+        {
+            SqueezePromo.ComingUp => ComingUpHeading,
+            SqueezePromo.Eventually => EventuallyHeading,
+            SqueezePromo.NowPlaying => NowPlayingHeading,
+            _ => Heading
+        };
+        return string.IsNullOrWhiteSpace(heading) ? Heading : heading.Trim();
+    }
 
     public string AccentColor { get; set; } = "#ff5c8a";
 

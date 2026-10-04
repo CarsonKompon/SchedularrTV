@@ -35,6 +35,7 @@ public sealed class GeneratedPromosPlugin : IPlugin, IPluginEndpoints
         services.AddSingleton<GeneratedPromoService>();
         services.AddSingleton<IScheduleFinisher>(sp => sp.GetRequiredService<GeneratedPromoService>());
         services.AddSingleton<GeneratedPromoPreview>();
+        services.AddSingleton<SchedularrTV.Plugins.Promos.IPromoMaker, GeneratedPromoMaker>();
         services.AddHostedService(sp => sp.GetRequiredService<GeneratedPromoService>());
         services.AddHostedService<GeneratedPromoRefresher>();
 

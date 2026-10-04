@@ -255,6 +255,18 @@ public sealed partial class GeneratedPromoService(
         [.. new[] { UpNextPromo.Previous(schedule, entry.Start)?.Title, UpNextPromo.Listings(schedule, entry.End, 1).FirstOrDefault()?.Title }
             .OfType<string>()];
 
+    /// <summary>The promo's file if it's been made already, else renders it now.</summary>
+    public async Task<string> MadeOrRenderAsync(ResolvedGeneratedPromo promo, CancellationToken cancellationToken = default)
+    {
+        if (Existing(promo) is { } made && File.Exists(made))
+        {
+            Touch(made);
+            return made;
+        }
+
+        return (await RenderAsync(promo, cancellationToken).ConfigureAwait(false)).Path;
+    }
+
     /// <summary>Renders one promo, falling back to a silent file when the voice cannot be produced.</summary>
     public async Task<GeneratedPromoRender> RenderAsync(ResolvedGeneratedPromo promo, CancellationToken cancellationToken = default)
     {

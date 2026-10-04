@@ -168,11 +168,16 @@ public sealed class CreditSqueezeTests
         Assert.Contains($"({big.Width}-1920)", animated, StringComparison.Ordinal);
         Assert.Contains("min(if(gte(t,", animated, StringComparison.Ordinal);
 
+        // The panel slides in from its edge with them, so it never shows around credits that don't fill the picture.
+        Assert.Contains("[stagebase][panelled]overlay=x='(1-min(", animated, StringComparison.Ordinal);
+        Assert.Contains("[stage][box]overlay", animated, StringComparison.Ordinal);
+
         // Framed: two boxes on a background, shrinking in only.
         SqueezeJob framed = job with { Style = SqueezeStyle.Framed };
         Assert.Equal(new Rect(48, 176, 686, 386), framed.Layout().Credits);
-        Assert.DoesNotContain("min(if(", string.Join(' ', SqueezeRenderer.Arguments(framed, "frame.png", "out.mp4", 1280, 720, animate: true)),
-            StringComparison.Ordinal);
+        string framedGraph = string.Join(' ', SqueezeRenderer.Arguments(framed, "frame.png", "out.mp4", 1280, 720, animate: true));
+        Assert.DoesNotContain("min(if(", framedGraph, StringComparison.Ordinal);
+        Assert.Contains("[panelled]fade=t=in:st=0:d=0.9[stage]", framedGraph, StringComparison.Ordinal);
 
         // Silent credits: no sound track at all.
         Assert.DoesNotContain("[a]", string.Join(' ', SqueezeRenderer.Arguments(job, "frame.png", "out.mp4", 1280, 720, animate: false, creditsAudio: false)),
@@ -217,6 +222,27 @@ public sealed class CreditSqueezeTests
         // A generated promo not made yet: the squeeze waits for it.
         Assert.Equal(((MediaItem?)null, true), SqueezePlanner.PickPromo(day, 0, 4, [SqueezePromo.ComingUp], "toons"));
         Assert.Equal("/promos/rugrats-next.mp4", Plan(day, new CreditSqueezeSection { Promos = [SqueezePromo.UpNext] })[0].Job.PromoPath);
+        Assert.False(Plan(day, new CreditSqueezeSection { Promos = [SqueezePromo.UpNext] })[0].Job.WantsMadePromo);
+
+        // The heading says what kind of promo is in the panel, and a Coming Up names the airing it's for.
+        Assert.Equal("Up next", Plan(day, new CreditSqueezeSection { Promos = [SqueezePromo.UpNext] })[0].Job.Heading);
+        List<ScheduleEntry> withComingUp = Day();
+        withComingUp.Insert(2, new ScheduleEntry
+        {
+            Start = Noon.AddMinutes(29), Duration = TimeSpan.FromSeconds(15), Kind = ScheduleEntryKind.Promo, PromoTargetId = "Hey Arnold",
+            Item = new MediaItem { Id = "arnold-promo", Title = "Hey Arnold promo", Duration = TimeSpan.FromSeconds(15), Path = "/promos/arnold.mp4" }
+        });
+        SqueezeJob comingUp = Plan(withComingUp, new CreditSqueezeSection { Promos = [SqueezePromo.ComingUp] })[0].Job;
+        Assert.Equal(("Coming up", "Hey Arnold", "1 PM", "/promos/arnold.mp4"), (comingUp.Heading, comingUp.Next.Title, comingUp.Next.When, comingUp.PromoPath));
+        Assert.Equal("Eventually", new CreditSqueezeSection().HeadingFor(SqueezePromo.Eventually));
+        Assert.Equal("Sat 4 PM", SqueezePlanner.When(new DateTimeOffset(2026, 10, 10, 16, 0, 0, TimeSpan.Zero), TimeZoneInfo.Utc, Noon));
+
+        // None to be had: the channel's generated promos are asked to make one, for the next programme's start.
+        SqueezeJob wanting = Plan(Day(), new CreditSqueezeSection { Promos = [SqueezePromo.Eventually, SqueezePromo.UpNext] })[0].Job;
+        Assert.True(wanting.WantsMadePromo);
+        Assert.Equal(("toons", "Day", Noon.AddMinutes(30)), (wanting.ChannelId, wanting.BlockName, wanting.NextStart));
+        Assert.Equal(2, wanting.MakeKinds!.Count);
+        Assert.False(Plan(Day(), new CreditSqueezeSection())[0].Job.WantsMadePromo);
     }
 
     [Fact]

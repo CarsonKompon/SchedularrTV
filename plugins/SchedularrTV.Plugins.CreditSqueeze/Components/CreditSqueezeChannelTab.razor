@@ -163,8 +163,9 @@
                         </div>
                     </div>
                     <p class="hint">One of the ticked kinds is picked at random from what the schedule airs nearby: library promo clips and generated promos
-                        alike. It plays in the panel's picture once the credits are in place, with its own sound over theirs. With none ticked, or none
-                        nearby, the panel shows the next programme's picture.</p>
+                        alike. It plays in the panel's picture once the credits are in place, with its own sound over theirs. With none nearby, the channel's
+                        generated promos make one of a ticked kind (when the Generated Promos plugin is on and the channel has a template of that kind),
+                        which makes previews take a little longer. With none ticked, or none to be had, the panel shows the next programme's picture.</p>
                 </div>
                 <div class="cs-preview">
                     <img src="@FramePreview(section, choice)" alt="How the squeeze is laid out" />
@@ -173,7 +174,7 @@
             </div>
             <div class="row row-wrap" style="gap:8px;align-items:center;margin-bottom:6px;">
                 <button class="btn btn-sm" type="button" disabled="@_previewing" @onclick="() => RenderPreviewAsync(section)">
-                    @(_previewing ? "Making a preview…" : PreviewButton)
+                    @(_previewing ? (_makingPromo ? "Making a promo for the panel, then the preview…" : "Making a preview…") : PreviewButton)
                 </button>
                 @if (_previewProblem is { } previewProblem)
                 {
@@ -239,12 +240,20 @@
 
             <h3 class="cs-heading">Look</h3>
             <div class="grid grid-3">
-                <label class="field"><span>Heading</span>
+                <label class="field"><span>Heading (next programme, Up Next)</span>
                     <input type="text" value="@section.Heading" @onchange="e => Set(() => section.Heading = Text(e, DefaultHeading))" /></label>
                 <div class="field"><span>Accent colour</span>
                     <input type="color" value="@section.AccentColor" @onchange="e => Set(() => section.AccentColor = Text(e, section.AccentColor))" style="width:56px;height:34px;padding:2px;" /></div>
                 <div class="field"><span>Background colour</span>
                     <input type="color" value="@section.BackgroundColor" @onchange="e => Set(() => section.BackgroundColor = Text(e, section.BackgroundColor))" style="width:56px;height:34px;padding:2px;" /></div>
+            </div>
+            <div class="grid grid-3">
+                <label class="field"><span>Heading with a Coming Up promo</span>
+                    <input type="text" value="@section.ComingUpHeading" @onchange="e => Set(() => section.ComingUpHeading = Text(e, section.Heading))" /></label>
+                <label class="field"><span>With an Eventually promo</span>
+                    <input type="text" value="@section.EventuallyHeading" @onchange="e => Set(() => section.EventuallyHeading = Text(e, section.Heading))" /></label>
+                <label class="field"><span>With a Now Playing ident</span>
+                    <input type="text" value="@section.NowPlayingHeading" @onchange="e => Set(() => section.NowPlayingHeading = Text(e, section.Heading))" /></label>
             </div>
             <div class="grid grid-2">
                 <label class="field"><span>Heading font</span>
@@ -405,6 +414,11 @@
     }
 
     private bool _previewing;
+    private bool _makingPromo;
+
+    [Inject] private IServiceProvider Services { get; set; } = default!;
+
+    private SchedularrTV.Plugins.Promos.IPromoMaker? PromoMaker => Services.GetService(typeof(SchedularrTV.Plugins.Promos.IPromoMaker)) as SchedularrTV.Plugins.Promos.IPromoMaker;
     private string? _previewUrl;
     private string? _previewProblem;
     private string? _previewNote;
@@ -817,6 +831,7 @@
         }
 
         _previewing = true;
+        _makingPromo = plan.Job.WantsMadePromo && PromoMaker is not null;
         StateHasChanged();
         try
         {

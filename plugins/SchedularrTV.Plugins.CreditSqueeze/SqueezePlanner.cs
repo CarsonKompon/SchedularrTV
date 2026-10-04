@@ -41,8 +41,19 @@ public sealed record SqueezeJob(
     string? CreditsCaption = null,
     string? CreditsLine = null,
     string HeadingFont = "Arial",
-    string TextFont = "Arial")
+    string TextFont = "Arial",
+    IReadOnlyList<SqueezePromo>? MakeKinds = null,
+    string? ChannelId = null,
+    string? BlockName = null,
+    DateTimeOffset NextStart = default,
+    IReadOnlyList<string>? MakeHeadings = null)
 {
+    /// <summary>
+    /// With no promo found in the schedule: the kinds (in the order to try) to have the channel's generated promos make
+    /// one of for the panel, if it has templates for them. Null or empty for none.
+    /// </summary>
+    public bool WantsMadePromo => PromoPath is null && MakeKinds is { Count: > 0 } && ChannelId is not null;
+
     public SqueezeLayout Layout(int width = 1280, int height = 720) =>
         SqueezeLayout.Of(Style, Side, SplitPercent, width, height, CreditsFit, CreditsText, PanelText);
 }
@@ -155,11 +166,32 @@ public static class SqueezePlanner
             }
         }
 
-        (MediaItem? promo, bool pending) = PickPromo(entries, index, next, section.Promos, channelId);
+        (ScheduleEntry? promoEntry, SqueezePromo? promoKind, bool pending) = PickPromoEntry(entries, index, next, section.Promos, channelId);
+        MediaItem? promo = pending ? null : promoEntry?.Item;
+
+        // The panel says what the promo in it is for: the next programme, or (Coming Up, Eventually) the airing it promotes.
+        SqueezeListing nextListing = Listing(entries[next], zone);
+        string heading = section.HeadingFor(null);
+        if (promo is not null && promoKind is { } kind)
+        {
+            heading = section.HeadingFor(kind);
+            nextListing = Subject(entries, promoEntry!, kind, zone, entries[index].Start) ?? nextListing;
+        }
+
         string? ending = whole ? ShowBefore(entries, index) : ShowOf(item);
         SqueezeLayoutChoice layout = section.LayoutFor(ending, everywhere);
-        return new SqueezePlan(index, from, whole, new SqueezeJob(item.Path!, from, length, Listing(entries[next], zone), later, channelName,
-            section.Heading, section.AccentColor, section.BackgroundColor, Math.Clamp(section.CreditsVolume, 0, 2), section.Animate,
+
+        // No promo of the wanted kinds ready nearby: the channel's generated promos may make one (tried in a seeded order).
+        // One the schedule is still making is waited for first (see Pending), then made here if it isn't ready in time.
+        IReadOnlyList<SqueezePromo>? make = null;
+        if (promo is null && section.Promos.Count > 0)
+        {
+            DeterministicRandom random = DeterministicRandom.FromSeedText(channelId, entries[index].Start.ToString("O"), "credit-squeeze-make");
+            make = [.. section.Promos.Distinct().OrderBy(_ => random.Next(10000))];
+        }
+
+        return new SqueezePlan(index, from, whole, new SqueezeJob(item.Path!, from, length, nextListing, later, channelName,
+            heading, section.AccentColor, section.BackgroundColor, Math.Clamp(section.CreditsVolume, 0, 2), section.Animate,
             layout.Side, Math.Clamp(layout.SplitPercent, SqueezeLayout.MinSplit, SqueezeLayout.MaxSplit), promo?.Path, promo?.Duration ?? TimeSpan.Zero,
             layout.Style, string.IsNullOrWhiteSpace(section.BackgroundPath) ? null : section.BackgroundPath.Trim(),
             layout.CreditsFit, layout.CreditsText, layout.PanelFit, layout.PanelText,
@@ -167,7 +199,9 @@ public static class SqueezePlanner
             layout.CreditsText ? section.CreditsCaption : null,
             layout.CreditsText && !string.IsNullOrWhiteSpace(section.CreditsLine) ? section.CreditsLine.Trim() : null,
             string.IsNullOrWhiteSpace(section.HeadingFont) ? "Arial" : section.HeadingFont,
-            string.IsNullOrWhiteSpace(section.TextFont) ? "Arial" : section.TextFont), pending);
+            string.IsNullOrWhiteSpace(section.TextFont) ? "Arial" : section.TextFont,
+            make, make is null ? null : channelId, make is null ? null : entries[index].BlockName, make is null ? default : entries[next].Start,
+            make?.Select(made => section.HeadingFor(made)).ToList()), pending);
     }
 
     // How far ahead each kind of promo is looked for.
@@ -183,14 +217,22 @@ public static class SqueezePlanner
     public static (MediaItem? Promo, bool Pending) PickPromo(IReadOnlyList<ScheduleEntry> entries, int index, int next, IReadOnlyList<SqueezePromo> kinds,
         string channelId)
     {
+        (ScheduleEntry? picked, _, bool pending) = PickPromoEntry(entries, index, next, kinds, channelId);
+        return (pending ? null : picked?.Item, pending);
+    }
+
+    /// <summary>As <see cref="PickPromo"/>, with the promo's entry in the schedule and its kind.</summary>
+    public static (ScheduleEntry? Entry, SqueezePromo? Kind, bool Pending) PickPromoEntry(IReadOnlyList<ScheduleEntry> entries, int index, int next,
+        IReadOnlyList<SqueezePromo> kinds, string channelId)
+    {
         if (kinds.Count == 0)
         {
-            return (null, false);
+            return (null, null, false);
         }
 
         ScheduleEntry entry = entries[index];
         DateTimeOffset nextStart = entries[next].Start;
-        List<MediaItem> candidates = [];
+        List<(ScheduleEntry Entry, SqueezePromo Kind)> candidates = [];
         HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
         for (int other = index + 1; other < entries.Count; other++)
         {
@@ -209,28 +251,61 @@ public static class SqueezePlanner
                 continue;
             }
 
-            bool wanted = candidate.Kind switch
+            SqueezePromo? kind = candidate.Kind switch
             {
-                ScheduleEntryKind.UpNextPromo => kinds.Contains(SqueezePromo.UpNext) && candidate.Start <= nextStart,
-                ScheduleEntryKind.NowPlayingPromo => kinds.Contains(SqueezePromo.NowPlaying) && candidate.Start <= nextStart,
-                ScheduleEntryKind.Promo => kinds.Contains(SqueezePromo.ComingUp) && ahead <= ComingUpWithin,
-                ScheduleEntryKind.EventuallyPromo => kinds.Contains(SqueezePromo.Eventually),
-                _ => false
+                ScheduleEntryKind.UpNextPromo when kinds.Contains(SqueezePromo.UpNext) && candidate.Start <= nextStart => SqueezePromo.UpNext,
+                ScheduleEntryKind.NowPlayingPromo when kinds.Contains(SqueezePromo.NowPlaying) && candidate.Start <= nextStart => SqueezePromo.NowPlaying,
+                ScheduleEntryKind.Promo when kinds.Contains(SqueezePromo.ComingUp) && ahead <= ComingUpWithin => SqueezePromo.ComingUp,
+                ScheduleEntryKind.EventuallyPromo when kinds.Contains(SqueezePromo.Eventually) => SqueezePromo.Eventually,
+                _ => null
             };
-            if (wanted && item.Duration > TimeSpan.FromSeconds(2))
+            if (kind is { } wanted && item.Duration > TimeSpan.FromSeconds(2))
             {
-                candidates.Add(item);
+                candidates.Add((candidate, wanted));
             }
         }
 
         if (candidates.Count == 0)
         {
-            return (null, false);
+            return (null, null, false);
         }
 
-        MediaItem picked = candidates[DeterministicRandom.FromSeedText(channelId, entry.Start.UtcDateTime.ToString("O", CultureInfo.InvariantCulture), "credit-squeeze", "promo")
+        (ScheduleEntry picked, SqueezePromo pickedKind) = candidates[DeterministicRandom
+            .FromSeedText(channelId, entry.Start.UtcDateTime.ToString("O", CultureInfo.InvariantCulture), "credit-squeeze", "promo")
             .Next(candidates.Count)];
-        return picked.Path is { Length: > 0 } ? (picked, false) : (null, true);
+        return (picked, pickedKind, picked.Item!.Path is not { Length: > 0 });
+    }
+
+    /// <summary>
+    /// What a Coming Up or Eventually promo is for, as the panel lists it: the airing it targets (a generated promo's
+    /// target time, or a clip's show next on after it), else its predicted show at its target time. Null when it can't
+    /// be told, or for kinds that promote the next programme anyway.
+    /// </summary>
+    public static SqueezeListing? Subject(IReadOnlyList<ScheduleEntry> entries, ScheduleEntry promo, SqueezePromo kind, TimeZoneInfo zone, DateTimeOffset from)
+    {
+        if (kind is not (SqueezePromo.ComingUp or SqueezePromo.Eventually))
+        {
+            return null;
+        }
+
+        if (promo.GeneratedTargetAt is { } at)
+        {
+            ScheduleEntry? airing = entries.FirstOrDefault(entry => IsProgramme(entry, includeOutros: false) && entry.Start >= at - TimeSpan.FromMinutes(1)
+                && (string.IsNullOrWhiteSpace(promo.GeneratedSubject) || string.Equals(ShowOf(entry.Item!), promo.GeneratedSubject, StringComparison.OrdinalIgnoreCase)));
+            return airing is not null && airing.Start - at < TimeSpan.FromHours(2)
+                ? Listing(airing, zone, from)
+                : promo.GeneratedSubject is { Length: > 0 } subject ? new SqueezeListing(subject, null, When(at, zone, from), null) : null;
+        }
+
+        if (promo.PromoTargetId is { Length: > 0 } target)
+        {
+            ScheduleEntry? airing = entries.FirstOrDefault(entry => entry.Start >= promo.Start && IsProgramme(entry, includeOutros: false)
+                && (string.Equals(entry.Item!.SeriesId, target, StringComparison.OrdinalIgnoreCase) || string.Equals(entry.Item.Id, target, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(ShowOf(entry.Item), target, StringComparison.OrdinalIgnoreCase)));
+            return airing is null ? null : Listing(airing, zone, from);
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -429,13 +504,19 @@ public static class SqueezePlanner
 
     public static string ShowOf(MediaItem item) => string.IsNullOrWhiteSpace(item.SeriesName) ? item.Title : item.SeriesName;
 
-    private static SqueezeListing Listing(ScheduleEntry entry, TimeZoneInfo zone)
+    private static SqueezeListing Listing(ScheduleEntry entry, TimeZoneInfo zone, DateTimeOffset? from = null)
     {
         MediaItem item = entry.Item!;
-        DateTime local = TimeZoneInfo.ConvertTime(entry.Start, zone).DateTime;
-        string when = local.ToString(local.Minute == 0 ? "h tt" : "h:mm tt", CultureInfo.InvariantCulture);
         bool episode = !string.IsNullOrWhiteSpace(item.SeriesName);
-        return new SqueezeListing(ShowOf(item), episode && item.Title != item.SeriesName ? item.Title : null, when,
+        return new SqueezeListing(ShowOf(item), episode && item.Title != item.SeriesName ? item.Title : null, When(entry.Start, zone, from ?? entry.Start),
             item.SeriesId ?? (Guid.TryParse(item.Id, out _) ? item.Id : null));
+    }
+
+    /// <summary>A time as the viewer reads it ("8:30 PM", "9 PM"), with the day ("Sat 4 PM") when it isn't the same day as <paramref name="from"/>.</summary>
+    public static string When(DateTimeOffset at, TimeZoneInfo zone, DateTimeOffset from)
+    {
+        DateTime local = TimeZoneInfo.ConvertTime(at, zone).DateTime;
+        string time = local.ToString(local.Minute == 0 ? "h tt" : "h:mm tt", CultureInfo.InvariantCulture);
+        return local.Date == TimeZoneInfo.ConvertTime(from, zone).Date ? time : $"{local.ToString("ddd", CultureInfo.InvariantCulture)} {time}";
     }
 }

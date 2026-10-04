@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "As a show's end credits roll, they shrink into a box and the rest of the picture says what's on next (with its picture and time, and what's after it), like network TV. Credits are found from chapters named for them, or Jellyfin's media segments (Jellyfin 10.10+ with a segment provider such as Intro Skipper). Shows' own outros can be squeezed too. Each channel and block sets the odds.",
   "author": "SchedularrTV",
-  "apiVersion": "1.6",
+  "apiVersion": "1.7",
   "entryAssembly": "SchedularrTV.Plugins.CreditSqueeze.dll",
   "settings": [
     {

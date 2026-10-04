@@ -5,7 +5,11 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
+using SchedularrTV.Core.Configuration;
+using SchedularrTV.Core.Scheduling;
+using SchedularrTV.Plugins.Promos;
 using SchedularrTV.Providers.Jellyfin;
+using SchedularrTV.Service;
 using SkiaSharp;
 
 namespace SchedularrTV.CreditSqueeze;
@@ -197,6 +201,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
     public async Task RenderAsync(SqueezeJob job, string output, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+        job = await WithMadePromoAsync(job, cancellationToken).ConfigureAwait(false);
         (int width, int height) = settings.Size;
         byte[]? art = await ArtAsync(job.Next.ImageId, cancellationToken).ConfigureAwait(false);
         string panel = output + ".frame.png";
@@ -232,6 +237,68 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
             TryDelete(panel);
             TryDelete(temp);
         }
+    }
+
+    /// <summary>
+    /// A squeeze with no promo from the schedule gets one made by the channel's generated promos (when that plugin is on
+    /// and the channel has a template of a wanted kind); otherwise it's left with the next programme's picture.
+    /// </summary>
+    private async Task<SqueezeJob> WithMadePromoAsync(SqueezeJob job, CancellationToken cancellationToken)
+    {
+        if (!job.WantsMadePromo || services.GetService<IPromoMaker>() is not { } maker
+            || services.GetService<SchedulerConfigProvider>()?.Current is not { } config
+            || config.Channels.FirstOrDefault(channel => string.Equals(channel.Id, job.ChannelId, StringComparison.OrdinalIgnoreCase)) is not { } channel
+            || services.GetService<ScheduleCoordinator>()?.Latest
+                .FirstOrDefault(schedule => string.Equals(schedule.ChannelId, job.ChannelId, StringComparison.OrdinalIgnoreCase)) is not { } schedule)
+        {
+            return job;
+        }
+
+        for (int index = 0; index < job.MakeKinds!.Count; index++)
+        {
+            SqueezePromo kind = job.MakeKinds[index];
+            GeneratedPromoType type = kind switch
+            {
+                SqueezePromo.ComingUp => GeneratedPromoType.ComingUp,
+                SqueezePromo.Eventually => GeneratedPromoType.Eventually,
+                SqueezePromo.NowPlaying => GeneratedPromoType.NowPlaying,
+                _ => GeneratedPromoType.UpNext
+            };
+            if (!maker.CanMake(config, channel, job.BlockName, type))
+            {
+                continue;
+            }
+
+            try
+            {
+                if (await maker.MakeAsync(config, channel, schedule, job.BlockName, type, job.NextStart, cancellationToken).ConfigureAwait(false) is { } made
+                    && File.Exists(made.Path))
+                {
+                {
+                    string heading = job.MakeHeadings is { } headings && index < headings.Count ? headings[index] : job.Heading;
+                    SqueezeListing next = job.Next;
+
+                    // A Coming Up or Eventually promo is for a later airing: the panel names that one.
+                    if (kind is SqueezePromo.ComingUp or SqueezePromo.Eventually && made.Subject is { Length: > 0 } subject && made.SubjectStart is { } at)
+                    {
+                        TimeZoneInfo zone = SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(channel.TimeZone) ? config.Settings.TimeZone : channel.TimeZone);
+                        string? image = schedule.Entries.FirstOrDefault(entry => entry.Start == at && entry.Item is not null)?.Item is { } item
+                            ? item.SeriesId ?? (Guid.TryParse(item.Id, out _) ? item.Id : null)
+                            : null;
+                        next = new SqueezeListing(subject, made.SubjectEpisode, SqueezePlanner.When(at, zone, job.NextStart), image);
+                    }
+
+                    return job with { PromoPath = made.Path, PromoLength = made.Length, Heading = heading, Next = next };
+                }
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning("Credit squeeze: the channel's {Type} promo couldn't be made for the panel: {Message}", type, ex.Message);
+            }
+        }
+
+        return job;
     }
 
     /// <summary>When the promo starts: once the credits have shrunk into place.</summary>
@@ -297,7 +364,27 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
                                    + "[cmask][cover]overlay=x='(main_w-overlay_w)/2':y='(main_h-overlay_h)/2':eval=frame:shortest=1,setsar=1[box]",
                 _ => $";[1:v]setpts=PTS-STARTPTS,scale={w}:{h}:force_original_aspect_ratio=decrease:force_divisible_by=2:eval=frame,setsar=1[box]"
             };
-            video += $";[panelled][box]overlay=x='({width}/2+({boxX}+{boxW}/2-{width}/2)*{e})-w/2':y='({height}/2+({boxY}+{boxH}/2-{height}/2)*{e})-h/2'"
+            // The panel comes in with them (and, side by side, goes with them), so nothing of it shows around credits that
+            // don't fill the picture: side by side it slides in from its edge, framed it fades up from black.
+            if (layout.Style == SqueezeStyle.SideBySide)
+            {
+                int panelW = layout.Panel.Width, panelH = layout.Panel.Height;
+                (string x, string y) = job.Side switch
+                {
+                    CreditsSide.Right => ($"-(1-{e})*{panelW}", "0"),
+                    CreditsSide.Top => ("0", $"(1-{e})*{panelH}"),
+                    CreditsSide.Bottom => ("0", $"-(1-{e})*{panelH}"),
+                    _ => ($"(1-{e})*{panelW}", "0")
+                };
+                video += $";color=c=black:s={width}x{height}:r=30:d={length}[stagebase];"
+                         + $"[stagebase][panelled]overlay=x='{x}':y='{y}':eval=frame:shortest=1[stage]";
+            }
+            else
+            {
+                video += $";[panelled]fade=t=in:st=0:d={d}[stage]";
+            }
+
+            video += $";[stage][box]overlay=x='({width}/2+({boxX}+{boxW}/2-{width}/2)*{e})-w/2':y='({height}/2+({boxY}+{boxH}/2-{height}/2)*{e})-h/2'"
                      + ":eval=frame:eof_action=pass:shortest=0,format=yuv420p[v]";
         }
         else
