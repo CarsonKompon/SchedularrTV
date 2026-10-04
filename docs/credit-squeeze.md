@@ -54,7 +54,9 @@ channel*, *Its own settings* or *No squeezes*):
     - **Up-next side text:** turn it off and the up-next side is just its video (the promo, else the next programme's
       picture) on the background, with no heading or listings.
   - These are part of the layout, so a show with its own layout can have its own fit and text too.
-  - **Layout for:** *Every show*, or a show the channel airs. Some shows' credits run in a corner or need more room, so
+  - **Layout for:** *Every show*, or *Specific show*, which adds a picker for any show or movie in the library (not
+    only what the channel airs now, since blocks and Archive Follow can play others). Shows already given a layout are
+    listed under it to jump to. A show the schedule doesn't air is previewed from one of its library episodes. Some shows' credits run in a corner or need more room, so
     a show can have its own layout, either just on this channel (or block) or on every channel. Pick the show, then
     **Give it its own here** or **…on every channel**. **Use it on every channel** / **Only use it here** move it
     between the two, and **Remove** goes back to the channel's layout. A show's layout on a channel wins over its
@@ -69,7 +71,8 @@ channel*, *Its own settings* or *No squeezes*):
 - **Play in the panel:** the kinds of promo that may play in the panel's picture: *Up Next* (the next programme's own,
   from the breaks before it), *Now Playing* (its ident), *Coming Up* (later today) and *Eventually* (later in the week).
   One is picked at random from what the schedule airs nearby, library promo clips and generated promos alike. It plays
-  once the credits are in place, with the credits' sound dipped under its own. A generated promo not made yet is waited
+  once the credits are in place, fading up from black (and back down as it ends), with the credits' sound dipped under
+  its own. The next programme's picture is only shown when there's no promo at all. A generated promo not made yet is waited
   for until 20 minutes before the squeeze airs. With none nearby (or a generated one not ready in time), and the
   Generated Promos plugin on, the channel's own templates make one of a ticked kind for the panel, if it has a template
   of that kind. This happens for previews too, so they take a little longer. With none ticked, or none to be had, the

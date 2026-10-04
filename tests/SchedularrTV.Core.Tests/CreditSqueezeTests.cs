@@ -196,6 +196,9 @@ public sealed class CreditSqueezeTests
         Assert.True(layout.Credits.X >= layout.Panel.Right);
         Assert.Equal("/promos/up-next.mp4", arguments[arguments.IndexOf("/media/SpongeBob/1.mkv") + 2]);
         Assert.Contains("[2:v]setpts=PTS-STARTPTS+1.2/TB", graph, StringComparison.Ordinal);
+
+        // It fades up from black as it starts and back down as it ends (at 16.2s).
+        Assert.Contains("fade=t=in:st=1.2:d=0.4,fade=t=out:st=15.8:d=0.4[promo]", graph, StringComparison.Ordinal);
         Assert.Contains($"overlay=x='{layout.Picture.X}+({layout.Picture.Width}-w)/2'", graph, StringComparison.Ordinal);
         Assert.Contains("volume='if(between(t,1.2,16.2),0.15,1)':eval=frame", graph, StringComparison.Ordinal);
         Assert.Contains("adelay=1200:all=1", graph, StringComparison.Ordinal);

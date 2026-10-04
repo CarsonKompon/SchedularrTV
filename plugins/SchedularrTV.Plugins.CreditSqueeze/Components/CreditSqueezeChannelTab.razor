@@ -101,16 +101,36 @@
                 <div>
                     @{
                         (SqueezeLayoutChoice choice, LayoutHome home) = Current(section);
-                        bool editable = home != LayoutHome.Inherited;
+                        bool editable = home != LayoutHome.Inherited && !(_specific && _show is null);
                     }
-                    <label class="field"><span>Layout for</span>
-                        <select value="@(_show ?? string.Empty)" @onchange="SelectShow">
-                            <option value="">Every show (and the preview below picks the first squeeze)</option>
-                            @foreach (string show in ShowsFor(section))
+                    <div class="cs-for">
+                        <label class="field"><span>Layout for</span>
+                            <select value="@(_specific ? SpecificValue : EveryValue)" @onchange="SelectLayoutFor">
+                                <option value="@EveryValue">Every show</option>
+                                <option value="@SpecificValue">Specific show</option>
+                            </select></label>
+                        @if (_specific)
+                        {
+                            <div class="field"><span>Show or movie</span>
+                                <TitlePicker Options="ShowOptions(section)" Value="@_show" AriaLabel="Show" Placeholder="Type any show or movie…" OnCommitted="PickShow" /></div>
+                        }
+                    </div>
+                    @if (_specific && OwnLayouts(section) is { Count: > 0 } withOwn)
+                    {
+                        <div class="cs-owned">
+                            <span class="hint" style="margin:0;">With their own layout:</span>
+                            @foreach (string owned in withOwn)
                             {
-                                <option value="@show">@(show + ShowMark(section, show))</option>
+                                <button type="button" class="cs-template @(string.Equals(owned, _show, StringComparison.OrdinalIgnoreCase) ? "active" : "")"
+                                        @onclick="() => PickShow(owned)">@(owned + ShowMark(section, owned))</button>
                             }
-                        </select></label>
+                        </div>
+                    }
+                    @if (_specific && _show is null)
+                    {
+                        <p class="hint">Pick a show to give it a layout of its own or preview it; any show or movie in the library will do, not only the ones this
+                            channel airs now (blocks and Archive Follow can play others).</p>
+                    }
 
                     @if (_show is { } picked)
                     {
@@ -378,6 +398,8 @@
         .cs-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
         .cs-fields:disabled { opacity: .55; }
         .cs-lookup { margin: 4px 0 0; }
+        .cs-for { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 12px; align-items: end; }
+        .cs-owned { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: -2px 0 10px; }
         .cs-of { text-transform: none; letter-spacing: 0; font-weight: 400; }
         .cs-templates { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
         .cs-template { display: inline-flex; gap: 8px; align-items: center; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line);
@@ -578,11 +600,116 @@
             ? "Side by side: the credits shrink into a band along the edge, the panel fills the rest, and they grow back to the whole picture as they end."
             : "Side by side: the credits shrink to one side, the panel fills the rest, and they grow back to the whole picture as they end.";
 
-    private void SelectShow(ChangeEventArgs e)
+    private const string EveryValue = "every";
+    private const string SpecificValue = "specific";
+
+    // "Specific show" is chosen (with or without a show picked yet).
+    private bool _specific;
+
+    // Every show and movie in the library, for the show picker.
+    private IReadOnlyList<string> _libraryTitles = [];
+
+    private SchedularrTV.Service.Editor.LibraryBrowser? Library =>
+        Services.GetService(typeof(SchedularrTV.Service.Editor.LibraryBrowser)) as SchedularrTV.Service.Editor.LibraryBrowser;
+
+    protected override async Task OnInitializedAsync()
     {
-        _show = e.Value?.ToString() is { Length: > 0 } show ? show : null;
+        if (Library is not { } library)
+        {
+            return;
+        }
+
+        try
+        {
+            IReadOnlyList<SchedularrTV.Service.Editor.LibraryShow> shows = await library.GetShowsAsync();
+            IReadOnlyList<SchedularrTV.Service.Editor.LibraryMovie> movies = await library.GetMoviesAsync();
+            _libraryTitles = [.. shows.Select(show => show.Name).Concat(movies.Select(movie => movie.Title))
+                .Where(name => !string.IsNullOrWhiteSpace(name)).Distinct(StringComparer.OrdinalIgnoreCase)];
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The picker still offers what the channel airs.
+        }
+    }
+
+    private void SelectLayoutFor(ChangeEventArgs e)
+    {
+        _specific = e.Value?.ToString() == SpecificValue;
+        if (!_specific)
+        {
+            _show = null;
+        }
+
         _previewNote = null;
         _previewProblem = null;
+    }
+
+    /// <summary>Picks a show to give a layout of its own or preview, and asks Jellyfin where its episodes' credits are.</summary>
+    private async Task PickShow(string? value)
+    {
+        _show = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        _specific = true;
+        _previewNote = null;
+        _previewProblem = null;
+        if (_show is { } show && Library is { } library)
+        {
+            try
+            {
+                IReadOnlyList<MediaItem> programmes = await library.GetProgrammesAsync();
+                Credits.LookUp(programmes.Where(item => string.Equals(SqueezePlanner.ShowOf(item), show, StringComparison.OrdinalIgnoreCase)));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+            }
+        }
+    }
+
+    /// <summary>What the show picker offers: every show and movie in the library, what the channel airs, and any with a layout.</summary>
+    private IEnumerable<string> ShowOptions(CreditSqueezeSection section) =>
+        ShowsFor(section).Concat(_libraryTitles).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.CurrentCultureIgnoreCase);
+
+    /// <summary>The shows given a layout of their own, here or on every channel.</summary>
+    private List<string> OwnLayouts(CreditSqueezeSection section) =>
+        [.. section.Shows.Keys.Concat(_everywhere?.Shows.Keys ?? Enumerable.Empty<string>())
+            .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.CurrentCultureIgnoreCase)];
+
+    /// <summary>
+    /// For a show the schedule doesn't air now: one of its episodes from the library, followed by the channel's next
+    /// programme (or something else), so its squeeze can be previewed all the same.
+    /// </summary>
+    private async Task<List<ScheduleEntry>?> StandInAsync(string show, ChannelSchedule schedule)
+    {
+        if (Library is not { } library)
+        {
+            return null;
+        }
+
+        IReadOnlyList<MediaItem> programmes = await library.GetProgrammesAsync();
+        MediaItem? episode = programmes
+            .Where(item => item.Path is { Length: > 0 } && item.Duration > TimeSpan.FromMinutes(1)
+                           && string.Equals(SqueezePlanner.ShowOf(item), show, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(item => Credits.CreditsOf(item) is not null)
+            .ThenBy(item => item.Id, StringComparer.Ordinal)
+            .FirstOrDefault();
+        if (episode is null)
+        {
+            return null;
+        }
+
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        MediaItem? following = schedule.Entries
+            .FirstOrDefault(entry => entry.Kind == ScheduleEntryKind.Program && entry.Start >= start && !entry.IsSlotOutro && entry.Item is { Path.Length: > 0 })?.Item
+            ?? programmes.FirstOrDefault(item => item.Path is { Length: > 0 } && !string.Equals(SqueezePlanner.ShowOf(item), show, StringComparison.OrdinalIgnoreCase));
+        if (following is null)
+        {
+            return null;
+        }
+
+        return
+        [
+            new ScheduleEntry { Start = start, Duration = episode.Duration, Kind = ScheduleEntryKind.Program, Item = episode, BlockName = null },
+            new ScheduleEntry { Start = start + episode.Duration, Duration = following.Duration, Kind = ScheduleEntryKind.Program, Item = following }
+        ];
     }
 
     /// <summary>The shows to pick from: what the channel airs, and any already given a layout.</summary>
@@ -893,15 +1020,23 @@
         SqueezePlan? plan;
         if (_show is { } show)
         {
-            if (SqueezePlanner.PreviewFor(schedule.Entries, show, trial, _everywhere, Channel.Id, Channel.Name, zone, Credits.CreditsOf, PreviewLength,
-                    Settings.AssumedCredits) is not { } found)
+            // From the schedule when it airs the show, else from one of its episodes in the library.
+            var found = SqueezePlanner.PreviewFor(schedule.Entries, show, trial, _everywhere, Channel.Id, Channel.Name, zone, Credits.CreditsOf, PreviewLength,
+                Settings.AssumedCredits);
+            if (found is null && await StandInAsync(show, schedule) is { } standIn)
             {
-                _previewProblem = $"The channel's schedule doesn't air {show} with something after it right now.";
+                found = SqueezePlanner.PreviewFor(standIn, show, trial, _everywhere, Channel.Id, Channel.Name, zone, Credits.CreditsOf, PreviewLength,
+                    Settings.AssumedCredits);
+            }
+
+            if (found is null)
+            {
+                _previewProblem = $"Couldn't find an episode of {show} to preview (the library has none with a file the scheduler can read).";
                 return;
             }
 
-            plan = found.Plan;
-            _previewNote = found.Source switch
+            plan = found.Value.Plan;
+            _previewNote = found.Value.Source switch
             {
                 SqueezePlanner.PreviewSource.Outro => $"From {show}'s own outro.",
                 SqueezePlanner.PreviewSource.Credits => "From an episode's marked credits.",

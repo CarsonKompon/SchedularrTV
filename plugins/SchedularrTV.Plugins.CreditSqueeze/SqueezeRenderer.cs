@@ -203,7 +203,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         Directory.CreateDirectory(Path.GetDirectoryName(output)!);
         job = await WithMadePromoAsync(job, cancellationToken).ConfigureAwait(false);
         (int width, int height) = settings.Size;
-        byte[]? art = await ArtAsync(job.Next.ImageId, cancellationToken).ConfigureAwait(false);
+        byte[]? art = PlaysPromo(job) ? null : await ArtAsync(job.Next.ImageId, cancellationToken).ConfigureAwait(false);
         string panel = output + ".frame.png";
         string temp = output + ".making.mp4";
         if (IsVideo(job.BackgroundPath) && !File.Exists(job.BackgroundPath))
@@ -304,6 +304,13 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
     /// <summary>When the promo starts: once the credits have shrunk into place.</summary>
     public static readonly TimeSpan PromoStart = TimeSpan.FromSeconds(1.2);
 
+    // How long the promo takes to fade up from black, and back down.
+    private static readonly TimeSpan PromoFade = TimeSpan.FromSeconds(0.4);
+
+    /// <summary>Whether a promo plays in the panel (one is set, and there's room for it after the credits settle).</summary>
+    public static bool PlaysPromo(SqueezeJob job) =>
+        job.PromoPath is not null && job.PromoLength > TimeSpan.Zero && job.Length > PromoStart + TimeSpan.FromSeconds(2);
+
     // The credits' sound while a promo with its own plays.
     private const double UnderPromo = 0.15;
 
@@ -321,7 +328,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         SqueezeLayout layout = job.Layout(width, height);
         int boxX = layout.Credits.X, boxY = layout.Credits.Y, boxW = layout.Credits.Width, boxH = layout.Credits.Height;
         string length = N(job.Length.TotalSeconds);
-        bool promo = job.PromoPath is not null && job.PromoLength > TimeSpan.Zero && job.Length > PromoStart + TimeSpan.FromSeconds(2);
+        bool promo = PlaysPromo(job);
         promoAudio &= promo;
         bool backgroundVideo = IsVideo(job.BackgroundPath);
         int promoInput = 2;
@@ -336,8 +343,16 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         // The promo, fitted into the picture slot from the moment the credits are in place; the frame shows through after it ends.
         Rect slot = layout.Picture;
         string start = N(PromoStart.TotalSeconds);
+        // It fades up from black (the frame leaves its slot black when there's a promo) and back down as it ends.
+        string fades = $",fade=t=in:st={start}:d={N(PromoFade.TotalSeconds)}";
+        TimeSpan promoEnds = PromoStart + job.PromoLength;
+        if (promoEnds <= job.Length)
+        {
+            fades += $",fade=t=out:st={N((promoEnds - PromoFade).TotalSeconds)}:d={N(PromoFade.TotalSeconds)}";
+        }
+
         video += promo
-            ? $";[{promoInput}:v]setpts=PTS-STARTPTS+{start}/TB,{Fitted(job.PanelFit, slot.Width, slot.Height)}[promo];"
+            ? $";[{promoInput}:v]setpts=PTS-STARTPTS+{start}/TB,{Fitted(job.PanelFit, slot.Width, slot.Height)}{fades}[promo];"
               + $"[bg][promo]overlay=x='{slot.X}+({slot.Width}-w)/2':y='{slot.Y}+({slot.Height}-h)/2':eof_action=pass:shortest=0[panelled]"
             : ";[bg]null[panelled]";
 
@@ -639,11 +654,18 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         SKRect picture = Sk(layout.Picture);
         bool bare = layout.Text.IsEmpty;
         float corner = bare && !framed ? 0 : 12;
-        using (SKImage? image = art is null ? null : SKImage.FromEncodedData(art))
+        bool playsPromo = PlaysPromo(job);
+        using (SKImage? image = art is null || playsPromo ? null : SKImage.FromEncodedData(art))
         {
             canvas.Save();
             canvas.ClipRoundRect(new SKRoundRect(picture, corner, corner), antialias: true);
-            if (image is not null)
+            if (playsPromo)
+            {
+                // The promo fades up from black here; the programme's picture is only for a panel without one.
+                using var black = new SKPaint { Color = SKColors.Black };
+                canvas.DrawRect(job.PanelFit == SqueezeFit.Letterbox ? Contain(16 / 9f, picture) : picture, black);
+            }
+            else if (image is not null)
             {
                 Place(canvas, image, picture, job.PanelFit);
             }
