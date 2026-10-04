@@ -355,7 +355,7 @@
                             <button class="btn btn-sm btn-ghost" type="button" @onclick="() => Change(() => FrameAt(channel.Offline, 1))">Centre</button>
                             <button class="btn btn-sm btn-ghost" type="button" @onclick="() => Change(() => FrameAt(channel.Offline, 2))">Right</button>
                             <span class="hint" style="margin:0;align-self:center;">16:9, in pixels on the 1280×720 picture. The countdown sits beside it when there's room,
-                                else in a card over its corner.</span>
+                                else next to the title above it, else in a narrow full-height column.</span>
                         </div>
                     }
                     @if (channel.Offline.Replay != ReplayStyle.Off)

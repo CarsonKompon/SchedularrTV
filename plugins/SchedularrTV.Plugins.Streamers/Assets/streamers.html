@@ -88,7 +88,20 @@
   #replaytop { position: absolute; left: 40px; top: 30px; width: 864px; display: flex; align-items: center; gap: 14px; }
   .replaytag { flex: none; font-size: 15px; font-weight: 800; letter-spacing: .14em; padding: 6px 12px; border-radius: 8px; background: var(--accent); color: #fff; }
   .replaytag::before { content: "↺ "; }
-  #replaytitle { font-size: 24px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #replaytitle { flex: 1; min-width: 0; font-size: 24px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #replaynext { flex: none; margin-left: auto; display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px; border-radius: 999px;
+    background: rgba(255,255,255,.07); border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent); max-width: 60%; }
+  #replaynext img { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; background: rgba(255,255,255,.1); flex: none; }
+  #replaynext .label { font-size: 11px; font-weight: 800; letter-spacing: .14em; color: var(--accent); flex: none; }
+  #replaynext .text { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+  #replaynext b { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #replaynext .count { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  #replayside.narrow { top: 24px !important; height: 672px; justify-content: center; gap: 6px; }
+  #replayside.narrow .avatar { width: 72px; height: 72px; }
+  #replayside.narrow .who { font-size: 20px; max-width: 100%; }
+  #replayside.narrow .count { font-size: 30px; }
+  #replayside.narrow .when { font-size: 13px; }
+  #replayside.narrow .list .other span { display: none; }
   #replaybelow { position: absolute; left: 40px; top: 608px; width: 864px; font-size: 18px; color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #replayside { position: absolute; left: 950px; top: 104px; width: 300px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; }
   #replayside .avatar { width: 96px; height: 96px; border-radius: 50%; border: 3px solid var(--accent); object-fit: cover; background: rgba(255,255,255,.08); }
@@ -129,7 +142,8 @@
 <div id="fakevideo" class="hidden">The stream</div>
 <div id="replay" class="hidden">
   <div id="replayframe"></div>
-  <div id="replaytop"><span class="replaytag">REPLAY</span><span id="replaytitle"></span></div>
+  <div id="replaytop"><span class="replaytag">REPLAY</span><span id="replaytitle"></span>
+  <span id="replaynext" class="hidden"><img alt=""><span class="label">NEXT LIVE</span><span class="text"><b></b><span class="count"></span></span></span></div>
   <div id="replaybelow"></div>
   <div id="replayside">
     <img class="avatar" id="replayavatar" alt="">
@@ -194,20 +208,45 @@
     placeFake();
   }
 
-  // The framed replay's pieces around its window: the title above, the date below, the countdown beside it when there's
-  // room (on whichever side has more), else in a card over the replay's corner.
+  // The framed replay's pieces around its window: the title above, the date below, and the next stream, wherever it fits
+  // best: a column beside the replay; else in the title bar above it, to the right of the title; else a narrow column the
+  // full height of the picture; else (no room anywhere) a card over the replay's corner.
+  let nextInTitle = false;
+
   function placeReplayFrame() {
     const f = cfg.replayFrame, px = n => n + "px";
     Object.assign($("replayframe").style, { left: px(f.x), top: px(f.y), width: px(f.width), height: px(f.height) });
     const top = $("replaytop"), below = $("replaybelow"), side = $("replayside");
+    const hasTop = f.y >= 60;
     Object.assign(top.style, { left: px(f.x), width: px(f.width), top: px(Math.max(12, f.y - 70)) });
-    top.classList.toggle("hidden", f.y < 60);
+    top.classList.toggle("hidden", !hasTop);
     Object.assign(below.style, { left: px(f.x), width: px(f.width), top: px(f.y + f.height + 14) });
     below.classList.toggle("hidden", f.y + f.height + 40 > 720);
-    const right = 1280 - (f.x + f.width) - 60, left = f.x - 60;
-    side.classList.toggle("compact", Math.max(right, left) < 240);
-    if (right >= left) Object.assign(side.style, { left: px(f.x + f.width + 30), width: px(Math.min(right, 360)), top: px(f.y) });
-    else Object.assign(side.style, { left: px(Math.max(30, f.x - 30 - Math.min(left, 360))), width: px(Math.min(left, 360)), top: px(f.y) });
+
+    const right = 1280 - (f.x + f.width) - 60, left = f.x - 60, room = Math.max(right, left);
+    const column = width => right >= left
+      ? { left: px(f.x + f.width + 30), width: px(width), top: px(f.y), height: "" }
+      : { left: px(Math.max(30, f.x - 30 - width)), width: px(width), top: px(f.y), height: "" };
+    nextInTitle = room < 240 && hasTop;
+    side.classList.remove("compact", "narrow");
+    side.classList.toggle("hidden", nextInTitle);
+    $("replaynext").classList.toggle("hidden", !nextInTitle);
+    if (room >= 240 || nextInTitle) {
+      Object.assign(side.style, column(Math.min(room, 360)));
+    } else if (room >= 150) {
+      side.classList.add("narrow");
+      Object.assign(side.style, column(room));
+    } else {
+      side.classList.add("compact");
+    }
+  }
+
+  function renderReplayNext() {
+    const next = nextStream(), chip = $("replaynext");
+    chip.querySelector("img").src = (next && next.avatar) || blank;
+    chip.querySelector("b").textContent = next ? next.name : "No stream expected yet";
+    const left = next ? countdownText(next.at) : null;
+    chip.querySelector(".count").textContent = !next ? "" : left ?? "any minute now";
   }
 
   // The editor's stand-in for the stream (or replay), where the real one would be.
@@ -345,6 +384,7 @@
       const left = next ? countdownText(next.at) : null;
       $("replaycount").textContent = !next ? "—" : left ?? "Any minute now";
       $("replaycount").style.fontSize = next && !left ? "30px" : "";
+      if (nextInTitle) renderReplayNext();
       if (!$("replaynote").classList.contains("hidden")) $("replaynote").querySelector(".meta").textContent = replayNoteMeta();
       return;
     }

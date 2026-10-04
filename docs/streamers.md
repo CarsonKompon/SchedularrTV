@@ -52,7 +52,9 @@ Open **Streamers** in the sidebar and choose **Add a streamer channel**:
     minutes a card says it's a replay of their stream from when, and counts down to the next live stream.
   - **A framed replay.** The replay plays in a frame marked *REPLAY*, with its title and date, and the countdown (and
     everyone's next stream) beside it the whole time. Set its size (always 16:9) and position, or snap it left, centre or
-    right; with no room beside it, the countdown moves to a card over the replay's corner.
+    right. When there isn't room for the countdown beside it, the next stream moves into the title bar above the replay,
+    to the right of its title; with no room above either, it goes in a narrow full-height column beside the replay, and
+    only with no room at all into a card over its corner.
 
   A replay is the newest saved stream among the channel's streamers: a Twitch past broadcast, or a YouTube stream's
   recording, at least ten minutes long. It plays from where it has got to (a restart doesn't send it back to the
