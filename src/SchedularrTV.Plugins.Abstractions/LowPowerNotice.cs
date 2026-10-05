@@ -42,51 +42,52 @@ public sealed class LowPowerNotice : ComponentBase
             return;
         }
 
-        int seq = 0;
         if (Inline)
         {
-            builder.OpenElement(seq++, "p");
-            builder.AddAttribute(seq++, "class", "hint warn low-power-note");
-            builder.AddContent(seq++, string.Join(" ", new[] { Title }.Concat(advice).Where(text => !string.IsNullOrWhiteSpace(text))));
-            builder.AddContent(seq++, ChildContent);
+            builder.OpenElement(0, "p");
+            builder.AddAttribute(1, "class", "hint warn low-power-note");
+            builder.AddContent(2, string.Join(" ", new[] { Title }.Concat(advice).Where(text => !string.IsNullOrWhiteSpace(text))));
+            builder.AddContent(3, ChildContent);
             builder.CloseElement();
             return;
         }
 
-        builder.OpenElement(seq++, "div");
-        builder.AddAttribute(seq++, "class", "banner banner-warn low-power-notice");
-        builder.AddAttribute(seq++, "role", "note");
-        builder.OpenElement(seq++, "strong");
-        builder.AddContent(seq++, string.IsNullOrWhiteSpace(Title) ? $"Running on {HardwareProfile.DeviceName}" : Title);
+        builder.OpenElement(10, "div");
+        builder.AddAttribute(11, "class", "banner banner-warn low-power-notice");
+        builder.AddAttribute(12, "role", "note");
+
+        builder.OpenElement(13, "strong");
+        builder.AddContent(14, string.IsNullOrWhiteSpace(Title) ? $"Running on {HardwareProfile.DeviceName}" : Title);
         builder.CloseElement();
+
         if (ChildContent is not null)
         {
-            builder.OpenElement(seq++, "div");
-            builder.AddAttribute(seq++, "style", "margin-top:4px;");
-            builder.AddContent(seq++, ChildContent);
+            builder.OpenElement(20, "div");
+            builder.AddAttribute(21, "style", "margin-top:4px;");
+            builder.AddContent(22, ChildContent);
             builder.CloseElement();
         }
 
         if (advice.Length > 0)
         {
-            builder.OpenElement(seq++, "ul");
+            builder.OpenElement(30, "ul");
             foreach (string item in advice)
             {
-                builder.OpenElement(seq, "li");
-                builder.AddContent(seq + 1, item);
+                builder.OpenElement(31, "li");
+                builder.AddContent(32, item);
                 builder.CloseElement();
             }
 
-            seq += 2;
             builder.CloseElement();
         }
 
-        builder.OpenElement(seq++, "p");
-        builder.AddAttribute(seq++, "class", "meta");
-        builder.AddAttribute(seq++, "style", "margin:6px 0 0;");
-        builder.AddContent(seq++, $"Shown because SchedularrTV is using its low-power defaults on {HardwareProfile.Detected.Summary}. "
-                                  + "Change this under App settings → Hardware.");
+        builder.OpenElement(40, "p");
+        builder.AddAttribute(41, "class", "meta");
+        builder.AddAttribute(42, "style", "margin:6px 0 0;");
+        builder.AddContent(43, $"Shown because SchedularrTV is using its low-power defaults on {HardwareProfile.Detected.Summary}. "
+                               + "Change this under App settings → Hardware and video encoding.");
         builder.CloseElement();
+
         builder.CloseElement();
     }
 }

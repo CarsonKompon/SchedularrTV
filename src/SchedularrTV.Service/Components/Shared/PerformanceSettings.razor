@@ -33,7 +33,7 @@
 <div class="grid grid-3">
     <label class="field">
         <span>Encoder</span>
-        <select value="@Form.PerformanceValue("LiveEncoding:Encoder")" @onchange="e => Edit("LiveEncoding:Encoder", e.Value?.ToString())">
+        <select value="@Form.PerformanceValue(LiveEncoderKey)" @onchange="e => Edit(LiveEncoderKey, e.Value?.ToString())">
             <option value="">Default (@LiveDefaults.Video.Encoder.Label)</option>
             @foreach (H264Encoder encoder in H264Encoder.All)
             {
@@ -43,7 +43,7 @@
     </label>
     <label class="field">
         <span>x264 speed preset</span>
-        <select value="@Form.PerformanceValue("LiveEncoding:Preset")" @onchange="e => Edit("LiveEncoding:Preset", e.Value?.ToString())">
+        <select value="@Form.PerformanceValue(LivePresetKey)" @onchange="e => Edit(LivePresetKey, e.Value?.ToString())">
             <option value="">Default (@LiveDefaults.Video.Preset)</option>
             @foreach (string preset in X264Presets.All)
             {
@@ -53,7 +53,7 @@
     </label>
     <label class="field">
         <span>Picture size</span>
-        <select value="@Form.PerformanceValue("LiveEncoding:Height")" @onchange="e => Edit("LiveEncoding:Height", e.Value?.ToString())">
+        <select value="@Form.PerformanceValue(LiveHeightKey)" @onchange="e => Edit(LiveHeightKey, e.Value?.ToString())">
             <option value="">Default (@(LiveDefaults.Height)p)</option>
             @foreach (int height in LiveEncodingSettings.Heights)
             {
@@ -63,7 +63,7 @@
     </label>
     <label class="field">
         <span>Frames per second</span>
-        <select value="@Form.PerformanceValue("LiveEncoding:FrameRate")" @onchange="e => Edit("LiveEncoding:FrameRate", e.Value?.ToString())">
+        <select value="@Form.PerformanceValue(LiveFrameRateKey)" @onchange="e => Edit(LiveFrameRateKey, e.Value?.ToString())">
             <option value="">Default (@LiveDefaults.FrameRate)</option>
             @foreach (int fps in LiveEncodingSettings.FrameRates)
             {
@@ -73,13 +73,13 @@
     </label>
     <label class="field">
         <span>Bitrate (kbps)</span>
-        <input type="number" min="300" max="20000" value="@Form.PerformanceValue("LiveEncoding:BitrateKbps")" placeholder="@LiveDefaults.BitrateKbps"
-               @onchange="e => Edit("LiveEncoding:BitrateKbps", e.Value?.ToString())" />
+        <input type="number" min="300" max="20000" value="@Form.PerformanceValue(LiveBitrateKey)" placeholder="@LiveDefaults.BitrateKbps"
+               @onchange="e => Edit(LiveBitrateKey, e.Value?.ToString())" />
     </label>
     <label class="field">
         <span>Encoder threads</span>
-        <input type="number" min="0" max="16" value="@Form.PerformanceValue("LiveEncoding:Threads")" placeholder="All of them"
-               @onchange="e => Edit("LiveEncoding:Threads", e.Value?.ToString())" />
+        <input type="number" min="0" max="16" value="@Form.PerformanceValue(LiveThreadsKey)" placeholder="All of them"
+               @onchange="e => Edit(LiveThreadsKey, e.Value?.ToString())" />
     </label>
 </div>
 <p class="hint">
@@ -100,7 +100,7 @@
 <div class="grid grid-3">
     <label class="field">
         <span>Encoder</span>
-        <select value="@Form.PerformanceValue("Rendering:Encoder")" @onchange="e => Edit("Rendering:Encoder", e.Value?.ToString())">
+        <select value="@Form.PerformanceValue(RenderEncoderKey)" @onchange="e => Edit(RenderEncoderKey, e.Value?.ToString())">
             <option value="">Default (@H264Encoder.Software.Label)</option>
             @foreach (H264Encoder encoder in H264Encoder.All)
             {
@@ -110,7 +110,7 @@
     </label>
     <label class="field">
         <span>x264 speed preset</span>
-        <select value="@Form.PerformanceValue("Rendering:Preset")" @onchange="e => Edit("Rendering:Preset", e.Value?.ToString())">
+        <select value="@Form.PerformanceValue(RenderPresetKey)" @onchange="e => Edit(RenderPresetKey, e.Value?.ToString())">
             <option value="">Default (@(HardwareProfile.IsLowPower ? "superfast" : "medium for promos, veryfast for squeezes"))</option>
             @foreach (string preset in X264Presets.All)
             {
@@ -120,13 +120,13 @@
     </label>
     <label class="field">
         <span>Encoder threads</span>
-        <input type="number" min="0" max="16" value="@Form.PerformanceValue("Rendering:Threads")" placeholder="@(HardwareProfile.IsLowPower ? "2" : "All of them")"
-               @onchange="e => Edit("Rendering:Threads", e.Value?.ToString())" />
+        <input type="number" min="0" max="16" value="@Form.PerformanceValue(RenderThreadsKey)" placeholder="@RenderThreadsPlaceholder"
+               @onchange="e => Edit(RenderThreadsKey, e.Value?.ToString())" />
     </label>
     <label class="field">
         <span>Hardware encoder bitrate at 1080p (kbps)</span>
-        <input type="number" min="500" max="40000" value="@Form.PerformanceValue("Rendering:HardwareBitrateKbps")" placeholder="@RenderingDefaults.HardwareBitrateKbps"
-               @onchange="e => Edit("Rendering:HardwareBitrateKbps", e.Value?.ToString())" />
+        <input type="number" min="500" max="40000" value="@Form.PerformanceValue(RenderBitrateKey)" placeholder="@RenderingDefaults.HardwareBitrateKbps"
+               @onchange="e => Edit(RenderBitrateKey, e.Value?.ToString())" />
     </label>
 </div>
 <p class="hint">
@@ -138,6 +138,20 @@
 @code {
     [Parameter, EditorRequired] public AppSettingsForm Form { get; set; } = default!;
     [Parameter] public EventCallback Changed { get; set; }
+
+    // Kept as constants so the markup's attributes don't need quotes inside quotes.
+    private const string LiveEncoderKey = "LiveEncoding:Encoder";
+    private const string LivePresetKey = "LiveEncoding:Preset";
+    private const string LiveHeightKey = "LiveEncoding:Height";
+    private const string LiveFrameRateKey = "LiveEncoding:FrameRate";
+    private const string LiveBitrateKey = "LiveEncoding:BitrateKbps";
+    private const string LiveThreadsKey = "LiveEncoding:Threads";
+    private const string RenderEncoderKey = "Rendering:Encoder";
+    private const string RenderPresetKey = "Rendering:Preset";
+    private const string RenderThreadsKey = "Rendering:Threads";
+    private const string RenderBitrateKey = "Rendering:HardwareBitrateKbps";
+
+    private static string RenderThreadsPlaceholder => HardwareProfile.IsLowPower ? "2" : "All of them";
 
     private static LiveEncodingSettings LiveDefaults => LiveEncodingSettings.Defaults;
 
@@ -195,7 +209,7 @@
         {
             RenderEncodingSettings rendering = Rendering;
             bool software = !rendering.Video.Encoder.Hardware;
-            string? preset = Typed("Rendering:Preset");
+            string? preset = Typed(RenderPresetKey);
             return
             [
                 software && preset is not null && X264Presets.IsSlow(preset)
