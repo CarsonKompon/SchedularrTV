@@ -1,0 +1,31 @@
+.backups { display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .backups { grid-template-columns: minmax(0, 1fr); } }
+
+.backups-list { display: flex; flex-direction: column; gap: 2px; max-height: 78vh; overflow-y: auto; position: sticky; top: 16px; }
+.backups-day { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 10px 4px 4px; }
+.backups-day:first-child { margin-top: 0; }
+.backups-item { display: flex; gap: 10px; align-items: baseline; text-align: left; width: 100%; padding: 8px 10px; border-radius: var(--r-sm);
+                border: 1px solid transparent; background: transparent; color: inherit; cursor: pointer; font: inherit; }
+.backups-item:hover { background: rgba(255, 255, 255, .03); border-color: var(--line); }
+.backups-item.on { background: var(--accent-dim); border-color: var(--accent-glow); }
+.backups-time { font-family: var(--mono); font-size: 12px; color: var(--muted); flex: none; min-width: 64px; }
+.backups-what { display: flex; flex-direction: column; min-width: 0; }
+.backups-what .meta { color: var(--muted); font-size: 12px; }
+
+.backups-detail { min-width: 0; }
+.backups-yaml { min-height: 50vh; width: 100%; }
+
+.diff { font-family: var(--mono); font-size: 12px; line-height: 1.55; border: 1px solid var(--line); border-radius: var(--r-sm);
+        background: rgba(5, 7, 12, .7); overflow: auto; max-height: 64vh; }
+.diff-line { display: grid; grid-template-columns: 44px 44px 18px minmax(0, 1fr); white-space: pre; }
+.diff-line.added { background: rgba(60, 207, 145, .10); }
+.diff-line.removed { background: rgba(242, 103, 109, .10); }
+.diff-line.added .diff-mark { color: var(--ok); }
+.diff-line.removed .diff-mark { color: var(--error); }
+.diff-num { color: var(--faint); text-align: right; padding-right: 8px; user-select: none; }
+.diff-mark { text-align: center; user-select: none; }
+.diff-text { padding-right: 12px; }
+.diff-gap { color: var(--muted); padding: 4px 12px; border-block: 1px dashed var(--line); font-family: var(--font); font-size: 12px; }
+.diff-count { font-family: var(--mono); font-weight: 650; }
+.diff-count.added { color: var(--ok); }
+.diff-count.removed { color: var(--error); }

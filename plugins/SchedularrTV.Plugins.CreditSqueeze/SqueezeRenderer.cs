@@ -203,10 +203,20 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
     {
         Directory.CreateDirectory(Path.GetDirectoryName(output)!);
         job = await WithMadePromoAsync(job, cancellationToken).ConfigureAwait(false);
+
+        // The boxes take the videos' own shapes (a 4:3 show's credits, a 4:3 promo), so neither is boxed with bars as if widescreen.
+        job = job with
+        {
+            CreditsAspect = await AspectAsync(job.SourcePath, cancellationToken).ConfigureAwait(false),
+            PromoAspect = job.PromoPath is { } promo ? await AspectAsync(promo, cancellationToken).ConfigureAwait(false) : null
+        };
         (job, string? playlist) = await WithCommercialsAsync(job, output, cancellationToken).ConfigureAwait(false);
         try
         {
-            await RenderMadeAsync(FittedToPromo(job), output, cancellationToken).ConfigureAwait(false);
+            SqueezeJob fitted = FittedToPromo(job);
+
+            // Without a promo after all, the slot shows the next programme's picture, in the usual widescreen slot.
+            await RenderMadeAsync(PlaysPromo(fitted) ? fitted : fitted with { PromoAspect = null }, output, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -243,6 +253,18 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         }
 
         clips.AddRange(ads);
+
+        // Joined in their own shape when they share one (all 4:3, say), so the panel's slot can take it; mixed, widescreen.
+        List<double?> shapes = [];
+        foreach (SqueezeClip clip in clips)
+        {
+            shapes.Add(await AspectAsync(clip.Path, cancellationToken).ConfigureAwait(false));
+        }
+
+        double shape = SharedShape(shapes);
+        int joinedWidth = SqueezeLayout.Even(720 * shape);
+        string size = $"{joinedWidth.ToString(CultureInfo.InvariantCulture)}:720";
+
         string playlist = output + ".panel.mp4";
         List<string> arguments = ["-y", "-hide_banner", "-loglevel", "error", "-nostdin"];
         List<string> parts = [];
@@ -252,8 +274,8 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
             SqueezeClip clip = clips[index];
             string length = N(clip.Length.TotalSeconds);
             arguments.AddRange(["-i", clip.Path]);
-            parts.Add($"[{index}:v]trim=duration={length},setpts=PTS-STARTPTS,scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2,"
-                      + $"pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p[v{index}]");
+            parts.Add($"[{index}:v]trim=duration={length},setpts=PTS-STARTPTS,scale={size}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
+                      + $"pad={size}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p[v{index}]");
             parts.Add(await HasAudioAsync(clip.Path, cancellationToken).ConfigureAwait(false)
                 ? $"[{index}:a]atrim=duration={length},asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,apad=whole_dur={length}[a{index}]"
                 : $"anullsrc=r=48000:cl=stereo,atrim=duration={length},aformat=sample_fmts=fltp:channel_layouts=stereo[a{index}]");
@@ -264,12 +286,12 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         arguments.AddRange(["-filter_complex", string.Join(';', parts), "-map", "[v]", "-map", "[a]"]);
         RenderEncodingSettings encoding = CurrentEncoding;
         List<string> tail = ["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ac", "2", playlist];
-        (int code, string errors, _) = await RunAsync(settings.Ffmpeg, [.. arguments, .. VideoArguments(encoding, 1280, 720), .. tail], cancellationToken)
+        (int code, string errors, _) = await RunAsync(settings.Ffmpeg, [.. arguments, .. VideoArguments(encoding, joinedWidth, 720), .. tail], cancellationToken)
             .ConfigureAwait(false);
         if (code != 0 && encoding.Video.Encoder.Hardware)
         {
             // A hardware encoder this computer doesn't have mustn't lose the panel: the same join in software.
-            (code, errors, _) = await RunAsync(settings.Ffmpeg, [.. arguments, .. VideoArguments(InSoftware(encoding), 1280, 720), .. tail], cancellationToken)
+            (code, errors, _) = await RunAsync(settings.Ffmpeg, [.. arguments, .. VideoArguments(InSoftware(encoding), joinedWidth, 720), .. tail], cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -281,7 +303,16 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         }
 
         TimeSpan total = TimeSpan.FromTicks(clips.Sum(clip => clip.Length.Ticks));
-        return (job with { PromoPath = playlist, PromoLength = total }, playlist);
+        return (job with { PromoPath = playlist, PromoLength = total, PromoAspect = shape }, playlist);
+    }
+
+    /// <summary>The shape every clip has (within a couple of percent), else widescreen; clips that can't say count as widescreen.</summary>
+    public static double SharedShape(IReadOnlyList<double?> shapes)
+    {
+        double first = shapes.Count > 0 && shapes[0] is { } known ? known : SqueezeLayout.Widescreen;
+        return shapes.All(shape => Math.Abs((shape ?? SqueezeLayout.Widescreen) / first - 1) < 0.02)
+            ? Math.Clamp(first, SqueezeLayout.NarrowestAspect, SqueezeLayout.WidestAspect)
+            : SqueezeLayout.Widescreen;
     }
 
     private async Task RenderMadeAsync(SqueezeJob job, string output, CancellationToken cancellationToken)
@@ -702,6 +733,101 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         }
     }
 
+    private static readonly ConcurrentDictionary<string, double?> Shapes = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// A video's shape as it's shown (width ÷ height, with its pixels' own shape: a 720×480 4:3 DVD is 1.333), asked of
+    /// ffprobe; null when it can't say.
+    /// </summary>
+    public async Task<double?> AspectAsync(string path, CancellationToken cancellationToken)
+    {
+        if (Shapes.TryGetValue(path, out double? known))
+        {
+            return known;
+        }
+
+        try
+        {
+            (int code, _, string output) = await RunAsync(Ffprobe,
+                ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,sample_aspect_ratio", "-of", "default=nw=1", path],
+                cancellationToken).ConfigureAwait(false);
+            if (code != 0)
+            {
+                return null;
+            }
+
+            double? aspect = AspectOf(output);
+            Shapes[path] = aspect;
+            return aspect;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The shape from ffprobe's <c>width=…</c>, <c>height=…</c> and <c>sample_aspect_ratio=…</c> lines; null without a size.</summary>
+    public static double? AspectOf(string ffprobeOutput)
+    {
+        int width = 0, height = 0;
+        double pixel = 1;
+        foreach (string line in ffprobeOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            int equals = line.IndexOf('=', StringComparison.Ordinal);
+            if (equals <= 0)
+            {
+                continue;
+            }
+
+            string key = line[..equals], value = line[(equals + 1)..];
+            switch (key)
+            {
+                case "width":
+                    _ = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out width);
+                    break;
+                case "height":
+                    _ = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out height);
+                    break;
+                case "sample_aspect_ratio" when value.Split(':') is [var n, var d]
+                                                && double.TryParse(n, NumberStyles.Float, CultureInfo.InvariantCulture, out double over)
+                                                && double.TryParse(d, NumberStyles.Float, CultureInfo.InvariantCulture, out double under)
+                                                && over > 0 && under > 0:
+                    // "0:1" or "N/A" when the file doesn't say: square pixels.
+                    pixel = over / under;
+                    break;
+            }
+        }
+
+        if (width <= 0 || height <= 0)
+        {
+            return null;
+        }
+
+        double aspect = width * pixel / height;
+
+        // Near enough to widescreen or 4:3 is taken as exactly that (encoders round sizes: 1920×1088, 704×480).
+        foreach (double common in new[] { SqueezeLayout.Widescreen, 4 / 3.0 })
+        {
+            if (Math.Abs(aspect / common - 1) < 0.02)
+            {
+                return common;
+            }
+        }
+
+        return aspect;
+    }
+
+    private string Ffprobe
+    {
+        get
+        {
+            string ffmpeg = settings.Ffmpeg;
+            return Path.IsPathRooted(ffmpeg)
+                ? Path.Combine(Path.GetDirectoryName(ffmpeg)!, OperatingSystem.IsWindows() ? "ffprobe.exe" : "ffprobe")
+                : "ffprobe";
+        }
+    }
+
     /// <summary>How long a video runs (asked of ffprobe); null when it can't say.</summary>
     public async Task<TimeSpan?> DurationAsync(string path, CancellationToken cancellationToken)
     {
@@ -877,6 +1003,9 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         bool bare = layout.Text.IsEmpty;
         float corner = bare && !framed ? 0 : 12;
         bool playsPromo = PlaysPromo(job);
+
+        // The promo's own shape, where it's kept whole in the slot (black only where it plays).
+        float promoShape = (float)Math.Clamp(job.PromoAspect ?? SqueezeLayout.Widescreen, SqueezeLayout.NarrowestAspect, SqueezeLayout.WidestAspect);
         using (SKImage? image = art is null || playsPromo ? null : SKImage.FromEncodedData(art))
         {
             canvas.Save();
@@ -885,7 +1014,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
             {
                 // The promo fades up from black here; the programme's picture is only for a panel without one.
                 using var black = new SKPaint { Color = SKColors.Black };
-                canvas.DrawRect(job.PanelFit == SqueezeFit.Letterbox ? Contain(16 / 9f, picture) : picture, black);
+                canvas.DrawRect(job.PanelFit == SqueezeFit.Letterbox ? Contain(promoShape, picture) : picture, black);
             }
             else if (image is not null)
             {
@@ -894,7 +1023,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
             else
             {
                 using var stand = new SKPaint { Color = Mix(background, accent, 0.35f) };
-                canvas.DrawRect(job.PanelFit == SqueezeFit.Letterbox ? Contain(16 / 9f, picture) : picture, stand);
+                canvas.DrawRect(job.PanelFit == SqueezeFit.Letterbox ? Contain(promoShape, picture) : picture, stand);
             }
 
             canvas.Restore();

@@ -39,7 +39,7 @@
     LiveStatus? status = string.IsNullOrEmpty(station.Id) ? null : Hub.Streams.Status(station.Id);
     <div class="card" @key="station">
         <div class="card-head">
-            <h2>@(string.IsNullOrWhiteSpace(station.Name) ? "New station" : station.Name)</h2>
+            <h2>@Title(station)</h2>
             <span class="pill pill-muted">@PresetName(station.Preset)</span>
             <span class="pill pill-muted">@(station.Source == RadioSource.Internet ? "Internet radio" : "Jellyfin music")</span>
             @if (status is not null)
@@ -211,10 +211,13 @@
                         <input type="range" min="0" max="1.5" step="0.05" value="@station.Volume.ToString(CultureInfo.InvariantCulture)"
                                @onchange="e => Change(() => station.Volume = Number(e, 1))" /></label>
 
-                    <div class="row" style="gap:8px;margin-top:14px;">
+                    <div class="row" style="gap:8px;margin-top:14px;align-items:center;">
+                        @if (!CanSave(station))
+                        {
+                            <span class="hint warn" style="margin:0;">@SaveProblem(station)</span>
+                        }
                         <div class="spacer"></div>
-                        <button class="btn btn-sm" type="button" @onclick="Cancel">Cancel</button>
-                        <button class="btn btn-sm btn-primary" type="button" disabled="@(!CanSave(station))" @onclick="Save">Save</button>
+                        <button class="btn btn-sm" type="button" @onclick="Done">Done</button>
                     </div>
                 </div>
 
@@ -231,8 +234,12 @@
 }
 
 <div class="row" style="gap:8px;">
-    <button class="btn btn-primary" type="button" disabled="@(_editing is not null)" @onclick="Add">Add a station</button>
+    <button class="btn btn-primary" type="button" @onclick="Add">Add a station</button>
 </div>
+
+<SaveDock Dirty="_dirty" Label="Unsaved radio stations" CanSave="@_stations.All(CanSave)"
+          Problem="@(_stations.FirstOrDefault(station => !CanSave(station)) is { } unfinished ? $"{Title(unfinished)} isn't finished" : null)"
+          OnSave="Save" OnDiscard="Discard" />
 
 <div class="card" style="margin-top:16px;">
     <div class="card-head"><h2>How it works</h2></div>
@@ -314,14 +321,32 @@
 
     private void OnHubChanged() => _ = InvokeAsync(StateHasChanged);
 
+    // Edits, new stations and deletions are all held here until Save in the bar along the bottom; Discard drops them.
+    private bool _dirty;
+
     private void Load()
     {
         _stations = [.. Store.Stations.Select(station => station.Copy())];
         _editing = null;
+        _confirmDelete = null;
+        _dirty = false;
         _choices = [];
         _choicesFor = null;
         _filter = string.Empty;
     }
+
+    private static string Title(RadioStation station) => string.IsNullOrWhiteSpace(station.Name) ? "New station" : station.Name;
+
+    private static string SaveProblem(RadioStation station) => station.Source switch
+    {
+        RadioSource.Internet => "Enter the station's http or https address to save it.",
+        _ => station.Pick switch
+        {
+            MusicPick.Playlist => "Choose a playlist to save it.",
+            MusicPick.Genres => "Choose at least one genre to save it.",
+            _ => "Choose at least one artist to save it."
+        }
+    };
 
     private static string PreviewSource(RadioStation station) =>
         $"plugins/radio/view/{Uri.EscapeDataString(string.IsNullOrEmpty(station.Id) ? "preview" : station.Id)}?preview=true";
@@ -370,16 +395,14 @@
         }
     };
 
+    // Another station's editor closes, keeping its edits for the save bar.
     private void Edit(RadioStation station)
     {
-        if (_editing is not null)
-        {
-            Load();
-            station = _stations.FirstOrDefault(candidate => candidate.Id == station.Id) ?? station;
-        }
-
         _editing = station;
         _message = null;
+        _choices = [];
+        _choicesFor = null;
+        _filter = string.Empty;
         _ = LoadChoicesAsync(station.Pick);
     }
 
@@ -388,16 +411,25 @@
         var station = new RadioStation();
         _stations.Add(station);
         _editing = station;
+        _choices = [];
+        _choicesFor = null;
         _message = null;
+        _dirty = true;
     }
 
-    private void Cancel() => Load();
+    private void Done() => _editing = null;
+
+    private void Discard()
+    {
+        Load();
+        _message = null;
+    }
 
     private void AskDelete(RadioStation station)
     {
         if (string.IsNullOrEmpty(station.Id))
         {
-            Load();
+            Remove(station);
             return;
         }
 
@@ -407,26 +439,29 @@
     private void Remove(RadioStation station)
     {
         _confirmDelete = null;
-        try
+        _stations.Remove(station);
+        if (ReferenceEquals(_editing, station))
         {
-            Store.Save(Store.Stations.Where(saved => !string.Equals(saved.Id, station.Id, StringComparison.OrdinalIgnoreCase)));
-            Load();
-            Say($"Deleted {station.Name}. Channels that used it fill that time with their other programming from the next rebuild.", ok: true);
+            _editing = null;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            Say($"Couldn't delete the station: {ex.Message}", ok: false);
-        }
+
+        _dirty = true;
     }
 
     private void Save()
     {
+        if (!_stations.All(CanSave))
+        {
+            return;
+        }
+
         try
         {
-            string name = _editing?.Name ?? string.Empty;
+            bool removed = Store.Stations.Any(saved => !_stations.Any(station => string.Equals(station.Id, saved.Id, StringComparison.OrdinalIgnoreCase)));
             Store.Save(_stations);
             Load();
-            Say($"Saved {name}. It's under TV Shows now (and in the show pickers). A station that's on air starts again with the new settings.", ok: true);
+            Say("Saved. Stations are under TV Shows (and in the show pickers); one that's on air starts again with its new settings."
+                + (removed ? " Channels that used a deleted station fill that time with their other programming from the next rebuild." : ""), ok: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -437,6 +472,7 @@
     private async Task PickAsync(RadioStation station, MusicPick pick)
     {
         station.Pick = pick;
+        _dirty = true;
         _filter = string.Empty;
         await PushPreviewAsync();
         await LoadChoicesAsync(pick);
@@ -493,6 +529,7 @@
     private async Task Change(Action change)
     {
         change();
+        _dirty = true;
         await PushPreviewAsync();
     }
 

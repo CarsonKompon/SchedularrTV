@@ -36,6 +36,14 @@ public sealed class ConfigEditor(SchedulerConfigProvider provider)
         Changed?.Invoke();
     }
 
+    /// <summary>Makes <paramref name="config"/> the whole working copy (a backup opened for review, say), unsaved.</summary>
+    public void Replace(SchedulerConfig config)
+    {
+        _working = config;
+        SaveError = null;
+        MarkDirty();
+    }
+
     public void Reload()
     {
         _working = Clone(provider.Current);

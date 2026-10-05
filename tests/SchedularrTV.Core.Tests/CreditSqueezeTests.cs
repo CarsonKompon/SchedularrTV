@@ -334,6 +334,58 @@ public sealed class CreditSqueezeTests
     }
 
     [Fact]
+    public void The_boxes_take_the_shape_of_the_credits_and_the_promo()
+    {
+        const double FourThree = 4 / 3.0;
+
+        // Side by side: 4:3 credits fill their column's width, taller than widescreen ones would.
+        SqueezeLayout column = SqueezeLayout.Of(SqueezeStyle.SideBySide, CreditsSide.Left, 60, creditsAspect: FourThree);
+        Assert.Equal(new Rect(0, 72, 768, 576), column.Credits);
+
+        // ...and a 4:3 promo gets a 4:3 slot, centred across the panel, the words under it.
+        SqueezeLayout promo = SqueezeLayout.Of(SqueezeStyle.SideBySide, CreditsSide.Left, 60, creditsAspect: FourThree, panelAspect: FourThree);
+        Assert.Equal(432, promo.Picture.Width);
+        Assert.Equal(324, promo.Picture.Height);
+        Assert.True(promo.Text.Y > promo.Picture.Bottom && promo.Text.Height >= 150);
+
+        // On the top or bottom: a 4:3 box in the band, and a narrower 4:3 slot with more room for the words beside it.
+        SqueezeLayout band = SqueezeLayout.Of(SqueezeStyle.SideBySide, CreditsSide.Top, 50, creditsAspect: FourThree, panelAspect: FourThree);
+        Assert.Equal(new Rect(400, 0, 480, 360), band.Credits);
+        Assert.Equal((394, 296), (band.Picture.Width, band.Picture.Height));
+        Assert.True(band.Text.X > band.Picture.Right && band.Text.Width > SqueezeLayout.Of(SqueezeStyle.SideBySide, CreditsSide.Top, 50).Text.Width);
+
+        // Framed: the 4:3 box is as tall as there's room for, leaving the panel the width it doesn't need.
+        SqueezeLayout framed = SqueezeLayout.Of(SqueezeStyle.Framed, CreditsSide.Left, 60, creditsAspect: FourThree, panelAspect: FourThree);
+        SqueezeLayout wide = SqueezeLayout.Of(SqueezeStyle.Framed, CreditsSide.Left, 60);
+        Assert.True(framed.Credits.Height > wide.Credits.Height);
+        Assert.Equal(framed.Credits.Width * 3, framed.Credits.Height * 4, tolerance: 8);
+        Assert.Equal(framed.Picture.Width * 3, framed.Picture.Height * 4, tolerance: 8);
+        Assert.True(framed.Credits.Bottom <= 720 - 90 && framed.Picture.Bottom < framed.Text.Y);
+
+        // Widescreen (or unknown) is laid out exactly as before.
+        SqueezeJob job = Plan(Day(), new CreditSqueezeSection { Animate = false })[0].Job;
+        Assert.Equal(job.Layout(), (job with { CreditsAspect = 16 / 9.0, PromoAspect = 16 / 9.0 }).Layout());
+        Assert.All(new[] { column.Credits, promo.Picture, band.Credits, band.Picture, framed.Credits, framed.Picture },
+            rect => Assert.True(rect.Width % 2 == 0 && rect.Height % 2 == 0));
+    }
+
+    [Fact]
+    public void A_videos_shape_is_read_with_its_pixels_own_shape()
+    {
+        Assert.Equal(4 / 3.0, SqueezeRenderer.AspectOf("width=640\nheight=480\nsample_aspect_ratio=1:1\n"));
+        Assert.Equal(4 / 3.0, SqueezeRenderer.AspectOf("width=720\nheight=480\nsample_aspect_ratio=8:9\n"));
+        Assert.Equal(16 / 9.0, SqueezeRenderer.AspectOf("width=720\nheight=480\nsample_aspect_ratio=32:27\n"));
+        Assert.Equal(16 / 9.0, SqueezeRenderer.AspectOf("width=1920\nheight=1088\nsample_aspect_ratio=N/A\n"));
+        Assert.Equal(2.4, SqueezeRenderer.AspectOf("width=1920\nheight=800\nsample_aspect_ratio=0:1\n")!.Value, 3);
+        Assert.Null(SqueezeRenderer.AspectOf(""));
+
+        // Commercials are joined in their shape when they share one, else widescreen.
+        Assert.Equal(4 / 3.0, SqueezeRenderer.SharedShape([4 / 3.0, 4 / 3.0]));
+        Assert.Equal(16 / 9.0, SqueezeRenderer.SharedShape([4 / 3.0, 16 / 9.0]));
+        Assert.Equal(16 / 9.0, SqueezeRenderer.SharedShape([null, null]));
+    }
+
+    [Fact]
     public void Each_squeeze_picks_one_of_the_saved_looks_by_weight()
     {
         CreditSqueezeSection section = new() { Heading = "Next up", AccentColor = "#ff0000" };

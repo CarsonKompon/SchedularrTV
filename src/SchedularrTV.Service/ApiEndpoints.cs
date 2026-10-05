@@ -189,6 +189,39 @@ public static partial class ApiEndpoints
             provider.Reload();
             return Results.Ok(provider.Validation);
         }).RequireApiKey();
+
+        // Earlier versions of the file, newest first; one is put aside before every change.
+        group.MapGet("/backups", (SchedulerConfigProvider provider) => Results.Ok(provider.Backups.List()));
+
+        group.MapGet("/backups/{id}", (string id, SchedulerConfigProvider provider) =>
+            provider.Backups.Find(id) is { } backup && provider.Backups.Read(id) is { } yaml
+                ? Results.Ok(new { backup, yaml })
+                : Results.NotFound());
+
+        group.MapPost("/backups/{id}/restore", (string id, SchedulerConfigProvider provider, ConfigEditor editor) =>
+        {
+            try
+            {
+                ConfigValidationResult? result = provider.Restore(id);
+                if (result is null)
+                {
+                    return Results.NotFound();
+                }
+
+                if (!result.IsValid)
+                {
+                    return Results.BadRequest(result);
+                }
+
+                // The web editor shows what's on disk now (unsaved edits there were made against the old version).
+                editor.Reload();
+                return Results.Ok(result);
+            }
+            catch (Exception ex) when (ex is SchedulerConfigException or YamlDotNet.Core.YamlException or QueryParseException)
+            {
+                return Results.BadRequest(new ConfigValidationResult(false, [ex.Message], []));
+            }
+        }).RequireApiKey();
     }
 
     private static void MapLibraryEndpoints(RouteGroupBuilder api)

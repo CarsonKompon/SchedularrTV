@@ -62,8 +62,18 @@ public sealed record SqueezeJob(
     /// </summary>
     public bool WantsMadePromo => PromoPath is null && MakeKinds is { Count: > 0 } && ChannelId is not null;
 
+    /// <summary>
+    /// The credits' shape as they're shown (width ÷ height: 1.333 for 4:3), read from the file as it's made; null (taken as
+    /// widescreen) until then. Their box is made that shape, so a 4:3 show's credits aren't shrunk into a 16:9 box with bars.
+    /// </summary>
+    public double? CreditsAspect { get; init; }
+
+    /// <summary>The panel's promo (or commercials') shape, read the same way; its picture slot is made that shape.</summary>
+    public double? PromoAspect { get; init; }
+
     public SqueezeLayout Layout(int width = 1280, int height = 720) =>
-        SqueezeLayout.Of(Style, Side, SplitPercent, width, height, CreditsFit, CreditsText, PanelText);
+        SqueezeLayout.Of(Style, Side, SplitPercent, width, height, CreditsFit, CreditsText, PanelText,
+            CreditsAspect ?? SqueezeLayout.Widescreen, PromoAspect ?? SqueezeLayout.Widescreen);
 }
 
 /// <summary>

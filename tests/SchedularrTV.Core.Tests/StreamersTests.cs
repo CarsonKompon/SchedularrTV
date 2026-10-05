@@ -375,6 +375,45 @@ public sealed class StreamersTests : IDisposable
     }
 
     [Fact]
+    public void A_replay_shows_in_the_guide_as_a_re_run_of_the_stream_round_and_round_until_the_next_one()
+    {
+        var channel = new StreamerChannel { Id = "fri", Name = "Friday", Number = 900 };
+        var streamer = new StreamerEntry { Platform = StreamPlatform.Twitch, Handle = "someone" };
+        DateTimeOffset aired = Now.AddDays(-2);
+        var onAir = new ChannelOnAir(null, "https://vod.example/1.m3u8", Now, null, Now)
+        {
+            ReplayKey = streamer.Key,
+            Replay = new StreamSession(aired, TimeSpan.FromHours(2), "Speedruns", "123"),
+            ReplayFrom = Now.AddMinutes(-30)
+        };
+
+        List<GuideSlot> reruns = [.. StreamerChannels.Reruns(onAir, streamer, "Someone", Now, Now.AddHours(5), 1)];
+
+        Assert.Equal(new[] { Now.AddMinutes(-30), Now.AddHours(1.5), Now.AddHours(3.5) }, reruns.Select(slot => slot.Start));
+        Assert.Equal(Now.AddHours(5), reruns[^1].End);
+        Assert.All(reruns, slot =>
+        {
+            Assert.Equal("Someone: Speedruns (re-run)", slot.Title);
+            Assert.Equal(aired, slot.FirstShown);
+            Assert.Contains("re-run of Someone's stream on Twitch", slot.Overview);
+        });
+
+        ChannelSchedule schedule = StreamerChannels.Build(channel, "http://localhost:5252/plugins/streamers/live/fri.ts",
+            [.. reruns, new GuideSlot(Now.AddHours(5), Now.AddHours(7), "Someone (expected)", null, 0)], Now, Now.AddHours(8));
+
+        Assert.Equal(new[] { "Someone: Speedruns (re-run)", "Someone: Speedruns (re-run)", "Someone: Speedruns (re-run)", "Someone (expected)", "Offline" },
+            schedule.Entries.Select(entry => entry.Item!.Title));
+        Assert.Equal(aired, schedule.Entries[0].Item!.PremiereDate);
+        Assert.Equal(aired.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+            schedule.Entries[0].Annotations![StreamerChannels.PreviouslyShownAnnotation]);
+        Assert.Null(schedule.Entries[3].Annotations);
+
+        // Live, or not replaying: no re-runs.
+        Assert.Empty(StreamerChannels.Reruns(onAir with { ActiveKey = streamer.Key }, streamer, "Someone", Now, Now.AddHours(5), 1));
+        Assert.Empty(StreamerChannels.Reruns(new ChannelOnAir(null, null, null, null), streamer, "Someone", Now, Now.AddHours(5), 1));
+    }
+
+    [Fact]
     public void Live_the_page_is_drawn_over_the_stream_and_offline_it_is_the_picture()
     {
         var channel = new StreamerChannel { Id = "fri", Name = "Friday", Number = 900, Volume = 0.8, Chat = new ChatOptions { Enabled = true, Layout = ChatLayout.PanelRight } };

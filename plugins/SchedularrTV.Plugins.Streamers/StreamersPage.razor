@@ -79,7 +79,7 @@
             {
                 <img class="streamer-channel-logo" src="@cardLogo" alt="" />
             }
-            <h2>@(string.IsNullOrWhiteSpace(channel.Name) ? "New channel" : channel.Name)</h2>
+            <h2>@Title(channel)</h2>
             @if (channel.Number > 0)
             {
                 <span class="pill pill-muted">Channel @channel.Number</span>
@@ -105,6 +105,10 @@
             {
                 <span class="pill pill-ok">On air · @status.Viewers watching</span>
             }
+            @if (saved is null)
+            {
+                <span class="pill pill-warn">Not saved yet</span>
+            }
             <div class="spacer"></div>
             @if (_confirmDelete == channel.Id && !string.IsNullOrEmpty(channel.Id))
             {
@@ -124,9 +128,9 @@
         @if (!editing && saved is not null)
         {
             <div class="streamer-list">
-                @for (int index = 0; index < saved.Streamers.Count; index++)
+                @for (int index = 0; index < channel.Streamers.Count; index++)
                 {
-                    StreamerEntry streamer = saved.Streamers[index];
+                    StreamerEntry streamer = channel.Streamers[index];
                     StreamerState? state = Monitor.State(streamer.Key);
                     <div class="streamer-row">
                         <span class="rank">@(index + 1)</span>
@@ -389,10 +393,13 @@
                                    @onchange="e => Change(() => channel.Offline.MusicVolume = Number(e, 0.4))" /></label>
                     </div>
 
-                    <div class="row" style="gap:8px;margin-top:14px;">
+                    <div class="row" style="gap:8px;margin-top:14px;align-items:center;">
+                        @if (!CanSave(channel))
+                        {
+                            <span class="hint warn" style="margin:0;">@SaveProblem(channel)</span>
+                        }
                         <div class="spacer"></div>
-                        <button class="btn btn-sm" type="button" @onclick="Cancel">Cancel</button>
-                        <button class="btn btn-sm btn-primary" type="button" disabled="@(!CanSave(channel))" @onclick="Save">Save</button>
+                        <button class="btn btn-sm" type="button" @onclick="Done">Done</button>
                     </div>
                 </div>
 
@@ -416,8 +423,12 @@
 }
 
 <div class="row" style="gap:8px;">
-    <button class="btn btn-primary" type="button" disabled="@(_editing is not null)" @onclick="Add">Add a streamer channel</button>
+    <button class="btn btn-primary" type="button" @onclick="Add">Add a streamer channel</button>
 </div>
+
+<SaveDock Dirty="_dirty" Label="Unsaved streamer channels" CanSave="@_channels.All(CanSave)"
+          Problem="@(_channels.FirstOrDefault(channel => !CanSave(channel)) is { } unfinished ? $"{Title(unfinished)} isn't finished" : null)"
+          OnSave="Save" OnDiscard="Discard" />
 
 <div class="card" style="margin-top:16px;">
     <div class="card-head"><h2>How it works</h2></div>
@@ -521,15 +532,28 @@
         Hub.Streams.Changed -= OnChanged;
         Monitor.Checked -= OnChanged;
         _refresh?.Dispose();
+
+        // Leaving without saving: logos uploaded meanwhile aren't on any saved channel.
+        RemoveUnused(_uploads);
     }
 
     private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    // Edits, new channels and deletions are all held here until Save in the bar along the bottom; Discard drops them.
+    private bool _dirty;
 
     private void Load()
     {
         _channels = [.. Store.Channels.Select(channel => channel.Copy())];
         _editing = null;
+        _confirmDelete = null;
+        _dirty = false;
     }
+
+    private static string Title(StreamerChannel channel) => string.IsNullOrWhiteSpace(channel.Name) ? "New channel" : channel.Name;
+
+    private static string SaveProblem(StreamerChannel channel) =>
+        channel.Number <= 0 ? "Give it a channel number to save it." : "Add at least one streamer to save it.";
 
     private string Name(StreamerEntry streamer) => Monitor.State(streamer.Key)?.Name(streamer) ?? streamer.DisplayName ?? streamer.Handle;
 
@@ -576,14 +600,9 @@
     private static bool CanSave(StreamerChannel channel) =>
         channel.Number > 0 && channel.Streamers.Any(streamer => StreamerHandles.Normalize(streamer.Platform, streamer.Handle).Length > 0);
 
+    // Another channel's editor closes, keeping its edits for the save bar.
     private void Edit(StreamerChannel channel)
     {
-        if (_editing is not null)
-        {
-            Load();
-            channel = _channels.FirstOrDefault(candidate => candidate.Id == channel.Id) ?? channel;
-        }
-
         _editing = channel;
         _message = null;
     }
@@ -598,15 +617,25 @@
         _channels.Add(channel);
         _editing = channel;
         _message = null;
+        _dirty = true;
     }
 
-    private void Cancel() => Load();
+    private void Done() => _editing = null;
+
+    private void Discard()
+    {
+        RemoveUnused(_uploads);
+        _uploads.Clear();
+        Load();
+        _message = null;
+        _logoError = null;
+    }
 
     private void AskDelete(StreamerChannel channel)
     {
-        if (string.IsNullOrEmpty(channel.Id))
+        if (string.IsNullOrEmpty(channel.Id) || Store.Find(channel.Id) is null)
         {
-            Load();
+            Remove(channel);
             return;
         }
 
@@ -616,26 +645,36 @@
     private void Remove(StreamerChannel channel)
     {
         _confirmDelete = null;
-        try
+        _channels.Remove(channel);
+        if (ReferenceEquals(_editing, channel))
         {
-            Store.Save(Store.Channels.Where(saved => !string.Equals(saved.Id, channel.Id, StringComparison.OrdinalIgnoreCase)));
-            Load();
-            Say($"Deleted {channel.Name}. It leaves ErsatzTV's lineup with the next publish.", ok: true);
+            _editing = null;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            Say($"Couldn't delete the channel: {ex.Message}", ok: false);
-        }
+
+        _dirty = true;
     }
 
     private void Save()
     {
+        if (!_channels.All(CanSave))
+        {
+            return;
+        }
+
         try
         {
-            string name = _editing?.Name ?? string.Empty;
+            List<StreamerChannel> before = [.. Store.Channels];
+            bool removed = before.Any(saved => !_channels.Any(channel => string.Equals(channel.Id, saved.Id, StringComparison.OrdinalIgnoreCase)));
             Store.Save(_channels);
+
+            // Logos replaced, removed or left by a deleted channel go now it's saved (not when the button was pressed, so
+            // Discard could still bring them back), as do uploads that didn't end up on a channel.
+            RemoveUnused([.. before.Select(old => StoredKey(old.Logo)).OfType<string>(), .. _uploads]);
+            _uploads.Clear();
+
             Load();
-            Say($"Saved {name}. Its streamers are being checked now; it's in ErsatzTV's lineup with the next publish.", ok: true);
+            Say("Saved. Streamers are being checked now; channel changes reach ErsatzTV's lineup with the next publish."
+                + (removed ? " Deleted channels leave the lineup then too." : ""), ok: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -646,12 +685,14 @@
     private async Task AddStreamer(StreamerChannel channel)
     {
         channel.Streamers.Add(new StreamerEntry { Platform = channel.Streamers.LastOrDefault()?.Platform ?? StreamPlatform.Twitch });
+        _dirty = true;
         await PushPreviewAsync();
     }
 
     private async Task RemoveStreamer(StreamerChannel channel, int index)
     {
         channel.Streamers.RemoveAt(index);
+        _dirty = true;
         await PushPreviewAsync();
     }
 
@@ -664,6 +705,7 @@
         }
 
         (channel.Streamers[index], channel.Streamers[to]) = (channel.Streamers[to], channel.Streamers[index]);
+        _dirty = true;
     }
 
     private async Task DownloadYtDlpAsync()
@@ -713,6 +755,7 @@
     private async Task Change(Action change)
     {
         change();
+        _dirty = true;
         await PushPreviewAsync();
     }
 
@@ -779,16 +822,28 @@
 
         if (string.IsNullOrEmpty(channel.Id))
         {
-            // A new channel gets its id now, so its logo's file is named after it.
-            channel.Id = StreamerChannel.Slug(string.IsNullOrWhiteSpace(channel.Name) ? "streamers" : channel.Name);
+            // A new channel gets its id now, so its logo's file is named after it: one no other channel has (or is about to).
+            string slug = StreamerChannel.Slug(string.IsNullOrWhiteSpace(channel.Name) ? "streamers" : channel.Name);
+            string id = slug;
+            for (int suffix = 2; id == "preview" || Store.Find(id) is not null
+                                 || _channels.Any(other => !ReferenceEquals(other, channel) && string.Equals(other.Id, id, StringComparison.OrdinalIgnoreCase)); suffix++)
+            {
+                id = $"{slug}-{suffix}";
+            }
+
+            channel.Id = id;
         }
 
         try
         {
             await using Stream content = file.OpenReadStream(SchedularrTV.Service.Editor.LogoStore.MaxBytes);
 
+            // A file of its own, so the saved logo stays until Save (Discard puts it back); the one it replaces goes then.
             // The address this browser reached the app on, so players on the same network can fetch it too.
-            channel.Logo = await Logos.SaveAsync($"streamers-{channel.Id}", file.Name, content, Nav.BaseUri);
+            string key = $"streamers-{channel.Id}-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)}";
+            channel.Logo = await Logos.SaveAsync(key, file.Name, content, Nav.BaseUri);
+            _uploads.Add(key);
+            _dirty = true;
             await PushPreviewAsync();
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
@@ -797,16 +852,45 @@
         }
     }
 
+    // Only the reference goes for now; a stored logo's file is deleted when the change is saved.
     private void RemoveLogo(StreamerChannel channel)
     {
-        // A logo hosted elsewhere isn't ours to delete; only the reference goes.
-        if (SchedularrTV.Service.Editor.LogoStore.IsStored(channel.Logo) && !string.IsNullOrEmpty(channel.Id))
-        {
-            Logos.Remove($"streamers-{channel.Id}");
-        }
-
         channel.Logo = null;
         _logoError = null;
+        _dirty = true;
+    }
+
+    // Logos uploaded since the page last saved or discarded, which no saved channel may be using yet.
+    private readonly List<string> _uploads = [];
+
+    /// <summary>The stored file a logo address points at (its name without the extension); null for one hosted elsewhere.</summary>
+    private static string? StoredKey(string? logo)
+    {
+        if (!SchedularrTV.Service.Editor.LogoStore.IsStored(logo))
+        {
+            return null;
+        }
+
+        // Only this page's own uploads: a pasted address of one of the scheduler's channel logos is never deleted from here.
+        string path = logo!.Split('?', '#')[0];
+        string key = Path.GetFileNameWithoutExtension(path[(path.LastIndexOf('/') + 1)..]);
+        return key.StartsWith("streamers-", StringComparison.OrdinalIgnoreCase) ? key : null;
+    }
+
+    /// <summary>Deletes the stored logos in <paramref name="keys"/> that no saved channel uses.</summary>
+    private void RemoveUnused(IEnumerable<string> keys)
+    {
+        HashSet<string> inUse = new(Store.Channels.Select(channel => StoredKey(channel.Logo)).OfType<string>(), StringComparer.OrdinalIgnoreCase);
+        foreach (string key in keys.Where(key => !inUse.Contains(key)).Distinct(StringComparer.OrdinalIgnoreCase).ToList())
+        {
+            try
+            {
+                Logos.Remove(key);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+            }
+        }
     }
 
     /// <summary>Sets the framed replay's left (0), top (1) or width (2); the height follows (16:9).</summary>

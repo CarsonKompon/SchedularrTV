@@ -381,7 +381,11 @@ public sealed class StreamerMonitor(
         IEnumerable<string> next = Upcoming(channel).Select(pair => pair.Prediction is { } prediction
             ? $"{pair.Streamer.Key}@{prediction.At.ToUnixTimeSeconds() / 600}"
             : pair.Streamer.Key);
-        return $"{channel.Number}|{channel.Name}|{channel.Logo}|{live}|{string.Join(',', next)}";
+        // The re-run on air (and its pass, which moves the guide's times when it starts over) is in the guide too.
+        string replay = OnAir(channel.Id) is { ActiveKey: null, StreamUrl: not null, Replay: { } recording } onAir
+            ? $"{recording.VideoId}#{onAir.Round}@{onAir.ReplayFrom.ToUnixTimeSeconds()}"
+            : "-";
+        return $"{channel.Number}|{channel.Name}|{channel.Logo}|{live}|{replay}|{string.Join(',', next)}";
     }
 
     public override void Dispose()

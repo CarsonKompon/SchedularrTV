@@ -17,6 +17,9 @@ Read endpoints are open. Mutating endpoints (🔒) require an `X-Api-Key` header
 | `PUT` | `/api/config` | Validate and atomically save. 🔒 |
 | `POST` | `/api/config/serialize` | Object model → YAML. |
 | `POST` | `/api/config/reload` | Re-read from disk. 🔒 |
+| `GET` | `/api/config/backups` | Earlier versions of the YAML, newest first (one is kept before every change). |
+| `GET` | `/api/config/backups/{id}` | One backup's details and YAML. |
+| `POST` | `/api/config/backups/{id}/restore` | Write a backup back as the schedule (what it replaces is backed up first). 🔒 |
 | `GET` | `/api/library/search?query=` | Run a query against the library. |
 | `POST` | `/api/library/query/parse` | Validate a query and return its AST. |
 | `POST` | `/api/library/refresh` | Drop the Jellyfin snapshot. 🔒 |

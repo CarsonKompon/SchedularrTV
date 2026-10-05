@@ -39,8 +39,12 @@
     LiveStatus? status = string.IsNullOrEmpty(channel.Id) ? null : Hub.Streams.Status(channel.Id);
     <div class="card" @key="channel">
         <div class="card-head">
-            <h2>@(string.IsNullOrWhiteSpace(channel.Name) ? "New channel" : channel.Name)</h2>
+            <h2>@Title(channel)</h2>
             <span class="pill pill-muted">@preset.Name</span>
+            @if (string.IsNullOrEmpty(channel.Id))
+            {
+                <span class="pill pill-warn">Not saved yet</span>
+            }
             @if (status is not null)
             {
                 <span class="pill pill-ok">On air · @status.Viewers watching</span>
@@ -259,10 +263,13 @@
             {
                 <p class="hint warn">That music folder doesn't exist on this computer; the channel will be silent.</p>
             }
-            <div class="row" style="gap:8px;margin-top:6px;">
+            <div class="row" style="gap:8px;margin-top:6px;align-items:center;">
+                @if (!CanShow(channel))
+                {
+                    <span class="hint warn" style="margin:0;">@(channel.PresetInfo.Id == WebPresets.Custom ? "Enter the page's address to save it." : "Choose a place to save it.")</span>
+                }
                 <div class="spacer"></div>
-                <button class="btn btn-sm" type="button" @onclick="Cancel">Cancel</button>
-                <button class="btn btn-sm btn-primary" type="button" disabled="@(!CanShow(channel))" @onclick="Save">Save</button>
+                <button class="btn btn-sm" type="button" @onclick="Done">Done</button>
             </div>
         }
         else
@@ -309,8 +316,12 @@
 }
 
 <div class="row" style="gap:8px;">
-    <button class="btn btn-primary" type="button" disabled="@(_editing is not null)" @onclick="Add">Add a channel</button>
+    <button class="btn btn-primary" type="button" @onclick="Add">Add a channel</button>
 </div>
+
+<SaveDock Dirty="Dirty" Label="Unsaved web channels" CanSave="@_channels.All(CanShow)"
+          Problem="@(_channels.FirstOrDefault(channel => !CanShow(channel)) is { } unfinished ? $"{Title(unfinished)} isn't finished" : null)"
+          OnSave="Save" OnDiscard="Discard" />
 
 <div class="card" style="margin-top:16px;">
     <div class="card-head"><h2>How it works</h2></div>
@@ -382,10 +393,22 @@
 
     private void OnHubChanged() => _ = InvokeAsync(StateHasChanged);
 
+    // Edits, new channels and deletions are held in _channels until Save in the bar along the bottom; Discard drops them.
+    // What was loaded, to tell whether anything has changed since.
+    private string _loaded = string.Empty;
+
+    private bool Dirty => !string.Equals(Snapshot(_channels), _loaded, StringComparison.Ordinal);
+
+    private static string Snapshot(IEnumerable<WebChannel> channels) => System.Text.Json.JsonSerializer.Serialize(channels);
+
+    private static string Title(WebChannel channel) => string.IsNullOrWhiteSpace(channel.Name) ? "New channel" : channel.Name;
+
     private void Load()
     {
         _channels = [.. Store.Channels.Select(channel => channel.Copy())];
+        _loaded = Snapshot(_channels);
         _editing = null;
+        _confirmDelete = null;
         _places = [];
     }
 
@@ -452,14 +475,9 @@
         channel.Layer = null;
     }
 
+    // Another channel's editor closes, keeping its edits for the save bar.
     private void Edit(WebChannel channel)
     {
-        if (_editing is not null)
-        {
-            Load();
-            channel = _channels.FirstOrDefault(candidate => candidate.Id == channel.Id) ?? channel;
-        }
-
         _editing = channel;
         _query = channel.Location;
         _places = [];
@@ -476,14 +494,24 @@
         _message = null;
     }
 
-    private void Cancel() => Load();
+    private void Done()
+    {
+        _editing = null;
+        _places = [];
+    }
+
+    private void Discard()
+    {
+        Load();
+        _message = null;
+    }
 
     private void AskDelete(WebChannel channel)
     {
-        // A channel that was never saved is just discarded.
+        // A channel that was never saved just goes.
         if (string.IsNullOrEmpty(channel.Id))
         {
-            Load();
+            Remove(channel);
             return;
         }
 
@@ -493,39 +521,33 @@
     private void Remove(WebChannel channel)
     {
         _confirmDelete = null;
-
-        // Deleted from what's saved, so unsaved edits to other channels aren't written along with it.
-        try
+        _channels.Remove(channel);
+        if (ReferenceEquals(_editing, channel))
         {
-            Store.Save(Store.Channels.Where(saved => !string.Equals(saved.Id, channel.Id, StringComparison.OrdinalIgnoreCase)));
-            Load();
-            Say($"Deleted {channel.Name}. Channels that used it fill that time with their other programming from the next rebuild.", ok: true);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            Say($"Couldn't delete the channel: {ex.Message}", ok: false);
+            Done();
         }
     }
 
     private void Save()
     {
-        if (_editing is not { } channel)
+        if (!_channels.All(CanShow))
         {
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(channel.Name))
+        foreach (WebChannel channel in _channels.Where(channel => string.IsNullOrWhiteSpace(channel.Name)))
         {
             channel.Name = channel.PresetInfo.DefaultName(Town(channel));
         }
 
-        string name = channel.Name;
         try
         {
+            bool removed = Store.Channels.Any(saved => !_channels.Any(channel => string.Equals(channel.Id, saved.Id, StringComparison.OrdinalIgnoreCase)));
             Store.Save(_channels);
             Load();
-            Say($"Saved {name}. It's under TV Shows now (and in the show pickers). If it's on air, it starts again with the new settings; "
-                + "channels already airing it show a new name in their guide from their next rebuild.", ok: true);
+            Say("Saved. Channels are under TV Shows (and in the show pickers). One that's on air starts again with its new settings; "
+                + "channels already airing it show a new name in their guide from their next rebuild."
+                + (removed ? " Channels that used a deleted one fill that time with their other programming from the next rebuild." : ""), ok: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

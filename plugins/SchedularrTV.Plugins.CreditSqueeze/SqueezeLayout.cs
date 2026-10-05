@@ -34,13 +34,25 @@ public sealed record SqueezeLayout(int Width, int Height, SqueezeStyle Style, Re
     /// <summary>The strip the credits' side takes: their column (left and right) or band (top and bottom); framed, their box.</summary>
     public Rect Strip { get; init; }
 
+    /// <summary>Widescreen, what the boxes are shaped for when a video's own shape isn't known.</summary>
+    public const double Widescreen = 16 / 9.0;
+
+    /// <summary>The narrowest and widest shapes a box takes (a video outside them is letterboxed into the nearest).</summary>
+    public const double NarrowestAspect = 0.5;
+    public const double WidestAspect = 3.0;
+
+    /// <param name="creditsAspect">The credits' shape (width ÷ height as shown, e.g. 4:3 is 1.333); their box takes it.</param>
+    /// <param name="panelAspect">The promo's or commercials' shape; the panel's picture slot takes it.</param>
     public static SqueezeLayout Of(SqueezeStyle style, CreditsSide side, int splitPercent, int width = 1280, int height = 720,
-        SqueezeFit creditsFit = SqueezeFit.Letterbox, bool creditsText = false, bool panelText = true)
+        SqueezeFit creditsFit = SqueezeFit.Letterbox, bool creditsText = false, bool panelText = true,
+        double creditsAspect = Widescreen, double panelAspect = Widescreen)
     {
         int split = Math.Clamp(splitPercent, MinSplit, MaxSplit);
+        double credits = Shape(creditsAspect);
+        double panel = Shape(panelAspect);
         SqueezeLayout layout = style == SqueezeStyle.Framed
-            ? Framed(side, split, creditsText, panelText)
-            : SideBySide(side, split, creditsFit, creditsText, panelText);
+            ? Framed(side, split, creditsText, panelText, credits, panel)
+            : SideBySide(side, split, creditsFit, creditsText, panelText, credits, panel);
         double scale = width / 1280.0;
         return layout with
         {
@@ -56,16 +68,26 @@ public sealed record SqueezeLayout(int Width, int Height, SqueezeStyle Style, Re
     }
 
     /// <summary>Two boxes on a background, side by side (top and bottom count as left and right here).</summary>
-    private static SqueezeLayout Framed(CreditsSide side, int split, bool creditsText, bool panelText)
+    private static SqueezeLayout Framed(CreditsSide side, int split, bool creditsText, bool panelText, double creditsAspect, double panelAspect)
     {
         bool left = side is CreditsSide.Left or CreditsSide.Top;
         int usable = 1280 - 2 * Margin - Gap;
-        int creditsWidth = Even(usable * Math.Clamp(split, 40, 75) / 100.0);
-        int creditsHeight = Even(creditsWidth * 9 / 16.0);
-        int panelWidth = usable - creditsWidth;
 
         // A little below centre, leaving room above for the channel's name and below for what's later (or the credits' words).
         int below = creditsText ? 150 : 90;
+
+        // The credits' box is their shape: as wide as the split gives them, unless that's too tall for the picture (a
+        // 4:3 or taller video), when it's as tall as there's room for and the panel gets the width it leaves.
+        int creditsWidth = Even(usable * Math.Clamp(split, 40, 75) / 100.0);
+        int creditsHeight = Even(HeightFor(creditsWidth, creditsAspect));
+        int tallest = 720 - 110 - below;
+        if (creditsHeight > tallest)
+        {
+            creditsHeight = Even(tallest);
+            creditsWidth = Even(WidthFor(creditsHeight, creditsAspect));
+        }
+
+        int panelWidth = usable - creditsWidth;
         int creditsTop = Even(Math.Clamp((720 - creditsHeight) / 2.0 + 8, 110, Math.Max(110, 720 - creditsHeight - below)));
         int panelTop = Math.Min(creditsTop, 144);
         int creditsLeft = left ? Margin : Margin + panelWidth + Gap;
@@ -77,12 +99,13 @@ public sealed record SqueezeLayout(int Width, int Height, SqueezeStyle Style, Re
         Rect text;
         if (panelText)
         {
-            picture = new Rect(panelLeft, panelTop + 40, panelWidth, Even(panelWidth * 9 / 16.0));
+            // The promo's shape across the panel, leaving the words under it some room (a tall one is centred, narrower).
+            picture = Fit(new Rect(panelLeft, panelTop + 40, panelWidth, 600 - (panelTop + 40) - 12 - 80), panelAspect, top: true);
             text = new Rect(panelLeft, picture.Bottom + 12, panelWidth, 600 - picture.Bottom - 12);
         }
         else
         {
-            // Just the two pictures, level with each other.
+            // Just the two pictures, level with each other (the promo is fitted into its box, in its own shape).
             picture = new Rect(panelLeft, creditsTop, panelWidth, creditsHeight);
             text = Rect.None;
         }
@@ -94,7 +117,8 @@ public sealed record SqueezeLayout(int Width, int Height, SqueezeStyle Style, Re
     }
 
     /// <summary>The credits against one edge, the panel filling the rest of the picture.</summary>
-    private static SqueezeLayout SideBySide(CreditsSide side, int split, SqueezeFit fit, bool creditsText, bool panelText)
+    private static SqueezeLayout SideBySide(CreditsSide side, int split, SqueezeFit fit, bool creditsText, bool panelText, double creditsAspect,
+        double panelAspect)
     {
         bool letterbox = fit == SqueezeFit.Letterbox;
         if (side is CreditsSide.Left or CreditsSide.Right)
@@ -105,9 +129,9 @@ public sealed record SqueezeLayout(int Width, int Height, SqueezeStyle Style, Re
             Rect caption = Rect.None;
             if (letterbox)
             {
-                // 16:9 in the column, centred along with its words.
-                int creditsHeight = Even(Math.Min(columnWidth * 9 / 16.0, 720 - (creditsText ? CaptionHeight : 0)));
-                int creditsWidth = Even(creditsHeight * 16 / 9.0);
+                // The credits' own shape in the column, centred along with its words.
+                int creditsHeight = Even(Math.Min(HeightFor(columnWidth, creditsAspect), 720 - (creditsText ? CaptionHeight : 0)));
+                int creditsWidth = Even(Math.Min(WidthFor(creditsHeight, creditsAspect), columnWidth));
                 int group = creditsHeight + (creditsText ? CaptionHeight : 0);
                 int top = Even((720 - group) / 2.0);
                 credits = new Rect(Even(column.X + (columnWidth - creditsWidth) / 2.0), top, creditsWidth, creditsHeight);
@@ -133,9 +157,11 @@ public sealed record SqueezeLayout(int Width, int Height, SqueezeStyle Style, Re
 
             int inset = Math.Min(40, panel.Width / 10);
             int pictureWidth = Even(panel.Width - 2 * inset);
-            Rect picture = new(Even(panel.X + inset), 96, pictureWidth, Even(pictureWidth * 9 / 16.0));
+
+            // The promo's shape across the panel, leaving the words under it some room (a tall one is centred, narrower).
+            Rect picture = Fit(new Rect(Even(panel.X + inset), 96, pictureWidth, 720 - 96 - 12 - 40 - 150), panelAspect, top: true);
             return new SqueezeLayout(1280, 720, SqueezeStyle.SideBySide, credits, panel, picture,
-                new Rect(picture.X, picture.Bottom + 12, pictureWidth, 720 - picture.Bottom - 40), false, caption) { Strip = column };
+                new Rect(Even(panel.X + inset), picture.Bottom + 12, pictureWidth, 720 - picture.Bottom - 40), false, caption) { Strip = column };
         }
 
         int bandHeight = Even(720 * split / 100.0);
@@ -144,9 +170,9 @@ public sealed record SqueezeLayout(int Width, int Height, SqueezeStyle Style, Re
         Rect bandCaption = Rect.None;
         if (letterbox)
         {
-            // 16:9 in the band, centred along with its words beside it.
-            int creditsWidth = Even(Math.Min(bandHeight * 16 / 9.0, 1280 - (creditsText ? CaptionWidth : 0)));
-            int creditsHeight = Even(creditsWidth * 9 / 16.0);
+            // The credits' own shape in the band, centred along with its words beside it.
+            int creditsWidth = Even(Math.Min(WidthFor(bandHeight, creditsAspect), 1280 - (creditsText ? CaptionWidth : 0)));
+            int creditsHeight = Even(Math.Min(HeightFor(creditsWidth, creditsAspect), bandHeight));
             int group = creditsWidth + (creditsText ? CaptionWidth : 0);
             int left = Even((1280 - group) / 2.0);
             bandCredits = new Rect(left, Even(band.Y + (bandHeight - creditsHeight) / 2.0), creditsWidth, creditsHeight);
@@ -170,11 +196,38 @@ public sealed record SqueezeLayout(int Width, int Height, SqueezeStyle Style, Re
             return new SqueezeLayout(1280, 720, SqueezeStyle.SideBySide, bandCredits, rest, rest, Rect.None, true, bandCaption) { Strip = band };
         }
 
+        // The promo's shape, as tall as the panel allows, its words beside it (a very wide one is kept narrow enough to leave them room).
         int pictureHeight = Even(Math.Max(60, rest.Height - 64));
-        Rect slot = new(Margin, Even(rest.Y + (rest.Height - pictureHeight) / 2.0), Even(pictureHeight * 16 / 9.0), pictureHeight);
+        int widest = 1280 - 2 * Margin - 32 - 240;
+        Rect slot = Fit(new Rect(Margin, Even(rest.Y + (rest.Height - pictureHeight) / 2.0), Math.Max(widest, Even(pictureHeight * Widescreen)), pictureHeight),
+            panelAspect, top: false, left: true);
         return new SqueezeLayout(1280, 720, SqueezeStyle.SideBySide, bandCredits, rest, slot,
-            new Rect(slot.Right + 32, slot.Y, 1280 - slot.Right - 32 - Margin, pictureHeight), true, bandCaption) { Strip = band };
+            new Rect(slot.Right + 32, slot.Y, 1280 - slot.Right - 32 - Margin, slot.Height), true, bandCaption) { Strip = band };
     }
+
+    /// <summary>The largest box of <paramref name="aspect"/>'s shape in <paramref name="bounds"/>: centred across it (or at its left), and at its top or centred down it.</summary>
+    private static Rect Fit(Rect bounds, double aspect, bool top, bool left = false)
+    {
+        int width = Even(bounds.Width);
+        int height = Even(HeightFor(width, aspect));
+        if (height > bounds.Height)
+        {
+            height = Even(bounds.Height);
+            width = Even(WidthFor(height, aspect));
+        }
+
+        int x = left ? bounds.X : Even(bounds.X + (bounds.Width - width) / 2.0);
+        int y = top ? bounds.Y : Even(bounds.Y + (bounds.Height - height) / 2.0);
+        return new Rect(x, y, width, height);
+    }
+
+    // Widescreen is worked out as 9/16 and 16/9 exactly, as it always was, so its boxes land on the same pixels.
+    private static double HeightFor(double width, double aspect) => aspect == Widescreen ? width * 9 / 16.0 : width / aspect;
+
+    private static double WidthFor(double height, double aspect) => aspect == Widescreen ? height * 16 / 9.0 : height * aspect;
+
+    private static double Shape(double aspect) =>
+        double.IsFinite(aspect) && aspect > 0 ? Math.Clamp(aspect, NarrowestAspect, WidestAspect) : Widescreen;
 
     private static Rect Scale(Rect rect, double scale) =>
         rect.IsEmpty ? Rect.None : new(Even(rect.X * scale), Even(rect.Y * scale), Even(rect.Width * scale), Even(rect.Height * scale));

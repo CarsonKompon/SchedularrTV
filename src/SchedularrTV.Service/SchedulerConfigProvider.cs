@@ -19,10 +19,14 @@ public sealed class SchedulerConfigProvider : IDisposable
     private SchedulerConfig _config = new();
     private ConfigValidationResult _validation = new(true, [], []);
 
+    // The file's text as last loaded or written here, so an edit made to it elsewhere can be backed up as it was before.
+    private string? _lastRaw;
+
     public SchedulerConfigProvider(IOptions<SchedulerServiceOptions> options, ILogger<SchedulerConfigProvider> logger)
     {
         _options = options.Value;
         _logger = logger;
+        Backups = new ConfigBackups(ConfigPath, _options.ConfigBackups, logger);
 
         // A fresh install has no schedule yet; start it with an empty one rather than an error.
         try
@@ -66,8 +70,14 @@ public sealed class SchedulerConfigProvider : IDisposable
 
     public string ReadRaw() => File.Exists(ConfigPath) ? File.ReadAllText(ConfigPath) : string.Empty;
 
-    /// <summary>Validates and atomically replaces the YAML file, then reloads.</summary>
-    public ConfigValidationResult Save(string yaml)
+    /// <summary>Earlier versions of the file, one put aside before every change.</summary>
+    public ConfigBackups Backups { get; }
+
+    /// <summary>
+    /// Validates and atomically replaces the YAML file, then reloads. What the file held is backed up first (as
+    /// <paramref name="backupReason"/>), so the change can be undone from the Backups page.
+    /// </summary>
+    public ConfigValidationResult Save(string yaml, string backupReason = ConfigBackups.BeforeSave)
     {
         SchedulerConfig parsed = SchedulerConfigLoader.Parse(yaml);
         ConfigValidationResult validation = SchedulerConfigLoader.Validate(parsed);
@@ -80,13 +90,30 @@ public sealed class SchedulerConfigProvider : IDisposable
         string directory = Path.GetDirectoryName(ConfigPath) ?? ".";
         Directory.CreateDirectory(directory);
 
+        string before = ReadRaw();
+        if (!string.Equals(before, yaml, StringComparison.Ordinal))
+        {
+            Backups.Snapshot(before, backupReason);
+        }
+
         string temp = ConfigPath + ".tmp";
         File.WriteAllText(temp, yaml);
         File.Move(temp, ConfigPath, overwrite: true);
+        lock (_gate)
+        {
+            _lastRaw = yaml;
+        }
 
         Apply(parsed, validation);
         return validation;
     }
+
+    /// <summary>
+    /// Puts a backup's YAML back as the schedule (backing up what's there now first, so the restore can be undone too).
+    /// Null when there's no such backup.
+    /// </summary>
+    public ConfigValidationResult? Restore(string backupId) =>
+        Backups.Read(backupId) is { } yaml ? Save(yaml, ConfigBackups.BeforeRestore) : null;
 
     public void Reload()
     {
@@ -100,6 +127,20 @@ public sealed class SchedulerConfigProvider : IDisposable
             }
 
             string raw = File.ReadAllText(ConfigPath);
+
+            // Changed by something other than this app (a text editor, a sync tool): what it was before is kept.
+            string? previous;
+            lock (_gate)
+            {
+                previous = _lastRaw;
+                _lastRaw = raw;
+            }
+
+            if (previous is not null && !string.Equals(previous, raw, StringComparison.Ordinal))
+            {
+                Backups.Snapshot(previous, ConfigBackups.BeforeOutsideEdit);
+            }
+
             SchedulerConfig parsed = SchedulerConfigLoader.Parse(raw);
             ConfigValidationResult validation = SchedulerConfigLoader.Validate(parsed);
 
@@ -146,9 +187,16 @@ public sealed class SchedulerConfigProvider : IDisposable
                 File.WriteAllText(backup, raw);
             }
 
+            Backups.Snapshot(raw, ConfigBackups.BeforeMigration);
+            string migrated = YamlCommentMerger.Merge(raw, SchedulerConfigLoader.Serialize(parsed));
             string temp = ConfigPath + ".tmp";
-            File.WriteAllText(temp, YamlCommentMerger.Merge(raw, SchedulerConfigLoader.Serialize(parsed)));
+            File.WriteAllText(temp, migrated);
             File.Move(temp, ConfigPath, overwrite: true);
+            lock (_gate)
+            {
+                _lastRaw = migrated;
+            }
+
             _logger.LogInformation(
                 "Moved promos, generated promos and Archive Follow settings under 'plugins:' in {Path}; the original is kept as {Backup}.",
                 ConfigPath, backup);

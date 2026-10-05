@@ -179,6 +179,11 @@ Each squeeze is a short video: the frame (drawn once, with the next programme's 
 played into its box with ffmpeg, and the credits' own sound. Squeezes are kept by content, so identical ones are made
 once. Ones no schedule has used for 3 days are deleted.
 
+The boxes follow the videos' own shapes, read with ffprobe as each squeeze is made: a 4:3 show's credits get a 4:3 box
+(as wide as the split allows, or as tall as there's room for), and a 4:3 promo gets a 4:3 slot in the panel. Commercials
+in the panel are joined in their shape when they all share one, and in widescreen when they're mixed. A video whose
+picture is already pillarboxed inside a 16:9 file counts as 16:9.
+
 In the guide, a squeeze is part of the programme whose credits it is.
 
 ## Settings

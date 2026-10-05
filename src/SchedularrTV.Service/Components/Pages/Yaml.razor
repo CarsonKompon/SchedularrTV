@@ -6,6 +6,7 @@
 <PageHeader Title="YAML" Eyebrow="System">
     <ChildContent>The same file the scheduler reads. Editing here is equivalent to editing schedule.yaml on disk.</ChildContent>
     <Actions>
+        <a class="btn" href="backups"><Icon Name="history" Size="15" />Backups</a>
         <button class="btn" @onclick="LoadFromEditor"><Icon Name="pencil" Size="15" />Load current edits</button>
         <button class="btn" @onclick="LoadFromDisk"><Icon Name="folder" Size="15" />Load from disk</button>
         <button class="btn btn-primary" @onclick="Apply"><Icon Name="check" Size="15" />Apply to editor</button>

@@ -1,0 +1,316 @@
+@page "/backups"
+@implements IDisposable
+@inject ConfigEditor Editor
+@inject SchedulerConfigProvider Provider
+
+<PageHeader Title="Backups" Eyebrow="System">
+    <ChildContent>
+        Earlier versions of schedule.yaml, put aside automatically before every change: saves here, the API, restores and edits
+        made to the file outside SchedularrTV. The newest @Provider.Backups.Keep are kept, in <code>@Provider.Backups.Folder</code>.
+    </ChildContent>
+    <Actions>
+        <button class="btn" type="button" disabled="@(!Provider.Backups.Enabled)" @onclick="BackUpNow"><Icon Name="save" Size="15" />Back up now</button>
+    </Actions>
+</PageHeader>
+
+@if (!Provider.Backups.Enabled)
+{
+    <div class="banner banner-warn" role="status">Backups are off (<code>Scheduler:ConfigBackups</code> is 0 in settings.json).</div>
+}
+@if (_error is not null)
+{
+    <div class="banner banner-error" role="alert">@_error</div>
+}
+@if (_ok is not null)
+{
+    <div class="banner banner-ok" role="status">@_ok</div>
+}
+@if (Editor.IsDirty)
+{
+    <div class="banner banner-warn" role="status">
+        The editor has unsaved changes. Restoring a backup replaces them; opening one in the editor does too.
+    </div>
+}
+
+@if (_backups.Count == 0)
+{
+    <div class="empty">No backups yet. One is made the next time the schedule is saved.</div>
+}
+else
+{
+    <div class="backups">
+        <div class="card backups-list" role="listbox" aria-label="Backups">
+            @foreach (IGrouping<DateTime, ConfigBackup> day in _backups.GroupBy(backup => backup.At.ToLocalTime().Date))
+            {
+                <div class="backups-day">@DayName(day.Key)</div>
+                @foreach (ConfigBackup backup in day)
+                {
+                    <button type="button" role="option" aria-selected="@(backup.Id == _selected?.Id ? "true" : "false")"
+                            class="backups-item @(backup.Id == _selected?.Id ? "on" : "")" @onclick="() => Select(backup)">
+                        <span class="backups-time">@backup.At.ToLocalTime().ToString("t", System.Globalization.CultureInfo.CurrentCulture)</span>
+                        <span class="backups-what">
+                            <span>@backup.Describe()</span>
+                            <span class="meta">@Ago(backup.At) · @Size(backup.Bytes)</span>
+                        </span>
+                    </button>
+                }
+            }
+        </div>
+
+        <div class="card backups-detail">
+            @if (_selected is { } selected)
+            {
+                <div class="card-head">
+                    <h2>@selected.At.ToLocalTime().ToString("f", System.Globalization.CultureInfo.CurrentCulture)</h2>
+                    <span class="pill pill-muted">@selected.Describe()</span>
+                </div>
+                <p class="hint" style="margin-top:0;">
+                    What the schedule was just before that change. <strong>Restore</strong> writes it back exactly as it was (what's there now is
+                    backed up first, so a restore can be undone too). <strong>Open in the editor</strong> loads it as unsaved changes to look over or
+                    adjust before saving.
+                </p>
+                <div class="row row-wrap" style="gap:8px;margin-bottom:12px;">
+                    @if (_confirmRestore)
+                    {
+                        <button class="btn btn-sm btn-danger confirm" type="button" @onclick="Restore"><Icon Name="undo" Size="14" />Restore this version?</button>
+                        <button class="btn btn-sm" type="button" @onclick="() => _confirmRestore = false">Keep the current one</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-sm btn-primary" type="button" disabled="@(_same)" @onclick="() => _confirmRestore = true"><Icon Name="undo" Size="14" />Restore</button>
+                    }
+                    <button class="btn btn-sm" type="button" @onclick="OpenInEditor"><Icon Name="pencil" Size="14" />Open in the editor</button>
+                    <div class="spacer"></div>
+                    @if (_confirmDelete)
+                    {
+                        <button class="btn btn-sm btn-danger" type="button" @onclick="Delete">Delete this backup?</button>
+                        <button class="btn btn-sm" type="button" @onclick="() => _confirmDelete = false">Keep</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-sm btn-ghost" type="button" @onclick="() => _confirmDelete = true"><Icon Name="trash" Size="14" />Delete</button>
+                    }
+                </div>
+
+                <div class="row row-wrap" style="gap:12px;align-items:center;margin-bottom:8px;">
+                    @if (_same)
+                    {
+                        <span class="hint" style="margin:0;">The same as the schedule now.</span>
+                    }
+                    else if (_diff is not null)
+                    {
+                        <span class="hint" style="margin:0;">
+                            Restoring it would change the schedule now by
+                            <span class="diff-count added">+@_diff.Count(line => line.Kind == DiffKind.Added)</span>
+                            <span class="diff-count removed">−@_diff.Count(line => line.Kind == DiffKind.Removed)</span> lines:
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="hint" style="margin:0;">Too large to compare line by line.</span>
+                    }
+                    <div class="spacer"></div>
+                    <label class="check" style="margin:0;">
+                        <input type="checkbox" checked="@_whole" @onchange="e => _whole = e.Value is true" />
+                        <span>Show the whole backup</span>
+                    </label>
+                </div>
+
+                @if (_whole || _diff is null)
+                {
+                    <textarea class="yaml-editor backups-yaml" rows="30" readonly spellcheck="false" aria-label="The backup's YAML">@_yaml</textarea>
+                }
+                else if (!_same)
+                {
+                    <div class="diff" role="table" aria-label="Changes restoring it would make">
+                        @foreach (DiffHunk hunk in LineDiff.Hunks(_diff))
+                        {
+                            @if (hunk.SkippedBefore > 0)
+                            {
+                                <div class="diff-gap">… @hunk.SkippedBefore unchanged line@(hunk.SkippedBefore == 1 ? "" : "s")</div>
+                            }
+                            @foreach (DiffLine line in hunk.Lines)
+                            {
+                                <div class="diff-line @line.Kind.ToString().ToLowerInvariant()">
+                                    <span class="diff-num">@line.OldNumber</span>
+                                    <span class="diff-num">@line.NewNumber</span>
+                                    <span class="diff-mark">@(line.Kind switch { DiffKind.Added => "+", DiffKind.Removed => "−", _ => " " })</span>
+                                    <span class="diff-text">@line.Text</span>
+                                </div>
+                            }
+                        }
+                    </div>
+                    <p class="meta" style="margin:6px 0 0;">Left numbers are lines in the schedule now; right ones, in the backup.</p>
+                }
+            }
+            else
+            {
+                <div class="empty">Choose a backup to see how it differs from the schedule now.</div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<ConfigBackup> _backups = [];
+    private ConfigBackup? _selected;
+    private string _yaml = string.Empty;
+    private IReadOnlyList<DiffLine>? _diff;
+    private bool _same;
+    private bool _whole;
+    private bool _confirmRestore;
+    private bool _confirmDelete;
+    private string? _error;
+    private string? _ok;
+
+    protected override void OnInitialized()
+    {
+        Editor.Changed += OnEditorChanged;
+        Refresh();
+        if (_backups.Count > 0)
+        {
+            Select(_backups[0]);
+        }
+    }
+
+    public void Dispose() => Editor.Changed -= OnEditorChanged;
+
+    private void OnEditorChanged() => InvokeAsync(StateHasChanged);
+
+    private void Refresh()
+    {
+        _backups = Provider.Backups.List();
+        if (_selected is not null && _backups.All(backup => backup.Id != _selected.Id))
+        {
+            _selected = null;
+        }
+    }
+
+    private void Select(ConfigBackup backup)
+    {
+        _selected = backup;
+        _confirmRestore = _confirmDelete = false;
+        _yaml = Provider.Backups.Read(backup.Id) ?? string.Empty;
+        string now = Provider.ReadRaw();
+        _same = string.Equals(Normalize(now), Normalize(_yaml), StringComparison.Ordinal);
+        _diff = _same ? [] : LineDiff.Compare(now, _yaml);
+    }
+
+    private void BackUpNow()
+    {
+        _error = _ok = null;
+        try
+        {
+            ConfigBackup? made = Provider.Backups.Snapshot(Provider.ReadRaw(), ConfigBackups.Manual);
+            _ok = made is null ? "The newest backup is already the same as the schedule now." : "Backed up.";
+            Refresh();
+            if (made is not null && _backups.FirstOrDefault(backup => backup.Id == made.Id) is { } shown)
+            {
+                Select(shown);
+            }
+        }
+        catch (IOException ex)
+        {
+            _error = $"Couldn't read the schedule: {ex.Message}";
+        }
+    }
+
+    private void Restore()
+    {
+        _error = _ok = null;
+        _confirmRestore = false;
+        if (_selected is not { } backup)
+        {
+            return;
+        }
+
+        try
+        {
+            ConfigValidationResult? result = Provider.Restore(backup.Id);
+            if (result is null)
+            {
+                _error = "That backup is gone.";
+            }
+            else if (!result.IsValid)
+            {
+                _error = "That backup can't be used as it is: " + string.Join(" · ", result.Errors)
+                         + ". Open it in the editor to fix it, or choose another.";
+            }
+            else
+            {
+                Editor.Reload();
+                _ok = $"Restored the schedule from {backup.At.ToLocalTime().ToString("f", System.Globalization.CultureInfo.CurrentCulture)}. "
+                      + "What it replaced is the newest backup, if you want it back.";
+            }
+        }
+        catch (Exception ex) when (ex is SchedulerConfigException or YamlDotNet.Core.YamlException or IOException or UnauthorizedAccessException)
+        {
+            _error = $"Couldn't restore it: {ex.Message}";
+        }
+
+        Refresh();
+        if (_selected is { } still)
+        {
+            Select(still);
+        }
+    }
+
+    private void OpenInEditor()
+    {
+        _error = _ok = null;
+        try
+        {
+            SchedulerConfig parsed = SchedulerConfigLoader.Parse(_yaml);
+            Editor.Replace(parsed);
+            _ok = "Opened in the editor as unsaved changes. Look it over on the other pages, then Save changes (or Discard to go back).";
+        }
+        catch (Exception ex) when (ex is SchedulerConfigException or YamlDotNet.Core.YamlException)
+        {
+            _error = $"That backup couldn't be read: {ex.Message}";
+        }
+    }
+
+    private void Delete()
+    {
+        _error = _ok = null;
+        _confirmDelete = false;
+        if (_selected is not { } backup)
+        {
+            return;
+        }
+
+        try
+        {
+            Provider.Backups.Delete(backup.Id);
+            _selected = null;
+            Refresh();
+            if (_backups.Count > 0)
+            {
+                Select(_backups[0]);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _error = $"Couldn't delete it: {ex.Message}";
+        }
+    }
+
+    private static string Normalize(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal).TrimEnd();
+
+    private static string DayName(DateTime day) =>
+        day == DateTime.Today ? "Today"
+        : day == DateTime.Today.AddDays(-1) ? "Yesterday"
+        : day.ToString("D", System.Globalization.CultureInfo.CurrentCulture);
+
+    private static string Ago(DateTimeOffset at)
+    {
+        TimeSpan ago = DateTimeOffset.UtcNow - at;
+        return ago.TotalMinutes < 1 ? "just now"
+            : ago.TotalHours < 1 ? $"{(int)ago.TotalMinutes} min ago"
+            : ago.TotalDays < 1 ? $"{(int)ago.TotalHours} hr ago"
+            : ago.TotalDays < 60 ? $"{(int)ago.TotalDays} day{((int)ago.TotalDays == 1 ? "" : "s")} ago"
+            : $"{(int)(ago.TotalDays / 30)} months ago";
+    }
+
+    private static string Size(long bytes) => bytes < 1024 ? $"{bytes} B" : $"{bytes / 1024.0:0.#} KB";
+}

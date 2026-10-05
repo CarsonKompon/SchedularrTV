@@ -23,6 +23,12 @@ public sealed class SchedulerServiceOptions
     public bool WatchConfig { get; set; } = true;
 
     /// <summary>
+    /// How many earlier versions of the YAML file to keep in the <c>backups</c> folder beside it, one put aside before
+    /// every change (see the Backups page). 0 turns them off.
+    /// </summary>
+    public int ConfigBackups { get; set; } = 100;
+
+    /// <summary>
     /// Optional shared secret required by mutating API endpoints. When null, mutating endpoints are
     /// disabled so an unauthenticated deployment cannot have its schedule rewritten.
     /// </summary>

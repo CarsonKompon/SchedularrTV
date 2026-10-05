@@ -41,6 +41,10 @@
         <div class="card-head">
             <h2>@(string.IsNullOrWhiteSpace(guide.Name) ? "New guide" : guide.Name)</h2>
             <span class="pill pill-muted">@(guide.Theme == GuideTheme.Prevue ? "Prevue 1990s" : "TV Guide Channel 2000s")</span>
+            @if (string.IsNullOrEmpty(guide.Id))
+            {
+                <span class="pill pill-warn">Not saved yet</span>
+            }
             @if (status is not null)
             {
                 <span class="pill pill-ok">On air · @status.Viewers watching</span>
@@ -251,8 +255,7 @@
 
                     <div class="row" style="gap:8px;margin-top:14px;">
                         <div class="spacer"></div>
-                        <button class="btn btn-sm" type="button" @onclick="Cancel">Cancel</button>
-                        <button class="btn btn-sm btn-primary" type="button" @onclick="Save">Save</button>
+                        <button class="btn btn-sm" type="button" @onclick="Done">Done</button>
                     </div>
                 </div>
 
@@ -268,8 +271,10 @@
 }
 
 <div class="row" style="gap:8px;">
-    <button class="btn btn-primary" type="button" disabled="@(_editing is not null)" @onclick="Add">Add a guide channel</button>
+    <button class="btn btn-primary" type="button" @onclick="Add">Add a guide channel</button>
 </div>
+
+<SaveDock Dirty="Dirty" Label="Unsaved guide channels" OnSave="Save" OnDiscard="Discard" />
 
 <div class="card" style="margin-top:16px;">
     <div class="card-head"><h2>How it works</h2></div>
@@ -338,23 +343,34 @@
 
     private void OnHubChanged() => _ = InvokeAsync(StateHasChanged);
 
+    // Edits, new guides and deletions are held in _guides until Save in the bar along the bottom; Discard drops them.
+    // What was loaded, to tell whether anything has changed since.
+    private string _loaded = string.Empty;
+
+    private bool Dirty => !string.Equals(Snapshot(_guides), _loaded, StringComparison.Ordinal);
+
+    // Hidden channels in any order are the same choice (ticking one off and on again moves it to the end).
+    private static string Snapshot(IEnumerable<GuideStation> guides) => System.Text.Json.JsonSerializer.Serialize(guides.Select(guide =>
+    {
+        GuideStation copy = guide.Copy();
+        copy.HiddenChannels = [.. copy.HiddenChannels.Order()];
+        return copy;
+    }));
+
     private void Load()
     {
         _guides = [.. Store.Guides.Select(guide => guide.Copy())];
+        _loaded = Snapshot(_guides);
         _editing = null;
+        _confirmDelete = null;
     }
 
     private static string PreviewSource(GuideStation guide) =>
         $"plugins/tv-guide/view/{Uri.EscapeDataString(string.IsNullOrEmpty(guide.Id) ? "preview" : guide.Id)}?preview=true";
 
+    // Another guide's editor closes, keeping its edits for the save bar.
     private void Edit(GuideStation guide)
     {
-        if (_editing is not null)
-        {
-            Load();
-            guide = _guides.FirstOrDefault(candidate => candidate.Id == guide.Id) ?? guide;
-        }
-
         _editing = guide;
         _message = null;
     }
@@ -367,13 +383,19 @@
         _message = null;
     }
 
-    private void Cancel() => Load();
+    private void Done() => _editing = null;
+
+    private void Discard()
+    {
+        Load();
+        _message = null;
+    }
 
     private void AskDelete(GuideStation guide)
     {
         if (string.IsNullOrEmpty(guide.Id))
         {
-            Load();
+            Remove(guide);
             return;
         }
 
@@ -383,15 +405,10 @@
     private void Remove(GuideStation guide)
     {
         _confirmDelete = null;
-        try
+        _guides.Remove(guide);
+        if (ReferenceEquals(_editing, guide))
         {
-            Store.Save(Store.Guides.Where(saved => !string.Equals(saved.Id, guide.Id, StringComparison.OrdinalIgnoreCase)));
-            Load();
-            Say($"Deleted {guide.Name}. Channels that used it fill that time with their other programming from the next rebuild.", ok: true);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            Say($"Couldn't delete the guide: {ex.Message}", ok: false);
+            _editing = null;
         }
     }
 
@@ -399,10 +416,11 @@
     {
         try
         {
-            string name = _editing?.Name ?? string.Empty;
+            bool removed = Store.Guides.Any(saved => !_guides.Any(guide => string.Equals(guide.Id, saved.Id, StringComparison.OrdinalIgnoreCase)));
             Store.Save(_guides);
             Load();
-            Say($"Saved {name}. It's under TV Shows now (and in the show pickers). A guide that's on air starts again with the new settings.", ok: true);
+            Say("Saved. Guides are under TV Shows (and in the show pickers); one that's on air starts again with its new settings."
+                + (removed ? " Channels that used a deleted guide fill that time with their other programming from the next rebuild." : ""), ok: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

@@ -5,9 +5,10 @@ using SchedularrTV.Core.Scheduling;
 
 namespace SchedularrTV.Streamers;
 
-/// <summary>A stretch of the channel's guide: someone live, someone expected, or nobody.</summary>
+/// <summary>A stretch of the channel's guide: someone live, someone expected, a re-run of a past stream, or nobody.</summary>
 /// <param name="Priority">Lower wins where two overlap (live always wins).</param>
-public sealed record GuideSlot(DateTimeOffset Start, DateTimeOffset End, string Title, string? Overview, int Priority);
+/// <param name="FirstShown">For a re-run, when the stream it replays was live.</param>
+public sealed record GuideSlot(DateTimeOffset Start, DateTimeOffset End, string Title, string? Overview, int Priority, DateTimeOffset? FirstShown = null);
 
 /// <summary>
 /// The streamer channels as whole channels for the scheduler to publish. The picture is always the channel's one live
@@ -93,7 +94,42 @@ public sealed class StreamerChannels(StreamerStore store, StreamerMonitor monito
             }
         }
 
+        if (!slots.Any(slot => slot.Priority < 0) && monitor.OnAir(channel.Id) is { } onAir
+            && channel.Streamers.FirstOrDefault(streamer => string.Equals(streamer.Key, onAir.ReplayKey, StringComparison.OrdinalIgnoreCase)) is { } replaying)
+        {
+            DateTimeOffset upTo = slots.Select(slot => slot.Start).Where(start => start > now).DefaultIfEmpty(until).Min();
+            slots.AddRange(Reruns(onAir, replaying, monitor.State(replaying.Key)?.Name(replaying) ?? replaying.Handle, now, upTo, channel.Streamers.Count));
+        }
+
         return slots;
+    }
+
+    /// <summary>
+    /// While nobody is live and the channel is replaying a past stream: that recording, over and over (as it plays), from
+    /// the pass on air now up to <paramref name="until"/> (the next stream expected, after which there's likely a newer one).
+    /// Below every expected stream, so it fills the time around them.
+    /// </summary>
+    public static IEnumerable<GuideSlot> Reruns(ChannelOnAir onAir, StreamerEntry streamer, string name, DateTimeOffset now, DateTimeOffset until, int priority)
+    {
+        if (onAir is not { ActiveKey: null, StreamUrl: not null, Replay: { Length.Ticks: > 0 } recording })
+        {
+            yield break;
+        }
+
+        string title = recording.Title is { Length: > 0 } streamTitle ? $"{name}: {streamTitle} (re-run)" : $"{name} (re-run)";
+        DateTimeOffset aired = recording.Start.ToLocalTime();
+        string overview = $"A re-run of {name}'s stream on {StreamerHandles.PlatformName(streamer.Platform)} from "
+                          + $"{aired.ToString("D", CultureInfo.CurrentCulture)}, {aired.ToString("t", CultureInfo.CurrentCulture)}"
+                          + (recording.Length >= TimeSpan.FromMinutes(1) ? $" ({Duration(recording.Length)})." : ".");
+
+        // The pass playing now began this far back; later passes follow straight on.
+        DateTimeOffset start = now - onAir.ReplayPosition(now);
+        for (int count = 0; count < 50 && start < until; count++)
+        {
+            DateTimeOffset end = start + recording.Length;
+            yield return new GuideSlot(start, end < until ? end : until, title, overview, priority, recording.Start);
+            start = end;
+        }
     }
 
     /// <summary>
@@ -132,7 +168,7 @@ public sealed class StreamerChannels(StreamerStore store, StreamerMonitor monito
                 entries.Add(Entry(channel, streamUrl, cursor, slot.Start, "Offline", Waiting(placed, cursor)));
             }
 
-            entries.Add(Entry(channel, streamUrl, slot.Start, slot.End, slot.Title, slot.Overview));
+            entries.Add(Entry(channel, streamUrl, slot.Start, slot.End, slot.Title, slot.Overview, slot.FirstShown));
             cursor = slot.End;
         }
 
@@ -183,12 +219,24 @@ public sealed class StreamerChannels(StreamerStore store, StreamerMonitor monito
 
     private static DateTimeOffset Minute(DateTimeOffset at) => new(at.Ticks - at.Ticks % TimeSpan.TicksPerMinute, at.Offset);
 
-    private static ScheduleEntry Entry(StreamerChannel channel, string streamUrl, DateTimeOffset start, DateTimeOffset stop, string title, string? overview) => new()
+    private static string Duration(TimeSpan length) =>
+        length.TotalHours >= 1
+            ? $"{(int)length.TotalHours} hr{(length.Minutes > 0 ? $" {length.Minutes} min" : "")}"
+            : $"{length.Minutes} min";
+
+    /// <summary>The ErsatzTV output's XMLTV writer marks an entry with this as a repeat, first shown then.</summary>
+    public const string PreviouslyShownAnnotation = "xmltv.previously_shown";
+
+    private static ScheduleEntry Entry(StreamerChannel channel, string streamUrl, DateTimeOffset start, DateTimeOffset stop, string title, string? overview,
+        DateTimeOffset? firstShown = null) => new()
     {
         Start = start,
         Duration = stop - start,
         Kind = ScheduleEntryKind.Program,
         Source = "streamers",
+        Annotations = firstShown is { } shown
+            ? new Dictionary<string, string> { [PreviouslyShownAnnotation] = shown.ToString("o", CultureInfo.InvariantCulture) }
+            : null,
         Item = new MediaItem
         {
             Id = $"streamers:{channel.Id}:{start.UtcTicks.ToString(CultureInfo.InvariantCulture)}",
@@ -196,7 +244,8 @@ public sealed class StreamerChannels(StreamerStore store, StreamerMonitor monito
             Overview = overview,
             Duration = stop - start,
             Path = streamUrl,
-            Tags = ["Streamers"],
+            PremiereDate = firstShown,
+            Tags = firstShown is null ? ["Streamers"] : ["Streamers", "Re-run"],
             Attributes = new Dictionary<string, string>
             {
                 // The ErsatzTV output's own keys: joined where it is, never seeked into.

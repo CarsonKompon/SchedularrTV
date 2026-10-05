@@ -200,6 +200,12 @@ public sealed class XmltvPublisher(IOptions<ErsatzTvOptions> options, ILogger<Xm
     /// </summary>
     public const string SourceProgrammeAnnotation = "xmltv.programme";
 
+    /// <summary>
+    /// Entry annotation marking a listing as a re-run: when it was first shown, as a round-trip ("o") date and time.
+    /// It's written as <c>&lt;previously-shown start="…"/&gt;</c>, which guides show as a repeat rather than new.
+    /// </summary>
+    public const string PreviouslyShownAnnotation = "xmltv.previously_shown";
+
     private static void WriteProgramme(XmlWriter writer, string tvgId, GuideEntry guide, string? artworkBaseUrl)
     {
         ScheduleEntry entry = guide.Entry;
@@ -271,6 +277,17 @@ public sealed class XmltvPublisher(IOptions<ErsatzTvOptions> options, ILogger<Xm
             writer.WriteStartElement("episode-num");
             writer.WriteAttributeString("system", "xmltv_ns");
             writer.WriteString($"{item.SeasonNumber - 1}.{item.EpisodeNumber - 1}.0/1");
+            writer.WriteEndElement();
+        }
+
+        if (entry.Annotations?.TryGetValue(PreviouslyShownAnnotation, out string? shown) == true)
+        {
+            writer.WriteStartElement("previously-shown");
+            if (DateTimeOffset.TryParse(shown, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTimeOffset first))
+            {
+                writer.WriteAttributeString("start", FormatXmltvTime(first));
+            }
+
             writer.WriteEndElement();
         }
 
