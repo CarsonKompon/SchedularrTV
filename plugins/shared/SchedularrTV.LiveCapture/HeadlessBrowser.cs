@@ -148,7 +148,7 @@ public sealed class HeadlessBrowser : IAsyncDisposable
     private static async Task<HeadlessBrowser> StartAsync(string browser, string[] mode, string url, int width, int height, bool transparent,
         CancellationToken cancellationToken)
     {
-        string profile = Path.Combine(Path.GetTempPath(), "schedularrtv-browser", Guid.NewGuid().ToString("N"));
+        string profile = Path.Combine(BrowserProcesses.ProfilesRoot, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(profile);
 
         var start = new ProcessStartInfo(browser)
@@ -175,6 +175,9 @@ public sealed class HeadlessBrowser : IAsyncDisposable
         }
 
         Process process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start {browser}.");
+
+        // Ended with the scheduler, however it stops (and swept up at the next start if it somehow isn't).
+        BrowserProcesses.Adopt(process, profile);
         var browserProcess = new HeadlessBrowser(process, profile) { _transparent = transparent };
         process.OutputDataReceived += (_, e) => browserProcess.Remember(e.Data);
         process.ErrorDataReceived += (_, e) => browserProcess.Remember(e.Data);

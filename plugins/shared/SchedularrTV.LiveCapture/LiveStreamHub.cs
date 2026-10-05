@@ -14,6 +14,15 @@ public sealed record LiveStatus(string Id, int Viewers, string? Problem);
 /// <param name="keepAlive">How long a channel stays on after its last viewer leaves.</param>
 public sealed class LiveStreamHub(Func<string, LiveStreamSpec?> resolve, Func<TimeSpan> keepAlive, ILogger logger) : IAsyncDisposable
 {
+    // Hidden browsers an earlier run left behind are ended as soon as any live channel plugin starts.
+    private readonly bool _swept = Sweep(logger);
+
+    private static bool Sweep(ILogger logger)
+    {
+        BrowserProcesses.SweepOnce(logger);
+        return true;
+    }
+
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, LiveStream> _running = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, CancellationTokenSource> _idle = new(StringComparer.OrdinalIgnoreCase);
