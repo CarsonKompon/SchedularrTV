@@ -13,7 +13,7 @@
 }
 else
 {
-    <a class="back-link" href="channels" style="margin-bottom:14px;"><Icon Name="arrow-left" Size="14" />All channels</a>
+    <a class="back-link" href="channels"><Icon Name="arrow-left" Size="14" />All channels</a>
     <PageHeader Title="@_channel.Name" Eyebrow="@($"Channel {_channel.Number}")">
         <Leading>
             <div class="logo-tile lg">
@@ -28,9 +28,9 @@ else
             </div>
         </Leading>
         <ChildContent>
-            <span class="row row-wrap" style="gap:6px;">
+            <span class="row row-wrap">
                 <span class="pill pill-muted">@_channel.TvgId</span>
-                <span class="pill pill-muted">@_channel.Blocks.Count block(s)</span>
+                <span class="pill pill-muted">@_channel.Blocks.Count @(_channel.Blocks.Count == 1 ? "block" : "blocks")</span>
                 @if (!string.IsNullOrWhiteSpace(_channel.Group))
                 {
                     <span class="pill pill-muted">@_channel.Group</span>
@@ -56,14 +56,14 @@ else
                     }
                 </select>
             </label>
-            <p>Replace this channel's settings? Its name, number, ID, and logo will be kept.</p>
-            <div class="toolbar" style="margin-bottom:0;">
+            <p class="hint">Replaces this channel's settings. Its name, number, ID, and logo are kept.</p>
+            <div class="row">
                 <button class="btn btn-primary btn-sm" type="button" disabled="@string.IsNullOrWhiteSpace(_copySourceId)" @onclick="CopyFrom">Copy settings</button>
                 <button class="btn btn-sm" type="button" @onclick="() => _copyOpen = false">Cancel</button>
             </div>
             @if (_copyError is not null)
             {
-                <p role="alert">@_copyError</p>
+                <span class="field-error" role="alert">@_copyError</span>
             }
         </div>
     }
@@ -96,18 +96,18 @@ else
                            @onchange="e => { _channel.Number = int.TryParse(e.Value?.ToString(), out int v) ? v : _channel.Number; Editor.MarkDirty(); }" />
                 </label>
                 <label class="field">
-                    <span>Id <span style="color:var(--muted);">(used in URLs)</span></span>
+                    <span>ID <span class="opt">(used in URLs)</span></span>
                     @* Keyed so a rejected rename puts the real id back: the model never changed, so
                        Blazor would otherwise diff no change and leave the typed text in the box. *@
                     <input type="text" @key="_idVersion" value="@_channel.Id"
                            @onchange="e => Rename(e.Value?.ToString())" />
                     @if (_idError is not null)
                     {
-                        <span style="color:var(--error);font-size:12px;">@_idError</span>
+                        <span class="field-error" role="alert">@_idError</span>
                     }
                 </label>
                 <label class="field">
-                    <span>Guide id <span style="color:var(--muted);">(from the channel number)</span></span>
+                    <span>Guide ID <span class="opt">(from the channel number)</span></span>
                     <input type="text" value="@_channel.TvgId" readonly disabled />
                 </label>
                 <label class="field">
@@ -116,7 +116,7 @@ else
                            @onchange="e => { _channel.Group = Text(e); Editor.MarkDirty(); }" />
                 </label>
                 <label class="field">
-                    <span>Time zone <span style="color:var(--muted);">(blank = global)</span></span>
+                    <span>Time zone <span class="opt">(blank = global)</span></span>
                     <input type="text" value="@_channel.TimeZone" placeholder="@Editor.Working.Settings.TimeZone"
                            @onchange="e => { _channel.TimeZone = Text(e); Editor.MarkDirty(); }" />
                 </label>
@@ -140,7 +140,7 @@ else
                     <div style="flex:1;">
                         @if (_logoError is not null)
                         {
-                            <p style="color:var(--error);font-size:12px;margin:0 0 6px;">@_logoError</p>
+                            <p class="field-error" role="alert" style="margin:0 0 6px;">@_logoError</p>
                         }
                         else
                         {
@@ -155,7 +155,7 @@ else
 
                         @if (!string.IsNullOrWhiteSpace(_channel.Logo))
                         {
-                            <button class="btn btn-sm btn-danger" style="margin-top:6px;" @onclick="RemoveLogo">Remove logo</button>
+                            <button class="btn btn-sm btn-danger" type="button" style="margin-top:8px;" @onclick="RemoveLogo">Remove logo</button>
                         }
                     </div>
                 </div>
@@ -186,7 +186,7 @@ else
             </p>
 
             <label class="field">
-                <span>Grid anchor <span style="color:var(--muted);">(blank = local midnight)</span></span>
+                <span>Grid anchor <span class="opt">(blank = local midnight)</span></span>
                 <input type="datetime-local" value="@AnchorText()" @onchange="SetAnchor" />
             </label>
             <p class="hint">
@@ -207,13 +207,15 @@ else
                 Each collection remembers the last thing it played and carries on from there, so adding
                 episodes or editing a collection will not send the channel back to the first episode.
             </p>
-            <button class="btn btn-sm btn-danger" disabled="@_resetting" @onclick="ResetRotation">
-                @(_resetting ? "Resetting…" : "Start this channel over")
-            </button>
-            @if (_resetMessage is not null)
-            {
-                <p class="hint" style="margin-top:8px;">@_resetMessage</p>
-            }
+            <div class="row row-wrap">
+                <button class="btn btn-sm btn-danger" type="button" disabled="@_resetting" @onclick="ResetRotation">
+                    @(_resetting ? "Resetting…" : "Start this channel over")
+                </button>
+                @if (_resetMessage is not null)
+                {
+                    <span class="hint inline">@_resetMessage</span>
+                }
+            </div>
         </div>
 
         <div class="card">

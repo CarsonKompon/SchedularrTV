@@ -27,7 +27,7 @@
                        ValueChanged="v => { Global.RebuildInterval = v ?? TimeSpan.FromHours(1); Editor.MarkDirty(); }" />
     </div>
     <label class="field">
-        <span>Shuffle seed <span style="color:var(--muted);">(change to reshuffle every rotation)</span></span>
+        <span>Shuffle seed <span class="opt">(change to reshuffle every rotation)</span></span>
         <input type="text" value="@Global.Seed" @onchange="OnSeedChanged" />
     </label>
 </div>
@@ -37,29 +37,29 @@
     <p class="hint">
         Added automatically to commercial queries on channels with seasonal matching enabled.
     </p>
-    <label class="field" style="max-width:260px;">
+    <label class="field field-narrow">
         <span>"Any time" tag</span>
         <input type="text" value="@Temporal.AnyTimeTag"
                @onchange="e => { Temporal.AnyTimeTag = e.Value?.ToString() ?? string.Empty; Editor.MarkDirty(); }" />
     </label>
 
-    <div class="row row-wrap">
-        <label class="check" style="margin-right:18px;">
+    <div class="check-row">
+        <label class="check">
             <input type="checkbox" checked="@Temporal.IncludeMonth"
                    @onchange="e => { Temporal.IncludeMonth = (bool)(e.Value ?? true); Editor.MarkDirty(); }" />
             <span>Month (January)</span>
         </label>
-        <label class="check" style="margin-right:18px;">
+        <label class="check">
             <input type="checkbox" checked="@Temporal.IncludeSeason"
                    @onchange="e => { Temporal.IncludeSeason = (bool)(e.Value ?? true); Editor.MarkDirty(); }" />
             <span>Season (Winter)</span>
         </label>
-        <label class="check" style="margin-right:18px;">
+        <label class="check">
             <input type="checkbox" checked="@Temporal.IncludeExactDate"
                    @onchange="e => { Temporal.IncludeExactDate = (bool)(e.Value ?? true); Editor.MarkDirty(); }" />
             <span>Date (12-25)</span>
         </label>
-        <label class="check" style="margin-right:18px;">
+        <label class="check">
             <input type="checkbox" checked="@Temporal.IncludeFullDate"
                    @onchange="e => { Temporal.IncludeFullDate = (bool)(e.Value ?? false); Editor.MarkDirty(); }" />
             <span>Full date (2026-12-25)</span>
@@ -77,21 +77,23 @@
     @foreach (HolidayDefinition holiday in Temporal.Holidays.ToList())
     {
         <div class="list-row">
-            <input type="text" style="width:180px;" value="@holiday.Name"
+            <input type="text" class="w-name" aria-label="Holiday name" value="@holiday.Name"
                    @onchange="e => { holiday.Name = e.Value?.ToString() ?? string.Empty; Editor.MarkDirty(); }" />
-            <input type="text" style="width:110px;" placeholder="MM-DD start" value="@holiday.Start"
+            <input type="text" class="w-date" aria-label="Start (MM-DD)" placeholder="MM-DD start" value="@holiday.Start"
                    @onchange="e => { holiday.Start = e.Value?.ToString(); Editor.MarkDirty(); }" />
-            <input type="text" style="width:110px;" placeholder="MM-DD end" value="@holiday.End"
+            <input type="text" class="w-date" aria-label="End (MM-DD)" placeholder="MM-DD end" value="@holiday.End"
                    @onchange="e => { holiday.End = e.Value?.ToString(); Editor.MarkDirty(); }" />
             <div class="spacer"></div>
             <button class="btn btn-sm btn-danger" @onclick="() => { Temporal.Holidays.Remove(holiday); Editor.MarkDirty(); }">Remove</button>
         </div>
     }
-    <button class="btn btn-sm" @onclick="AddHoliday">Add holiday</button>
-    @if (Temporal.Holidays.Count == 0)
-    {
-        <button class="btn btn-sm" style="margin-left:6px;" @onclick="LoadDefaultHolidays">Load defaults to edit</button>
-    }
+    <div class="row">
+        <button class="btn btn-sm" @onclick="AddHoliday"><Icon Name="plus" Size="14" />Add holiday</button>
+        @if (Temporal.Holidays.Count == 0)
+        {
+            <button class="btn btn-sm btn-ghost" @onclick="LoadDefaultHolidays">Load defaults to edit</button>
+        }
+    </div>
 </div>
 
 <div class="card">
@@ -113,12 +115,12 @@
     {
         @foreach (JellyfinLibrary library in _libraries)
         {
-            <label class="check" style="display:flex;align-items:baseline;gap:8px;padding:4px 0;">
+            <label class="check">
                 <input type="checkbox" checked="@IsIncluded(library.Name)"
                        @onchange="e => ToggleLibrary(library.Name, (bool)(e.Value ?? true))" />
                 <span>
                     @library.Name
-                    <span style="color:var(--muted);">@string.Join(" · ", library.Locations)</span>
+                    <span class="opt">@string.Join(" · ", library.Locations)</span>
                 </span>
             </label>
         }
@@ -153,20 +155,20 @@
                         }
                         @if (!Directory.Exists(folder.Path))
                         {
-                            <text> · </text><span style="color:var(--bad);">folder not found</span>
+                            <text> · </text><span class="pill pill-error">folder not found</span>
                         }
                     </div>
                 </div>
             </div>
         }
 
-        <div class="row row-wrap" style="align-items:center;gap:10px;">
+        <div class="row row-wrap">
             <button class="btn btn-sm" disabled="@_rescanning" @onclick="RescanCommercials">
                 @(_rescanning ? "Rescanning…" : "Rescan and rebuild")
             </button>
             @if (_rescanMessage is not null)
             {
-                <span class="hint" style="margin:0;">@_rescanMessage</span>
+                <span class="hint inline">@_rescanMessage</span>
             }
         </div>
         <p class="hint">
