@@ -28,8 +28,10 @@ public sealed class WebChannelSettings(IPluginContext context)
 
     public string? BrowserPath => Value("BrowserPath");
 
+    /// <summary>Unset: 15, or 8 on a Raspberry Pi.</summary>
     public int CaptureFrameRate =>
-        int.TryParse(Value("FrameRate"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int fps) ? Math.Clamp(fps, 5, 30) : 15;
+        int.TryParse(Value("FrameRate"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int fps) ? Math.Clamp(fps, 5, 30)
+            : SchedularrTV.Core.Platform.HardwareProfile.Pick(15, 8);
 
     public TimeSpan KeepAlive =>
         TimeSpan.FromSeconds(int.TryParse(Value("KeepAliveSeconds"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int seconds)

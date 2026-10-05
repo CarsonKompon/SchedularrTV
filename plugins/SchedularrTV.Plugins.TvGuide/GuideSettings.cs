@@ -12,8 +12,10 @@ public sealed class GuideSettings(IPluginContext context)
 
     public string? BrowserPath => Value("BrowserPath");
 
+    /// <summary>Unset: 24, or 12 on a Raspberry Pi (the listings scroll all the time, so every frame is new).</summary>
     public int CaptureFrameRate =>
-        int.TryParse(Value("FrameRate"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int fps) ? Math.Clamp(fps, 5, 30) : 24;
+        int.TryParse(Value("FrameRate"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int fps) ? Math.Clamp(fps, 5, 30)
+            : SchedularrTV.Core.Platform.HardwareProfile.Pick(24, 12);
 
     public TimeSpan KeepAlive =>
         TimeSpan.FromSeconds(int.TryParse(Value("KeepAliveSeconds"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int seconds)

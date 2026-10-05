@@ -14,7 +14,7 @@ public sealed record FeedSegment(string Input, TimeSpan Duration, bool Realtime,
 {
     /// <summary>A short black, silent stretch, for when there's nothing to play (or it failed).</summary>
     public static FeedSegment Black(int width, int height, TimeSpan duration) =>
-        new($"color=c=black:s={width}x{height}:r={LiveStream.OutputFrameRate}", duration, Realtime: true, HasAudio: false, Lavfi: true, Label: "black");
+        new($"color=c=black:s={width}x{height}:r={LiveEncodingSettings.Current.FrameRate}", duration, Realtime: true, HasAudio: false, Lavfi: true, Label: "black");
 }
 
 /// <summary>
@@ -78,9 +78,12 @@ public static class SequenceFeed
     }
 
     /// <summary>The ffmpeg command for one segment, its timestamps starting at <paramref name="offset"/>.</summary>
-    public static IReadOnlyList<string> Arguments(FeedSegment segment, int width, int height, TimeSpan offset)
+    /// <param name="encoding">The live encoding settings (frame rate, encoder, preset); those in use now if not given.</param>
+    public static IReadOnlyList<string> Arguments(FeedSegment segment, int width, int height, TimeSpan offset, LiveEncodingSettings? encoding = null)
     {
         string Number(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+        encoding ??= LiveEncodingSettings.Current;
+        int fps = encoding.FrameRate;
         List<string> arguments = ["-hide_banner", "-loglevel", "warning", "-nostdin"];
         if (segment.Realtime)
         {
@@ -102,10 +105,14 @@ public static class SequenceFeed
         [
             "-map", "0:v:0", "-map", segment.HasAudio ? "0:a:0" : "1:a:0",
             "-t", Number(Math.Max(segment.Duration.TotalSeconds, 0.5)),
-            "-vf", $"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={LiveStream.OutputFrameRate},format=yuv420p",
-            "-af", "aresample=48000:async=1,aformat=channel_layouts=stereo",
-            "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", "-profile:v", "high",
-            "-g", (LiveStream.OutputFrameRate * 2).ToString(CultureInfo.InvariantCulture), "-b:v", "2500k", "-maxrate", "2500k", "-bufsize", "5000k",
+            "-vf", $"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},format=yuv420p",
+            "-af", "aresample=48000:async=1,aformat=channel_layouts=stereo"
+        ]);
+        // Only ever decoded again by the page channel's own ffmpeg, so it uses the live settings' encoder and speed.
+        arguments.AddRange(encoding.Video.VideoArguments(2500, tune: "zerolatency"));
+        arguments.AddRange(
+        [
+            "-g", (fps * 2).ToString(CultureInfo.InvariantCulture),
             "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
             "-output_ts_offset", Number(offset.TotalSeconds),
             "-f", "mpegts", "-mpegts_flags", "+resend_headers", "-muxdelay", "0", "pipe:1"

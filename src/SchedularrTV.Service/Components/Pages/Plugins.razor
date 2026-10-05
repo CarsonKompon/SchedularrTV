@@ -110,6 +110,10 @@ else if (Registry.RestartRequired)
                     {
                         <p class="hint warn" style="margin:6px 0 0;">@plugin.Blocked</p>
                     }
+                    @if (!string.IsNullOrWhiteSpace(plugin.Manifest.LowPowerNotice))
+                    {
+                        <LowPowerNotice Inline="true" Title="@($"On {HardwareProfile.DeviceName}: {plugin.Manifest.LowPowerNotice}")" />
+                    }
                 </div>
                 <div class="plugin-actions">
                     @if (Local.IsLocal && plugin.Source == PluginSource.Installed && !Manager.IsPendingRemoval(plugin.Id))
@@ -150,6 +154,11 @@ else if (Registry.RestartRequired)
                 <div class="spacer"></div>
                 <button class="btn btn-sm btn-icon btn-ghost" type="button" aria-label="Close" @onclick="CloseSettings"><Icon Name="x" Size="15" /></button>
             </div>
+
+            @if (!string.IsNullOrWhiteSpace(open.Manifest.LowPowerNotice))
+            {
+                <LowPowerNotice Title="@($"{open.Manifest.Name} on {HardwareProfile.DeviceName}")">@open.Manifest.LowPowerNotice</LowPowerNotice>
+            }
 
             @* A broken plugin component shouldn't take the page down with it. *@
             <ErrorBoundary>
@@ -320,9 +329,10 @@ else if (Registry.RestartRequired)
         else
         {
             Dictionary<string, string?> values = Manager.LoadSettings(plugin.Id);
+            // A field the plugin defaults differently on a Raspberry Pi starts at that value there.
             foreach (PluginSetting setting in plugin.Manifest.Settings.Where(setting => setting.Default is not null && !values.ContainsKey(setting.Key)))
             {
-                values[setting.Key] = setting.Default;
+                values[setting.Key] = HardwareProfile.IsLowPower && setting.LowPowerDefault is not null ? setting.LowPowerDefault : setting.Default;
             }
 
             _editor = new PluginSettingsEditor(plugin.Id, values);

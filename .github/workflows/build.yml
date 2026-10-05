@@ -47,6 +47,12 @@ jobs:
             os: windows-latest
           - rid: linux-x64
             os: ubuntu-latest
+          # Raspberry Pi 4/5 and other 64-bit ARM boards. Cross-published from x64 (no native code is compiled here);
+          # ReadyToRun precompiles the app so it starts in a few seconds on a slow CPU instead of JIT-ing everything, and
+          # workstation GC keeps the memory a 2–4 GB board can spare (server GC reserves a heap per core).
+          - rid: linux-arm64
+            os: ubuntu-latest
+            publish_args: -p:PublishReadyToRun=true -p:ServerGarbageCollection=false
           - rid: osx-arm64
             os: macos-latest
           - rid: osx-x64
@@ -82,8 +88,8 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           out="publish/SchedularrTV"
-          dotnet publish src/SchedularrTV.Tray/SchedularrTV.Tray.csproj -c Release -r ${{ matrix.rid }} --self-contained -p:Version="$VERSION" -o "$out"
-          dotnet publish src/SchedularrTV.Service/SchedularrTV.Service.csproj -c Release -r ${{ matrix.rid }} --self-contained -p:Version="$VERSION" -o "$out/server"
+          dotnet publish src/SchedularrTV.Tray/SchedularrTV.Tray.csproj -c Release -r ${{ matrix.rid }} --self-contained -p:Version="$VERSION" ${{ matrix.publish_args }} -o "$out"
+          dotnet publish src/SchedularrTV.Service/SchedularrTV.Service.csproj -c Release -r ${{ matrix.rid }} --self-contained -p:Version="$VERSION" ${{ matrix.publish_args }} -o "$out/server"
           rm -f "$out"/*.pdb "$out"/server/*.pdb
 
       - name: Package (Windows)

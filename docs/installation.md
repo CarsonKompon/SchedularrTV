@@ -13,6 +13,7 @@ is self-contained, so .NET does not need to be installed. File names start with 
 | macOS (Apple silicon) | `SchedularrTV-<version>-osx-arm64.zip` | Unzip and move `SchedularrTV.app` to Applications. See [macOS](#macos) below for the first launch. |
 | macOS (Intel) | `SchedularrTV-<version>-osx-x64.zip` | As above. |
 | Linux | `SchedularrTV-<version>-linux-x64.tar.gz` | `tar xzf SchedularrTV-<version>-linux-x64.tar.gz` and run `./SchedularrTV/SchedularrTV`. |
+| Linux on ARM (Raspberry Pi 4/5) | `SchedularrTV-<version>-linux-arm64.tar.gz` | As above. Needs a 64-bit OS; see [Raspberry Pi](#raspberry-pi-and-other-low-power-devices). |
 
 When a newer release is published, a dot appears beside **Settings** in the sidebar and the settings
 pages show a link to download it. SchedularrTV checks the GitHub repository in `Updates:Repository`
@@ -129,3 +130,50 @@ loginctl enable-linger $USER   # keep it running without a login session
 
 To reach the web UI from another machine, turn on **Allow other devices on the network** in App
 settings. The UI has no password, so only do this on a network you trust.
+
+## Raspberry Pi and other low-power devices
+
+Use `SchedularrTV-<version>-linux-arm64.tar.gz` on a 64-bit Raspberry Pi OS (or another 64-bit Linux) on a
+Raspberry Pi 4 or 5 with 4 GB or more; 2 GB works for the scheduler with few extras. Install ffmpeg, ICU and,
+for the web page, radio, TV guide and streamer channels, Chromium (Chrome and Edge have no ARM Linux builds):
+
+```sh
+sudo apt install ffmpeg libicu72 chromium
+```
+
+(`libicu72` is Bookworm's; use whichever `libicu` version your release has, and `chromium-browser` on older Raspberry Pi
+OS releases.) Run it headless with the systemd unit above.
+
+SchedularrTV recognises a Raspberry Pi, or another small 64-bit ARM Linux board (four cores or fewer, or about
+4 GB of memory or less), and uses its **low-power profile**. **App settings → Hardware and video encoding** shows
+what was detected and can force the profile on or off. The profile only changes defaults: anything you've set yourself
+is kept. It changes these:
+
+| What | Standard | Low-power |
+| --- | --- | --- |
+| New channels' `channel.json` | 1080p, 6 Mbps, loudness normalisation | 720p, 3 Mbps, no loudness normalisation |
+| Live page channels (web, radio, guide, streamers) | 720p30, x264 `veryfast`, 3.5 Mbps | 540p30, x264 `ultrafast`, 2.5 Mbps |
+| Capture frames per second (web / radio / guide / streamers) | 15 / 20 / 24 / 15 | 8 / 10 / 12 / 8 |
+| Streamers: highest stream quality, check interval | 720p, 60 s | 480p, 120 s |
+| Generated promos and credit squeezes | x264 `medium` / `veryfast`, every thread, 2 promos at once | x264 `superfast`, 2 threads, 1 promo at once |
+| Auto Chapters decoding | every thread, software | 2 threads, `-hwaccel auto` (software if that fails) |
+| Commercial folder ffprobes at once | 8 | 3 |
+| Jellyfin library and commercial folders re-read after | 30 minutes | 2 hours |
+| New radio stations' background | blurred cover | plain colour |
+| Local AI default model | Qwen3.5 2B | Qwen3.5 0.8B under 6 GB of memory, else 2B |
+
+The profile also shows warnings in the pages and plugin settings that are known to be heavy on a Pi, with what to
+choose instead.
+
+What limits a Pi is video encoding, not scheduling. ErsatzTV re-encodes every channel being watched (in software
+on a Pi 5, which has no H.264 encoder), so expect about one 720p stream at a time. To get more out of it:
+
+- Pass channels through where the files are already H.264/AAC (IPTV passthrough does this), and avoid overlays on
+  those channels, since items with overlays are always re-encoded.
+- On a Pi 4, try the **Raspberry Pi 4 hardware (h264_v4l2m2m)** encoder for live page channels and rendered clips.
+- Keep the data folder, and ErsatzTV's `hls` folder in the lineup folder, on a USB SSD or tmpfs rather than the SD
+  card.
+- Run ErsatzTV Next on a stronger computer and keep SchedularrTV on the Pi (`ErsatzTv:PathMappings` maps media
+  paths between them).
+
+The arm64 download uses workstation garbage collection and is precompiled (ReadyToRun) so it starts quickly.

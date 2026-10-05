@@ -40,6 +40,10 @@
             <p class="hint warn">Couldn't download the engine: @engineError</p>
         }
 
+        <LowPowerNotice Title="@($"The built-in AI on {HardwareProfile.DeviceName}")" Advice="LowPowerAdvice">
+            It runs on the processor only, so expect roughly 10 to 40 seconds per voice-over or caption, and it shares the
+            processor with the channels on air.
+        </LowPowerNotice>
         <p class="hint" style="margin:12px 0 6px;">Models (each is downloaded once, into <code>@ModelsFolder</code>):</p>
         <div class="local-ai-list">
             @foreach (LocalAiModel model in LocalAiModels.All)
@@ -202,6 +206,29 @@
     private string ChosenModel => Editor.Get(ModelKey) ?? Saved.Model;
 
     private string ModelsFolder => Paths.ModelsFolder(Editor.Get(ModelsFolderKey) ?? Saved.ModelsFolder);
+
+    // On a Raspberry Pi: which model fits its memory, and where to keep it.
+    private IEnumerable<string?> LowPowerAdvice
+    {
+        get
+        {
+            double memory = HardwareProfile.Detected.MemoryGb;
+            string chosen = ChosenModel;
+            return
+            [
+                string.Equals(chosen, "qwen3.5-4b", StringComparison.OrdinalIgnoreCase) && memory < 7
+                    ? "Qwen3.5 4B needs about 3 GB on its own; with the browsers and ffmpegs of the channels that's more than this board has. Choose 0.8B or 2B."
+                    : string.Equals(chosen, "qwen3.5-4b", StringComparison.OrdinalIgnoreCase)
+                        ? "Qwen3.5 4B is about twice as slow as 2B here (a minute or more per piece)."
+                        : null,
+                string.Equals(chosen, LocalAiModels.Default, StringComparison.OrdinalIgnoreCase) && memory < 3
+                    ? "Qwen3.5 2B takes about 1.5 GB; on a board with under 3 GB choose 0.8B, or use a model on another computer's Ollama (Server, below)."
+                    : null,
+                "Each time it's loaded the model is read in full (0.5 to 2.7 GB); keep the models folder on a USB SSD rather than the SD card, and raise \"Free memory after\" if it's reloading often.",
+                "Or run the model on a stronger computer with Ollama or LM Studio and point the Server settings at it; the Pi then only waits for the answer."
+            ];
+        }
+    }
 
     protected override void OnInitialized()
     {

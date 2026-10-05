@@ -27,7 +27,26 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         ".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif"
     };
 
-    public string VideoEncoder { get; init; } = "libx264";
+    /// <summary>
+    /// The encoder, preset and threads; unset, the <c>Rendering</c> app settings in use now (x264 <c>medium</c>, or
+    /// <c>superfast</c> on two threads on a Raspberry Pi).
+    /// </summary>
+    public VideoEncoderChoice? Encoding { get; init; }
+
+    /// <summary>The bitrate a 1080p promo gets from a hardware encoder (scaled to the promo's size); unset, the app setting.</summary>
+    public int? HardwareBitrateKbps { get; init; }
+
+    /// <summary>Kept for callers that only name an encoder; <see cref="Encoding"/> wins when set.</summary>
+    public string VideoEncoder
+    {
+        get => (Encoding ?? CurrentSettings.Video).Encoder.Name;
+        init => Encoding = (Encoding ?? CurrentSettings.Video) with { Encoder = H264Encoder.Find(value) };
+    }
+
+    private static RenderEncodingSettings CurrentSettings => RenderEncodingSettings.Current(StandardPreset);
+
+    /// <summary>The standard preset: measured on 1080p cartoon footage, about a quarter smaller than veryfast/crf 20 at equal SSIM.</summary>
+    public const string StandardPreset = "medium";
 
     public async Task<PromoRenderResult> RenderAsync(PromoComposition composition, string outputPath, CancellationToken cancellationToken = default)
     {
@@ -44,9 +63,22 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             await RunAsync(AudioArguments(composition, mixed), cancellationToken).ConfigureAwait(false);
         }
 
+        RenderEncodingSettings settings = CurrentSettings;
+        VideoEncoderChoice encoding = Encoding ?? settings.Video;
         try
         {
-            return await RenderVideoAsync(composition, outputPath, videoBackground, mixed, stopwatch, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                return await RenderVideoAsync(composition, outputPath, videoBackground, mixed, encoding, HardwareBitrateKbps ?? settings.HardwareBitrateKbps,
+                    stopwatch, cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException) when (encoding.Encoder.Hardware && !cancellationToken.IsCancellationRequested)
+            {
+                // A hardware encoder this computer (or this ffmpeg) doesn't have mustn't stop promos being made: the
+                // same promo is made in software instead.
+                return await RenderVideoAsync(composition, outputPath, videoBackground, mixed, encoding with { Encoder = H264Encoder.Software },
+                    0, stopwatch, cancellationToken).ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -62,6 +94,8 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         string outputPath,
         bool videoBackground,
         string? mixedAudio,
+        VideoEncoderChoice encoding,
+        int hardwareBitrateKbps,
         Stopwatch stopwatch,
         CancellationToken cancellationToken)
     {
@@ -72,7 +106,7 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true
-        }.WithArguments(Arguments(composition, outputPath, videoBackground, mixedAudio)))
+        }.WithArguments(Arguments(composition, outputPath, videoBackground, mixedAudio, encoding, hardwareBitrateKbps)))
             ?? throw new InvalidOperationException("ffmpeg could not be started.");
 
         var errors = new StringBuilder();
@@ -252,7 +286,8 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
     private static string Seconds(TimeSpan value) =>
         Math.Max(0, value.TotalSeconds).ToString("0.###", CultureInfo.InvariantCulture);
 
-    private IEnumerable<string> Arguments(PromoComposition composition, string outputPath, bool videoBackground, string? mixedAudio)
+    private static IEnumerable<string> Arguments(PromoComposition composition, string outputPath, bool videoBackground, string? mixedAudio,
+        VideoEncoderChoice encoding, int hardwareBitrateKbps)
     {
         string fps = composition.Fps.ToString(CultureInfo.InvariantCulture);
         string duration = Seconds(composition.Duration);
@@ -301,14 +336,13 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         args.AddRange(
         [
             "-filter_complex", $"{video};[{audio}:a]apad[a]",
-            "-map", "[v]", "-map", "[a]", "-t", duration,
-            "-c:v", VideoEncoder, "-r", fps
+            "-map", "[v]", "-map", "[a]", "-t", duration, "-r", fps
         ]);
-        if (VideoEncoder == "libx264")
-        {
-            // Measured on 1080p cartoon footage: about a quarter smaller than veryfast/crf 20 at equal SSIM.
-            args.AddRange(["-preset", "medium", "-crf", "22", "-tune", "animation"]);
-        }
+
+        // Software: quality-based (crf 22, tuned for animation). Hardware encoders have no quality setting, so they get
+        // the 1080p bitrate scaled to the promo's size.
+        int bitrate = Math.Max(1500, (int)(Math.Max(hardwareBitrateKbps, 500) * (composition.Width * (double)composition.Height) / (1920 * 1080)));
+        args.AddRange(encoding.VideoArguments(bitrate, crf: 22, profileHigh: false, tune: "animation"));
 
         args.AddRange(["-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", outputPath]);
         return args;

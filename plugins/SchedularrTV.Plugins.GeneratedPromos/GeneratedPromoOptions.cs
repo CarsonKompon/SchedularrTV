@@ -11,8 +11,8 @@ public sealed class GeneratedPromoOptions
 
     public string FfprobePath { get; set; } = "ffprobe";
 
-    /// <summary>Promos rendered at once; each render also keeps ffmpeg busy.</summary>
-    public int Concurrency { get; set; } = 2;
+    /// <summary>Promos rendered at once; each render also keeps ffmpeg busy. Unset: 2, or 1 on a Raspberry Pi.</summary>
+    public int Concurrency { get; set; } = HardwareProfile.Pick(2, 1);
 
     /// <summary>A failed render is not retried until this has passed.</summary>
     public TimeSpan RetryAfter { get; set; } = TimeSpan.FromMinutes(10);

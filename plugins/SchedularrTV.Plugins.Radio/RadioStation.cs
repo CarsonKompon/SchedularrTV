@@ -108,7 +108,8 @@ public sealed class RadioStation
 
     public RadioPreset Preset { get; set; } = RadioPreset.NowPlaying;
 
-    public RadioBackground Background { get; set; } = RadioBackground.BlurredArt;
+    /// <summary>A new station's: the blurred cover, or a plain colour on a Raspberry Pi (a full-screen blur every frame is heavy there).</summary>
+    public RadioBackground Background { get; set; } = SchedularrTV.Core.Platform.HardwareProfile.Pick(RadioBackground.BlurredArt, RadioBackground.Solid);
 
     /// <summary>#rrggbb.</summary>
     public string AccentColor { get; set; } = "#ff5c8a";
@@ -201,11 +202,12 @@ public static class RadioLayout
     }
 
     /// <summary>The ffmpeg filters that turn the sound into the visualizer's picture, sized to its box.</summary>
-    public static string? Filter(RadioVisualizer visualizer, FrameRect rect, string accent)
+    /// <param name="frameRate">The stream's frame rate (drawing more frames than that is wasted work); 30 if not given.</param>
+    public static string? Filter(RadioVisualizer visualizer, FrameRect rect, string accent, int? frameRate = null)
     {
         string color = "0x" + (IsColour(accent) ? accent[1..] : "ff5c8a");
         string size = $"{rect.Width.ToString(CultureInfo.InvariantCulture)}x{rect.Height.ToString(CultureInfo.InvariantCulture)}";
-        int fps = LiveStream.OutputFrameRate;
+        int fps = frameRate ?? LiveStream.OutputFrameRate;
         return visualizer switch
         {
             RadioVisualizer.Bars => $"showfreqs=s={size}:mode=bar:ascale=log:fscale=log:win_size=2048:colors={color},fps={fps}",

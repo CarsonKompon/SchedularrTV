@@ -39,6 +39,7 @@
     that file, the playouts and the guide into this folder (<code>@DefaultRoot</code> unless you choose another).
     When it manages ErsatzTV, it starts it with this folder's lineup.
 </p>
+<LowPowerNotice Title="@($"ErsatzTV does most of the work on {HardwareProfile.DeviceName}")" Advice="ErsatzAdvice" />
 @if (_autoPicked is not null)
 {
     <p class="hint">Lineup folder set to the one ErsatzTV already uses: <code>@_autoPicked</code>.</p>
@@ -92,6 +93,19 @@ else if (OtherLineups.FirstOrDefault() is { } found)
     private string? _autoPicked;
     private bool _checking;
     private GuideCheckResult? _guide;
+
+    // What's heavy for ErsatzTV on a Raspberry Pi: it encodes every channel being watched, in software on a Pi 5.
+    private static IEnumerable<string?> ErsatzAdvice =>
+    [
+        "Every channel someone is watching is re-encoded by ErsatzTV. A Pi manages about one 720p stream at a time"
+            + (HardwareProfile.HasV4l2H264Encoder ? "; this Pi 4 has a hardware H.264 encoder (h264_v4l2m2m) if your ErsatzTV build can use it."
+                : HardwareProfile.Detected is { IsRaspberryPi: true, PiGeneration: >= 5 } ? ", and the Pi 5 has no hardware H.264 encoder." : "."),
+        "New channels here start at 720p, 3 Mbps, without loudness normalisation (each channel's channel.json). Channels made before keep 1080p at 6 Mbps with loudness normalisation; lower them in their channel.json if streams stutter.",
+        "Channels whose files are already H.264/AAC can pass them through without re-encoding: the ersatztv.copy annotation (IPTV passthrough sets it).",
+        "Items with overlays are always re-encoded, even on passed-through channels, and burning subtitles into the picture needs a re-encode too.",
+        "ErsatzTV writes its stream segments into the lineup folder's hls folder. Keep that on a USB SSD or in memory (tmpfs) rather than the SD card.",
+        "For more than one or two channels at once, run ErsatzTV on a stronger computer and keep SchedularrTV here (ErsatzTv:PathMappings maps the media paths)."
+    ];
 
     private static string Describe(GuideChannelCheck channel)
     {

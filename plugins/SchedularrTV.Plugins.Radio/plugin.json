@@ -4,14 +4,16 @@
   "version": "1.0.0",
   "description": "Music as a channel: songs from your Jellyfin library, or an internet radio station, shown with the cover, the lyrics and a visualizer that moves with the sound, in one of five looks. A 24/7 music channel, or music between shows. Needs Chrome or Edge on this computer.",
   "author": "SchedularrTV",
-  "apiVersion": "1.4",
+  "apiVersion": "1.8",
   "entryAssembly": "SchedularrTV.Plugins.Radio.dll",
+  "lowPowerNotice": "each station on air is a hidden browser drawing its page without a graphics chip, plus a live encode. Prefer a plain colour background over the blurred cover, Bars or Waveform over Spectrum, and a look other than Vinyl, and capture at about 10 frames per second.",
   "settings": [
     {
       "key": "BrowserPath",
       "label": "Browser",
       "type": "File",
-      "description": "Chrome, Edge or Chromium, run hidden to draw the stations. Leave empty to find one automatically."
+      "description": "Chrome, Edge or Chromium, run hidden to draw the stations. Leave empty to find one automatically.",
+      "lowPowerNote": "On Raspberry Pi OS, install chromium (sudo apt install chromium); Chrome and Edge have no ARM Linux builds."
     },
     {
       "key": "FfmpegPath",
@@ -31,7 +33,9 @@
       "label": "Capture frames per second",
       "type": "Number",
       "placeholder": "20",
-      "description": "How often the page is captured (5 to 30). The visualizer is always drawn at 30 fps from the sound."
+      "lowPowerPlaceholder": "10",
+      "description": "How often the page is captured (5 to 30). The visualizer is drawn from the sound at the stream's own frame rate (App settings → Hardware and video encoding).",
+      "lowPowerNote": "About 10 here (the default): lyrics and the clock don't need more."
     },
     {
       "key": "KeepAliveSeconds",

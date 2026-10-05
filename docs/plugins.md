@@ -130,6 +130,20 @@ Package it with `dotnet publish -c Release -o out/<id>` and zip the `out/<id>` f
 | `channelSettings`, `blockSettings`, `scheduleSettings` | Plugin API 1.1. Generated editor forms for the plugin's YAML sections (below), with the same field types as `settings`. Keys are written as given, so use snake_case. Unknown keys set by hand are kept. |
 | `settingsComponent` | Full type name of a component in the entry assembly, shown in the plugin's settings dialog below the `settings` fields (while the plugin is loaded), for things fields can't do, like downloads. It gets a `[Parameter] PluginSettingsEditor Editor` to read and set values; the Plugins page saves them. |
 | `pages` | Routable components in the entry assembly, each under `/plugins/<id>`. They're added to the sidebar and use the app's layout and styles. |
+| `lowPowerNotice` | Plugin API 1.8. Shown on the plugin's card and in its settings on a Raspberry Pi or other low-power computer: what's heavy there and how to keep it light. |
+| `lowPowerNote`, `lowPowerPlaceholder`, `lowPowerDefault` (on a setting) | Plugin API 1.8. On a low-power computer: a warning under the field, its placeholder, and the value a `default` field starts at, for when the plugin's own default differs there. |
+
+### Low-power computers (Plugin API 1.8)
+
+`SchedularrTV.Core.Platform.HardwareProfile.IsLowPower` says whether the app is using its Raspberry Pi defaults (detected,
+or chosen under **App settings → Hardware and video encoding**); read it each time, since it can change while running.
+Use `HardwareProfile.Pick(standard, lowPower)` for defaults, never to override a value the user set. In your own pages,
+`<LowPowerNotice Title="…" Advice="…" />` (namespace `SchedularrTV.Plugins`) shows a warning only on such a computer;
+`Inline="true"` makes it a hint beside a field.
+
+Plugins that encode video should take their encoder from the app's settings: `LiveEncodingSettings.Current` for
+live streams and `RenderEncodingSettings.Current(preset)` for clips made ahead of time, whose
+`VideoEncoderChoice.VideoArguments(...)` gives the `-c:v …` arguments for the chosen encoder.
 
 Files in a `wwwroot` folder inside the plugin are served at `/plugins/<id>/`.
 

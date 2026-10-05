@@ -28,6 +28,11 @@
     </div>
 }
 
+<LowPowerNotice Title="@($"Streamer channels are the heaviest kind on {SchedularrTV.Core.Platform.HardwareProfile.DeviceName}")" Advice="LowPowerAdvice">
+    While someone is live, the stream is decoded in software, the chat and pop-ups are drawn over it as see-through frames, and
+    the whole picture is encoded again. The countdown while nobody is live is light.
+</LowPowerNotice>
+
 <div class="card">
     <div class="card-head">
         <h2>yt-dlp</h2>
@@ -469,6 +474,24 @@
     private bool _checkingYtDlp = true;
     private string? _ytDlpProblem;
     private double? _downloading;
+
+    // On a Raspberry Pi: what in the current settings is heavy, and what to choose instead.
+    private IEnumerable<string?> LowPowerAdvice =>
+    [
+        Settings.MaxHeight > 480
+            ? $"Highest stream quality is {Settings.MaxHeight}p. Choose 480 or 360 (plugin settings): the stream is decoded in software, and 720p60 alone can take most of the processor."
+            : null,
+        Settings.CaptureFrameRate > 8
+            ? $"Capture frames per second is {Settings.CaptureFrameRate}. 5 to 8 is enough for chat and pop-ups, and each frame is a full see-through picture."
+            : null,
+        Settings.PollInterval < TimeSpan.FromSeconds(90)
+            ? $"Who's live is checked every {Settings.PollInterval.TotalSeconds:0} seconds. Every two minutes or more is lighter and barely slower to notice."
+            : null,
+        _channels.Count(channel => !string.IsNullOrEmpty(channel.Id)) > 1
+            ? "With more than one streamer channel, only tune one at a time: two live streams at once is more than a Pi can encode."
+            : null,
+        "YouTube replays with separate picture and sound are a second download and decode; prefer live streams or Twitch replays here."
+    ];
 
     protected override void OnInitialized()
     {

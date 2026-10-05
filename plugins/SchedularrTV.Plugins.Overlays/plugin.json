@@ -4,8 +4,9 @@
   "version": "1.0.0",
   "description": "Screen bugs, lower thirds and other graphics over your channels, designed in a visual editor and timed per programme: all the way through, at the start or end, part-way through, every few minutes, or by the clock, with fades. Set them up for a whole channel or just a block, or have a block (or channel) show another channel's, kept in step. Needs ErsatzTV Next with its graphics engine.",
   "author": "SchedularrTV",
-  "apiVersion": "1.2",
+  "apiVersion": "1.8",
   "entryAssembly": "SchedularrTV.Plugins.Overlays.dll",
+  "lowPowerNotice": "drawing overlays is cheap, but ErsatzTV always re-encodes items that carry them, even on channels set to pass video through, and does it in software on a Pi. Use them on channels that are re-encoded anyway, rather than adding them to passed-through ones.",
   "settings": [
     {
       "key": "RenderFolder",

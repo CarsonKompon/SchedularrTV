@@ -113,6 +113,11 @@ else if (_saved && !Form.IsDirty)
     <FolderSettings Form="Form" Changed="Edited" />
 </div>
 
+<div class="card" id="hardware">
+    <div class="card-head"><h2>Hardware and video encoding</h2></div>
+    <PerformanceSettings Form="Form" Changed="Edited" />
+</div>
+
 <div class="save-dock" role="region" aria-label="App settings" style="@(Form.IsDirty ? "" : "display:none;")">
     <div class="save-dock-text">
         <span class="status-dot warn"></span>

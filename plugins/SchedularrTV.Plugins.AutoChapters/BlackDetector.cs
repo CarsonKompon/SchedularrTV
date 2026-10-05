@@ -8,6 +8,18 @@ namespace SchedularrTV.AutoChapters;
 public sealed record DetectionOptions(TimeSpan MinBlack, double PixelThreshold, bool RequireSilence)
 {
     public static DetectionOptions Default { get; } = new(TimeSpan.FromSeconds(0.4), 0.1, true);
+
+    /// <summary>Decoder threads; 0 lets ffmpeg use every core.</summary>
+    public int Threads { get; init; }
+
+    /// <summary>
+    /// ffmpeg's <c>-hwaccel</c> (<c>auto</c>, <c>drm</c> on a Raspberry Pi, <c>cuda</c>, <c>qsv</c>…), or null to decode
+    /// in software. Only the decode moves to the video chip; the frames come back for the black and silence filters.
+    /// </summary>
+    public string? HardwareDecode { get; init; }
+
+    /// <summary>The same options decoding in software, for when the hardware decoder can't read a file.</summary>
+    public DetectionOptions InSoftware() => this with { HardwareDecode = null };
 }
 
 /// <summary>A stretch of black picture or silent sound, in seconds from the start of the file.</summary>
@@ -53,11 +65,22 @@ public static partial class BlackDetector
     {
         string minBlack = options.MinBlack.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
         string threshold = options.PixelThreshold.ToString("0.###", CultureInfo.InvariantCulture);
-        List<string> arguments =
+        List<string> arguments = ["-hide_banner", "-nostats", "-nostdin"];
+        if (options.HardwareDecode is { Length: > 0 } hardware)
+        {
+            arguments.AddRange(["-hwaccel", hardware]);
+        }
+
+        if (options.Threads > 0)
+        {
+            arguments.AddRange(["-threads", options.Threads.ToString(CultureInfo.InvariantCulture)]);
+        }
+
+        arguments.AddRange(
         [
-            "-hide_banner", "-nostats", "-nostdin", "-i", file,
+            "-i", file,
             "-map", "0:v:0", "-vf", $"scale=320:-2,blackdetect=d={minBlack}:pic_th=0.98:pix_th={threshold}"
-        ];
+        ]);
 
         if (options.RequireSilence)
         {
@@ -73,8 +96,29 @@ public static partial class BlackDetector
         return arguments;
     }
 
-    /// <summary>Runs ffmpeg over a file. Throws when ffmpeg can't be started or fails.</summary>
+    /// <summary>
+    /// Runs ffmpeg over a file. Throws when ffmpeg can't be started or fails. If a hardware decoder was asked for and
+    /// ffmpeg fails with it, the file is read again in software.
+    /// </summary>
     public static async Task<Detection> AnalyseAsync(string ffmpeg, string file, TimeSpan? knownDuration, DetectionOptions options, CancellationToken cancellationToken)
+    {
+        if (options.HardwareDecode is { Length: > 0 })
+        {
+            try
+            {
+                return await AnalyseOnceAsync(ffmpeg, file, knownDuration, options, cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException) when (!cancellationToken.IsCancellationRequested)
+            {
+                options = options.InSoftware();
+            }
+        }
+
+        return await AnalyseOnceAsync(ffmpeg, file, knownDuration, options, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<Detection> AnalyseOnceAsync(string ffmpeg, string file, TimeSpan? knownDuration, DetectionOptions options,
+        CancellationToken cancellationToken)
     {
         var start = new ProcessStartInfo(ffmpeg)
         {

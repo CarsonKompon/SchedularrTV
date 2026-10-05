@@ -1,0 +1,219 @@
+@* Hardware profile and video encoding (live page channels, rendered clips); part of App settings. *@
+@using SchedularrTV.Service.Hosting
+
+<div class="grid grid-2">
+    <div class="field">
+        <span>This computer</span>
+        <code style="padding:8px 0;">@HardwareProfile.Detected.Summary</code>
+    </div>
+    <label class="field">
+        <span>Hardware profile</span>
+        <select value="@Form.PerformanceValue(HardwareProfile.SettingKey)" @onchange="e => Edit(HardwareProfile.SettingKey, e.Value?.ToString())">
+            <option value="">Automatic (@(HardwareProfile.Detected.LooksLowPower ? "low-power" : "standard") for this computer)</option>
+            <option value="@nameof(HardwareMode.LowPower)">Low-power (Raspberry Pi and similar)</option>
+            <option value="@nameof(HardwareMode.Standard)">Standard</option>
+        </select>
+    </label>
+</div>
+<p class="hint">
+    @if (HardwareProfile.IsLowPower)
+    {
+        <text>Using the <strong>low-power</strong> defaults: smaller and faster encodes, fewer things at once, and warnings beside settings that are known to be heavy here.</text>
+    }
+    else
+    {
+        <text>Using the standard defaults. The low-power profile lightens them for a Raspberry Pi or a similar small computer, and shows warnings where settings are heavy.</text>
+    }
+    Only defaults change; anything you've set yourself is kept. A changed profile applies once saved.
+</p>
+<LowPowerNotice Title="@($"Running on {HardwareProfile.DeviceName}")" Advice="GeneralAdvice" />
+
+<h3 style="margin:18px 0 6px;">Live page channels</h3>
+<p class="hint">Web page channels, radio stations, the TV guide channel and streamer channels: each one on air is a hidden browser and one live encode.</p>
+<div class="grid grid-3">
+    <label class="field">
+        <span>Encoder</span>
+        <select value="@Form.PerformanceValue("LiveEncoding:Encoder")" @onchange="e => Edit("LiveEncoding:Encoder", e.Value?.ToString())">
+            <option value="">Default (@LiveDefaults.Video.Encoder.Label)</option>
+            @foreach (H264Encoder encoder in H264Encoder.All)
+            {
+                <option value="@encoder.Name">@encoder.Label</option>
+            }
+        </select>
+    </label>
+    <label class="field">
+        <span>x264 speed preset</span>
+        <select value="@Form.PerformanceValue("LiveEncoding:Preset")" @onchange="e => Edit("LiveEncoding:Preset", e.Value?.ToString())">
+            <option value="">Default (@LiveDefaults.Video.Preset)</option>
+            @foreach (string preset in X264Presets.All)
+            {
+                <option value="@preset">@preset</option>
+            }
+        </select>
+    </label>
+    <label class="field">
+        <span>Picture size</span>
+        <select value="@Form.PerformanceValue("LiveEncoding:Height")" @onchange="e => Edit("LiveEncoding:Height", e.Value?.ToString())">
+            <option value="">Default (@(LiveDefaults.Height)p)</option>
+            @foreach (int height in LiveEncodingSettings.Heights)
+            {
+                <option value="@height">@(height)p (@(LiveEncodingSettings.WidthFor(height))×@height)</option>
+            }
+        </select>
+    </label>
+    <label class="field">
+        <span>Frames per second</span>
+        <select value="@Form.PerformanceValue("LiveEncoding:FrameRate")" @onchange="e => Edit("LiveEncoding:FrameRate", e.Value?.ToString())">
+            <option value="">Default (@LiveDefaults.FrameRate)</option>
+            @foreach (int fps in LiveEncodingSettings.FrameRates)
+            {
+                <option value="@fps">@fps</option>
+            }
+        </select>
+    </label>
+    <label class="field">
+        <span>Bitrate (kbps)</span>
+        <input type="number" min="300" max="20000" value="@Form.PerformanceValue("LiveEncoding:BitrateKbps")" placeholder="@LiveDefaults.BitrateKbps"
+               @onchange="e => Edit("LiveEncoding:BitrateKbps", e.Value?.ToString())" />
+    </label>
+    <label class="field">
+        <span>Encoder threads</span>
+        <input type="number" min="0" max="16" value="@Form.PerformanceValue("LiveEncoding:Threads")" placeholder="All of them"
+               @onchange="e => Edit("LiveEncoding:Threads", e.Value?.ToString())" />
+    </label>
+</div>
+<p class="hint">
+    Pages are still laid out at 1280×720 and scaled to the size chosen. Blank fields use the defaults for this computer.
+    Channels on air restart with new settings the next time they're tuned.
+</p>
+<LowPowerNotice Inline="true" Advice="LiveWarnings" />
+@if (Live.Video.Encoder.Hardware)
+{
+    <p class="hint warn">
+        A hardware encoder only works if this computer has it and ffmpeg was built with it; if not, live channels stop as soon
+        as they start. Watch one after saving.
+    </p>
+}
+
+<h3 style="margin:18px 0 6px;">Rendered clips</h3>
+<p class="hint">Generated promos and credit squeezes, made ahead of time in the background. A slower preset makes smaller files at the same quality.</p>
+<div class="grid grid-3">
+    <label class="field">
+        <span>Encoder</span>
+        <select value="@Form.PerformanceValue("Rendering:Encoder")" @onchange="e => Edit("Rendering:Encoder", e.Value?.ToString())">
+            <option value="">Default (@H264Encoder.Software.Label)</option>
+            @foreach (H264Encoder encoder in H264Encoder.All)
+            {
+                <option value="@encoder.Name">@encoder.Label</option>
+            }
+        </select>
+    </label>
+    <label class="field">
+        <span>x264 speed preset</span>
+        <select value="@Form.PerformanceValue("Rendering:Preset")" @onchange="e => Edit("Rendering:Preset", e.Value?.ToString())">
+            <option value="">Default (@(HardwareProfile.IsLowPower ? "superfast" : "medium for promos, veryfast for squeezes"))</option>
+            @foreach (string preset in X264Presets.All)
+            {
+                <option value="@preset">@preset</option>
+            }
+        </select>
+    </label>
+    <label class="field">
+        <span>Encoder threads</span>
+        <input type="number" min="0" max="16" value="@Form.PerformanceValue("Rendering:Threads")" placeholder="@(HardwareProfile.IsLowPower ? "2" : "All of them")"
+               @onchange="e => Edit("Rendering:Threads", e.Value?.ToString())" />
+    </label>
+    <label class="field">
+        <span>Hardware encoder bitrate at 1080p (kbps)</span>
+        <input type="number" min="500" max="40000" value="@Form.PerformanceValue("Rendering:HardwareBitrateKbps")" placeholder="@RenderingDefaults.HardwareBitrateKbps"
+               @onchange="e => Edit("Rendering:HardwareBitrateKbps", e.Value?.ToString())" />
+    </label>
+</div>
+<p class="hint">
+    Software encodes aim for a quality; hardware encoders have no quality setting, so they use this bitrate (scaled to the
+    clip's size). If a hardware encoder fails, the clip is made in software instead, so promos and squeezes are never lost.
+</p>
+<LowPowerNotice Inline="true" Advice="RenderingWarnings" />
+
+@code {
+    [Parameter, EditorRequired] public AppSettingsForm Form { get; set; } = default!;
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private static LiveEncodingSettings LiveDefaults => LiveEncodingSettings.Defaults;
+
+    private static RenderEncodingSettings RenderingDefaults => RenderEncodingSettings.Defaults("medium");
+
+    // The settings as they'd be with what's typed here (blank fields take this computer's defaults).
+    private string? Typed(string key) => Form.PerformanceValue(key) is { Length: > 0 } value ? value : null;
+
+    private LiveEncodingSettings Live => LiveEncodingSettings.From(Typed);
+
+    private RenderEncodingSettings Rendering => RenderEncodingSettings.From(Typed, "medium");
+
+    private static IEnumerable<string?> GeneralAdvice =>
+    [
+        "The scheduler itself is light here. What's heavy is encoding video: ErsatzTV re-encodes every channel being watched, and the live page channels, generated promos, credit squeezes and Auto Chapters each run ffmpeg too.",
+        HardwareProfile.HasV4l2H264Encoder
+            ? "This Pi has a hardware H.264 encoder: choose \"Raspberry Pi 4 hardware (h264_v4l2m2m)\" below to take live channels and rendered clips off the processor."
+            : HardwareProfile.Detected is { IsRaspberryPi: true, PiGeneration: >= 5 }
+                ? "The Pi 5 has no hardware H.264 encoder, so everything is encoded in software: keep the presets fast and the sizes small."
+                : null,
+        HardwareProfile.Detected.MemoryGb is > 0 and < 3
+            ? "With under 3 GB of memory, keep to one live page channel at a time (each hidden browser takes 300–500 MB) and avoid the IPTV guide grabber and the larger Local AI models."
+            : null,
+        "Keep the data folder (and ErsatzTV's hls folder) on a USB SSD rather than the SD card: playback state, playouts and stream segments are rewritten often."
+    ];
+
+    private IEnumerable<string?> LiveWarnings
+    {
+        get
+        {
+            LiveEncodingSettings live = Live;
+            bool software = !live.Video.Encoder.Hardware;
+            return
+            [
+                software && X264Presets.All.ToList().IndexOf(live.Video.Preset) > X264Presets.All.ToList().IndexOf("superfast")
+                    ? $"x264 \"{live.Video.Preset}\" is slow for a live encode here; ultrafast or superfast keeps up."
+                    : null,
+                live.Height >= 720 && live.FrameRate >= 30 && software
+                    ? "720p at 30 fps is about twice the work of 540p; one such channel can take most of the processor."
+                    : null,
+                live.BitrateKbps > 4000 ? "Over 4 Mbps adds little for page channels and costs more to encode and send." : null,
+                live.Video.Encoder.Name == "h264_v4l2m2m" && !HardwareProfile.HasV4l2H264Encoder
+                    ? "This computer has no V4L2 H.264 encoder (the Raspberry Pi 5 doesn't), so h264_v4l2m2m won't work here."
+                    : null,
+                live.Video.Encoder.Hardware && live.Video.Encoder.Name != "h264_v4l2m2m" && HardwareProfile.Detected.IsRaspberryPi
+                    ? $"A Raspberry Pi has no {live.Video.Encoder.Label} encoder."
+                    : null
+            ];
+        }
+    }
+
+    private IEnumerable<string?> RenderingWarnings
+    {
+        get
+        {
+            RenderEncodingSettings rendering = Rendering;
+            bool software = !rendering.Video.Encoder.Hardware;
+            string? preset = Typed("Rendering:Preset");
+            return
+            [
+                software && preset is not null && X264Presets.IsSlow(preset)
+                    ? $"x264 \"{preset}\" can take several minutes per promo here; superfast or veryfast are much quicker."
+                    : null,
+                software && rendering.Video.Threads == 0
+                    ? "With every thread, a render can make the channels on air stutter; 2 leaves room for them."
+                    : null,
+                rendering.Video.Encoder.Name == "h264_v4l2m2m" && !HardwareProfile.HasV4l2H264Encoder
+                    ? "This computer has no V4L2 H.264 encoder (the Raspberry Pi 5 doesn't); clips would be made in software anyway."
+                    : null
+            ];
+        }
+    }
+
+    private Task Edit(string key, string? value)
+    {
+        Form.SetPerformance(key, value);
+        return Changed.InvokeAsync();
+    }
+}

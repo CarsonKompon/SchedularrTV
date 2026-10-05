@@ -27,6 +27,11 @@
     <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status">@_message</div>
 }
 
+<LowPowerNotice Title="@($"Web page channels on {SchedularrTV.Core.Platform.HardwareProfile.DeviceName}")" Advice="LowPowerAdvice">
+    Each channel on air is a hidden browser drawing the page without a graphics chip, plus a live encode. One at a time is
+    comfortable; two at once can use the whole processor.
+</LowPowerNotice>
+
 @foreach (WebChannel channel in _channels)
 {
     bool editing = ReferenceEquals(channel, _editing);
@@ -75,6 +80,7 @@
                 </label>
             </div>
             <p class="hint" style="margin:-4px 0 12px;">@preset.Description</p>
+            <LowPowerNotice Inline="true" Title="@PresetWarning(preset.Id)" />
 
             @if (preset.Id == WebPresets.Custom)
             {
@@ -328,6 +334,27 @@
 
 @code {
     private List<WebChannel> _channels = [];
+
+    // On a Raspberry Pi: the presets that draw continuously with WebGL or canvas are far heavier without a graphics chip.
+    private static string? PresetWarning(string presetId) => presetId switch
+    {
+        WebPresets.Radar => "Weather radar is an animated WebGL map; drawn in software here it's slow and jerky. The clock and WeatherStar are much lighter.",
+        WebPresets.Globe => "The wind globe animates thousands of particles every frame; drawn in software here it's very slow. The clock and WeatherStar are much lighter.",
+        WebPresets.Custom => "Busy pages (video, WebGL, large animations) are slow without a graphics chip; a simple page works best here.",
+        _ => null
+    };
+
+    private IEnumerable<string?> LowPowerAdvice =>
+    [
+        Settings.CaptureFrameRate > 10
+            ? $"Capture frames per second is {Settings.CaptureFrameRate}. 5 to 10 is plenty for forecasts and a clock (plugin settings)."
+            : null,
+        _channels.Any(channel => channel.Preset is WebPresets.Radar or WebPresets.Globe)
+            ? "Weather radar and the wind globe are heavy WebGL animations here; prefer WeatherStar or the clock."
+            : null,
+        "Used as short segments between programmes, each one starts a browser (a few seconds on a Pi); a longer keep-alive saves restarting it.",
+        "The hidden browser is Chromium: on Raspberry Pi OS, sudo apt install chromium."
+    ];
     private WebChannel? _editing;
     private string? _confirmDelete;
     private string _query = string.Empty;

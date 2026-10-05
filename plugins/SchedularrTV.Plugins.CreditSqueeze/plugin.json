@@ -4,8 +4,9 @@
   "version": "1.0.0",
   "description": "As a show's end credits roll, they shrink into a box and the rest of the picture says what's on next (with its picture and time, and what's after it), like network TV. Credits are found from chapters named for them, or Jellyfin's media segments (Jellyfin 10.10+ with a segment provider such as Intro Skipper). Shows' own outros can be squeezed too. Each channel and block sets the odds.",
   "author": "SchedularrTV",
-  "apiVersion": "1.7",
+  "apiVersion": "1.8",
   "entryAssembly": "SchedularrTV.Plugins.CreditSqueeze.dll",
+  "lowPowerNotice": "each squeeze decodes the credits and encodes them again in software, about real time at 720p on a Pi 5 and slower on a Pi 4. Keep 720p and \"only for watched channels\", and turn the shrinking animation off on channels where squeezes come out late. The encoder and preset are under App settings → Hardware and video encoding.",
   "settings": [
     {
       "key": "SaveFolder",
@@ -26,7 +27,8 @@
       "label": "Only make squeezes for channels someone is watching",
       "type": "Boolean",
       "default": "true",
-      "description": "Uses ErsatzTV's stream activity. Tuning in starts making the channel's squeezes; credits whose squeeze isn't ready in time play as they are."
+      "description": "Uses ErsatzTV's stream activity. Tuning in starts making the channel's squeezes; credits whose squeeze isn't ready in time play as they are.",
+      "lowPowerNote": "Keep this on here."
     },
     {
       "key": "KeepDays",
@@ -53,7 +55,8 @@
       "label": "Squeeze resolution",
       "type": "Choice",
       "default": "720p",
-      "options": [ "720p", "1080p" ]
+      "options": [ "720p", "1080p" ],
+      "lowPowerNote": "Keep 720p here: 1080p is over twice the work for each squeeze."
     },
     {
       "key": "FfmpegPath",

@@ -14,9 +14,12 @@ public static class PluginApi
     /// media enrichers (<c>AddMediaEnricher</c>). 1.3 added external channels (<c>AddExternalChannels</c>) and
     /// <c>IScheduleRepublisher</c>. 1.4 added <c>IMediaLibraryNotifier</c>. 1.5 added text generators
     /// (<c>AddTextGenerator</c>). 1.6 added <c>IExternalChannelSource.EditPath</c>, which lists external channels on the
-    /// Channels page and dashboard. 1.7 added <c>IPromoMaker</c>, for promos made on request.
+    /// Channels page and dashboard. 1.7 added <c>IPromoMaker</c>, for promos made on request. 1.8 added the hardware
+    /// profile and encoding settings (<c>SchedularrTV.Core.Platform</c>: <c>HardwareProfile</c>, <c>LiveEncodingSettings</c>,
+    /// <c>RenderEncodingSettings</c>), the <c>LowPowerNotice</c> component, and the manifest's <c>lowPowerNotice</c>
+    /// and settings' <c>lowPowerNote</c>, <c>lowPowerPlaceholder</c> and <c>lowPowerDefault</c>.
     /// </remarks>
-    public static readonly Version Version = new(1, 7);
+    public static readonly Version Version = new(1, 8);
 
     public static bool IsCompatible(Version wanted) => wanted.Major == Version.Major && wanted.Minor <= Version.Minor;
 }
@@ -87,6 +90,12 @@ public sealed class PluginManifest
     /// <summary>Where the settings for a built-in plugin are edited, if not on the Plugins page.</summary>
     [JsonIgnore]
     public string? SettingsLink { get; set; }
+
+    /// <summary>
+    /// Shown on the plugin's card and settings on a Raspberry Pi or other low-power computer: what about the plugin is
+    /// heavy there and how to keep it light. Null for none.
+    /// </summary>
+    public string? LowPowerNotice { get; set; }
 }
 
 public sealed class PluginDependency
@@ -129,6 +138,15 @@ public sealed class PluginSetting
 
     /// <summary>Choices for <see cref="PluginSettingType.Choice"/>.</summary>
     public List<string> Options { get; set; } = [];
+
+    /// <summary>Shown under the field on a low-power computer: what to set it to there, or what to avoid.</summary>
+    public string? LowPowerNote { get; set; }
+
+    /// <summary>The placeholder on a low-power computer, where the plugin's default differs (e.g. a lower frame rate).</summary>
+    public string? LowPowerPlaceholder { get; set; }
+
+    /// <summary>What <see cref="Default"/> is on a low-power computer, where the plugin's own default differs.</summary>
+    public string? LowPowerDefault { get; set; }
 }
 
 public sealed class PluginPage

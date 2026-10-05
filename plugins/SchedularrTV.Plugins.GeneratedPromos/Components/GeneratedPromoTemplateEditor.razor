@@ -754,6 +754,18 @@
         "The episode clip's sound isn't on (under Canvas), so there's nothing for this to mute yet.";
     private int _tries;
     private static readonly string[] Handles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+    // On a Raspberry Pi: what in this template makes each render slow (each promo is encoded in software there).
+    private IEnumerable<string?> LowPowerTemplateWarnings =>
+    [
+        Template.Width * Template.Height > 1280 * 720
+            ? $"{Template.Width} × {Template.Height} takes about twice as long to render here as 1280 × 720; 720p looks the same on most channels."
+            : null,
+        Template.Fps > 30 ? $"{Template.Fps} fps is twice the frames of 30 to draw and encode." : null,
+        Template.Background is { Length: > 0 } background && !PromoRenderer.IsImage(background)
+            ? "A looping video background is decoded and scaled for every frame; a picture is much lighter here."
+            : null
+    ];
+
     private static readonly (int Width, int Height, string Label)[] Sizes =
     [
         (1920, 1080, "1920 × 1080 (1080p)"),
@@ -1632,6 +1644,7 @@
                 </label>
             </div>
         }
+        <LowPowerNotice Inline="true" Advice="LowPowerTemplateWarnings" />
         <div class="field">
             <span>@(Template.BackgroundClip is null || GeneratedPromoResolver.UsesClip(Template.Generator) ? "Background image or video (optional; videos loop)" : "Fallback background image or video (when the episode file can't be read)")</span>
             <FilePathPicker Value="@Template.Background" ValueChanged="value => Set(() => Template.Background = value)"

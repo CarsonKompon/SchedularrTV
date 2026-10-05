@@ -327,6 +327,10 @@
                 <label class="check"><input type="checkbox" checked="@look.Animate" @onchange="e => Set(() => look.Animate = e.Value is true)" />
                     <span>Shrink the credits into place (side by side, they grow back at the end)</span></label>
             </div>
+            @if (look.Animate)
+            {
+                <LowPowerNotice Inline="true" Title="The shrinking animation rescales the credits on every frame, the slowest part of a squeeze here. Turn it off if squeezes aren't ready in time." />
+            }
 
             <h3 class="cs-heading">How often <span class="cs-of">(@(Block is null ? "the channel" : "this block"), whichever template)</span></h3>
             <label class="field"><span>Episodes' end credits: @Percent(section.CreditsChance)</span>

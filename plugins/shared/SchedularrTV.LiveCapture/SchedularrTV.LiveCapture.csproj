@@ -18,7 +18,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- For the encoding settings and hardware profile (SchedularrTV.Core.Platform); supplied by the scheduler at runtime. -->
+    <ProjectReference Include="..\..\..\src\SchedularrTV.Plugins.Abstractions\SchedularrTV.Plugins.Abstractions.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Microsoft.Extensions.Logging" />
+    <Using Include="SchedularrTV.Core.Platform" />
   </ItemGroup>
 
 </Project>

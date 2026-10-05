@@ -66,7 +66,7 @@ public sealed class LineupPublisher(
             string channelConfigPath = Path.Combine(channelFolder, _options.Lineup.ChannelConfigFileName);
             if (!File.Exists(channelConfigPath))
             {
-                await File.WriteAllTextAsync(channelConfigPath, DefaultChannelConfig, cancellationToken).ConfigureAwait(false);
+                await File.WriteAllTextAsync(channelConfigPath, NewChannelConfig, cancellationToken).ConfigureAwait(false);
                 logger.LogInformation("Created default channel config at {Path}.", channelConfigPath);
             }
             else
@@ -203,6 +203,44 @@ public sealed class LineupPublisher(
           }
         }
         """;
+
+    /// <summary>
+    /// What a new channel starts with on a Raspberry Pi (or another low-power computer): 720p at 3 Mbps and no loudness
+    /// normalisation, since ErsatzTV encodes in software there (the Pi 5 has no H.264 encoder) and a 1080p encode with
+    /// loudnorm is more than one Pi can do in real time. Like the standard one, written once and then left to the user.
+    /// </summary>
+    internal const string LowPowerChannelConfig = """
+        {
+          "version": "https://ersatztv.org/channel/version/0.1.0",
+          "playout": { "folder": "./playout" },
+          "ffmpeg": { "ffmpeg_path": "", "ffprobe_path": "", "disabled_filters": [] },
+          "normalization": {
+            "audio": {
+              "format": "aac",
+              "bitrate_kbps": 160,
+              "buffer_kbps": 320,
+              "channels": 2,
+              "sample_rate_hz": 48000,
+              "normalize_loudness": false,
+              "loudness": { "integrated_target": -16, "range_target": 11, "true_peak": -1.5 }
+            },
+            "video": {
+              "format": "h264",
+              "bit_depth": 8,
+              "width": 1280,
+              "height": 720,
+              "bitrate_kbps": 3000,
+              "buffer_kbps": 6000,
+              "accel": null,
+              "tonemap_algorithm": "linear"
+            },
+            "subtitle": { "mode": "burn" }
+          }
+        }
+        """;
+
+    /// <summary>The channel.json a new channel gets on this computer.</summary>
+    internal static string NewChannelConfig => SchedularrTV.Core.Platform.HardwareProfile.IsLowPower ? LowPowerChannelConfig : DefaultChannelConfig;
 }
 
 internal sealed class LineupDocument

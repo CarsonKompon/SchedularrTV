@@ -77,10 +77,17 @@ public sealed record LiveStreamSpec
     /// <summary>Anything else that should restart the stream when it changes (the same recording starting over, say).</summary>
     public string? RestartToken { get; init; }
 
+    /// <summary>
+    /// How the stream is encoded (the <c>LiveEncoding</c> app settings): encoder, preset, size, frame rate and bitrate.
+    /// Pages are still laid out on the 1280×720 frame; a smaller size is scaled down at the end.
+    /// </summary>
+    public LiveEncodingSettings Encoding { get; init; } = LiveEncodingSettings.Current;
+
     /// <summary>Changes whenever anything that affects the running stream does, so it's started again with the new settings.</summary>
     public string Fingerprint =>
         string.Join('|', PageUrl, Ffmpeg, BrowserPath, CaptureFrameRate, WindowStreamUrl, Window, Audio, MusicFolder,
-            Volume.ToString(CultureInfo.InvariantCulture), AudioStreamUrl, Visualizer, VisualizerRect, PageOnTop, Recorded, RestartToken);
+            Volume.ToString(CultureInfo.InvariantCulture), AudioStreamUrl, Visualizer, VisualizerRect, PageOnTop, Recorded, RestartToken,
+            Encoding.Fingerprint);
 
     /// <summary>The options before a window or sound stream's <c>-i</c>.</summary>
     internal IEnumerable<string> InputOptions()
@@ -108,14 +115,28 @@ public sealed record LiveStreamSpec
 /// </remarks>
 public sealed class LiveStream : IAsyncDisposable
 {
+    /// <summary>The frame pages are laid out on (and window and visualizer rectangles measured against).</summary>
     public const int Width = 1280;
     public const int Height = 720;
+
+    /// <summary>The standard output frame rate; the stream's own is <see cref="LiveEncodingSettings.FrameRate"/>.</summary>
     public const int OutputFrameRate = 30;
 
-    /// <summary>What ErsatzTV is told about these streams, so it needn't open one twice to find out.</summary>
-    public static string ProbeHint => $$"""
-        {"format_name":"mpegts","video":[{"stream_index":0,"codec":"h264","width":{{Width}},"height":{{Height}},"pix_fmt":"yuv420p","frame_rate":"{{OutputFrameRate}}","profile":"high"}],"audio":[{"stream_index":1,"codec":"aac","channels":2}]}
-        """.Trim();
+    /// <summary>What ErsatzTV is told about these streams, with the encoding settings in use now.</summary>
+    public static string ProbeHint => ProbeHintFor(LiveEncodingSettings.Current);
+
+    /// <summary>
+    /// What ErsatzTV is told about streams encoded with <paramref name="encoding"/>, so it needn't open one twice to find
+    /// out. It must match what <see cref="Arguments"/> produces.
+    /// </summary>
+    public static string ProbeHintFor(LiveEncodingSettings encoding)
+    {
+        // The Pi's V4L2 encoder is left on its own profile, so none is claimed for it.
+        string profile = encoding.Video.Encoder.Name == "h264_v4l2m2m" ? "" : ",\"profile\":\"high\"";
+        string video = string.Create(CultureInfo.InvariantCulture,
+            $"\"stream_index\":0,\"codec\":\"h264\",\"width\":{encoding.Width},\"height\":{encoding.Height},\"pix_fmt\":\"yuv420p\",\"frame_rate\":\"{encoding.FrameRate}\"{profile}");
+        return "{\"format_name\":\"mpegts\",\"video\":[{" + video + "}],\"audio\":[{\"stream_index\":1,\"codec\":\"aac\",\"channels\":2}]}";
+    }
 
     private const int PacketSize = 188;
     private static readonly string[] MusicExtensions = [".mp3", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".wav"];
@@ -274,6 +295,8 @@ public sealed class LiveStream : IAsyncDisposable
     public static IReadOnlyList<string> Arguments(LiveStreamSpec spec, string? playlist)
     {
         string Number(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+        LiveEncodingSettings encoding = spec.Encoding;
+        int fps = encoding.FrameRate;
         List<string> arguments =
         [
             "-hide_banner", "-loglevel", "warning", "-nostdin",
@@ -335,14 +358,14 @@ public sealed class LiveStream : IAsyncDisposable
             // The page keeps the timing (its frames are paced by the clock): a copy of it, filled in, is the dark background;
             // the window's stream goes over that, and the page itself (see-through where it draws nothing) over both.
             graph.Add($"[0:v]scale={Width}:{Height}:force_original_aspect_ratio=decrease,pad={Width}:{Height}:(ow-iw)/2:(oh-ih)/2:color=black@0,"
-                      + $"setsar=1,fps={OutputFrameRate},format=rgba,split=2[pagetop][pagebase]");
+                      + $"setsar=1,fps={fps},format=rgba,split=2[pagetop][pagebase]");
             // Filled after the change to yuv420p: older ffmpegs' drawbox only takes YUV pictures.
             graph.Add($"[pagebase]format=yuv420p,drawbox=x=0:y=0:w=iw:h=ih:color=0x0b0d12@1:t=fill[base]");
             current = "[base]";
         }
         else
         {
-            graph.Add($"[0:v]scale={Width}:{Height}:force_original_aspect_ratio=decrease,pad={Width}:{Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={OutputFrameRate}[page]");
+            graph.Add($"[0:v]scale={Width}:{Height}:force_original_aspect_ratio=decrease,pad={Width}:{Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps}[page]");
             current = "[page]";
         }
 
@@ -352,7 +375,7 @@ public sealed class LiveStream : IAsyncDisposable
             // past the pad that should hold it ("Padded dimensions cannot be smaller than input dimensions").
             FrameRect rect = asked with { Width = Math.Max(2, asked.Width / 2 * 2), Height = Math.Max(2, asked.Height / 2 * 2) };
             graph.Add($"[{windowInput}:v]setpts=PTS-STARTPTS,scale={rect.Width}:{rect.Height}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
-                      + $"pad={rect.Width}:{rect.Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={OutputFrameRate}[window]");
+                      + $"pad={rect.Width}:{rect.Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps}[window]");
             graph.Add($"{current}[window]overlay={rect.X}:{rect.Y}:eof_action=pass:shortest=0[windowed]");
             current = "[windowed]";
         }
@@ -372,16 +395,19 @@ public sealed class LiveStream : IAsyncDisposable
             current = "[visualized]";
         }
 
-        graph.Add($"{current}format=yuv420p[v]");
+        // A smaller stream (the low-power default) is laid out at full size and scaled once at the end, so every
+        // rectangle above stays in 1280×720 terms.
+        string resize = encoding.Height != Height ? $"scale={encoding.Width}:{encoding.Height}:flags=bilinear," : "";
+        graph.Add($"{current}{resize}format=yuv420p[v]");
         graph.Add(audioFilter);
 
+        string gop = (fps * 2).ToString(CultureInfo.InvariantCulture);
         arguments.AddRange(["-filter_complex", string.Join(';', graph), "-map", "[v]", "-map", "[a]"]);
+        arguments.AddRange(["-r", fps.ToString(CultureInfo.InvariantCulture)]);
+        arguments.AddRange(encoding.Video.VideoArguments(encoding.BitrateKbps));
         arguments.AddRange(
         [
-            "-r", OutputFrameRate.ToString(CultureInfo.InvariantCulture),
-            "-c:v", "libx264", "-preset", "veryfast", "-profile:v", "high",
-            "-g", (OutputFrameRate * 2).ToString(CultureInfo.InvariantCulture), "-keyint_min", (OutputFrameRate * 2).ToString(CultureInfo.InvariantCulture),
-            "-sc_threshold", "0", "-b:v", "3500k", "-maxrate", "3500k", "-bufsize", "7000k",
+            "-g", gop, "-keyint_min", gop, "-sc_threshold", "0",
             "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
             "-f", "mpegts", "-mpegts_flags", "+resend_headers", "-muxdelay", "0", "pipe:1"
         ]);

@@ -4,8 +4,9 @@
   "version": "1.0.0",
   "description": "A channel of your favourite Twitch and YouTube streamers, in priority order: whoever is live is shown (the highest in the list wins), with their chat and pop-ups when the others are live too. While nobody is live, a countdown to the next stream, predicted from their past ones. No API keys needed. Needs Chrome or Edge on this computer, and yt-dlp (downloaded for you).",
   "author": "SchedularrTV",
-  "apiVersion": "1.6",
+  "apiVersion": "1.8",
   "entryAssembly": "SchedularrTV.Plugins.Streamers.dll",
+  "lowPowerNotice": "a live or replayed stream is the heaviest kind of channel there is: the stream is decoded in software, the chat and pop-ups are drawn as see-through frames over it, and the result is encoded again. Expect one such channel at a time at most, at 480p or 360p and 5 to 8 capture frames per second. The countdown while nobody is live is light.",
   "settings": [
     {
       "key": "YtDlpPath",
@@ -17,7 +18,8 @@
       "key": "BrowserPath",
       "label": "Browser",
       "type": "File",
-      "description": "Chrome, Edge or Chromium, run hidden to draw the countdown, the chat and the pop-ups. Leave empty to find one automatically."
+      "description": "Chrome, Edge or Chromium, run hidden to draw the countdown, the chat and the pop-ups. Leave empty to find one automatically.",
+      "lowPowerNote": "On Raspberry Pi OS, install chromium (sudo apt install chromium); Chrome and Edge have no ARM Linux builds."
     },
     {
       "key": "FfmpegPath",
@@ -37,15 +39,19 @@
       "label": "Check who's live every (seconds)",
       "type": "Number",
       "placeholder": "60",
-      "description": "20 to 900. A streamer counts as offline after two checks in a row say so."
+      "lowPowerPlaceholder": "120",
+      "description": "20 to 900. A streamer counts as offline after two checks in a row say so.",
+      "lowPowerNote": "Each check fetches every streamer's page; every two minutes or more (the default here) keeps it light."
     },
     {
       "key": "MaxHeight",
       "label": "Highest stream quality",
       "type": "Choice",
       "default": "720",
-      "options": [ "480", "720", "1080" ],
-      "description": "The tallest picture asked of a stream. The channel itself is 720p, so more mostly costs bandwidth."
+      "lowPowerDefault": "480",
+      "options": [ "360", "480", "720", "1080" ],
+      "description": "The tallest picture asked of a stream. The channel itself is 720p, so more mostly costs bandwidth.",
+      "lowPowerNote": "Use 480 or 360 here: the stream is decoded in software, and a 720p60 stream alone can take most of the processor. Avoid 1080."
     },
     {
       "key": "TimeZone",
@@ -59,7 +65,9 @@
       "label": "Capture frames per second",
       "type": "Number",
       "placeholder": "15",
-      "description": "How often the chat and pop-ups are drawn (5 to 30). The stream itself always plays at its own rate."
+      "lowPowerPlaceholder": "8",
+      "description": "How often the chat and pop-ups are drawn (5 to 30). The stream itself always plays at its own rate.",
+      "lowPowerNote": "Keep this at 5 to 8 here: each frame is a full see-through picture the browser draws and ffmpeg decodes."
     },
     {
       "key": "KeepAliveSeconds",

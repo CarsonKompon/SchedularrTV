@@ -28,6 +28,11 @@
     <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status">@_message</div>
 }
 
+<LowPowerNotice Title="@($"IPTV on {HardwareProfile.DeviceName}")" Advice="LowPowerAdvice">
+    Passed-through channels are relayed as they are, which costs almost nothing here. The heavier parts are re-encoding and the
+    iptv-org guide grabber.
+</LowPowerNotice>
+
 @foreach (IptvSource source in _sources)
 {
     bool editing = ReferenceEquals(source, _editing);
@@ -104,6 +109,10 @@
                 knows for each one (matched by the playlist's tvg-id, else the channel's name). The first time, the plugin sets up the grabber in its own
                 folder (Node.js, unless you have it, and iptv-org/epg: a few hundred MB and a few minutes); after that the guide is grabbed every few hours.
             </p>
+            @if (source.IptvOrgGuide)
+            {
+                <LowPowerNotice Inline="true" Title="@GrabberWarning" />
+            }
             <label class="field"><span>Guide (XMLTV) address or file <span class="muted">(.xml or .xml.gz; @(source.IptvOrgGuide ? "optional: fills in channels iptv-org has nothing for" : "empty uses the one the playlist names"))</span></span>
                 <input type="text" value="@source.GuideUrl" placeholder="@(source.IptvOrgGuide ? "" : _preview?.GuideUrls.FirstOrDefault() ?? "http://provider.example/xmltv.php?username=…&password=…")"
                        @onchange="e => source.GuideUrl = Text(e)" /></label>
@@ -118,6 +127,10 @@
                 <label class="check"><input type="checkbox" checked="@source.Passthrough" @onchange="e => source.Passthrough = e.Value is true" />
                     <span>Pass video and audio through without re-encoding (recommended)</span></label>
             </div>
+            @if (!source.Passthrough)
+            {
+                <LowPowerNotice Inline="true" Title="With passthrough off, ErsatzTV re-encodes every one of these channels while it's watched, in software on a Raspberry Pi. Leave it on unless a player can't play the provider's streams." />
+            }
 
             <h3 class="iptv-section">Channels</h3>
             <div class="row" style="gap:8px;margin-bottom:10px;">
@@ -294,6 +307,21 @@
 
     private List<IptvSource> _sources = [];
     private IReadOnlyList<CarriedChannel> _carried = [];
+
+    private static string GrabberWarning =>
+        "The grabber runs Node.js for up to a few hours each time, with up to 2 GB of memory, and its first setup downloads a few hundred MB"
+        + (HardwareProfile.Detected.MemoryGb is > 0 and < 4.5
+            ? ". With this little memory it can starve the channels on air; prefer the provider's own XMLTV guide."
+            : ". Keep the days of listings and requests at once low (plugin settings).");
+
+    private IEnumerable<string?> LowPowerAdvice =>
+    [
+        _sources.Any(source => !string.IsNullOrEmpty(source.Id) && !source.Passthrough)
+            ? "A provider has passthrough off: ErsatzTV re-encodes its channels in software here. Turn passthrough on where players can take the streams as they are."
+            : null,
+        _sources.Any(source => !string.IsNullOrEmpty(source.Id) && source.IptvOrgGuide) ? GrabberWarning : null,
+        "Very large provider playlists (with films and series, 100 MB or more) are read whole into memory at each refresh; a playlist of live channels only, if the provider offers one, is much lighter."
+    ];
     private IptvSource? _editing;
     private Playlist? _preview;
     private bool _loading;

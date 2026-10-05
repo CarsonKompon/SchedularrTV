@@ -4,8 +4,9 @@
   "version": "1.0.0",
   "description": "Live channels from an IPTV playlist (M3U) and its XMLTV guide, added alongside your own channels: same channel list, same guide in Jellyfin. Streams are passed through without re-encoding where possible; HLS and MPEG-TS sources both work. Free channels from iptv-org's playlists can be picked by country, category or language, and guides made with iptv-org/epg.",
   "author": "SchedularrTV",
-  "apiVersion": "1.6",
+  "apiVersion": "1.8",
   "entryAssembly": "SchedularrTV.Plugins.Iptv.dll",
+  "lowPowerNotice": "passed-through channels cost almost nothing. Keep passthrough on (re-encoding is done in software), and on boards with 4 GB or less prefer the provider's XMLTV guide to the iptv-org grabber, which runs Node.js with up to 2 GB of memory.",
   "settings": [
     {
       "key": "FfmpegPath",
@@ -39,14 +40,16 @@
       "label": "iptv-org guides: days of listings",
       "type": "Number",
       "placeholder": "2",
-      "description": "1 to 14. More days take longer to grab; the guide is grabbed again well before they run out."
+      "description": "1 to 14. More days take longer to grab; the guide is grabbed again well before they run out.",
+      "lowPowerNote": "Keep this at 1 or 2 here: each day is more listings to fetch and hold in memory."
     },
     {
       "key": "IptvOrgConnections",
       "label": "iptv-org guides: requests at once",
       "type": "Number",
       "placeholder": "3",
-      "description": "1 to 20. Higher grabs faster, but some listings sites block busy callers."
+      "description": "1 to 20. Higher grabs faster, but some listings sites block busy callers.",
+      "lowPowerNote": "Keep this at 3 or fewer here."
     },
     {
       "key": "NodePath",

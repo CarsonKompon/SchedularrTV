@@ -20,6 +20,7 @@ starts from an empty schedule with only global settings.
 | Voices (optional plugins) | MiniMax API key, Piper program and voices folder, from each plugin's gear on the Plugins page | `Plugins:tts-minimax:ApiKey`, `Plugins:tts-piper:ExecutablePath`, `Plugins:tts-piper:VoicesPath` (the older `MiniMax:` and `Piper:` sections still work) |
 | ffmpeg | ffmpeg and ffprobe programs | `GeneratedPromos:FfmpegPath`, `GeneratedPromos:FfprobePath`, `FileSystemLibrary:FfprobePath` |
 | Commercials library | Folders, tags, promo folder name | `FileSystemLibrary:Folders` |
+| Hardware and video encoding | Hardware profile (`Auto`, `LowPower`, `Standard`; see [Raspberry Pi](installation.md#raspberry-pi-and-other-low-power-devices)); live page channels' encoder, x264 preset, height (360/480/540/720), frame rate (15/24/25/30), bitrate and threads; rendered clips' (generated promos, credit squeezes) encoder, preset, threads and hardware bitrate. Blank uses this computer's default | `Hardware:Profile`, `LiveEncoding:Encoder`, `LiveEncoding:Preset`, `LiveEncoding:Height`, `LiveEncoding:FrameRate`, `LiveEncoding:BitrateKbps`, `LiveEncoding:Threads`, `Rendering:Encoder`, `Rendering:Preset`, `Rendering:Threads`, `Rendering:HardwareBitrateKbps` |
 
 `settings.json` uses the same layout as `appsettings.json`, so anything in the table can also come from
 `appsettings.json`, user secrets, environment variables (`Jellyfin__ApiKey`) or a `.env` file

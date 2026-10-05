@@ -4,8 +4,9 @@
   "version": "1.0.0",
   "description": "Renders promos from your own templates (text, artwork, music and voice-over) for the shows actually coming up. Install voice plugins for the voice-overs.",
   "author": "SchedularrTV",
-  "apiVersion": "1.7",
+  "apiVersion": "1.8",
   "entryAssembly": "SchedularrTV.Plugins.GeneratedPromos.dll",
+  "lowPowerNotice": "each promo is encoded in software, one at a time (the default here): roughly 20 to 40 seconds per 10-second 1080p promo on a Pi 5, longer on a Pi 4. Keep \"only for watched channels\" on, make templates 720p, prefer picture backgrounds to video ones, and give renders a longer lead time. The encoder and preset are under App settings → Hardware and video encoding.",
   "settings": [
     {
       "key": "SaveFolder",
@@ -19,14 +20,16 @@
       "label": "Start rendering when a promo airs within (minutes)",
       "type": "Number",
       "placeholder": "60",
-      "description": "0 renders the whole playout ahead. Promos further out wait, so a rebuild or edit before then doesn't leave renders behind that never air. Allow time for the queue to finish: a slot whose promo isn't ready airs ordinary commercials of the same length."
+      "description": "0 renders the whole playout ahead. Promos further out wait, so a rebuild or edit before then doesn't leave renders behind that never air. Allow time for the queue to finish: a slot whose promo isn't ready airs ordinary commercials of the same length.",
+      "lowPowerNote": "Renders are slower here, so allow more time (90 to 120 minutes); 0 would render the whole playout and keep the processor busy for hours."
     },
     {
       "key": "WatchedOnly",
       "label": "Only render for channels someone is watching",
       "type": "Boolean",
       "default": "true",
-      "description": "Uses ErsatzTV's stream activity, so paid voices are only spent on channels with a viewer. Other channels air stand-in commercials in each promo slot. Tuning in starts rendering within about 30 seconds, so the first few slots may still be stand-ins."
+      "description": "Uses ErsatzTV's stream activity, so paid voices are only spent on channels with a viewer. Other channels air stand-in commercials in each promo slot. Tuning in starts rendering within about 30 seconds, so the first few slots may still be stand-ins.",
+      "lowPowerNote": "Keep this on here: rendering for every channel would keep the processor busy all the time."
     },
     {
       "key": "KeepVideosDays",

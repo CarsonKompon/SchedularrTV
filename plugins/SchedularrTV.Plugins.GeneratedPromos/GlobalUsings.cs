@@ -6,6 +6,7 @@ global using Microsoft.Extensions.Configuration;
 global using Microsoft.Extensions.DependencyInjection;
 global using Microsoft.Extensions.Hosting;
 global using Microsoft.Extensions.Logging;
+global using SchedularrTV.Core.Platform;
 global using SchedularrTV.Hosting;
 global using SchedularrTV.Plugins;
 global using SchedularrTV.Plugins.Speech;

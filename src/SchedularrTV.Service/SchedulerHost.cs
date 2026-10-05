@@ -90,6 +90,12 @@ public static class SchedulerHost
         builder.Configuration.AddJsonFile(settingsFile.Path, optional: true, reloadOnChange: false);
         System.Text.Json.Nodes.JsonObject userSettings = settingsFile.Load();
 
+        // Raspberry Pi (low-power) defaults and warnings follow detection unless App settings says otherwise. Read live,
+        // so changing it applies without a restart; set before plugins load, since some read it as they start.
+        // The live encoding settings are read through the same reader by the scheduler and every plugin.
+        IConfiguration platformConfiguration = builder.Configuration;
+        SchedularrTV.Core.Platform.PlatformSettings.Use(key => platformConfiguration[key]);
+
         // An explicit --urls or ASPNETCORE_URLS still wins; otherwise the port chosen in the app is used.
         if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]))
         {
@@ -202,6 +208,10 @@ public static class SchedulerHost
         builder.Services.Replace(ServiceDescriptor.Singleton(typeof(IOptions<>), typeof(LiveOptions<>)));
 
         WebApplication app = builder.Build();
+
+        app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Hardware").LogInformation(
+            "Running on {Hardware}; {Profile} defaults ({Mode}).", SchedularrTV.Core.Platform.HardwareProfile.Detected.Summary,
+            SchedularrTV.Core.Platform.HardwareProfile.IsLowPower ? "low-power" : "standard", SchedularrTV.Core.Platform.HardwareProfile.Mode);
 
         // The library pickers re-read what's available when a media source is switched or reconfigured.
         LibraryBrowser browser = app.Services.GetRequiredService<LibraryBrowser>();

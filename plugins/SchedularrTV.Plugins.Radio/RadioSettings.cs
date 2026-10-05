@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.Extensions.Configuration;
+using SchedularrTV.Core.Platform;
 
 namespace SchedularrTV.Radio;
 
@@ -12,8 +13,10 @@ public sealed class RadioSettings(IPluginContext context)
 
     public string? BrowserPath => Value("BrowserPath");
 
+    /// <summary>Unset: 20, or 10 on a Raspberry Pi (each captured frame is a JPEG the browser encodes and ffmpeg decodes).</summary>
     public int CaptureFrameRate =>
-        int.TryParse(Value("FrameRate"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int fps) ? Math.Clamp(fps, 5, 30) : 20;
+        int.TryParse(Value("FrameRate"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int fps) ? Math.Clamp(fps, 5, 30)
+            : HardwareProfile.Pick(20, 10);
 
     public TimeSpan KeepAlive =>
         TimeSpan.FromSeconds(int.TryParse(Value("KeepAliveSeconds"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int seconds)
@@ -67,8 +70,10 @@ public sealed class RadioSettings(IPluginContext context)
     public LiveStreamSpec Spec(RadioStation station)
     {
         FrameRect? rect = station.VisualizerRect;
+        LiveEncodingSettings encoding = LiveEncodingSettings.Current;
         return new LiveStreamSpec
         {
+            Encoding = encoding,
             Id = station.Id,
             Name = station.Name,
             PageUrl = PageUrl(station.Id),
@@ -78,7 +83,7 @@ public sealed class RadioSettings(IPluginContext context)
             Audio = LiveAudio.Stream,
             AudioStreamUrl = SoundUrl(station.Id),
             Volume = station.Volume,
-            Visualizer = rect is null ? null : RadioLayout.Filter(station.Visualizer, rect, station.AccentColor),
+            Visualizer = rect is null ? null : RadioLayout.Filter(station.Visualizer, rect, station.AccentColor, encoding.FrameRate),
             VisualizerRect = rect
         };
     }

@@ -9,7 +9,7 @@ public sealed class LocalAiOptions
     public const string OpenAiCompatible = "OpenAI-compatible";
 
     /// <summary>A <see cref="LocalAiModels"/> id, or <see cref="LocalAiModels.Custom"/> for <see cref="ModelFile"/>.</summary>
-    public string Model { get; set; } = LocalAiModels.Default;
+    public string Model { get; set; } = LocalAiModels.ForThisComputer;
 
     public string? ModelFile { get; set; }
 
@@ -47,11 +47,20 @@ public sealed record LocalAiModel(string Id, string Name, string Description, st
 public static class LocalAiModels
 {
     public const string Default = "qwen3.5-2b";
+    public const string Smallest = "qwen3.5-0.8b";
     public const string Custom = "custom";
+
+    /// <summary>
+    /// The model used when none is chosen: <see cref="Default"/>, or on a low-power computer with less than about 6 GB
+    /// of memory (a 2 or 4 GB Raspberry Pi) <see cref="Smallest"/>, which leaves room for the browsers and ffmpegs of
+    /// the live channels.
+    /// </summary>
+    public static string ForThisComputer =>
+        SchedularrTV.Core.Platform.HardwareProfile.IsLowPower && SchedularrTV.Core.Platform.HardwareProfile.Detected.MemoryGb < 6 ? Smallest : Default;
 
     public static readonly IReadOnlyList<LocalAiModel> All =
     [
-        new("qwen3.5-0.8b", "Qwen3.5 0.8B", "The smallest and quickest. Fine for short captions; its voice-overs are plainer and more often set aside.",
+        new(Smallest, "Qwen3.5 0.8B", "The smallest and quickest. Fine for short captions; its voice-overs are plainer and more often set aside.",
             "unsloth/Qwen3.5-0.8B-GGUF", "Qwen3.5-0.8B-Q4_K_M.gguf", 532_517_120),
         new(Default, "Qwen3.5 2B", "The one to start with: a few seconds a promo on an ordinary processor, and good at following the rules.",
             "unsloth/Qwen3.5-2B-GGUF", "Qwen3.5-2B-Q4_K_M.gguf", 1_280_835_840),
@@ -79,7 +88,7 @@ public sealed class LocalAiPaths(string dataDirectory)
     public string? ModelPath(string? model, string? modelFile, string? modelsFolder) =>
         string.Equals(model?.Trim(), LocalAiModels.Custom, StringComparison.OrdinalIgnoreCase)
             ? Resolve(modelFile)
-            : Path.Combine(ModelsFolder(modelsFolder), (LocalAiModels.Find(model) ?? LocalAiModels.Find(LocalAiModels.Default)!).File);
+            : Path.Combine(ModelsFolder(modelsFolder), (LocalAiModels.Find(model) ?? LocalAiModels.Find(LocalAiModels.ForThisComputer)!).File);
 
     public string? ModelPath(LocalAiOptions options) => ModelPath(options.Model, options.ModelFile, options.ModelsFolder);
 

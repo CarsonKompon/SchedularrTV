@@ -18,8 +18,11 @@ public sealed class JellyfinOptions
 
     public int PageSize { get; set; } = 500;
 
-    /// <summary>How long a library snapshot is reused before a fresh crawl.</summary>
-    public TimeSpan CacheDuration { get; set; } = TimeSpan.FromMinutes(30);
+    /// <summary>
+    /// How long a library snapshot is reused before a fresh crawl. Unset: 30 minutes, or 2 hours on a Raspberry Pi,
+    /// where re-reading a large library at every hourly rebuild costs seconds of CPU and a few hundred MB.
+    /// </summary>
+    public TimeSpan CacheDuration { get; set; } = SchedularrTV.Core.Platform.HardwareProfile.Pick(TimeSpan.FromMinutes(30), TimeSpan.FromHours(2));
 
     public string[] IncludeItemTypes { get; set; } = ["Episode", "Movie", "Video", "MusicVideo"];
 

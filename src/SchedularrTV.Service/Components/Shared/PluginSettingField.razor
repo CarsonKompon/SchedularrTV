@@ -43,14 +43,14 @@
     case PluginSettingType.Number:
         <label class="field">
             <span>@Label</span>
-            <input type="number" value="@Value" placeholder="@Setting.Placeholder" @onchange="e => Editor.Set(Setting.Key, e.Value?.ToString())" />
+            <input type="number" value="@Value" placeholder="@Placeholder" @onchange="e => Editor.Set(Setting.Key, e.Value?.ToString())" />
         </label>
         break;
 
     default:
         <label class="field">
             <span>@Label</span>
-            <input type="text" value="@Value" placeholder="@Setting.Placeholder" @onchange="e => Editor.Set(Setting.Key, e.Value?.ToString())" />
+            <input type="text" value="@Value" placeholder="@Placeholder" @onchange="e => Editor.Set(Setting.Key, e.Value?.ToString())" />
         </label>
         break;
 }
@@ -58,10 +58,19 @@
 {
     <p class="hint">@Setting.Description</p>
 }
+@if (!string.IsNullOrWhiteSpace(Setting.LowPowerNote))
+{
+    <LowPowerNotice Inline="true" Title="@Setting.LowPowerNote" />
+}
 
 @code {
     [Parameter, EditorRequired] public PluginSetting Setting { get; set; } = default!;
     [Parameter, EditorRequired] public PluginSettingsEditor Editor { get; set; } = default!;
+
+    // On a Raspberry Pi the plugin's own default for an unset field can differ; the placeholder says which applies.
+    private string? Placeholder => HardwareProfile.IsLowPower && !string.IsNullOrWhiteSpace(Setting.LowPowerPlaceholder)
+        ? Setting.LowPowerPlaceholder
+        : Setting.Placeholder;
 
     private string? Value => Editor.Get(Setting.Key);
 

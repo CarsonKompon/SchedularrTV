@@ -29,6 +29,11 @@
     <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status">@_message</div>
 }
 
+<LowPowerNotice Title="@($"Analysing programmes on {HardwareProfile.DeviceName}")" Advice="LowPowerAdvice">
+    Each analysis decodes a whole programme: a few minutes for a 1080p H.264 episode here, longer for HEVC or 4K, and it
+    competes with the channels on air.
+</LowPowerNotice>
+
 <div class="card">
     <div class="card-head"><h2>Mid-roll breaks coming up</h2><span class="muted" style="font-size:12px;">next two days, all channels</span></div>
     @{ MidRollSummary breaks = Aligner.Summary; }
@@ -213,6 +218,14 @@
     private string? _message;
     private bool _messageOk;
     private bool _confirmForget;
+
+    private IEnumerable<string?> LowPowerAdvice =>
+    [
+        Settings.ScanLibrary ? "Analyse the whole library is on: for a large library that's days of full processor here. Programmes in the schedule are analysed anyway, as they come up." : null,
+        Settings.Concurrency > 1 ? $"{Settings.Concurrency} programmes are analysed at once; keep it to 1 here." : null,
+        Settings.HardwareDecode is null ? "Hardware decoding is off. auto lets the Pi's chip decode HEVC, far faster than the processor." : null,
+        Settings.DecodeThreads is 0 or > 2 ? "Each analysis may use every processor thread; 2 (the default here) leaves the rest for channels on air." : null
+    ];
     private HashSet<string>? _wanted;
     private (int Analysed, int Total)? _coverage;
     private string? _coverageError;

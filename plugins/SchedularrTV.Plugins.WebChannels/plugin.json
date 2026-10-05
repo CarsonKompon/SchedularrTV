@@ -4,8 +4,9 @@
   "version": "1.0.0",
   "description": "Any web page as a live channel you can schedule, with presets for the ones that make good television: WeatherStar 4000+ retro forecasts, a time-and-temperature clock, Windy's weather radar and the earth.nullschool wind globe. A 24/7 channel, or short segments between shows. Needs Chrome or Edge on this computer. Replaces the WeatherStar plugin and takes over its stations.",
   "author": "SchedularrTV",
-  "apiVersion": "1.4",
+  "apiVersion": "1.8",
   "entryAssembly": "SchedularrTV.Plugins.WebChannels.dll",
+  "lowPowerNotice": "each channel on air is a hidden browser drawing the page without a graphics chip, plus a live encode. WeatherStar and the clock are fine one at a time; weather radar and the wind globe (WebGL animations) are too heavy.",
   "settings": [
     {
       "key": "WeatherStarUrl",
@@ -18,7 +19,8 @@
       "key": "BrowserPath",
       "label": "Browser",
       "type": "File",
-      "description": "Chrome, Edge or Chromium, run hidden to draw the pages. Leave empty to find one automatically."
+      "description": "Chrome, Edge or Chromium, run hidden to draw the pages. Leave empty to find one automatically.",
+      "lowPowerNote": "On Raspberry Pi OS, install chromium (sudo apt install chromium); Chrome and Edge have no ARM Linux builds."
     },
     {
       "key": "FfmpegPath",
@@ -38,7 +40,9 @@
       "label": "Capture frames per second",
       "type": "Number",
       "placeholder": "15",
-      "description": "How often each page is captured (5 to 30). Higher is smoother for animated maps but uses more CPU; the stream itself is always 30 fps."
+      "lowPowerPlaceholder": "8",
+      "description": "How often each page is captured (5 to 30). Higher is smoother for animated maps but uses more CPU; the stream's own frame rate is set under App settings → Hardware and video encoding.",
+      "lowPowerNote": "5 to 10 here (8 is the default): forecasts and a clock change slowly."
     },
     {
       "key": "KeepAliveSeconds",

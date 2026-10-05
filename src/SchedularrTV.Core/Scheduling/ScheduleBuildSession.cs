@@ -234,12 +234,15 @@ internal sealed class ScheduleBuildSession(
         return sequence;
     }
 
+    /// <summary>Saves every sequence's place together (one write of the state file for the whole channel).</summary>
     public async ValueTask FlushAsync(CancellationToken cancellationToken)
     {
-        foreach (MediaSequence sequence in _sequences.Values)
+        if (_sequences.Count == 0)
         {
-            await stateStore.SaveAsync(sequence.ToState(), cancellationToken).ConfigureAwait(false);
+            return;
         }
+
+        await stateStore.SaveAllAsync([.. _sequences.Values.Select(sequence => sequence.ToState())], cancellationToken).ConfigureAwait(false);
     }
 
     public QueryExpression ResolveExpression(ContentSelector selector, int depth)

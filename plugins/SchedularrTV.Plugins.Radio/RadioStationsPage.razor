@@ -28,6 +28,11 @@
     <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status">@_message</div>
 }
 
+<LowPowerNotice Title="@($"Radio stations on {HardwareProfile.DeviceName}")" Advice="LowPowerAdvice">
+    Each station on air is a hidden browser drawing its page without a graphics chip, plus a live encode; the sound itself is
+    cheap. A plain look keeps one station comfortable here.
+</LowPowerNotice>
+
 @foreach (RadioStation station in _stations)
 {
     bool editing = ReferenceEquals(station, _editing);
@@ -185,6 +190,7 @@
                                 <input type="color" value="@station.BackgroundColor" @onchange="e => Change(() => station.BackgroundColor = Text(e))" style="width:56px;height:34px;padding:2px;" /></div>
                         }
                     </div>
+                    <LowPowerNotice Inline="true" Advice="LookWarnings(station)" />
                     <div class="row row-wrap" style="gap:18px;margin-bottom:8px;">
                         <label class="check"><input type="checkbox" checked="@station.ShowArt" @onchange="e => Change(() => station.ShowArt = e.Value is true)" /><span>Cover</span></label>
                         <label class="check"><input type="checkbox" checked="@station.ShowLyrics" @onchange="e => Change(() => station.ShowLyrics = e.Value is true)" /><span>Lyrics</span></label>
@@ -260,6 +266,27 @@
 
 @code {
     private List<RadioStation> _stations = [];
+
+    private IEnumerable<string?> LowPowerAdvice =>
+    [
+        Settings.CaptureFrameRate > 10
+            ? $"Capture frames per second is {Settings.CaptureFrameRate}. 10 is smooth enough for lyrics and the clock (plugin settings)."
+            : null,
+        _stations.Any(station => !string.IsNullOrEmpty(station.Id) && (station.Background == RadioBackground.BlurredArt
+                                                                      || station.Visualizer == RadioVisualizer.Spectrum || station.Preset == RadioPreset.Vinyl))
+            ? "Some stations use a blurred-cover background, the Spectrum visualizer or the spinning Vinyl look, the heaviest choices here."
+            : null
+    ];
+
+    // The heavy parts of one station's look, with what to choose instead.
+    private static IEnumerable<string?> LookWarnings(RadioStation station) =>
+    [
+        station.Background == RadioBackground.BlurredArt
+            ? "The blurred cover is a full-screen blur redrawn every frame, the heaviest part of the page here; a colour is far lighter."
+            : station.Background == RadioBackground.Gradient ? "The moving gradient redraws the whole picture all the time; a colour is lighter." : null,
+        station.Visualizer == RadioVisualizer.Spectrum ? "The Spectrum visualizer (showcqt) is costly to draw; Bars or Waveform are light." : null,
+        station.Preset == RadioPreset.Vinyl ? "The Vinyl look spins continuously, so every frame is new; Now Playing or Retro FM are lighter." : null
+    ];
     private RadioStation? _editing;
     private string? _confirmDelete;
     private string? _message;

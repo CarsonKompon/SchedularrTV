@@ -61,6 +61,28 @@ public sealed class AppSettingsForm(
 
     public List<MediaFolderOptions> Folders { get; private set; } = [];
 
+    /// <summary>
+    /// The hardware profile and the live and rendering encoding settings, by their settings.json key
+    /// (<c>Hardware:Profile</c>, <c>LiveEncoding:Preset</c>…). Blank means "the default for this computer".
+    /// </summary>
+    public Dictionary<string, string> Performance { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Every key <see cref="Performance"/> holds.</summary>
+    public static readonly IReadOnlyList<string> PerformanceKeys =
+    [
+        SchedularrTV.Core.Platform.HardwareProfile.SettingKey,
+        "LiveEncoding:Encoder", "LiveEncoding:Preset", "LiveEncoding:Height", "LiveEncoding:FrameRate", "LiveEncoding:BitrateKbps", "LiveEncoding:Threads",
+        "Rendering:Encoder", "Rendering:Preset", "Rendering:Threads", "Rendering:HardwareBitrateKbps"
+    ];
+
+    public string PerformanceValue(string key) => Performance.TryGetValue(key, out string? value) ? value : string.Empty;
+
+    public void SetPerformance(string key, string? value)
+    {
+        Performance[key] = value?.Trim() ?? string.Empty;
+        IsDirty = true;
+    }
+
     public bool FoldersChanged { get; set; }
 
     /// <summary>True once something was edited since loading or saving.</summary>
@@ -126,6 +148,13 @@ public sealed class AppSettingsForm(
             ["GeneratedPromos:FfmpegPath"] = Ffmpeg,
             ["GeneratedPromos:FfprobePath"] = Ffprobe
         };
+
+        foreach (string key in PerformanceKeys)
+        {
+            Performance[key] = configuration[key]?.Trim() ?? string.Empty;
+            _original[key] = Performance[key];
+        }
+
         IsDirty = false;
     }
 
@@ -169,6 +198,15 @@ public sealed class AppSettingsForm(
             AppSettingsFile.Set(file, "FileSystemLibrary:Folders", JsonSerializer.SerializeToNode(keep, AppSettingsJson.Options));
         }
 
+        bool liveEncodingChanged = false;
+        foreach (string key in PerformanceKeys)
+        {
+            string value = PerformanceValue(key);
+            liveEncodingChanged |= (key.StartsWith("LiveEncoding:", StringComparison.Ordinal) || key == SchedularrTV.Core.Platform.HardwareProfile.SettingKey)
+                                   && !string.Equals(_original.GetValueOrDefault(key) ?? string.Empty, value, StringComparison.Ordinal);
+            SetIfChanged(file, key, value);
+        }
+
         if (completeOnboarding)
         {
             AppSettingsFile.Set(file, OnboardingKey, JsonValue.Create(true));
@@ -178,6 +216,13 @@ public sealed class AppSettingsForm(
             || _original.Keys.Any(key => key.StartsWith("Jellyfin:", StringComparison.Ordinal) && _original[key] != Current(key))
             || Ffprobe != _original["GeneratedPromos:FfprobePath"];
         runtime.SaveSettings(file);
+
+        // The live page channels' streams are described to ErsatzTV in the published schedule (their size and frame
+        // rate), so new live settings are republished with a rebuild; a running stream restarts with them by itself.
+        if (liveEncodingChanged && !sourcesChanged)
+        {
+            rebuilds?.RequestFullRebuild();
+        }
 
         // A different media server or folder changes what the schedule can use, so it's replanned now.
         if (sourcesChanged)
@@ -260,7 +305,7 @@ public sealed class AppSettingsForm(
         "ErsatzTv:ConfigRoot" => ErsatzRoot,
         "GeneratedPromos:FfmpegPath" => Ffmpeg,
         "GeneratedPromos:FfprobePath" => Ffprobe,
-        _ => null
+        _ => Performance.TryGetValue(key, out string? value) ? value : null
     };
 
     // The raw configured value, so a bare "ffmpeg" (find automatically) shows as blank rather than wherever it was found.

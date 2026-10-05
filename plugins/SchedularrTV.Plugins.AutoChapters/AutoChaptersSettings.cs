@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.Extensions.Configuration;
+using SchedularrTV.Core.Platform;
 
 namespace SchedularrTV.AutoChapters;
 
@@ -22,9 +23,32 @@ public sealed class AutoChaptersSettings(IPluginContext context)
     public DetectionOptions Detection => new(
         MinBlack: TimeSpan.FromSeconds(Number("MinBlackSeconds", 0.4, 0.1, 5)),
         PixelThreshold: Number("BlackThreshold", 0.1, 0.01, 0.5),
-        RequireSilence: RequireSilence);
+        RequireSilence: RequireSilence)
+    {
+        Threads = DecodeThreads,
+        HardwareDecode = HardwareDecode
+    };
 
     public int Concurrency => (int)Number("Concurrency", 1, 1, 8);
+
+    /// <summary>
+    /// Decoder threads per analysis. Unset: every core, or 2 on a Raspberry Pi, so the channels on air keep the rest.
+    /// </summary>
+    public int DecodeThreads => (int)Number("DecodeThreads", HardwareProfile.Pick(0, 2), 0, 32);
+
+    /// <summary>
+    /// The <c>HardwareDecode</c> setting as ffmpeg's <c>-hwaccel</c>, or null for software. Unset: software, or
+    /// <c>auto</c> on a Raspberry Pi (whose chip decodes HEVC; anything it can't read falls back to software).
+    /// </summary>
+    public string? HardwareDecode
+    {
+        get
+        {
+            string? value = Value("HardwareDecode")?.ToLowerInvariant();
+            value ??= HardwareProfile.Pick<string?>(null, "auto");
+            return value is null or "off" or "none" or "software" ? null : value;
+        }
+    }
 
     /// <summary>The plugin's own choice, else the one App settings uses, else one beside ffprobe, else ffmpeg on the PATH.</summary>
     public string Ffmpeg

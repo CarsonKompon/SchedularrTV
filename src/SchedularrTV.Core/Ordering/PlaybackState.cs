@@ -50,5 +50,17 @@ public interface IPlaybackStateStore
 
     ValueTask SaveAsync(PlaybackState state, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Saves several states together, as at the end of a channel build. The same as saving each in turn; a store that
+    /// writes to disk overrides it to write once rather than once per state.
+    /// </summary>
+    async ValueTask SaveAllAsync(IEnumerable<PlaybackState> states, CancellationToken cancellationToken = default)
+    {
+        foreach (PlaybackState state in states)
+        {
+            await SaveAsync(state, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     ValueTask ResetAsync(string keyPrefix, CancellationToken cancellationToken = default);
 }

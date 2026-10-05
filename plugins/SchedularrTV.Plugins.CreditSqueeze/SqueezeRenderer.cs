@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using SchedularrTV.Core.Configuration;
+using SchedularrTV.Core.Platform;
 using SchedularrTV.Core.Scheduling;
 using SchedularrTV.Plugins.Promos;
 using SchedularrTV.Providers.Jellyfin;
@@ -260,9 +261,18 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
 
         string joined = string.Concat(Enumerable.Range(0, clips.Count).Select(index => $"[v{index}][a{index}]"));
         parts.Add($"{joined}concat=n={clips.Count}:v=1:a=1[v][a]");
-        arguments.AddRange(["-filter_complex", string.Join(';', parts), "-map", "[v]", "-map", "[a]",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ac", "2", playlist]);
-        (int code, string errors, _) = await RunAsync(settings.Ffmpeg, arguments, cancellationToken).ConfigureAwait(false);
+        arguments.AddRange(["-filter_complex", string.Join(';', parts), "-map", "[v]", "-map", "[a]"]);
+        RenderEncodingSettings encoding = CurrentEncoding;
+        List<string> tail = ["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ac", "2", playlist];
+        (int code, string errors, _) = await RunAsync(settings.Ffmpeg, [.. arguments, .. VideoArguments(encoding, 1280, 720), .. tail], cancellationToken)
+            .ConfigureAwait(false);
+        if (code != 0 && encoding.Video.Encoder.Hardware)
+        {
+            // A hardware encoder this computer doesn't have mustn't lose the panel: the same join in software.
+            (code, errors, _) = await RunAsync(settings.Ffmpeg, [.. arguments, .. VideoArguments(InSoftware(encoding), 1280, 720), .. tail], cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         if (code != 0 || !File.Exists(playlist))
         {
             logger.LogWarning("Credit squeeze: couldn't join the commercials for the panel: {Error}", errors.Trim());
@@ -291,10 +301,19 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         try
         {
             string? failure = null;
+            RenderEncodingSettings encoding = CurrentEncoding;
             foreach (bool animate in job.Animate ? new[] { true, false } : new[] { false })
             {
-                (int code, string errors, _) = await RunAsync(settings.Ffmpeg, Arguments(job, panel, temp, width, height, animate, creditsAudio, promoAudio),
-                    cancellationToken).ConfigureAwait(false);
+                (int code, string errors, _) = await RunAsync(settings.Ffmpeg, Arguments(job, panel, temp, width, height, animate, creditsAudio, promoAudio,
+                    encoding), cancellationToken).ConfigureAwait(false);
+                if ((code != 0 || !File.Exists(temp)) && encoding.Video.Encoder.Hardware)
+                {
+                    // A hardware encoder this computer doesn't have mustn't stop the squeeze: from here on it's made in software.
+                    encoding = InSoftware(encoding);
+                    (code, errors, _) = await RunAsync(settings.Ffmpeg, Arguments(job, panel, temp, width, height, animate, creditsAudio, promoAudio,
+                        encoding), cancellationToken).ConfigureAwait(false);
+                }
+
                 if (code == 0 && File.Exists(temp))
                 {
                     File.Move(temp, output, overwrite: true);
@@ -453,9 +472,11 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
     /// </summary>
     /// <param name="creditsAudio">The credits have sound.</param>
     /// <param name="promoAudio">The promo has sound.</param>
+    /// <param name="encoding">The <c>Rendering</c> app settings; those in use now if not given.</param>
     public static IReadOnlyList<string> Arguments(SqueezeJob job, string framePath, string output, int width, int height, bool animate,
-        bool creditsAudio = true, bool promoAudio = true)
+        bool creditsAudio = true, bool promoAudio = true, RenderEncodingSettings? encoding = null)
     {
+        encoding ??= CurrentEncoding;
         string N(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
         SqueezeLayout layout = job.Layout(width, height);
         int boxX = layout.Credits.X, boxY = layout.Credits.Y, boxW = layout.Credits.Width, boxH = layout.Credits.Height;
@@ -608,14 +629,29 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
             arguments.AddRange(["-map", "[a]", "-c:a", "aac", "-b:a", "160k", "-ac", "2"]);
         }
 
-        arguments.AddRange(
-        [
-            "-t", total, "-r", "30",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
-            "-movflags", "+faststart", output
-        ]);
+        arguments.AddRange(["-t", total, "-r", "30"]);
+        arguments.AddRange(VideoArguments(encoding, width, height));
+        arguments.AddRange(["-pix_fmt", "yuv420p", "-movflags", "+faststart", output]);
         return arguments;
     }
+
+    /// <summary>The preset squeezes are made with when nothing else is set (and off a Raspberry Pi).</summary>
+    public const string StandardPreset = "veryfast";
+
+    /// <summary>The <c>Rendering</c> app settings in use now (<c>veryfast</c>, or <c>superfast</c> on two threads on a Raspberry Pi).</summary>
+    public static RenderEncodingSettings CurrentEncoding => RenderEncodingSettings.Current(StandardPreset);
+
+    /// <summary>
+    /// The <c>-c:v …</c> arguments: x264 at crf 20, or for a hardware encoder the 1080p bitrate scaled to this size
+    /// (they have no quality setting).
+    /// </summary>
+    private static IReadOnlyList<string> VideoArguments(RenderEncodingSettings encoding, int width, int height) =>
+        encoding.Video.VideoArguments(Math.Max(1500, (int)(encoding.HardwareBitrateKbps * (width * (double)height) / (1920 * 1080))), crf: 20,
+            profileHigh: false);
+
+    /// <summary>The same settings made in software, for when a hardware encoder can't be used.</summary>
+    private static RenderEncodingSettings InSoftware(RenderEncodingSettings encoding) =>
+        encoding with { Video = encoding.Video with { Encoder = H264Encoder.Software } };
 
     /// <summary>A video fitted into <paramref name="width"/>×<paramref name="height"/>: kept whole with room around it, stretched, or trimmed.</summary>
     private static string Fitted(SqueezeFit fit, int width, int height) => fit switch

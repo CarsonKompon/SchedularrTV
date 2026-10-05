@@ -4,14 +4,16 @@
   "version": "1.0.0",
   "description": "A scrolling listings channel made from your own schedule, in the style of the 1990s Prevue Channel or the 2000s TV Guide Channel, with information, round-the-clock ads or another channel's picture up top and music or a channel's sound. Needs Chrome or Edge on this computer.",
   "author": "SchedularrTV",
-  "apiVersion": "1.4",
+  "apiVersion": "1.8",
   "entryAssembly": "SchedularrTV.Plugins.TvGuide.dll",
+  "lowPowerNotice": "the scrolling listings are drawn by a hidden browser without a graphics chip and encoded live. Keep the top panel on Information (commercials or a channel there are extra encodes) and capture at 10 to 15 frames per second.",
   "settings": [
     {
       "key": "BrowserPath",
       "label": "Browser",
       "type": "File",
-      "description": "Chrome, Edge or Chromium, run hidden to draw the guide. Leave empty to find one automatically."
+      "description": "Chrome, Edge or Chromium, run hidden to draw the guide. Leave empty to find one automatically.",
+      "lowPowerNote": "On Raspberry Pi OS, install chromium (sudo apt install chromium); Chrome and Edge have no ARM Linux builds."
     },
     {
       "key": "FfmpegPath",
@@ -31,7 +33,9 @@
       "label": "Capture frames per second",
       "type": "Number",
       "placeholder": "24",
-      "description": "How often the guide is captured (5 to 30). Higher scrolls more smoothly but uses more CPU; the stream itself is always 30 fps."
+      "lowPowerPlaceholder": "12",
+      "description": "How often the guide is captured (5 to 30). Higher scrolls more smoothly but uses more CPU; the stream's own frame rate is set under App settings → Hardware and video encoding.",
+      "lowPowerNote": "10 to 15 here (12 is the default): the listings never stop moving, so every captured frame is new work."
     },
     {
       "key": "KeepAliveSeconds",

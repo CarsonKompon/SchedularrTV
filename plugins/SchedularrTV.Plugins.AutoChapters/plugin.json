@@ -4,8 +4,9 @@
   "version": "1.0.0",
   "description": "Finds where programmes with no chapter markers fade to black (and go quiet), and uses those moments for mid-roll breaks instead of cutting at a fixed interval. Programmes are analysed in the background with ffmpeg, those about to air first.",
   "author": "SchedularrTV",
-  "apiVersion": "1.3",
+  "apiVersion": "1.8",
   "entryAssembly": "SchedularrTV.Plugins.AutoChapters.dll",
+  "lowPowerNotice": "each analysis decodes a whole programme, which takes minutes per episode here (more for HEVC or 4K) and competes with the channels on air. Keep one at a time, leave the whole-library scan off, and let it use the hardware decoder.",
   "settings": [
     {
       "key": "UseForMidRolls",
@@ -40,14 +41,32 @@
       "label": "Analyse the whole library in the background",
       "type": "Boolean",
       "default": "false",
-      "description": "Off: only programmes in the schedule are analysed, as they come up. On: every episode and movie without chapters is, which can take a long time for a big library."
+      "description": "Off: only programmes in the schedule are analysed, as they come up. On: every episode and movie without chapters is, which can take a long time for a big library.",
+      "lowPowerNote": "Leave this off here: a whole library can mean days of full CPU."
     },
     {
       "key": "Concurrency",
       "label": "Programmes analysed at once",
       "type": "Number",
       "placeholder": "1",
-      "description": "Each decodes a whole video, so more than 1 or 2 slows everything else on this computer."
+      "description": "Each decodes a whole video, so more than 1 or 2 slows everything else on this computer.",
+      "lowPowerNote": "Keep this at 1 here."
+    },
+    {
+      "key": "DecodeThreads",
+      "label": "Decoder threads",
+      "type": "Number",
+      "placeholder": "All of them",
+      "lowPowerPlaceholder": "2",
+      "description": "Processor threads each analysis may use. Fewer is slower but leaves the rest for the channels on air. Leave empty for the default."
+    },
+    {
+      "key": "HardwareDecode",
+      "label": "Hardware decoding",
+      "type": "Choice",
+      "options": [ "off", "auto", "drm", "cuda", "qsv", "vaapi", "videotoolbox", "d3d11va" ],
+      "description": "Let the graphics or video chip decode instead of the processor (ffmpeg's -hwaccel). auto picks one if there is one; drm is the Raspberry Pi's. A file it can't decode is read in software instead. Leave empty for the default: off, or auto on a Raspberry Pi.",
+      "lowPowerNote": "auto (the default here) lets the Pi's chip decode HEVC, much faster than the processor."
     },
     {
       "key": "FfmpegPath",

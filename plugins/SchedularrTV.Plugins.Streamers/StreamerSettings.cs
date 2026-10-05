@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.Extensions.Configuration;
+using SchedularrTV.Core.Platform;
 
 namespace SchedularrTV.Streamers;
 
@@ -21,13 +22,17 @@ public sealed class StreamerSettings(IPluginContext context)
 
     public string? YtDlpPath => Value("YtDlpPath");
 
-    /// <summary>How often each streamer is checked for being live.</summary>
-    public TimeSpan PollInterval => TimeSpan.FromSeconds(Number("PollSeconds", 60, 20, 900));
+    /// <summary>How often each streamer is checked for being live: unset, every minute, or every two on a Raspberry Pi.</summary>
+    public TimeSpan PollInterval => TimeSpan.FromSeconds(Number("PollSeconds", HardwareProfile.Pick(60, 120), 20, 900));
 
-    /// <summary>The tallest picture asked of a stream (the channel itself is always 720p).</summary>
-    public int MaxHeight => Number("MaxHeight", 720, 360, 1080);
+    /// <summary>
+    /// The tallest picture asked of a stream. Unset: 720, or 480 on a Raspberry Pi, where the stream is decoded in
+    /// software and a 720p60 one alone can take most of the CPU.
+    /// </summary>
+    public int MaxHeight => Number("MaxHeight", HardwareProfile.Pick(720, 480), 360, 1080);
 
-    public int CaptureFrameRate => Number("FrameRate", 15, 5, 30);
+    /// <summary>Unset: 15, or 8 on a Raspberry Pi (the chat and pop-ups are captured as see-through PNGs, the costliest kind).</summary>
+    public int CaptureFrameRate => Number("FrameRate", HardwareProfile.Pick(15, 8), 5, 30);
 
     public TimeSpan KeepAlive => TimeSpan.FromSeconds(Number("KeepAliveSeconds", 60, 0, 3600));
 

@@ -32,7 +32,7 @@ slots, programming blocks, ad breaks, bumpers and promos, and hands them to
 
    | Windows | macOS | Linux |
    | --- | --- | --- |
-   | `SchedularrTV-<version>-win-x64.zip` | `SchedularrTV-<version>-osx-arm64.zip` (Apple silicon)<br>`SchedularrTV-<version>-osx-x64.zip` (Intel) | `SchedularrTV-<version>-linux-x64.tar.gz` |
+   | `SchedularrTV-<version>-win-x64.zip` | `SchedularrTV-<version>-osx-arm64.zip` (Apple silicon)<br>`SchedularrTV-<version>-osx-x64.zip` (Intel) | `SchedularrTV-<version>-linux-x64.tar.gz`<br>`SchedularrTV-<version>-linux-arm64.tar.gz` (Raspberry Pi 4/5) |
 
    `<version>` is the release's tag (`v1.0.0`), or `nightly` for the nightly build.
 

@@ -32,6 +32,21 @@ public sealed class JsonPlaybackStateStore : IPlaybackStateStore, IAsyncDisposab
         await FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Every state of a build, then one write. The file holds every channel's shuffle bags, so writing it per state
+    /// (dozens per channel each hour) wore out SD cards for nothing: readers always get the in-memory copy.
+    /// </summary>
+    public async ValueTask SaveAllAsync(IEnumerable<PlaybackState> states, CancellationToken cancellationToken = default)
+    {
+        foreach (PlaybackState state in states)
+        {
+            _states[state.Key] = state.Clone();
+            _dirty = true;
+        }
+
+        await FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async ValueTask ResetAsync(string keyPrefix, CancellationToken cancellationToken = default)
     {
         foreach (string key in _states.Keys.Where(k => k.StartsWith(keyPrefix, StringComparison.Ordinal)))

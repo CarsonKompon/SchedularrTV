@@ -20,10 +20,14 @@ public sealed class FileSystemLibraryOptions
     /// <summary>Durations are cached here so a rescan does not re-probe thousands of unchanged files.</summary>
     public string CachePath { get; set; } = "state/probe-cache.json";
 
-    /// <summary>How long a scan is reused before the folders are walked again.</summary>
-    public TimeSpan CacheDuration { get; set; } = TimeSpan.FromMinutes(30);
+    /// <summary>
+    /// How long a scan is reused before the folders are walked again. Unset: 30 minutes, or 2 hours on a Raspberry Pi
+    /// (each walk reads every file's size and date, and wakes a sleeping USB disk).
+    /// </summary>
+    public TimeSpan CacheDuration { get; set; } = SchedularrTV.Core.Platform.HardwareProfile.Pick(TimeSpan.FromMinutes(30), TimeSpan.FromHours(2));
 
-    public int ProbeConcurrency { get; set; } = 8;
+    /// <summary>ffprobes run at once on new or changed files. Unset: 8, or 3 on a Raspberry Pi.</summary>
+    public int ProbeConcurrency { get; set; } = SchedularrTV.Core.Platform.HardwareProfile.Pick(8, 3);
 
     public TimeSpan ProbeTimeout { get; set; } = TimeSpan.FromSeconds(30);
 

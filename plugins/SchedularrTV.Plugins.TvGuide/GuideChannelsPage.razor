@@ -28,6 +28,11 @@
     <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status">@_message</div>
 }
 
+<LowPowerNotice Title="@($"The guide channel on {HardwareProfile.DeviceName}")" Advice="LowPowerAdvice">
+    The listings scroll all the time, so every frame is new: a hidden browser draws them without a graphics chip and they're
+    encoded live. With the Information top panel and music it's one comfortable channel here.
+</LowPowerNotice>
+
 @foreach (GuideStation guide in _guides)
 {
     bool editing = ReferenceEquals(guide, _editing);
@@ -155,6 +160,7 @@
                             <input type="range" min="0" max="70" step="1" value="@guide.TopPercent"
                                    @oninput="e => Change(() => guide.TopPercent = (int)Number(e, 45))" /></label>
                     </div>
+                    <LowPowerNotice Inline="true" Title="@TopPanelWarning(guide)" />
                     <label class="field"><span>Message <span class="muted">({channel} is the guide's name)</span></span>
                         <input type="text" value="@guide.Message" @onchange="e => Change(() => guide.Message = Text(e))" /></label>
                     @if (guide.Top == TopPanel.Ads)
@@ -290,6 +296,24 @@
 
 @code {
     private List<GuideStation> _guides = [];
+
+    private IEnumerable<string?> LowPowerAdvice =>
+    [
+        Settings.CaptureFrameRate > 15
+            ? $"Capture frames per second is {Settings.CaptureFrameRate}. 10 to 15 scrolls a little less smoothly but halves the browser's work (plugin settings)."
+            : null,
+        _guides.Any(guide => !string.IsNullOrEmpty(guide.Id) && guide.Top != TopPanel.Info)
+            ? "A guide shows commercials or a channel in its top panel: that's a second (and, while channels change, a third) video decoded and encoded alongside the guide, more than a Pi keeps up with."
+            : null
+    ];
+
+    // Commercials and channels in the window are whole extra encodes on a Raspberry Pi.
+    private static string? TopPanelWarning(GuideStation guide) => guide.Top switch
+    {
+        TopPanel.Ads => "Commercials in the window are each decoded and encoded again before the guide lays them in, on top of the guide's own encode: too heavy for a Pi. Information is the light choice here.",
+        TopPanel.Channel => "A channel in the window has ErsatzTV encode that channel as well (on this Pi, if it runs here), and cycling warms the next one up early: too heavy for a Pi. Information is the light choice here.",
+        _ => null
+    };
     private GuideStation? _editing;
     private string? _confirmDelete;
     private IReadOnlyList<GuideRow> _channels = [];

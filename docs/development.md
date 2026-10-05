@@ -58,7 +58,8 @@ with `UPDATE_SNAPSHOTS=1` and commit the updated snapshots. See [Engine extensio
 ## Releases
 
 `.github/workflows/build.yml` runs the tests on Windows, then publishes self-contained builds for
-`win-x64`, `linux-x64`, `osx-arm64` and `osx-x64`:
+`win-x64`, `linux-x64`, `linux-arm64`, `osx-arm64` and `osx-x64` (`linux-arm64`, for the Raspberry Pi, is
+cross-published from x64 with ReadyToRun so it starts quickly on slow CPUs):
 
 - every push to `main` replaces the **nightly** pre-release;
 - pushing a tag such as `v1.2.0` creates a release with that version.
