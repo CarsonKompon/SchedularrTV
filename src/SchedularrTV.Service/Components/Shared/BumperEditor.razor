@@ -5,35 +5,34 @@
 @inject ConfigEditor Editor
 
 <div class="modal-backdrop" @onclick="Close">
-    <div class="modal modal-wide" @onclick:stopPropagation="true">
-        <h2 style="margin-top:0;">@Include.Show &mdash; intros &amp; outros</h2>
+    <div class="modal modal-wide" role="dialog" aria-label="@($"{Include.Show} intros and outros")" @onclick:stopPropagation="true">
+        <div class="modal-head">
+            <h2>@Include.Show &mdash; intros &amp; outros</h2>
+            <div class="spacer"></div>
+            <button class="btn btn-ghost btn-icon btn-sm" type="button" title="Close" aria-label="Close" @onclick="Close"><Icon Name="x" Size="16" /></button>
+        </div>
+
         <p class="hint">
-            Blocks play in the order shown, wrapped around the episodes filling the slot. Each block
-            holds a pool of clips and decides which one to use when it plays.
+            Clips that play before and after each episode. Group them into blocks: a block holds a few clips and
+            picks one each time it plays.
         </p>
 
         @if (ShowWide)
         {
-            <p class="hint">
-                These play wherever the show is scheduled. A collection can still give the show its own blocks instead
+            <div class="banner">
+                These play wherever the show is scheduled. A collection can give the show its own blocks instead
                 (from the collection's <strong>Intros/outros…</strong>).
                 @if (OverriddenIn.Count > 0)
                 {
                     <text> Right now @string.Join(", ", OverriddenIn) @(OverriddenIn.Count == 1 ? "does" : "do"), so these don't play there.</text>
                 }
-            </p>
+            </div>
         }
         else
         {
-            <div class="row row-wrap" style="gap:8px;align-items:baseline;">
-                <label class="check">
-                    <input type="radio" name="bumper-scope" checked="@(!IsOverride)" @onchange="() => SetScope(false)" />
-                    <span>Use everywhere this show plays</span>
-                </label>
-                <label class="check">
-                    <input type="radio" name="bumper-scope" checked="@IsOverride" @onchange="() => SetScope(true)" />
-                    <span>Only in this collection</span>
-                </label>
+            <div class="segmented" role="radiogroup" aria-label="Where these blocks apply" style="margin-bottom:6px;">
+                <button type="button" role="radio" aria-checked="@(!IsOverride)" class="@(!IsOverride ? "on" : "")" @onclick="() => SetScope(false)">Everywhere this show plays</button>
+                <button type="button" role="radio" aria-checked="@IsOverride" class="@(IsOverride ? "on" : "")" @onclick="() => SetScope(true)">Only in this collection</button>
             </div>
             <p class="hint">
                 @(IsOverride
@@ -42,10 +41,10 @@
             </p>
         }
 
-        <div class="bumper-timeline">
+        <div class="bumper-timeline" aria-label="Playback order">
             @foreach (BumperBlock block in Ordered(BumperPosition.Intro))
             {
-                <div class="bumper-chip @(block == _expanded ? "bumper-chip-on" : "")" @onclick="() => Expand(block)">
+                <div class="bumper-chip">
                     <div class="bumper-chip-name">@Label(block)</div>
                     <div class="bumper-chip-meta">@Summarise(block)</div>
                 </div>
@@ -58,153 +57,194 @@
 
             @foreach (BumperBlock block in Ordered(BumperPosition.Outro))
             {
-                <div class="bumper-chip @(block == _expanded ? "bumper-chip-on" : "")" @onclick="() => Expand(block)">
+                <div class="bumper-chip">
                     <div class="bumper-chip-name">@Label(block)</div>
                     <div class="bumper-chip-meta">@Summarise(block)</div>
                 </div>
-            }
-
-            @if (Blocks.Count == 0)
-            {
-                <div class="hint" style="margin:0 0 0 12px;align-self:center;">No blocks yet.</div>
             }
         </div>
 
         @if (_error is not null)
         {
-            <div class="empty">@_error</div>
+            <div class="banner banner-warn">@_error</div>
         }
 
         @foreach (BumperPosition position in (BumperPosition[])[BumperPosition.Intro, BumperPosition.Outro])
         {
-            <div class="row" style="align-items:baseline;margin-top:14px;">
-                <h3 style="margin:0;">@(position == BumperPosition.Intro ? "Before the episode" : "After the episode")</h3>
+            <div class="section-title" style="margin:22px 0 10px;">
+                <h2>@(position == BumperPosition.Intro ? "Before the episode" : "After the episode")</h2>
                 <div class="spacer"></div>
-                <button class="btn btn-sm" @onclick="() => AddBlock(position)">Add block</button>
+                <button class="btn btn-sm" type="button" @onclick="() => AddBlock(position)"><Icon Name="plus" Size="14" />Add block</button>
             </div>
+
+            @if (!Ordered(position).Any())
+            {
+                <div class="empty" style="padding:22px;">
+                    Nothing plays @(position == BumperPosition.Intro ? "before" : "after") the episode yet.
+                </div>
+            }
 
             @foreach (BumperBlock block in Ordered(position))
             {
-                <div class="list-row" style="align-items:flex-start;flex-wrap:wrap;">
-                    <input type="text" style="width:190px;" placeholder="Opening theme" value="@block.Name"
-                           @onchange="e => Rename(block, e)" />
+                <div class="bumper-block">
+                    <div class="row">
+                        <input type="text" class="bumper-name" aria-label="Block name" placeholder="Block name, e.g. Opening theme" value="@block.Name"
+                               @onchange="e => Rename(block, e)" />
+                        <div class="spacer"></div>
+                        <button class="btn btn-sm btn-ghost btn-icon" type="button" title="Move up" aria-label="Move up" disabled="@IsFirst(block)" @onclick="() => Move(block, -1)">↑</button>
+                        <button class="btn btn-sm btn-ghost btn-icon" type="button" title="Move down" aria-label="Move down" disabled="@IsLast(block)" @onclick="() => Move(block, 1)">↓</button>
+                        <button class="btn btn-sm btn-ghost btn-icon btn-danger" type="button" title="Remove block" aria-label="Remove block" @onclick="() => RemoveBlock(block)"><Icon Name="trash" Size="14" /></button>
+                    </div>
 
-                    <label class="inline-field" title="How this block picks a clip when it plays">
-                        <span>Picks</span>
-                        <select value="@block.Selection" @onchange="e => SetSelection(block, e)">
-                            @foreach (BumperSelection option in Enum.GetValues<BumperSelection>())
-                            {
-                                <option value="@option">@Describe(option)</option>
-                            }
-                        </select>
-                    </label>
-
-                    <span class="meta">@Summarise(block)</span>
-
-                    <fieldset style="flex-basis:100%;min-width:0;" aria-label="Seasons for @Label(block)">
-                        <legend>Seasons: @(block.Seasons.Count == 0 ? "All seasons" : string.Join(", ", block.Seasons.Order()))</legend>
-                        <div class="row row-wrap" style="gap:12px;">
-                            @foreach (int season in _seasons.Concat(block.Seasons).Distinct().Order())
-                            {
-                                <label class="check">
-                                    <input type="checkbox" checked="@block.Seasons.Contains(season)"
-                                           @onchange="args => ToggleSeason(block, season, args.Value is true)" />
-                                    <span>@(season == 0 ? "Specials (0)" : $"Season {season}")</span>
-                                </label>
-                            }
-                            <button class="btn btn-sm" disabled="@(block.Seasons.Count == 0)"
-                                    @onclick="() => ClearSeasons(block)">All seasons</button>
-                        </div>
-                    </fieldset>
-
-                    <div class="spacer"></div>
-
-                    <button class="btn btn-sm" disabled="@(IsFirst(block))" @onclick="() => Move(block, -1)">↑</button>
-                    <button class="btn btn-sm" disabled="@(IsLast(block))" @onclick="() => Move(block, 1)">↓</button>
-                    <button class="btn btn-sm" @onclick="() => Expand(block)">
-                        @(block == _expanded ? "Hide clips" : "Clips…")
-                    </button>
-                    <button class="btn btn-sm btn-danger" @onclick="() => RemoveBlock(block)">Remove</button>
-
-                    @if (block == _expanded)
+                    @if (block.Clips.Count == 0)
                     {
-                        <div style="flex-basis:100%;margin-top:10px;">
-                            @if (block.Clips.Count == 0)
-                            {
-                                <p class="hint">No clips yet. Add one from the show's extras below.</p>
-                            }
-                            else
-                            {
-                                <table class="table">
-                                    <thead>
-                                        <tr><th>Clip</th><th style="width:90px;">Length</th><th>Plays with</th><th style="width:150px;"></th></tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach (BumperClip clip in block.Clips.ToList())
-                                        {
-                                            <tr>
-                                                <td>@ClipName(clip)</td>
-                                                <td>@LengthOf(clip)</td>
-                                                <td>
-                                                    @if (clip.Episodes.Count == 0)
-                                                    {
-                                                        <span class="meta">any episode</span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <span class="pill pill-ok">@string.Join(", ", clip.Episodes)</span>
-                                                    }
-                                                </td>
-                                                <td style="text-align:right;">
-                                                    <button class="btn btn-sm" @onclick="() => PinTo(block, clip)">Episodes…</button>
-                                                    <button class="btn btn-sm btn-danger" @onclick="() => RemoveClip(block, clip)">Remove</button>
-                                                </td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                </table>
-                            }
-
-                            <p class="hint">
-                                A clip tied to episodes plays only with those, and they always get it
-                                ahead of whatever the behaviour would otherwise pick.
-                            </p>
-
-                            <TagListEditor Label="Skip this block when the episode's file name contains"
-                                           Placeholder="(with Intro)"
-                                           Values="block.SkipWhenFileContains" Changed="Changed" />
-                            <p class="hint">
-                                For copies that already have the sequence baked in, so they do not get a
-                                second one. Case does not matter.
-                            </p>
-
-                            @if (_extras is null)
-                            {
-                                <p class="hint">Loading extras…</p>
-                            }
-                            else
-                            {
-                                <div class="row row-wrap" style="gap:6px;">
-                                    @foreach (JellyfinExtra extra in _extras.Where(x => !block.Clips.Any(c => SamePath(c.Path, x.Path))))
-                                    {
-                                        <button class="btn btn-sm" @onclick="() => AddClip(block, extra)">
-                                            + @extra.Name <span class="meta">@($"{extra.Duration.TotalSeconds:0}s")</span>
-                                        </button>
-                                    }
-                                </div>
-                            }
+                        <div class="bumper-empty">
+                            <span class="muted">No clips yet.</span>
+                            <button class="btn btn-sm btn-primary" type="button" @onclick="() => OpenAdd(block)"><Icon Name="plus" Size="14" />Add clips</button>
                         </div>
                     }
+                    else
+                    {
+                        <ul class="bumper-clips">
+                            @foreach (BumperClip clip in block.Clips.ToList())
+                            {
+                                <li>
+                                    <Icon Name="film" Size="15" />
+                                    <span class="bumper-clip-name" title="@clip.Path">@ClipName(clip)</span>
+                                    <span class="meta">@LengthOf(clip)</span>
+                                    <div class="spacer"></div>
+                                    <button class="pill @(clip.Episodes.Count == 0 ? "pill-muted" : "pill-ok") bumper-pin" type="button"
+                                            title="Choose which episodes this clip plays with" @onclick="() => PinTo(block, clip)">
+                                        @(clip.Episodes.Count == 0 ? "Any episode" : string.Join(", ", clip.Episodes))
+                                    </button>
+                                    <button class="btn btn-sm btn-ghost btn-icon" type="button" title="Remove clip" aria-label="Remove clip" @onclick="() => RemoveClip(block, clip)"><Icon Name="x" Size="14" /></button>
+                                </li>
+                            }
+                        </ul>
+                        <button class="btn btn-sm" type="button" @onclick="() => OpenAdd(block)"><Icon Name="plus" Size="14" />Add clips</button>
+                    }
+
+                    <details class="bumper-options">
+                        <summary>
+                            Options
+                            <span class="meta">· @(block.Clips.Count > 1 ? Describe(block.Selection) : "One clip")
+                                · @(block.Seasons.Count == 0 ? "all seasons" : "seasons " + string.Join(", ", block.Seasons.Order()))
+                                @(block.SkipWhenFileContains.Count > 0 ? "· skip rules" : "")</span>
+                        </summary>
+
+                        <div class="grid grid-2" style="margin-top:12px;">
+                            <label class="field">
+                                <span>When there are several clips, play</span>
+                                <select value="@block.Selection" @onchange="e => SetSelection(block, e)">
+                                    @foreach (BumperSelection option in Enum.GetValues<BumperSelection>())
+                                    {
+                                        <option value="@option">@Describe(option)</option>
+                                    }
+                                </select>
+                            </label>
+                        </div>
+
+                        <fieldset class="bumper-seasons" aria-label="Seasons for @Label(block)">
+                            <legend>Only play in <span class="opt">(none ticked = every season)</span></legend>
+                            <div class="check-row">
+                                @foreach (int season in _seasons.Concat(block.Seasons).Distinct().Order())
+                                {
+                                    <label class="check">
+                                        <input type="checkbox" checked="@block.Seasons.Contains(season)"
+                                               @onchange="args => ToggleSeason(block, season, args.Value is true)" />
+                                        <span>@(season == 0 ? "Specials" : $"Season {season}")</span>
+                                    </label>
+                                }
+                            </div>
+                        </fieldset>
+
+                        <TagListEditor Label="Skip this block when the episode's file name contains"
+                                       Placeholder="(with Intro)"
+                                       Values="block.SkipWhenFileContains" Changed="Changed" />
+                        <p class="hint">
+                            For copies that already have the sequence baked in. Case does not matter.
+                        </p>
+                    </details>
                 </div>
             }
+        }
+
+        @if (_adding is { } target)
+        {
+            <div class="modal-backdrop" @onclick="CloseAdd">
+                <div class="modal bumper-add" role="dialog" aria-label="Add clips" @onclick:stopPropagation="true">
+                    <div class="modal-head">
+                        <h2>Add clips to &ldquo;@Label(target)&rdquo;</h2>
+                    </div>
+
+                    <FilePathPicker Multiple="true" ButtonText="Browse files on disk…" Extensions="FileBrowsing.Videos" Label="clips"
+                                    OnPicked="picked => AddFromDisk(target, picked)" />
+
+                    <h3>From this show's extras</h3>
+
+                    @if (_extras is null)
+                    {
+                        <p class="hint">@(_error is null ? "Loading extras…" : "Extras aren't available. Browse files on disk instead.")</p>
+                    }
+                    else
+                    {
+                        List<JellyfinExtra> available = [.. _extras.Where(x => !target.Clips.Any(c => SamePath(c.Path, x.Path)))];
+                        List<JellyfinExtra> shown = [.. available.Where(x => string.IsNullOrWhiteSpace(_filter) || x.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase))];
+
+                        @if (_extras.Count == 0)
+                        {
+                            <div class="empty" style="padding:22px;">This show has no extras in Jellyfin. Browse files on disk instead.</div>
+                        }
+                        else if (available.Count == 0)
+                        {
+                            <div class="empty" style="padding:22px;">Every extra is already in this block.</div>
+                        }
+                        else
+                        {
+                            <div class="row" style="margin-bottom:8px;">
+                                <div class="search-field" style="max-width:none;">
+                                    <Icon Name="search" Size="15" />
+                                    <input type="text" placeholder="Filter extras" aria-label="Filter extras" value="@_filter" @oninput="e => _filter = e.Value?.ToString()" />
+                                </div>
+                                <button class="btn btn-sm" type="button" disabled="@(shown.Count == 0)" @onclick="() => SelectShown(shown)">Select all</button>
+                                <button class="btn btn-sm btn-ghost" type="button" disabled="@(_picked.Count == 0)" @onclick="() => _picked.Clear()">Clear</button>
+                            </div>
+
+                            <div class="scroll-list" style="max-height:300px;">
+                                @foreach (JellyfinExtra extra in shown)
+                                {
+                                    <label class="check bumper-extra">
+                                        <input type="checkbox" checked="@_picked.Contains(extra.Path)"
+                                               @onchange="e => TogglePick(extra.Path, e.Value is true)" />
+                                        <span>@extra.Name</span>
+                                        <span class="meta" style="margin-left:auto;">@($"{extra.Duration.TotalSeconds:0}s")</span>
+                                    </label>
+                                }
+                                @if (shown.Count == 0)
+                                {
+                                    <div class="hint" style="padding:12px;">Nothing matches &ldquo;@_filter&rdquo;.</div>
+                                }
+                            </div>
+                        }
+                    }
+
+                    <div class="wizard-foot">
+                        <div class="spacer"></div>
+                        <button class="btn" type="button" @onclick="CloseAdd">Cancel</button>
+                        <button class="btn btn-primary" type="button" disabled="@(_picked.Count == 0)" @onclick="() => AddPicked(target)">
+                            @(_picked.Count == 0 ? "Add extras" : $"Add {_picked.Count} {(_picked.Count == 1 ? "extra" : "extras")}")
+                        </button>
+                    </div>
+                </div>
+            </div>
         }
 
         @if (_pinning is not null)
         {
             <div class="modal-backdrop" @onclick="() => _pinning = null">
-                <div class="modal" @onclick:stopPropagation="true">
-                    <h2 style="margin-top:0;">Episodes for @ClipName(_pinning)</h2>
-                    <p class="hint">Leave everything unticked to keep the clip in the general pool.</p>
+                <div class="modal" role="dialog" aria-label="Episodes for this clip" @onclick:stopPropagation="true">
+                    <div class="modal-head"><h2>Episodes for @ClipName(_pinning)</h2></div>
+                    <p class="hint">Tick the episodes this clip is reserved for. Leave everything unticked to keep it in the general pool.</p>
 
                     @if (_episodes.Count == 0)
                     {
@@ -215,7 +255,7 @@
                         <div class="scroll-list" style="max-height:320px;">
                             @foreach (LibraryEpisode episode in _episodes)
                             {
-                                <label class="check" style="display:flex;gap:8px;padding:3px 0;">
+                                <label class="check bumper-extra">
                                     <input type="checkbox" checked="@_pinning.Episodes.Contains(episode.Code)"
                                            @onchange="e => TogglePin(episode.Code, (bool)(e.Value ?? false))" />
                                     <span>@episode.Code <span class="meta">@episode.Title</span></span>
@@ -224,17 +264,18 @@
                         </div>
                     }
 
-                    <div class="row" style="margin-top:14px;">
+                    <div class="wizard-foot">
+                        <button class="btn btn-ghost btn-sm" type="button" disabled="@(_pinning.Episodes.Count == 0)" @onclick="ClearPins">Clear</button>
                         <div class="spacer"></div>
-                        <button class="btn btn-primary" @onclick="() => _pinning = null">Done</button>
+                        <button class="btn btn-primary" type="button" @onclick="() => _pinning = null">Done</button>
                     </div>
                 </div>
             </div>
         }
 
-        <div class="row" style="margin-top:16px;">
+        <div class="wizard-foot">
             <div class="spacer"></div>
-            <button class="btn btn-primary" @onclick="Close">Done</button>
+            <button class="btn btn-primary" type="button" @onclick="Close">Done</button>
         </div>
     </div>
 </div>
@@ -257,7 +298,9 @@
     private IReadOnlyList<LibraryEpisode> _episodes = [];
     private IReadOnlyList<int> _seasons = [];
     private string? _seriesId;
-    private BumperBlock? _expanded;
+    private BumperBlock? _adding;
+    private readonly HashSet<string> _picked = new(StringComparer.OrdinalIgnoreCase);
+    private string? _filter;
     private BumperClip? _pinning;
     private string? _error;
 
@@ -275,7 +318,7 @@
 
             if (show is null)
             {
-                _error = "This title is not in the library, so its extras cannot be listed.";
+                _error = "This title is not in the library, so its extras cannot be listed. You can still add files from disk.";
                 return;
             }
 
@@ -393,7 +436,7 @@
     private string LengthOf(BumperClip clip)
     {
         JellyfinExtra? extra = _extras?.FirstOrDefault(x => SamePath(x.Path, clip.Path));
-        return extra is null ? "\u2014" : $"{extra.Duration.TotalSeconds:0}s";
+        return extra is null ? "—" : $"{extra.Duration.TotalSeconds:0}s";
     }
 
     // Jellyfin and the saved config can disagree on casing, and the engine matches paths the same way.
@@ -413,7 +456,6 @@
         };
 
         EnsureTarget().Add(block);
-        _expanded = block;
         await Changed.InvokeAsync();
     }
 
@@ -421,9 +463,9 @@
     {
         Blocks.Remove(block);
 
-        if (_expanded == block)
+        if (_adding == block)
         {
-            _expanded = null;
+            CloseAdd();
         }
 
         Prune(Include.Show ?? string.Empty);
@@ -478,17 +520,61 @@
         await Changed.InvokeAsync();
     }
 
-    private async Task ClearSeasons(BumperBlock block)
+    private void OpenAdd(BumperBlock block)
     {
-        block.Seasons.Clear();
+        _adding = block;
+        _picked.Clear();
+        _filter = null;
+    }
+
+    private void CloseAdd()
+    {
+        _adding = null;
+        _picked.Clear();
+    }
+
+    private void TogglePick(string path, bool on)
+    {
+        if (on)
+        {
+            _picked.Add(path);
+        }
+        else
+        {
+            _picked.Remove(path);
+        }
+    }
+
+    private void SelectShown(IEnumerable<JellyfinExtra> shown)
+    {
+        foreach (JellyfinExtra extra in shown)
+        {
+            _picked.Add(extra.Path);
+        }
+    }
+
+    private async Task AddPicked(BumperBlock block)
+    {
+        foreach (JellyfinExtra extra in (_extras ?? []).Where(x => _picked.Contains(x.Path)))
+        {
+            if (!block.Clips.Any(c => SamePath(c.Path, extra.Path)))
+            {
+                block.Clips.Add(new BumperClip { Path = extra.Path, Name = extra.Name });
+            }
+        }
+
+        CloseAdd();
         await Changed.InvokeAsync();
     }
 
-    private void Expand(BumperBlock block) => _expanded = _expanded == block ? null : block;
-
-    private async Task AddClip(BumperBlock block, JellyfinExtra extra)
+    private async Task AddFromDisk(BumperBlock block, IReadOnlyList<string> paths)
     {
-        block.Clips.Add(new BumperClip { Path = extra.Path, Name = extra.Name });
+        foreach (string path in paths.Where(p => !block.Clips.Any(c => SamePath(c.Path, p))))
+        {
+            block.Clips.Add(new BumperClip { Path = path, Name = System.IO.Path.GetFileNameWithoutExtension(path) });
+        }
+
+        CloseAdd();
         await Changed.InvokeAsync();
     }
 
@@ -512,6 +598,12 @@
         {
             _episodes = await Library.GetEpisodesAsync(_seriesId);
         }
+    }
+
+    private async Task ClearPins()
+    {
+        _pinning?.Episodes.Clear();
+        await Changed.InvokeAsync();
     }
 
     private async Task TogglePin(string code, bool on)

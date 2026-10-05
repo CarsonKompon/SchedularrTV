@@ -935,6 +935,28 @@ progress::-moz-progress-bar { background: var(--accent-gradient); border-radius:
 .bumper-chip-name { font-weight: 550; font-size: 13px; }
 .bumper-chip-meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
 .bumper-chip-episode { flex: 1 1 auto; min-width: 160px; max-width: none; cursor: default; border-style: dashed; background: transparent; }
+.bumper-chip-on { border-color: var(--accent); }
+.bumper-chip { cursor: default; }
+.bumper-block { padding: 14px 16px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: var(--r); background: rgba(255, 255, 255, .02); display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.bumper-block > .row { width: 100%; }
+.bumper-name { max-width: 320px; font-weight: 550; }
+.bumper-empty { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px; border: 1px dashed var(--line-strong); border-radius: var(--r-sm); }
+.bumper-clips { list-style: none; margin: 0; padding: 0; width: 100%; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.bumper-clips li { display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 12px; border-bottom: 1px solid var(--line); }
+.bumper-clips li:last-child { border-bottom: 0; }
+.bumper-clips .icon { color: var(--faint); }
+.bumper-clip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bumper-pin { cursor: pointer; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.bumper-pin:hover { filter: brightness(1.2); }
+.bumper-options { width: 100%; }
+.bumper-options > summary { cursor: pointer; color: var(--muted); font-size: 12.5px; font-weight: 500; user-select: none; }
+.bumper-options > summary:hover { color: var(--text); }
+.bumper-seasons { border: 0; padding: 0; margin: 0 0 14px; min-width: 0; }
+.bumper-seasons legend { padding: 0; margin-bottom: 8px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.bumper-add { width: 600px; }
+.bumper-extra { display: flex; padding: 7px 12px; margin: 0; border-bottom: 1px solid var(--line); }
+.bumper-extra:last-child { border-bottom: 0; }
+.bumper-extra:hover { background: rgba(255, 255, 255, .03); }
 .inline-field { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
 .inline-field select, .inline-field input { font-size: 12px; padding: 4px 8px; }
 .inline-field select { padding-right: 28px; background-position: right 6px center; }
