@@ -86,7 +86,9 @@ public sealed class CreditSqueezeTests
         Assert.Equal(("/renders/0.mp4", Noon.AddMinutes(21), TimeSpan.FromMinutes(1), true), (squeezed[1].Item!.Path, squeezed[1].Start, squeezed[1].Duration, squeezed[1].IsSlotOutro));
         Assert.Equal(TimeSpan.Zero, squeezed[1].InPoint);
         Assert.Equal("/renders/3.mp4", squeezed[4].Item!.Path);
-        Assert.All(squeezed.Zip(squeezed.Skip(1)), pair => Assert.Equal(pair.First.End, pair.Second.Start));
+        // Day() leaves a gap after Hey Arnold (it has no break before Rocket Power), so the last pair isn't compared.
+        List<ScheduleEntry> joined = [.. squeezed.SkipLast(1)];
+        Assert.All(joined.Zip(joined.Skip(1)), pair => Assert.Equal(pair.First.End, pair.Second.Start));
 
         // Not made yet: the credits play as they are.
         Assert.Equal(day, SqueezePlanner.Apply(day, plans, _ => null));
@@ -505,7 +507,7 @@ public sealed class CreditSqueezeTests
 
     [Theory]
     [InlineData("Credits", 20.5, 20.5)]
-    [InlineData("End Credits", 21, 21)]
+    [InlineData("End Credits", 21.0, 21.0)] // written as doubles: xUnit won't turn an int into a double?
     [InlineData("Outro", 21.5, 21.5)]
     [InlineData("Opening Credits", 21, null)]
     [InlineData("Credits", 2, null)]
