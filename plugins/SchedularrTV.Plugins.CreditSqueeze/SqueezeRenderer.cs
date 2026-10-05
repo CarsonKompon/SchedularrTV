@@ -202,7 +202,80 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
     {
         Directory.CreateDirectory(Path.GetDirectoryName(output)!);
         job = await WithMadePromoAsync(job, cancellationToken).ConfigureAwait(false);
-        job = FittedToPromo(job);
+        (job, string? playlist) = await WithCommercialsAsync(job, output, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await RenderMadeAsync(FittedToPromo(job), output, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (playlist is not null)
+            {
+                TryDelete(playlist);
+            }
+        }
+    }
+
+    /// <summary>
+    /// With commercials in the panel: the ones that fit the credits (after the promo, when it opens with one), joined
+    /// into one clip that then plays as the panel's promo does. Returns that clip's file, to be deleted afterwards.
+    /// </summary>
+    private async Task<(SqueezeJob Job, string? Playlist)> WithCommercialsAsync(SqueezeJob job, string output, CancellationToken cancellationToken)
+    {
+        if (job.Panel == SqueezePanel.Promo || job.Commercials is not { Count: > 0 } pool)
+        {
+            return (job, null);
+        }
+
+        List<SqueezeClip> clips = [];
+        TimeSpan room = job.Length - PromoStart;
+        if (job.Panel == SqueezePanel.PromoThenCommercials && job.PromoPath is { } promo && job.PromoLength > TimeSpan.Zero)
+        {
+            clips.Add(new SqueezeClip(promo, job.PromoLength));
+            room -= job.PromoLength;
+        }
+
+        List<SqueezeClip> ads = SqueezePlanner.FillWith(pool, room).Where(ad => File.Exists(ad.Path)).ToList();
+        if (ads.Count == 0)
+        {
+            return (job, null);
+        }
+
+        clips.AddRange(ads);
+        string playlist = output + ".panel.mp4";
+        List<string> arguments = ["-y", "-hide_banner", "-loglevel", "error", "-nostdin"];
+        List<string> parts = [];
+        string N(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+        for (int index = 0; index < clips.Count; index++)
+        {
+            SqueezeClip clip = clips[index];
+            string length = N(clip.Length.TotalSeconds);
+            arguments.AddRange(["-i", clip.Path]);
+            parts.Add($"[{index}:v]trim=duration={length},setpts=PTS-STARTPTS,scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2,"
+                      + $"pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p[v{index}]");
+            parts.Add(await HasAudioAsync(clip.Path, cancellationToken).ConfigureAwait(false)
+                ? $"[{index}:a]atrim=duration={length},asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,apad=whole_dur={length}[a{index}]"
+                : $"anullsrc=r=48000:cl=stereo,atrim=duration={length},aformat=sample_fmts=fltp:channel_layouts=stereo[a{index}]");
+        }
+
+        string joined = string.Concat(Enumerable.Range(0, clips.Count).Select(index => $"[v{index}][a{index}]"));
+        parts.Add($"{joined}concat=n={clips.Count}:v=1:a=1[v][a]");
+        arguments.AddRange(["-filter_complex", string.Join(';', parts), "-map", "[v]", "-map", "[a]",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ac", "2", playlist]);
+        (int code, string errors, _) = await RunAsync(settings.Ffmpeg, arguments, cancellationToken).ConfigureAwait(false);
+        if (code != 0 || !File.Exists(playlist))
+        {
+            logger.LogWarning("Credit squeeze: couldn't join the commercials for the panel: {Error}", errors.Trim());
+            TryDelete(playlist);
+            return (job, null);
+        }
+
+        TimeSpan total = TimeSpan.FromTicks(clips.Sum(clip => clip.Length.Ticks));
+        return (job with { PromoPath = playlist, PromoLength = total }, playlist);
+    }
+
+    private async Task RenderMadeAsync(SqueezeJob job, string output, CancellationToken cancellationToken)
+    {
         (int width, int height) = settings.Size;
         byte[]? art = PlaysPromo(job) ? null : await ArtAsync(job.Next.ImageId, cancellationToken).ConfigureAwait(false);
         string panel = output + ".frame.png";

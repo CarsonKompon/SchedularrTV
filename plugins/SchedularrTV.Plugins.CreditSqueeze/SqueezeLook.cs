@@ -1,5 +1,21 @@
 namespace SchedularrTV.CreditSqueeze;
 
+/// <summary>What plays in the panel beside the credits.</summary>
+public enum SqueezePanel
+{
+    /// <summary>A promo of a ticked kind (else the next programme's picture).</summary>
+    Promo,
+
+    /// <summary>Ordinary commercials, as many as fit, as in a break.</summary>
+    Commercials,
+
+    /// <summary>A promo first, then commercials for the rest of the credits.</summary>
+    PromoThenCommercials
+}
+
+/// <summary>A clip to play in the panel, with how long it runs.</summary>
+public sealed record SqueezeClip(string Path, TimeSpan Length);
+
 /// <summary>
 /// How a squeeze looks: its layout, what plays in the panel, the headings, fonts, colours and background. A channel (or
 /// block) has one of its own, and may save more as templates, one of which is picked at random for each squeeze.
@@ -27,6 +43,9 @@ public class SqueezeLook
     /// clips and generated promos alike). None, or none nearby: the panel shows the next programme's picture.
     /// </summary>
     public List<SqueezePromo> Promos { get; set; } = [];
+
+    /// <summary>Promos, commercials, or a promo then commercials.</summary>
+    public SqueezePanel Panel { get; set; } = SqueezePanel.Promo;
 
     /// <summary>Over the ending show's name, when the credits have text.</summary>
     public string CreditsCaption { get; set; } = "You've been watching";
@@ -107,6 +126,7 @@ public class SqueezeLook
     {
         target.UseLayout(OwnLayout());
         target.Promos = [.. Promos];
+        target.Panel = Panel;
         target.CreditsCaption = CreditsCaption;
         target.CreditsLine = CreditsLine;
         target.HeadingFont = HeadingFont;

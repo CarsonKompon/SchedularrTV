@@ -392,6 +392,40 @@ public sealed class CreditSqueezeTests
     }
 
     [Fact]
+    public void The_panel_can_play_commercials_from_later_breaks()
+    {
+        // Ads in the break straight after the credits, and in the one after Rugrats.
+        List<ScheduleEntry> day = Day();
+        day[1] = new ScheduleEntry
+        {
+            Start = Noon.AddMinutes(22), Duration = TimeSpan.FromMinutes(8), Kind = ScheduleEntryKind.Commercial,
+            Item = new MediaItem { Id = "next-break", Title = "Soda", Duration = TimeSpan.FromSeconds(30), Path = "/ads/soda.mp4" }
+        };
+        day[4] = new ScheduleEntry
+        {
+            Start = Noon.AddMinutes(52.5), Duration = TimeSpan.FromSeconds(30), Kind = ScheduleEntryKind.Commercial,
+            Item = new MediaItem { Id = "later-a", Title = "Cereal", Duration = TimeSpan.FromSeconds(30), Path = "/ads/cereal.mp4" }
+        };
+        day.Insert(5, new ScheduleEntry
+        {
+            Start = Noon.AddMinutes(53), Duration = TimeSpan.FromSeconds(15), Kind = ScheduleEntryKind.Commercial,
+            Item = new MediaItem { Id = "later-b", Title = "Toys", Duration = TimeSpan.FromSeconds(15), Path = "/ads/toys.mp4" }
+        });
+
+        SqueezeJob job = Plan(day, new CreditSqueezeSection { Panel = SqueezePanel.Commercials, Promos = [SqueezePromo.UpNext] })[0].Job;
+
+        Assert.Equal(SqueezePanel.Commercials, job.Panel);
+        Assert.False(job.WantsMadePromo);
+        Assert.Equal(new[] { "/ads/cereal.mp4", "/ads/toys.mp4" }, job.Commercials!.Select(ad => ad.Path).Order());
+
+        // As many as fit, in order, until what's left is too short for any.
+        List<SqueezeClip> fill = SqueezePlanner.FillWith(
+            [new("/a.mp4", TimeSpan.FromSeconds(30)), new("/b.mp4", TimeSpan.FromSeconds(30)), new("/c.mp4", TimeSpan.FromSeconds(15))], TimeSpan.FromSeconds(50));
+        Assert.Equal(new[] { "/a.mp4", "/c.mp4" }, fill.Select(ad => ad.Path));
+        Assert.Null(Plan(day, new CreditSqueezeSection())[0].Job.Commercials);
+    }
+
+    [Fact]
     public void Episodes_without_known_credits_can_have_their_end_squeezed()
     {
         TimeSpan ninety = TimeSpan.FromSeconds(90);

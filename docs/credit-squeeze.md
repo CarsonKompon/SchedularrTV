@@ -68,7 +68,12 @@ channel*, *Its own settings* or *No squeezes*):
   - Under the preview, the tab says what Jellyfin is being asked: how many episodes are waiting, roughly how long
     that will take, and how many have credits marked. Opening the tab asks about the channel's episodes straight
     away, even before the channel's turned on.
-- **Play in the panel:** the kinds of promo that may play in the panel's picture: *Up Next* (the next programme's own,
+- **Play in the panel:** *A promo* (below), *Commercials*, or *A promo, then commercials for the rest*. Commercials
+  are ordinary ads, as many as fit while the credits roll, picked at random from what the channel's breaks air over the
+  next few hours (not the break straight after the credits, so none plays twice in a row). After a promo, they fill
+  what's left of the credits. They play in the panel like a promo: fading up from black, with their sound over the
+  credits'.
+- **Promo kinds:** the kinds of promo that may play in the panel's picture: *Up Next* (the next programme's own,
   from the breaks before it), *Now Playing* (its ident), *Coming Up* (later today) and *Eventually* (later in the week).
   One is picked at random from what the schedule airs nearby, library promo clips and generated promos alike. It plays
   once the credits are in place, fading up from black (and back down as it ends), with the credits' sound dipped under
@@ -119,6 +124,7 @@ plugins:
         side: left
         split_percent: 45
     background_path: D:\Media\Backgrounds\loop.mp4
+    panel: promo_then_commercials   # promo, commercials, promo_then_commercials
     promos: [up_next, coming_up]
     credits_chance: 0.75
     assumed_credits_seconds: 45   # episodes without known credits: squeeze their last 45 seconds

@@ -49,7 +49,9 @@ public sealed record SqueezeJob(
     IReadOnlyList<string>? MakeHeadings = null,
     TimeSpan MaxExtra = default,
     bool FitToPromo = false,
-    TimeSpan Extra = default)
+    TimeSpan Extra = default,
+    SqueezePanel Panel = SqueezePanel.Promo,
+    IReadOnlyList<SqueezeClip>? Commercials = null)
 {
     /// <summary>How long the squeeze runs: its credits, then (with <see cref="Extra"/>) the rest of its promo, full screen.</summary>
     public TimeSpan Total => Length + Extra;
@@ -175,7 +177,10 @@ public static class SqueezePlanner
             }
         }
 
-        (ScheduleEntry? promoEntry, SqueezePromo? promoKind, bool pending) = PickPromoEntry(entries, index, next, look.Promos, channelId);
+        // Commercials only: no promo is looked for.
+        IReadOnlyList<SqueezePromo> wantedPromos = look.Panel == SqueezePanel.Commercials ? Array.Empty<SqueezePromo>() : look.Promos;
+        (ScheduleEntry? promoEntry, SqueezePromo? promoKind, bool pending) = PickPromoEntry(entries, index, next, wantedPromos, channelId);
+        IReadOnlyList<SqueezeClip>? commercials = look.Panel == SqueezePanel.Promo ? null : CommercialPool(entries, index, next, channelId);
         MediaItem? promo = pending ? null : promoEntry?.Item;
 
         // The panel says what the promo in it is for: the next programme, or (Coming Up, Eventually) the airing it promotes.
@@ -193,10 +198,10 @@ public static class SqueezePlanner
         // No promo of the wanted kinds ready nearby: the channel's generated promos may make one (tried in a seeded order).
         // One the schedule is still making is waited for first (see Pending), then made here if it isn't ready in time.
         IReadOnlyList<SqueezePromo>? make = null;
-        if (promo is null && look.Promos.Count > 0)
+        if (promo is null && wantedPromos.Count > 0)
         {
             DeterministicRandom random = DeterministicRandom.FromSeedText(channelId, entries[index].Start.ToString("O"), "credit-squeeze-make");
-            make = [.. look.Promos.Distinct().OrderBy(_ => random.Next(10000))];
+            make = [.. wantedPromos.Distinct().OrderBy(_ => random.Next(10000))];
         }
 
         return new SqueezePlan(index, from, whole, new SqueezeJob(item.Path!, from, length, nextListing, later, channelName,
@@ -211,7 +216,68 @@ public static class SqueezePlanner
             string.IsNullOrWhiteSpace(look.TextFont) ? "Arial" : look.TextFont,
             make, make is null ? null : channelId, make is null ? null : entries[index].BlockName, make is null ? default : entries[next].Start,
             make?.Select(made => look.HeadingFor(made)).ToList(),
-            BreakRoom(entries, index, next)), pending);
+            BreakRoom(entries, index, next), Panel: look.Panel, Commercials: commercials), pending);
+    }
+
+    // How far ahead commercials for the panel are gathered from, and how many.
+    private static readonly TimeSpan CommercialsWithin = TimeSpan.FromHours(6);
+    private const int MostCommercials = 40;
+
+    /// <summary>
+    /// Commercials the panel may play, in a seeded order: ones the channel airs in its breaks over the next few hours
+    /// (not the break straight after the credits, which would show them twice in a row), each once.
+    /// </summary>
+    public static IReadOnlyList<SqueezeClip> CommercialPool(IReadOnlyList<ScheduleEntry> entries, int index, int next, string channelId)
+    {
+        DateTimeOffset from = entries[index].Start;
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        List<SqueezeClip> pool = [];
+        for (int other = next; other < entries.Count && pool.Count < MostCommercials; other++)
+        {
+            ScheduleEntry candidate = entries[other];
+            if (candidate.Start - from > CommercialsWithin)
+            {
+                break;
+            }
+
+            if (candidate.Kind == ScheduleEntryKind.Commercial && candidate.Item is { Path.Length: > 0 } ad && ad.Duration > TimeSpan.FromSeconds(2)
+                && seen.Add(ad.Path))
+            {
+                pool.Add(new SqueezeClip(ad.Path, ad.Duration));
+            }
+        }
+
+        DeterministicRandom random = DeterministicRandom.FromSeedText(channelId, from.UtcDateTime.ToString("O", CultureInfo.InvariantCulture), "credit-squeeze", "ads");
+        return [.. pool.OrderBy(_ => random.Next(1_000_000))];
+    }
+
+    /// <summary>
+    /// Commercials from <paramref name="pool"/> (in its order) for <paramref name="room"/>: each that still fits, until
+    /// what's left is too short for any.
+    /// </summary>
+    public static List<SqueezeClip> FillWith(IReadOnlyList<SqueezeClip>? pool, TimeSpan room)
+    {
+        List<SqueezeClip> picked = [];
+        if (pool is null)
+        {
+            return picked;
+        }
+
+        foreach (SqueezeClip ad in pool)
+        {
+            if (ad.Length <= room)
+            {
+                picked.Add(ad);
+                room -= ad.Length;
+            }
+
+            if (room < TimeSpan.FromSeconds(5))
+            {
+                break;
+            }
+        }
+
+        return picked;
     }
 
     // How far ahead each kind of promo is looked for.

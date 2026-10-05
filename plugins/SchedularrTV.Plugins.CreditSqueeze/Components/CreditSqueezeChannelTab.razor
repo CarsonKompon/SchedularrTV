@@ -208,7 +208,20 @@
                         </div>
                     </fieldset>
                     <p class="hint">@StyleHint(choice)</p>
-                    <div class="field"><span>Play in the panel</span>
+                    <label class="field"><span>Play in the panel</span>
+                        <select value="@look.Panel" @onchange="e => Set(() => look.Panel = Parse(e, SqueezePanel.Promo))">
+                            <option value="Promo">A promo</option>
+                            <option value="Commercials">Commercials</option>
+                            <option value="PromoThenCommercials">A promo, then commercials for the rest</option>
+                        </select></label>
+                    @if (look.Panel == SqueezePanel.Commercials)
+                    {
+                        <p class="hint">Ordinary commercials, as many as fit while the credits roll, picked from what the channel's breaks air over the next few hours
+                            (not the break straight after, so none plays twice in a row).</p>
+                    }
+                    else
+                    {
+                    <div class="field"><span>Promo kinds</span>
                         <div class="row row-wrap" style="gap:4px 16px;">
                             @foreach (SqueezePromo kind in Enum.GetValues<SqueezePromo>())
                             {
@@ -217,10 +230,15 @@
                             }
                         </div>
                     </div>
+                    @if (look.Panel == SqueezePanel.PromoThenCommercials)
+                    {
+                        <p class="hint">After the promo, commercials fill the rest of the credits (as many as fit). A promo longer than the credits plays on by itself.</p>
+                    }
                     <p class="hint">One of the ticked kinds is picked at random from what the schedule airs nearby: library promo clips and generated promos
                         alike. It plays in the panel's picture once the credits are in place, with its own sound over theirs. With none nearby, the channel's
                         generated promos make one of a ticked kind (when the Generated Promos plugin is on and the channel has a template of that kind),
                         which makes previews take a little longer. With none ticked, or none to be had, the panel shows the next programme's picture.</p>
+                    }
                 </div>
                 <div class="cs-preview">
                     <img src="@FramePreview(look, choice)" alt="How the squeeze is laid out" />
@@ -1142,7 +1160,7 @@
         try
         {
             // As long as its promo needs (the renderer knows once it has it, made or not), else the usual 20 seconds.
-            SqueezeJob job = plan.Job.PromoPath is not null || plan.Job.WantsMadePromo
+            SqueezeJob job = plan.Job.PromoPath is not null || plan.Job.WantsMadePromo || plan.Job.Panel != SqueezePanel.Promo
                 ? plan.Job with { FitToPromo = true }
                 : plan.Job with { Length = plan.Job.Length < PreviewLength ? plan.Job.Length : PreviewLength };
             string name = await Renderer.PreviewAsync(job, Channel.Id, CancellationToken.None);
