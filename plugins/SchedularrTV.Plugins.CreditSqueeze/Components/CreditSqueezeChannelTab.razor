@@ -1158,6 +1158,13 @@
             }
         }
 
+        // A stand-in (an episode and its outro from the library, as a show with its own outro is previewed) has no breaks, so
+        // a panel of commercials takes the ones the channel's real schedule airs over the next few hours.
+        if (plan.Job.Panel != SqueezePanel.Promo && plan.Job.Commercials is not { Count: > 0 })
+        {
+            plan = plan with { Job = plan.Job with { Commercials = SqueezePlanner.CommercialsFrom(schedule.Entries, DateTimeOffset.UtcNow, Channel.Id) } };
+        }
+
         _previewing = true;
         _makingPromo = plan.Job.WantsMadePromo && PromoMaker is not null;
         StateHasChanged();

@@ -370,6 +370,23 @@ public sealed class CreditSqueezeTests
     }
 
     [Fact]
+    public void A_preview_without_breaks_of_its_own_takes_the_channels_commercials()
+    {
+        DateTimeOffset start = new(2026, 10, 5, 12, 0, 0, TimeSpan.Zero);
+        ScheduleEntry Ad(string path, int minutes) => new()
+        {
+            Start = start.AddMinutes(minutes), Duration = TimeSpan.FromSeconds(30), Kind = ScheduleEntryKind.Commercial,
+            Item = new SchedularrTV.Core.Media.MediaItem { Id = path, Title = path, Duration = TimeSpan.FromSeconds(30), Path = path }
+        };
+        ScheduleEntry[] entries = [Ad("/ads/old.mp4", -60), Ad("/ads/a.mp4", 10), Ad("/ads/b.mp4", 40), Ad("/ads/a.mp4", 70), Ad("/ads/late.mp4", 60 * 8)];
+
+        IReadOnlyList<SqueezeClip> pool = SqueezePlanner.CommercialsFrom(entries, start, "ch1");
+
+        Assert.Equal(new[] { "/ads/a.mp4", "/ads/b.mp4" }, pool.Select(ad => ad.Path).Order());
+        Assert.Empty(SqueezePlanner.CommercialsFrom([], start, "ch1"));
+    }
+
+    [Fact]
     public void A_videos_shape_is_read_with_its_pixels_own_shape()
     {
         Assert.Equal(4 / 3.0, SqueezeRenderer.AspectOf("width=640\nheight=480\nsample_aspect_ratio=1:1\n"));

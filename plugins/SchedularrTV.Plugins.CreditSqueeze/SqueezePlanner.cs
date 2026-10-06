@@ -262,6 +262,26 @@ public static class SqueezePlanner
     }
 
     /// <summary>
+    /// Commercials the channel airs in its breaks over the few hours from <paramref name="from"/>, in a seeded order: for a
+    /// preview made from a stand-in schedule (an episode and its outro from the library), which has no breaks of its own.
+    /// </summary>
+    public static IReadOnlyList<SqueezeClip> CommercialsFrom(IReadOnlyList<ScheduleEntry> entries, DateTimeOffset from, string channelId)
+    {
+        if (entries.Count == 0)
+        {
+            return [];
+        }
+
+        int start = 0;
+        while (start < entries.Count - 1 && entries[start].End <= from)
+        {
+            start++;
+        }
+
+        return CommercialPool(entries, start, start, channelId);
+    }
+
+    /// <summary>
     /// Commercials from <paramref name="pool"/> (in its order) for <paramref name="room"/>: each that still fits, until
     /// what's left is too short for any.
     /// </summary>

@@ -55,7 +55,7 @@ public sealed class SaveDock : ComponentBase
         builder.AddAttribute(21, "type", "button");
         builder.AddAttribute(22, "class", "btn btn-sm btn-ghost");
         builder.AddAttribute(23, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, () => OnDiscard.InvokeAsync()));
-        Icon(builder, 24, UndoIcon);
+        builder.AddMarkupContent(24, Icon(UndoIcon));
         builder.AddContent(25, "Discard");
         builder.CloseElement();
 
@@ -65,7 +65,7 @@ public sealed class SaveDock : ComponentBase
         builder.AddAttribute(33, "disabled", !CanSave);
         builder.AddAttribute(34, "title", CanSave ? null : Problem);
         builder.AddAttribute(35, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, () => OnSave.InvokeAsync()));
-        Icon(builder, 36, SaveIcon);
+        builder.AddMarkupContent(36, Icon(SaveIcon));
         builder.AddContent(37, "Save changes");
         builder.CloseElement();
 
@@ -73,22 +73,7 @@ public sealed class SaveDock : ComponentBase
     }
 
     // The same stroke icons as the app's own (Lucide, ISC licence), inline so they inherit currentColor.
-    private static void Icon(RenderTreeBuilder builder, int sequence, string paths)
-    {
-        builder.OpenRegion(sequence);
-        builder.OpenElement(0, "svg");
-        builder.AddAttribute(1, "class", "icon");
-        builder.AddAttribute(2, "width", "14");
-        builder.AddAttribute(3, "height", "14");
-        builder.AddAttribute(4, "viewBox", "0 0 24 24");
-        builder.AddAttribute(5, "fill", "none");
-        builder.AddAttribute(6, "stroke", "currentColor");
-        builder.AddAttribute(7, "stroke-width", "2");
-        builder.AddAttribute(8, "stroke-linecap", "round");
-        builder.AddAttribute(9, "stroke-linejoin", "round");
-        builder.AddAttribute(10, "aria-hidden", "true");
-        builder.AddMarkupContent(11, paths);
-        builder.CloseElement();
-        builder.CloseRegion();
-    }
+    private static string Icon(string paths) =>
+        """<svg class="icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" """
+        + """stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">""" + paths + "</svg>";
 }
