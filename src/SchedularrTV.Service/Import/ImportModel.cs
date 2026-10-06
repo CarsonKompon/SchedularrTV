@@ -86,6 +86,13 @@ public sealed class ImportedContent
         CollectionName = CollectionName, Problem = Problem, Weight = weight
     };
 
+    /// <summary>The same content played another way.</summary>
+    public ImportedContent WithOrder(ImportedOrder order) => new()
+    {
+        Kind = Kind, Name = Name, ShowJellyfinId = ShowJellyfinId, Seasons = Seasons, Items = Items, Children = Children, Order = order,
+        CollectionName = CollectionName, Problem = Problem, Weight = Weight
+    };
+
     public static ImportedContent ForShow(string title, string? jellyfinId = null, IEnumerable<int>? seasons = null, ImportedOrder order = ImportedOrder.Default) =>
         new() { Kind = ImportedContentKind.Show, Name = title, ShowJellyfinId = jellyfinId, Seasons = [.. seasons ?? []], Order = order };
 

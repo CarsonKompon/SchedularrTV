@@ -25,6 +25,8 @@
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.153.1" />
     <!-- Reads ErsatzTV's and Tunarr's databases (read-only) to import their channels. -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+    <!-- Pinned past the SQLite it brings by default (2.1.11 bundles a SQLite with CVE-2025-6965, GHSA-2m69-gcr7-jv3q). -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
   </ItemGroup>
 
   <ItemGroup>

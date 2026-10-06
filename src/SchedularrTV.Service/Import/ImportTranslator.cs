@@ -111,6 +111,9 @@ public sealed class ImportTranslator
     private readonly HashSet<string> _collectionKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<int> _reserved = [];
 
+    /// <summary>Above the everyday blocks' default (10), below a specific date's (100).</summary>
+    public const int DayPriority = 20;
+
     /// <summary>What was and wasn't found, as one channel is worked out.</summary>
     private sealed class Tally
     {
@@ -181,6 +184,9 @@ public sealed class ImportTranslator
                     EndTime = end,
                     Recurrence = slot.Days.Count > 0 ? Recurrence.DaysOfWeek : Recurrence.Daily,
                     Days = [.. slot.Days],
+
+                    // A lineup for some days (an ErsatzTV alternate schedule) wins over the everyday one on those days.
+                    Priority = slot.Days.Count > 0 ? DayPriority : null,
                     Shows = [selector]
                 });
             }
@@ -283,36 +289,42 @@ public sealed class ImportTranslator
     /// <summary>The content as one selector (a shared collection, when it was one there); null when none of it was found.</summary>
     private ContentSelector? Selector(ImportedContent content, ImportPlan plan, Tally tally)
     {
-        List<ContentInclude> includes = Includes(content, tally);
-        if (includes.Count == 0)
-        {
-            return null;
-        }
-
         PlaybackOrder? order = Order(content.Order);
         if (content.CollectionName is { Length: > 0 } name)
         {
-            // Made once, and shared by every channel (and slot) that played it there.
+            // Made once, and shared by every channel (and slot) that played it there. Its members carry only the orders
+            // they had themselves; how it's played is set where it's used, so each use keeps its own.
             if (!_collectionsByName.TryGetValue(name, out string? key))
             {
+                List<ContentInclude> members = Includes(content.WithOrder(ImportedOrder.Default), tally, inherited: null, defaults: false);
+                if (members.Count == 0)
+                {
+                    return null;
+                }
+
                 key = Unique(Slug(name).Replace('-', '_'), _collectionKeys);
                 _collectionsByName[name] = key;
-                plan.Collections[key] = new ContentSelector { Include = includes };
+                plan.Collections[key] = new ContentSelector { Include = members };
             }
 
-            return new ContentSelector { Collection = key, Order = order };
+            return new ContentSelector { Collection = key, Order = order ?? PlaybackOrder.Shuffle };
         }
 
-        return new ContentSelector { Include = includes, Order = order };
+        List<ContentInclude> includes = Includes(content, tally);
+        return includes.Count == 0 ? null : new ContentSelector { Include = includes, Order = order };
     }
 
     private readonly Dictionary<string, string> _collectionsByName = new(StringComparer.Ordinal);
 
-    /// <summary>The content as includes: shows (all of them, some seasons, or some episodes), and films by id.</summary>
-    private List<ContentInclude> Includes(ImportedContent content, Tally tally)
+    /// <summary>
+    /// The content as includes: shows (all of them, some seasons, or some episodes), and films by id. Each takes its own
+    /// order, else its group's (<paramref name="inherited"/>); with <paramref name="defaults"/>, any still without one then
+    /// gets the usual (season and episode order for a show, shuffled otherwise).
+    /// </summary>
+    private List<ContentInclude> Includes(ImportedContent content, Tally tally, PlaybackOrder? inherited = null, bool defaults = true)
     {
         List<ContentInclude> includes = [];
-        PlaybackOrder? order = Order(content.Order);
+        PlaybackOrder? order = Order(content.Order) ?? inherited;
         switch (content.Kind)
         {
             case ImportedContentKind.Show:
@@ -321,8 +333,7 @@ public sealed class ImportTranslator
                     tally.Found++;
                     includes.Add(new ContentInclude
                     {
-                        Show = series.Name, ShowId = series.Id, Seasons = [.. content.Seasons.Distinct().Order()],
-                        Order = order ?? PlaybackOrder.SeasonEpisode
+                        Show = series.Name, ShowId = series.Id, Seasons = [.. content.Seasons.Distinct().Order()], Order = order
                     });
                 }
                 else
@@ -332,7 +343,7 @@ public sealed class ImportTranslator
 
                 break;
             case ImportedContentKind.AllMovies:
-                includes.Add(new ContentInclude { Query = "kind == 'Movie'", Order = order ?? PlaybackOrder.Shuffle });
+                includes.Add(new ContentInclude { Query = "kind == 'Movie'", Order = order });
                 break;
             case ImportedContentKind.Unsupported:
                 break;
@@ -345,13 +356,20 @@ public sealed class ImportTranslator
 
         foreach (ImportedContent child in content.Children.Where(child => child.Kind != ImportedContentKind.Unsupported))
         {
-            foreach (ContentInclude include in Includes(child, tally))
+            foreach (ContentInclude include in Includes(child, tally, order, defaults: false))
             {
-                include.Order ??= order;
                 if (!includes.Any(existing => Same(existing, include)))
                 {
                     includes.Add(include);
                 }
+            }
+        }
+
+        if (defaults)
+        {
+            foreach (ContentInclude include in includes)
+            {
+                include.Order ??= include.Show is not null || include.ShowId is not null ? PlaybackOrder.SeasonEpisode : PlaybackOrder.Shuffle;
             }
         }
 
@@ -382,10 +400,10 @@ public sealed class ImportTranslator
 
             string name = items[0].SeriesName ?? seriesId;
             yield return items.Count >= _episodesInSeries.GetValueOrDefault(seriesId)
-                ? new ContentInclude { Show = name, ShowId = seriesId, Order = order ?? PlaybackOrder.SeasonEpisode }
+                ? new ContentInclude { Show = name, ShowId = seriesId, Order = order }
                 : new ContentInclude
                 {
-                    Show = name, ShowId = seriesId, Order = order ?? PlaybackOrder.SeasonEpisode,
+                    Show = name, ShowId = seriesId, Order = order,
                     Episodes = [.. items.OrderBy(item => item.SeasonNumber).ThenBy(item => item.EpisodeNumber)
                         .Select(item => $"S{item.SeasonNumber!.Value:D2}E{item.EpisodeNumber!.Value:D2}")]
                 };
@@ -393,7 +411,7 @@ public sealed class ImportTranslator
 
         if (loose.Count > 0)
         {
-            yield return new ContentInclude { Query = $"id IN [{string.Join(", ", loose.Select(Quote))}]", Order = order ?? PlaybackOrder.Shuffle };
+            yield return new ContentInclude { Query = $"id IN [{string.Join(", ", loose.Select(Quote))}]", Order = order };
         }
     }
 

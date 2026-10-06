@@ -212,7 +212,7 @@ public static class ErsatzTvImporter
 
                 (long showId, int? season) = SqliteSnapshot.Long(row, "SeasonId") is { } seasonId && Seasons.TryGetValue(seasonId, out var found)
                     ? (found.ShowId, found.Number)
-                    : (0L, null);
+                    : (0L, (int?)null);
                 (string show, string? showJellyfin, _) = Shows.TryGetValue(showId, out var known) ? known : (string.Empty, null, null);
                 episodes[id] = new ImportedMedia(SqliteSnapshot.Text(row, "ItemId"), SqliteSnapshot.Text(row, "Path"), SqliteSnapshot.Text(row, "Title") ?? $"Episode {id}",
                     show.Length == 0 ? null : show, showJellyfin, season, SqliteSnapshot.Int(row, "EpisodeNumber"), Duration: SqliteSnapshot.Span(row, "Duration") ?? TimeSpan.Zero);

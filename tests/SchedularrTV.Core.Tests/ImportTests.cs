@@ -204,6 +204,48 @@ public sealed class ImportTests : IDisposable
     }
 
     [Fact]
+    public void Each_use_of_a_shared_collection_keeps_its_order_groups_pass_theirs_down_and_day_blocks_win()
+    {
+        ImportedMedia doug = new(null, null, "Doug S1E2", "Doug", null, 1, 2);
+        ImportedContent Weekend(ImportedOrder order) => new()
+        {
+            Kind = ImportedContentKind.Group, Name = "Weekend", CollectionName = "Weekend", Items = [doug], Order = order,
+            Children = [ImportedContent.ForShow("Rugrats")]
+        };
+        var schedule = new ImportedSchedule { Source = ImportSource.ErsatzTv, From = "test" };
+        var shuffled = new ImportedChannel { SourceId = "1", Name = "Shuffled", Number = 1 };
+        shuffled.Slots.Add(new ImportedSlot(TimeSpan.FromHours(6), Weekend(ImportedOrder.Shuffle), []));
+        shuffled.Slots.Add(new ImportedSlot(TimeSpan.FromHours(18), Weekend(ImportedOrder.Shuffle), []));
+        shuffled.Slots.Add(new ImportedSlot(TimeSpan.FromHours(9), ImportedContent.ForShow("Doug"), [DayOfWeek.Saturday], TimeSpan.FromHours(3)));
+        var inOrder = new ImportedChannel { SourceId = "2", Name = "In order", Number = 2 };
+        inOrder.Rotation.Add(new ImportedContent
+        {
+            Kind = ImportedContentKind.Group, Name = "Mix", Order = ImportedOrder.Shuffle, Children = [ImportedContent.ForShow("Rugrats"), ImportedContent.ForShow("Doug", order: ImportedOrder.Chronological)]
+        });
+        inOrder.Slots.Add(new ImportedSlot(TimeSpan.FromHours(20), Weekend(ImportedOrder.Chronological), [], TimeSpan.FromHours(2)));
+        schedule.Channels.AddRange([shuffled, inOrder]);
+
+        ImportPlan plan = new ImportTranslator(Library()).Plan(schedule, new SchedulerConfig());
+        ChannelConfig first = plan.Channels[0].Channel!, second = plan.Channels[1].Channel!;
+
+        // One collection, its members with no order of their own; each channel plays it its own way.
+        ContentSelector shared = Assert.Single(plan.Collections).Value;
+        Assert.All(shared.Include, include => Assert.Null(include.Order));
+        Assert.Equal(PlaybackOrder.Shuffle, first.Blocks.First(block => block.Shows[0].Collection is not null).Shows[0].Order);
+        Assert.Equal(PlaybackOrder.Chronological, second.Blocks.Single().Shows[0].Order);
+
+        // A shuffled group shuffles its shows, unless one has an order of its own.
+        Assert.Equal(PlaybackOrder.Shuffle, second.BaseRotation!.Include.Single(include => include.Show == "Rugrats").Order);
+        Assert.Equal(PlaybackOrder.Chronological, second.BaseRotation.Include.Single(include => include.Show == "Doug").Order);
+
+        // Saturday's own block outranks the everyday ones.
+        BlockConfig saturday = first.Blocks.Single(block => block.Days.Count > 0);
+        Assert.Equal(ImportTranslator.DayPriority, saturday.Priority);
+        Assert.All(first.Blocks.Where(block => block.Days.Count == 0), block => Assert.Null(block.Priority));
+        Valid(plan);
+    }
+
+    [Fact]
     public void Programmes_are_found_by_id_by_file_under_another_folder_and_by_episode()
     {
         var translator = new ImportTranslator(
