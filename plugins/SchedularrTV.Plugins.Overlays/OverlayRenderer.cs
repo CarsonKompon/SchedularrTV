@@ -300,12 +300,13 @@ public sealed class OverlayRenderer(Func<string> folder)
         // A play mark in the middle.
         float size = Math.Min(bounds.Width, bounds.Height) * 0.25f;
         using var mark = new SKPaint { Color = new SKColor(255, 255, 255, 170), IsAntialias = true };
-        using var triangle = new SKPath();
-        triangle.MoveTo(bounds.MidX - size * 0.4f, bounds.MidY - size / 2);
-        triangle.LineTo(bounds.MidX + size * 0.5f, bounds.MidY);
-        triangle.LineTo(bounds.MidX - size * 0.4f, bounds.MidY + size / 2);
-        triangle.Close();
-        canvas.DrawPath(triangle, mark);
+        string P(float value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+        using SKPath? triangle = SKPath.ParseSvgPathData(
+            $"M{P(bounds.MidX - size * 0.4f)} {P(bounds.MidY - size / 2)} L{P(bounds.MidX + size * 0.5f)} {P(bounds.MidY)} L{P(bounds.MidX - size * 0.4f)} {P(bounds.MidY + size / 2)} Z");
+        if (triangle is not null)
+        {
+            canvas.DrawPath(triangle, mark);
+        }
     }
 
     public static bool IsVideo(string? path) =>

@@ -446,7 +446,9 @@ public sealed class CreditSqueezeTests
         string graph = arguments[arguments.IndexOf("-filter_complex") + 1];
         Assert.Contains("[v0][promo]overlay", graph, StringComparison.Ordinal);
         Assert.Contains("amix=inputs=2:duration=longest", graph, StringComparison.Ordinal);
-        Assert.Equal("91.2", arguments[^14]);
+        // Found by name, not counted from the end: the encoder's arguments vary by machine (a 2-core CI runner counts as
+        // low-power and adds -threads 2).
+        Assert.Equal("91.2", arguments[arguments.LastIndexOf("-t") + 1]);
         Assert.Equal("60", arguments[arguments.IndexOf("/media/SpongeBob/1.mkv") - 2]);
 
         // In the schedule, it runs on into the break, whose end is cut short; the next programme starts on time.
