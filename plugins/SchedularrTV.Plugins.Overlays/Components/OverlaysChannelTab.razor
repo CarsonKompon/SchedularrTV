@@ -154,7 +154,7 @@
 
         @if (Mode == OwnMode && _selected is { } selected && _section?.Overlays.Contains(selected) == true)
         {
-            <OverlayEditor @key="selected" Overlay="selected" ChannelName="@channel.Name" Changed="Commit" />
+            <OverlayEditor @key="selected" Overlay="selected" ChannelName="@channel.Name" Changed="Commit" HolidayNames="HolidayNames" />
         }
     </div>
 }
@@ -176,6 +176,13 @@
     private int _loadedIndex = -2;
 
     private ChannelConfig Channel => Context.Channel!;
+
+    // The schedule's own holidays (Settings), else the built-in ones, for a file's other pictures.
+    private IReadOnlyList<string> HolidayNames =>
+        [.. (Context.Config.Settings.TemporalTags.Holidays.Count > 0
+                ? Context.Config.Settings.TemporalTags.Holidays
+                : (IEnumerable<SchedularrTV.Core.Temporal.HolidayDefinition>)SchedularrTV.Core.Temporal.TemporalTagOptions.DefaultHolidays)
+            .Select(holiday => holiday.Name).Where(name => !string.IsNullOrWhiteSpace(name)).Distinct(StringComparer.OrdinalIgnoreCase)];
 
     private BlockConfig? Block => _blockIndex >= 0 && _blockIndex < Channel.Blocks.Count ? Channel.Blocks[_blockIndex] : null;
 

@@ -140,10 +140,77 @@ public sealed class Overlay
     /// <summary><see cref="OverlayAppliesTo"/>.</summary>
     public string AppliesTo { get; set; } = OverlayAppliesTo.Programmes;
 
+    /// <summary>
+    /// For a file: other pictures shown instead of <see cref="File"/> when their conditions are met (a rating badge for
+    /// TV-Y shows, a pumpkin bug through Halloween). The first that matches wins; with none, <see cref="File"/> shows,
+    /// and with no <see cref="File"/> either, nothing does.
+    /// </summary>
+    public List<OverlayVariant> Variants { get; set; } = [];
+
     public Overlay Copy()
     {
         var copy = (Overlay)MemberwiseClone();
         copy.Layers = [.. Layers.Select(layer => layer.Copy())];
+        copy.Variants = [.. Variants.Select(variant => variant.Copy())];
+        return copy;
+    }
+}
+
+/// <summary>
+/// Another picture for a file overlay, and when it's used instead. Every condition that's set must hold (an empty one
+/// isn't checked); they're judged at the start of each entry, in the channel's time zone.
+/// </summary>
+public sealed class OverlayVariant
+{
+    public string Name { get; set; } = "Variant";
+
+    public bool Enabled { get; set; } = true;
+
+    public string? File { get; set; }
+
+    /// <summary>The programme's content rating is one of these (TV-Y, TV-PG, PG-13…), ignoring case and dashes.</summary>
+    public List<string> Ratings { get; set; } = [];
+
+    /// <summary>The programme matches this library query (<c>show:'Rugrats'</c>, <c>tag:'Halloween'</c>).</summary>
+    public string? Query { get; set; }
+
+    /// <summary>Within one of these holidays, as set up under Settings (Christmas, Halloween…).</summary>
+    public List<string> Holidays { get; set; } = [];
+
+    /// <summary>In one of these seasons: Winter, Spring, Summer, Fall.</summary>
+    public List<string> Seasons { get; set; } = [];
+
+    /// <summary>In one of these months, 1 to 12.</summary>
+    public List<int> Months { get; set; } = [];
+
+    /// <summary>On or after this day of the year, <c>MM-DD</c> (with <see cref="DateTo"/>, a range that may wrap the new year).</summary>
+    public string? DateFrom { get; set; }
+
+    /// <summary>On or before this day of the year, <c>MM-DD</c>.</summary>
+    public string? DateTo { get; set; }
+
+    /// <summary>On one of these days of the week.</summary>
+    public List<DayOfWeek> Days { get; set; } = [];
+
+    /// <summary>At or after this time of day (with <see cref="TimeTo"/>, a range that may cross midnight).</summary>
+    public TimeSpan? TimeFrom { get; set; }
+
+    /// <summary>Before this time of day.</summary>
+    public TimeSpan? TimeTo { get; set; }
+
+    /// <summary>Whether any condition is set (one without any would always win).</summary>
+    public bool HasConditions =>
+        Ratings.Count > 0 || !string.IsNullOrWhiteSpace(Query) || Holidays.Count > 0 || Seasons.Count > 0 || Months.Count > 0
+        || !string.IsNullOrWhiteSpace(DateFrom) || !string.IsNullOrWhiteSpace(DateTo) || Days.Count > 0 || TimeFrom is not null || TimeTo is not null;
+
+    public OverlayVariant Copy()
+    {
+        var copy = (OverlayVariant)MemberwiseClone();
+        copy.Ratings = [.. Ratings];
+        copy.Holidays = [.. Holidays];
+        copy.Seasons = [.. Seasons];
+        copy.Months = [.. Months];
+        copy.Days = [.. Days];
         return copy;
     }
 }

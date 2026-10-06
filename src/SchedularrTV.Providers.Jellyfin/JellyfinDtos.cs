@@ -52,6 +52,10 @@ internal sealed class JellyfinItem
     [JsonPropertyName("Tags")]
     public List<string>? Tags { get; set; }
 
+    /// <summary>The content rating (TV-Y, TV-PG, PG-13…), returned on every item without asking.</summary>
+    [JsonPropertyName("OfficialRating")]
+    public string? OfficialRating { get; set; }
+
     [JsonPropertyName("Path")]
     public string? Path { get; set; }
 
@@ -93,7 +97,7 @@ internal sealed class JellyfinNamedItem
 }
 
 /// <summary>Series-level metadata that episodes do not carry themselves, or carry staler.</summary>
-internal sealed record JellyfinSeriesInfo(string? Name, List<string> Networks, int? Year);
+internal sealed record JellyfinSeriesInfo(string? Name, List<string> Networks, int? Year, string? Rating = null);
 
 /// <summary>Which merged version group an item belongs to, and what this version is called.</summary>
 internal sealed record JellyfinVersion(string GroupId, string? Name);

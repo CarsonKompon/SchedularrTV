@@ -187,6 +187,9 @@ public static class QueryEvaluator
         "kind" or "type" => [item.Kind.ToString()],
         "path" => item.Path is null ? [] : [item.Path],
         "version" => item.VersionName is null ? [] : [item.VersionName],
+
+        // A rating:… tag (as an attribute) still answers for an item Jellyfin has no rating for.
+        "rating" or "content_rating" or "official_rating" when item.Rating is { Length: > 0 } rating => [rating],
         _ => item.Attributes.TryGetValue(field, out string? attribute) ? [attribute] : []
     };
 

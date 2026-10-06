@@ -232,6 +232,70 @@ public sealed class OverlayTests : IDisposable
     }
 
     [Fact]
+    public async Task A_file_shows_the_first_picture_whose_conditions_hold_else_its_own()
+    {
+        (SchedulerConfig config, ChannelConfig cartoons, _) = Channels();
+        cartoons.Plugins = Section(new OverlaysSection
+        {
+            Overlays =
+            [
+                new Overlay
+                {
+                    Name = "Bug", Kind = OverlayKinds.File, File = "default.png", FadeSeconds = 0,
+                    Variants =
+                    [
+                        new OverlayVariant { Name = "Kids", File = "kids.png", Ratings = ["TVY"] },
+                        new OverlayVariant { Name = "Off", File = "never.png", Ratings = ["TV-Y"], Enabled = false },
+                        new OverlayVariant { Name = "Spooky nights", File = "pumpkin.png", Holidays = ["Halloween"], TimeFrom = TimeSpan.FromHours(19) },
+                        new OverlayVariant { Name = "Mondays", File = "monday.png", Days = [DayOfWeek.Monday] }
+                    ]
+                },
+                // Only its variants: nothing on a programme none of them suits.
+                new Overlay { Name = "Rating", Kind = OverlayKinds.File, FadeSeconds = 0, Variants = [new OverlayVariant { File = "tv-y.png", Ratings = ["TV-Y"] }] }
+            ]
+        });
+        MediaItem kids = new() { Id = "kids", Title = "Kids", Kind = MediaKind.Episode, Duration = TimeSpan.FromMinutes(22), SeriesName = "Kids", Rating = "TV-Y" };
+        var schedule = new ChannelSchedule
+        {
+            ChannelId = "cartoons", ChannelName = "Cartoons", ChannelNumber = 1, Start = Eight, End = Eight.AddDays(2),
+            Entries =
+            [
+                Episode() with { Item = kids },                      // Saturday 3 October, 8pm: rated TV-Y
+                Episode(start: Eight.AddMinutes(22)),                // unrated, in Halloween, after 7pm
+                Episode(start: Eight.AddDays(2).AddHours(-10))       // Monday 5 October, 10am
+            ]
+        };
+
+        ChannelSchedule processed = await Processor().ProcessAsync(new PlayoutContext(config, cartoons, schedule), CancellationToken.None);
+        string[] Files(int index) =>
+            [.. ((JsonArray)JsonNode.Parse(processed.Entries[index].Annotations![PlayoutPublisher.GraphicsAnnotation])!).Select(layer => (string)layer!["source"]!["path"]!)];
+
+        Assert.Equal(new[] { "kids.png", "tv-y.png" }, Files(0));
+        Assert.Equal(new[] { "pumpkin.png" }, Files(1));
+        Assert.Equal(new[] { "monday.png" }, Files(2));
+    }
+
+    [Fact]
+    public void Variant_dates_and_times_can_wrap_and_queries_and_seasons_are_checked()
+    {
+        OverlayMoment At(DateTimeOffset when) => OverlayMoment.At(when, new SchedulerConfig(), new ChannelConfig { Id = "c", Name = "C" });
+        DateTimeOffset newYearsEve = new(2026, 12, 31, 23, 30, 0, TimeSpan.Zero);
+
+        Assert.True(OverlayVariants.Matches(new OverlayVariant { DateFrom = "12-20", DateTo = "01-05" }, null, At(newYearsEve)));
+        Assert.False(OverlayVariants.Matches(new OverlayVariant { DateFrom = "12-20", DateTo = "01-05" }, null, At(newYearsEve.AddDays(-15))));
+        Assert.True(OverlayVariants.Matches(new OverlayVariant { TimeFrom = TimeSpan.FromHours(22), TimeTo = TimeSpan.FromHours(6) }, null, At(newYearsEve)));
+        Assert.False(OverlayVariants.Matches(new OverlayVariant { TimeFrom = TimeSpan.FromHours(22), TimeTo = TimeSpan.FromHours(6) }, null, At(newYearsEve.AddHours(-12))));
+        Assert.True(OverlayVariants.Matches(new OverlayVariant { Seasons = ["winter"], Months = [12], Holidays = ["New Year"] }, null, At(newYearsEve)));
+        Assert.False(OverlayVariants.Matches(new OverlayVariant { Seasons = ["Summer"] }, null, At(newYearsEve)));
+
+        MediaItem rugrats = TestMedia.Episode("Rugrats", 1, 1, TimeSpan.FromMinutes(22));
+        Assert.True(OverlayVariants.Matches(new OverlayVariant { Query = "show:'Rugrats'" }, rugrats, At(newYearsEve)));
+        Assert.False(OverlayVariants.Matches(new OverlayVariant { Query = "show:'Doug'" }, rugrats, At(newYearsEve)));
+        Assert.False(OverlayVariants.Matches(new OverlayVariant { Query = "show:(" }, rugrats, At(newYearsEve)));
+        Assert.False(OverlayVariants.Matches(new OverlayVariant { Ratings = ["TV-Y"] }, rugrats, At(newYearsEve)));
+    }
+
+    [Fact]
     public async Task Text_is_filled_in_per_programme_so_each_show_gets_its_own_drawing()
     {
         (SchedulerConfig config, ChannelConfig cartoons, _) = Channels();

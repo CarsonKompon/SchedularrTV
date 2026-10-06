@@ -372,7 +372,7 @@ public static partial class ApiEndpoints
             queryFields = new[]
             {
                 "id", "title", "plot", "tag", "collection", "show", "show_id",
-                "kind", "season", "episode", "year", "duration", "path", "promo_type"
+                "kind", "season", "episode", "year", "duration", "path", "rating", "promo_type"
             },
             queryOperators = new[] { ":", "==", "!=", ">", ">=", "<", "<=", "CONTAINS", "MATCHES", "IN" },
             defaultHolidays = TemporalTagOptions.DefaultHolidays,

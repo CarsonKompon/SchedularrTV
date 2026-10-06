@@ -84,6 +84,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
 
             var layers = new JsonArray();
             Dictionary<string, string>? tokens = null;
+            OverlayMoment? moment = null;
             foreach (Overlay overlay in resolved.Overlays)
             {
                 if (OverlayTiming.For(overlay, entry) is not { } showing)
@@ -93,8 +94,26 @@ public sealed class OverlayProcessor : IPlayoutProcessor
 
                 try
                 {
+                    // A file with variants shows whichever picture this entry calls for (or nothing, when none does and it has no default).
+                    Overlay shown = overlay;
+                    if (overlay.Kind == OverlayKinds.File && overlay.Variants.Count > 0)
+                    {
+                        moment ??= OverlayMoment.At(entry.Start, context.Config, channel);
+                        string? file = OverlayVariants.FileFor(overlay, entry.Item, moment);
+                        if (file is null)
+                        {
+                            continue;
+                        }
+
+                        if (!string.Equals(file, overlay.File, StringComparison.Ordinal))
+                        {
+                            shown = overlay.Copy();
+                            shown.File = file;
+                        }
+                    }
+
                     tokens ??= Tokens(entry, Next(ordered, index), resolved.Owner);
-                    if (Layer(Written(overlay, entry, tokens), showing, tokens) is { } layer)
+                    if (Layer(Written(shown, entry, tokens), showing, tokens) is { } layer)
                     {
                         layers.Add(layer);
                     }

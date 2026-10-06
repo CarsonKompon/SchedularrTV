@@ -96,7 +96,8 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
                 .Select(n => n!)
                 .Distinct(StringComparer.OrdinalIgnoreCase)];
 
-            info[series.Id] = new JellyfinSeriesInfo(series.Name, names, series.ProductionYear);
+            info[series.Id] = new JellyfinSeriesInfo(series.Name, names, series.ProductionYear,
+                string.IsNullOrWhiteSpace(series.OfficialRating) ? null : series.OfficialRating.Trim());
         }
 
         logger.LogInformation("Fetched metadata for {Count} series from Jellyfin.", info.Count);

@@ -19,6 +19,24 @@ public static class OverlayPresets
             When = OverlayWhen.Always,
             FadeSeconds = 1
         }),
+        new("rating", "Rating badge", "The programme's rating (TV-Y, TV-PG…) in the top corner as it starts: choose a picture for each rating.", () => new Overlay
+        {
+            Name = "Rating",
+            Kind = OverlayKinds.File,
+            Anchor = "top_left",
+            SizePercent = 7,
+            MarginXPercent = 3,
+            MarginYPercent = 4,
+            When = OverlayWhen.Start,
+            OffsetSeconds = 2,
+            DurationSeconds = 15,
+            FadeSeconds = 0.6,
+            Variants =
+            [
+                .. new[] { "TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA" }
+                    .Select(rating => new OverlayVariant { Name = rating, Ratings = [rating] })
+            ]
+        }),
         new("bug-text", "Screen bug (the channel's name)", "The channel's name in a corner, softly, all the way through.", () => new Overlay
         {
             Name = "Name bug",

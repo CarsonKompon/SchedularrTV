@@ -222,6 +222,9 @@ public sealed class JellyfinMediaLibrary(
             EpisodeNumber = item.IndexNumber,
             PremiereDate = premiere,
             Overview = item.Overview,
+
+            // Episodes are often unrated themselves: the series' rating stands for them.
+            Rating = string.IsNullOrWhiteSpace(item.OfficialRating) ? info?.Rating : item.OfficialRating.Trim(),
             Tags = tags,
             Collections = itemCollections,
             Networks = info?.Networks ?? [],

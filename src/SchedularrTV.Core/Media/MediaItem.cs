@@ -41,6 +41,9 @@ public sealed class MediaItem
 
     public string? Overview { get; init; }
 
+    /// <summary>The content rating (TV-Y, TV-PG, PG-13…): the item's own, else its series'. Null when it has none.</summary>
+    public string? Rating { get; init; }
+
     public IReadOnlyList<string> Tags { get; init; } = [];
 
     public IReadOnlyList<string> Collections { get; init; } = [];
@@ -114,6 +117,7 @@ public sealed class MediaItem
             EpisodeNumber = EpisodeNumber,
             PremiereDate = PremiereDate,
             Overview = Overview,
+            Rating = Rating,
             Tags = Tags,
             Collections = Collections,
             Networks = Networks,

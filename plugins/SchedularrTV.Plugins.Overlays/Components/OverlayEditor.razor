@@ -269,14 +269,17 @@
             else
             {
                 <h3 class="ed-section">File</h3>
-                <div class="field"><span>Picture or video</span>
+                <div class="field"><span>@(Overlay.Variants.Count > 0 ? "Default picture or video" : "Picture or video")</span>
                     <FilePathPicker Value="@Overlay.File" ValueChanged="value => Set(() => Overlay.File = value)" Extensions="MediaExtensions"
                                     Label="picture or video" StartIn="Environment.SpecialFolder.MyPictures" Placeholder="D:\Media\Logos\bug.png" /></div>
                 @if (Missing(Overlay.File))
                 {
                     <p class="hint warn">The scheduler can't find this file.</p>
                 }
-                <p class="hint">A PNG with transparency, or a video (with an alpha channel, such as a .mov) for an animated bug.</p>
+                <p class="hint">A PNG with transparency, or a video (with an alpha channel, such as a .mov) for an animated bug.
+                    @(Overlay.Variants.Count > 0 ? "Leave it empty to show only the pictures below (a rating badge with nothing for unrated shows)." : "")</p>
+
+                <OverlayVariantsEditor Overlay="Overlay" HolidayNames="HolidayNames" Changed="CommitAsync" />
 
                 <h4>Placement</h4>
                 <div class="field"><span>Where</span>
@@ -314,6 +317,9 @@
     [Parameter] public string ChannelName { get; set; } = "Channel";
 
     [Parameter] public EventCallback Changed { get; set; }
+
+    /// <summary>The schedule's holidays, for a file's other pictures to pick from.</summary>
+    [Parameter] public IReadOnlyList<string> HolidayNames { get; set; } = [.. SchedularrTV.Core.Temporal.TemporalTagOptions.DefaultHolidays.Select(holiday => holiday.Name)];
 
     private const string MoveHandle = "move";
 
