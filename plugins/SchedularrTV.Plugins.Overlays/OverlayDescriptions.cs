@@ -53,6 +53,15 @@ public static class OverlayDescriptions
         return windows;
     }
 
+    /// <summary>When a layer is seen within one appearance of a timed overlay, in seconds from its start; empty when never.</summary>
+    public static (double From, double To) Within(Overlay overlay, OverlayLayer layer)
+    {
+        double length = Math.Max(1, overlay.DurationSeconds);
+        double from = Math.Clamp(layer.InSeconds, 0, length);
+        double to = Math.Clamp(length - Math.Max(0, layer.OutSeconds), 0, length);
+        return to - from < 0.75 ? (from, from) : (from, to);
+    }
+
     private static string Seconds(double seconds) =>
         seconds >= 60 && seconds % 60 == 0
             ? $"{(seconds / 60).ToString("0.#", CultureInfo.InvariantCulture)} min"

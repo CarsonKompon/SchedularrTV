@@ -376,6 +376,117 @@ public sealed class OverlayTests : IDisposable
         Assert.Equal(1, generator.Calls);
     }
 
+    // --- Videos in designs, and parts timed on their own ---------------------------------------------
+
+    [Fact]
+    public void A_layer_comes_in_late_and_goes_early_within_the_overlay_and_a_video_does_not_fade()
+    {
+        var overlay = new Overlay { When = OverlayWhen.Start, OffsetSeconds = 10, DurationSeconds = 8, FadeSeconds = 1 };
+
+        GraphicsTiming text = OverlayTiming.For(overlay, Episode(), new LayerTiming(2, 1))!.Timing!;
+        Assert.Equal((12_000L, 5_000L, 1_000L), (text.PhaseMs, text.VisibleMs, text.FadeMs));
+
+        GraphicsTiming video = OverlayTiming.For(overlay, Episode(), LayerTiming.Of(new OverlayLayer { Kind = OverlayLayerKinds.Video }))!.Timing!;
+        Assert.Equal((10_000L, 8_000L, 0L), (video.PhaseMs, video.VisibleMs, video.FadeMs));
+
+        // Nothing left of its window: it doesn't show.
+        Assert.Null(OverlayTiming.For(overlay, Episode(), new LayerTiming(4, 4)));
+
+        // Every few minutes keeps the cycle, starting each one later.
+        GraphicsTiming every = OverlayTiming.For(new Overlay { When = OverlayWhen.Every, EveryMinutes = 5, OffsetSeconds = 60, DurationSeconds = 10 },
+            Episode(), new LayerTiming(1.5, 1.5))!.Timing!;
+        Assert.Equal((300_000L, 61_500L, 7_000L), (every.FrequencyMs, every.PhaseMs, every.VisibleMs));
+
+        // All the way through: from each part's start and end.
+        GraphicsTiming always = OverlayTiming.For(new Overlay { When = OverlayWhen.Always, FadeSeconds = 0 }, Episode(), new LayerTiming(3, 2))!.Timing!;
+        Assert.Equal((3_000L, 22 * 60_000L - 5_000L), (always.PhaseMs, always.VisibleMs));
+    }
+
+    [Fact]
+    public void A_design_splits_into_its_videos_and_runs_of_drawn_layers_that_come_and_go_together()
+    {
+        var overlay = new Overlay
+        {
+            Layers =
+            [
+                new OverlayLayer { Name = "Bar video", Kind = OverlayLayerKinds.Video, Path = "bar.mov" },
+                new OverlayLayer { Name = "Show", Kind = OverlayLayerKinds.Text, InSeconds = 1.5, OutSeconds = 1.5 },
+                new OverlayLayer { Name = "Episode", Kind = OverlayLayerKinds.Text, InSeconds = 1.5, OutSeconds = 1.5 },
+                new OverlayLayer { Name = "Logo", Kind = OverlayLayerKinds.Image }
+            ]
+        };
+
+        var groups = OverlayRenderer.Groups(overlay);
+
+        Assert.Equal(3, groups.Count);
+        Assert.Equal(["Bar video"], groups[0].Layers.Select(layer => layer.Name));
+        Assert.False(groups[0].Timing.Fades);
+        Assert.Equal(["Show", "Episode"], groups[1].Layers.Select(layer => layer.Name));
+        Assert.Equal(["Logo"], groups[2].Layers.Select(layer => layer.Name));
+        Assert.True(groups[2].Timing.IsWhole);
+    }
+
+    [Fact]
+    public async Task A_design_with_a_video_reaches_ErsatzTV_as_the_video_then_its_text_timed_inside_it()
+    {
+        (SchedulerConfig config, ChannelConfig cartoons, _) = Channels();
+        string video = Path.Combine(_folder, "lower-third.mov");
+        cartoons.Plugins = Section(new OverlaysSection
+        {
+            Overlays =
+            [
+                new Overlay
+                {
+                    Name = "Animated lower third", When = OverlayWhen.Start, OffsetSeconds = 10, DurationSeconds = 8, FadeSeconds = 0.5,
+                    Layers =
+                    [
+                        new OverlayLayer { Kind = OverlayLayerKinds.Video, Path = video, X = 96, Y = 810, Width = 960, Height = 180 },
+                        new OverlayLayer { Kind = OverlayLayerKinds.Text, Text = "{title}", X = 140, Y = 850, Width = 860, Height = 70, InSeconds = 1.5, OutSeconds = 1 }
+                    ]
+                }
+            ]
+        });
+        var schedule = new ChannelSchedule
+        {
+            ChannelId = "cartoons", ChannelName = "Cartoons", ChannelNumber = 1, Start = Eight, End = Eight.AddMinutes(22),
+            Entries = [Episode()]
+        };
+
+        ChannelSchedule processed = await Processor().ProcessAsync(new PlayoutContext(config, cartoons, schedule), CancellationToken.None);
+        JsonArray layers = (JsonArray)JsonNode.Parse(processed.Entries[0].Annotations![PlayoutPublisher.GraphicsAnnotation])!;
+
+        Assert.Equal(2, layers.Count);
+
+        // The video: where its box is, as percents of the canvas, on the whole frame; it plays the whole time, unfaded.
+        Assert.Equal(video, (string?)layers[0]!["source"]!["path"]);
+        Assert.Equal("top_left", (string?)layers[0]!["location"]);
+        Assert.Equal(50, (double)layers[0]!["width_percent"]!);
+        Assert.Equal(5, (double)layers[0]!["horizontal_margin_percent"]!);
+        Assert.Equal(75, (double)layers[0]!["vertical_margin_percent"]!);
+        Assert.False((bool)layers[0]!["within_source_content"]!);
+        Assert.Equal(10_000, (long)layers[0]!["timing"]!["phase_offset_ms"]!);
+        Assert.Equal(0, (long)layers[0]!["timing"]!["fade_ms"]!);
+        Assert.Equal(8_000, (long)layers[0]!["timing"]!["hold_ms"]!);
+
+        // The text: drawn without the video, 1.5s later and gone 1s sooner, fading as the overlay does.
+        string drawn = (string)layers[1]!["source"]!["path"]!;
+        Assert.True(File.Exists(drawn));
+        Assert.Equal(11_500, (long)layers[1]!["timing"]!["phase_offset_ms"]!);
+        Assert.Equal(500, (long)layers[1]!["timing"]!["fade_ms"]!);
+        Assert.Equal(4_500, (long)layers[1]!["timing"]!["hold_ms"]!);
+    }
+
+    [Fact]
+    public void Ffprobe_says_how_long_a_video_runs_and_its_size()
+    {
+        OverlayVideoInfo info = OverlayVideos.Parse("width=1920\nheight=1080\nduration=6.506000\n")!;
+
+        Assert.Equal((1920, 1080), (info.Width, info.Height));
+        Assert.Equal(6.506, info.Duration!.Value.TotalSeconds, 3);
+        Assert.Equal(0.5625, info.Aspect!.Value, 4);
+        Assert.Null(OverlayVideos.Parse("nonsense"));
+    }
+
     [Fact]
     public void Every_preset_starts_from_something_that_shows()
     {

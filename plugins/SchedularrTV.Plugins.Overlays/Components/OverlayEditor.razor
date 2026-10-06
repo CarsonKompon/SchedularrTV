@@ -29,6 +29,7 @@
                     <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Text)">+ Text</button>
                     <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Image)">+ Picture</button>
                     <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Rect)">+ Colour block</button>
+                    <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Video)">+ Video</button>
                     <div class="spacer"></div>
                     <span class="ed-meta">@Overlay.Width × @Overlay.Height</span>
                 </div>
@@ -74,11 +75,33 @@
                         }
                     </div>
                 </div>
+                @if (ShowsAppearance)
+                {
+                    double length = Math.Max(1, Overlay.DurationSeconds);
+                    <div class="field ov-appearance">
+                        <span>Each time it shows (@Number(length)s), layer by layer, top first</span>
+                        @foreach (OverlayLayer layer in Enumerable.Reverse(Overlay.Layers).ToList())
+                        {
+                            (double comesIn, double goesOut) = OverlayDescriptions.Within(Overlay, layer);
+                            string stripClass = layer.Kind == OverlayLayerKinds.Video ? "ed-strip-on ov-video" : "ed-strip-on";
+                            <div class="ov-appearance-row @(ReferenceEquals(layer, _layer) ? "selected" : "")" @key="layer">
+                                <button type="button" class="ov-appearance-name" @onclick="() => _layer = layer">@Label(layer)</button>
+                                <div class="ed-strip">
+                                    @if (goesOut > comesIn)
+                                    {
+                                        <span class="@stripClass" style="left:@Fraction(comesIn, length);width:@Fraction(goesOut - comesIn, length);"
+                                              title="@($"{Number(comesIn)}s to {Number(goesOut)}s")"></span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
             </div>
             <p class="hint">
                 @OverlayDescriptions.When(Overlay).
                 @(IsDesign
-                    ? "Shown over a stand-in picture with sample words for {tokens}. Drag a box to move it, or a handle to resize it; it snaps to the centre lines unless you hold Alt."
+                    ? "Shown over a stand-in picture with sample words for {tokens}, and a still from part-way through any video. Drag a box to move it, or a handle to resize it; it snaps to the centre lines unless you hold Alt."
                     : "Shown where ErsatzTV will put it, over a stand-in picture. Videos show as a box here.")
             </p>
             @if (_previewError is not null)
@@ -239,8 +262,44 @@
                                 <p class="hint warn">The scheduler can't find this file.</p>
                             }
                         }
+                        else if (selected.Kind == OverlayLayerKinds.Video)
+                        {
+                            <div class="field"><span>Video</span>
+                                <FilePathPicker Value="@selected.Path" ValueChanged="value => SetVideo(selected, value)" Extensions="VideoExtensions"
+                                                Label="video" StartIn="Environment.SpecialFolder.MyVideos" Placeholder="D:\Media\Overlays\lower-third.mov" /></div>
+                            @if (Missing(selected.Path))
+                            {
+                                <p class="hint warn">The scheduler can't find this file.</p>
+                            }
+                            else if (selected.Path is { Length: > 0 } videoPath && _videoInfo.GetValueOrDefault(videoPath) is { } info)
+                            {
+                                <p class="hint">
+                                    @(info.Width > 0 ? $"{info.Width} × {info.Height}" : "")@(info.Width > 0 && info.Duration is not null ? ", " : "")@(info.Duration is { } runs ? $"{Number(runs.TotalSeconds)}s long" : "").
+                                </p>
+                                <div class="ed-toolbar">
+                                    @if (info.Aspect is not null)
+                                    {
+                                        <button class="btn btn-sm" type="button" @onclick="() => FitVideo(selected, info, fill: false)">Fit box to its shape</button>
+                                        <button class="btn btn-sm" type="button" @onclick="() => FitVideo(selected, info, fill: true)">Fill the canvas</button>
+                                    }
+                                    @if (info.Duration is { } videoLength && Overlay.When != OverlayWhen.Always
+                                         && Math.Abs(videoLength.TotalSeconds - Overlay.DurationSeconds) >= 0.05)
+                                    {
+                                        <button class="btn btn-sm" type="button" @onclick="() => Set(() => Overlay.DurationSeconds = Math.Round(videoLength.TotalSeconds, 2))">
+                                            Show for @Number(Math.Round(videoLength.TotalSeconds, 2))s, its length</button>
+                                    }
+                                </div>
+                            }
+                            else if (selected.Path is { Length: > 0 } lookedUp && (_videos is null || _videoInfo.ContainsKey(lookedUp)))
+                            {
+                                <p class="hint">Couldn't read its length or take a still: that needs ffmpeg and ffprobe (as set for Generated promos, or on the PATH).</p>
+                            }
+                            <p class="hint">A video with an alpha channel (ProRes 4444 .mov, or VP9 .webm) shows the programme through it. ErsatzTV sizes
+                                it by the box's width, keeping its shape. It doesn't fade:
+                                its own animation brings it in and out, so time the other layers around it below.</p>
+                        }
 
-                        @if (selected.Kind != OverlayLayerKinds.Image)
+                        @if (selected.Kind is not (OverlayLayerKinds.Image or OverlayLayerKinds.Video))
                         {
                             <div class="grid grid-2">
                                 <div class="field"><span>Colour</span>
@@ -263,6 +322,21 @@
                         </div>
                         <label class="field"><span>Opacity: @selected.Opacity.ToString("0", CultureInfo.InvariantCulture)%</span>
                             <input type="range" min="0" max="100" step="1" value="@Number(selected.Opacity)" @onchange="e => Set(() => selected.Opacity = Math.Clamp(Number(e, 100), 0, 100))" /></label>
+
+                        <h4>Timing within the overlay</h4>
+                        <div class="grid grid-2">
+                            <label class="field"><span>Comes in after (seconds)</span>
+                                <input type="number" min="0" step="0.1" value="@Number(selected.InSeconds)" @onchange="e => Set(() => selected.InSeconds = Math.Max(0, Number(e, 0)))" /></label>
+                            <label class="field"><span>Goes before the end (seconds)</span>
+                                <input type="number" min="0" step="0.1" value="@Number(selected.OutSeconds)" @onchange="e => Set(() => selected.OutSeconds = Math.Max(0, Number(e, 0)))" /></label>
+                        </div>
+                        <p class="hint">
+                            @(selected.Kind == OverlayLayerKinds.Video
+                                ? "Usually 0 and 0: the video plays for the whole time the overlay shows."
+                                : Overlay.When == OverlayWhen.Always
+                                    ? "Measured from the start and end of each part of the programme (between its breaks)."
+                                    : "E.g. text over a video that takes 1.5s to animate in and out: in after 1.5, out 1.5 before the end. It fades as the overlay does.")
+                        </p>
                     </div>
                 }
             }
@@ -344,6 +418,7 @@
     private static readonly string[] Handles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
     private static readonly TimeSpan SampleLength = TimeSpan.FromMinutes(22);
     private static readonly string[] MediaExtensions = [.. FileBrowsing.Images, ".mov", ".webm", ".mp4", ".mkv"];
+    private static readonly string[] VideoExtensions = [".mov", ".webm", ".mkv", ".mp4", ".m4v", ".avi"];
     private static readonly (int Width, int Height, string Label)[] Sizes =
     [
         (1920, 1080, "1920 × 1080 (16:9)"),
@@ -375,8 +450,17 @@
     private string? _preview;
     private string? _previewError;
     private int _previewVersion;
+    private OverlayVideos? _videos;
+
+    /// <summary>What's known of each video layer's file (null once looked up and ffprobe couldn't say).</summary>
+    private readonly Dictionary<string, OverlayVideoInfo?> _videoInfo = new(StringComparer.Ordinal);
 
     private bool IsDesign => Overlay.Kind != OverlayKinds.File;
+
+    /// <summary>The one-appearance chart: worth showing once some part of a timed design comes or goes on its own.</summary>
+    private bool ShowsAppearance =>
+        IsDesign && Overlay.When != OverlayWhen.Always && Overlay.Layers.Count > 1
+        && Overlay.Layers.Any(layer => layer.Kind == OverlayLayerKinds.Video || layer.InSeconds > 0 || layer.OutSeconds > 0);
 
     private int CanvasWidth => IsDesign ? Math.Max(1, Overlay.Width) : FileCanvasWidth;
 
@@ -396,6 +480,7 @@
     protected override async Task OnInitializedAsync()
     {
         _fonts = InstalledFonts();
+        _videos = Services.GetService<OverlayVideos>();
         _layer = Overlay.Layers.LastOrDefault();
         await RefreshPreviewAsync();
     }
@@ -447,7 +532,8 @@
         float scale = Math.Min(1f, PreviewPixels / CanvasWidth);
         try
         {
-            byte[] png = await Task.Run(() => OverlayRenderer.Preview(snapshot, tokens, scale));
+            Dictionary<string, string> posters = await PostersAsync(snapshot);
+            byte[] png = await Task.Run(() => OverlayRenderer.Preview(snapshot, tokens, scale, posters));
             if (version == _previewVersion)
             {
                 _preview = "data:image/png;base64," + Convert.ToBase64String(png);
@@ -458,6 +544,71 @@
         {
             _previewError = ex.Message;
         }
+    }
+
+    /// <summary>A still for each of the design's videos (taken once and kept), and what's known of each, for the inspector.</summary>
+    private async Task<Dictionary<string, string>> PostersAsync(Overlay overlay)
+    {
+        Dictionary<string, string> posters = new(StringComparer.Ordinal);
+        if (_videos is null || overlay.Kind == OverlayKinds.File)
+        {
+            return posters;
+        }
+
+        foreach (string path in overlay.Layers.Where(layer => layer.Kind == OverlayLayerKinds.Video && layer.Path is { Length: > 0 } && File.Exists(layer.Path))
+                     .Select(layer => layer.Path!).Distinct(StringComparer.Ordinal))
+        {
+            _videoInfo[path] = await _videos.InfoAsync(path);
+            if (await _videos.PosterAsync(path) is { } poster)
+            {
+                posters[path] = poster;
+            }
+        }
+
+        return posters;
+    }
+
+    /// <summary>A video chosen: its box takes its shape, and the first one chosen sets how long the overlay shows.</summary>
+    private async Task SetVideo(OverlayLayer layer, string? path)
+    {
+        bool first = string.IsNullOrWhiteSpace(layer.Path)
+                     && !Overlay.Layers.Any(other => other.Kind == OverlayLayerKinds.Video && !ReferenceEquals(other, layer) && !string.IsNullOrWhiteSpace(other.Path));
+        layer.Path = string.IsNullOrWhiteSpace(path) ? null : path.Trim().Trim('"');
+        if (_videos is not null && layer.Path is { } chosen && File.Exists(chosen))
+        {
+            OverlayVideoInfo? info = await _videos.InfoAsync(chosen);
+            _videoInfo[chosen] = info;
+            if (info?.Aspect is { } aspect)
+            {
+                layer.Height = MathF.Round(layer.Width * (float)aspect);
+            }
+
+            if (first && info?.Duration is { } length && Overlay.When != OverlayWhen.Always)
+            {
+                Overlay.DurationSeconds = Math.Max(1, Math.Round(length.TotalSeconds, 2));
+            }
+        }
+
+        await CommitAsync();
+    }
+
+    /// <summary>The box to the video's shape at its current width, or covering the canvas's width from the top-left.</summary>
+    private async Task FitVideo(OverlayLayer layer, OverlayVideoInfo info, bool fill)
+    {
+        if (info.Aspect is not { } aspect)
+        {
+            return;
+        }
+
+        if (fill)
+        {
+            layer.X = 0;
+            layer.Y = 0;
+            layer.Width = Overlay.Width;
+        }
+
+        layer.Height = MathF.Round(layer.Width * (float)aspect);
+        await CommitAsync();
     }
 
     private async Task SetSize(ChangeEventArgs e)
@@ -486,6 +637,19 @@
 
     private async Task AddLayer(string kind)
     {
+        if (kind == OverlayLayerKinds.Video)
+        {
+            // Usually the design's backdrop, so it goes under everything, covering the canvas until a video gives it a shape.
+            var video = new OverlayLayer
+            {
+                Kind = kind, Name = UniqueName(KindName(kind)), X = 0, Y = 0, Width = Overlay.Width, Height = Overlay.Height, Shadow = false
+            };
+            Overlay.Layers.Insert(0, video);
+            _layer = video;
+            await CommitAsync();
+            return;
+        }
+
         var layer = new OverlayLayer
         {
             Kind = kind,
@@ -672,8 +836,11 @@
     {
         OverlayLayerKinds.Image => "Picture",
         OverlayLayerKinds.Rect => "Colour block",
+        OverlayLayerKinds.Video => "Video",
         _ => "Text"
     };
+
+    private static string Fraction(double value, double of) => (Math.Clamp(value / Math.Max(0.001, of), 0, 1) * 100).ToString("0.###", CultureInfo.InvariantCulture) + "%";
 
     /// <summary>A canvas-pixel position or size as a percent of the canvas, so boxes follow the canvas at any width.</summary>
     private static string Pct(double value, double of) => (value / Math.Max(1, of) * 100).ToString("0.###", CultureInfo.InvariantCulture) + "%";

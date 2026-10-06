@@ -45,7 +45,7 @@ public sealed class OverlayRenderer(Func<string> folder)
         }
         else
         {
-            byte[] png = Draw(overlay, tokens, scale: 1, backdrop: false);
+            byte[] png = Draw(overlay, tokens, scale: 1, backdrop: false, posters: null);
             string temp = Path.Combine(Folder, $"{key}.{Guid.NewGuid():N}.tmp");
             File.WriteAllBytes(temp, png);
             File.Move(temp, path, overwrite: true);
@@ -59,14 +59,47 @@ public sealed class OverlayRenderer(Func<string> folder)
     /// The editor's preview: the overlay over a stand-in picture (a design drawn, a file placed as ErsatzTV will), at
     /// <paramref name="scale"/> of the design's size.
     /// </summary>
-    public static byte[] Preview(Overlay overlay, IReadOnlyDictionary<string, string> tokens, float scale)
+    /// <param name="posters">A still from each video layer's file (by its path), drawn in its box; one without shows as a marked box.</param>
+    public static byte[] Preview(Overlay overlay, IReadOnlyDictionary<string, string> tokens, float scale, IReadOnlyDictionary<string, string>? posters = null)
     {
         if (overlay.Kind == OverlayKinds.File)
         {
             return DrawFile(overlay, scale);
         }
 
-        return Draw(overlay, tokens, scale, backdrop: true);
+        return Draw(overlay, tokens, scale, backdrop: true, posters ?? new Dictionary<string, string>());
+    }
+
+    /// <summary>
+    /// A design split into what goes to ErsatzTV: each video layer on its own, and runs of the drawn layers between them
+    /// that come and go together, in drawing order (bottom first).
+    /// </summary>
+    public static IReadOnlyList<(LayerTiming Timing, IReadOnlyList<OverlayLayer> Layers)> Groups(Overlay overlay)
+    {
+        List<(LayerTiming, IReadOnlyList<OverlayLayer>)> groups = [];
+        List<OverlayLayer>? run = null;
+        LayerTiming runTiming = default;
+        foreach (OverlayLayer layer in overlay.Layers)
+        {
+            LayerTiming timing = LayerTiming.Of(layer);
+            if (layer.Kind == OverlayLayerKinds.Video)
+            {
+                run = null;
+                groups.Add((timing, [layer]));
+                continue;
+            }
+
+            if (run is null || runTiming != timing)
+            {
+                run = [];
+                runTiming = timing;
+                groups.Add((timing, run));
+            }
+
+            run.Add(layer);
+        }
+
+        return groups;
     }
 
     /// <summary>Fills {tokens} in a text; unknown ones are left as written.</summary>
@@ -104,7 +137,9 @@ public sealed class OverlayRenderer(Func<string> folder)
         return Convert.ToHexString(hash, 0, 12).ToLowerInvariant();
     }
 
-    private static byte[] Draw(Overlay overlay, IReadOnlyDictionary<string, string> tokens, float scale, bool backdrop)
+    /// <param name="posters">For the preview, stills of its videos; null when drawing for ErsatzTV, which shows videos itself.</param>
+    private static byte[] Draw(Overlay overlay, IReadOnlyDictionary<string, string> tokens, float scale, bool backdrop,
+        IReadOnlyDictionary<string, string>? posters)
     {
         int width = Math.Max(16, (int)Math.Round(Math.Clamp(overlay.Width, 64, 7680) * scale));
         int height = Math.Max(16, (int)Math.Round(Math.Clamp(overlay.Height, 64, 4320) * scale));
@@ -120,7 +155,12 @@ public sealed class OverlayRenderer(Func<string> folder)
         canvas.Scale(scale);
         foreach (OverlayLayer layer in overlay.Layers)
         {
-            DrawLayer(canvas, layer, tokens);
+            if (layer.Kind == OverlayLayerKinds.Video && posters is null)
+            {
+                continue;
+            }
+
+            DrawLayer(canvas, layer, tokens, posters);
         }
 
         using SKImage image = surface.Snapshot();
@@ -140,7 +180,8 @@ public sealed class OverlayRenderer(Func<string> folder)
         canvas.DrawCircle(width * 0.72f, height * 0.62f, height * 0.25f, haze);
     }
 
-    private static void DrawLayer(SKCanvas canvas, OverlayLayer layer, IReadOnlyDictionary<string, string> tokens)
+    private static void DrawLayer(SKCanvas canvas, OverlayLayer layer, IReadOnlyDictionary<string, string> tokens,
+        IReadOnlyDictionary<string, string>? posters)
     {
         SKRect bounds = SKRect.Create(layer.X, layer.Y, Math.Max(1, layer.Width), Math.Max(1, layer.Height));
         byte alpha = (byte)Math.Round(Math.Clamp(layer.Opacity, 0, 100) / 100 * 255);
@@ -179,6 +220,9 @@ public sealed class OverlayRenderer(Func<string> folder)
                 break;
             case OverlayLayerKinds.Text:
                 DrawText(canvas, layer, Fill(layer.Text, tokens), bounds);
+                break;
+            case OverlayLayerKinds.Video:
+                DrawVideoStill(canvas, layer, bounds, posters);
                 break;
         }
 
@@ -228,6 +272,44 @@ public sealed class OverlayRenderer(Func<string> folder)
         float y = bounds.MidY - (metrics.Ascent + metrics.Descent) / 2;
         canvas.DrawText(text, x, y, align, font, paint);
     }
+
+    /// <summary>
+    /// In the preview, a video as ErsatzTV places it: its still at the box's width from the box's top-left (ErsatzTV sizes
+    /// it by width), or a marked box when there's no still.
+    /// </summary>
+    private static void DrawVideoStill(SKCanvas canvas, OverlayLayer layer, SKRect bounds, IReadOnlyDictionary<string, string>? posters)
+    {
+        if (layer.Path is { Length: > 0 } path && posters?.GetValueOrDefault(path) is { } poster && File.Exists(poster))
+        {
+            using SKImage? still = SKImage.FromEncodedData(poster);
+            if (still is not null)
+            {
+                var placed = SKRect.Create(bounds.Left, bounds.Top, bounds.Width, bounds.Width * still.Height / still.Width);
+                using var paint = new SKPaint { IsAntialias = true };
+                canvas.DrawImage(still, placed, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear), paint);
+                return;
+            }
+        }
+
+        using var fill = new SKPaint { Color = new SKColor(255, 255, 255, 40), IsAntialias = true };
+        using var edge = new SKPaint { Color = new SKColor(255, 255, 255, 140), IsAntialias = true, IsStroke = true, StrokeWidth = 2,
+            PathEffect = SKPathEffect.CreateDash([10, 6], 0) };
+        canvas.DrawRect(bounds, fill);
+        canvas.DrawRect(bounds, edge);
+
+        // A play mark in the middle.
+        float size = Math.Min(bounds.Width, bounds.Height) * 0.25f;
+        using var mark = new SKPaint { Color = new SKColor(255, 255, 255, 170), IsAntialias = true };
+        using var triangle = new SKPath();
+        triangle.MoveTo(bounds.MidX - size * 0.4f, bounds.MidY - size / 2);
+        triangle.LineTo(bounds.MidX + size * 0.5f, bounds.MidY);
+        triangle.LineTo(bounds.MidX - size * 0.4f, bounds.MidY + size / 2);
+        triangle.Close();
+        canvas.DrawPath(triangle, mark);
+    }
+
+    public static bool IsVideo(string? path) =>
+        !string.IsNullOrWhiteSpace(path) && Path.GetExtension(path).ToLowerInvariant() is ".mov" or ".webm" or ".mp4" or ".mkv" or ".avi" or ".m4v";
 
     private static void DrawContained(SKCanvas canvas, SKImage image, SKRect bounds)
     {

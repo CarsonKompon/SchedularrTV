@@ -57,6 +57,38 @@ want ("a cheeky one-liner about the episode") and a free model on your computer 
 its description and what's next. Captions are written in the background for the next day and a half of
 programmes; until one is ready (or if the AI's writing doesn't pass its checks) the box shows its usual text.
 
+### Videos in a design
+
+A design can have **video** layers too: an animated design (a lower-third bar that wipes in, holds and wipes out)
+with your text on top of it. Use a video with an alpha channel, such as ProRes 4444 in a `.mov` or VP9 in a `.webm`,
+so the programme shows through it. The canvas shows a still from part-way through the video. ErsatzTV sizes the video
+by its box's width and keeps its shape, so use **Fit box to its shape** (or **Fill the canvas** for a full-frame video).
+When you pick the first video, the overlay's **Shows for** is set to the video's length. **Show for …s, its length**
+puts it back if you change it.
+
+Videos don't fade: their own animation brings them in and out. To keep text off the screen while the video animates,
+time each layer within the overlay. **Comes in after** and **Goes before the end** (seconds) hold a layer back and take
+it away early. It fades in and out as the overlay does. For a video that takes 1.5 s to animate in and 1 s to animate
+out, set the text to come in after 1.5 and go 1 before the end. A chart under the timing strip shows when each layer is
+seen during one appearance.
+
+```yaml
+- name: Animated lower third
+  when: start
+  offset_seconds: 10
+  duration_seconds: 8
+  fade_seconds: 0.5
+  layers:
+    - { kind: video, path: D:\Media\Overlays\lower-third.mov, x: 96, y: 810, width: 960, height: 180 }
+    - { kind: text, text: "{title}", x: 140, y: 850, width: 860, height: 70, in_seconds: 1.5, out_seconds: 1 }
+```
+
+Each video goes to ErsatzTV as its own graphics layer. The drawn layers between videos are drawn into separate
+pictures. Layers that come and go together share a picture, and the drawing order (bottom to top) is kept. Test a new
+video on a channel first. The video should play from its first frame each time the overlay appears, and that depends
+on how your ErsatzTV version plays graphics videos. If yours plays it on a loop instead, use the "once" timings (near
+the start, near the end, part-way through) rather than "every few minutes".
+
 A **file** overlay is a picture or video file (a PNG with transparency, or a video with an alpha channel for an
 animated bug), placed at one of nine positions with its width and margins as percents of the picture. *Keep inside
 the picture* keeps it off the black bars of letterboxed and 4:3 shows.

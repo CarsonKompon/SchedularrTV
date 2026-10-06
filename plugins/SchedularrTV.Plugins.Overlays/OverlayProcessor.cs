@@ -113,7 +113,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
                     }
 
                     tokens ??= Tokens(entry, Next(ordered, index), resolved.Owner);
-                    if (Layer(Written(shown, entry, tokens), showing, tokens) is { } layer)
+                    foreach (JsonObject layer in Layers(Written(shown, entry, tokens), entry, showing, tokens))
                     {
                         layers.Add(layer);
                     }
@@ -136,6 +136,99 @@ public sealed class OverlayProcessor : IPlayoutProcessor
 
         return ValueTask.FromResult(changed ? context.Schedule with { Entries = result } : context.Schedule);
     }
+
+    /// <summary>
+    /// An overlay's graphics layers on one entry, bottom first. A file is one; so is a design that's all drawn and comes
+    /// and goes as a whole. A design with videos, or with parts timed on their own, is split: each video goes as its own
+    /// layer, and the drawn parts between them as full-frame PNGs, each timed within the overlay's appearance.
+    /// </summary>
+    internal IEnumerable<JsonObject> Layers(Overlay overlay, ScheduleEntry entry, OverlayShowing showing, IReadOnlyDictionary<string, string> tokens)
+    {
+        if (overlay.Kind == OverlayKinds.File)
+        {
+            if (Layer(overlay, showing, tokens) is { } file)
+            {
+                yield return file;
+            }
+
+            yield break;
+        }
+
+        IReadOnlyList<(LayerTiming Timing, IReadOnlyList<OverlayLayer> Layers)> groups = OverlayRenderer.Groups(overlay);
+        if (groups.Count == 1 && groups[0].Timing.IsWhole && groups[0].Layers.All(layer => layer.Kind != OverlayLayerKinds.Video))
+        {
+            if (Layer(overlay, showing, tokens) is { } whole)
+            {
+                yield return whole;
+            }
+
+            yield break;
+        }
+
+        foreach ((LayerTiming timing, IReadOnlyList<OverlayLayer> parts) in groups)
+        {
+            OverlayShowing? own = timing.IsWhole ? showing : OverlayTiming.For(overlay, entry, timing);
+            if (own is null)
+            {
+                continue;
+            }
+
+            JsonObject? layer = parts.Count == 1 && parts[0].Kind == OverlayLayerKinds.Video
+                ? VideoLayer(overlay, parts[0], own)
+                : Layer(Part(overlay, parts), own, tokens);
+            if (layer is not null)
+            {
+                yield return layer;
+            }
+        }
+    }
+
+    /// <summary>The design with only these of its layers, drawn as a picture of its own.</summary>
+    private static Overlay Part(Overlay overlay, IReadOnlyList<OverlayLayer> layers)
+    {
+        Overlay part = overlay.Copy();
+        part.Layers = [.. layers.Select(layer => layer.Copy())];
+        return part;
+    }
+
+    /// <summary>
+    /// A design's video as ErsatzTV places a file: from its box's top-left, as wide as its box (ErsatzTV keeps the video's
+    /// shape), on the whole frame rather than inside the programme's picture, the way the rest of the design is.
+    /// </summary>
+    private static JsonObject? VideoLayer(Overlay overlay, OverlayLayer video, OverlayShowing showing)
+    {
+        if (video.Path is not { Length: > 0 } path || video.Opacity <= 0)
+        {
+            return null;
+        }
+
+        double width = Math.Max(1, overlay.Width);
+        double height = Math.Max(1, overlay.Height);
+        var layer = new JsonObject
+        {
+            ["source"] = new JsonObject { ["source_type"] = "local", ["path"] = path },
+            ["location"] = "top_left",
+            ["width_percent"] = Round(Math.Clamp(video.Width / width * 100, 1, 100)),
+            ["horizontal_margin_percent"] = Round(Math.Clamp(video.X / width * 100, 0, 100)),
+            ["vertical_margin_percent"] = Round(Math.Clamp(video.Y / height * 100, 0, 100)),
+            ["within_source_content"] = false
+        };
+
+        double opacity = Math.Clamp(overlay.Opacity, 0, 100) * Math.Clamp(video.Opacity, 0, 100) / 100;
+        if (opacity < 100)
+        {
+            layer["opacity_percent"] = Round(opacity);
+        }
+
+        if (showing.Timing is { } timing)
+        {
+            layer["timing"] = timing.ToJson();
+        }
+
+        return layer;
+    }
+
+    private static double Round(double value) => Math.Round(value, 3);
 
     /// <summary>One graphics layer in ErsatzTV's format: a design as a full-frame PNG, a file where it's anchored.</summary>
     internal JsonObject? Layer(Overlay overlay, OverlayShowing showing, IReadOnlyDictionary<string, string> tokens)

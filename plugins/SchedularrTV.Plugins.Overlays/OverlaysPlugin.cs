@@ -19,6 +19,9 @@ public sealed class OverlaysPlugin : IPlugin
             return renderer;
         });
 
+        // For the editor: design videos' lengths, sizes and stills.
+        services.AddSingleton(_ => new OverlayVideos(() => OverlayVideos.ResolveFfmpeg(context), Path.Combine(context.DataDirectory, "stills")));
+
         services.AddPlayoutProcessor<OverlayProcessor>();
         services.AddChannelEditorTab<OverlaysChannelTab>(context, "Overlays", order: 55, icon: "layers");
     }

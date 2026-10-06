@@ -222,6 +222,13 @@ public static class OverlayLayerKinds
     public const string Text = "text";
     public const string Image = "image";
     public const string Rect = "rect";
+
+    /// <summary>
+    /// A video file (with an alpha channel, for an animated design to put text over). It isn't drawn into the design's
+    /// picture: it goes to ErsatzTV as a graphics layer of its own, placed where its box is, between the layers drawn
+    /// under and over it.
+    /// </summary>
+    public const string Video = "video";
 }
 
 /// <summary>A box on a design's canvas: text, a picture or a block of colour, in canvas pixels.</summary>
@@ -243,8 +250,16 @@ public sealed class OverlayLayer
     /// <summary>For text: may hold {title}, {episode}, {season_episode}, {year}, {channel}, {next} and {next_time}.</summary>
     public string? Text { get; set; }
 
-    /// <summary>For an image.</summary>
+    /// <summary>For an image or a video.</summary>
     public string? Path { get; set; }
+
+    /// <summary>
+    /// Comes in this long after the overlay does (fading in then), so text can wait for a video's design to animate in.
+    /// </summary>
+    public double InSeconds { get; set; }
+
+    /// <summary>Goes this long before the overlay does (fading out then), so text can clear before a video animates out.</summary>
+    public double OutSeconds { get; set; }
 
     /// <summary>#rrggbb: the text's colour, or the block's.</summary>
     public string Color { get; set; } = "#ffffff";

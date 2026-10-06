@@ -38,6 +38,16 @@
 .ov-scope .ed-strip { position: relative; height: 22px; border-radius: 6px; background: rgba(255,255,255,.06); border: 1px solid var(--line); overflow: hidden; }
 .ov-scope .ed-strip-on { position: absolute; top: 0; bottom: 0; min-width: 2px; background: var(--accent); opacity: .85; }
 .ov-scope .ed-colour { width: 56px; height: 34px; padding: 2px; }
+
+/* One appearance, layer by layer: when each part of a design comes and goes within it. */
+.ov-scope .ov-appearance { margin-top: 10px; display: grid; gap: 4px; }
+.ov-scope .ov-appearance-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; align-items: center; }
+.ov-scope .ov-appearance-row .ed-strip { height: 14px; }
+.ov-scope .ov-appearance-name { background: none; border: 0; padding: 0; color: var(--muted); font-size: 12px; text-align: left; cursor: pointer;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-scope .ov-appearance-row.selected .ov-appearance-name { color: inherit; font-weight: 600; }
+.ov-scope .ov-appearance-row.selected .ed-strip { border-color: var(--accent); }
+.ov-scope .ed-strip-on.ov-video { background: repeating-linear-gradient(135deg, var(--accent) 0 6px, transparent 6px 10px); opacity: .9; }
 .ov-scope .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .ov-scope .check-stack { display: grid; gap: 6px; align-content: end; padding-bottom: 10px; }
 
