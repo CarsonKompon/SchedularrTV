@@ -326,7 +326,16 @@ public sealed partial class GeneratedPromoService(
             await new PromoRenderer(_options.FfmpegPath)
                 .RenderAsync(composition, partial, cancellationToken)
                 .ConfigureAwait(false);
-            File.Move(partial, target, overwrite: true);
+            try
+            {
+                File.Move(partial, target, overwrite: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && File.Exists(target))
+            {
+                // Another render of the same promo finished at the same moment (Windows refuses to replace a file
+                // that's still being moved into place or read). Its file is the same promo, so it stands; this
+                // partial is deleted below.
+            }
         }
         finally
         {
