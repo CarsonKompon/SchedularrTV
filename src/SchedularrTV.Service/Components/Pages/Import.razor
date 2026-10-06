@@ -1,0 +1,364 @@
+@page "/import"
+@using SchedularrTV.Service.Import
+@inject ChannelImporter Importer
+@inject ConfigEditor Editor
+@inject NavigationManager Nav
+
+<PageHeader Title="Import channels" Eyebrow="Programming">
+    <ChildContent>
+        Coming from ErsatzTV or Tunarr? Bring your channels over: their schedules, shows, collections, filler and logos, set up as
+        SchedularrTV channels from your Jellyfin library. Nothing in the other app is changed.
+    </ChildContent>
+</PageHeader>
+
+@if (!Local.IsLocal)
+{
+    <div class="banner banner-warn" role="status">
+        For safety, importing reads files on the computer running the scheduler, so it's only offered in a browser on that computer.
+    </div>
+}
+else
+{
+    @if (_error is not null)
+    {
+        <div class="banner banner-error" role="alert">@_error</div>
+    }
+
+    @if (_done is not null)
+    {
+        <div class="banner banner-ok" role="status">
+            @_done
+            <a class="btn btn-sm btn-primary" style="margin-left:10px;" href="channels">See the channels</a>
+        </div>
+    }
+
+    <div class="card">
+        <div class="card-head"><h2>1. Where from</h2></div>
+        <div class="import-sources" role="radiogroup" aria-label="Import from">
+            @foreach ((ImportSource source, string name, string blurb) in Sources)
+            {
+                <button type="button" role="radio" aria-checked="@(_source == source ? "true" : "false")" class="import-source @(_source == source ? "on" : "")"
+                        @onclick="() => Choose(source)">
+                    <strong>@name</strong>
+                    <span>@blurb</span>
+                </button>
+            }
+        </div>
+
+        <div class="field" style="margin-top:12px;">
+            <span>@(_source == ImportSource.ErsatzTv ? "ErsatzTV's database (ersatztv.sqlite3), or its config folder" : "Tunarr's database (db.db), or its data folder")</span>
+            <FilePathPicker Value="@_path" ValueChanged="value => { _path = value; _schedule = null; _plan = null; }" Extensions="Extensions"
+                            Label="the database" StartIn="Environment.SpecialFolder.LocalApplicationData"
+                            Placeholder="@(_source == ImportSource.ErsatzTv ? ErsatzTvPlaceholder : TunarrPlaceholder)" />
+        </div>
+        @if (_found is { } found && !string.Equals(found, _path, StringComparison.OrdinalIgnoreCase))
+        {
+            <p class="hint">Found one at <code>@found</code>. <button class="btn btn-sm btn-ghost" type="button" @onclick="() => _path = found">Use it</button></p>
+        }
+        else if (_found is null)
+        {
+            <p class="hint">
+                @(_source == ImportSource.ErsatzTv
+                    ? "It isn't in the usual place on this computer. In Docker it's in the folder mapped to /root/.local/share/ersatztv; copy it here or point to it on a share."
+                    : "It isn't in the usual place on this computer. In Docker it's in the folder mapped to /config/tunarr; copy db.db and the channel-lineups folder beside it.")
+            </p>
+        }
+        <p class="hint">Read from a copy, so the other app can stay running. Programmes are matched to your Jellyfin library by Jellyfin's ids, then by
+            their files, then by show and episode (or a film's title and year), so a library from Plex works too as long as Jellyfin has the same media.</p>
+
+        <div class="row" style="gap:8px;">
+            <button class="btn btn-primary" type="button" disabled="@(_reading || string.IsNullOrWhiteSpace(_path))" @onclick="ReadAsync">
+                @(_reading ? "Reading…" : _plan is null ? "Read its channels" : "Read again")
+            </button>
+        </div>
+    </div>
+
+    @if (_plan is { } plan)
+    {
+        <div class="card">
+            <div class="card-head">
+                <h2>2. Channels to bring over</h2>
+                <span class="pill pill-muted">@plan.Channels.Count found</span>
+                <div class="spacer"></div>
+                <button class="btn btn-sm btn-ghost" type="button" @onclick="() => SelectAll(true)">All</button>
+                <button class="btn btn-sm btn-ghost" type="button" @onclick="() => SelectAll(false)">None</button>
+            </div>
+            @foreach (string warning in plan.Schedule.Warnings)
+            {
+                <p class="hint warn">@warning</p>
+            }
+            @if (plan.Channels.Count == 0)
+            {
+                <div class="empty">That database has no channels.</div>
+            }
+            @foreach (ImportedChannelPlan channel in plan.Channels)
+            {
+                bool importable = channel.Channel is not null;
+                bool chosen = importable && _chosen.Contains(channel.Source.SourceId);
+                bool open = _open == channel.Source.SourceId;
+                <div class="import-row @(importable ? "" : "off")" @key="channel.Source.SourceId">
+                    <label class="check" style="margin:0;">
+                        <input type="checkbox" checked="@chosen" disabled="@(!importable)" aria-label="Import @channel.Source.Name"
+                               @onchange="e => Choose(channel, e.Value is true)" />
+                    </label>
+                    <span class="channel-number">@(channel.Channel?.Number ?? channel.Source.Number)</span>
+                    <div class="import-what">
+                        <strong>@channel.Source.Name</strong>
+                        <span class="meta">@Summary(channel)</span>
+                    </div>
+                    @if (channel.Missing > 0)
+                    {
+                        <span class="pill pill-warn" title="@string.Join(", ", channel.MissingNames.Take(12))">@channel.Missing not in the library</span>
+                    }
+                    @if (channel.Notes.Count > 0 || channel.Channel is not null)
+                    {
+                        <button class="btn btn-sm btn-ghost" type="button" aria-expanded="@(open ? "true" : "false")" @onclick="() => _open = open ? null : channel.Source.SourceId">
+                            @(open ? "Less" : "More")
+                        </button>
+                    }
+                </div>
+                @if (open)
+                {
+                    <div class="import-detail">
+                        @foreach (string note in channel.Notes)
+                        {
+                            <p class="hint" style="margin:0 0 4px;">@note</p>
+                        }
+                        @if (channel.MissingNames.Count > 0)
+                        {
+                            <p class="hint warn" style="margin:0 0 4px;">Not found in Jellyfin: @string.Join(", ", channel.MissingNames.Take(30))@(channel.MissingNames.Count > 30 ? "…" : "")</p>
+                        }
+                        @if (channel.Channel is { } config)
+                        {
+                            @foreach (BlockConfig block in config.Blocks)
+                            {
+                                <p class="meta" style="margin:0;">@When(block) · @block.Name</p>
+                            }
+                            @if (config.BaseRotation is { Include.Count: > 0 } rotation)
+                            {
+                                <p class="meta" style="margin:4px 0 0;">Round and round@(config.Blocks.Count > 0 ? " between them" : ""):
+                                    @string.Join(", ", rotation.Include.Take(12).Select(Name))@(rotation.Include.Count > 12 ? $" and {rotation.Include.Count - 12} more" : "")</p>
+                            }
+                        }
+                    </div>
+                }
+            }
+            @if (plan.Collections.Count > 0)
+            {
+                <p class="hint" style="margin-top:10px;">@plan.Collections.Count collection(s) come too, shared by the channels that use them (under Collections).</p>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-head"><h2>3. Bring them over</h2></div>
+            <p class="hint">
+                The channels are added to your schedule@(Editor.IsDirty ? " along with your other unsaved changes; save them from the bar below" : " and saved")
+                (the schedule is backed up first, under Backups). Commercials and promos follow your usual settings; numbers already in use move up.
+            </p>
+            <button class="btn btn-primary" type="button" disabled="@(_importing || _chosen.Count == 0)" @onclick="ImportAsync">
+                @(_importing ? "Bringing them over…" : $"Import {_chosen.Count} channel{(_chosen.Count == 1 ? "" : "s")}")
+            </button>
+        </div>
+    }
+}
+
+<style>
+    .import-sources { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+    .import-source { text-align: left; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; font: inherit; }
+    .import-source strong { display: block; margin-bottom: 4px; }
+    .import-source span { font-size: 12px; color: var(--muted); }
+    .import-source.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--accent-dim); }
+    .import-row { display: flex; align-items: center; gap: 12px; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+    .import-row.off { opacity: .55; }
+    .import-what { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .import-what .meta { color: var(--muted); font-size: 12px; }
+    .import-detail { padding: 6px 4px 10px 64px; border-bottom: 1px solid var(--line); }
+    .hint.warn { color: #ffd08a; }
+</style>
+
+@code {
+    [CascadingParameter] private LocalAccess Local { get; set; } = new(false);
+
+    /// <summary><c>?from=tunarr</c> starts on Tunarr (from the setup guide).</summary>
+    [SupplyParameterFromQuery(Name = "from")] public string? From { get; set; }
+
+    private static readonly (ImportSource Source, string Name, string Blurb)[] Sources =
+    [
+        (ImportSource.ErsatzTv, "ErsatzTV", "Its classic and block schedules, collections, filler presets and channel logos."),
+        (ImportSource.Tunarr, "Tunarr", "Its channels' programmes, time-slot and random-slot schedules, custom shows and filler lists.")
+    ];
+
+    // Named rather than written into the markup: a quoted string inside an attribute's own quotes ends the attribute.
+    private const string ErsatzTvPlaceholder = @"%LOCALAPPDATA%\ersatztv\ersatztv.sqlite3";
+    private const string TunarrPlaceholder = @"%APPDATA%\tunarr\db.db";
+
+    private ImportSource _source = ImportSource.ErsatzTv;
+    private string? _path;
+    private string? _found;
+    private bool _reading;
+    private bool _importing;
+    private string? _error;
+    private string? _done;
+    private string? _open;
+    private ImportedSchedule? _schedule;
+    private ImportPlan? _plan;
+    private readonly HashSet<string> _chosen = new(StringComparer.Ordinal);
+
+    private string[] Extensions => _source == ImportSource.ErsatzTv ? [".sqlite3", ".sqlite", ".db"] : [".db"];
+
+    protected override void OnInitialized() =>
+        Choose(string.Equals(From, "tunarr", StringComparison.OrdinalIgnoreCase) ? ImportSource.Tunarr : ImportSource.ErsatzTv);
+
+    private void Choose(ImportSource source)
+    {
+        _source = source;
+        _found = ChannelImporter.Find(source);
+        _path = _found is null ? null : source == ImportSource.ErsatzTv ? ErsatzTvImporter.ResolvePath(_found) : TunarrImporter.ResolvePath(_found);
+        _found = _path;
+        _schedule = null;
+        _plan = null;
+        _error = null;
+        _done = null;
+    }
+
+    private async Task ReadAsync()
+    {
+        if (!Local.IsLocal || string.IsNullOrWhiteSpace(_path))
+        {
+            return;
+        }
+
+        _reading = true;
+        _error = null;
+        _done = null;
+        StateHasChanged();
+        try
+        {
+            ImportedSchedule schedule = await Task.Run(() => Importer.Read(_source, _path));
+            _schedule = schedule;
+            _plan = await Importer.PlanAsync(schedule);
+            _chosen.Clear();
+            foreach (ImportedChannelPlan channel in _plan.Channels.Where(channel => channel.Channel is not null))
+            {
+                _chosen.Add(channel.Source.SourceId);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or Microsoft.Data.Sqlite.SqliteException
+                                       or System.Text.Json.JsonException or HttpRequestException)
+        {
+            _error = $"Couldn't read it: {ex.Message}";
+            _plan = null;
+        }
+        finally
+        {
+            _reading = false;
+        }
+    }
+
+    private void Choose(ImportedChannelPlan channel, bool on)
+    {
+        if (on)
+        {
+            _chosen.Add(channel.Source.SourceId);
+        }
+        else
+        {
+            _chosen.Remove(channel.Source.SourceId);
+        }
+    }
+
+    private void SelectAll(bool on)
+    {
+        _chosen.Clear();
+        if (on && _plan is not null)
+        {
+            foreach (ImportedChannelPlan channel in _plan.Channels.Where(channel => channel.Channel is not null))
+            {
+                _chosen.Add(channel.Source.SourceId);
+            }
+        }
+    }
+
+    private async Task ImportAsync()
+    {
+        if (!Local.IsLocal || _schedule is null || _chosen.Count == 0)
+        {
+            return;
+        }
+
+        _importing = true;
+        _error = null;
+        StateHasChanged();
+        try
+        {
+            bool wasDirty = Editor.IsDirty;
+
+            // Worked out again for just the chosen ones, so they take the lowest free numbers between them.
+            ImportPlan plan = await Importer.PlanAsync(_schedule, _chosen);
+            int added = await Importer.ApplyAsync(plan, Nav.BaseUri);
+            bool saved = !wasDirty && added > 0 && Editor.Save();
+            if (!wasDirty && added > 0 && !saved)
+            {
+                _error = "The channels were added, but the schedule couldn't be saved: " + string.Join(" · ", Editor.Errors.Take(5))
+                         + ". Fix them on the Channels page, or Discard from the bar below.";
+            }
+
+            _done = added == 0
+                ? "Nothing was brought over."
+                : $"Brought over {added} channel{(added == 1 ? "" : "s")}{(saved ? "" : wasDirty ? "; save them from the bar below" : "")}. They're scheduled from the next rebuild.";
+            _plan = null;
+            _schedule = null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            _error = $"Couldn't bring them over: {ex.Message}";
+        }
+        finally
+        {
+            _importing = false;
+        }
+    }
+
+    private static string Summary(ImportedChannelPlan channel)
+    {
+        if (channel.Channel is not { } config)
+        {
+            return "Can't be brought over: " + (channel.Notes.LastOrDefault() ?? "nothing in it was found in the library");
+        }
+
+        List<string> parts = [];
+        if (config.Blocks.Count > 0)
+        {
+            parts.Add($"{config.Blocks.Count} timed block{(config.Blocks.Count == 1 ? "" : "s")}");
+        }
+
+        if (config.BaseRotation?.Include.Count is > 0 and var count)
+        {
+            parts.Add($"{count} show{(count == 1 ? "" : "s")} or sets of films going round");
+        }
+
+        if (config.Interstitials?.Filler is not null)
+        {
+            parts.Add("its own filler");
+        }
+
+        if (config.Number != channel.Source.Number && channel.Source.Number > 0)
+        {
+            parts.Add($"was {channel.Source.Number}");
+        }
+
+        parts.Add($"{channel.Found} found in Jellyfin");
+        return string.Join(" · ", parts);
+    }
+
+    private static string When(BlockConfig block)
+    {
+        string days = block.Days.Count == 0 ? "Every day" : string.Join(", ", block.Days.Select(day => day.ToString()[..3]));
+        return $"{days} {Clock(block.Time)}–{Clock(block.EndTime)}";
+    }
+
+    private static string Clock(TimeSpan? time) => time is { } value ? value.ToString(@"hh\:mm", System.Globalization.CultureInfo.InvariantCulture) : "…";
+
+    private static string Name(ContentInclude include) =>
+        include.Show ?? include.Movie ?? (include.Query is { } query && query.StartsWith("id IN", StringComparison.Ordinal) ? "some films" : include.Query) ?? "something";
+}

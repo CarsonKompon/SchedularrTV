@@ -984,6 +984,8 @@ progress::-moz-progress-bar { background: var(--accent-gradient); border-radius:
 .wizard h2 { margin: 6px 0 10px; font-size: 20px; display: flex; align-items: center; gap: 10px; }
 .wizard > p { color: var(--muted); line-height: 1.6; }
 .wizard-steps { display: flex; gap: 6px; margin-bottom: 14px; }
+.wizard-import { display: flex; gap: 12px; align-items: center; margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: var(--r); background: rgba(255, 255, 255, .02); }
+.wizard-import > div { flex: 1; min-width: 0; }
 .wizard-step { flex: 1; height: 4px; border-radius: 2px; background: var(--line-strong); transition: background .2s; }
 .wizard-step.done { background: rgba(123, 139, 255, .55); }
 .wizard-step.current { background: var(--accent); }

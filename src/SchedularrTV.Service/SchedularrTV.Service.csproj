@@ -23,6 +23,8 @@
     <PackageReference Include="SkiaSharp" Version="4.153.1" />
     <!-- Windows and macOS natives come with SkiaSharp itself; Linux needs its own package. -->
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.153.1" />
+    <!-- Reads ErsatzTV's and Tunarr's databases (read-only) to import their channels. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup>

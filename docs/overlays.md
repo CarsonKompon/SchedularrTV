@@ -77,6 +77,35 @@ breaks too**. Times are measured through the whole programme, so one split by mi
 third 10 seconds in and its "Up next" before the very end, on whichever part those fall in. A strip under the canvas
 shows when it would appear on a 22-minute programme.
 
+## Different pictures for different times
+
+A file overlay can show other pictures in place of its own when their conditions hold: under **Other pictures** in its
+editor. Each has a picture and any mix of conditions, all of which must hold:
+
+- **Rated**: the programme's content rating from Jellyfin (TV-Y, TV-PG, PG-13…), the episode's own or else its series'.
+- **Matches a library query**: the usual query language, e.g. `show:'Rugrats' OR tag:'Halloween'` (`rating` works there too).
+- **During a holiday**, **in a season**, **in a month**, or **between two dates** (`MM-DD`, wrapping the new year if need be).
+- **On a day** of the week, and **between two times** (which may cross midnight).
+
+They're checked in order as each programme starts, in the channel's time zone, and the first that holds wins. With none,
+the overlay's own picture shows; leave that empty and nothing shows, which makes a rating badge: the **Rating badge**
+preset comes with one entry per TV rating, so you only choose the pictures. In YAML:
+
+```yaml
+- name: Screen bug
+  kind: file
+  file: D:\Media\Logos\bug.png
+  variants:
+    - { name: Halloween, file: D:\Media\Logos\bug-pumpkin.png, holidays: [Halloween] }
+    - { name: Saturday mornings, file: D:\Media\Logos\bug-toons.png, days: [Saturday], time_from: "06:00", time_to: "12:00" }
+- name: Rating
+  kind: file
+  when: start
+  variants:
+    - { file: D:\Media\Ratings\tv-y.png, ratings: [TV-Y] }
+    - { file: D:\Media\Ratings\tv-pg.png, ratings: [TV-PG] }
+```
+
 ## How it reaches ErsatzTV
 
 When schedules are published, the plugin adds a graphics layer to every playout item an overlay shows on: designs as

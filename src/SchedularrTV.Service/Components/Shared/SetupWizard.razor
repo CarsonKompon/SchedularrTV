@@ -34,6 +34,7 @@
                     <li><Icon Name="megaphone" Size="15" /><span>Optionally, a folder of <strong>commercials and bumpers</strong> for the ad breaks.</span></li>
                 </ul>
                 <p class="hint">Everything here can be changed later under <strong>App settings</strong>.</p>
+                <p class="hint">Moving from <strong>ErsatzTV</strong> or <strong>Tunarr</strong>? Once Jellyfin is connected, the last step offers to import your channels.</p>
                 break;
 
             case 1:
@@ -128,6 +129,15 @@
                 @if (JellyfinFilled)
                 {
                     <p>Next, create your first channel: the channel wizard picks what to show, when breaks happen and which commercials to use.</p>
+                    <div class="wizard-import">
+                        <Icon Name="download" Size="16" />
+                        <div>
+                            <strong>Coming from ErsatzTV or Tunarr?</strong>
+                            <p class="hint" style="margin:2px 0 0;">Bring all your channels over instead: their schedules, shows, collections, filler and logos,
+                                matched to your Jellyfin library. Nothing in the other app is changed.</p>
+                        </div>
+                        <button class="btn btn-sm" type="button" @onclick="() => Finish(createChannel: false, import: true)">Import channels</button>
+                    </div>
                 }
                 else
                 {
@@ -228,7 +238,7 @@
 
     private Task Skip() => OnClose.InvokeAsync();
 
-    private async Task Finish(bool createChannel)
+    private async Task Finish(bool createChannel, bool import = false)
     {
         _error = null;
         try
@@ -246,14 +256,18 @@
             _restarting = true;
             StateHasChanged();
             await RestartFlow.RestartAndReloadAsync(Runtime, JS, Navigation,
-                createChannel ? "/channels" : "/",
-                createChannel ? "wizard=1" : null,
+                import ? "/import" : createChannel ? "/channels" : "/",
+                createChannel && !import ? "wizard=1" : null,
                 Form.Port != Form.LoadedPort ? Form.Port : null);
             return;
         }
 
         await OnClose.InvokeAsync();
-        if (createChannel)
+        if (import)
+        {
+            Navigation.NavigateTo("import");
+        }
+        else if (createChannel)
         {
             Navigation.NavigateTo("channels?wizard=1");
         }
