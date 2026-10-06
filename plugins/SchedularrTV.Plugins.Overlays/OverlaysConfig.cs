@@ -199,6 +199,7 @@ public sealed class OverlayVariant
     public TimeSpan? TimeTo { get; set; }
 
     /// <summary>Whether any condition is set (one without any would always win).</summary>
+    [YamlDotNet.Serialization.YamlIgnore]
     public bool HasConditions =>
         Ratings.Count > 0 || !string.IsNullOrWhiteSpace(Query) || Holidays.Count > 0 || Seasons.Count > 0 || Months.Count > 0
         || !string.IsNullOrWhiteSpace(DateFrom) || !string.IsNullOrWhiteSpace(DateTo) || Days.Count > 0 || TimeFrom is not null || TimeTo is not null;

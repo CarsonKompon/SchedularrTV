@@ -79,7 +79,9 @@ public static class TunarrImporter
             schedule.Warnings.Add($"There's no {LineupFolder} folder beside the database, so only the channels' programmes (not their order or schedules) could be read.");
         }
 
-        schedule.Channels.Sort((a, b) => a.Number.CompareTo(b.Number));
+        List<ImportedChannel> ordered = [.. schedule.Channels.OrderBy(channel => channel.Number)];
+        schedule.Channels.Clear();
+        schedule.Channels.AddRange(ordered);
         return schedule;
     }
 

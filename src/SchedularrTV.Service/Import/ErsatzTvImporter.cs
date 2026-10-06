@@ -71,7 +71,9 @@ public static class ErsatzTvImporter
             schedule.Channels.Add(channel);
         }
 
-        schedule.Channels.Sort((a, b) => a.Number.CompareTo(b.Number));
+        List<ImportedChannel> ordered = [.. schedule.Channels.OrderBy(channel => channel.Number)];
+        schedule.Channels.Clear();
+        schedule.Channels.AddRange(ordered);
         return schedule;
     }
 
@@ -208,7 +210,9 @@ public static class ErsatzTvImporter
                     continue;
                 }
 
-                (long showId, int season) = SqliteSnapshot.Long(row, "SeasonId") is { } seasonId && Seasons.TryGetValue(seasonId, out var found) ? found : (0, 0);
+                (long showId, int? season) = SqliteSnapshot.Long(row, "SeasonId") is { } seasonId && Seasons.TryGetValue(seasonId, out var found)
+                    ? (found.ShowId, found.Number)
+                    : (0L, null);
                 (string show, string? showJellyfin, _) = Shows.TryGetValue(showId, out var known) ? known : (string.Empty, null, null);
                 episodes[id] = new ImportedMedia(SqliteSnapshot.Text(row, "ItemId"), SqliteSnapshot.Text(row, "Path"), SqliteSnapshot.Text(row, "Title") ?? $"Episode {id}",
                     show.Length == 0 ? null : show, showJellyfin, season, SqliteSnapshot.Int(row, "EpisodeNumber"), Duration: SqliteSnapshot.Span(row, "Duration") ?? TimeSpan.Zero);
