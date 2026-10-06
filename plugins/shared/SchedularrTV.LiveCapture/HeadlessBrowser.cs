@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.Buffers.Text;
 using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Text;
@@ -103,6 +105,16 @@ public sealed class HeadlessBrowser : IAsyncDisposable
     /// <summary>Raised from a background thread with each new frame the page draws.</summary>
     public event Action<byte[]>? Frame;
 
+    /// <summary>How many screencast frames have arrived (0 on setups where the screencast sends none).</summary>
+    public long ScreencastFrames => Interlocked.Read(ref _screencastFrames);
+
+    private long _screencastFrames;
+
+    // The shortest time between screencast frames: each frame is acknowledged no sooner than this after the last, and
+    // Chrome sends nothing (and so encodes nothing) until it is. Zero acknowledges at once.
+    private long _frameIntervalTicks;
+    private long _lastFrameTimestamp;
+
     /// <summary>The browser closed, or the page went away for good (crashed, or the connection to it closed).</summary>
     public bool HasExited => _process.HasExited || _detached;
 
@@ -125,15 +137,20 @@ public sealed class HeadlessBrowser : IAsyncDisposable
     /// <param name="transparent">
     /// Pictures are PNGs with a see-through background where the page draws none (for a page laid over a video).
     /// </param>
+    /// <param name="maxFrameRate">
+    /// The most screencast frames a second wanted (the capture rate); 0 for as many as the page draws. Chrome draws at
+    /// up to 60 a second while anything moves, and encodes every frame it sends, so this saves most of its work.
+    /// </param>
     public static async Task<HeadlessBrowser> StartAsync(string browser, string url, int width, int height, CancellationToken cancellationToken,
-        bool transparent = false)
+        bool transparent = false, int maxFrameRate = 0)
     {
         List<string> problems = [];
         foreach (string[] mode in Modes)
         {
             try
             {
-                return await StartAsync(browser, mode, url, width, height, transparent, cancellationToken).ConfigureAwait(false);
+                HeadlessBrowser started = await StartAsync(browser, mode, url, width, height, transparent, maxFrameRate, cancellationToken).ConfigureAwait(false);
+                return started;
             }
             catch (BrowserClosedException ex)
             {
@@ -146,7 +163,7 @@ public sealed class HeadlessBrowser : IAsyncDisposable
     }
 
     private static async Task<HeadlessBrowser> StartAsync(string browser, string[] mode, string url, int width, int height, bool transparent,
-        CancellationToken cancellationToken)
+        int maxFrameRate, CancellationToken cancellationToken)
     {
         string profile = Path.Combine(BrowserProcesses.ProfilesRoot, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(profile);
@@ -165,6 +182,10 @@ public sealed class HeadlessBrowser : IAsyncDisposable
                      "--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows",
                      "--mute-audio", "--hide-scrollbars", "--autoplay-policy=no-user-gesture-required",
 
+                     // Background work a hidden page never needs, which otherwise wakes the browser now and then.
+                     "--disable-component-update", "--disable-sync", "--disable-default-apps", "--disable-breakpad",
+                     "--disable-features=Translate,OptimizationHints,MediaRouter,DialMediaRouteProvider,AutofillServerCommunication",
+
                      // Opened straight on the page rather than navigated there later: a navigation that moves the page to
                      // another process detaches it for a moment, and commands sent then fail with "Not attached to an
                      // active page".
@@ -178,7 +199,11 @@ public sealed class HeadlessBrowser : IAsyncDisposable
 
         // Ended with the scheduler, however it stops (and swept up at the next start if it somehow isn't).
         BrowserProcesses.Adopt(process, profile);
-        var browserProcess = new HeadlessBrowser(process, profile) { _transparent = transparent };
+        var browserProcess = new HeadlessBrowser(process, profile)
+        {
+            _transparent = transparent,
+            _frameIntervalTicks = maxFrameRate > 0 ? Stopwatch.Frequency / maxFrameRate : 0
+        };
         process.OutputDataReceived += (_, e) => browserProcess.Remember(e.Data);
         process.ErrorDataReceived += (_, e) => browserProcess.Remember(e.Data);
         process.BeginOutputReadLine();
@@ -408,7 +433,7 @@ public sealed class HeadlessBrowser : IAsyncDisposable
                 }
                 while (!result.EndOfMessage);
 
-                Handle(JsonNode.Parse(message.GetBuffer().AsSpan(0, (int)message.Length)) as JsonObject);
+                Dispatch(message.GetBuffer(), (int)message.Length);
             }
         }
         catch (Exception ex) when (ex is OperationCanceledException or WebSocketException or JsonException or ObjectDisposedException or FormatException)
@@ -427,6 +452,15 @@ public sealed class HeadlessBrowser : IAsyncDisposable
 
                 _pending.Clear();
             }
+        }
+    }
+
+    private void Dispatch(byte[] buffer, int length)
+    {
+        ReadOnlySpan<byte> received = buffer.AsSpan(0, length);
+        if (!TryHandleScreencastFrame(received))
+        {
+            Handle(JsonNode.Parse(received) as JsonObject);
         }
     }
 
@@ -466,21 +500,167 @@ public sealed class HeadlessBrowser : IAsyncDisposable
 
         if ((string?)message["method"] == "Page.screencastFrame" && message["params"] is JsonObject frame)
         {
-            if ((string?)frame["data"] is { } data)
+            byte[]? picture = (string?)frame["data"] is { } data ? Convert.FromBase64String(data) : null;
+            int? session = frame["sessionId"] is JsonValue value && value.TryGetValue(out int sessionId) ? sessionId : null;
+            OnScreencastFrame(picture, session);
+        }
+    }
+
+    private static ReadOnlySpan<byte> ScreencastMethod => "\"Page.screencastFrame\""u8;
+
+    /// <summary>
+    /// Handles a screencast frame straight from the bytes received: the picture (hundreds of kilobytes of base64, many
+    /// times a second) is decoded in place, without building a JSON tree or a string of it first. False for any other
+    /// message (or one this can't read), which is then handled the ordinary way.
+    /// </summary>
+    private bool TryHandleScreencastFrame(ReadOnlySpan<byte> message)
+    {
+        // Base64 has no quotes, so the method's name can't turn up inside the picture by chance.
+        if (message.IndexOf(ScreencastMethod) < 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            var reader = new Utf8JsonReader(message);
+            bool isFrame = false;
+            byte[]? picture = null;
+            int? session = null;
+            while (reader.Read())
             {
-                Frame?.Invoke(Convert.FromBase64String(data));
+                if (reader.TokenType != JsonTokenType.PropertyName)
+                {
+                    continue;
+                }
+
+                // The message's own fields are at depth 1; params' (data, sessionId) at depth 2.
+                int depth = reader.CurrentDepth;
+                if (depth == 1 && reader.ValueTextEquals("method"u8))
+                {
+                    reader.Read();
+                    isFrame = reader.TokenType == JsonTokenType.String && reader.ValueTextEquals("Page.screencastFrame"u8);
+                    if (!isFrame)
+                    {
+                        return false;
+                    }
+                }
+                else if (depth == 2 && reader.ValueTextEquals("data"u8))
+                {
+                    reader.Read();
+                    picture = reader.TokenType == JsonTokenType.String ? DecodeBase64(ref reader) : null;
+                }
+                else if (depth == 2 && reader.ValueTextEquals("sessionId"u8))
+                {
+                    reader.Read();
+                    session = reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out int id) ? id : null;
+                }
+                else if (depth == 1 && reader.ValueTextEquals("params"u8))
+                {
+                    // Read into: data and sessionId are in here.
+                }
+                else
+                {
+                    // Anything else (the frame's metadata) is passed over whole.
+                    reader.Read();
+                    if (reader.TokenType is JsonTokenType.StartObject or JsonTokenType.StartArray)
+                    {
+                        reader.Skip();
+                    }
+                }
             }
 
-            // Frames stop coming until each one is acknowledged.
-            if (frame["sessionId"] is JsonNode session)
+            if (!isFrame)
             {
-                _ = SendRawAsync(new JsonObject
-                {
-                    ["id"] = Interlocked.Increment(ref _nextId),
-                    ["method"] = "Page.screencastFrameAck",
-                    ["params"] = new JsonObject { ["sessionId"] = session.DeepClone() }
-                }, _life.Token).ContinueWith(_ => { }, TaskScheduler.Default);
+                return false;
             }
+
+            OnScreencastFrame(picture, session);
+            return true;
+        }
+        catch (Exception ex) when (ex is JsonException or FormatException or InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private static byte[] DecodeBase64(ref Utf8JsonReader reader)
+    {
+        if (reader.HasValueSequence || reader.ValueIsEscaped)
+        {
+            return Convert.FromBase64String(reader.GetString() ?? string.Empty);
+        }
+
+        ReadOnlySpan<byte> text = reader.ValueSpan;
+        byte[] bytes = new byte[Base64.GetMaxDecodedFromUtf8Length(text.Length)];
+        if (Base64.DecodeFromUtf8(text, bytes, out _, out int written) != OperationStatus.Done)
+        {
+            throw new FormatException("A screencast frame wasn't valid base64.");
+        }
+
+        return written == bytes.Length ? bytes : bytes.AsSpan(0, written).ToArray();
+    }
+
+    /// <summary>
+    /// Passes a frame on, then acknowledges it: at once, or (with a frame rate set) once the frame's share of a second
+    /// has gone by. Chrome sends no further frame until then, and those it would have sent in between are never encoded.
+    /// </summary>
+    private void OnScreencastFrame(byte[]? picture, int? session)
+    {
+        long now = Stopwatch.GetTimestamp();
+        Interlocked.Increment(ref _screencastFrames);
+        if (picture is { Length: > 0 })
+        {
+            Frame?.Invoke(picture);
+        }
+
+        if (session is not { } id)
+        {
+            return;
+        }
+
+        long wait = Interlocked.Read(ref _lastFrameTimestamp) + _frameIntervalTicks - now;
+        Interlocked.Exchange(ref _lastFrameTimestamp, now);
+        if (_frameIntervalTicks <= 0 || wait <= 0)
+        {
+            _heldBack = false;
+            _ = AcknowledgeAsync(id, TimeSpan.Zero);
+        }
+        else
+        {
+            _heldBack = true;
+            _ = AcknowledgeAsync(id, TimeSpan.FromSeconds((double)wait / Stopwatch.Frequency));
+        }
+    }
+
+    private volatile bool _heldBack;
+
+    /// <summary>
+    /// The latest screencast frame was acknowledged late (to keep to the frame rate), so the page may have drawn
+    /// something since that the screencast never sent: a picture should be taken once it goes quiet.
+    /// </summary>
+    public bool MayHaveHeldBackFrame => _heldBack;
+
+    // Frames stop coming until each one is acknowledged.
+    private async Task AcknowledgeAsync(int session, TimeSpan delay)
+    {
+        try
+        {
+            if (delay > TimeSpan.Zero)
+            {
+                await Task.Delay(delay, _life.Token).ConfigureAwait(false);
+            }
+
+            await SendRawAsync(new JsonObject
+            {
+                ["id"] = Interlocked.Increment(ref _nextId),
+                ["method"] = "Page.screencastFrameAck",
+                ["params"] = new JsonObject { ["sessionId"] = session }
+            }, _life.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or WebSocketException or ObjectDisposedException or InvalidOperationException)
+        {
+            // The browser is going away.
         }
     }
 
@@ -490,9 +670,10 @@ public sealed class HeadlessBrowser : IAsyncDisposable
     /// </summary>
     public async Task<byte[]?> CaptureAsync(CancellationToken cancellationToken)
     {
+        // optimizeForSpeed: a quicker, lighter compression (browsers too old to know it ignore it).
         JsonNode? result = await RetryAsync("Page.captureScreenshot", _transparent
-            ? new JsonObject { ["format"] = "png", ["fromSurface"] = true }
-            : new JsonObject { ["format"] = "jpeg", ["quality"] = 85, ["fromSurface"] = true }, cancellationToken).ConfigureAwait(false);
+            ? new JsonObject { ["format"] = "png", ["fromSurface"] = true, ["optimizeForSpeed"] = true }
+            : new JsonObject { ["format"] = "jpeg", ["quality"] = 85, ["fromSurface"] = true, ["optimizeForSpeed"] = true }, cancellationToken).ConfigureAwait(false);
         return (string?)result?["data"] is { Length: > 0 } data ? Convert.FromBase64String(data) : null;
     }
 

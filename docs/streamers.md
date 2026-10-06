@@ -117,7 +117,22 @@ The plugin's gear on the **Plugins** page:
 | Highest stream quality | 720 | The tallest picture asked of a stream |
 | Time zone for predictions | This computer's | e.g. `America/New_York` |
 | Capture frames per second | 15 | How smoothly the chat and pop-ups move |
+| Decode streams on the graphics chip | off | `auto`, or `cuda` (NVIDIA), `qsv` (Intel), `d3d11va` (Windows), `vaapi` (Linux), `videotoolbox` (Mac) |
 | Keep a channel running after its last viewer | 60 s | |
+
+### Lightening the load
+
+A live or replayed stream is the heaviest kind of channel: the stream is decoded, the chat and pop-ups are laid over it,
+and the result is encoded again. The biggest savings, in order:
+
+- **Encode on the graphics chip**: under **App settings → Hardware and video encoding → Live page channels**, choose your
+  card's encoder (NVIDIA, Intel Quick Sync, AMD…). This helps every live page channel, not just streamers.
+- **Decode on the graphics chip**: the plugin's **Decode streams on the graphics chip** setting (`auto` is a good start).
+  A stream the chip can't decode is decoded in software instead.
+- **Highest stream quality** and **Capture frames per second**: lower is lighter.
+
+The plugin already asks for a stream's 30 frames a second copy over a 60 one of the same height where there's a choice
+(the channel keeps at most 30), and the hidden browser only draws as many frames as are captured.
 
 ## Troubleshooting
 

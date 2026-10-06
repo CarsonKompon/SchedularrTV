@@ -36,6 +36,16 @@ public sealed class StreamerSettings(IPluginContext context)
 
     public TimeSpan KeepAlive => TimeSpan.FromSeconds(Number("KeepAliveSeconds", 60, 0, 3600));
 
+    /// <summary>The ffmpeg <c>-hwaccel</c> methods the <c>VideoDecoding</c> setting can choose.</summary>
+    public static readonly IReadOnlyList<string> DecodingMethods = ["auto", "cuda", "qsv", "d3d11va", "dxva2", "vaapi", "videotoolbox", "drm"];
+
+    /// <summary>
+    /// How streams are decoded: null (unset, or <c>software</c>) on the CPU, else an ffmpeg <c>-hwaccel</c> method for
+    /// the graphics chip (<c>auto</c> picks whichever works here, and ffmpeg falls back to the CPU when none does).
+    /// </summary>
+    public string? HardwareDecoding =>
+        Value("VideoDecoding")?.ToLowerInvariant() is { } method && DecodingMethods.Contains(method) ? method : null;
+
     /// <summary>The plugin's own choice, else the one App settings uses, else one beside ffprobe, else ffmpeg on the PATH.</summary>
     public string Ffmpeg
     {

@@ -121,7 +121,7 @@ public sealed class YtDlp(StreamerSettings settings, ILogger<YtDlp> logger)
         string program = Executable ?? throw new InvalidOperationException("yt-dlp isn't installed: download it on the Streamers page.");
         int height = settings.MaxHeight;
         (int code, string output, string errors) = await RunAsync(program,
-            ["--no-warnings", "--no-playlist", "--no-cache-dir", "-f", $"best[height<={height}]/best", "-g", pageUrl],
+            ["--no-warnings", "--no-playlist", "--no-cache-dir", "-f", $"best[height<={height}]/best", "-S", Preference(height), "-g", pageUrl],
             TimeSpan.FromSeconds(60), cancellationToken).ConfigureAwait(false);
         string? url = output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .FirstOrDefault(line => line.StartsWith("http", StringComparison.OrdinalIgnoreCase));
@@ -145,7 +145,7 @@ public sealed class YtDlp(StreamerSettings settings, ILogger<YtDlp> logger)
             ? $"bv*[height<={height}][vcodec^=avc1]+ba[acodec^=mp4a]/bv*[height<={height}]+ba/b[height<={height}]/b"
             : $"best[height<={height}]/best";
         (int code, string output, string errors) = await RunAsync(program,
-            ["--no-warnings", "--no-playlist", "--no-cache-dir", "-f", format, "-g", pageUrl],
+            ["--no-warnings", "--no-playlist", "--no-cache-dir", "-f", format, "-S", Preference(height), "-g", pageUrl],
             TimeSpan.FromSeconds(90), cancellationToken).ConfigureAwait(false);
         string[] urls = [.. output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(line => line.StartsWith("http", StringComparison.OrdinalIgnoreCase))];
@@ -157,6 +157,15 @@ public sealed class YtDlp(StreamerSettings settings, ILogger<YtDlp> logger)
 
         return (urls[0], urls.Length > 1 ? urls[1] : null);
     }
+
+    /// <summary>
+    /// yt-dlp's sort order: the tallest picture allowed first, then, of those as tall, the one closest to the channel's
+    /// own frame rate (30, not 60). The channel keeps at most that many frames a second, so a 60 frames a second copy is
+    /// twice the decoding for frames that are thrown away; a stream offered only at 60 is still taken at full height.
+    /// </summary>
+    public static string Preference(int height) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"res:{height},fps:{SchedularrTV.Core.Platform.LiveEncodingSettings.Current.FrameRate}");
 
     private static async Task<(int Code, string Output, string Errors)> RunAsync(string program, IEnumerable<string> arguments, TimeSpan limit,
         CancellationToken cancellationToken)

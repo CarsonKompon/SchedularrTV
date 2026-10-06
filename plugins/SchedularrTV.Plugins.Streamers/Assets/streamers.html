@@ -24,8 +24,9 @@
   #offline .glow { position: absolute; inset: -30%; background:
       radial-gradient(circle at 25% 30%, color-mix(in srgb, var(--accent) 45%, transparent), transparent 45%),
       radial-gradient(circle at 75% 75%, color-mix(in srgb, var(--accent) 25%, #001a33), transparent 50%);
-    animation: drift 50s ease-in-out infinite alternate; opacity: .8; }
-  @keyframes drift { from { transform: translate(-4%, -3%) rotate(0); } to { transform: translate(4%, 3%) rotate(10deg); } }
+    transform: translate(-4%, -3%); will-change: transform; opacity: .8; }
+  /* It drifts (see drift() below) ten times a second rather than as a CSS animation, which the browser would redraw
+     60 times a second, every one a full picture to capture, for movement too slow to see between them. */
   #channel { position: absolute; top: 30px; left: 44px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; font-size: 18px; color: var(--soft); }
   #clock { position: absolute; top: 26px; right: 44px; font-size: 24px; font-weight: 600; color: var(--soft); font-variant-numeric: tabular-nums; }
   #hero { position: absolute; left: 0; right: 0; top: 118px; display: flex; flex-direction: column; align-items: center; text-align: center; }
@@ -73,7 +74,7 @@
   #popup.away { opacity: 0; transform: translateY(-16px) scale(.97); }
   #popup img { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 3px solid #e91916; flex: none; background: rgba(255,255,255,.1); }
   #popup .tag { font-size: 12px; font-weight: 800; letter-spacing: .12em; color: #ff4d4d; }
-  #popup .tag::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff4d4d; margin-right: 6px; vertical-align: 1px; animation: pulse 1.6s infinite; }
+  #popup .tag::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff4d4d; margin-right: 6px; vertical-align: 1px; animation: pulse 1.6s steps(4) infinite; }
   @keyframes pulse { 50% { opacity: .3; } }
   #popup .line { font-size: 17px; font-weight: 600; margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   #popup .meta { font-size: 13px; color: var(--soft); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -603,8 +604,19 @@
     }
   });
 
+  // The countdown's background glow: over 50 s from one side to the other and back, eased at each end.
+  const glow = document.querySelector("#offline .glow");
+  function drift() {
+    if (mode !== "offline") return;
+    const cycle = (Date.now() / 50000) % 2, along = cycle <= 1 ? cycle : 2 - cycle;
+    const p = 0.5 - 0.5 * Math.cos(Math.PI * along);
+    glow.style.transform = `translate(${(-4 + 8 * p).toFixed(3)}%, ${(-3 + 6 * p).toFixed(3)}%) rotate(${(10 * p).toFixed(3)}deg)`;
+  }
+
   applyConfig();
   poll();
+  drift();
+  setInterval(drift, 100);
   setInterval(poll, 5000);
   setInterval(pollChat, 1500);
   setInterval(() => { tick(); reminderTick(); replayNoteTick(); }, 1000);

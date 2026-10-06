@@ -83,11 +83,18 @@ public sealed record LiveStreamSpec
     /// </summary>
     public LiveEncodingSettings Encoding { get; init; } = LiveEncodingSettings.Current;
 
+    /// <summary>
+    /// ffmpeg's <c>-hwaccel</c> for decoding the window's stream on a graphics chip (<c>auto</c>, <c>cuda</c>, <c>qsv</c>,
+    /// <c>d3d11va</c>, <c>vaapi</c>, <c>videotoolbox</c>…), or null to decode it on the CPU. Decoded pictures come back to
+    /// memory for the rest of the work, and ffmpeg falls back to the CPU by itself where the chip can't decode it.
+    /// </summary>
+    public string? HardwareDecoding { get; init; }
+
     /// <summary>Changes whenever anything that affects the running stream does, so it's started again with the new settings.</summary>
     public string Fingerprint =>
         string.Join('|', PageUrl, Ffmpeg, BrowserPath, CaptureFrameRate, WindowStreamUrl, Window, Audio, MusicFolder,
             Volume.ToString(CultureInfo.InvariantCulture), AudioStreamUrl, Visualizer, VisualizerRect, PageOnTop, Recorded, RestartToken,
-            Encoding.Fingerprint);
+            Encoding.Fingerprint, HardwareDecoding);
 
     /// <summary>The options before a window or sound stream's <c>-i</c>.</summary>
     internal IEnumerable<string> InputOptions()
@@ -317,6 +324,11 @@ public sealed class LiveStream : IAsyncDisposable
         int? window = null;
         if (spec.WindowStreamUrl is { } windowUrl && spec.Window is not null)
         {
+            if (spec.HardwareDecoding is { Length: > 0 } hwaccel)
+            {
+                arguments.AddRange(["-hwaccel", hwaccel]);
+            }
+
             arguments.AddRange([.. spec.InputOptions(), "-i", windowUrl]);
             window = next++;
         }
@@ -351,21 +363,24 @@ public sealed class LiveStream : IAsyncDisposable
             audioFilter = $"[{audio}:a]anull[a]";
         }
 
+        // Every picture is turned into the format it's finally mixed in as early as possible, in the same pass as any
+        // scaling, and before fps repeats it: a page captured at 15 frames a second is converted 15 times a second, not 30.
         List<string> graph = [];
         string current;
         if (spec.PageOnTop)
         {
-            // The page keeps the timing (its frames are paced by the clock): a copy of it, filled in, is the dark background;
-            // the window's stream goes over that, and the page itself (see-through where it draws nothing) over both.
-            graph.Add($"[0:v]scale={Width}:{Height}:force_original_aspect_ratio=decrease,pad={Width}:{Height}:(ow-iw)/2:(oh-ih)/2:color=black@0,"
-                      + $"setsar=1,fps={fps},format=rgba,split=2[pagetop][pagebase]");
-            // Filled after the change to yuv420p: older ffmpegs' drawbox only takes YUV pictures.
-            graph.Add($"[pagebase]format=yuv420p,drawbox=x=0:y=0:w=iw:h=ih:color=0x0b0d12@1:t=fill[base]");
+            // A plain dark background (made once by ffmpeg, at the stream's rate); the window's stream goes over that,
+            // and the page (see-through where it draws nothing) over both. The page needs no fps of its own: overlay
+            // shows its latest frame under each background frame, and waits for it, so the page still keeps the timing.
+            graph.Add($"color=c=0x0b0d12:s={Width}x{Height}:r={fps},format=yuv420p[base]");
+            graph.Add($"[0:v]scale={Width}:{Height}:force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuva420p,"
+                      + $"pad={Width}:{Height}:(ow-iw)/2:(oh-ih)/2:color=black@0,setsar=1[pagetop]");
             current = "[base]";
         }
         else
         {
-            graph.Add($"[0:v]scale={Width}:{Height}:force_original_aspect_ratio=decrease,pad={Width}:{Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps}[page]");
+            graph.Add($"[0:v]scale={Width}:{Height}:force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p,"
+                      + $"pad={Width}:{Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps}[page]");
             current = "[page]";
         }
 
@@ -373,9 +388,10 @@ public sealed class LiveStream : IAsyncDisposable
         {
             // Even sizes only: 4:2:0 video can't be an odd number of pixels high or wide, and scale rounds such a size up,
             // past the pad that should hold it ("Padded dimensions cannot be smaller than input dimensions").
+            // fps comes first, so a 60 frames a second stream has only the frames that are kept scaled.
             FrameRect rect = asked with { Width = Math.Max(2, asked.Width / 2 * 2), Height = Math.Max(2, asked.Height / 2 * 2) };
-            graph.Add($"[{windowInput}:v]setpts=PTS-STARTPTS,scale={rect.Width}:{rect.Height}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
-                      + $"pad={rect.Width}:{rect.Height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps}[window]");
+            graph.Add($"[{windowInput}:v]setpts=PTS-STARTPTS,fps={fps},scale={rect.Width}:{rect.Height}:force_original_aspect_ratio=decrease:force_divisible_by=2,"
+                      + $"format=yuv420p,pad={rect.Width}:{rect.Height}:(ow-iw)/2:(oh-ih)/2,setsar=1[window]");
             graph.Add($"{current}[window]overlay={rect.X}:{rect.Y}:eof_action=pass:shortest=0[windowed]");
             current = "[windowed]";
         }
@@ -620,8 +636,12 @@ public sealed class LiveStream : IAsyncDisposable
                 {
                     try
                     {
-                        _browser = await HeadlessBrowser.StartAsync(browser, Spec.PageUrl, Width, Height, cancellationToken, transparent: Spec.PageOnTop)
+                        // Frames beyond the capture rate would only be thrown away, so the browser isn't asked for them.
+                        _browser = await HeadlessBrowser.StartAsync(browser, Spec.PageUrl, Width, Height, cancellationToken, transparent: Spec.PageOnTop,
+                                maxFrameRate: Math.Clamp(Spec.CaptureFrameRate, 5, 30))
                             .ConfigureAwait(false);
+                        _screencastSeen = 0;
+                        _settled = false;
                         Interlocked.Exchange(ref _lastFrameAt, Environment.TickCount64);
                         _startedAt = Environment.TickCount64;
                         _drawing = false;
@@ -666,10 +686,35 @@ public sealed class LiveStream : IAsyncDisposable
         }
     }
 
-    /// <summary>Takes a picture when the screencast has been quiet a moment; says why if nothing has come for a while.</summary>
+    // Screencast frames counted at the last check, and whether a picture has been taken since the last of them.
+    private long _screencastSeen;
+    private bool _settled;
+
+    /// <summary>
+    /// Takes a picture when the screencast has gone quiet; says why if nothing has come for a while. With the screencast
+    /// working, that's once after each burst of frames (the browser may have drawn the last one while its frames were
+    /// held back to the capture rate), and then only now and then while the page is still; without it, every second.
+    /// </summary>
     private async Task CatchUpAsync(CancellationToken cancellationToken)
     {
-        if (_browser is not { HasExited: false } browser || Environment.TickCount64 - Interlocked.Read(ref _lastFrameAt) < 1_000)
+        if (_browser is not { HasExited: false } browser)
+        {
+            return;
+        }
+
+        long quiet = Environment.TickCount64 - Interlocked.Read(ref _lastFrameAt);
+        long screencast = browser.ScreencastFrames;
+        if (screencast != _screencastSeen)
+        {
+            _screencastSeen = screencast;
+            // Only a frame acknowledged late can have hidden a later one; otherwise the screencast already sent the last.
+            _settled = !browser.MayHaveHeldBackFrame;
+        }
+
+        bool due = screencast == 0 ? quiet >= 1_000
+            : !_settled ? quiet >= 300
+            : quiet >= 20_000;
+        if (!due)
         {
             return;
         }
@@ -681,6 +726,7 @@ public sealed class LiveStream : IAsyncDisposable
             if (await browser.CaptureAsync(timeout.Token).ConfigureAwait(false) is { Length: > 0 } picture)
             {
                 OnFrame(picture);
+                _settled = true;
                 return;
             }
         }

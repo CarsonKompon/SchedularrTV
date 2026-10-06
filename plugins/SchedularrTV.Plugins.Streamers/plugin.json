@@ -70,6 +70,15 @@
       "lowPowerNote": "Keep this at 5 to 8 here: each frame is a full see-through picture the browser draws and ffmpeg decodes."
     },
     {
+      "key": "VideoDecoding",
+      "label": "Decode streams on the graphics chip",
+      "type": "Choice",
+      "default": "off",
+      "options": [ "off", "auto", "cuda", "qsv", "d3d11va", "dxva2", "vaapi", "videotoolbox", "drm" ],
+      "description": "Let the graphics chip decode the live stream or replay instead of the processor (ffmpeg's -hwaccel): usually the biggest saving after encoding. auto picks one if there is one; cuda is NVIDIA, qsv Intel, d3d11va any card on Windows, vaapi Intel or AMD on Linux, videotoolbox a Mac. A stream it can't decode is decoded in software instead. To encode on the graphics chip too, choose its encoder under App settings, Hardware and video encoding, Live page channels.",
+      "lowPowerNote": "The Pi's chip decodes HEVC but not H.264 this way, and Twitch and YouTube streams are H.264, so this saves little here."
+    },
+    {
       "key": "KeepAliveSeconds",
       "label": "Keep a channel running after its last viewer (seconds)",
       "type": "Number",

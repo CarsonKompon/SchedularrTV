@@ -475,6 +475,32 @@ public sealed class StreamersTests : IDisposable
         Assert.Equal(TimeSpan.FromHours(1), onAir.ReplayPosition(onAir.ReplayFrom + TimeSpan.FromHours(7)));
     }
 
+    [Fact]
+    public void A_live_stream_is_mixed_cheaply_and_can_be_decoded_on_the_graphics_chip()
+    {
+        var channel = new StreamerChannel { Id = "fri", Name = "Friday", Number = 900 };
+        LiveStreamSpec live = StreamerPage.Spec(channel, new ChannelOnAir("twitch:a", "https://video.example/live.m3u8", Now, null), Settings());
+        List<string> arguments = [.. LiveStream.Arguments(live, null)];
+        string graph = arguments[arguments.IndexOf("-filter_complex") + 1];
+
+        // The background is made by ffmpeg, not copied from the page and painted over every frame.
+        Assert.Contains("color=c=0x0b0d12", graph, StringComparison.Ordinal);
+        Assert.DoesNotContain("drawbox", graph, StringComparison.Ordinal);
+        Assert.DoesNotContain("split", graph, StringComparison.Ordinal);
+        // The page is converted once, at the capture rate; the stream is thinned to the channel's rate before it's scaled.
+        Assert.Contains("format=yuva420p", graph, StringComparison.Ordinal);
+        Assert.Contains("setpts=PTS-STARTPTS,fps=", graph, StringComparison.Ordinal);
+        Assert.DoesNotContain("-hwaccel", arguments);
+
+        LiveStreamSpec decoded = live with { HardwareDecoding = "cuda" };
+        List<string> withChip = [.. LiveStream.Arguments(decoded, null)];
+        int window = withChip.IndexOf("https://video.example/live.m3u8");
+        Assert.Equal("cuda", withChip[withChip.IndexOf("-hwaccel") + 1]);
+        Assert.True(withChip.IndexOf("-hwaccel") < window);
+        Assert.Single(withChip, argument => argument == "-hwaccel");
+        Assert.NotEqual(live.Fingerprint, decoded.Fingerprint);
+    }
+
     [Theory]
     [InlineData(40, 104, 864, 40, 104, 864, 486)]
     [InlineData(500, 600, 641, 500, 360, 640, 360)]

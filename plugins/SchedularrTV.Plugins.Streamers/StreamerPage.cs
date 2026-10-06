@@ -100,7 +100,8 @@ public static class StreamerPage
             PageUrl = $"{settings.PageUrl(channel.Id)}?v={look}",
             Ffmpeg = settings.Ffmpeg,
             BrowserPath = settings.BrowserPath,
-            CaptureFrameRate = settings.CaptureFrameRate
+            CaptureFrameRate = settings.CaptureFrameRate,
+            HardwareDecoding = settings.HardwareDecoding
         };
 
         if (onAir is { ActiveKey: null, Replay: { } replay, StreamUrl: { } recording })
