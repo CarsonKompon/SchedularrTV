@@ -90,11 +90,17 @@ public sealed record LiveStreamSpec
     /// </summary>
     public string? HardwareDecoding { get; init; }
 
+    /// <summary>
+    /// The hidden browser draws the page's animations (CSS ones, and requestAnimationFrame) only as often as it's
+    /// captured, rather than 60 times a second; they move just as fast, in the steps the stream would show anyway.
+    /// </summary>
+    public bool PaceAnimations { get; init; } = true;
+
     /// <summary>Changes whenever anything that affects the running stream does, so it's started again with the new settings.</summary>
     public string Fingerprint =>
         string.Join('|', PageUrl, Ffmpeg, BrowserPath, CaptureFrameRate, WindowStreamUrl, Window, Audio, MusicFolder,
             Volume.ToString(CultureInfo.InvariantCulture), AudioStreamUrl, Visualizer, VisualizerRect, PageOnTop, Recorded, RestartToken,
-            Encoding.Fingerprint, HardwareDecoding);
+            Encoding.Fingerprint, HardwareDecoding, PaceAnimations);
 
     /// <summary>The options before a window or sound stream's <c>-i</c>.</summary>
     internal IEnumerable<string> InputOptions()
@@ -179,6 +185,9 @@ public sealed class LiveStream : IAsyncDisposable
 
     /// <summary>The latest frame the page drew, for previews; null until it draws.</summary>
     public byte[]? LatestFrame => _latest;
+
+    /// <summary>A frame's content type: a PNG (pages drawn over a stream), else a JPEG.</summary>
+    public static string ImageType(byte[] frame) => frame is [0x89, 0x50, ..] ? "image/png" : "image/jpeg";
 
     /// <summary>Why something isn't showing (no browser, a page or channel that can't be reached), or null.</summary>
     public string? Problem { get; private set; }
@@ -638,7 +647,7 @@ public sealed class LiveStream : IAsyncDisposable
                     {
                         // Frames beyond the capture rate would only be thrown away, so the browser isn't asked for them.
                         _browser = await HeadlessBrowser.StartAsync(browser, Spec.PageUrl, Width, Height, cancellationToken, transparent: Spec.PageOnTop,
-                                maxFrameRate: Math.Clamp(Spec.CaptureFrameRate, 5, 30))
+                                maxFrameRate: Math.Clamp(Spec.CaptureFrameRate, 5, 30), paceAnimations: Spec.PaceAnimations)
                             .ConfigureAwait(false);
                         _screencastSeen = 0;
                         _settled = false;

@@ -78,3 +78,5 @@ can reach, e.g. `http://192.168.1.20:5252`.
 | Stream address | Where ErsatzTV fetches the guide from. |
 | Capture frames per second | How often the page is captured (5 to 30, default 24). Higher scrolls more smoothly but uses more CPU. |
 | Keep a guide running after it goes off air | Seconds a guide stays on after it's no longer watched (default 90). |
+| Draw animations at the capture rate | On by default: the hidden browser scrolls the listings only as often as they're captured, rather than redrawing 60 times a second. Same speed, far less work. |
+| Decode the video window on the graphics chip | Off by default. `auto`, `cuda` (NVIDIA), `qsv` (Intel), `d3d11va` (Windows), `vaapi` (Linux) or `videotoolbox` (Mac) decodes the window's channel or commercials on the graphics chip; video it can't decode is decoded in software. |

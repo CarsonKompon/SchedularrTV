@@ -141,15 +141,19 @@ public sealed class HeadlessBrowser : IAsyncDisposable
     /// The most screencast frames a second wanted (the capture rate); 0 for as many as the page draws. Chrome draws at
     /// up to 60 a second while anything moves, and encodes every frame it sends, so this saves most of its work.
     /// </param>
+    /// <param name="paceAnimations">
+    /// With <paramref name="maxFrameRate"/>, the page's animations are drawn at that rate too (see <see cref="PacingScript"/>).
+    /// </param>
     public static async Task<HeadlessBrowser> StartAsync(string browser, string url, int width, int height, CancellationToken cancellationToken,
-        bool transparent = false, int maxFrameRate = 0)
+        bool transparent = false, int maxFrameRate = 0, bool paceAnimations = false)
     {
         List<string> problems = [];
         foreach (string[] mode in Modes)
         {
             try
             {
-                HeadlessBrowser started = await StartAsync(browser, mode, url, width, height, transparent, maxFrameRate, cancellationToken).ConfigureAwait(false);
+                HeadlessBrowser started = await StartAsync(browser, mode, url, width, height, transparent, maxFrameRate,
+                    paceAnimations && maxFrameRate > 0, cancellationToken).ConfigureAwait(false);
                 return started;
             }
             catch (BrowserClosedException ex)
@@ -163,7 +167,7 @@ public sealed class HeadlessBrowser : IAsyncDisposable
     }
 
     private static async Task<HeadlessBrowser> StartAsync(string browser, string[] mode, string url, int width, int height, bool transparent,
-        int maxFrameRate, CancellationToken cancellationToken)
+        int maxFrameRate, bool paceAnimations, CancellationToken cancellationToken)
     {
         string profile = Path.Combine(BrowserProcesses.ProfilesRoot, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(profile);
@@ -236,6 +240,11 @@ public sealed class HeadlessBrowser : IAsyncDisposable
                 catch (InvalidOperationException)
                 {
                 }
+            }
+
+            if (paceAnimations)
+            {
+                await browserProcess.PaceAsync(maxFrameRate, cancellationToken).ConfigureAwait(false);
             }
 
             // Without a screencast the stream takes a picture every second instead, so this isn't fatal either.
@@ -663,6 +672,94 @@ public sealed class HeadlessBrowser : IAsyncDisposable
             // The browser is going away.
         }
     }
+
+    /// <summary>
+    /// Has the page (and any it moves on to) draw its animations at <paramref name="frameRate"/>. Pacing that can't be
+    /// set up just leaves the page drawing as often as it likes, as before.
+    /// </summary>
+    private async Task PaceAsync(int frameRate, CancellationToken cancellationToken)
+    {
+        string script = PacingScript(frameRate);
+        try
+        {
+            // Pages loaded from now on (a reload, or a page that moves on), then the one already open.
+            await RetryAsync("Page.addScriptToEvaluateOnNewDocument", new JsonObject { ["source"] = script }, cancellationToken).ConfigureAwait(false);
+            await RetryAsync("Runtime.evaluate", new JsonObject { ["expression"] = script }, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// A script that makes a page draw only as often as it's captured. Chrome redraws up to 60 times a second while
+    /// anything moves, and every redraw is layout, painting and compositing, for frames the capture never takes.
+    /// <list type="bullet">
+    /// <item>requestAnimationFrame callbacks run at most <paramref name="frameRate"/> times a second (still in step with a
+    /// real frame, and with its timestamp, so anything timed by it moves at the same speed).</item>
+    /// <item>CSS animations and transitions (and the Web Animations API's) are paused once seen, then moved on by hand at
+    /// that rate: they keep their speed, place and events (one that reaches its end is finished, so animationend and
+    /// transitionend still fire), but the browser has nothing to redraw in between.</item>
+    /// </list>
+    /// A page that pauses one of its own animations has it carry on here, which is why the plugins can switch pacing off.
+    /// </summary>
+    public static string PacingScript(int frameRate) => $$$"""
+        (() => {
+          if (window.__schedularrPacing) return;
+          window.__schedularrPacing = true;
+          const interval = 1000 / {{{Math.Clamp(frameRate, 1, 60)}}};
+
+          // requestAnimationFrame, batched to the capture rate.
+          const nativeFrame = window.requestAnimationFrame.bind(window);
+          let queue = new Map(), running = null, nextId = 1, timer = 0, last = -Infinity;
+          const flush = () => {
+            timer = 0;
+            last = performance.now();
+            const due = running = queue;
+            queue = new Map();
+            nativeFrame(time => {
+              for (const callback of due.values()) {
+                try { callback(time); } catch (error) { setTimeout(() => { throw error; }); }
+              }
+              if (running === due) running = null;
+            });
+          };
+          window.requestAnimationFrame = callback => {
+            const id = nextId++;
+            queue.set(id, callback);
+            if (!timer) timer = setTimeout(flush, Math.max(0, last + interval - performance.now()));
+            return id;
+          };
+          window.cancelAnimationFrame = id => { queue.delete(id); if (running) running.delete(id); };
+
+          // CSS and Web Animations, stepped by hand.
+          if (!document.getAnimations) return;
+          const paced = new WeakSet();
+          let previous = performance.now();
+          setInterval(() => {
+            const now = performance.now(), elapsed = now - previous;
+            previous = now;
+            for (const animation of document.getAnimations()) {
+              try {
+                const state = animation.playState;
+                if (!paced.has(animation)) {
+                  // Taken over where it has got to; one the page made paused is left alone.
+                  if (state === "running") { paced.add(animation); animation.pause(); }
+                  continue;
+                }
+                if (state === "running") { animation.pause(); continue; }
+                if (state !== "paused") continue;
+                const rate = animation.playbackRate;
+                if (!rate) continue;
+                const time = (animation.currentTime || 0) + elapsed * rate;
+                const end = animation.effect ? animation.effect.getComputedTiming().endTime : Infinity;
+                if ((rate > 0 && time >= end) || (rate < 0 && time <= 0)) animation.finish();
+                else animation.currentTime = time;
+              } catch { }
+            }
+          }, interval);
+        })();
+        """;
 
     /// <summary>
     /// Takes a picture of the page now. Screencast frames only come when Chrome repaints (and some setups send none

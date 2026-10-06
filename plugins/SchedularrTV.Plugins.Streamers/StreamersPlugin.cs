@@ -31,15 +31,13 @@ public sealed class StreamersPlugin : IPlugin, IPluginEndpoints
             StreamerStore store = sp.GetRequiredService<StreamerStore>();
             StreamerSettings settings = sp.GetRequiredService<StreamerSettings>();
             StreamerMonitor monitor = sp.GetRequiredService<StreamerMonitor>();
-            var hub = new LiveStreamHub(
-                id => store.Find(id) is { Enabled: true } channel ? StreamerPage.Spec(channel, monitor.OnAir(channel.Id), settings) : null,
-                () => settings.KeepAlive,
-                sp.GetRequiredService<ILoggerFactory>().CreateLogger("Streamers"));
 
-            // A channel whose streamer, stream address or look changed starts again with it; ErsatzTV reconnects.
-            monitor.OnAirChanged += () => _ = hub.RestartChangedAsync();
-            store.Changed += () => _ = hub.RestartChangedAsync();
-            return new StreamersHub(hub);
+            // A channel whose streamer, stream address or look changed starts again with it.
+            return LiveChannelHub.Create(sp, "Streamers", settings,
+                id => store.Find(id) is { Enabled: true } channel ? StreamerPage.Spec(channel, monitor.OnAir(channel.Id), settings) : null,
+                hub => new StreamersHub(hub),
+                changed => monitor.OnAirChanged += changed,
+                changed => store.Changed += changed);
         });
         services.AddExternalChannels<StreamerChannels>();
     }
@@ -84,24 +82,13 @@ public sealed class StreamersPlugin : IPlugin, IPluginEndpoints
             return Results.Json(new ChatResponse(source is null ? null : $"{source.Key}/{source.Target}", messages, source?.Problem), StreamerPage.Json);
         });
 
-        // What ErsatzTV plays: the channel's live MPEG-TS, started on demand.
-        endpoints.MapGet(prefix + "/live/{id}.ts", (string id, HttpContext http, StreamersHub hub) => hub.Streams.ServeAsync(id, http));
-
-        // The latest frame of a running channel, for the Streamers page.
-        endpoints.MapGet(prefix + "/snapshot/{id}", (string id, StreamersHub hub) =>
-            hub.Streams.Snapshot(id) is { } frame
-                ? Results.File(frame, frame is [0x89, 0x50, ..] ? "image/png" : "image/jpeg")
-                : Results.NotFound());
+        // What ErsatzTV plays, and the latest frame of a running channel for the Streamers page (a PNG while live).
+        endpoints.MapLiveChannels<StreamersHub>(prefix, snapshot: "/snapshot/{id}");
     }
 }
 
-/// <summary>This plugin's running channels, in a type of its own so it can't be mistaken for another live page plugin's hub.</summary>
-public sealed class StreamersHub(LiveStreamHub streams) : IAsyncDisposable
-{
-    public LiveStreamHub Streams { get; } = streams;
-
-    public ValueTask DisposeAsync() => Streams.DisposeAsync();
-}
+/// <summary>This plugin's running channels.</summary>
+public sealed class StreamersHub(LiveStreamHub streams) : LiveChannelHub(streams);
 
 /// <summary>What the page is told about a channel.</summary>
 public static class StreamerViews

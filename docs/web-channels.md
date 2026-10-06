@@ -102,6 +102,7 @@ e.g. `http://192.168.1.20:5252`. The default is `localhost`, which only works wh
 | Stream address | Where ErsatzTV fetches the streams from. |
 | Capture frames per second | How many frames per second are taken from the page (5–30, default 15). Animated maps look smoother higher. The stream is always 30 fps. |
 | Keep a channel running after it goes off air | Seconds a channel stays on after it's no longer watched (default 90). |
+| Draw animations at the capture rate | On by default: the hidden browser moves the page's animations (CSS, and anything drawn with requestAnimationFrame) on only as often as it's captured, rather than redrawing 60 times a second. A page of your own that pauses and resumes its own animations may need this off. |
 
 ## Troubleshooting
 

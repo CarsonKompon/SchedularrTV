@@ -43,6 +43,22 @@
       "type": "Number",
       "placeholder": "90",
       "description": "So back-to-back guide segments don't restart the browser each time."
+    },
+    {
+      "key": "PaceAnimations",
+      "label": "Draw animations at the capture rate",
+      "type": "Boolean",
+      "default": "true",
+      "description": "The hidden browser scrolls the listings (and moves anything else) only as often as they're captured, instead of redrawing 60 times a second for frames that are never used. They scroll at the same speed. Turn off only if something stops or stutters."
+    },
+    {
+      "key": "VideoDecoding",
+      "label": "Decode the video window on the graphics chip",
+      "type": "Choice",
+      "default": "off",
+      "options": [ "off", "auto", "cuda", "qsv", "d3d11va", "dxva2", "vaapi", "videotoolbox", "drm" ],
+      "description": "Let the graphics chip decode the channel or commercials in the video window instead of the processor (ffmpeg's -hwaccel). auto picks one if there is one; cuda is NVIDIA, qsv Intel, d3d11va any card on Windows, vaapi Intel or AMD on Linux, videotoolbox a Mac. Video it can't decode is decoded in software instead. To encode on the graphics chip too, choose its encoder under App settings, Hardware and video encoding, Live page channels.",
+      "lowPowerNote": "The Pi's chip decodes HEVC but not H.264 this way, so this saves little for ErsatzTV's H.264 channels."
     }
   ],
   "pages": [

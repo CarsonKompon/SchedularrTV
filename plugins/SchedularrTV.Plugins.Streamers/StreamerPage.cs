@@ -93,16 +93,7 @@ public static class StreamerPage
         // The page's settings are part of its address, so a channel whose look changed is restarted with it.
         string look = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(
             System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(StreamerPageConfig.For(channel, preview: false), Json))))[..12];
-        LiveStreamSpec spec = new()
-        {
-            Id = channel.Id,
-            Name = channel.Name,
-            PageUrl = $"{settings.PageUrl(channel.Id)}?v={look}",
-            Ffmpeg = settings.Ffmpeg,
-            BrowserPath = settings.BrowserPath,
-            CaptureFrameRate = settings.CaptureFrameRate,
-            HardwareDecoding = settings.HardwareDecoding
-        };
+        LiveStreamSpec spec = settings.BaseSpec(channel.Id, channel.Name, $"{settings.PageUrl(channel.Id)}?v={look}");
 
         if (onAir is { ActiveKey: null, Replay: { } replay, StreamUrl: { } recording })
         {

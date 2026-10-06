@@ -50,6 +50,13 @@
       "type": "Number",
       "placeholder": "90",
       "description": "So back-to-back segments don't restart the browser each time."
+    },
+    {
+      "key": "PaceAnimations",
+      "label": "Draw animations at the capture rate",
+      "type": "Boolean",
+      "default": "true",
+      "description": "The hidden browser moves the page's animations on only as often as it's captured, instead of redrawing 60 times a second for frames that are never used. They move at the same speed. A page of your own that pauses and resumes its animations may need this off."
     }
   ],
   "pages": [

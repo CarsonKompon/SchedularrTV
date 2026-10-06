@@ -43,6 +43,13 @@
       "type": "Number",
       "placeholder": "90",
       "description": "So back-to-back radio segments don't restart the station each time."
+    },
+    {
+      "key": "PaceAnimations",
+      "label": "Draw animations at the capture rate",
+      "type": "Boolean",
+      "default": "true",
+      "description": "The hidden browser moves the page's animations (the spinning record, the scrolling ticker, the glow) on only as often as it's captured, instead of redrawing 60 times a second for frames that are never used. They move at the same speed. Turn off only if an animation stops or stutters."
     }
   ],
   "pages": [

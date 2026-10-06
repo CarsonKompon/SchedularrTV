@@ -73,6 +73,7 @@ reach, e.g. `http://192.168.1.20:5252`.
 | Stream address | Where ErsatzTV fetches the station from. |
 | Capture frames per second | How often the page is captured (5 to 30, default 20). The visualizer is always 30 fps. |
 | Keep a station running after it goes off air | Seconds (default 90). |
+| Draw animations at the capture rate | On by default: the hidden browser moves the page's animations on only as often as it's captured, rather than redrawing 60 times a second. Turn off if an animation stops or stutters. |
 
 ## Troubleshooting
 

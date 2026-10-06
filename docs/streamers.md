@@ -119,6 +119,7 @@ The plugin's gear on the **Plugins** page:
 | Capture frames per second | 15 | How smoothly the chat and pop-ups move |
 | Decode streams on the graphics chip | off | `auto`, or `cuda` (NVIDIA), `qsv` (Intel), `d3d11va` (Windows), `vaapi` (Linux), `videotoolbox` (Mac) |
 | Keep a channel running after its last viewer | 60 s | |
+| Draw animations at the capture rate | On | The chat, pop-ups and ticker are moved on only as often as they're captured |
 
 ### Lightening the load
 

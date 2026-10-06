@@ -4,7 +4,7 @@
 @inject GuideStore Store
 @inject GuideSettings Settings
 @inject GuideData Data
-@inject LiveStreamHub Hub
+@inject GuideHub Running
 @inject TimeProvider Clock
 @inject IJSRuntime JS
 
@@ -301,6 +301,9 @@
 
 @code {
     private List<GuideStation> _guides = [];
+
+    // The running guides.
+    private LiveStreamHub Hub => Running.Streams;
 
     private IEnumerable<string?> LowPowerAdvice =>
     [

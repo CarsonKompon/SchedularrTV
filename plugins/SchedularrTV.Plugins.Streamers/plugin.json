@@ -84,6 +84,13 @@
       "type": "Number",
       "placeholder": "60",
       "description": "Holds the stream over guide changes, when ErsatzTV briefly reconnects."
+    },
+    {
+      "key": "PaceAnimations",
+      "label": "Draw animations at the capture rate",
+      "type": "Boolean",
+      "default": "true",
+      "description": "The hidden browser moves the chat, pop-ups and ticker on only as often as they're captured, instead of redrawing 60 times a second for frames that are never used. They move at the same speed. Turn off only if an animation stops or stutters."
     }
   ],
   "pages": [

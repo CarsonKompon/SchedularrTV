@@ -24,14 +24,8 @@ public sealed class TvGuidePlugin : IPlugin, IPluginEndpoints
         {
             GuideStore store = sp.GetRequiredService<GuideStore>();
             GuideSettings settings = sp.GetRequiredService<GuideSettings>();
-            var hub = new LiveStreamHub(
-                id => store.Find(id) is { } guide ? settings.Spec(guide) : null,
-                () => settings.KeepAlive,
-                sp.GetRequiredService<ILoggerFactory>().CreateLogger("TvGuide"));
-
-            // A guide whose settings changed starts again with them on its next viewer.
-            store.Changed += () => _ = hub.RestartChangedAsync();
-            return hub;
+            return LiveChannelHub.Create(sp, "TvGuide", settings, id => store.Find(id) is { } guide ? settings.Spec(guide) : null,
+                hub => new GuideHub(hub), changed => store.Changed += changed);
         });
         services.AddMediaSource<GuideLibrary>("tv-guide");
     }
@@ -86,11 +80,10 @@ public sealed class TvGuidePlugin : IPlugin, IPluginEndpoints
         // What the video window plays when it isn't one channel: the commercials, or channels in turn (read by the guide's own ffmpeg).
         endpoints.MapGet(prefix + "/feed/{id}.ts", (string id, HttpContext http, WindowFeed feed) => feed.ServeAsync(id, http));
 
-        // What ErsatzTV plays: the guide's live MPEG-TS, started on demand.
-        endpoints.MapGet(prefix + "/live/{id}.ts", (string id, HttpContext http, LiveStreamHub hub) => hub.ServeAsync(id, http));
-
-        // The latest frame of a running guide, for the editor.
-        endpoints.MapGet(prefix + "/snapshot/{id}.jpg", (string id, LiveStreamHub hub) =>
-            hub.Snapshot(id) is { } frame ? Results.File(frame, "image/jpeg") : Results.NotFound());
+        // What ErsatzTV plays, and the latest frame of a running guide for the editor.
+        endpoints.MapLiveChannels<GuideHub>(prefix);
     }
 }
+
+/// <summary>This plugin's running guides.</summary>
+public sealed class GuideHub(LiveStreamHub streams) : LiveChannelHub(streams);
