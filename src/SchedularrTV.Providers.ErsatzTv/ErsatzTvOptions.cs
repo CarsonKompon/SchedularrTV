@@ -80,6 +80,14 @@ public sealed class ErsatzTvOptions
     /// Defaults to the Jellyfin address; empty writes no artwork at all.
     /// </summary>
     public string? ArtworkBaseUrl { get; set; }
+
+    /// <summary>
+    /// Where guide clients fetch the pictures of local TV shows and movies from: this scheduler, which serves the
+    /// pictures beside their files. Defaults to <c>http://localhost:</c> and the scheduler's port, which suits a guide read on
+    /// this computer (Jellyfin's Live TV here, say); set it to the address other devices reach the scheduler at when
+    /// their guide should show them.
+    /// </summary>
+    public string? LocalArtworkBaseUrl { get; set; }
 }
 
 public sealed class PathMapping

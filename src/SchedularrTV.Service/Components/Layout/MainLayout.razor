@@ -130,7 +130,7 @@
         Editor.Validate();
 
         // First visit, or still no media library to schedule from. "Skip for now" hides it until the next visit.
-        _showSetup = !SetupStatus.OnboardingCompleted || !SetupStatus.JellyfinConfiguredInUse;
+        _showSetup = !SetupStatus.OnboardingCompleted || !SetupStatus.LibraryConfiguredInUse;
     }
 
     private void CloseSetup()

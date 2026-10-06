@@ -34,6 +34,13 @@ public sealed class ErsatzTvPlugin : IBuiltInPlugin
             {
                 options.ArtworkBaseUrl = configuration["Jellyfin:BaseUrl"];
             }
+
+            // Local shows' and movies' pictures are served by the scheduler itself.
+            if (string.IsNullOrWhiteSpace(options.LocalArtworkBaseUrl))
+            {
+                string port = int.TryParse(configuration["Server:Port"], out int configured) ? configured.ToString(System.Globalization.CultureInfo.InvariantCulture) : "5252";
+                options.LocalArtworkBaseUrl = $"http://localhost:{port}";
+            }
         });
 
         services.AddErsatzTvPublishing();

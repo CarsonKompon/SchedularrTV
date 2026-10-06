@@ -1,0 +1,74 @@
+@* Local TV and movie folders (instead of, or as well as, Jellyfin); shared by App settings and the setup wizard. *@
+@using SchedularrTV.Core.Media
+@using SchedularrTV.Providers.FileSystem
+@using SchedularrTV.Service.Hosting
+
+<p class="hint">
+    Shows and movies straight from folders on disk, laid out the way Sonarr, Radarr, Kodi, Jellyfin and ErsatzTV expect:
+    <code>TV/Show Name (2005)/Season 01/Show Name - S01E02 - Title.mkv</code> and
+    <code>Movies/Movie Title (2010)/Movie Title (2010).mkv</code>. Titles, plots, ratings, genres, networks and collections come
+    from <code>.nfo</code> files where there are any, and posters, fanart and episode stills from the pictures beside them
+    (<code>poster.jpg</code>, <code>fanart.jpg</code>, <code>…-thumb.jpg</code>).
+</p>
+@foreach (MediaFolderOptions folder in Form.Folders.Where(folder => folder.IsLibrary).ToList())
+{
+    <div class="list-row" style="flex-wrap:wrap;gap:8px;align-items:flex-end;">
+        <label class="field" style="flex:0 1 140px;margin:0;">
+            <span>Holds</span>
+            <select value="@folder.Kind" @onchange="e => Edit(() => folder.Kind = Enum.TryParse(e.Value?.ToString(), out MediaKind kind) ? kind : folder.Kind)">
+                <option value="@MediaKind.Episode">TV shows</option>
+                <option value="@MediaKind.Movie">Movies</option>
+            </select>
+        </label>
+        <label class="field" style="flex:2 1 320px;margin:0;">
+            <span>Folder</span>
+            <FilePathPicker Value="@folder.Path" ValueChanged="v => Edit(() => folder.Path = v ?? string.Empty)" Extensions="SettingsFiles.None"
+                            PickFolder="true" Label="@(folder.Kind == MediaKind.Movie ? "a movies folder" : "a TV shows folder")"
+                            StartIn="Environment.SpecialFolder.MyVideos" />
+        </label>
+        @if (ShowAdvanced)
+        {
+            <label class="field" style="flex:1 1 180px;margin:0;">
+                <span>Tags for everything inside</span>
+                <input type="text" value="@string.Join(", ", folder.Tags)" placeholder="(none)"
+                       @onchange="e => Edit(() => folder.Tags = [.. (e.Value?.ToString() ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)])" />
+            </label>
+            <label class="check" style="margin:0 0 8px;" title="TV/Cartoons/Show gives its episodes the tag Cartoons">
+                <input type="checkbox" checked="@folder.TagFromFolders" @onchange="e => Edit(() => folder.TagFromFolders = e.Value is true)" />
+                <span>Tag from grouping folders</span>
+            </label>
+        }
+        <button class="btn btn-sm btn-danger" type="button" style="margin-bottom:6px;" @onclick="() => Edit(() => Form.Folders.Remove(folder))">Remove</button>
+        @if (!string.IsNullOrWhiteSpace(folder.Path) && !Directory.Exists(folder.Path))
+        {
+            <p class="hint warn" style="flex-basis:100%;margin:0;">This folder can't be found.</p>
+        }
+    </div>
+}
+<div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <button class="btn btn-sm" type="button" @onclick="() => Add(MediaKind.Episode)"><Icon Name="plus" Size="14" />Add a TV folder</button>
+    <button class="btn btn-sm" type="button" @onclick="() => Add(MediaKind.Movie)"><Icon Name="plus" Size="14" />Add a movies folder</button>
+</div>
+<p class="hint">
+    ErsatzTV plays the files from where they are, so it needs to see the same paths (or set its path mappings). Lengths and
+    chapters are read with ffprobe the first time, and kept.
+</p>
+
+@code {
+    [Parameter, EditorRequired] public AppSettingsForm Form { get; set; } = default!;
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public bool ShowAdvanced { get; set; } = true;
+
+    private Task Add(MediaKind kind)
+    {
+        Form.AddLibraryFolder(kind);
+        return Changed.InvokeAsync();
+    }
+
+    private Task Edit(Action change)
+    {
+        change();
+        Form.FoldersChanged = Form.IsDirty = true;
+        return Changed.InvokeAsync();
+    }
+}

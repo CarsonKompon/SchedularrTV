@@ -128,16 +128,16 @@
         <p class="hint">Save, then Rescan on the TV Shows page to apply.</p>
     }
 
-    <h3>Commercials library</h3>
+    <h3>Local folders</h3>
     <p class="hint">
-        Folders on disk holding adverts, bumpers and promos. Add or change them under
+        Folders on disk holding TV shows, movies, adverts, bumpers and promos. Add or change them under
         <a href="settings/app">App settings</a>.
     </p>
 
     @if (MediaFolders.Value.Folders.Count == 0)
     {
         <div class="empty">
-            No commercial folders yet. Add them under <a href="settings/app">App settings</a>.
+            No local folders yet. Add them under <a href="settings/app">App settings</a>.
         </div>
     }
     else
@@ -148,8 +148,17 @@
                 <div>
                     <div class="title"><code>@folder.Path</code></div>
                     <div class="meta">
-                        Tagged @string.Join(", ", folder.Tags)
-                        @if (!string.IsNullOrWhiteSpace(folder.PromoFolder))
+                        @(folder.Kind switch
+                        {
+                            SchedularrTV.Core.Media.MediaKind.Episode => "TV shows",
+                            SchedularrTV.Core.Media.MediaKind.Movie => "Movies",
+                            _ => "Commercials"
+                        })
+                        @if (folder.Tags.Count > 0)
+                        {
+                            <text> · tagged @string.Join(", ", folder.Tags)</text>
+                        }
+                        @if (!folder.IsLibrary && !string.IsNullOrWhiteSpace(folder.PromoFolder))
                         {
                             <text> · promos under <code>@folder.PromoFolder</code></text>
                         }
@@ -172,8 +181,8 @@
             }
         </div>
         <p class="hint">
-            Scans are cached for @Humanise(MediaFolders.Value.CacheDuration), so new clips need a rescan
-            to show up.
+            Scans are cached for @Humanise(MediaFolders.Value.CacheDuration), so new clips, episodes and movies need a
+            rescan to show up.
         </p>
     }
 </div>

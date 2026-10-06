@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using SchedularrTV.Core.Configuration;
+using SchedularrTV.Core.Media;
 using SchedularrTV.Core.Platform;
 using SchedularrTV.Core.Scheduling;
 using SchedularrTV.Plugins.Promos;
@@ -462,7 +463,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
                     {
                         TimeZoneInfo zone = SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(channel.TimeZone) ? config.Settings.TimeZone : channel.TimeZone);
                         string? image = schedule.Entries.FirstOrDefault(entry => entry.Start == at && entry.Item is not null)?.Item is { } item
-                            ? item.SeriesId ?? (Guid.TryParse(item.Id, out _) ? item.Id : null)
+                            ? item.SeriesId ?? item.Id
                             : null;
                         next = new SqueezeListing(subject, made.SubjectEpisode, SqueezePlanner.When(at, zone, job.NextStart), image);
                     }
@@ -849,19 +850,23 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         }
     }
 
-    /// <summary>The next programme's picture from Jellyfin: a landscape still, else its backdrop, else its poster.</summary>
+    /// <summary>
+    /// The next programme's picture (from Jellyfin, or beside a local show's or movie's files): a landscape still, else
+    /// its backdrop, else its poster.
+    /// </summary>
     private async Task<byte[]?> ArtAsync(string? itemId, CancellationToken cancellationToken)
     {
-        if (itemId is null || services.GetService<JellyfinClient>() is not { } jellyfin)
+        if (itemId is null)
         {
             return null;
         }
 
-        foreach (string type in new[] { "Thumb", "Backdrop", "Primary" })
+        IArtworkSource[] sources = [.. services.GetServices<IArtworkSource>()];
+        foreach (string type in new[] { ArtworkTypes.Thumb, ArtworkTypes.Backdrop, ArtworkTypes.Primary })
         {
             try
             {
-                if (await jellyfin.GetImageAsync(itemId, type, 800, cancellationToken).ConfigureAwait(false) is { Content.Length: > 0 } image)
+                if (await ArtworkTypes.FindAsync(sources, itemId, type, 800, cancellationToken).ConfigureAwait(false) is { Content.Length: > 0 } image)
                 {
                     return image.Content;
                 }

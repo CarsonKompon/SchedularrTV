@@ -7,7 +7,8 @@
     <code>Commercials/Nickelodeon/Ads/x.mp4</code> is tagged Commercials, Nickelodeon and Ads, and channels pick their
     breaks by those names.
 </p>
-@foreach (MediaFolderOptions folder in Form.Folders)
+@* TV and movie folders are edited in LibraryFolderSettings. *@
+@foreach (MediaFolderOptions folder in Form.Folders.Where(folder => !folder.IsLibrary).ToList())
 {
     <div class="list-row" style="flex-wrap:wrap;gap:8px;align-items:flex-end;">
         <label class="field" style="flex:2 1 320px;margin:0;">

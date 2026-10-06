@@ -45,7 +45,8 @@ public sealed class XmltvPublisher(IOptions<ErsatzTvOptions> options, ILogger<Xm
             string path = Path.Combine(folder, fileName);
             string temp = path + ".tmp";
 
-            await File.WriteAllTextAsync(temp, BuildFragment(schedule, _options.GuideMode, _options.ArtworkBaseUrl), new UTF8Encoding(false), cancellationToken)
+            await File.WriteAllTextAsync(temp, BuildFragment(schedule, _options.GuideMode, _options.ArtworkBaseUrl, _options.LocalArtworkBaseUrl),
+                    new UTF8Encoding(false), cancellationToken)
                 .ConfigureAwait(false);
 
             File.Move(temp, path, overwrite: true);
@@ -81,7 +82,9 @@ public sealed class XmltvPublisher(IOptions<ErsatzTvOptions> options, ILogger<Xm
         }
     }
 
-    internal static string BuildFragment(ChannelSchedule schedule, GuideMode mode, string? artworkBaseUrl = null)
+    /// <param name="artworkBaseUrl">The media server's address, for its items' pictures.</param>
+    /// <param name="localArtworkBaseUrl">This scheduler's address, for the pictures beside local TV shows and movies.</param>
+    internal static string BuildFragment(ChannelSchedule schedule, GuideMode mode, string? artworkBaseUrl = null, string? localArtworkBaseUrl = null)
     {
         var settings = new XmlWriterSettings { Indent = true, Encoding = new UTF8Encoding(false) };
         var buffer = new StringWriterWithEncoding(Encoding.UTF8);
@@ -94,7 +97,7 @@ public sealed class XmltvPublisher(IOptions<ErsatzTvOptions> options, ILogger<Xm
 
             foreach (GuideEntry guide in BuildGuide(schedule, mode))
             {
-                WriteProgramme(writer, schedule.TvgId, guide, artworkBaseUrl);
+                WriteProgramme(writer, schedule.TvgId, guide, artworkBaseUrl, localArtworkBaseUrl);
             }
 
             writer.WriteEndElement();
@@ -206,7 +209,7 @@ public sealed class XmltvPublisher(IOptions<ErsatzTvOptions> options, ILogger<Xm
     /// </summary>
     public const string PreviouslyShownAnnotation = "xmltv.previously_shown";
 
-    private static void WriteProgramme(XmlWriter writer, string tvgId, GuideEntry guide, string? artworkBaseUrl)
+    private static void WriteProgramme(XmlWriter writer, string tvgId, GuideEntry guide, string? artworkBaseUrl, string? localArtworkBaseUrl)
     {
         ScheduleEntry entry = guide.Entry;
         MediaItem? item = entry.Item;
@@ -256,12 +259,17 @@ public sealed class XmltvPublisher(IOptions<ErsatzTvOptions> options, ILogger<Xm
             WriteText(writer, "category", block);
         }
 
+        foreach (string genre in item?.Genres ?? [])
+        {
+            WriteText(writer, "category", genre);
+        }
+
         if (item?.PremiereDate is { } premiere)
         {
             writer.WriteElementString("date", premiere.ToString("yyyyMMdd", CultureInfo.InvariantCulture));
         }
 
-        WriteArtwork(writer, item, artworkBaseUrl);
+        WriteArtwork(writer, item, artworkBaseUrl, localArtworkBaseUrl);
 
         if (guide.EpisodeNumbers.Count > 0)
         {
@@ -321,22 +329,40 @@ public sealed class XmltvPublisher(IOptions<ErsatzTvOptions> options, ILogger<Xm
     /// Points the guide at the media server's own images: the series poster for the listing, and the
     /// episode still where a client can use one.
     /// </summary>
-    private static void WriteArtwork(XmlWriter writer, MediaItem? item, string? artworkBaseUrl)
+    private static void WriteArtwork(XmlWriter writer, MediaItem? item, string? artworkBaseUrl, string? localArtworkBaseUrl)
     {
-        if (item is null || string.IsNullOrWhiteSpace(artworkBaseUrl))
+        if (item is null)
         {
             return;
         }
 
-        string root = artworkBaseUrl.TrimEnd('/');
-        string? posterId = item.SeriesId ?? item.Id;
-
-        if (posterId is null || item.Id.StartsWith("fs:", StringComparison.Ordinal))
+        string posterId = item.SeriesId ?? item.Id;
+        string poster;
+        string? still;
+        if (posterId.StartsWith("local", StringComparison.Ordinal) && item.Id.StartsWith("local:", StringComparison.Ordinal))
         {
-            return;
-        }
+            // A local show or movie: the pictures beside its files, served by this scheduler.
+            if (string.IsNullOrWhiteSpace(localArtworkBaseUrl))
+            {
+                return;
+            }
 
-        string poster = $"{root}/Items/{Uri.EscapeDataString(posterId)}/Images/Primary?fillHeight=440";
+            string local = localArtworkBaseUrl.TrimEnd('/') + "/api/library/artwork/";
+            poster = $"{local}{Uri.EscapeDataString(posterId)}?type=Primary&w=440";
+            still = item.SeriesId is not null ? $"{local}{Uri.EscapeDataString(item.Id)}?type=Primary&w=400" : null;
+        }
+        else
+        {
+            // Jellyfin's ids are bare; a colon means another source (commercials' fs:, a plugin's own) without pictures there.
+            if (string.IsNullOrWhiteSpace(artworkBaseUrl) || posterId.Contains(':') || item.Id.Contains(':'))
+            {
+                return;
+            }
+
+            string root = artworkBaseUrl.TrimEnd('/');
+            poster = $"{root}/Items/{Uri.EscapeDataString(posterId)}/Images/Primary?fillHeight=440";
+            still = item.SeriesId is not null ? $"{root}/Items/{Uri.EscapeDataString(item.Id)}/Images/Primary?fillHeight=220" : null;
+        }
 
         writer.WriteStartElement("icon");
         writer.WriteAttributeString("src", poster);
@@ -347,12 +373,12 @@ public sealed class XmltvPublisher(IOptions<ErsatzTvOptions> options, ILogger<Xm
         writer.WriteString(poster);
         writer.WriteEndElement();
 
-        if (item.SeriesId is not null)
+        if (still is not null)
         {
             writer.WriteStartElement("image");
             writer.WriteAttributeString("type", "still");
             writer.WriteAttributeString("orient", "L");
-            writer.WriteString($"{root}/Items/{Uri.EscapeDataString(item.Id)}/Images/Primary?fillHeight=220");
+            writer.WriteString(still);
             writer.WriteEndElement();
         }
     }

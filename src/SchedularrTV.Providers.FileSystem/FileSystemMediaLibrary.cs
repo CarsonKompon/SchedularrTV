@@ -8,7 +8,8 @@ using SchedularrTV.Core.Query;
 namespace SchedularrTV.Providers.FileSystem;
 
 /// <summary>
-/// Media library backed by folders on disk, where the folder path is the tag set.
+/// Media library backed by folders on disk. Commercials and other filler are tagged by their folder path; a folder of
+/// TV shows or movies (<see cref="MediaFolderOptions.Kind"/>) is read as a library instead (see <see cref="LocalVideoScanner"/>).
 /// </summary>
 /// <remarks>
 /// <c>Commercials\Adult Swim\Bumpers\Any Time\x.mp4</c> becomes an item tagged
@@ -30,7 +31,15 @@ public sealed class FileSystemMediaLibrary(
     private readonly SemaphoreSlim _scanLock = new(1, 1);
 
     private IReadOnlyList<MediaItem> _snapshot = [];
+    private IReadOnlyDictionary<string, LocalImages> _images = new Dictionary<string, LocalImages>();
     private DateTimeOffset _scannedAt = DateTimeOffset.MinValue;
+
+    /// <summary>The pictures found beside a TV show, episode or movie in a local library (by its id), or null.</summary>
+    public async ValueTask<LocalImages?> ImagesAsync(string id, CancellationToken cancellationToken = default)
+    {
+        await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        return _images.GetValueOrDefault(id);
+    }
 
     public async ValueTask<IReadOnlyList<MediaItem>> SearchAsync(QueryExpression expression, CancellationToken cancellationToken = default)
     {
@@ -78,13 +87,28 @@ public sealed class FileSystemMediaLibrary(
             string scanningWith = Fingerprint();
             var probe = new MediaProbe(_options, logger);
             List<MediaItem> items = [];
+            Dictionary<string, LocalImages> images = new(StringComparer.Ordinal);
 
             foreach (MediaFolderOptions folder in _options.Folders)
             {
-                items.AddRange(await ScanFolderAsync(folder, probe, cancellationToken).ConfigureAwait(false));
+                if (folder.Kind is MediaKind.Episode or MediaKind.Movie)
+                {
+                    // A TV or movie library: shows, seasons and movies read the way Sonarr, Radarr and Kodi lay them out.
+                    LocalScan scan = await new LocalVideoScanner(_options, probe, logger).ScanAsync(folder, cancellationToken).ConfigureAwait(false);
+                    items.AddRange(scan.Items);
+                    foreach ((string id, LocalImages found) in scan.Images)
+                    {
+                        images[id] = found;
+                    }
+                }
+                else
+                {
+                    items.AddRange(await ScanFolderAsync(folder, probe, cancellationToken).ConfigureAwait(false));
+                }
             }
 
             _snapshot = items;
+            _images = images;
             _scannedAt = _time.GetUtcNow();
             _scannedWith = scanningWith;
 

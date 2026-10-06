@@ -695,7 +695,8 @@ public static class SqueezePlanner
         MediaItem item = entry.Item!;
         bool episode = !string.IsNullOrWhiteSpace(item.SeriesName);
         return new SqueezeListing(ShowOf(item), episode && item.Title != item.SeriesName ? item.Title : null, When(entry.Start, zone, from ?? entry.Start),
-            item.SeriesId ?? (Guid.TryParse(item.Id, out _) ? item.Id : null));
+            // Whichever artwork source owns the id has its pictures; one none owns (commercials, say) just has none.
+            item.SeriesId ?? item.Id);
     }
 
     /// <summary>A time as the viewer reads it ("8:30 PM", "9 PM"), with the day ("Sat 4 PM") when it isn't the same day as <paramref name="from"/>.</summary>

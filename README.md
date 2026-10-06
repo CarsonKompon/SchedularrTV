@@ -2,7 +2,8 @@
 
 **Local TV like it used to be**
 
-SchedularrTV builds round-the-clock linear TV schedules from your Jellyfin library, complete with time
+SchedularrTV builds round-the-clock linear TV schedules from your Jellyfin library (or plain folders of
+shows and movies), complete with time
 slots, programming blocks, ad breaks, bumpers and promos, and hands them to
 [ErsatzTV Next](https://github.com/ErsatzTV/next) to stream to any IPTV player with a full programme guide.
 
@@ -39,7 +40,7 @@ slots, programming blocks, ad breaks, bumpers and promos, and hands them to
 2. **Run** `SchedularrTV`. It appears in the notification area or menu bar and opens at
    <http://localhost:5252>. The builds aren't code-signed, so Windows and macOS warn the first time; see
    [Installation](docs/installation.md) for how to open them.
-3. **Follow the setup guide** that opens the first time: connect Jellyfin, choose the ErsatzTV Next
+3. **Follow the setup guide** that opens the first time: connect Jellyfin or add your TV and movie folders, choose the ErsatzTV Next
    program, and check ffmpeg was found.
 4. **Create a channel** with the Channel Creation Wizard at the end of the guide (or later from
    **Channels → New channel**), then add ErsatzTV's playlist
@@ -48,7 +49,7 @@ slots, programming blocks, ad breaks, bumpers and promos, and hands them to
 
 ### Requirements
 
-- [Jellyfin](https://jellyfin.org) with your shows and movies
+- Your shows and movies: in [Jellyfin](https://jellyfin.org), or in [folders on disk](docs/local-library.md) laid out as Sonarr, Radarr or Kodi do (or both)
 - [ErsatzTV Next](https://github.com/ErsatzTV/next) for streaming
 - [ffmpeg](https://ffmpeg.org/download.html) (`winget install ffmpeg`, `brew install ffmpeg`, or your package manager)
 
@@ -58,6 +59,7 @@ slots, programming blocks, ad breaks, bumpers and promos, and hands them to
 | --- | --- |
 | [Installation](docs/installation.md) | Downloads, first run, the data folder, updating, running headless or under systemd |
 | [Configuration](docs/configuration.md) | App settings, the schedule file, commercials on disk, Jellyfin tags |
+| [Local TV and movies](docs/local-library.md) | Shows and movies from folders without Jellyfin: naming, .nfo files and pictures |
 | [How scheduling works](docs/scheduling.md) | Blocks and anchors, ad break packing, mid-rolls, the query language, seasonal tags |
 | [ErsatzTV Next](docs/ersatztv.md) | What is published and how ErsatzTV is managed |
 | [Plugins](docs/plugins.md) | Installing plugins and writing your own |

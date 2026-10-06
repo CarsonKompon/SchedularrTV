@@ -98,6 +98,11 @@ else if (_saved && !Form.IsDirty)
     <JellyfinSettings Form="Form" Changed="Edited" @bind-Result="_jellyfinTest" />
 </div>
 
+<div class="card" id="local-library">
+    <div class="card-head"><h2>Local TV and movies</h2><span class="pill pill-muted">Optional with Jellyfin</span></div>
+    <LibraryFolderSettings Form="Form" Changed="Edited" />
+</div>
+
 <div class="card">
     <div class="card-head"><h2>ErsatzTV Next</h2></div>
     <ErsatzSettings Form="Form" Changed="Edited" />

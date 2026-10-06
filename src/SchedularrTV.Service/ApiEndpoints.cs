@@ -255,26 +255,18 @@ public static partial class ApiEndpoints
             return Results.Ok(new { refreshed = true });
         }).RequireApiKey();
 
-        // Only well-formed Jellyfin ids and a fixed set of image types reach the media server.
-        group.MapGet("/artwork/{id}", async (string id, string? type, int? w, JellyfinClient jellyfin, HttpContext http, CancellationToken ct) =>
+        // Only well-formed ids (Jellyfin's, or local shows' and movies') and a fixed set of image types are looked up:
+        // from the media server, or the pictures beside local files.
+        group.MapGet("/artwork/{id}", async (string id, string? type, int? w, [Microsoft.AspNetCore.Mvc.FromServices] IEnumerable<IArtworkSource> sources, HttpContext http,
+            CancellationToken ct) =>
         {
-            string imageType = type ?? "Primary";
+            string imageType = type ?? ArtworkTypes.Primary;
             if (!ArtworkLinks.IsValidId(id) || !ArtworkLinks.ImageTypes.Contains(imageType))
             {
                 return Results.NotFound();
             }
 
-            JellyfinClient.JellyfinImage? image;
-            try
-            {
-                image = await jellyfin.GetImageAsync(id, imageType, Math.Clamp(w ?? 300, 32, 1280), ct);
-            }
-            catch (Exception ex) when (ex is HttpRequestException || (ex is TaskCanceledException && !ct.IsCancellationRequested))
-            {
-                return Results.NotFound();
-            }
-
-            if (image is null)
+            if (await ArtworkTypes.FindAsync(sources, id, imageType, Math.Clamp(w ?? 300, 32, 1280), ct) is not { } image)
             {
                 return Results.NotFound();
             }
@@ -371,7 +363,7 @@ public static partial class ApiEndpoints
             daysOfWeek = Enum.GetNames<DayOfWeek>(),
             queryFields = new[]
             {
-                "id", "title", "plot", "tag", "collection", "show", "show_id",
+                "id", "title", "plot", "tag", "collection", "genre", "network", "show", "show_id",
                 "kind", "season", "episode", "year", "duration", "path", "rating", "promo_type"
             },
             queryOperators = new[] { ":", "==", "!=", ">", ">=", "<", "<=", "CONTAINS", "MATCHES", "IN" },

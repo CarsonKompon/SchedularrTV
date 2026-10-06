@@ -7,11 +7,11 @@
 <PageHeader Title="Movies" Eyebrow="Library">
     @if (_loading)
     {
-        <span>Reading your Jellyfin library&hellip;</span>
+        <span>Reading your library&hellip;</span>
     }
     else
     {
-        <span>@_movies.Count.ToString("N0") movies in your Jellyfin library</span>
+        <span>@_movies.Count.ToString("N0") movies in your library</span>
     }
 </PageHeader>
 

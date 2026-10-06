@@ -21,6 +21,7 @@ public static class JellyfinServiceCollectionExtensions
 
         // Keyed so the composite library can collect every source without depending on itself.
         services.AddKeyedSingleton<IMediaLibrary>(LibraryKey, (sp, _) => sp.GetRequiredService<JellyfinMediaLibrary>());
+        services.AddSingleton<IArtworkSource, JellyfinArtworkSource>();
 
         return services;
     }

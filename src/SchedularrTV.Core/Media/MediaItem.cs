@@ -48,6 +48,9 @@ public sealed class MediaItem
 
     public IReadOnlyList<string> Collections { get; init; } = [];
 
+    /// <summary>Genres, e.g. <c>["Animation", "Comedy"]</c>: the item's own, else its series'.</summary>
+    public IReadOnlyList<string> Genres { get; init; } = [];
+
     /// <summary>Networks the show originally aired on, e.g. <c>["Teletoon", "Cartoon Network"]</c>.</summary>
     public IReadOnlyList<string> Networks { get; init; } = [];
 
@@ -120,6 +123,7 @@ public sealed class MediaItem
             Rating = Rating,
             Tags = Tags,
             Collections = Collections,
+            Genres = Genres,
             Networks = Networks,
             SeriesYear = SeriesYear,
             Chapters = chapters,

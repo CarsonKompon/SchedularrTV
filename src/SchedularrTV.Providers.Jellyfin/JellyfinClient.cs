@@ -28,7 +28,7 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
 
         // PremiereDate and ProductionYear are returned on every item, so they are not named here:
         // Jellyfin 12 dropped them from the fields enum.
-        const string fields = "Overview,Tags,Path,ParentId,Chapters,MediaSourceCount";
+        const string fields = "Overview,Tags,Genres,Path,ParentId,Chapters,MediaSourceCount";
 
         while (true)
         {
@@ -80,7 +80,7 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
         {
             ["recursive"] = "true",
             ["includeItemTypes"] = "Series",
-            ["fields"] = "Studios",
+            ["fields"] = "Studios,Genres",
             ["enableImages"] = "false",
             ["limit"] = "5000",
             ["userId"] = _options.UserId
@@ -97,7 +97,7 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
                 .Distinct(StringComparer.OrdinalIgnoreCase)];
 
             info[series.Id] = new JellyfinSeriesInfo(series.Name, names, series.ProductionYear,
-                string.IsNullOrWhiteSpace(series.OfficialRating) ? null : series.OfficialRating.Trim());
+                string.IsNullOrWhiteSpace(series.OfficialRating) ? null : series.OfficialRating.Trim(), series.Genres);
         }
 
         logger.LogInformation("Fetched metadata for {Count} series from Jellyfin.", info.Count);

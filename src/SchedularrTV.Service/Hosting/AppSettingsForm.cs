@@ -114,6 +114,13 @@ public sealed class AppSettingsForm(
     public bool JellyfinConfiguredInUse =>
         !string.IsNullOrWhiteSpace(jellyfin.Value.BaseUrl) && !string.IsNullOrWhiteSpace(jellyfin.Value.ApiKey);
 
+    /// <summary>Whether the running server has somewhere to get shows and movies from: Jellyfin, or a local TV or movie folder.</summary>
+    public bool LibraryConfiguredInUse =>
+        JellyfinConfiguredInUse || folders.Value.Folders.Any(folder => folder.IsLibrary && !string.IsNullOrWhiteSpace(folder.Path));
+
+    /// <summary>The same for the settings being edited (before they're saved).</summary>
+    public bool LibraryFolderFilled => Folders.Any(folder => folder.IsLibrary && !string.IsNullOrWhiteSpace(folder.Path));
+
     public bool OnboardingCompleted => AppSettingsFile.GetBool(runtime.Settings.Load(), OnboardingKey) == true;
 
     public void Load()
@@ -294,6 +301,13 @@ public sealed class AppSettingsForm(
     public void AddFolder()
     {
         Folders.Add(new MediaFolderOptions { Path = string.Empty, Tags = ["Commercials"] });
+        FoldersChanged = IsDirty = true;
+    }
+
+    /// <summary>Adds a TV (<see cref="MediaKind.Episode"/>) or movie (<see cref="MediaKind.Movie"/>) library folder.</summary>
+    public void AddLibraryFolder(SchedularrTV.Core.Media.MediaKind kind)
+    {
+        Folders.Add(new MediaFolderOptions { Path = string.Empty, Kind = kind, PromoFolder = null });
         FoldersChanged = IsDirty = true;
     }
 

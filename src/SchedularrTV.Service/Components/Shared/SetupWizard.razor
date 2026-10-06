@@ -23,31 +23,34 @@
             case 0:
                 <h2>Welcome to SchedularrTV</h2>
                 <p>
-                    SchedularrTV turns your Jellyfin library into round-the-clock TV channels, with time slots, programming
+                    SchedularrTV turns your shows and movies into round-the-clock TV channels, with time slots, programming
                     blocks, ad breaks and promos, and hands them to ErsatzTV Next to stream to your IPTV player.
                 </p>
                 <p>This guide takes a couple of minutes. You'll need:</p>
                 <ul class="checklist">
-                    <li><Icon Name="library" Size="15" /><span><strong>Jellyfin</strong> with your shows and movies, and permission to create an API key.</span></li>
+                    <li><Icon Name="library" Size="15" /><span>Your shows and movies: in <strong>Jellyfin</strong> (with permission to create an API key), or in <strong>folders</strong> on this computer laid out as Sonarr, Radarr or Kodi do, or both.</span></li>
                     <li><Icon Name="radio" Size="15" /><span><strong><a href="https://github.com/ErsatzTV/next" target="_blank" rel="noopener">ErsatzTV Next</a></strong> downloaded on this computer, to stream the channels.</span></li>
                     <li><Icon Name="film" Size="15" /><span><strong>ffmpeg</strong>, which we'll try to find for you.</span></li>
                     <li><Icon Name="megaphone" Size="15" /><span>Optionally, a folder of <strong>commercials and bumpers</strong> for the ad breaks.</span></li>
                 </ul>
                 <p class="hint">Everything here can be changed later under <strong>App settings</strong>.</p>
-                <p class="hint">Moving from <strong>ErsatzTV</strong> or <strong>Tunarr</strong>? Once Jellyfin is connected, the last step offers to import your channels.</p>
+                <p class="hint">Moving from <strong>ErsatzTV</strong> or <strong>Tunarr</strong>? Once your library is set up, the last step offers to import your channels.</p>
                 break;
 
             case 1:
-                <h2>Connect to Jellyfin</h2>
-                <p>SchedularrTV reads your shows, movies and collections from Jellyfin to build schedules.</p>
+                <h2>Your shows and movies</h2>
+                <p>SchedularrTV reads your shows, movies and collections from Jellyfin, from folders on this computer, or both.</p>
+                <h3>Jellyfin</h3>
                 <JellyfinSettings Form="Form" ShowUser="false" Changed="Edited" @bind-Result="_jellyfinTest" />
                 @if (_jellyfinTest is null && JellyfinFilled)
                 {
                     <p class="hint">Press <strong>Test connection</strong> to make sure the address and key work.</p>
                 }
-                else if (!JellyfinFilled)
+                <h3>Folders on this computer <span class="pill pill-muted">Without Jellyfin, or as well</span></h3>
+                <LibraryFolderSettings Form="Form" ShowAdvanced="false" Changed="Edited" />
+                @if (!LibraryFilled)
                 {
-                    <p class="hint warn">Channels can't be built until Jellyfin is connected. You can skip this for now and come back to it.</p>
+                    <p class="hint warn">Channels can't be built until Jellyfin is connected or a TV or movies folder is added. You can skip this for now and come back to it.</p>
                 }
                 break;
 
@@ -105,9 +108,9 @@
             default:
                 <h2>You're all set</h2>
                 <ul class="checklist">
-                    <li class="@(JellyfinFilled ? "ok" : "warn")">
-                        <Icon Name="@(JellyfinFilled ? "check-circle" : "alert")" Size="15" />
-                        <span>@(JellyfinFilled ? $"Jellyfin at {Form.JellyfinUrl}" + (_jellyfinTest is { Ok: true } ? " (connected)" : "") : "Jellyfin isn't connected yet; channels can't be built until it is.")</span>
+                    <li class="@(LibraryFilled ? "ok" : "warn")">
+                        <Icon Name="@(LibraryFilled ? "check-circle" : "alert")" Size="15" />
+                        <span>@LibrarySummary</span>
                     </li>
                     <li class="@(ErsatzReady ? "ok" : "warn")">
                         <Icon Name="@(ErsatzReady ? "check-circle" : "alert")" Size="15" />
@@ -119,14 +122,14 @@
                     </li>
                     <li class="ok">
                         <Icon Name="check-circle" Size="15" />
-                        <span>@(Form.Folders.Count(f => !string.IsNullOrWhiteSpace(f.Path)) is var count and > 0 ? $"{count} commercials folder(s)" : "No commercials folders (optional)")</span>
+                        <span>@(Form.Folders.Count(f => !f.IsLibrary && !string.IsNullOrWhiteSpace(f.Path)) is var count and > 0 ? $"{count} commercials folder(s)" : "No commercials folders (optional)")</span>
                     </li>
                 </ul>
                 @if (Form.IsDirty)
                 {
                     <p class="hint">Finishing saves these settings and restarts the scheduler, which takes a few seconds.</p>
                 }
-                @if (JellyfinFilled)
+                @if (LibraryFilled)
                 {
                     <p>Next, create your first channel: the channel wizard picks what to show, when breaks happen and which commercials to use.</p>
                     <div class="wizard-import">
@@ -134,14 +137,14 @@
                         <div>
                             <strong>Coming from ErsatzTV or Tunarr?</strong>
                             <p class="hint" style="margin:2px 0 0;">Bring all your channels over instead: their schedules, shows, collections, filler and logos,
-                                matched to your Jellyfin library. Nothing in the other app is changed.</p>
+                                matched to your library. Nothing in the other app is changed.</p>
                         </div>
                         <button class="btn btn-sm" type="button" @onclick="() => Finish(createChannel: false, import: true)">Import channels</button>
                     </div>
                 }
                 else
                 {
-                    <p>Connect Jellyfin under <strong>App settings</strong> when you're ready; this guide will open again until you do.</p>
+                    <p>Connect Jellyfin or add a TV or movies folder under <strong>App settings</strong> when you're ready; this guide will open again until you do.</p>
                 }
                 break;
         }
@@ -170,7 +173,7 @@
                 <div class="spacer"></div>
                 @if (_step == Steps.Length - 1)
                 {
-                    @if (JellyfinFilled)
+                    @if (LibraryFilled)
                     {
                         <button class="btn" type="button" @onclick="() => Finish(createChannel: false)">Done</button>
                         <button class="btn btn-primary" type="button" @onclick="() => Finish(createChannel: true)"><Icon Name="plus" Size="14" />Create a channel</button>
@@ -196,7 +199,7 @@
 @code {
     [Parameter] public EventCallback OnClose { get; set; }
 
-    private static readonly string[] Steps = ["Welcome", "Jellyfin", "ErsatzTV Next", "ffmpeg", "Commercials", "Extras", "Finish"];
+    private static readonly string[] Steps = ["Welcome", "Library", "ErsatzTV Next", "ffmpeg", "Commercials", "Extras", "Finish"];
 
     private int _step;
     private ConnectionTest? _jellyfinTest;
@@ -208,6 +211,35 @@
 
     private bool JellyfinFilled =>
         !string.IsNullOrWhiteSpace(Form.JellyfinUrl) && (Form.JellyfinKeySet || !string.IsNullOrWhiteSpace(Form.JellyfinKey));
+
+    /// <summary>Somewhere to get shows and movies from: Jellyfin, or a local TV or movies folder.</summary>
+    private bool LibraryFilled => JellyfinFilled || Form.LibraryFolderFilled;
+
+    private string LibrarySummary
+    {
+        get
+        {
+            List<string> parts = [];
+            if (JellyfinFilled)
+            {
+                parts.Add($"Jellyfin at {Form.JellyfinUrl}" + (_jellyfinTest is { Ok: true } ? " (connected)" : ""));
+            }
+
+            int tv = Form.Folders.Count(f => f.Kind == SchedularrTV.Core.Media.MediaKind.Episode && !string.IsNullOrWhiteSpace(f.Path));
+            int movies = Form.Folders.Count(f => f.Kind == SchedularrTV.Core.Media.MediaKind.Movie && !string.IsNullOrWhiteSpace(f.Path));
+            if (tv > 0)
+            {
+                parts.Add(tv == 1 ? "a TV folder" : $"{tv} TV folders");
+            }
+
+            if (movies > 0)
+            {
+                parts.Add(movies == 1 ? "a movies folder" : $"{movies} movies folders");
+            }
+
+            return parts.Count > 0 ? string.Join(", ", parts) : "No library yet; channels can't be built until Jellyfin is connected or a TV or movies folder is added.";
+        }
+    }
 
     private bool ErsatzReady => !Form.ErsatzManage || (!string.IsNullOrWhiteSpace(Form.ErsatzExe) && File.Exists(Form.ErsatzExe));
 

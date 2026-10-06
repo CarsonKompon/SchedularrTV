@@ -67,5 +67,15 @@ public sealed class MediaFolderOptions
     /// </summary>
     public string[] AttributeFolderPrefixes { get; set; } = ["promo_type", "show_id", "channel", "brand"];
 
+    /// <summary>
+    /// What the folder holds. <see cref="MediaKind.Filler"/> (the default): commercials, bumpers and promos, tagged by
+    /// their folders. <see cref="MediaKind.Episode"/>: a TV library (show folders with season folders, as Sonarr lays
+    /// them out). <see cref="MediaKind.Movie"/>: a movie library (a folder per movie, as Radarr lays them out). Both
+    /// read .nfo files and the pictures beside the videos.
+    /// </summary>
     public MediaKind Kind { get; set; } = MediaKind.Filler;
+
+    /// <summary>A TV or movie library rather than commercials.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsLibrary => Kind is MediaKind.Episode or MediaKind.Movie;
 }

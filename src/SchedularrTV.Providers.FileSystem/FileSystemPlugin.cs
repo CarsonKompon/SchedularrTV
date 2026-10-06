@@ -14,7 +14,8 @@ public sealed class FileSystemPlugin : IBuiltInPlugin
         Id = PluginId,
         Name = "Local media folders",
         Version = typeof(FileSystemPlugin).Assembly.GetName().Version?.ToString(3) ?? "1.0.0",
-        Description = "Commercials, bumpers, station IDs and promos from folders on disk, tagged by their folder names.",
+        Description = "TV shows and movies from folders on disk (laid out as Sonarr, Radarr or Kodi do, with .nfo files and pictures), "
+                      + "and commercials, bumpers, station IDs and promos tagged by their folder names.",
         Author = "SchedularrTV",
         ApiVersion = PluginApi.Version.ToString(),
         SettingsLink = "settings/app"

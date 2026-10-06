@@ -18,7 +18,7 @@ public static class QueryEvaluator
 
     private static readonly HashSet<string> SetFields = new(StringComparer.OrdinalIgnoreCase)
     {
-        "tag", "tags", "collection", "collections"
+        "tag", "tags", "collection", "collections", "genre", "genres"
     };
 
     private static readonly HashSet<string> TextFields = new(StringComparer.OrdinalIgnoreCase)
@@ -181,6 +181,7 @@ public static class QueryEvaluator
         "plot" or "overview" or "description" => item.Overview is null ? [] : [item.Overview],
         "tag" or "tags" => item.Tags,
         "collection" or "collections" => item.Collections,
+        "genre" or "genres" => item.Genres,
         "network" or "networks" or "studio" => item.Networks,
         "show" or "series" or "series_name" => item.SeriesName is null ? [] : [item.SeriesName],
         "show_id" or "series_id" => ResolveShowId(item),

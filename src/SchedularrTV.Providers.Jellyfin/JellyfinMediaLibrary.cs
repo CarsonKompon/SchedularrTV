@@ -56,8 +56,16 @@ public sealed class JellyfinMediaLibrary(
         await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Whether a server address and key are set. Without them this source is simply empty: shows and movies can come from local folders instead.</summary>
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(_options.BaseUrl) && !string.IsNullOrWhiteSpace(_options.ApiKey);
+
     private async ValueTask<IReadOnlyList<MediaItem>> EnsureSnapshotAsync(CancellationToken cancellationToken)
     {
+        if (!IsConfigured)
+        {
+            return [];
+        }
+
         string[] excluded = [.. scope?.ExcludedLibraries ?? []];
         // The server and user are part of it too, so pointing App settings at another server reloads at once.
         string scopeKey = string.Join('\u001f', new[] { _options.BaseUrl, _options.UserId ?? string.Empty }.Concat(excluded));
@@ -227,6 +235,8 @@ public sealed class JellyfinMediaLibrary(
             Rating = string.IsNullOrWhiteSpace(item.OfficialRating) ? info?.Rating : item.OfficialRating.Trim(),
             Tags = tags,
             Collections = itemCollections,
+            // Episodes are seldom given genres of their own: the series' stand for them.
+            Genres = item.Genres is { Count: > 0 } genres ? genres : info?.Genres ?? [],
             Networks = info?.Networks ?? [],
             SeriesYear = info?.Year,
             Chapters = item.Chapters?
@@ -248,21 +258,8 @@ public sealed class JellyfinMediaLibrary(
             (item.Chapters ?? []).Select(chapter => (TimeSpan.FromTicks(chapter.StartPositionTicks), chapter.Name)));
 
     /// <summary>Where the chapter named for the end credits starts, among chapters (start, name) of an item this long.</summary>
-    public static TimeSpan? CreditsChapter(TimeSpan runtime, IEnumerable<(TimeSpan Start, string? Name)> chapters)
-    {
-        foreach ((TimeSpan start, string? named) in chapters)
-        {
-            string name = named?.Trim() ?? string.Empty;
-            bool credits = name.Contains("credit", StringComparison.OrdinalIgnoreCase) || name.Contains("outro", StringComparison.OrdinalIgnoreCase)
-                           || name.Equals("ending", StringComparison.OrdinalIgnoreCase) || name.Equals("ED", StringComparison.Ordinal);
-            if (credits && !name.Contains("open", StringComparison.OrdinalIgnoreCase) && runtime > TimeSpan.Zero && start > runtime / 2 && start < runtime)
-            {
-                return start;
-            }
-        }
-
-        return null;
-    }
+    public static TimeSpan? CreditsChapter(TimeSpan runtime, IEnumerable<(TimeSpan Start, string? Name)> chapters) =>
+        ChapterMarkers.CreditsStart(runtime, chapters);
 
     internal static int? ResolveSeasonNumber(JellyfinItem item, IReadOnlyDictionary<string, int> seasons)
     {
