@@ -462,6 +462,19 @@ td .pill { margin-left: 0; }
 .banner-ok { background: rgba(60, 207, 145, .07); border: 1px solid rgba(60, 207, 145, .3); }
 .banner-error { background: rgba(242, 103, 109, .07); border: 1px solid rgba(242, 103, 109, .35); }
 .banner-warn { background: rgba(243, 183, 79, .07); border: 1px solid rgba(243, 183, 79, .3); }
+.banner-info { background: rgba(123, 139, 255, .08); border: 1px solid rgba(123, 139, 255, .35); }
+
+/* The live-page plugins' "virtual shows" note: one line, with More info on the right to open the rest. */
+.virtual-show-notice { padding-top: 8px; padding-bottom: 8px; }
+.virtual-show-notice > summary { display: flex; align-items: center; gap: 12px; list-style: none; cursor: pointer; }
+.virtual-show-notice > summary::-webkit-details-marker { display: none; }
+.virtual-show-notice > summary > span:first-child { flex: 1; min-width: 0; }
+.virtual-show-notice .virtual-show-more { flex: none; }
+.virtual-show-notice .virtual-show-more::after { content: "More info"; }
+.virtual-show-notice[open] .virtual-show-more::after { content: "Less"; }
+.virtual-show-notice > p { margin: 8px 0 0; }
+.virtual-show-notice > p + p { margin-top: 6px; }
+
 .banner ul { margin: 6px 0 0; padding-left: 18px; }
 .banner li + li { margin-top: 2px; }
 
