@@ -66,8 +66,9 @@ public static class LiveFonts
             return null;
         }
 
+        // A web font by its own spelling, so it matches the family its stylesheet declares.
         WebFont? web = Find(name);
-        return $"\"{name}\", {web?.Fallback ?? "\"Segoe UI\", Arial, sans-serif"}";
+        return $"\"{web?.Family ?? name}\", {web?.Fallback ?? "\"Segoe UI\", Arial, sans-serif"}";
     }
 
     /// <summary>The stylesheet a web font needs; null for an installed font or one the page brings.</summary>
