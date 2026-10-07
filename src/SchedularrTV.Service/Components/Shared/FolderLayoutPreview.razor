@@ -1,0 +1,121 @@
+@* Where a channel's break clips or promos go on disk, worked out from its settings as they stand. *@
+@using Microsoft.Extensions.Options
+@using SchedularrTV.Providers.FileSystem
+@inject LibraryBrowser Library
+@inject IOptionsMonitor<FileSystemLibraryOptions> MediaFolders
+@inject TimeProvider Clock
+
+<div class="card">
+    <div class="card-head">
+        <h2>Folder layout</h2>
+        <span class="muted">@(Kind == FolderPreviewKind.Promos ? "Where this channel's promos are looked for" : "Where this channel's break clips are looked for")</span>
+    </div>
+
+    @if (_layouts.Count == 0)
+    {
+        <p class="muted">@(Kind == FolderPreviewKind.Promos ? "Promos are switched off, so none are looked for." : "Nothing to look for.")</p>
+    }
+    else
+    {
+        <div class="layouts">
+            @foreach (FolderLayout layout in _layouts)
+            {
+                <section class="layout">
+                    <div class="layout-head">
+                        <strong>@layout.Title</strong>
+                        @if (layout.Summary is not null)
+                        {
+                            <span class="muted">@layout.Summary</span>
+                        }
+                    </div>
+                    <ol class="tree">
+                        @for (int i = 0; i < layout.Levels.Count; i++)
+                        {
+                            FolderLevel level = layout.Levels[i];
+                            <li style="--depth:@i">
+                                <span class="branch" aria-hidden="true">@(i == 0 ? "" : "└─")</span>
+                                <span class="choices">
+                                    @for (int c = 0; c < level.Choices.Count; c++)
+                                    {
+                                        FolderChoice choice = level.Choices[c];
+                                        @if (c > 0)
+                                        {
+                                            <span class="or">or</span>
+                                        }
+                                        <span class="folder @StateClass(choice.State)" title="@Title(choice)">
+                                            <Icon Name="folder" Size="12" />@choice.Name/
+                                        </span>
+                                    }
+                                </span>
+                                <span class="caption">@Caption(level)</span>
+                            </li>
+                        }
+                        <li style="--depth:@layout.Levels.Count">
+                            <span class="branch" aria-hidden="true">└─</span>
+                            <span class="choices"><span class="file"><Icon Name="film" Size="12" />@layout.FileName</span></span>
+                        </li>
+                    </ol>
+                    @foreach (string note in layout.Notes.Distinct())
+                    {
+                        <p class="hint layout-note">@note</p>
+                    }
+                </section>
+            }
+        </div>
+        <p class="hint legend">
+            <span class="folder found">In your library</span>
+            <span class="folder missing">Not found yet</span>
+            <span class="folder placeholder">Your choice of name</span>
+            Every folder becomes a tag, so the order above is the usual one rather than a rule.
+            @if (Kind == FolderPreviewKind.Promos)
+            {
+                <text>Below the promo folder, the levels are read as the show and then the promo type.</text>
+            }
+        </p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SchedulerConfig Config { get; set; } = default!;
+    [Parameter, EditorRequired] public ChannelConfig Channel { get; set; } = default!;
+    [Parameter] public FolderPreviewKind Kind { get; set; }
+
+    private CommercialFolders _library = new([], [], [], []);
+    private IReadOnlyList<FolderLayout> _layouts = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _library = await Library.GetCommercialFoldersAsync();
+        Build();
+    }
+
+    // The settings are edited in place, so the layout is worked out again whenever the page re-renders this.
+    protected override void OnParametersSet() => Build();
+
+    private void Build()
+    {
+        IReadOnlyList<MediaFolderOptions> roots = MediaFolders.CurrentValue.Folders;
+        _layouts = Kind == FolderPreviewKind.Promos
+            ? FolderLayouts.Promos(Config, Channel, _library, roots, FolderLayouts.ExampleShows(Channel))
+            : FolderLayouts.Breaks(Config, Channel, _library, roots, Clock.GetLocalNow());
+    }
+
+    private static string Caption(FolderLevel level) =>
+        level.Caption + (level.Optional ? " (optional)" : "") + (level.Note is null ? "" : $" · {level.Note}");
+
+    private static string StateClass(FolderState state) => state switch
+    {
+        FolderState.Found => "found",
+        FolderState.Missing => "missing",
+        FolderState.Placeholder => "placeholder",
+        _ => "fixed"
+    };
+
+    private static string Title(FolderChoice choice) => (choice.State switch
+    {
+        FolderState.Found => "In your library",
+        FolderState.Missing => "No folder by this name in your library yet",
+        FolderState.Placeholder => "Your choice of name",
+        _ => "Set by your settings"
+    }) + (choice.Hint is null ? "" : $" · {choice.Hint}");
+}

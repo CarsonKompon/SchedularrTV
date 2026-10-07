@@ -1123,6 +1123,20 @@ public sealed class SchedulingEngine(
         return cursor;
     }
 
+    /// <summary>
+    /// The breaks a channel (or one of its blocks) fills, with every inherited setting resolved as a build sees it.
+    /// For the editor, e.g. to show which folders they're drawn from.
+    /// </summary>
+    public static InterstitialsConfig ResolvedBreaks(SchedulerConfig config, ChannelConfig channel, BlockConfig? block = null) =>
+        ResolveInterstitials(config, channel, block);
+
+    /// <summary>The promo settings a channel (or block) uses, and the brand folders they're drawn from, as a build sees them.</summary>
+    public static (PromoConfig Promos, List<string>? BrandTags) ResolvedPromos(SchedulerConfig config, ChannelConfig channel, BlockConfig? block = null)
+    {
+        PromoConfig promos = block?.Promos ?? channel.Promos ?? config.Settings.Promos;
+        return (promos, ResolvePromoBaseTags(block, channel, promos, ResolveInterstitials(config, channel, block).Commercials!));
+    }
+
     /// <summary>Which brand folders promos come from; see <see cref="PromoBreakContributor.ResolveBaseTags"/>.</summary>
     internal static List<string>? ResolvePromoBaseTags(
         BlockConfig? block,

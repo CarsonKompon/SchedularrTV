@@ -282,10 +282,12 @@ else
         {
             <MidRollEditor Config="_channel.MidRoll" Changed="Editor.MarkDirty" />
         }
+
+        <FolderLayoutPreview Config="Editor.Working" Channel="_channel" Kind="FolderPreviewKind.Breaks" />
     }
     else if (_tab == "stats")
     {
-        <ChannelStatsTab Channel="_channel" Changed="Editor.MarkDirty"TimeZoneId="@(string.IsNullOrWhiteSpace(_channel.TimeZone) ? Editor.Working.Settings.TimeZone : _channel.TimeZone)" />
+        <ChannelStatsTab Channel="_channel" Changed="Editor.MarkDirty" TimeZoneId="@(string.IsNullOrWhiteSpace(_channel.TimeZone) ? Editor.Working.Settings.TimeZone : _channel.TimeZone)" />
     }
     else if (ChannelSections.FirstOrDefault(section => SectionTab(section) == _tab) is { } pluginSection)
     {

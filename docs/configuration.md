@@ -87,6 +87,10 @@ Add folders under **App settings → Commercials library**, or in `settings.json
 }
 ```
 
+The bottom of a channel's **Breaks** and **Promos** tabs shows the folder layout that channel looks for with its
+current settings (brands, clip folders, time-of-year folders, promo folder, shows and promo types), and marks which
+folders are already in your library and which aren't yet. It updates as you change the settings.
+
 Beneath a folder named by `PromoFolder`, the levels become promo metadata:
 `<promo folder>/<show>/<promo type>`. A folder named `key=value` becomes an attribute rather than a tag.
 
