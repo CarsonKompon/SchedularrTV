@@ -29,9 +29,12 @@ TV/
 
 - **A show** is a folder with a `tvshow.nfo`, season folders, or episodes in it. Its name is the folder's (with a year
   in brackets and ids like `[tvdbid-…]` or `{tmdb-…}` taken off), unless `tvshow.nfo` says otherwise.
-- **Seasons:** `Season 1`, `Season 01`, `S01`, `Series 1`; `Specials` is season 0. Episodes can also sit directly in the
-  show's folder.
-- **Episodes:** `S01E02`, `s01e02`, `S01E02E03` / `S01E02-E03` / `S01E02-03` (one file, several episodes), `1x02`, a date
+- **Seasons:** `Season 1`, `Season 01`, `S01`, `Series 1`; `Specials` is season 0. Inside a show, folders are also read
+  as ErsatzTV reads them: a bare number (`01`), an S or Season number anywhere (`Season 2 (2005)`), a number at the end
+  (`Staffel 3`, `Disc 1`), or a name ending in "specials". **The season folder decides the season**, as in ErsatzTV, so
+  a file named `S03E09` filed under `Season 2` is in season 2; folders below a season folder (`Season 1/Disc 2`) stay in
+  it. Episodes can also sit directly in the show's folder, and then take their season from the .nfo or their name.
+- **Episodes:** `S01E02`, `s01e02`, `S01E02E03` / `S01E02-E03` / `S01E02-03` (one file, several episodes), `1x02`, `1.02`, `1_02`, a date
   for daily shows (`2024-03-15`), or inside a season folder a leading number (`02 - Title`) or `Episode 2`. The title
   is what follows (`- Title`), without quality tags (`WEBDL-1080p`, `[x265]`…).
 - **Grouping folders** between the root and a show (`TV/Cartoons/Daria`) become tags on its episodes, as commercials'
@@ -61,8 +64,23 @@ Movies/
 ## Left out
 
 Extras folders (`Extras`, `Featurettes`, `Behind The Scenes`, `Deleted Scenes`, `Interviews`, `Scenes`, `Shorts`,
-`Trailers`, `Other`, `Samples`…), files ending `-trailer`, `-sample`, `-featurette` and the like, hidden folders, and
-any folder with an `.ignore` file in it.
+`Trailers`, `Other`, `Samples`…), files ending `-trailer`, `-sample`, `-featurette` and the like, macOS `._` files, hidden
+folders, and any folder with an `.etvignore` (as ErsatzTV uses) or `.ignore` (as Jellyfin uses) file in it. Hidden and
+ignored folders and `._` files are left out of commercials folders too.
+
+## Coming from ErsatzTV
+
+A local library set up for ErsatzTV (legacy) reads the same here: the same video types (`.mkv`, `.mp4`, `.avi`, `.ts`,
+`.m2ts`, `.wmv`, `.ogv`…), show folders with season folders named any way ErsatzTV accepts, `tvshow.nfo`, `movie.nfo`
+and `name.nfo` files when they're there and names when they're not, `poster`/`folder`/`fanart`/`thumb` pictures (`.jpg`,
+`.png`, `.gif`, `.webp`, `.tbn`) and `.etvignore`. An ErsatzTV "Other Videos" library works as a commercials folder: every
+folder becomes a tag, including the library folder's own name when no tags are set for it.
+
+Where this reads more than ErsatzTV does, it's only extra: grouping folders between the root and a show, episodes loose in
+a show folder, videos loose in the movies root, and versions and parts of one movie. Two things it deliberately leaves out
+that ErsatzTV would pick up: videos in a season's `Extras`/`Trailers` folders (ErsatzTV adds them as episodes), and movies
+whose file name merely ends in a word like "short" (`The Big Short.mkv` is a movie here; extras need a dash,
+`Movie-short.mkv`). Music videos, songs and image libraries aren't supported.
 
 ## .nfo files
 

@@ -15,7 +15,9 @@ public sealed class FileSystemLibraryOptions
     /// <summary>Path to ffprobe. Bare <c>ffprobe</c> resolves via PATH.</summary>
     public string FfprobePath { get; set; } = "ffprobe";
 
-    public string[] Extensions { get; set; } = [".mp4", ".mkv", ".mpg", ".mpeg", ".avi", ".mov", ".m4v", ".webm", ".ts"];
+    /// <summary>The video files read: the same list ErsatzTV scans for.</summary>
+    public string[] Extensions { get; set; } =
+        [".mp4", ".mkv", ".mpg", ".mpeg", ".avi", ".mov", ".m4v", ".webm", ".ts", ".m2ts", ".wmv", ".ogv", ".ogg", ".mpe", ".mpv", ".mp2", ".m4p", ".avs"];
 
     /// <summary>Durations are cached here so a rescan does not re-probe thousands of unchanged files.</summary>
     public string CachePath { get; set; } = "state/probe-cache.json";

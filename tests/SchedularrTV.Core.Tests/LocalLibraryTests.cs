@@ -59,6 +59,87 @@ public sealed class LocalLibraryTests : IDisposable
     [InlineData("Seasoning", null)]
     public void Season_folders_are_recognised(string folder, int? season) => Assert.Equal(season, LocalNaming.SeasonFolder(folder));
 
+    [Theory]
+    [InlineData("Season 1", 1)]
+    [InlineData("01", 1)]
+    [InlineData("Season 2 (2005)", 2)]
+    [InlineData("Staffel 3", 3)]
+    [InlineData("Disc 1", 1)]
+    [InlineData("Show Specials", 0)]
+    [InlineData("Extras", null)]
+    [InlineData("Seasoning", null)]
+    public void Inside_a_show_folders_are_read_as_seasons_the_way_ErsatzTV_reads_them(string folder, int? season) =>
+        Assert.Equal(season, LocalNaming.SeasonFolderInShow(folder));
+
+    [Theory]
+    [InlineData("Show.1.02.Title.mkv", 1, 2, "Title")]
+    [InlineData("Show 1_03.mkv", 1, 3, null)]
+    public void Dotted_and_underscored_numbers_are_episodes_too(string file, int season, int episode, string? title)
+    {
+        EpisodeName name = LocalNaming.Episode(file, inSeasonFolder: false);
+
+        Assert.Equal(((int?)season, (int?)episode, title), (name.Season, name.Episode, name.Title));
+    }
+
+    [Fact]
+    public void A_dotted_date_is_still_a_date()
+    {
+        EpisodeName name = LocalNaming.Episode("Show.2024.03.15.Guest.mkv", inSeasonFolder: false);
+
+        Assert.Equal((new DateOnly(2024, 3, 15), (int?)null), (name.Aired!.Value, name.Season));
+    }
+
+    [Fact]
+    public async Task A_library_laid_out_for_ErsatzTV_reads_the_same()
+    {
+        string tv = Path.Combine(_folder, "TV");
+        string office = Path.Combine(tv, "The Office");
+
+        // Bare-number season folders, and a disc folder inside a season, which stays in that season.
+        Video(Path.Combine(office, "1", "The Office - S01E01 - Pilot.mkv"), "<episodedetails><runtime>22</runtime></episodedetails>");
+        Video(Path.Combine(office, "2", "Disc 2", "The Office - S02E05.mkv"), "<episodedetails><runtime>22</runtime></episodedetails>");
+
+        // The season folder decides, as ErsatzTV has it.
+        Video(Path.Combine(office, "2", "The Office - S03E09 - Misfiled.mkv"), "<episodedetails><runtime>22</runtime></episodedetails>");
+
+        // Left out: a folder marked .etvignore, a hidden folder, and macOS "._" files.
+        Video(Path.Combine(office, "3", "The Office - S03E01.mkv"), "<episodedetails><runtime>22</runtime></episodedetails>");
+        Write(Path.Combine(office, "3", ".etvignore"));
+        Video(Path.Combine(office, ".hidden", "The Office - S04E01.mkv"), "<episodedetails><runtime>22</runtime></episodedetails>");
+        Video(Path.Combine(office, "1", "._The Office - S01E01 - Pilot.mkv"), "<episodedetails><runtime>22</runtime></episodedetails>");
+
+        // A grouping folder holding a show whose name ends in a number is still a grouping folder.
+        Video(Path.Combine(tv, "Sci-Fi", "Babylon 5", "Season 1", "Babylon 5 - S01E01.mkv"), "<episodedetails><runtime>44</runtime></episodedetails>");
+
+        FileSystemMediaLibrary library = Library(new MediaFolderOptions { Path = tv, Kind = MediaKind.Episode });
+        IReadOnlyList<MediaItem> items = await library.SearchAsync(QueryExpression.All);
+
+        Assert.Equal(4, items.Count);
+        MediaItem[] office1 = [.. items.Where(item => item.SeriesName == "The Office")];
+        Assert.Equal(new[] { (1, 1), (2, 5), (2, 9) }, office1.Select(item => (item.SeasonNumber!.Value, item.EpisodeNumber!.Value)).Order());
+
+        MediaItem babylon = items.Single(item => item.SeriesName == "Babylon 5");
+        Assert.Equal(1, babylon.SeasonNumber);
+        Assert.Contains("Sci-Fi", babylon.Tags);
+    }
+
+    [Fact]
+    public void Clip_folders_skip_hidden_and_ignored_folders_and_untagged_ones_take_their_name()
+    {
+        string root = Path.Combine(_folder, "Commercials");
+        Write(Path.Combine(root, "Nick", "Ignored", ".etvignore"));
+        Directory.CreateDirectory(Path.Combine(root, ".cache"));
+        Dictionary<string, bool> known = [];
+
+        Assert.True(FileSystemMediaLibrary.InIgnoredFolder(root, Path.Combine(root, "Nick", "Ignored", "Deeper"), known));
+        Assert.True(FileSystemMediaLibrary.InIgnoredFolder(root, Path.Combine(root, ".cache"), known));
+        Assert.False(FileSystemMediaLibrary.InIgnoredFolder(root, Path.Combine(root, "Nick"), known));
+        Assert.True(LocalNaming.IsResourceFork("._ad.mp4"));
+
+        List<string> tags = FileSystemMediaLibrary.BuildTags(root, Path.Combine(root, "Nick", "Ads", "ad.mp4"), new MediaFolderOptions { Path = root });
+        Assert.Equal(["Commercials", "Nick", "Ads"], tags);
+    }
+
     [Fact]
     public void Folder_names_give_the_title_the_year_and_any_ids()
     {

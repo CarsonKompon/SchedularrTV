@@ -149,12 +149,36 @@ internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaP
 
     /// <summary>
     /// A show's folder has a tvshow.nfo, season folders, or episodes of its own. The library's root is one only with a
-    /// tvshow.nfo or season folders (a library of one show); loose files there are otherwise left alone.
+    /// tvshow.nfo or season folders (a library of one show); loose files there are otherwise left alone. A folder whose
+    /// subfolders only read as seasons the way ErsatzTV reads them (<c>1</c>, <c>Disc 2</c>, <c>Staffel 3</c>) is a show
+    /// too, unless one of those subfolders is plainly a show itself (a grouping folder holding <c>Babylon 5</c>).
     /// </summary>
-    private bool IsShowFolder(DirectoryInfo directory, bool isRoot) =>
+    private bool IsShowFolder(DirectoryInfo directory, bool isRoot)
+    {
+        if (File.Exists(Path.Combine(directory.FullName, "tvshow.nfo")))
+        {
+            return true;
+        }
+
+        DirectoryInfo[] children = [.. Children(directory).Where(child => !LocalNaming.IsSkippedFolder(child))];
+        if (children.Any(child => LocalNaming.SeasonFolder(child.Name) is not null))
+        {
+            return true;
+        }
+
+        if (isRoot)
+        {
+            return false;
+        }
+
+        return Videos(directory).Any()
+            || (children.Any(child => LocalNaming.SeasonFolderInShow(child.Name) is not null) && !children.Any(IsPlainlyShow));
+    }
+
+    /// <summary>A folder that's a show by its own markings (a tvshow.nfo or <c>Season</c> folders), not by holding videos.</summary>
+    private static bool IsPlainlyShow(DirectoryInfo directory) =>
         File.Exists(Path.Combine(directory.FullName, "tvshow.nfo"))
-        || Children(directory).Any(child => LocalNaming.SeasonFolder(child.Name) is not null)
-        || (!isRoot && Videos(directory).Any());
+        || Children(directory).Any(child => LocalNaming.SeasonFolder(child.Name) is not null);
 
     private void AddShow(DirectoryInfo show, List<string> parents, MediaFolderOptions folder, List<Candidate> candidates,
         Dictionary<string, LocalImages> images)
@@ -208,7 +232,9 @@ internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaP
             return null;
         }
 
-        int? season = nfo?.Season ?? name.Season ?? folderSeason ?? name.Aired?.Year;
+        // The season folder decides, as in ErsatzTV (and so an episode filed under Season 2 is in season 2, whatever its
+        // name says); loose in the show, the .nfo, then the name.
+        int? season = folderSeason ?? nfo?.Season ?? name.Season ?? name.Aired?.Year;
         // A daily show's episodes (named by date) are numbered by it within the year's season: 0315 for March 15th.
         int? episode = nfo?.Episode ?? name.Episode ?? (name.Aired is { } day ? (int?)(day.Month * 100 + day.Day) : null);
         int? last = nfos.Count > 1 ? nfos.Max(info => info.Episode) : name.LastEpisode;
@@ -265,7 +291,10 @@ internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaP
         return (item, new LocalImages(still, still, fanart));
     }
 
-    /// <summary>Every episode under a show: its file, the season its folder says, and the folder it's in.</summary>
+    /// <summary>
+    /// Every episode under a show: its file, the season its folder says, and the folder it's in. Below a season folder,
+    /// subfolders (<c>Season 1/Disc 2</c>) stay in that season, as in ErsatzTV.
+    /// </summary>
     private IEnumerable<(FileInfo File, int? Season, string Directory)> Episodes(DirectoryInfo directory, int? season)
     {
         foreach (FileInfo file in Videos(directory))
@@ -277,7 +306,7 @@ internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaP
         {
             if (!LocalNaming.IsSkippedFolder(child))
             {
-                foreach (var found in Episodes(child, LocalNaming.SeasonFolder(child.Name) ?? season))
+                foreach (var found in Episodes(child, season ?? LocalNaming.SeasonFolderInShow(child.Name)))
                 {
                     yield return found;
                 }
@@ -453,7 +482,7 @@ internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaP
         }
 
         return files
-            .Where(file => _extensions.Contains(file.Extension) && !LocalNaming.IsExtraFile(file.Name))
+            .Where(file => _extensions.Contains(file.Extension) && !LocalNaming.IsExtraFile(file.Name) && !LocalNaming.IsResourceFork(file.Name))
             .OrderBy(file => file.Name, StringComparer.OrdinalIgnoreCase);
     }
 

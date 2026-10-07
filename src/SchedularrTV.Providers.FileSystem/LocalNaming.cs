@@ -20,7 +20,7 @@ internal sealed record MovieName(string Title, int? Year, int? Part);
 internal static partial class LocalNaming
 {
     public static readonly IReadOnlySet<string> ImageExtensions =
-        new HashSet<string>([".jpg", ".jpeg", ".png", ".webp", ".tbn"], StringComparer.OrdinalIgnoreCase);
+        new HashSet<string>([".jpg", ".jpeg", ".png", ".webp", ".tbn", ".gif"], StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Folders of extras (trailers, featurettes…) and housekeeping, never episodes or movies.</summary>
     private static readonly HashSet<string> ExtrasFolders = new(StringComparer.OrdinalIgnoreCase)
@@ -30,11 +30,22 @@ internal static partial class LocalNaming
         ".actors", "@eadir", "#recycle", "$recycle.bin", "lost+found"
     };
 
-    /// <summary>A folder whose contents are left out: extras, hidden folders, and any holding a <c>.ignore</c> file (as Jellyfin does).</summary>
+    /// <summary>
+    /// A folder whose contents are left out: extras, hidden folders, and any holding an <c>.etvignore</c> (as ErsatzTV
+    /// does) or <c>.ignore</c> file (as Jellyfin does).
+    /// </summary>
     public static bool IsSkippedFolder(DirectoryInfo folder) =>
-        ExtrasFolders.Contains(folder.Name) || folder.Name.StartsWith('.')
-        || (folder.Attributes & FileAttributes.Hidden) != 0 && folder.Parent is not null
-        || File.Exists(Path.Combine(folder.FullName, ".ignore"));
+        ExtrasFolders.Contains(folder.Name) || IsIgnoredFolder(folder.FullName)
+        || (folder.Attributes & FileAttributes.Hidden) != 0 && folder.Parent is not null;
+
+    /// <summary>A hidden (dot) folder, or one marked with <c>.etvignore</c> or <c>.ignore</c>: never scanned, for any kind of library.</summary>
+    public static bool IsIgnoredFolder(string path) =>
+        Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)).StartsWith('.')
+        || File.Exists(Path.Combine(path, ".etvignore"))
+        || File.Exists(Path.Combine(path, ".ignore"));
+
+    /// <summary>A macOS resource fork (<c>._Movie.mkv</c>), which only looks like a video.</summary>
+    public static bool IsResourceFork(string fileName) => fileName.StartsWith("._", StringComparison.Ordinal);
 
     /// <summary>A video that's an extra rather than an episode or the movie itself: <c>Movie-trailer.mkv</c>, <c>sample.mkv</c>.</summary>
     public static bool IsExtraFile(string fileName)
@@ -55,6 +66,41 @@ internal static partial class LocalNaming
 
         Match match = SeasonFolderPattern().Match(trimmed);
         return match.Success && int.TryParse(match.Groups["s"].Value, CultureInfo.InvariantCulture, out int season) ? season : null;
+    }
+
+    /// <summary>
+    /// A folder inside a show, read as ErsatzTV reads its season folders: as above, or a bare number (<c>01</c>), an
+    /// <c>S</c>/<c>Season</c> number anywhere in it (<c>Season 2 (2005)</c>), a number at the end (<c>Staffel 3</c>,
+    /// <c>Disc 1</c>), or a name ending in "specials" (season 0). Used once inside a show, where a folder is a season
+    /// or nothing; <see cref="SeasonFolder"/> alone decides whether a folder is a show, so a grouping folder holding
+    /// <c>Babylon 5</c> isn't mistaken for one.
+    /// </summary>
+    public static int? SeasonFolderInShow(string name)
+    {
+        if (SeasonFolder(name) is { } season)
+        {
+            return season;
+        }
+
+        string trimmed = name.Trim();
+        if (int.TryParse(trimmed, NumberStyles.None, CultureInfo.InvariantCulture, out int number))
+        {
+            return number;
+        }
+
+        Match match = LooseSeason().Match(trimmed);
+        if (match.Success && int.TryParse(match.Groups["s"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out number))
+        {
+            return number;
+        }
+
+        string last = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? string.Empty;
+        if (int.TryParse(last, NumberStyles.None, CultureInfo.InvariantCulture, out number))
+        {
+            return number;
+        }
+
+        return trimmed.EndsWith("specials", StringComparison.OrdinalIgnoreCase) ? 0 : null;
     }
 
     /// <summary>A show or movie folder's name: its title, the year in brackets, and ids written in it (<c>[tvdbid-123]</c>, <c>{tmdb-456}</c>).</summary>
@@ -89,26 +135,23 @@ internal static partial class LocalNaming
         string stem = Path.GetFileNameWithoutExtension(fileName);
 
         Match match = SeasonEpisode().Match(stem);
-        if (!match.Success)
-        {
-            match = CrossEpisode().Match(stem);
-        }
-
         if (match.Success)
         {
-            int season = int.Parse(match.Groups["s"].Value, CultureInfo.InvariantCulture);
-            int first = int.Parse(match.Groups["e"].Value, CultureInfo.InvariantCulture);
-            int? last = match.Groups["x"].Captures.Count > 0
-                ? int.Parse(match.Groups["x"].Captures[^1].Value, CultureInfo.InvariantCulture)
-                : null;
-            return new EpisodeName(season, first, last is { } end && end > first ? end : null, null, TitleAfter(stem, match));
+            return Numbered(stem, match);
         }
 
+        // A date before "1.02"-style numbers, so 2024.03.15 isn't read as season 3, episode 15.
         Match date = AirDate().Match(stem);
         if (date.Success && DateOnly.TryParseExact($"{date.Groups["y"].Value}-{date.Groups["m"].Value}-{date.Groups["d"].Value}", "yyyy-MM-dd",
                 CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly aired))
         {
             return new EpisodeName(null, null, null, aired, TitleAfter(stem, date));
+        }
+
+        match = CrossEpisode().Match(stem);
+        if (match.Success)
+        {
+            return Numbered(stem, match);
         }
 
         if (inSeasonFolder)
@@ -126,6 +169,16 @@ internal static partial class LocalNaming
         }
 
         return new EpisodeName(null, null, null, null, null);
+    }
+
+    private static EpisodeName Numbered(string stem, Match match)
+    {
+        int season = int.Parse(match.Groups["s"].Value, CultureInfo.InvariantCulture);
+        int first = int.Parse(match.Groups["e"].Value, CultureInfo.InvariantCulture);
+        int? last = match.Groups["x"].Captures.Count > 0
+            ? int.Parse(match.Groups["x"].Captures[^1].Value, CultureInfo.InvariantCulture)
+            : null;
+        return new EpisodeName(season, first, last is { } end && end > first ? end : null, null, TitleAfter(stem, match));
     }
 
     /// <summary>A movie's title and year from a file or folder name (<c>Movie.Title.2010.1080p.BluRay</c>, <c>Movie Title (2010) - 4K</c>), and a part number (<c>cd1</c>, <c>part2</c>).</summary>
@@ -217,6 +270,10 @@ internal static partial class LocalNaming
     [GeneratedRegex(@"^(?:season|series|s)[ ._-]*(?<s>\d{1,4})$", RegexOptions.IgnoreCase)]
     private static partial Regex SeasonFolderPattern();
 
+    /// <summary>ErsatzTV's season folder pattern: an S or Season number anywhere, not followed by an episode.</summary>
+    [GeneratedRegex(@"s(?:eason)?\s?(?<s>\d+)(?![e\d])", RegexOptions.IgnoreCase)]
+    private static partial Regex LooseSeason();
+
     [GeneratedRegex(@"[\[\{]\s*(?<key>tvdbid|tvdb|tmdbid|tmdb|imdbid|imdb)\s*[-=]\s*(?<value>[^\]\}]+)[\]\}]", RegexOptions.IgnoreCase)]
     private static partial Regex IdTag();
 
@@ -226,7 +283,8 @@ internal static partial class LocalNaming
     [GeneratedRegex(@"(?<![a-z0-9])S(?<s>\d{1,4})[ ._]?E(?<e>\d{1,4})(?:[ ._]?-?[ ._]?E(?<x>\d{1,4})|-(?<x>\d{1,3})(?![\dpPiIkK]))*", RegexOptions.IgnoreCase)]
     private static partial Regex SeasonEpisode();
 
-    [GeneratedRegex(@"(?<![a-z0-9])(?<s>\d{1,2})x(?<e>\d{2,3})(?:-x?(?<x>\d{2,3}))?(?!\d)", RegexOptions.IgnoreCase)]
+    // 1x02, and (as ErsatzTV also reads them) 1.02 and 1_02.
+    [GeneratedRegex(@"(?<![a-z0-9])(?<s>\d{1,2})[x._](?<e>\d{2,3})(?:-x?(?<x>\d{2,3}))?(?!\d)", RegexOptions.IgnoreCase)]
     private static partial Regex CrossEpisode();
 
     [GeneratedRegex(@"(?<!\d)(?<y>(?:19|20)\d{2})[-. _](?<m>0[1-9]|1[0-2])[-. _](?<d>0[1-9]|[12]\d|3[01])(?!\d)")]

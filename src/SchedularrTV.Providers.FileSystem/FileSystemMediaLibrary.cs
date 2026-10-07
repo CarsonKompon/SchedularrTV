@@ -137,9 +137,11 @@ public sealed class FileSystemMediaLibrary(
         HashSet<string> extensions = new(_options.Extensions, StringComparer.OrdinalIgnoreCase);
         var enumeration = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true };
 
+        // As in ErsatzTV: hidden (dot) folders, folders marked .etvignore (or .ignore) and macOS "._" files are left out.
+        Dictionary<string, bool> ignored = new(StringComparer.OrdinalIgnoreCase);
         List<FileInfo> files = new DirectoryInfo(root)
             .EnumerateFiles("*", enumeration)
-            .Where(f => extensions.Contains(f.Extension))
+            .Where(f => extensions.Contains(f.Extension) && !LocalNaming.IsResourceFork(f.Name) && !InIgnoredFolder(root, f.DirectoryName, ignored))
             .ToList();
 
         if (files.Count == 0)
@@ -183,6 +185,31 @@ public sealed class FileSystemMediaLibrary(
         return items;
     }
 
+    /// <summary>Whether a folder between the root and a file is hidden or marked to be ignored (remembered per folder).</summary>
+    internal static bool InIgnoredFolder(string root, string? directory, Dictionary<string, bool> known)
+    {
+        if (string.IsNullOrEmpty(directory))
+        {
+            return false;
+        }
+
+        string full = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string top = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (full.Length <= top.Length)
+        {
+            return false;
+        }
+
+        if (known.TryGetValue(full, out bool cached))
+        {
+            return cached;
+        }
+
+        bool result = LocalNaming.IsIgnoredFolder(full) || InIgnoredFolder(root, Path.GetDirectoryName(full), known);
+        known[full] = result;
+        return result;
+    }
+
     internal static List<string> BuildTags(string root, string filePath, MediaFolderOptions folder) =>
         Describe(root, filePath, folder).Tags;
 
@@ -201,6 +228,13 @@ public sealed class FileSystemMediaLibrary(
         if (!folder.TagFromFolders)
         {
             return (tags, attributes);
+        }
+
+        // A folder given no tags of its own is tagged with its name, as ErsatzTV tags "other videos" with the library
+        // folder's name (D:\Media\Commercials → Commercials) as well as the folders below it.
+        if (tags.Count == 0 && Path.GetFileName(Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) is { Length: > 0 } rootName)
+        {
+            tags.Add(rootName);
         }
 
         string? relativeDirectory = Path.GetDirectoryName(Path.GetRelativePath(root, filePath));
