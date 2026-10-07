@@ -10,11 +10,13 @@
 
 <div class="page-header">
     <div>
-        <div class="eyebrow">TV Guide channel</div>
-        <h1>Guide channels</h1>
-        <p class="muted">A scrolling listings channel made from your own schedule, like the Prevue Channel or the TV Guide Channel.</p>
+        <div class="eyebrow">TV Guide shows</div>
+        <h1>Guide shows</h1>
+        <p class="muted">Scrolling listings made from your own schedule, like the Prevue Channel or the TV Guide Channel.</p>
     </div>
 </div>
+
+<VirtualShowNotice />
 
 @if (BrowserLocator.Find(Settings.BrowserPath) is null)
 {
@@ -271,10 +273,10 @@
 }
 
 <div class="row" style="gap:8px;">
-    <button class="btn btn-primary" type="button" @onclick="Add">Add a guide channel</button>
+    <button class="btn btn-primary" type="button" @onclick="Add">Add a guide</button>
 </div>
 
-<SaveDock Dirty="Dirty" Label="Unsaved guide channels" OnSave="Save" OnDiscard="Discard" />
+<SaveDock Dirty="Dirty" Label="Unsaved guides" OnSave="Save" OnDiscard="Discard" />
 
 <div class="card" style="margin-top:16px;">
     <div class="card-head"><h2>How it works</h2></div>

@@ -1,6 +1,6 @@
 {
   "id": "tv-guide",
-  "name": "TV Guide channel",
+  "name": "TV Guide shows",
   "version": "1.0.0",
   "description": "A scrolling listings channel made from your own schedule, in the style of the 1990s Prevue Channel or the 2000s TV Guide Channel, with information, round-the-clock ads or another channel's picture up top and music or a channel's sound. Needs Chrome or Edge on this computer.",
   "author": "SchedularrTV",
@@ -62,6 +62,6 @@
     }
   ],
   "pages": [
-    { "path": "/plugins/tv-guide", "title": "Guide channels", "icon": "list" }
+    { "path": "/plugins/tv-guide", "title": "Guide shows", "icon": "list" }
   ]
 }

@@ -1,4 +1,4 @@
-# Radio channels
+# Radio shows
 
 The radio plugin (`radio`) makes music into a channel: songs from your **Jellyfin music library**, or an **internet
 radio station**, shown with the song's cover, its lyrics and a visualizer that moves with the sound. Use one as a 24/7
@@ -16,7 +16,7 @@ Like the TV Guide channel, it's built against the scheduler itself, so install t
 
 ## Making a station
 
-Open **Radio channels** in the sidebar and choose **Add a station**. The live preview beside the form shows a song from
+Open **Radio shows** in the sidebar and choose **Add a station**. The live preview beside the form shows a song from
 your library with your settings as you change them.
 
 | Section | Options |

@@ -1,6 +1,6 @@
 {
   "id": "web-channels",
-  "name": "Web page channels",
+  "name": "Web page shows",
   "version": "1.0.0",
   "description": "Any web page as a live channel you can schedule, with presets for the ones that make good television: WeatherStar 4000+ retro forecasts, a time-and-temperature clock, Windy's weather radar and the earth.nullschool wind globe. A 24/7 channel, or short segments between shows. Needs Chrome or Edge on this computer. Replaces the WeatherStar plugin and takes over its stations.",
   "author": "SchedularrTV",
@@ -60,6 +60,6 @@
     }
   ],
   "pages": [
-    { "path": "/plugins/web-channels", "title": "Web channels", "icon": "globe" }
+    { "path": "/plugins/web-channels", "title": "Web shows", "icon": "globe" }
   ]
 }

@@ -9,12 +9,14 @@
 
 <div class="page-header">
     <div>
-        <div class="eyebrow">Radio channels</div>
+        <div class="eyebrow">Radio shows</div>
         <h1>Radio stations</h1>
         <p class="muted">Music as a channel: songs from your Jellyfin library, or an internet station, with the cover, the lyrics and a
             visualizer that moves with the sound.</p>
     </div>
 </div>
+
+<VirtualShowNotice />
 
 @if (BrowserLocator.Find(Settings.BrowserPath) is null)
 {

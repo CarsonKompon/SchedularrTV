@@ -1,4 +1,4 @@
-# Web page channels
+# Web page shows
 
 The web page channels plugin (`web-channels`) puts live web pages on your channels. A hidden browser shows the page
 and its picture is streamed to ErsatzTV with your music, so what airs is always current. Use one for a 24/7 channel,
@@ -36,7 +36,7 @@ Then:
 
 ## Channels
 
-Open **Web channels** in the sidebar and add a channel:
+Open **Web shows** in the sidebar and choose **Add a show**:
 
 1. Choose what it **shows** (a preset) and name the show.
 2. For presets with a place, search for one and pick it. This fills in the latitude, longitude and (for the clock)
@@ -107,7 +107,7 @@ e.g. `http://192.168.1.20:5252`. The default is `localhost`, which only works wh
 ## Troubleshooting
 
 - **A plain dark picture.** That's the stand-in shown until the browser draws the page. While the channel is on air,
-  the Web channels page shows what's going out under **Preview**, and says under the channel why nothing is drawn
+  the Web shows page shows what's going out under **Preview**, and says under the channel why nothing is drawn
   (after 20 seconds). Check that a browser is installed and that the page opens in a browser on the scheduler's computer.
 - **The radar is empty.** Windy's radar only covers some parts of the world; choose *Rain and thunder* instead.
 - **The clock shows no weather.** It needs a place, and internet access to Open-Meteo.

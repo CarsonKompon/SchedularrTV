@@ -8,12 +8,14 @@
 
 <div class="page-header">
     <div>
-        <div class="eyebrow">Web page channels</div>
-        <h1>Web channels</h1>
+        <div class="eyebrow">Web page shows</div>
+        <h1>Web shows</h1>
         <p class="muted">Live web pages scheduled like shows: retro WeatherStar forecasts, a time-and-temperature clock, weather radar,
             the wind globe, or any page you like. Run one around the clock, or in short segments between programmes.</p>
     </div>
 </div>
+
+<VirtualShowNotice />
 
 @if (BrowserLocator.Find(Settings.BrowserPath) is null)
 {
@@ -27,7 +29,7 @@
     <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status">@_message</div>
 }
 
-<LowPowerNotice Title="@($"Web page channels on {SchedularrTV.Core.Platform.HardwareProfile.DeviceName}")" Advice="LowPowerAdvice">
+<LowPowerNotice Title="@($"Web shows on{SchedularrTV.Core.Platform.HardwareProfile.DeviceName}")" Advice="LowPowerAdvice">
     Each channel on air is a hidden browser drawing the page without a graphics chip, plus a live encode. One at a time is
     comfortable; two at once can use the whole processor.
 </LowPowerNotice>
@@ -61,7 +63,7 @@
                 {
                     <button class="btn btn-sm" type="button" @onclick="() => Edit(channel)">Edit</button>
                 }
-                <button class="btn btn-sm btn-ghost" type="button" title="Delete this channel" aria-label="Delete @channel.Name"
+                <button class="btn btn-sm btn-ghost" type="button" title="Delete this show" aria-label="Delete @channel.Name"
                         @onclick="() => AskDelete(channel)">Delete</button>
             }
         </div>
@@ -316,21 +318,21 @@
 }
 
 <div class="row" style="gap:8px;">
-    <button class="btn btn-primary" type="button" @onclick="Add">Add a channel</button>
+    <button class="btn btn-primary" type="button" @onclick="Add">Add a show</button>
 </div>
 
-<SaveDock Dirty="Dirty" Label="Unsaved web channels" CanSave="@_channels.All(CanShow)"
+<SaveDock Dirty="Dirty" Label="Unsaved web shows" CanSave="@_channels.All(CanShow)"
           Problem="@(_channels.FirstOrDefault(channel => !CanShow(channel)) is { } unfinished ? $"{Title(unfinished)} isn't finished" : null)"
           OnSave="Save" OnDiscard="Discard" />
 
 <div class="card" style="margin-top:16px;">
     <div class="card-head"><h2>How it works</h2></div>
     <ul class="hint" style="margin:0;padding-left:18px;line-height:1.6;">
-        <li>Each channel appears as a show (under TV Shows and in collection pickers) with one "episode" per length, so the scheduler picks whichever fits.</li>
+        <li>Each one appears as a show (under TV Shows and in collection pickers) with one "episode" per length, so the scheduler picks whichever fits.</li>
         <li><strong>Round the clock:</strong> make it a channel's base rotation, with long lengths (30, 60).</li>
         <li><strong>Between shows:</strong> on a channel's Breaks tab, add it to the interstitial shows with short lengths (2–5 minutes), one per slot.</li>
         <li>When it airs, ErsatzTV plays it live: a hidden browser shows the page and its picture is streamed with your music, so it's always current.</li>
-        <li>New or renamed channels reach the schedule on its next rebuild (Dashboard → Rebuild).</li>
+        <li>New or renamed shows reach the schedule on its next rebuild (Dashboard → Rebuild).</li>
     </ul>
 </div>
 
@@ -401,7 +403,7 @@
 
     private static string Snapshot(IEnumerable<WebChannel> channels) => System.Text.Json.JsonSerializer.Serialize(channels);
 
-    private static string Title(WebChannel channel) => string.IsNullOrWhiteSpace(channel.Name) ? "New channel" : channel.Name;
+    private static string Title(WebChannel channel) => string.IsNullOrWhiteSpace(channel.Name) ? "New show" : channel.Name;
 
     private void Load()
     {
@@ -545,13 +547,13 @@
             bool removed = Store.Channels.Any(saved => !_channels.Any(channel => string.Equals(channel.Id, saved.Id, StringComparison.OrdinalIgnoreCase)));
             Store.Save(_channels);
             Load();
-            Say("Saved. Channels are under TV Shows (and in the show pickers). One that's on air starts again with its new settings; "
+            Say("Saved. Web shows are under TV Shows (and in the show pickers). One that's on air starts again with its new settings; "
                 + "channels already airing it show a new name in their guide from their next rebuild."
                 + (removed ? " Channels that used a deleted one fill that time with their other programming from the next rebuild." : ""), ok: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Say($"Couldn't save the channels: {ex.Message}", ok: false);
+            Say($"Couldn't save the web shows: {ex.Message}", ok: false);
         }
     }
 

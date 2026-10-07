@@ -19,7 +19,7 @@ the one from the same release as your scheduler.
 
 ## Making a guide
 
-Open **Guide channels** in the sidebar and choose **Add a guide channel**. Everything you change shows at once
+Open **Guide shows** in the sidebar and choose **Add a guide**. Everything you change shows at once
 in the live preview beside the form, with your real listings.
 
 | Section | Options |

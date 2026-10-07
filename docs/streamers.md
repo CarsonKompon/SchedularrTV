@@ -18,7 +18,7 @@ change on their side can break something until the plugin is updated.
 ## Requirements
 
 - **Chrome, Edge or Chromium** on the scheduler's computer, run hidden to draw the countdown, chat and pop-ups (as for
-  [Radio channels](radio.md)).
+  [Radio shows](radio.md)).
 - **yt-dlp**, which opens the streams. The **Streamers** page downloads it for you (from yt-dlp's GitHub releases), or
   installs on the PATH are found automatically. Use **Update** now and then: Twitch and YouTube change often, and new
   yt-dlp versions keep up.

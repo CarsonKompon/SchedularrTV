@@ -75,10 +75,10 @@ Optional extras, installed from the **Plugins** page (each release has a `Schedu
 | [Generated promos](docs/generated-promos.md) | Promo templates, voices, music, external generators |
 | [Overlays](docs/overlays.md) | Screen bugs, lower thirds and "up next" graphics, designed visually and timed per programme |
 | [Local AI writer](docs/local-ai.md) | A free model on your own computer that words promo voice-overs and captions naturally, fit for more long-form promos |
-| [Radio channels](docs/radio.md) | Music from Jellyfin or an internet station, with cover art, lyrics and a visualizer |
+| [Radio shows](docs/radio.md) | Music from Jellyfin or an internet station, with cover art, lyrics and a visualizer |
 | [IPTV passthrough](docs/iptv.md) | Channels from an IPTV playlist (M3U) and its XMLTV guide, or free channels from iptv-org with guides from iptv-org/epg |
 | [Streamer channels](docs/streamers.md) | Twitch and YouTube streamers in priority order, with chat, "also live" pop-ups, replays and a countdown to the next stream |
-| [Web page channels](docs/web-channels.md) | Live web pages as channels: WeatherStar retro weather, a clock, weather radar, the wind globe or any page |
+| [Web page shows](docs/web-channels.md) | Live web pages as channels: WeatherStar retro weather, a clock, weather radar, the wind globe or any page |
 | [TV Guide channel](docs/tv-guide.md) | A scrolling Prevue / TV Guide Channel-style listings channel from your own schedule |
 | [Credit squeeze](docs/credit-squeeze.md) | As the end credits roll they shrink into a box beside what's on next, like network TV |
 | [Auto Chapters](docs/auto-chapters.md) | Mid-roll breaks at the fades to black in files without chapter markers |
