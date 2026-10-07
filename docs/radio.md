@@ -24,7 +24,7 @@ your library with your settings as you change them.
 | Station | Show name; music from the Jellyfin library or an internet station; lengths it can be scheduled for |
 | Music (Jellyfin) | Every song, a playlist, some genres or some artists; shuffled or in order |
 | Station (internet) | The stream's address, or an `.m3u` / `.pls` playlist that names it |
-| Look | Now Playing, Karaoke, Vinyl, Retro FM or Minimal; the visualizer (bars, waveform, spectrum, oscilloscope or none); background (the cover blurred, a moving gradient, or a colour); accent colour; cover, lyrics, up next and clock on or off; a message along the bottom; lyrics timing |
+| Look | Now Playing, Karaoke, Vinyl, Retro FM or Minimal; the visualizer (bars, waveform, spectrum, oscilloscope or none), its size (50–150%), how strongly it moves, and its colour; background (the cover blurred, a moving gradient, or a colour); accent colour; lettering (the look's own, Inter, Oswald, Merriweather, Roboto Slab, Nunito, JetBrains Mono or a segmented display), text size and text colour; cover, lyrics, up next, clock and scan lines on or off; a message along the bottom; lyrics timing |
 | Sound | Volume |
 
 ### The looks
@@ -32,7 +32,9 @@ your library with your settings as you change them.
 - **Now Playing:** a big cover on the left, the song and its lyrics on the right, the visualizer along the bottom.
 - **Karaoke:** the lyrics, big and centred, the current line lit up, over the blurred cover.
 - **Vinyl:** a spinning record with the cover as its label, the song underneath, the current lyric line above.
-- **Retro FM:** a hi-fi tuner's glowing display with the song in capitals and the visualizer as its meter.
+- **Retro FM:** a hi-fi tuner's glowing 14-segment display ([DSEG14](https://github.com/keshikan/DSEG), fetched
+  when the page draws) with its unlit segments faintly showing, the song in capitals scrolling along it when it's too
+  long, and the visualizer as its meter.
 - **Minimal:** the cover filling the screen, softly, with the song in a corner.
 
 ## Lyrics and covers

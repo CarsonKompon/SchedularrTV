@@ -25,7 +25,8 @@ public sealed class RadioSettings(IPluginContext context) : LivePageSettings(con
             Audio = LiveAudio.Stream,
             AudioStreamUrl = SoundUrl(station.Id),
             Volume = station.Volume,
-            Visualizer = rect is null ? null : RadioLayout.Filter(station.Visualizer, rect, station.AccentColor, encoding.FrameRate),
+            Visualizer = rect is null ? null : RadioLayout.Filter(station.Visualizer, rect, station.VisualizerColor ?? station.AccentColor,
+                encoding.FrameRate, station.VisualizerIntensity),
             VisualizerRect = rect
         };
     }

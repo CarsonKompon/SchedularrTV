@@ -42,7 +42,7 @@
     <div class="card" @key="guide">
         <div class="card-head">
             <h2>@(string.IsNullOrWhiteSpace(guide.Name) ? "New guide" : guide.Name)</h2>
-            <span class="pill pill-muted">@(guide.Theme == GuideTheme.Prevue ? "Prevue 1990s" : "TV Guide Channel 2000s")</span>
+            <span class="pill pill-muted">@GuideThemes.Of(guide.Theme).Name</span>
             @if (string.IsNullOrEmpty(guide.Id))
             {
                 <span class="pill pill-warn">Not saved yet</span>
@@ -87,14 +87,16 @@
             <div class="tvg-editor">
                 <div class="tvg-form">
                     <h3>Guide</h3>
-                    <div class="grid grid-2">
-                        <label class="field"><span>Show name</span>
-                            <input type="text" value="@guide.Name" @onchange="e => Change(() => guide.Name = Text(e))" /></label>
-                        <label class="field"><span>Look</span>
-                            <select value="@guide.Theme" @onchange="e => Change(() => guide.Theme = Enum.Parse<GuideTheme>(Text(e)))">
-                                <option value="Prevue">Prevue (1990s)</option>
-                                <option value="TvGuide">TV Guide Channel (2000s)</option>
-                            </select></label>
+                    <label class="field"><span>Show name</span>
+                        <input type="text" value="@guide.Name" @onchange="e => Change(() => guide.Name = Text(e))" /></label>
+                    <div class="tvg-looks">
+                        @foreach (GuideThemes.Look look in GuideThemes.All)
+                        {
+                            <button type="button" class="tvg-look @(guide.Theme == look.Theme ? "on" : "")" @onclick="() => Change(() => guide.Theme = look.Theme)">
+                                <strong>@look.Name</strong>
+                                <span>@look.Blurb</span>
+                            </button>
+                        }
                     </div>
                     <label class="field"><span>Lengths it can be scheduled for (minutes)</span>
                         <input type="text" value="@(string.Join(", ", guide.Lengths))" @onchange="e => Change(() => guide.Lengths = Lengths(e))" /></label>
@@ -298,6 +300,11 @@
     .tvg-preview { width: 640px; height: 360px; overflow: hidden; border-radius: 10px; background: #000; border: 1px solid var(--line); }
     .tvg-preview iframe { width: 1280px; height: 720px; border: 0; transform: scale(.5); transform-origin: 0 0; display: block; }
     .tvg-snapshot { width: 100%; max-width: 640px; border-radius: 10px; display: block; margin-top: 8px; }
+    .tvg-looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; margin-bottom: 12px; }
+    .tvg-look { text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
+    .tvg-look strong { display: block; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tvg-look span { font-size: 12px; color: var(--muted); }
+    .tvg-look.on { border-color: var(--accent, #6f7fff); box-shadow: 0 0 0 1px var(--accent, #6f7fff); }
     .hint.warn { color: #ffd08a; }
 </style>
 
@@ -476,11 +483,11 @@
 
     private static IEnumerable<(string Label, Func<string?> Get, Action<string?> Set, string Fallback)> Colours(GuideStation guide)
     {
-        bool prevue = guide.Theme == GuideTheme.Prevue;
-        yield return ("Background", () => guide.Background, value => guide.Background = value, prevue ? "#0b1a6e" : "#1b1464");
-        yield return ("Rows", () => guide.RowColor, value => guide.RowColor = value, prevue ? "#1d3aa8" : "#2f45b8");
-        yield return ("Text", () => guide.TextColor, value => guide.TextColor = value, "#ffffff");
-        yield return ("Highlights", () => guide.AccentColor, value => guide.AccentColor = value, prevue ? "#ffd400" : "#ffcc33");
+        GuideThemes.Look look = GuideThemes.Of(guide.Theme);
+        yield return ("Background", () => guide.Background, value => guide.Background = value, look.Background);
+        yield return ("Rows", () => guide.RowColor, value => guide.RowColor = value, look.Row);
+        yield return ("Text", () => guide.TextColor, value => guide.TextColor = value, look.Text);
+        yield return ("Highlights", () => guide.AccentColor, value => guide.AccentColor = value, look.Accent);
     }
 
     /// <summary>

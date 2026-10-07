@@ -24,11 +24,25 @@ in the live preview beside the form, with your real listings.
 
 | Section | Options |
 | --- | --- |
-| Guide | Show name, look (Prevue 1990s or TV Guide Channel 2000s), lengths it can be scheduled for |
+| Guide | Show name, look (see below), lengths it can be scheduled for |
 | Listings | Time shown (1 to 3 hours), scroll speed, row height, text size, channel logos, 24-hour clock, which channels are listed |
 | Colours | Background, rows, text and highlights, or the theme's own |
 | Top panel | Information (clock, date, a message and a rotating "Now on…"), commercials round the clock, or a channel's picture (one channel, or a different one at random every few minutes); its height |
 | Sound | Music from a folder (shuffled), the top panel's sound (the commercials, or the channel shown), a channel's sound (the old cable "barker" channel), or nothing; volume |
+
+### The looks
+
+- **Prevue (1990s):** a blue scrolling list, a channel box and the programmes after it.
+- **TV Guide Channel (2000s):** a glossy grid with half-hour columns.
+- **Cable box guide (2000s):** the on-screen guide of an early-2000s cable box. An orange promo box for something
+  coming up ("Tonight at 9:30 PM", "Channel 32"), the picture beside it, a cream time bar with a running clock, red
+  channel badges, rounded cream listings with « » where a programme runs on, and a red cursor hopping between them.
+- **Listings channel (1999):** a blue promo panel with the programme in yellow, the picture beside it, yellow times in
+  blue boxes, rows coloured by kind (movies in maroon, in quotes) and chevrons where a programme runs on.
+
+The cable box and listings channel looks put the picture on the right of the top panel, filling its height, with the
+promo on the left; their promos favour movies, and change every 8 seconds. Without a picture (Information up top) the
+promo takes the left and the clock and message the right.
 
 Untick the guide's own channel under **Channels listed** so it doesn't list itself.
 

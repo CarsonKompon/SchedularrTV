@@ -9,7 +9,38 @@ public enum GuideTheme
     Prevue,
 
     /// <summary>The 2000s TV Guide Channel: a glossy grid with half-hour columns.</summary>
-    TvGuide
+    TvGuide,
+
+    /// <summary>
+    /// An early-2000s interactive cable-box guide: an orange promo box for what's on later, the picture beside it, a cream
+    /// time bar with a running clock, red channel badges and rounded cream listings, a cursor hopping between them.
+    /// </summary>
+    Interactive,
+
+    /// <summary>
+    /// The turn-of-the-century listings channel: a blue promo panel, the picture beside it, yellow times in boxes, and
+    /// rows coloured by kind (movies in maroon) with chevrons where a programme runs on.
+    /// </summary>
+    Classic
+}
+
+/// <summary>What each look is called, says about itself, and its own colours.</summary>
+public static class GuideThemes
+{
+    public sealed record Look(GuideTheme Theme, string Name, string Blurb, string Background, string Row, string Text, string Accent);
+
+    public static readonly IReadOnlyList<Look> All =
+    [
+        new(GuideTheme.Prevue, "Prevue (1990s)", "A blue scrolling list, a channel box and the programmes after it.", "#0b1a6e", "#1d3aa8", "#ffffff", "#ffd400"),
+        new(GuideTheme.TvGuide, "TV Guide Channel (2000s)", "A glossy grid with half-hour columns.", "#1b1464", "#2f45b8", "#ffffff", "#ffcc33"),
+        new(GuideTheme.Interactive, "Cable box guide (2000s)", "Orange promo box, cream rounded listings, red channel badges, a hopping cursor.", "#fdf1b8", "#f8e08c", "#3a2200", "#b5303c"),
+        new(GuideTheme.Classic, "Listings channel (1999)", "Blue promo panel, yellow times in boxes, rows coloured by kind, chevrons.", "#0a1258", "#1f6fc4", "#ffffff", "#ffe94a")
+    ];
+
+    public static Look Of(GuideTheme theme) => All.FirstOrDefault(look => look.Theme == theme) ?? All[0];
+
+    /// <summary>Looks with the picture on the right of the top panel, filling its height (the promo goes on the left).</summary>
+    public static bool WindowOnRight(GuideTheme theme) => theme is GuideTheme.Interactive or GuideTheme.Classic;
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -137,23 +168,25 @@ public sealed class GuideStation
     public int TopHeight => Math.Clamp(TopPercent, 0, 70) * LiveStream.Height / 100 / 2 * 2;
 
     /// <summary>
-    /// Where the video window sits in the top panel: the left of it, 16:9, with a margin. The page draws its frame
-    /// and the stream lays the picture over exactly this, so both use this one calculation.
+    /// Where the video window sits in the top panel, 16:9: on the left with a margin, or (for the cable box and listings
+    /// channel looks) on the right, filling the panel's height. The page draws its frame and the stream lays the picture
+    /// over exactly this, so both use this one calculation.
     /// </summary>
     [JsonIgnore]
     public FrameRect? Window
     {
         get
         {
-            const int margin = 22;
+            bool right = GuideThemes.WindowOnRight(Theme);
+            int margin = right ? 0 : 22;
             int height = (TopHeight - (2 * margin)) / 2 * 2;
             if (Top == TopPanel.Info || height < 90)
             {
                 return null;
             }
 
-            int width = height * 16 / 9 / 2 * 2;
-            return new FrameRect(margin, margin, width, height);
+            int width = Math.Min(height * 16 / 9 / 2 * 2, LiveStream.Width * 2 / 3 / 2 * 2);
+            return new FrameRect(right ? LiveStream.Width - width : margin, margin, width, height);
         }
     }
 

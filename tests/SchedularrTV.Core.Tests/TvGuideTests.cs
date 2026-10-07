@@ -33,6 +33,33 @@ public sealed class TvGuideTests : IDisposable
         Assert.Null(new GuideStation { Top = TopPanel.Ads, TopPercent = 10 }.Window);
     }
 
+    [Theory]
+    [InlineData(GuideTheme.Interactive)]
+    [InlineData(GuideTheme.Classic)]
+    public void The_cable_box_and_listings_channel_looks_put_the_window_on_the_right_filling_the_panel(GuideTheme theme)
+    {
+        var guide = new GuideStation { Theme = theme, Top = TopPanel.Channel, TopPercent = 45 };
+
+        FrameRect window = guide.Window!;
+
+        Assert.Equal((0, 324, 576), (window.Y, window.Height, window.Width));
+        Assert.Equal(1280, window.X + window.Width);
+        Assert.True(GuideThemes.WindowOnRight(theme));
+        Assert.False(GuideThemes.WindowOnRight(GuideTheme.Prevue));
+    }
+
+    [Fact]
+    public void Every_look_has_a_name_a_description_and_its_own_colours()
+    {
+        Assert.Equal(Enum.GetValues<GuideTheme>().Length, GuideThemes.All.Count);
+        Assert.All(GuideThemes.All, look =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(look.Name));
+            Assert.False(string.IsNullOrWhiteSpace(look.Blurb));
+            Assert.Matches("^#[0-9a-f]{6}$", look.Background);
+        });
+    }
+
     [Fact]
     public void Saving_tidies_values_and_keeps_only_real_colours()
     {

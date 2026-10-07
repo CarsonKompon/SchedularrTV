@@ -76,6 +76,11 @@ public sealed class RadioStore
         station.LyricsOffset = Math.Clamp(station.LyricsOffset, -30, 30);
         station.AccentColor = RadioLayout.IsColour(station.AccentColor) ? station.AccentColor.ToLowerInvariant() : "#ff5c8a";
         station.BackgroundColor = RadioLayout.IsColour(station.BackgroundColor) ? station.BackgroundColor.ToLowerInvariant() : "#101828";
+        station.VisualizerColor = RadioLayout.IsColour(station.VisualizerColor) ? station.VisualizerColor!.ToLowerInvariant() : null;
+        station.TextColor = RadioLayout.IsColour(station.TextColor) ? station.TextColor!.ToLowerInvariant() : null;
+        station.VisualizerSize = Math.Clamp(station.VisualizerSize, 0.5, 1.5);
+        station.VisualizerIntensity = Math.Clamp(station.VisualizerIntensity, 0.25, 3);
+        station.TextScale = Math.Clamp(station.TextScale, 0.8, 1.4);
         station.Genres = [.. station.Genres.Where(genre => !string.IsNullOrWhiteSpace(genre)).Select(genre => genre.Trim()).Distinct(StringComparer.OrdinalIgnoreCase)];
         station.Artists = [.. station.Artists.Where(artist => !string.IsNullOrWhiteSpace(artist)).Select(artist => artist.Trim()).Distinct(StringComparer.OrdinalIgnoreCase)];
         station.StreamUrl = string.IsNullOrWhiteSpace(station.StreamUrl) ? null : station.StreamUrl.Trim();

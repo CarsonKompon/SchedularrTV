@@ -464,7 +464,7 @@
     .news-snapshot { width: 100%; max-width: 640px; border-radius: 10px; display: block; margin-top: 8px; }
     .news-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-bottom: 12px; }
     .news-choice { text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
-    .news-choice strong { display: block; margin-bottom: 4px; }
+    .news-choice strong { display: block; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .news-choice span { font-size: 12px; color: var(--muted); }
     .news-choice.on { border-color: var(--accent, #6f7fff); box-shadow: 0 0 0 1px var(--accent, #6f7fff); }
     .hint.warn { color: #ffd08a; }
@@ -536,7 +536,7 @@
     {
         NewsTheme.Teletext => "Teletext",
         NewsTheme.CableNews => "24-hour cable news",
-        NewsTheme.RetroLocal => "80s/90s local news",
+        NewsTheme.RetroLocal => "80s/90s local",
         _ => "News desk"
     };
 

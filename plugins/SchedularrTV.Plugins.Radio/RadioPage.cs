@@ -19,9 +19,14 @@ public sealed record RadioPageConfig(
     string? Message,
     FrameRect? Vis,
     long LyricsOffsetMs,
-    bool Preview)
+    bool Preview,
+    string Font = "Theme",
+    double TextScale = 1,
+    string? TextColor = null,
+    bool ScanLines = false,
+    bool GhostSegments = true)
 {
-    public static RadioPageConfig For(RadioStation station, bool preview) => new(
+    public static RadioPageConfig For(RadioStation station, bool preview) => new RadioPageConfig(
         station.Id,
         station.Name,
         station.Preset.ToString(),
@@ -35,7 +40,12 @@ public sealed record RadioPageConfig(
         station.Message,
         station.VisualizerRect,
         (long)(station.LyricsOffset * 1000),
-        preview);
+        preview,
+        station.Font.ToString(),
+        station.TextScale,
+        RadioLayout.IsColour(station.TextColor) ? station.TextColor : null,
+        station.ScanLines,
+        station.GhostSegments);
 }
 
 /// <summary>The radio page: one self-contained HTML file (in the plugin) with the station's settings written in.</summary>

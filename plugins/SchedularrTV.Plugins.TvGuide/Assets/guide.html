@@ -81,11 +81,95 @@
   .theme-tvguide .cell .sub { font-size: calc(14px * var(--scale)); opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .theme-tvguide .cell.movie { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 45%, #ffffff), color-mix(in srgb, var(--accent) 60%, var(--row)) 55%); color: #1b1464; }
   .theme-tvguide .cell .more { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); opacity: .7; }
+
+  /* The promo panel (cable box and listings channel looks): an upcoming programme, beside the picture. */
+  #promo { position: absolute; left: 0; top: 0; bottom: 0; display: none; overflow: hidden; }
+  .theme-interactive #promo, .theme-classic #promo { display: flex; }
+  #promo .lines { transition: opacity .45s; }
+  #promo.fade .lines { opacity: 0; }
+  .tb-clock { font-variant-numeric: tabular-nums; }
+
+  /* ---------- Cable box guide (early 2000s) ---------- */
+  .theme-interactive #screen { background: var(--bg); font-family: "Nunito", "Arial Rounded MT Bold", "Trebuchet MS", Arial, sans-serif; color: var(--text); }
+  .theme-interactive #top { background: #111; }
+  .theme-interactive #promo { flex-direction: column; justify-content: center; padding: 14px 26px 14px 30px;
+    background: linear-gradient(160deg, #ffc640 0%, #f9a51c 45%, #ec8705 100%); border-bottom-right-radius: 26px; }
+  .theme-interactive #promo .logo { display: flex; align-items: flex-end; gap: 0; margin-bottom: 10px; }
+  .theme-interactive #promo .logo .mark { background: linear-gradient(180deg, #e2434b, #a81f2a); color: #fff; font-weight: 900; font-size: calc(24px * var(--scale));
+    padding: 2px 10px; border-radius: 8px 8px 0 8px; border: 2px solid #fff3c4; text-shadow: 0 2px 0 #6b0f17; letter-spacing: .02em; }
+  .theme-interactive #promo .logo .swoosh { background: linear-gradient(180deg, #fff27a, #f4d22f); color: #6b3a00; font-weight: 900; font-style: italic;
+    font-size: calc(17px * var(--scale)); padding: 4px 22px 4px 12px; border-radius: 0 22px 22px 0; margin-left: -4px; margin-bottom: -10px; border: 2px solid #6b3a00; }
+  .theme-interactive #promo .line { color: #fff; font-weight: 900; font-size: calc(35px * var(--scale)); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    text-shadow: -2px -2px 0 #6b3a00, 2px -2px 0 #6b3a00, -2px 2px 0 #6b3a00, 2px 2px 0 #6b3a00, 0 3px 4px rgba(0,0,0,.35); }
+  .theme-interactive #promo .tag { display: inline-block; background: #fff; color: #1d1d1d; font-weight: 900; font-size: calc(20px * var(--scale)); line-height: 1;
+    padding: 4px 8px; margin: 4px 0; border: 2px solid #1d1d1d; text-shadow: none; }
+  .theme-interactive #info { background: #fbe9a2; color: #3a2200; }
+  .theme-interactive #brand { color: var(--accent); }
+  .theme-interactive #timebar { height: 46px; display: flex; background: linear-gradient(180deg, #fffbe2, #f4dd8e); color: #3a2200; font-weight: 900;
+    font-size: calc(23px * var(--scale)); border-top: 3px solid #fff; border-bottom: 3px solid #d2ab45; }
+  .theme-interactive #timebar .lead { flex: none; width: 160px; display: flex; align-items: center; justify-content: center; border-right: 3px solid #c99a2e; }
+  .theme-interactive #timebar .slots { flex: 1; position: relative; }
+  .theme-interactive #timebar .slot { position: absolute; top: 4px; bottom: 4px; display: flex; align-items: center; justify-content: center; border-right: 3px solid #c99a2e; }
+  .theme-interactive .row { padding: 4px 0; }
+  .theme-interactive .ch { flex: none; width: 160px; display: flex; align-items: center; justify-content: center; }
+  .theme-interactive .ch .badge { width: 104px; height: calc(var(--row-h) - 6px); border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 80%, #fff) 0%, var(--accent) 45%, color-mix(in srgb, var(--accent) 70%, #000) 100%);
+    border: 2px solid #fff3c4; box-shadow: 0 2px 4px rgba(90,50,0,.35); color: #fff; line-height: 1; overflow: hidden; }
+  .theme-interactive .ch .num { font-weight: 900; font-size: calc(26px * var(--scale)); }
+  .theme-interactive .ch .call { font-weight: 800; font-size: calc(13px * var(--scale)); letter-spacing: .04em; margin-top: 2px; white-space: nowrap; max-width: 96px; overflow: hidden; text-overflow: ellipsis; }
+  .theme-interactive .ch img { max-height: calc(var(--row-h) / 2 - 6px); max-width: 80px; object-fit: contain; margin-top: 2px; }
+  .theme-interactive .track { flex: 1; position: relative; margin-right: 10px; }
+  .theme-interactive .cell { position: absolute; top: 0; bottom: 0; border-radius: 22px; padding: 2px 30px 2px 18px; overflow: hidden; display: flex; align-items: center;
+    background: linear-gradient(180deg, #fffbe6 0%, color-mix(in srgb, var(--row) 60%, #fff) 45%, var(--row) 100%); border: 2px solid color-mix(in srgb, var(--row) 70%, #8a6100);
+    color: var(--text); transition: background .3s, color .3s; }
+  .theme-interactive .cell .title { font-weight: 800; font-size: calc(22px * var(--scale)); line-height: 1.12; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .theme-interactive .cell.sel { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 75%, #fff) 0%, var(--accent) 50%, color-mix(in srgb, var(--accent) 70%, #000) 100%);
+    border-color: #6b0f17; color: #fff; }
+  .theme-interactive .cell .more, .theme-interactive .cell .back { position: absolute; top: 50%; transform: translateY(-50%); font-weight: 900; font-size: calc(26px * var(--scale)); }
+  .theme-interactive .cell .more { right: 10px; }
+  .theme-interactive .cell .back { left: 6px; }
+  .theme-interactive .cell.started { padding-left: 34px; }
+
+  /* ---------- Listings channel (1999) ---------- */
+  .theme-classic #screen { background: var(--bg); font-family: "Roboto Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif; }
+  .theme-classic #top { background: #000; }
+  .theme-classic #promo { flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 14px 24px;
+    background: linear-gradient(180deg, #2236c4 0%, #13209a 38%, #0a1264 100%); }
+  .theme-classic #promo .line { color: #fff; font-weight: 700; font-size: calc(40px * var(--scale)); line-height: 1.5; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+    text-shadow: 2px 2px 0 #000, 0 0 6px rgba(0,0,0,.6); }
+  .theme-classic #promo .line.title { color: var(--accent); }
+  .theme-classic #promo .tag { display: inline-block; border: 2px solid var(--accent); color: var(--accent); font-size: .55em; padding: 0 6px; margin-left: 10px; vertical-align: .35em; line-height: 1.3; text-shadow: none; }
+  .theme-classic #info { background: linear-gradient(180deg, #13209a, #0a1264); }
+  .theme-classic #timebar { height: 48px; display: flex; gap: 4px; padding: 3px 4px; background: var(--bg); }
+  .theme-classic #timebar .lead, .theme-classic #timebar .slot { display: flex; align-items: center; justify-content: center; color: var(--accent); font-weight: 700;
+    font-size: calc(26px * var(--scale)); background: linear-gradient(180deg, #3a62e0, #1d3fae 55%, #15308c); border: 2px solid #9fb5ff; border-radius: 3px; }
+  .theme-classic #timebar .lead { flex: none; width: 150px; }
+  .theme-classic #timebar .slots { flex: 1; position: relative; }
+  .theme-classic #timebar .slot { position: absolute; top: 0; bottom: 0; }
+  .theme-classic .row { padding: 2px 4px; gap: 4px; }
+  .theme-classic .ch { flex: none; width: 150px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.02;
+    background: linear-gradient(180deg, #121c66, #0a1150); border: 2px solid #8ea4ff; color: var(--accent); font-weight: 700; overflow: hidden; }
+  .theme-classic .ch .num { font-size: calc(28px * var(--scale)); }
+  .theme-classic .ch .call { font-size: calc(22px * var(--scale)); white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+  .theme-classic .ch img { max-height: calc(var(--row-h) / 2 - 4px); max-width: 110px; object-fit: contain; }
+  .theme-classic .track { flex: 1; position: relative; }
+  .theme-classic .cell { position: absolute; top: 0; bottom: 0; padding: 2px 34px 2px 12px; overflow: hidden; display: flex; flex-direction: column; justify-content: center;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--row) 70%, #fff) 0%, var(--row) 38%, color-mix(in srgb, var(--row) 75%, #000) 100%);
+    border: 2px solid #c6d3ff; color: var(--text); font-weight: 700; }
+  .theme-classic .cell.movie { background: linear-gradient(180deg, #a63a4c 0%, #7c1c2e 38%, #561121 100%); }
+  .theme-classic .cell.started { padding-left: 34px; }
+  .theme-classic .cell .title { font-size: calc(24px * var(--scale)); line-height: 1.12; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    text-shadow: 1px 1px 0 rgba(0,0,0,.6); }
+  .theme-classic .cell .sub { font-size: calc(18px * var(--scale)); opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .theme-classic .cell .more, .theme-classic .cell .back { position: absolute; top: 50%; transform: translateY(-50%); width: 24px; height: calc(var(--row-h) - 16px); max-height: 46px; }
+  .theme-classic .cell .more { right: 4px; }
+  .theme-classic .cell .back { left: 4px; }
 </style>
 </head>
 <body>
 <div id="screen">
   <div id="top">
+    <div id="promo"><div class="lines"></div></div>
     <div id="window"><video id="ad" muted playsinline></video><div id="window-label"></div></div>
     <div id="info">
       <div id="brand"></div>
@@ -125,12 +209,28 @@
     return start;
   }
 
+  // Each look's own colours (the same as the editor's), and the lettering it fetches, if any.
+  const LOOKS = {
+    prevue: { background: "#0b1a6e", row: "#1d3aa8", text: "#ffffff", accent: "#ffd400", bar: 0 },
+    tvguide: { background: "#1b1464", row: "#2f45b8", text: "#ffffff", accent: "#ffcc33", bar: 44 },
+    interactive: { background: "#fdf1b8", row: "#f8e08c", text: "#3a2200", accent: "#b5303c", bar: 46, font: "Nunito:wght@700;800;900" },
+    classic: { background: "#0a1258", row: "#1f6fc4", text: "#ffffff", accent: "#ffe94a", bar: 48, font: "Roboto+Condensed:wght@700" }
+  };
+  const themeKey = () => ({ TvGuide: "tvguide", Interactive: "interactive", Classic: "classic" }[cfg.theme] || "prevue");
+  const promoLook = () => themeKey() === "interactive" || themeKey() === "classic";
+  let fontLoaded = "";
+
   function applyConfig() {
     const root = document.documentElement.style;
-    const theme = cfg.theme === "TvGuide" ? "tvguide" : "prevue";
-    const defaults = theme === "tvguide"
-      ? { background: "#1b1464", row: "#2f45b8", text: "#ffffff", accent: "#ffcc33" }
-      : { background: "#0b1a6e", row: "#1d3aa8", text: "#ffffff", accent: "#ffd400" };
+    const theme = themeKey();
+    const defaults = LOOKS[theme];
+    if (defaults.font && fontLoaded !== defaults.font) {
+      fontLoaded = defaults.font;
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = `https://fonts.googleapis.com/css2?family=${defaults.font}&display=swap`;
+      document.head.appendChild(link);
+    }
     document.body.className = "theme-" + theme;
     root.setProperty("--bg", cfg.background || defaults.background);
     root.setProperty("--row", cfg.rowColor || defaults.row);
@@ -140,14 +240,22 @@
     root.setProperty("--scale", cfg.fontScale);
     root.setProperty("--top-h", cfg.topHeight + "px");
 
-    const top = $("top"), win = $("window"), info = $("info");
+    const top = $("top"), win = $("window"), info = $("info"), promo = $("promo");
     top.classList.toggle("hidden", cfg.topHeight <= 0);
     if (cfg.window) {
       Object.assign(win.style, { display: "block", left: cfg.window.x + "px", top: cfg.window.y + "px", width: cfg.window.width + "px", height: cfg.window.height + "px" });
-      info.style.left = (cfg.window.x + cfg.window.width + 10) + "px";
     } else {
       win.style.display = "none";
-      info.style.left = "0px";
+    }
+    if (promoLook()) {
+      // The promo fills the left of the panel; the picture (or, without one, the clock and message) the right.
+      const split = cfg.window ? cfg.window.x : 640;
+      promo.style.width = split + "px";
+      info.style.display = cfg.window ? "none" : "";
+      info.style.left = split + "px";
+    } else {
+      info.style.display = "";
+      info.style.left = cfg.window ? (cfg.window.x + cfg.window.width + 10) + "px" : "0px";
     }
 
     $("brand").textContent = cfg.name;
@@ -161,19 +269,25 @@
       label.textContent = "";
     }
 
-    const timebarHeight = theme === "tvguide" ? 44 : 0;
+    const timebarHeight = defaults.bar;
     $("timebar").style.top = cfg.topHeight + "px";
     $("listings").style.top = (cfg.topHeight + timebarHeight) + "px";
     playAds();
     render();
+    promoIndex = 0;
+    showPromo();
   }
 
   async function loadListings() {
     try {
-      const response = await fetch(`${base}/listings.json?hours=${encodeURIComponent(cfg.hoursShown)}`, { cache: "no-store" });
+      // A few hours further than the grid shows, for the promos ("Tonight at 9:30 PM").
+      const hours = promoLook() ? Math.max(cfg.hoursShown, 6) : cfg.hoursShown;
+      const response = await fetch(`${base}/listings.json?hours=${encodeURIComponent(hours)}`, { cache: "no-store" });
       if (response.ok) rows = await response.json();
     } catch { /* keep what we have */ }
     render();
+    // The first listings: a real promo straight away, not the placeholder until the next turn.
+    if (!promoReady && promoCandidates().length) showPromo();
   }
 
   function visibleRows() {
@@ -221,10 +335,128 @@
     }).join("");
   }
 
+  // --- The cable box and listings channel looks -----------------------------------------------------------------
+
+  // A short call sign for the badge: the name if it's short, else its initials ("Home Box Office" → "HBO").
+  function callSign(name) {
+    const text = String(name || "").toUpperCase();
+    if (text.length <= 6) return text;
+    const words = text.split(/[\s\-_]+/).filter(Boolean);
+    return words.length > 1 ? words.map(word => word[0]).join("").slice(0, 5) : text.slice(0, 6);
+  }
+
+  const chevron = flip => `<svg viewBox="0 0 24 48" preserveAspectRatio="none" style="transform:scaleX(${flip ? -1 : 1})"><path d="M4 2 L20 24 L4 46 L10 46 L24 24 L10 2 Z" fill="#fff" stroke="#000" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
+
+  function seconds(date) {
+    if (cfg.clock24) return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+    const h = date.getHours() % 12 || 12;
+    return `${h}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
+  }
+
+  function renderGrid(start, end, theme) {
+    const span = end - start;
+    const slots = [];
+    for (let at = new Date(start); at < end; at = new Date(at.getTime() + 30 * 60000)) {
+      const left = ((at - start) / span) * 100, width = (30 * 60000 / span) * 100;
+      slots.push(`<div class="slot" style="left:${left}%;width:calc(${width}% - ${theme === "classic" ? 4 : 0}px)">${esc(clock(at, true))}</div>`);
+    }
+    $("timebar").innerHTML = `<div class="lead tb-clock">${esc(seconds(new Date()))}</div><div class="slots">${slots.join("")}</div>`;
+    return visibleRows().map(row => {
+      const logo = cfg.showLogos && row.logo ? `<img src="${esc(row.logo)}" alt="" onerror="this.remove()">` : "";
+      const call = logo || `<span class="call">${esc(callSign(row.name))}</span>`;
+      const ch = theme === "interactive"
+        ? `<div class="ch"><div class="badge"><span class="num">${row.number}</span>${call}</div></div>`
+        : `<div class="ch"><span class="num">${row.number}</span>${call}</div>`;
+      const cells = row.listings.filter(item => new Date(item.end) > start && new Date(item.start) < end).map(item => {
+        const from = Math.max(new Date(item.start), start), to = Math.min(new Date(item.end), end);
+        const gap = theme === "classic" ? 0.35 : 0.6;
+        const left = ((from - start) / span) * 100, width = Math.max(((to - from) / span) * 100 - gap, 1);
+        const started = new Date(item.start) < start, runs = new Date(item.end) > end;
+        const back = started ? (theme === "classic" ? `<span class="back">${chevron(true)}</span>` : `<span class="back">&laquo;</span>`) : "";
+        const more = runs ? (theme === "classic" ? `<span class="more">${chevron(false)}</span>` : `<span class="more">&raquo;</span>`) : "";
+        const title = theme === "classic" && item.movie ? `“${esc(item.title)}”` : esc(item.title);
+        const sub = theme === "classic" && item.subtitle ? `<div class="sub">${esc(item.subtitle)}</div>` : "";
+        return `<div class="cell${item.movie ? " movie" : ""}${started ? " started" : ""}" style="left:${left}%;width:${width}%">${back}<div class="title">${title}</div>${sub}${more}</div>`;
+      }).join("");
+      return `<div class="row">${ch}<div class="track">${cells}</div></div>`;
+    }).join("");
+  }
+
+  // The promo: something coming up (movies first), "Tonight at 9:30 PM", "Channel 32"; a different one every 8 seconds.
+  let promoIndex = 0, promoReady = false;
+  function promoCandidates() {
+    const now = new Date(), soon = now.getTime() + 8 * 3600000;
+    const found = [];
+    for (const row of visibleRows()) {
+      for (const item of row.listings) {
+        const begins = new Date(item.start);
+        if (new Date(item.end) <= now || begins.getTime() > soon) continue;
+        found.push({ row, item, begins });
+      }
+    }
+    // Later programmes are more of a promo than what's already on; movies most of all.
+    found.sort((a, b) => (b.item.movie - a.item.movie) || ((a.begins <= now) - (b.begins <= now)) || (a.begins - b.begins));
+    return found.slice(0, 16);
+  }
+
+  function when(begins) {
+    const now = new Date();
+    if (begins <= now) return "On now";
+    const time = clock(begins, true);
+    if (begins.toDateString() === now.toDateString()) return (begins.getHours() >= 17 ? "Tonight at " : "Today at ") + time;
+    return begins.toLocaleDateString([], { weekday: "long" }) + (themeKey() === "classic" ? "" : " at " + time);
+  }
+
+  function showPromo() {
+    if (!promoLook()) return;
+    const promo = $("promo"), lines = promo.querySelector(".lines");
+    const list = promoCandidates();
+    const pick = list.length ? list[promoIndex++ % list.length] : null;
+    promoReady = !!pick;
+    const classic = themeKey() === "classic";
+    let html;
+    if (!pick) {
+      html = classic
+        ? `<div class="line">${esc(cfg.name)}</div><div class="line title">${esc((cfg.message || "").replaceAll("{channel}", cfg.name))}</div>`
+        : `${logo()}<div class="line">${esc((cfg.message || "").replaceAll("{channel}", cfg.name))}</div>`;
+    } else if (classic) {
+      const title = pick.item.movie ? `“${esc(pick.item.title)}”` : esc(pick.item.title);
+      html = `<div class="line">${esc(pick.row.name)}</div><div class="line title">${title}${pick.item.movie ? `<span class="tag">MOVIE</span>` : ""}</div>`
+        + `<div class="line">${esc(when(pick.begins))}</div><div class="line">Channel ${pick.row.number}</div>`;
+    } else {
+      html = `${logo()}<div class="line">${esc(pick.row.name)}</div><div class="line">${esc(pick.item.title)}</div>`
+        + (pick.item.movie ? `<div><span class="tag">MOVIE</span></div>` : pick.item.subtitle ? `<div class="line" style="font-size:calc(22px * var(--scale))">${esc(pick.item.subtitle)}</div>` : "")
+        + `<div class="line">${esc(when(pick.begins))}</div><div class="line">Channel ${pick.row.number}</div>`;
+    }
+    promo.classList.add("fade");
+    setTimeout(() => { lines.innerHTML = html; promo.classList.remove("fade"); }, lines.innerHTML ? 450 : 0);
+  }
+
+  // The cable box guide's logo: the guide's initials in a red box, its name on a yellow swoosh.
+  function logo() {
+    const initials = String(cfg.name || "TV").split(/\s+/).filter(Boolean).map(word => word[0]).join("").slice(0, 3).toUpperCase() || "TV";
+    return `<div class="logo"><span class="mark">${esc(initials)}</span><span class="swoosh">${esc(cfg.name)}</span></div>`;
+  }
+
+  // The cable box guide's cursor, as though someone's browsing: a different programme every few seconds.
+  function moveCursor() {
+    if (themeKey() !== "interactive") return;
+    const area = $("listings").getBoundingClientRect();
+    const cells = [...document.querySelectorAll("#scroller .cell")].filter(cell => {
+      const box = cell.getBoundingClientRect();
+      return box.top > area.top + 4 && box.bottom < area.bottom - 4;
+    });
+    document.querySelectorAll("#scroller .cell.sel").forEach(cell => cell.classList.remove("sel"));
+    if (cells.length) cells[Math.floor(Math.random() * cells.length)].classList.add("sel");
+  }
+
   function render() {
     const start = windowStart();
     const end = new Date(start.getTime() + cfg.hoursShown * 3600000);
-    const html = cfg.theme === "TvGuide" ? renderTvGuide(start, end) : renderPrevue(start, end);
+    const theme = themeKey();
+    const html = theme === "tvguide" ? renderTvGuide(start, end)
+      : theme === "interactive" || theme === "classic" ? renderGrid(start, end, theme)
+      : renderPrevue(start, end);
     const scroller = $("scroller");
     if (!html) {
       scroller.innerHTML = `<div class="empty-note">${rows.length ? "No channels to list." : "Listings will appear once the schedule has been built."}</div>`;
@@ -257,6 +489,8 @@
     const now = new Date();
     $("clock").textContent = clock(now, true);
     $("date").textContent = now.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
+    const running = document.querySelector("#timebar .tb-clock");
+    if (running) running.textContent = seconds(now);
   }
 
   // "Now on 5 CARTOON: SpongeBob", a different channel every few seconds.
@@ -325,6 +559,8 @@
   setInterval(loadListings, 60000);
   setInterval(nowOn, 6000);
   nowOn();
+  setInterval(showPromo, 8000);
+  setInterval(moveCursor, 3500);
   requestAnimationFrame(scroll);
 })();
 </script>

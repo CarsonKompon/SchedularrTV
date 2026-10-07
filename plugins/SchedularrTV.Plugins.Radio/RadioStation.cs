@@ -74,6 +74,22 @@ public enum RadioBackground
     Solid
 }
 
+/// <summary>The lettering, besides the look's own (Retro FM's own is a segmented display).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RadioFont
+{
+    Theme,
+    Sans,
+    Condensed,
+    Serif,
+    Slab,
+    Rounded,
+    Mono,
+
+    /// <summary>A 14-segment display, like a tuner's or a clock radio's.</summary>
+    Segment
+}
+
 /// <summary>One radio station: where its music comes from, how it looks, and the lengths it can be scheduled for.</summary>
 public sealed class RadioStation
 {
@@ -130,6 +146,29 @@ public sealed class RadioStation
 
     public RadioVisualizer Visualizer { get; set; } = RadioVisualizer.Bars;
 
+    /// <summary>How big the visualizer is next to the look's own, 0.5 to 1.5.</summary>
+    public double VisualizerSize { get; set; } = 1;
+
+    /// <summary>How strongly it moves with the sound, 0.25 (calm) to 3 (lively).</summary>
+    public double VisualizerIntensity { get; set; } = 1;
+
+    /// <summary>The visualizer's colour; null for the accent colour.</summary>
+    public string? VisualizerColor { get; set; }
+
+    public RadioFont Font { get; set; } = RadioFont.Theme;
+
+    /// <summary>How big the words are, 0.8 to 1.4.</summary>
+    public double TextScale { get; set; } = 1;
+
+    /// <summary>The words' colour; null for the look's own.</summary>
+    public string? TextColor { get; set; }
+
+    /// <summary>CRT scan lines over the whole picture.</summary>
+    public bool ScanLines { get; set; }
+
+    /// <summary>Retro FM: unlit segments faintly showing behind the lit ones, as on a real display.</summary>
+    public bool GhostSegments { get; set; } = true;
+
     /// <summary>Lyrics shown this much earlier (positive) or later, in seconds, to line them up with what's heard.</summary>
     public double LyricsOffset { get; set; }
 
@@ -145,7 +184,7 @@ public sealed class RadioStation
 
     /// <summary>Where the visualizer is drawn, by the stream, over the page; null when there's none.</summary>
     [JsonIgnore]
-    public FrameRect? VisualizerRect => Visualizer == RadioVisualizer.None ? null : RadioLayout.VisualizerRect(Preset, Visualizer);
+    public FrameRect? VisualizerRect => Visualizer == RadioVisualizer.None ? null : RadioLayout.VisualizerRect(Preset, Visualizer, VisualizerSize);
 
     public RadioStation Copy()
     {
@@ -180,7 +219,9 @@ public sealed class RadioStation
 /// <summary>Where each preset puts the visualizer, and the ffmpeg filters that draw it; shared by the page and the stream.</summary>
 public static class RadioLayout
 {
-    public static FrameRect VisualizerRect(RadioPreset preset, RadioVisualizer visualizer)
+    /// <param name="size">How big next to the look's own (0.5 to 1.5). Strips along the bottom grow upwards from where they
+    /// sit; Retro FM's meter, and the scope, grow about their middle. Kept on the 1280×720 frame, in even sizes.</param>
+    public static FrameRect VisualizerRect(RadioPreset preset, RadioVisualizer visualizer, double size = 1)
     {
         FrameRect rect = preset switch
         {
@@ -190,6 +231,25 @@ public static class RadioLayout
             RadioPreset.Minimal => new FrameRect(60, 470, 560, 120),
             _ => new FrameRect(0, 590, 1280, 130)
         };
+
+        double scale = Math.Clamp(size, 0.5, 1.5);
+        if (Math.Abs(scale - 1) > 0.001)
+        {
+            int height = Even(rect.Height * scale);
+            if (preset == RadioPreset.RetroFm)
+            {
+                int width = Even(Math.Min(rect.Width * scale, LiveStream.Width - 40));
+                rect = new FrameRect(Place(rect.X + (rect.Width - width) / 2.0, width, LiveStream.Width),
+                    Place(rect.Y + (rect.Height - height) / 2.0, height, LiveStream.Height), width, height);
+            }
+            else
+            {
+                // Grows up from its bottom edge, and wider too where it doesn't already fill the width.
+                int width = rect.Width >= LiveStream.Width ? rect.Width : Even(Math.Min(rect.Width * scale, LiveStream.Width - 40));
+                int bottom = rect.Y + rect.Height;
+                rect = new FrameRect(Place(rect.X + (rect.Width - width) / 2.0, width, LiveStream.Width), Place(bottom - height, height, LiveStream.Height), width, height);
+            }
+        }
 
         // The scope is round: a square, centred where the strip would be.
         if (visualizer == RadioVisualizer.Scope)
@@ -201,21 +261,32 @@ public static class RadioLayout
         return rect;
     }
 
+    private static int Even(double value) => Math.Max(2, (int)Math.Round(value / 2) * 2);
+
+    /// <summary>An even position that keeps a box of <paramref name="size"/> inside <paramref name="frame"/>.</summary>
+    private static int Place(double position, int size, int frame) =>
+        (int)Math.Round(Math.Clamp(position, 0, Math.Max(0, frame - size)) / 2) * 2;
+
     /// <summary>The ffmpeg filters that turn the sound into the visualizer's picture, sized to its box.</summary>
     /// <param name="frameRate">The stream's frame rate (drawing more frames than that is wasted work); 30 if not given.</param>
-    public static string? Filter(RadioVisualizer visualizer, FrameRect rect, string accent, int? frameRate = null)
+    /// <param name="intensity">How strongly it moves: the sound it's drawn from is turned up or down by this much (what's heard isn't).</param>
+    public static string? Filter(RadioVisualizer visualizer, FrameRect rect, string accent, int? frameRate = null, double intensity = 1)
     {
         string color = "0x" + (IsColour(accent) ? accent[1..] : "ff5c8a");
         string size = $"{rect.Width.ToString(CultureInfo.InvariantCulture)}x{rect.Height.ToString(CultureInfo.InvariantCulture)}";
         int fps = frameRate ?? LiveStream.OutputFrameRate;
-        return visualizer switch
+        double gain = Math.Clamp(intensity, 0.25, 3);
+        string boost = Math.Abs(gain - 1) < 0.001 ? "" : $"volume={gain.ToString("0.##", CultureInfo.InvariantCulture)},";
+        string? draw = visualizer switch
         {
             RadioVisualizer.Bars => $"showfreqs=s={size}:mode=bar:ascale=log:fscale=log:win_size=2048:colors={color},fps={fps}",
             RadioVisualizer.Wave => $"showwaves=s={size}:mode=cline:rate={fps}:scale=sqrt:colors={color}",
-            RadioVisualizer.Spectrum => $"showcqt=s={size}:r={fps}:sono_h=0:axis=0:bar_g=2",
+            RadioVisualizer.Spectrum => $"showcqt=s={size}:r={fps}:sono_h=0:axis=0:bar_g={(2 * gain).ToString("0.##", CultureInfo.InvariantCulture)}",
             RadioVisualizer.Scope => $"avectorscope=s={size}:mode=lissajous_xy:draw=line:scale=sqrt:rate={fps}:{ScopeColour(accent)}",
             _ => null
         };
+        // showcqt has its own gain; the others are given a louder or quieter copy of the sound.
+        return draw is null ? null : visualizer == RadioVisualizer.Spectrum ? draw : boost + draw;
     }
 
     private static string ScopeColour(string accent)

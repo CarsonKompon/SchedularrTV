@@ -174,6 +174,38 @@ public sealed class RadioTests : IDisposable
     }
 
     [Fact]
+    public void A_bigger_visualizer_grows_up_from_its_strip_and_stays_on_the_frame()
+    {
+        FrameRect normal = RadioLayout.VisualizerRect(RadioPreset.NowPlaying, RadioVisualizer.Bars);
+        FrameRect big = RadioLayout.VisualizerRect(RadioPreset.NowPlaying, RadioVisualizer.Bars, 1.5);
+        FrameRect wide = RadioLayout.VisualizerRect(RadioPreset.Minimal, RadioVisualizer.Bars, 1.5);
+        FrameRect meter = RadioLayout.VisualizerRect(RadioPreset.RetroFm, RadioVisualizer.Bars, 0.5);
+
+        Assert.Equal(normal.Y + normal.Height, big.Y + big.Height);
+        Assert.Equal(196, big.Height);
+        Assert.All(new[] { big, wide, meter }, rect =>
+        {
+            Assert.InRange(rect.X, 0, 1280 - rect.Width);
+            Assert.InRange(rect.Y, 0, 720 - rect.Height);
+            Assert.Equal(0, rect.Width % 2);
+            Assert.Equal(0, rect.Height % 2);
+        });
+        // Retro FM's meter shrinks about its middle.
+        Assert.InRange(meter.Y + meter.Height / 2, 300 + 220 / 2 - 2, 300 + 220 / 2 + 2);
+    }
+
+    [Fact]
+    public void Intensity_turns_up_only_the_sound_the_visualizer_is_drawn_from()
+    {
+        FrameRect rect = RadioLayout.VisualizerRect(RadioPreset.NowPlaying, RadioVisualizer.Bars);
+
+        Assert.StartsWith("showfreqs=", RadioLayout.Filter(RadioVisualizer.Bars, rect, "#ff5c8a"), StringComparison.Ordinal);
+        Assert.StartsWith("volume=2,showfreqs=", RadioLayout.Filter(RadioVisualizer.Bars, rect, "#ff5c8a", intensity: 2), StringComparison.Ordinal);
+        Assert.Contains("bar_g=4", RadioLayout.Filter(RadioVisualizer.Spectrum, rect, "#ff5c8a", intensity: 2), StringComparison.Ordinal);
+        Assert.Contains("colors=0x00ff00", RadioLayout.Filter(RadioVisualizer.Bars, rect, "#00ff00"), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_scope_is_square_and_centred_in_the_presets_strip()
     {
         FrameRect strip = RadioLayout.VisualizerRect(RadioPreset.NowPlaying, RadioVisualizer.Bars);

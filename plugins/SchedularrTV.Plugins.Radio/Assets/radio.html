@@ -11,11 +11,21 @@
 <meta name="viewport" content="width=1280, height=720">
 <title>Radio</title>
 <style>
-  :root { --accent: #ff5c8a; --bgc: #101828; --ink: #ffffff; --soft: rgba(255,255,255,.72); --faint: rgba(255,255,255,.4); }
+  /* DSEG14 (SIL Open Font License): a 14-segment display face. "~" lights every segment, for the unlit ones behind. */
+  @font-face { font-family: "DSEG14 Classic"; font-weight: 700; font-display: block;
+    src: url("https://cdn.jsdelivr.net/npm/dseg@0.46.0/fonts/DSEG14-Classic/DSEG14Classic-Bold.woff2") format("woff2"); }
+  @font-face { font-family: "DSEG14 Classic"; font-weight: 400; font-display: block;
+    src: url("https://cdn.jsdelivr.net/npm/dseg@0.46.0/fonts/DSEG14-Classic/DSEG14Classic-Regular.woff2") format("woff2"); }
+
+  /* --ts scales the words; --font is the lettering (the look's own unless chosen). */
+  :root { --accent: #ff5c8a; --bgc: #101828; --ink: #ffffff; --soft: rgba(255,255,255,.72); --faint: rgba(255,255,255,.4); --ts: 1;
+          --font: "Segoe UI", "Helvetica Neue", Arial, sans-serif; --lcd-font: "DSEG14 Classic", "Consolas", "Courier New", monospace; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 1280px; height: 720px; overflow: hidden; background: #000; }
-  body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: var(--ink); position: relative; }
+  body { font-family: var(--font); color: var(--ink); position: relative; }
   .hidden { display: none !important; }
+  .scanlines::after { content: ""; position: absolute; inset: 0; z-index: 50; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 2px, transparent 2px 4px); }
 
   /* Background */
   #bg { position: absolute; inset: 0; background: var(--bgc); overflow: hidden; }
@@ -31,17 +41,17 @@
   .art { position: absolute; border-radius: 14px; overflow: hidden; background: rgba(255,255,255,.08); box-shadow: 0 18px 50px rgba(0,0,0,.55); }
   .art img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .art .none { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 96px; color: var(--faint); }
-  #station { position: absolute; top: 28px; left: 40px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: 20px; color: var(--soft); }
+  #station { position: absolute; top: 28px; left: 40px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: calc(20px * var(--ts)); color: var(--soft); }
   #station::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); margin-right: 10px; vertical-align: 2px; animation: pulse 2s infinite; }
   @keyframes pulse { 50% { opacity: .3; } }
-  #clock { position: absolute; top: 24px; right: 40px; font-size: 26px; font-weight: 600; color: var(--soft); font-variant-numeric: tabular-nums; }
+  #clock { position: absolute; top: 24px; right: 40px; font-size: calc(26px * var(--ts)); font-weight: 600; color: var(--soft); font-variant-numeric: tabular-nums; }
   #title { font-weight: 800; line-height: 1.08; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   #artist { color: var(--accent); font-weight: 600; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #album { color: var(--soft); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #progress { position: absolute; height: 5px; background: rgba(255,255,255,.18); border-radius: 3px; overflow: hidden; }
   #progress div { height: 100%; width: 0; background: var(--accent); }
-  #next { position: absolute; font-size: 18px; color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #next b { color: var(--accent); font-weight: 700; margin-right: 8px; text-transform: uppercase; letter-spacing: .08em; font-size: 14px; }
+  #next { position: absolute; font-size: calc(18px * var(--ts)); color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #next b { color: var(--accent); font-weight: 700; margin-right: 8px; text-transform: uppercase; letter-spacing: .08em; font-size: calc(14px * var(--ts)); }
   #lyrics { position: absolute; overflow: hidden; }
   #lyrics .line { transition: color .35s, opacity .35s, transform .35s; color: var(--faint); }
   #lyrics .line.now { color: var(--ink); }
@@ -57,10 +67,10 @@
   /* Now playing */
   .p-NowPlaying #art { left: 80px; top: 100px; width: 420px; height: 420px; }
   .p-NowPlaying #info { position: absolute; left: 550px; top: 110px; width: 660px; }
-  .p-NowPlaying #title { font-size: 52px; }
-  .p-NowPlaying #artist { font-size: 30px; }
-  .p-NowPlaying #album { font-size: 20px; }
-  .p-NowPlaying #lyrics { left: 550px; top: 300px; width: 660px; height: 200px; font-size: 26px; line-height: 40px; }
+  .p-NowPlaying #title { font-size: calc(52px * var(--ts)); }
+  .p-NowPlaying #artist { font-size: calc(30px * var(--ts)); }
+  .p-NowPlaying #album { font-size: calc(20px * var(--ts)); }
+  .p-NowPlaying #lyrics { left: 550px; top: 300px; width: 660px; height: 200px; font-size: calc(26px * var(--ts)); line-height: calc(40px * var(--ts)); }
   .p-NowPlaying #progress { left: 550px; top: 515px; width: 660px; }
   .p-NowPlaying #next { left: 80px; top: 540px; width: 1130px; }
   .p-NowPlaying.no-art #info, .p-NowPlaying.no-art #lyrics, .p-NowPlaying.no-art #progress { left: 80px; width: 1130px; }
@@ -69,11 +79,11 @@
   .p-Karaoke #art { left: 40px; top: 70px; width: 96px; height: 96px; border-radius: 10px; }
   .p-Karaoke #info { position: absolute; left: 156px; top: 76px; width: 900px; }
   .p-Karaoke.no-art #info { left: 40px; }
-  .p-Karaoke #title { font-size: 30px; -webkit-line-clamp: 1; }
-  .p-Karaoke #artist { font-size: 22px; margin-top: 4px; }
+  .p-Karaoke #title { font-size: calc(30px * var(--ts)); -webkit-line-clamp: 1; }
+  .p-Karaoke #artist { font-size: calc(22px * var(--ts)); margin-top: 4px; }
   .p-Karaoke #album { display: none; }
-  .p-Karaoke #lyrics { left: 80px; right: 80px; top: 190px; height: 390px; text-align: center; font-size: 34px; line-height: 64px; }
-  .p-Karaoke #lyrics .line.now { font-size: 54px; font-weight: 800; color: var(--ink); text-shadow: 0 0 24px color-mix(in srgb, var(--accent) 70%, transparent); }
+  .p-Karaoke #lyrics { left: 80px; right: 80px; top: 190px; height: 390px; text-align: center; font-size: calc(34px * var(--ts)); line-height: calc(64px * var(--ts)); }
+  .p-Karaoke #lyrics .line.now { font-size: calc(54px * var(--ts)); font-weight: 800; color: var(--ink); text-shadow: 0 0 24px color-mix(in srgb, var(--accent) 70%, transparent); }
   .p-Karaoke #progress { left: 40px; right: 40px; top: 585px; }
   .p-Karaoke #next { right: 40px; top: 120px; width: 420px; text-align: right; }
 
@@ -86,53 +96,66 @@
   .p-Vinyl #art::after { content: ""; position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px; border-radius: 50%; background: #0b0b0b; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .p-Vinyl #info { position: absolute; left: 140px; right: 140px; top: 500px; text-align: center; }
-  .p-Vinyl #title { font-size: 34px; -webkit-line-clamp: 1; }
-  .p-Vinyl #artist { font-size: 22px; margin-top: 4px; }
+  .p-Vinyl #title { font-size: calc(34px * var(--ts)); -webkit-line-clamp: 1; }
+  .p-Vinyl #artist { font-size: calc(22px * var(--ts)); margin-top: 4px; }
   .p-Vinyl #album { display: none; }
-  .p-Vinyl #lyrics { left: 140px; right: 140px; top: 24px; height: 40px; text-align: center; font-size: 24px; line-height: 40px; }
+  .p-Vinyl #lyrics { left: 140px; right: 140px; top: 24px; height: 40px; text-align: center; font-size: calc(24px * var(--ts)); line-height: 40px; }
   .p-Vinyl #lyrics .line:not(.now) { display: none; }
   .p-Vinyl #progress { display: none; }
   .p-Vinyl #next { left: 40px; bottom: 24px; width: 600px; }
   .p-Vinyl #station { top: 680px; left: auto; right: 40px; }
   .p-Vinyl #clock { top: 24px; }
 
-  /* Retro FM */
+  /* Retro FM: a tuner's glowing segmented display. */
   .p-RetroFm #bg { background: #07090c; }
   .p-RetroFm #bg img, .p-RetroFm #bg .gradient { opacity: .18; }
   .p-RetroFm #panel { position: absolute; left: 60px; top: 50px; right: 60px; bottom: 50px; border-radius: 18px;
     background: linear-gradient(180deg, #14181f, #0b0e12); box-shadow: inset 0 0 0 2px #2a313c, 0 20px 60px rgba(0,0,0,.7); }
-  .p-RetroFm #lcd { position: absolute; left: 120px; top: 90px; width: 1040px; height: 180px; border-radius: 10px; background: #0d1a12;
-    box-shadow: inset 0 0 30px rgba(0,0,0,.8); font-family: "Consolas", "Courier New", monospace; color: var(--accent); text-shadow: 0 0 10px var(--accent); }
-  .p-RetroFm #station { position: absolute; left: 150px; top: 112px; font-family: "Consolas", "Courier New", monospace; color: var(--accent); text-shadow: 0 0 10px var(--accent); font-size: 26px; }
+  .p-RetroFm #panel::before { content: "STEREO   FM   AM"; position: absolute; left: 70px; bottom: 30px; font: 700 14px/1 Arial, sans-serif; letter-spacing: .3em; color: #5d6878; }
+  .p-RetroFm #lcd { position: absolute; left: 120px; top: 90px; width: 1040px; height: 180px; border-radius: 10px;
+    background: radial-gradient(ellipse at 50% 40%, #102117, #08130d 80%); box-shadow: inset 0 0 30px rgba(0,0,0,.85), inset 0 0 0 2px #1c2a22; }
+  .p-RetroFm .lcd { font-family: var(--lcd-font); color: var(--lcd, var(--accent)); text-shadow: 0 0 10px var(--lcd, var(--accent)), 0 0 2px var(--lcd, var(--accent));
+    text-transform: uppercase; font-variant-numeric: normal; letter-spacing: .04em; }
+  .p-RetroFm #station { position: absolute; left: 150px; top: 112px; font-size: calc(22px * var(--ts)); font-weight: 400; letter-spacing: .06em; }
   .p-RetroFm #station::before { display: none; }
-  .p-RetroFm #clock { right: 150px; top: 108px; font-family: "Consolas", "Courier New", monospace; color: var(--accent); text-shadow: 0 0 10px var(--accent); font-size: 30px; }
-  .p-RetroFm #info { position: absolute; left: 150px; top: 160px; width: 980px; font-family: "Consolas", "Courier New", monospace; color: var(--accent); text-shadow: 0 0 12px var(--accent); }
-  .p-RetroFm #title { font-size: 46px; -webkit-line-clamp: 1; text-transform: uppercase; }
-  .p-RetroFm #artist { font-size: 26px; color: var(--accent); opacity: .8; text-transform: uppercase; }
+  .p-RetroFm #clock { right: 150px; top: 108px; font-size: calc(26px * var(--ts)); font-weight: 700; }
+  .p-RetroFm #info { position: absolute; left: 150px; top: 158px; width: 980px; }
+  .p-RetroFm #title { font-size: calc(40px * var(--ts)); font-weight: 700; -webkit-line-clamp: 1; display: block; white-space: nowrap; line-height: 1.25; }
+  .p-RetroFm #artist { font-size: calc(22px * var(--ts)); font-weight: 400; opacity: .85; margin-top: 10px; overflow: visible; }
   .p-RetroFm #album { display: none; }
   .p-RetroFm #art { right: 150px; top: 540px; width: 110px; height: 110px; border-radius: 8px; }
-  .p-RetroFm #lyrics { left: 150px; top: 545px; width: 860px; height: 44px; font-size: 26px; line-height: 44px; font-family: "Consolas", "Courier New", monospace; }
+  .p-RetroFm #lyrics { left: 150px; top: 545px; width: 860px; height: 44px; font-size: calc(24px * var(--ts)); line-height: 44px; font-family: var(--font); }
   .p-RetroFm #lyrics .line:not(.now) { display: none; }
   .p-RetroFm #lyrics .line.now { color: #e8ffe8; }
   .p-RetroFm #progress { left: 150px; top: 530px; width: 860px; height: 4px; }
-  .p-RetroFm #next { left: 150px; top: 600px; width: 860px; font-family: "Consolas", "Courier New", monospace; font-size: 18px; }
+  .p-RetroFm #next { left: 150px; top: 600px; width: 860px; font-size: calc(18px * var(--ts)); }
   .p-RetroFm #vis { border-radius: 8px; box-shadow: inset 0 0 0 2px #2a313c; }
+  /* Unlit segments behind the lit ones; and a title too long for the display scrolls along it. */
+  .p-RetroFm.ghosts .lcd { position: relative; }
+  .p-RetroFm.ghosts #station { position: absolute; }
+  .p-RetroFm.ghosts #clock { position: absolute; }
+  .p-RetroFm.ghosts .lcd[data-ghost]::before { content: attr(data-ghost); position: absolute; left: 0; top: 0; white-space: nowrap; color: var(--lcd, var(--accent)); opacity: .09; text-shadow: none; pointer-events: none; }
+  .p-RetroFm #title .run { display: inline-block; }
+  .p-RetroFm #title.marquee .run { animation: marquee linear infinite; padding-right: 3em; }
+  @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  .p-RetroFm #title.marquee { text-overflow: clip; }
+  .p-RetroFm #title.marquee::before { display: none; }
 
   /* Minimal */
   .p-Minimal #bg img { inset: -20px; width: calc(100% + 40px); height: calc(100% + 40px); filter: blur(6px) brightness(.55); }
   .p-Minimal #bg .shade { background: linear-gradient(90deg, rgba(0,0,0,.75), rgba(0,0,0,.1) 70%); }
   .p-Minimal #art { display: none; }
   .p-Minimal #info { position: absolute; left: 60px; top: 600px; width: 900px; }
-  .p-Minimal #title { font-size: 40px; -webkit-line-clamp: 1; }
-  .p-Minimal #artist { font-size: 24px; margin-top: 2px; }
+  .p-Minimal #title { font-size: calc(40px * var(--ts)); -webkit-line-clamp: 1; }
+  .p-Minimal #artist { font-size: calc(24px * var(--ts)); margin-top: 2px; }
   .p-Minimal #album { display: none; }
-  .p-Minimal #lyrics { left: 60px; top: 120px; width: 900px; height: 300px; font-size: 30px; line-height: 50px; }
+  .p-Minimal #lyrics { left: 60px; top: 120px; width: 900px; height: 300px; font-size: calc(30px * var(--ts)); line-height: calc(50px * var(--ts)); }
   .p-Minimal #progress { left: 60px; top: 690px; width: 560px; height: 3px; }
   .p-Minimal #next { right: 40px; top: 690px; width: 560px; text-align: right; }
 
   /* A message along the bottom pushes nothing: it sits over the bottom edge in its own bar. */
   body.with-ticker #ticker { height: 40px; background: rgba(0,0,0,.55); border-top: 2px solid var(--accent); }
-  body.with-ticker #ticker span { line-height: 38px; font-size: 20px; }
+  body.with-ticker #ticker span { line-height: 38px; font-size: calc(20px * var(--ts)); }
 </style>
 </head>
 <body>
@@ -157,22 +180,58 @@
   "use strict";
   const base = "/plugins/radio";
   let cfg = window.RADIO;
-  let now = null, offset = 0, songKey = "", lyricsKey = "";
+  let now = null, offset = 0, songKey = "", lyricsKey = "", fontLoaded = "";
   const $ = id => document.getElementById(id);
+
+  // Lettering: Google Fonts when chosen, with the computer's own close match until (or unless) it arrives.
+  const FONTS = {
+    Sans: ["Inter:wght@400;600;800", `"Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif`],
+    Condensed: ["Oswald:wght@400;500;700", `"Oswald", "Arial Narrow", sans-serif`],
+    Serif: ["Merriweather:wght@400;700;900", `"Merriweather", Georgia, serif`],
+    Slab: ["Roboto+Slab:wght@400;600;800", `"Roboto Slab", Rockwell, serif`],
+    Rounded: ["Nunito:wght@400;700;800", `"Nunito", "Arial Rounded MT Bold", sans-serif`],
+    Mono: ["JetBrains+Mono:wght@400;700;800", `"JetBrains Mono", Consolas, "Courier New", monospace`],
+    Segment: [null, `"DSEG14 Classic", Consolas, "Courier New", monospace`]
+  };
+  const retro = () => cfg.preset === "RetroFm";
+  // Retro FM's display is segmented unless another lettering is chosen; the other looks keep theirs unless one is.
+  const segmented = () => cfg.font === "Segment" || (retro() && (!cfg.font || cfg.font === "Theme"));
+
+  function applyFont() {
+    const font = FONTS[cfg.font];
+    const root = document.documentElement.style;
+    // The display's lettering (Retro FM) and the rest.
+    root.setProperty("--lcd-font", segmented() ? FONTS.Segment[1] : font ? font[1] : `"Consolas", "Courier New", monospace`);
+    if (font && cfg.font !== "Segment") root.setProperty("--font", font[1]); else root.removeProperty("--font");
+    if (font && font[0] && fontLoaded !== font[0]) {
+      fontLoaded = font[0];
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = `https://fonts.googleapis.com/css2?family=${font[0]}&display=swap`;
+      document.head.appendChild(link);
+    }
+    // Once the lettering is in, the title's width is known: decide again whether it scrolls.
+    if (document.fonts) document.fonts.ready.then(() => { songKey = ""; render(); });
+  }
 
   function applyConfig() {
     const root = document.documentElement.style;
     root.setProperty("--accent", cfg.accent);
     root.setProperty("--bgc", cfg.backgroundColor);
-    document.body.className = `p-${cfg.preset}` + (cfg.preview ? " preview" : "") + (cfg.showArt ? "" : " no-art") + (cfg.message ? " with-ticker" : "");
-    $("panel").classList.toggle("hidden", cfg.preset !== "RetroFm");
-    $("lcd").classList.toggle("hidden", cfg.preset !== "RetroFm");
+    root.setProperty("--ts", String(cfg.textScale || 1));
+    if (cfg.textColor) { root.setProperty("--ink", cfg.textColor); root.setProperty("--lcd", cfg.textColor); }
+    else { root.removeProperty("--ink"); root.removeProperty("--lcd"); }
+    document.body.className = `p-${cfg.preset}` + (cfg.preview ? " preview" : "") + (cfg.showArt ? "" : " no-art") + (cfg.message ? " with-ticker" : "")
+      + (cfg.scanLines ? " scanlines" : "") + (retro() && segmented() && cfg.ghostSegments !== false ? " ghosts" : "");
+    for (const id of ["station", "clock", "title", "artist"]) $(id).classList.toggle("lcd", retro());
+    $("panel").classList.toggle("hidden", !retro());
+    $("lcd").classList.toggle("hidden", !retro());
     $("record").classList.toggle("hidden", cfg.preset !== "Vinyl");
     $("art").classList.toggle("hidden", !cfg.showArt);
     $("lyrics").classList.toggle("hidden", !cfg.showLyrics);
     $("next").classList.toggle("hidden", !cfg.showUpNext);
     $("clock").classList.toggle("hidden", !cfg.showClock);
-    $("station").textContent = cfg.name;
+    setText($("station"), cfg.name);
     $("bg").querySelector(".gradient").classList.toggle("hidden", cfg.background !== "Gradient");
     const vis = $("vis");
     if (cfg.vis) {
@@ -183,8 +242,33 @@
     const ticker = $("ticker").querySelector("span");
     ticker.textContent = cfg.message || "";
     requestAnimationFrame(() => { ticker.style.animationDuration = Math.max(10, ticker.scrollWidth / 110) + "s"; });
+    applyFont();
     songKey = ""; lyricsKey = "";
     render();
+  }
+
+  // Text on the display: its unlit segments behind it ("~" lights them all), as many as the text has characters.
+  function setText(element, text) {
+    element.textContent = text;
+    if (element.classList.contains("lcd")) element.dataset.ghost = "~".repeat([...text].length);
+    else delete element.dataset.ghost;
+  }
+
+  // On Retro FM a title too long for the display scrolls along it, twice over so it loops without a gap.
+  function setTitle(text) {
+    const title = $("title");
+    title.classList.remove("marquee");
+    setText(title, text);
+    if (!retro() || !text) return;
+    requestAnimationFrame(() => {
+      if (title.scrollWidth <= title.clientWidth + 2) return;
+      const run = document.createElement("span");
+      run.className = "run";
+      run.textContent = `${text}   ${text}   `;
+      title.replaceChildren(run);
+      title.classList.add("marquee");
+      run.style.animationDuration = Math.max(8, run.scrollWidth / 2 / 70) + "s";
+    });
   }
 
   async function poll() {
@@ -223,8 +307,8 @@
     const key = song ? `${song.title}|${song.artist}|${song.art || ""}` : "";
     if (key !== songKey) {
       songKey = key;
-      $("title").textContent = song ? song.title : (problem ? "" : cfg.name);
-      $("artist").textContent = song ? song.artist : "";
+      setTitle(song ? song.title : (problem ? "" : cfg.name));
+      setText($("artist"), song ? song.artist : "");
       $("album").textContent = song ? [song.album, song.year].filter(Boolean).join(" · ") : "";
       setArt(song ? song.art : null);
       lyricsKey = "";
@@ -279,13 +363,18 @@
 
   function clock() {
     const date = new Date();
-    $("clock").textContent = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    // A segmented clock has no room for "PM" in lower case, and keeps its digits in place.
+    const text = retro()
+      ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }).replace(/\s?([AaPp])\.?[Mm]\.?/, " $1M")
+      : date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    setText($("clock"), text);
   }
 
   window.addEventListener("message", event => {
     if (event.data && event.data.type === "radio-settings") {
       cfg = Object.assign({}, cfg, event.data.settings, { preview: true });
       applyConfig();
+      clock();
       poll();
     }
   });
