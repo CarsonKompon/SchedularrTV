@@ -130,6 +130,11 @@ public static class SchedulerConfigLoader
             errors.Add("settings.interstitials.max_shows_per_slot: must be zero or greater.");
         }
 
+        if (config.Settings.Interstitials?.ShowChance is < 0 or > 100)
+        {
+            errors.Add("settings.interstitials.show_chance: must be a percentage from 0 to 100.");
+        }
+
         foreach ((string key, ContentSelector selector) in config.GlobalCollections)
         {
             ValidateSelector(selector, $"global_collections.{key}", config, errors);
@@ -501,6 +506,11 @@ public static class SchedulerConfigLoader
         if (interstitials.MaxShowsPerSlot < 0)
         {
             errors.Add($"{scope}.max_shows_per_slot: must be zero or greater.");
+        }
+
+        if (interstitials.ShowChance is < 0 or > 100)
+        {
+            errors.Add($"{scope}.show_chance: must be a percentage from 0 to 100.");
         }
 
         if (interstitials.Commercials is { } commercials)

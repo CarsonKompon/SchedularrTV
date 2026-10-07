@@ -663,6 +663,11 @@ public sealed class SchedulingEngine(
         return null;
     }
 
+    /// <summary>Whether a break's <paramref name="roll"/>th short programme is used, at <paramref name="chance"/> percent.</summary>
+    internal static bool UsesShort(string breakSeed, int roll, int chance) =>
+        chance >= 100 || (chance > 0
+            && DeterministicRandom.FromSeedText(breakSeed, "interstitial-chance", roll.ToString(System.Globalization.CultureInfo.InvariantCulture)).Next(100) < chance);
+
     /// <summary>
     /// Fills a break: break contributors' openers, interstitial shows, their items after those, commercials
     /// and filler with their mix-ins dropped among them, padding, then their closing items. Finalizers then
@@ -751,9 +756,18 @@ public sealed class SchedulingEngine(
                 .GetSequenceAsync(interstitialSelector, "interstitial", cancellationToken)
                 .ConfigureAwait(false);
 
+            int chance = Math.Clamp(interstitials.ShowChance ?? InterstitialsConfig.DefaultShowChance, 0, 100);
+            int rolls = 0;
             while (shorts is { IsEmpty: false } && fillTo - cursor > tolerance
                 && session.InterstitialShowsInSlot < (interstitials.MaxShowsPerSlot ?? int.MaxValue))
             {
+                // Each short that could go in is a roll of the dice, seeded by the break, so rebuilds agree. A miss
+                // hands the rest of the break to the adverts.
+                if (!UsesShort(breakSeed, rolls++, chance))
+                {
+                    break;
+                }
+
                 TimeSpan remaining = fillTo - cursor;
                 if (!shorts.TryTakeForGap(i => i.Duration > TimeSpan.Zero && i.Duration <= remaining, out MediaItem shortItem))
                 {
@@ -1176,6 +1190,7 @@ public sealed class SchedulingEngine(
         {
             Shows = block?.InterstitialShows ?? channel.InterstitialShows ?? resolved.Shows,
             MaxShowsPerSlot = resolved.MaxShowsPerSlot,
+            ShowChance = resolved.ShowChance,
             Commercials = commercials,
             Filler = filler
         };

@@ -15,6 +15,15 @@ public sealed class InterstitialsConfig
 
     public int? MaxShowsPerSlot { get; set; }
 
+    /// <summary>
+    /// Percent chance (0–100) that a short programme is used when one would fit, checked for each one, so a break
+    /// isn't always opened with a short. A miss leaves the rest of the break to adverts. Null inherits, defaulting to
+    /// <see cref="DefaultShowChance"/>.
+    /// </summary>
+    public int? ShowChance { get; set; }
+
+    public const int DefaultShowChance = 70;
+
     /// <summary>Tier 2: strict-fit commercials and promos. Never trimmed, never overrun.</summary>
     public CommercialsConfig? Commercials { get; set; }
 
@@ -25,6 +34,7 @@ public sealed class InterstitialsConfig
     {
         Shows = Shows ?? parent?.Shows,
         MaxShowsPerSlot = MaxShowsPerSlot ?? parent?.MaxShowsPerSlot,
+        ShowChance = ShowChance ?? parent?.ShowChance,
         Commercials = (Commercials ?? new CommercialsConfig()).Merge(parent?.Commercials),
         Filler = (Filler ?? new FillerTierConfig()).Merge(parent?.Filler)
     };

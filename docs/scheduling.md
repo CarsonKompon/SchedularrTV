@@ -49,6 +49,7 @@ Anything still unfilled becomes an explicit `Padding` entry rather than silent d
 ```yaml
 interstitials:
   max_shows_per_slot: 2
+  show_chance: 70
   shows:
     query: "collection:'Shorts & Pilots'"
     order: shuffle
@@ -66,7 +67,10 @@ interstitials:
 Tiers merge block → channel → `settings.interstitials`, so a block only restates what it changes.
 `max_shows_per_slot` caps the total tier-1 shorts across all breaks in one programme timeslot,
 including stacked episodes. Zero disables shorts; blank inherits the parent limit, with unlimited as
-the default. The `commercial_base_tags`, `interstitial_shows` and `auto_temporal_tags` shorthands
+the default. `show_chance` is the percent chance (0–100) that a short is used when one fits, checked for each
+short, so breaks aren't always opened with one; a miss leaves the rest of the break to the adverts. Blank inherits,
+with 70 as the default; 100 always uses one. The roll is seeded by the break, so rebuilding gives the same result.
+The `commercial_base_tags`, `interstitial_shows` and `auto_temporal_tags` shorthands
 still work and win at whichever level they are declared.
 
 Gap-filling shorts and commercials can recycle fitting items when the remaining shuffle bag cannot fit

@@ -9,12 +9,21 @@
     </p>
 
     <h3>Tier 1 &mdash; interstitial shows</h3>
-    <label class="field">
-        <span>Max interstitial shows per timeslot</span>
-        <input type="number" min="0" step="1" placeholder="Inherit (default: unlimited)"
-               value="@(Interstitials.MaxShowsPerSlot?.ToString() ?? "")"
-               @onchange="e => { Interstitials.MaxShowsPerSlot = Int(e); Changed.InvokeAsync(); }" />
-    </label>
+    <div class="grid grid-2">
+        <label class="field">
+            <span>Max interstitial shows per timeslot</span>
+            <input type="number" min="0" step="1" placeholder="Inherit (default: unlimited)"
+                   value="@(Interstitials.MaxShowsPerSlot?.ToString() ?? "")"
+                   @onchange="e => { Interstitials.MaxShowsPerSlot = Int(e); Changed.InvokeAsync(); }" />
+        </label>
+        <label class="field">
+            <span>Chance to use a short when one fits (%)</span>
+            <input type="number" min="0" max="100" step="5" placeholder="Inherit (default: @InterstitialsConfig.DefaultShowChance%)"
+                   value="@(Interstitials.ShowChance?.ToString() ?? "")"
+                   @onchange="e => { Interstitials.ShowChance = Int(e) is { } percent ? Math.Clamp(percent, 0, 100) : null; Changed.InvokeAsync(); }" />
+        </label>
+    </div>
+    <p class="hint">Checked for each short, so breaks aren't always opened with one; a miss leaves the rest of the break to the adverts. 100 always uses one.</p>
     @if (Interstitials.Shows is null)
     {
         <button class="btn btn-sm" @onclick="AddShows">Add a shorts pool</button>

@@ -62,6 +62,7 @@ public class SchedulingEngineTests
             TimeZone = "UTC",
             Interstitials = new InterstitialsConfig
             {
+                ShowChance = 100,
                 Commercials = new CommercialsConfig
                 {
                     BaseQuery = "tag:\"Commercials\"",

@@ -260,6 +260,7 @@ public class MidRollTests
             Interstitials = withShorts
                 ? new InterstitialsConfig
                 {
+                    ShowChance = 100,
                     Shows = new ContentSelector { Query = "collection:'Shorts'", Order = PlaybackOrder.Shuffle }
                 }
                 : null

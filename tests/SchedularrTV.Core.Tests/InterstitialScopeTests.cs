@@ -49,6 +49,7 @@ public class InterstitialScopeTests
             {
                 Shows = new() { Include = [new ContentInclude { Show = "Shorts" }], Order = PlaybackOrder.Random },
                 MaxShowsPerSlot = channelLimit,
+                ShowChance = 100,
                 Commercials = new() { Query = "tag:'Ads'", MaxRepeatsPerBreak = 100 },
                 Filler = new() { Fallback = false }
             }
@@ -100,6 +101,7 @@ public class InterstitialScopeTests
             Interstitials = new()
             {
                 MaxShowsPerSlot = 1,
+                ShowChance = 100,
                 Shows = new() { Include = [new ContentInclude { Show = "Shorts" }], Order = PlaybackOrder.Random },
                 Filler = new() { Fallback = false }
             }
