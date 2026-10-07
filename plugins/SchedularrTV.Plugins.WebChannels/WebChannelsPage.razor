@@ -421,7 +421,7 @@
     private static string? Town(WebChannel channel) =>
         string.IsNullOrWhiteSpace(channel.Location) ? null : channel.Location.Split(',')[0].Trim();
 
-    private static string Summary(WebChannel channel)
+    private string Summary(WebChannel channel)
     {
         WebPreset preset = channel.PresetInfo;
         List<string> parts = [];

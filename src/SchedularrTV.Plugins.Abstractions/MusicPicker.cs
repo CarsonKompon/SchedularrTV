@@ -114,12 +114,12 @@ public sealed class MusicPicker : ComponentBase
         builder.AddAttribute(8, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e => ChooseSourceAsync(e.Value?.ToString() ?? "")));
         if (AllowNone || music is null)
         {
-            Option(builder, 9, "", NoneLabel);
+            builder.AddContent(9, Option("", NoneLabel));
         }
 
         if (AllowFolder || music is { FromLibrary: false })
         {
-            Option(builder, 10, "folder", "A folder on disk");
+            builder.AddContent(10, Option("folder", "A folder on disk"));
         }
 
         foreach (IMusicLibrary library in libraries)
@@ -133,7 +133,7 @@ public sealed class MusicPicker : ComponentBase
 
         if (music is { FromLibrary: true } && !libraries.Any(library => string.Equals(library.Id, music.LibraryId, StringComparison.OrdinalIgnoreCase)))
         {
-            Option(builder, 14, source, $"{music.LibraryId} (not installed)");
+            builder.AddContent(14, Option(source, $"{music.LibraryId} (not installed)"));
         }
 
         builder.CloseElement();
@@ -151,13 +151,13 @@ public sealed class MusicPicker : ComponentBase
         builder.CloseElement();
     }
 
-    private static void Option(RenderTreeBuilder builder, int sequence, string value, string text)
+    private static RenderFragment Option(string value, string text) => builder =>
     {
-        builder.OpenElement(sequence, "option");
-        builder.AddAttribute(sequence + 100, "value", value);
-        builder.AddContent(sequence + 200, text);
+        builder.OpenElement(0, "option");
+        builder.AddAttribute(1, "value", value);
+        builder.AddContent(2, text);
         builder.CloseElement();
-    }
+    };
 
     private void BuildFolder(RenderTreeBuilder builder, BackgroundMusic music)
     {
@@ -180,7 +180,7 @@ public sealed class MusicPicker : ComponentBase
 
         if (!string.IsNullOrWhiteSpace(music.Folder) && !Directory.Exists(music.Folder.Trim().Trim('"')))
         {
-            Hint(builder, 32, MissingFolderText, warn: true);
+            builder.AddContent(32, Hint(MissingFolderText, warn: true));
         }
     }
 
@@ -189,9 +189,9 @@ public sealed class MusicPicker : ComponentBase
         IMusicLibrary? library = libraries.FirstOrDefault(candidate => string.Equals(candidate.Id, music.LibraryId, StringComparison.OrdinalIgnoreCase));
         if (library is not { IsConfigured: true })
         {
-            Hint(builder, 40, library is null
+            builder.AddContent(40, Hint(library is null
                 ? "That music library's plugin isn't installed or is switched off; there'll be no music."
-                : $"{library.Name} isn't set up yet (App settings); there'll be no music until it is.", warn: true);
+                : $"{library.Name} isn't set up yet (App settings); there'll be no music until it is.", warn: true));
             return;
         }
 
@@ -204,10 +204,10 @@ public sealed class MusicPicker : ComponentBase
         builder.AddAttribute(46, "value", music.Pick.ToString());
         builder.AddAttribute(47, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this,
             e => ChangeAsync(copy => copy.Pick = Enum.TryParse(e.Value?.ToString(), out BackgroundMusicPick pick) ? pick : BackgroundMusicPick.All)));
-        Option(builder, 48, nameof(BackgroundMusicPick.All), "Every song");
-        Option(builder, 49, nameof(BackgroundMusicPick.Playlist), "A playlist");
-        Option(builder, 50, nameof(BackgroundMusicPick.Genres), "Some genres");
-        Option(builder, 51, nameof(BackgroundMusicPick.Artists), "Some artists");
+        builder.AddContent(48, Option(nameof(BackgroundMusicPick.All), "Every song"));
+        builder.AddContent(49, Option(nameof(BackgroundMusicPick.Playlist), "A playlist"));
+        builder.AddContent(50, Option(nameof(BackgroundMusicPick.Genres), "Some genres"));
+        builder.AddContent(51, Option(nameof(BackgroundMusicPick.Artists), "Some artists"));
         builder.CloseElement();
         builder.CloseElement();
 
@@ -218,13 +218,13 @@ public sealed class MusicPicker : ComponentBase
 
         if (_loading)
         {
-            Hint(builder, 52, $"Asking {library.Name}…", warn: false);
+            builder.AddContent(52, Hint($"Asking {library.Name}…", warn: false));
             return;
         }
 
         if (_problem is { } problem)
         {
-            Hint(builder, 53, problem, warn: true);
+            builder.AddContent(53, Hint(problem, warn: true));
             return;
         }
 
@@ -243,7 +243,7 @@ public sealed class MusicPicker : ComponentBase
                 copy.PlaylistId = id.Length == 0 ? null : id;
                 copy.PlaylistName = _choices.FirstOrDefault(choice => choice.Id == id)?.Name;
             })));
-            Option(builder, 67, "", "Choose…");
+            builder.AddContent(67, Option("", "Choose…"));
             foreach (MusicChoice playlist in _choices)
             {
                 builder.OpenElement(68, "option");
@@ -257,7 +257,7 @@ public sealed class MusicPicker : ComponentBase
             builder.CloseElement();
             if (string.IsNullOrEmpty(music.PlaylistId))
             {
-                Hint(builder, 71, "Choose a playlist, or there'll be no music.", warn: true);
+                builder.AddContent(71, Hint("Choose a playlist, or there'll be no music.", warn: true));
             }
 
             return;
@@ -309,17 +309,17 @@ public sealed class MusicPicker : ComponentBase
         builder.CloseElement();
         if (chosen.Count == 0)
         {
-            Hint(builder, 101, $"Choose at least one {(genres ? "genre" : "artist")}, or there'll be no music.", warn: true);
+            builder.AddContent(101, Hint($"Choose at least one {(genres ? "genre" : "artist")}, or there'll be no music.", warn: true));
         }
     }
 
-    private static void Hint(RenderTreeBuilder builder, int sequence, string text, bool warn)
+    private static RenderFragment Hint(string text, bool warn) => builder =>
     {
-        builder.OpenElement(sequence, "p");
-        builder.AddAttribute(sequence + 1000, "class", warn ? "hint warn" : "hint");
-        builder.AddContent(sequence + 2000, text);
+        builder.OpenElement(0, "p");
+        builder.AddAttribute(1, "class", warn ? "hint warn" : "hint");
+        builder.AddContent(2, text);
         builder.CloseElement();
-    }
+    };
 
     private async Task ChooseSourceAsync(string value)
     {
