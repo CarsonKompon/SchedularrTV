@@ -275,10 +275,11 @@
     private async Task Edit(ContentInclude include)
     {
         _editing = include;
-        _editSeasons = (await Library.GetShowsAsync())
-            .FirstOrDefault(s => string.Equals(s.Name, include.Show, StringComparison.OrdinalIgnoreCase))
-            ?.Seasons ?? [];
-        _editEpisodes = await Library.GetEpisodesAsync(include.Show!);
+
+        // Episodes are kept by series id, not name: the show as this entry means it (its pinned id, else its name).
+        LibraryShow? show = Find(include);
+        _editSeasons = show?.Seasons ?? [];
+        _editEpisodes = show is null ? [] : await Library.GetEpisodesAsync(show.Id);
     }
 
     private void ToggleSeason(int season, bool on)
