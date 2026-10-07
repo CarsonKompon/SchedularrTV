@@ -82,7 +82,7 @@
                         <strong>Pick shows and movies</strong>
                         <span>Choose exactly which titles air.</span>
                     </button>
-                    @if (_jellyfinCollections.Count > 0)
+                    @if (Jellyfin.IsConfigured && _jellyfinCollections.Count > 0)
                     {
                         <button type="button" class="wizard-choice @(_source == Source.JellyfinCollection ? "on" : "")" @onclick="() => _source = Source.JellyfinCollection">
                             <strong>A Jellyfin collection</strong>

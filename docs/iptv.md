@@ -27,7 +27,7 @@ Open **IPTV channels** in the sidebar and add a provider:
 [iptv-org](https://github.com/iptv-org/iptv) collects publicly available channels from around the world, and
 [iptv-org/epg](https://github.com/iptv-org/epg) grabs their listings from TV listings sites.
 
-- **Add free channels from iptv-org** (or the box at the top of any provider's editor) picks one of iptv-org's playlists
+- **Add channels from iptv-org** (or the box at the top of any provider's editor) picks one of iptv-org's playlists
   instead of an address: a country, a category (News, Kids…), a language, or everything. Then load the channels and tick
   the ones to carry as usual. iptv-org's streams come and go, so expect some not to play.
 - **Make the guide with iptv-org/epg** (on by default for iptv-org playlists, and available for any provider) makes the

@@ -1,6 +1,7 @@
 @* The list of explicitly picked shows/movies inside a collection. *@
 @inject LibraryBrowser Library
 @inject ConfigEditor Editor
+@inject SchedularrTV.Providers.Jellyfin.JellyfinMediaLibrary Jellyfin
 
 <div class="field">
     <span style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px;">
@@ -78,7 +79,10 @@
         <select class="include-add-kind" @onchange="OnPickerChanged" value="@_pickerKind">
             <option value="show">Show</option>
             <option value="movie">Movie</option>
-            <option value="collection">Jellyfin collection</option>
+            @if (Jellyfin.IsConfigured)
+            {
+                <option value="collection">Jellyfin collection</option>
+            }
         </select>
         @* Picking a suggestion adds it straight away; a name typed out is added with the button (or Enter). *@
         <TitlePicker @key="_pickerKind" Class="include-add-picker" Options="_options" Value="@_pending" ValueChanged="v => _pending = v" OnPicked="AddPicked"
