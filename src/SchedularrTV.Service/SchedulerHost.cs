@@ -174,6 +174,14 @@ public static class SchedulerHost
         builder.Services.AddSingleton<ScheduleRebuildService>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<ScheduleRebuildService>());
 
+        // Viewing stats: who's watching each channel (Jellyfin, Plex, ErsatzTV direct), noted every minute.
+        builder.Services.Configure<SchedularrTV.Service.Stats.StatsOptions>(builder.Configuration.GetSection(SchedularrTV.Service.Stats.StatsOptions.SectionName));
+        builder.Services.AddSingleton(new SchedularrTV.Service.Stats.ViewingStore(Path.Combine(dataDirectory, "stats", "viewing.db")));
+        builder.Services.AddSingleton<SchedularrTV.Service.Stats.AudienceReader>();
+        builder.Services.AddSingleton<SchedularrTV.Service.Stats.ViewingRecorder>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<SchedularrTV.Service.Stats.ViewingRecorder>());
+        builder.Services.AddHttpClient(SchedularrTV.Service.Stats.AudienceReader.ClientName, http => http.Timeout = TimeSpan.FromSeconds(10));
+
         builder.Services.AddRazorComponents().AddInteractiveServerComponents();
         // Singleton, not scoped: a scoped editor is per-circuit, so refreshing the browser would
         // silently throw away unsaved edits. This is a single-user localhost tool, so one shared

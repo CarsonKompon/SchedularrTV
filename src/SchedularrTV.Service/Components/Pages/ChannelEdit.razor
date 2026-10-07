@@ -283,6 +283,10 @@ else
             <MidRollEditor Config="_channel.MidRoll" Changed="Editor.MarkDirty" />
         }
     }
+    else if (_tab == "stats")
+    {
+        <ChannelStatsTab Channel="_channel" TimeZoneId="@(string.IsNullOrWhiteSpace(_channel.TimeZone) ? Editor.Working.Settings.TimeZone : _channel.TimeZone)" />
+    }
     else if (ChannelSections.FirstOrDefault(section => SectionTab(section) == _tab) is { } pluginSection)
     {
         @* Promos, Generated Promos, Archive Follow and any installed plugin's channel tab. *@
@@ -299,7 +303,8 @@ else
     [
         ("general", "General", "sliders", 0),
         ("schedule", "Blocks & anchors", "calendar", 10),
-        ("breaks", "Breaks", "clock", 30)
+        ("breaks", "Breaks", "clock", 30),
+        ("stats", "Stats", "activity", 90)
     ];
 
     private IEnumerable<PluginEditorSection> ChannelSections =>

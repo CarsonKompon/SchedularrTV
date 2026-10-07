@@ -393,7 +393,7 @@ public sealed class NewsCasts(NewsSources sources, NewsVoice voice, NewsSettings
             {
                 while (queue.TryDequeue(out Story? story))
                 {
-                    if (seen.Add(new string([.. story.Title.Where(char.IsLetterOrDigit)])))
+                    if (seen.Add(string.Concat(story.Title.Where(char.IsLetterOrDigit))))
                     {
                         picked.Add(story);
                         break;

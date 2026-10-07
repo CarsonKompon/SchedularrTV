@@ -1,0 +1,559 @@
+@* A channel's viewing stats: who watched, when, and what; from the viewing history the recorder keeps. *@
+@using System.Globalization
+@using System.Text.Json.Nodes
+@using SchedularrTV.Hosting
+@using SchedularrTV.Service.Hosting
+@using SchedularrTV.Service.Stats
+@inject ViewingStore Store
+@inject ViewingRecorder Recorder
+@inject AudienceReader Audience
+@inject AppRuntime Runtime
+@inject TimeProvider Clock
+@implements IDisposable
+
+<div class="stats-bar">
+    <div class="stats-periods" role="group" aria-label="Period">
+        @foreach (StatsPeriod period in StatsPeriod.All)
+        {
+            <button type="button" class="btn btn-sm @(_period == period ? "btn-primary" : "")" @onclick="() => Pick(period)">@period.Label</button>
+        }
+    </div>
+    <div class="stats-now">
+        @if (NowWatching.Count > 0)
+        {
+            <span class="live-dot" aria-hidden="true"></span>
+            <span><strong>@NowWatching.Count</strong> watching now</span>
+            @foreach (Viewer viewer in NowWatching)
+            {
+                <span class="pill @ViaClass(viewer.Via)" title="@(viewer.Device is null ? viewer.Via : $"{viewer.Via} · {viewer.Device}")">@viewer.Name</span>
+            }
+        }
+        else
+        {
+            <span class="muted">Nobody watching right now</span>
+        }
+    </div>
+</div>
+
+@if (_report is not { } report)
+{
+    <div class="card"><p class="muted">Loading…</p></div>
+}
+else if (report.HistoryStart is null)
+{
+    <div class="card stats-empty">
+        <Icon Name="activity" Size="28" />
+        <h2>No viewing recorded yet</h2>
+        <p class="muted">
+            Every minute, SchedularrTV notes what this channel is airing and who's watching it, from @SourcesText.
+            Stats appear here once the channel has been on air for a little while.
+        </p>
+    </div>
+}
+else
+{
+    @if (report.HistoryStart > report.From)
+    {
+        <p class="hint stats-since">History for this channel begins @report.HistoryStart.Value.ToString("d MMM yyyy, HH:mm", CultureInfo.CurrentCulture).</p>
+    }
+
+    <div class="stats-kpis">
+        <div class="kpi">
+            <span class="kpi-label">Watch time</span>
+            <span class="kpi-value">@Duration(report.WatchedMinutes)</span>
+            <span class="kpi-sub">@Duration(report.ViewerMinutes) viewer time</span>
+        </div>
+        <div class="kpi">
+            <span class="kpi-label">Airtime watched</span>
+            <span class="kpi-value">@Percent(report.WatchedShare)</span>
+            <span class="kpi-sub">of @Duration(report.AiredMinutes) on air</span>
+        </div>
+        <div class="kpi">
+            <span class="kpi-label">Peak viewers</span>
+            <span class="kpi-value">@report.PeakViewers</span>
+            <span class="kpi-sub" title="@PeakText(report)">@PeakText(report)</span>
+        </div>
+        <div class="kpi">
+            <span class="kpi-label">Viewers</span>
+            <span class="kpi-value">@report.UniqueViewers</span>
+            <span class="kpi-sub">@string.Join(" · ", report.MinutesByVia.OrderByDescending(pair => pair.Value).Select(pair => pair.Key))</span>
+        </div>
+        <div class="kpi">
+            <span class="kpi-label">Sessions</span>
+            <span class="kpi-value">@report.Sessions</span>
+            <span class="kpi-sub">@(report.Sessions == 0 ? "None yet" : $"{Duration((int)Math.Round(report.AverageSessionMinutes))} avg · {Duration(report.LongestSessionMinutes)} longest")</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head">
+            <h2>Watch time by @(report.BarsAreWeeks ? "week" : "day")</h2>
+            <span class="muted">Hours someone was watching</span>
+        </div>
+        @{
+            double barMax = Math.Max(1, report.Bars.Count == 0 ? 0 : report.Bars.Max(bar => bar.WatchedMinutes) / 60.0);
+            double slot = (WideWidth - Gutter) / (double)Math.Max(1, report.Bars.Count);
+            int labelEvery = Math.Max(1, (int)Math.Ceiling(report.Bars.Count / 14.0));
+        }
+        <svg class="chart" viewBox="0 0 @WideWidth @(ChartHeight + 22)" role="img" aria-label="Watch time chart">
+            @foreach (double tick in Ticks(barMax))
+            {
+                double y = ChartHeight - tick / barMax * ChartHeight;
+                <line class="grid-line" x1="@Gutter" x2="@WideWidth" y1="@F(y)" y2="@F(y)" />
+                <text class="axis" x="0" y="@F(y + 3)">@Number(tick)h</text>
+            }
+            @for (int i = 0; i < report.Bars.Count; i++)
+            {
+                TimeBar bar = report.Bars[i];
+                double height = bar.WatchedMinutes / 60.0 / barMax * ChartHeight;
+                double x = Gutter + i * slot + slot * 0.15;
+                <rect class="bar" x="@F(x)" y="@F(ChartHeight - height)" width="@F(slot * 0.7)" height="@F(Math.Max(height, bar.WatchedMinutes > 0 ? 1.5 : 0))" rx="2">
+                    <title>@bar.Label: @Duration(bar.WatchedMinutes) watched of @Duration(bar.AiredMinutes) on air</title>
+                </rect>
+                @if (i % labelEvery == 0)
+                {
+                    <text class="axis" x="@F(x + slot * 0.35)" y="@(ChartHeight + 16)" text-anchor="middle">@bar.Label</text>
+                }
+            }
+        </svg>
+    </div>
+
+    <div class="stats-split">
+        <div class="card">
+            <div class="card-head">
+                <h2>Last 24 hours</h2>
+                <span class="muted">Average viewers, by quarter hour</span>
+            </div>
+            @{
+                double lineMax = Math.Max(1, Math.Ceiling(report.Recent.Count == 0 ? 0 : report.Recent.Max(point => point.Viewers)));
+                double step = report.Recent.Count > 1 ? (ChartWidth - Gutter) / (double)(report.Recent.Count - 1) : ChartWidth;
+                string points = string.Join(" ", report.Recent.Select((point, i) => $"{F(Gutter + i * step)},{F(ChartHeight - point.Viewers / lineMax * ChartHeight)}"));
+            }
+            <svg class="chart" viewBox="0 0 @ChartWidth @(ChartHeight + 22)" role="img" aria-label="Viewers over the last day">
+                @foreach (double tick in Ticks(lineMax))
+                {
+                    double y = ChartHeight - tick / lineMax * ChartHeight;
+                    <line class="grid-line" x1="@Gutter" x2="@ChartWidth" y1="@F(y)" y2="@F(y)" />
+                    <text class="axis" x="0" y="@F(y + 3)">@Number(tick)</text>
+                }
+                @if (report.Recent.Count > 1)
+                {
+                    <polygon class="area" points="@Gutter,@ChartHeight @points @F(ChartWidth),@ChartHeight" />
+                    <polyline class="line" points="@points" />
+                    @for (int i = 0; i < report.Recent.Count; i += 16)
+                    {
+                        <text class="axis" x="@F(Gutter + i * step)" y="@(ChartHeight + 16)" text-anchor="@(i == 0 ? "start" : i + 16 >= report.Recent.Count ? "end" : "middle")">@report.Recent[i].At.ToString("HH:mm", CultureInfo.CurrentCulture)</text>
+                    }
+                }
+            </svg>
+        </div>
+
+        <div class="card">
+            <div class="card-head">
+                <h2>When people watch</h2>
+                <span class="muted">Average viewers by day and hour</span>
+            </div>
+            @{
+                double heatMax = Math.Max(0.01, report.Heat.Count == 0 ? 0 : report.Heat.Max(c => c.AverageViewers));
+            }
+            <div class="heat">
+                <span></span>
+                @for (int hour = 0; hour < 24; hour++)
+                {
+                    <span class="heat-hour">@(hour % 3 == 0 ? hour.ToString("00", CultureInfo.InvariantCulture) : "")</span>
+                }
+                @for (int day = 0; day < 7; day++)
+                {
+                    <span class="heat-day">@Days[day]</span>
+                    int row = day;
+                    @foreach (HeatCell cell in report.Heat.Where(c => c.Day == row))
+                    {
+                        <span class="heat-cell" style="--a:@F(cell.AverageViewers <= 0 ? 0 : 0.12 + 0.88 * cell.AverageViewers / heatMax)"
+                              title="@($"{Days[day]} {cell.Hour:00}:00 · {cell.AverageViewers:0.##} viewers on average · {Duration(cell.WatchedMinutes)} watched")"></span>
+                    }
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="stats-split">
+        <div class="card">
+            <div class="card-head">
+                <h2>Most watched</h2>
+                <span class="muted">By viewer time</span>
+            </div>
+            @if (report.MostWatched.Count == 0)
+            {
+                <p class="muted">Nothing watched in this period.</p>
+            }
+            else
+            {
+                double most = report.MostWatched.Max(show => show.ViewerMinutes);
+                <ol class="rank">
+                    @foreach (ShowStat show in report.MostWatched)
+                    {
+                        <li>
+                            <div class="rank-row"><span class="rank-name">@show.Show</span><span class="rank-value">@Duration(show.ViewerMinutes)</span></div>
+                            <div class="meter"><span style="width:@F(show.ViewerMinutes / most * 100)%"></span></div>
+                            <div class="rank-sub">@Percent(show.Share) of @Duration(show.AiredMinutes) watched · @show.Airings @(show.Airings == 1 ? "airing" : "airings") · peak @show.Peak</div>
+                        </li>
+                    }
+                </ol>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-head">
+                <h2>Least watched</h2>
+                <span class="muted">Share of airtime watched</span>
+            </div>
+            @if (report.LeastWatched.Count == 0)
+            {
+                <p class="muted">No show has aired for @ChannelStats.LeastWatchedMinimumMinutes minutes yet in this period.</p>
+            }
+            else
+            {
+                <ol class="rank">
+                    @foreach (ShowStat show in report.LeastWatched)
+                    {
+                        <li>
+                            <div class="rank-row"><span class="rank-name">@show.Show</span><span class="rank-value">@Percent(show.Share)</span></div>
+                            <div class="meter meter-warn"><span style="width:@F(Math.Max(show.Share * 100, show.Share > 0 ? 1 : 0))%"></span></div>
+                            <div class="rank-sub">@Duration(show.WatchedMinutes) of @Duration(show.AiredMinutes) watched · @show.Airings @(show.Airings == 1 ? "airing" : "airings")</div>
+                        </li>
+                    }
+                </ol>
+                @if (report.NeverWatchedShows > 0)
+                {
+                    <p class="hint">@report.NeverWatchedShows @(report.NeverWatchedShows == 1 ? "show has" : "shows have") aired for @ChannelStats.LeastWatchedMinimumMinutes+ minutes with nobody watching.</p>
+                }
+            }
+        </div>
+    </div>
+
+    <div class="stats-split">
+        <div class="card">
+            <div class="card-head"><h2>Top episodes &amp; films</h2></div>
+            @if (report.TopTitles.Count == 0)
+            {
+                <p class="muted">Nothing watched in this period.</p>
+            }
+            else
+            {
+                <table class="stats-table">
+                    <tbody>
+                        @foreach (TitleStat title in report.TopTitles)
+                        {
+                            <tr>
+                                <td>
+                                    <strong>@title.Show</strong>
+                                    @if (title.Title is not null)
+                                    {
+                                        <span class="muted"> · @title.Title</span>
+                                    }
+                                </td>
+                                <td class="num">@Duration(title.ViewerMinutes)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-head"><h2>Programmes vs breaks</h2></div>
+            <div class="versus">
+                <div>
+                    <div class="rank-row"><span>Programmes</span><span class="rank-value">@Percent(report.ProgramShare)</span></div>
+                    <div class="meter"><span style="width:@F(report.ProgramShare * 100)%"></span></div>
+                </div>
+                <div>
+                    <div class="rank-row"><span>Ad breaks &amp; promos</span><span class="rank-value">@Percent(report.BreakShare)</span></div>
+                    <div class="meter meter-break"><span style="width:@F(report.BreakShare * 100)%"></span></div>
+                </div>
+            </div>
+            <p class="hint">
+                The share of each that someone was watching. @BreakExits(report)
+            </p>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head"><h2>Who watched</h2></div>
+        @if (report.Who.Count == 0)
+        {
+            <p class="muted">Nobody watched in this period.</p>
+        }
+        else
+        {
+            int total = Math.Max(1, report.MinutesByVia.Values.Sum());
+            <div class="via-split" role="img" aria-label="Watching by source">
+                @foreach ((string via, int minutes) in report.MinutesByVia.OrderByDescending(pair => pair.Value))
+                {
+                    <span class="via-@via.ToLowerInvariant()" style="flex:@minutes" title="@($"{via}: {Duration(minutes)}")">@via @Percent((double)minutes / total)</span>
+                }
+            </div>
+            <table class="stats-table">
+                <thead><tr><th>Viewer</th><th>Through</th><th class="num">Watched</th><th class="num">Last seen</th></tr></thead>
+                <tbody>
+                    @foreach (WhoStat who in report.Who)
+                    {
+                        <tr>
+                            <td>@who.Name</td>
+                            <td><span class="pill @ViaClass(who.Via)">@who.Via</span></td>
+                            <td class="num">@Duration(who.Minutes)</td>
+                            <td class="num muted">@who.LastSeen.ToString("d MMM, HH:mm", CultureInfo.CurrentCulture)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (report.MinutesByVia.ContainsKey("Direct"))
+            {
+                <p class="hint">"Direct viewer" is a player pulling the channel straight from ErsatzTV (VLC, an IPTV app). ErsatzTV can't say how many, so it counts as one.</p>
+            }
+        }
+    </div>
+}
+
+<div class="card">
+    <div class="card-head">
+        <h2>Where viewers come from</h2>
+        <span class="muted">Shared by every channel</span>
+    </div>
+    <ul class="sources">
+        @foreach ((string source, string detail) in SourceRows())
+        {
+            string? problem = Audience.Problems.TryGetValue(source, out string? reason) ? reason : null;
+            bool on = Audience.Sources.Contains(source);
+            <li>
+                <span class="pill @(problem is not null ? "pill-error" : on ? "pill-ok" : "pill-muted")">@(problem is not null ? "Problem" : on ? "On" : "Off")</span>
+                <strong>@source</strong>
+                <span class="muted">@(problem is not null ? $"Couldn't read sessions: {problem}" : detail)</span>
+            </li>
+        }
+    </ul>
+
+    <div class="grid grid-2">
+        <label class="field">
+            <span>Plex address</span>
+            <input type="url" value="@_plexUrl" placeholder="http://localhost:32400" @onchange="e => { _plexUrl = Text(e).TrimEnd('/'); _dirty = true; }" />
+        </label>
+        <label class="field">
+            <span>Plex token @(_plexTokenSet ? "(saved)" : "")</span>
+            <input type="password" autocomplete="off" value="@_plexToken"
+                   placeholder="@(_plexTokenSet ? "•••••••• (leave blank to keep)" : "X-Plex-Token")" @onchange="e => { _plexToken = Text(e); _dirty = true; }" />
+        </label>
+    </div>
+    <div class="grid grid-2">
+        <label class="field">
+            <span>Keep history for (days)</span>
+            <input type="number" min="7" max="3650" value="@_keepDays"
+                   @onchange="e => { _keepDays = int.TryParse(e.Value?.ToString(), out int days) ? Math.Clamp(days, 7, 3650) : _keepDays; _dirty = true; }" />
+        </label>
+        <label class="check stats-check">
+            <input type="checkbox" checked="@_enabled" @onchange="e => { _enabled = (bool)(e.Value ?? false); _dirty = true; }" />
+            <span>Record viewing</span>
+        </label>
+    </div>
+    <div class="row row-wrap" style="gap:10px;align-items:center;">
+        <button class="btn btn-sm btn-primary" type="button" disabled="@(!_dirty)" @onclick="Save">Save</button>
+        <button class="btn btn-sm" type="button" disabled="@_checking" @onclick="CheckNow">@(_checking ? "Checking…" : "Check now")</button>
+        @if (_message is not null)
+        {
+            <span class="pill pill-ok">@_message</span>
+        }
+        <span class="stats-spacer"></span>
+        @if (_confirmClear)
+        {
+            <span class="muted">Forget all of @Channel.Name's viewing history?</span>
+            <button class="btn btn-sm btn-danger" type="button" @onclick="Clear">Forget it</button>
+            <button class="btn btn-sm" type="button" @onclick="() => _confirmClear = false">Keep it</button>
+        }
+        else
+        {
+            <button class="btn btn-sm" type="button" @onclick="() => _confirmClear = true"><Icon Name="trash" Size="14" />Clear this channel's history</button>
+        }
+    </div>
+    <p class="hint" style="margin-top:10px;">
+        Jellyfin viewers are read with the Jellyfin connection from App settings. For Plex, find the token by opening any item's
+        <strong>⋯ → Get Info → View XML</strong> and copying the <code>X-Plex-Token</code> from the address.
+    </p>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ChannelConfig Channel { get; set; } = default!;
+
+    /// <summary>The channel's time zone (its own, or the scheduler's), for days and hours.</summary>
+    [Parameter] public string? TimeZoneId { get; set; }
+
+    // Drawing sizes: the full-width chart, and those that sit two to a row.
+    private const int WideWidth = 960;
+    private const int ChartWidth = 480;
+    private const int ChartHeight = 160;
+    private const int Gutter = 30;
+    private static readonly string[] Days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+    private StatsPeriod _period = StatsPeriod.Find("week");
+    private ChannelStatsReport? _report;
+    private string? _loadedFor;
+
+    private string _plexUrl = string.Empty;
+    private string _plexToken = string.Empty;
+    private bool _plexTokenSet;
+    private int _keepDays = 365;
+    private bool _enabled = true;
+    private bool _dirty;
+    private bool _checking;
+    private bool _confirmClear;
+    private string? _message;
+
+    private IReadOnlyList<Viewer> NowWatching =>
+        Recorder.Now.TryGetValue(Channel.Id, out IReadOnlyList<Viewer>? viewers) ? viewers : [];
+
+    private string SourcesText =>
+        Audience.Sources.Count == 0 ? "nowhere yet (set up Jellyfin, Plex or ErsatzTV below)" : string.Join(", ", Audience.Sources);
+
+    protected override void OnInitialized()
+    {
+        Recorder.Sampled += OnSampled;
+        LoadSettings();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (_loadedFor != Channel.Id)
+        {
+            _loadedFor = Channel.Id;
+            _confirmClear = false;
+            Refresh();
+        }
+    }
+
+    private void Pick(StatsPeriod period)
+    {
+        _period = period;
+        Refresh();
+    }
+
+    private void Refresh()
+    {
+        TimeZoneInfo zone = string.IsNullOrWhiteSpace(TimeZoneId) ? TimeZoneInfo.Local : SchedularrTV.Core.Scheduling.SchedulingEngine.ResolveTimeZone(TimeZoneId);
+        _report = ChannelStats.Build(Store, Channel.Id, _period, Clock.GetUtcNow(), zone);
+    }
+
+    private void OnSampled() => _ = InvokeAsync(() =>
+    {
+        Refresh();
+        StateHasChanged();
+    });
+
+    private IEnumerable<(string Source, string Detail)> SourceRows()
+    {
+        yield return ("Jellyfin", Audience.Sources.Contains("Jellyfin") ? "Each user watching through Jellyfin Live TV." : "Connect Jellyfin in App settings to count its Live TV viewers.");
+        yield return ("Plex", Audience.PlexConfigured ? "Each user watching through Plex Live TV." : "Add Plex's address and token below to count its Live TV viewers.");
+        yield return ("Direct", Audience.Sources.Contains("Direct") ? "Players pulling a channel straight from ErsatzTV (VLC, IPTV apps), counted as one."
+            : "ErsatzTV isn't set up, so players watching it directly can't be seen.");
+    }
+
+    private void LoadSettings()
+    {
+        JsonObject file = Runtime.Settings.Load();
+        _plexUrl = AppSettingsFile.GetString(file, "Stats:PlexUrl") ?? string.Empty;
+        _plexTokenSet = !string.IsNullOrWhiteSpace(AppSettingsFile.GetString(file, "Stats:PlexToken"));
+        _plexToken = string.Empty;
+        _keepDays = AppSettingsFile.GetInt(file, "Stats:KeepDays") ?? 365;
+        _enabled = AppSettingsFile.GetBool(file, "Stats:Enabled") ?? true;
+        _dirty = false;
+    }
+
+    private void Save()
+    {
+        JsonObject file = Runtime.Settings.Load();
+        AppSettingsFile.Set(file, "Stats:PlexUrl", string.IsNullOrWhiteSpace(_plexUrl) ? null : JsonValue.Create(_plexUrl));
+        if (!string.IsNullOrWhiteSpace(_plexToken))
+        {
+            AppSettingsFile.Set(file, "Stats:PlexToken", JsonValue.Create(_plexToken));
+        }
+        else if (string.IsNullOrWhiteSpace(_plexUrl))
+        {
+            // No Plex address: the token goes with it.
+            AppSettingsFile.Set(file, "Stats:PlexToken", null);
+        }
+
+        AppSettingsFile.Set(file, "Stats:KeepDays", JsonValue.Create(_keepDays));
+        AppSettingsFile.Set(file, "Stats:Enabled", JsonValue.Create(_enabled));
+        Runtime.SaveSettings(file);
+        LoadSettings();
+        _message = "Saved";
+    }
+
+    private async Task CheckNow()
+    {
+        _checking = true;
+        _message = null;
+        try
+        {
+            await Recorder.SampleAsync(CancellationToken.None);
+            Refresh();
+            _message = Audience.Problems.Count == 0 ? "All sources answered" : null;
+        }
+        finally
+        {
+            _checking = false;
+        }
+    }
+
+    private void Clear()
+    {
+        Store.Clear(Channel.Id);
+        _confirmClear = false;
+        Refresh();
+    }
+
+    private static string PeakText(ChannelStatsReport report) =>
+        report.PeakAt is not { } at ? "Nobody yet"
+            : report.PeakShow is null ? at.ToString("ddd d MMM, HH:mm", CultureInfo.CurrentCulture)
+            : at.ToString("ddd d MMM, HH:mm", CultureInfo.CurrentCulture) + " · " + report.PeakShow;
+
+    private static string BreakExits(ChannelStatsReport report) =>
+        report.Sessions == 0 ? string.Empty
+            : $"{report.SessionsEndingInBreaks} of {report.Sessions} viewing sessions ({Percent((double)report.SessionsEndingInBreaks / report.Sessions)}) ended during a break.";
+
+    private static string Text(ChangeEventArgs e) => e.Value?.ToString()?.Trim() ?? string.Empty;
+
+    private static string ViaClass(string via) => via switch
+    {
+        "Jellyfin" => "pill-jellyfin",
+        "Plex" => "pill-plex",
+        _ => "pill-muted"
+    };
+
+    /// <summary>A number for SVG: invariant, so a comma decimal never breaks the drawing.</summary>
+    private static string F(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private static string Number(double value) => value.ToString(value < 10 && value != Math.Floor(value) ? "0.#" : "0", CultureInfo.CurrentCulture);
+
+    private static string Percent(double share) => share <= 0 ? "0%" : share < 0.01 ? "<1%" : share.ToString("0%", CultureInfo.CurrentCulture);
+
+    private static string Duration(int minutes) => minutes switch
+    {
+        <= 0 => "0m",
+        < 60 => $"{minutes}m",
+        < 60 * 100 => minutes % 60 == 0 ? $"{minutes / 60}h" : $"{minutes / 60}h {minutes % 60}m",
+        _ => $"{(minutes / 60):N0}h"
+    };
+
+    /// <summary>Two or three tidy gridlines up to <paramref name="max"/>.</summary>
+    private static IEnumerable<double> Ticks(double max)
+    {
+        double raw = max / 3;
+        double magnitude = Math.Pow(10, Math.Floor(Math.Log10(raw)));
+        double step = (raw / magnitude) switch { < 1.5 => magnitude, < 3.5 => 2 * magnitude, < 7.5 => 5 * magnitude, _ => 10 * magnitude };
+        for (double tick = step; tick <= max + 1e-9; tick += step)
+        {
+            yield return tick;
+        }
+    }
+
+    public void Dispose() => Recorder.Sampled -= OnSampled;
+}
