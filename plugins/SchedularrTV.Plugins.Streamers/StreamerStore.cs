@@ -23,7 +23,18 @@ public sealed class StreamerStore
     {
         _channelsPath = Path.Combine(dataDirectory, "channels.json");
         _historyPath = Path.Combine(dataDirectory, "history.json");
-        _channels = Load<List<StreamerChannel>>(_channelsPath) ?? [];
+        List<StreamerChannel> loaded = Load<List<StreamerChannel>>(_channelsPath) ?? [];
+        foreach (OfflineOptions? offline in loaded.Select(channel => channel.Offline))
+        {
+            // An earlier version's music folder is shown, and can be changed, as the channel's music.
+            if (offline is not null)
+            {
+                offline.Music = SchedularrTV.Core.Media.BackgroundMusic.Tidy(offline.Music, offline.MusicFolder);
+                offline.MusicFolder = null;
+            }
+        }
+
+        _channels = loaded;
         _history = new Dictionary<string, List<StreamSession>>(
             Load<Dictionary<string, List<StreamSession>>>(_historyPath) ?? new Dictionary<string, List<StreamSession>>(), StringComparer.OrdinalIgnoreCase);
     }
@@ -114,7 +125,8 @@ public sealed class StreamerStore
         offline.Message = string.IsNullOrWhiteSpace(offline.Message) ? null : offline.Message.Trim();
         offline.AccentColor = IsColour(offline.AccentColor) ? offline.AccentColor.ToLowerInvariant() : "#9146ff";
         offline.BackgroundColor = IsColour(offline.BackgroundColor) ? offline.BackgroundColor.ToLowerInvariant() : "#0e0e14";
-        offline.MusicFolder = string.IsNullOrWhiteSpace(offline.MusicFolder) ? null : offline.MusicFolder.Trim().Trim('"');
+        offline.Music = SchedularrTV.Core.Media.BackgroundMusic.Tidy(offline.Music, offline.MusicFolder);
+        offline.MusicFolder = null;
         offline.MusicVolume = Math.Clamp(offline.MusicVolume, 0, 2);
         offline.ReplayNoteEveryMinutes = Math.Clamp(offline.ReplayNoteEveryMinutes, 1, 120);
         offline.ReplayNoteSeconds = Math.Clamp(offline.ReplayNoteSeconds, 3, 120);

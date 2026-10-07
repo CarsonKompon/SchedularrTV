@@ -79,7 +79,8 @@ public sealed class GuideStore
         guide.FontFamily = LiveFonts.Clean(guide.FontFamily);
         guide.TopPercent = Math.Clamp(guide.TopPercent, 0, 70);
         guide.Volume = Math.Clamp(guide.Volume, 0, 1);
-        guide.MusicFolder = string.IsNullOrWhiteSpace(guide.MusicFolder) ? null : guide.MusicFolder.Trim().Trim('"');
+        guide.Music = SchedularrTV.Core.Media.BackgroundMusic.Tidy(guide.Music, guide.MusicFolder);
+        guide.MusicFolder = null;
         guide.HiddenChannels = [.. guide.HiddenChannels.Distinct().Order()];
         guide.CycleChannelNumbers = [.. guide.CycleChannelNumbers.Distinct().Order()];
         guide.CycleMinutes = Math.Clamp(guide.CycleMinutes, 1, 120);
@@ -97,7 +98,15 @@ public sealed class GuideStore
     {
         try
         {
-            return File.Exists(path) ? JsonSerializer.Deserialize<List<GuideStation>>(File.ReadAllText(path), Json) ?? [] : [];
+            List<GuideStation> guides = File.Exists(path) ? JsonSerializer.Deserialize<List<GuideStation>>(File.ReadAllText(path), Json) ?? [] : [];
+            foreach (GuideStation guide in guides)
+            {
+                // An earlier version's music folder is shown, and can be changed, as the guide's music.
+                guide.Music = SchedularrTV.Core.Media.BackgroundMusic.Tidy(guide.Music, guide.MusicFolder);
+                guide.MusicFolder = null;
+            }
+
+            return guides;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {

@@ -165,6 +165,7 @@ public sealed class GeneratedPromoPreview(
         GeneratedPromoTemplate copy = GeneratedPromoEditing.Copy(template);
         copy.Music!.Path = null;
         copy.Music.Paths = [song];
+        copy.Music.Library = null;
         return copy;
     }
 

@@ -44,8 +44,10 @@ Open **Web shows** in the sidebar and choose **Add a show**:
 3. Set its look: units, clock style, map layer and zoom, and so on, depending on the preset.
 4. List the **lengths** it can be scheduled for, in minutes, e.g. `3, 4, 5` for short segments, or `30, 60` for a
    channel of its own.
-5. Optionally pick a **music folder**. Its songs are shuffled under the page at the volume you set. MP3, M4A, AAC,
-   OGG, Opus, FLAC and WAV files are used, including those in subfolders. A page's own sound isn't captured.
+5. Optionally choose **music**, shuffled under the page at the volume you set: a folder on disk (MP3, M4A, AAC, OGG,
+   Opus, FLAC, WAV and other audio files, including those in subfolders), or any [music library](background-music.md)
+   (Jellyfin's, local music folders, a plugin's) with every song, a playlist, some genres or some artists. A page's
+   own sound isn't captured.
 
 The preview shows the page as it will look. While a channel is on air, the preview shows what's going out.
 
@@ -111,7 +113,8 @@ e.g. `http://192.168.1.20:5252`. The default is `localhost`, which only works wh
   (after 20 seconds). Check that a browser is installed and that the page opens in a browser on the scheduler's computer.
 - **The radar is empty.** Windy's radar only covers some parts of the world; choose *Rain and thunder* instead.
 - **The clock shows no weather.** It needs a place, and internet access to Open-Meteo.
-- **No sound.** The music folder doesn't exist on the scheduler's computer, or has no music files in it.
+- **No sound.** The music folder doesn't exist on the scheduler's computer, or has no music files in it; or the music
+  library isn't set up, or has no songs for the playlist, genres or artists chosen.
 - **ErsatzTV can't open the stream.** Check the stream address, and that the scheduler's port is reachable from the
   ErsatzTV computer through its firewall.
 - **The channel loads forever.** Rebuild the schedule (Dashboard → Rebuild) so ErsatzTV gets the segments as live

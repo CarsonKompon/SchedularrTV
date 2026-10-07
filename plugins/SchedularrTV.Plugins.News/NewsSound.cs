@@ -2,6 +2,8 @@ using System.Buffers.Binary;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using SchedularrTV.Core.Media;
+using SchedularrTV.Plugins;
 
 namespace SchedularrTV.News;
 
@@ -10,13 +12,18 @@ namespace SchedularrTV.News;
 /// its segment's time on the show's clock (<see cref="NewsCast"/>), over the show's music, which dips under the voice.
 /// The mix is made here, 20 ms at a time and a little ahead of the clock, and encoded by an ffmpeg of its own.
 /// </summary>
-public sealed class NewsSound(NewsStore store, NewsCasts casts, NewsSettings settings, TimeProvider clock, ILogger<NewsSound> logger)
+public sealed class NewsSound(
+    NewsStore store,
+    NewsCasts casts,
+    NewsSettings settings,
+    TimeProvider clock,
+    ILogger<NewsSound> logger,
+    IEnumerable<IMusicLibrary> musicLibraries)
 {
-    private const int Rate = 48000;
+    private const int Rate = MusicBed.Rate;
     private const int FramesPerChunk = Rate / 50;
-    private const int BytesPerFrame = 4;
+    private const int BytesPerFrame = MusicBed.BytesPerFrame;
     private static readonly TimeSpan Ahead = TimeSpan.FromMilliseconds(250);
-    private static readonly string[] MusicExtensions = [".mp3", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".wav"];
 
     public async Task ServeAsync(string showId, HttpContext context)
     {
@@ -36,7 +43,7 @@ public sealed class NewsSound(NewsStore store, NewsCasts casts, NewsSettings set
         using Process encoder = StartEncoder();
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         Task outward = encoder.StandardOutput.BaseStream.CopyToAsync(context.Response.Body, stop.Token);
-        Music? music = null;
+        MusicBed? music = null;
         try
         {
             await MixAsync(show, encoder.StandardInput.BaseStream, outward, mix => music = mix, stop.Token).ConfigureAwait(false);
@@ -60,7 +67,7 @@ public sealed class NewsSound(NewsStore store, NewsCasts casts, NewsSettings set
         }
     }
 
-    private async Task MixAsync(NewsShow show, Stream input, Task outward, Action<Music?> musicChanged, CancellationToken cancellationToken)
+    private async Task MixAsync(NewsShow show, Stream input, Task outward, Action<MusicBed?> musicChanged, CancellationToken cancellationToken)
     {
         var paced = Stopwatch.StartNew();
         long startedAt = clock.GetUtcNow().ToUnixTimeMilliseconds();
@@ -69,8 +76,8 @@ public sealed class NewsSound(NewsStore store, NewsCasts casts, NewsSettings set
         short[] speech = new short[FramesPerChunk * 2];
         short[] bed = new short[FramesPerChunk * 2];
         double musicGain = show.MusicVolume;
-        Music? music = null;
-        string? musicFolder = null;
+        MusicBed? music = null;
+        string? musicKey = null;
         Clip? clip = null;
         NewsCast cast = casts.Use(show.Id, show, speak: true);
         long checkedAt = -1;
@@ -87,11 +94,12 @@ public sealed class NewsSound(NewsStore store, NewsCasts casts, NewsSettings set
                     show = store.Find(show.Id) ?? show;
                     // Also what keeps the rundown fresh while the show is on air.
                     cast = casts.Use(show.Id, show, speak: true);
-                    if (show.MusicFolder != musicFolder)
+                    BackgroundMusic? wanted = show.Music ?? BackgroundMusic.Tidy(null, show.MusicFolder);
+                    if (wanted?.Key != musicKey)
                     {
                         music?.Dispose();
-                        musicFolder = show.MusicFolder;
-                        music = Music.Start(settings.Ffmpeg, musicFolder, logger);
+                        musicKey = wanted?.Key;
+                        music = MusicBed.Start(settings.Ffmpeg, wanted, musicLibraries, logger);
                         musicChanged(music);
                     }
                 }
@@ -115,15 +123,9 @@ public sealed class NewsSound(NewsStore store, NewsCasts casts, NewsSettings set
                     speaking = clip is not null && clip.Read(intoVoice * Rate / 1000, speech);
                 }
 
+                // The music player starts its songs again itself when they run out; between songs it's silence.
                 Array.Clear(bed);
-                if (music is not null && !music.Read(bed))
-                {
-                    // The songs ran out or ffmpeg stopped: start them again next second.
-                    music.Dispose();
-                    music = null;
-                    musicFolder = null;
-                    musicChanged(null);
-                }
+                music?.Read(bed);
 
                 // The music dips under the voice, smoothly.
                 double target = show.MusicVolume * (speaking || (item?.Clip is not null && intoVoice >= -300 && intoVoice < item.ClipMs + 300) ? 0.22 : 1.0);
@@ -264,121 +266,4 @@ public sealed class NewsSound(NewsStore store, NewsCasts casts, NewsSettings set
         public void Dispose() => _file.Dispose();
     }
 
-    /// <summary>The show's music: the folder's songs, shuffled and looped, decoded to PCM by an ffmpeg as it's needed.</summary>
-    private sealed class Music : IDisposable
-    {
-        private readonly Process _process;
-        private readonly Stream _output;
-        private readonly string _playlist;
-        private readonly byte[] _buffer = new byte[FramesPerChunk * BytesPerFrame];
-
-        private Music(Process process, string playlist)
-        {
-            _process = process;
-            _output = process.StandardOutput.BaseStream;
-            _playlist = playlist;
-        }
-
-        public static Music? Start(string ffmpeg, string? folder, ILogger logger)
-        {
-            if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
-            {
-                return null;
-            }
-
-            string[] songs;
-            try
-            {
-                songs = [.. Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
-                    .Where(path => MusicExtensions.Contains(System.IO.Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))];
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                logger.LogWarning("News: couldn't read the music folder {Folder}: {Message}", folder, ex.Message);
-                return null;
-            }
-
-            if (songs.Length == 0)
-            {
-                return null;
-            }
-
-            Random.Shared.Shuffle(songs);
-            string playlist = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"schedularrtv-news-{Guid.NewGuid():N}.txt");
-            File.WriteAllLines(playlist, songs.Select(song => $"file '{LiveStream.ConcatPath(song)}'").Prepend("ffconcat version 1.0"));
-
-            var start = new ProcessStartInfo(ffmpeg)
-            {
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-            foreach (string argument in new[]
-                     {
-                         "-hide_banner", "-loglevel", "error", "-nostdin",
-                         "-stream_loop", "-1", "-f", "concat", "-safe", "0", "-i", playlist,
-                         "-vn", "-ac", "2", "-ar", "48000", "-f", "s16le", "pipe:1"
-                     })
-            {
-                start.ArgumentList.Add(argument);
-            }
-
-            try
-            {
-                Process process = Process.Start(start) ?? throw new InvalidOperationException("ffmpeg didn't start.");
-                process.ErrorDataReceived += (_, line) =>
-                {
-                    if (!string.IsNullOrWhiteSpace(line.Data))
-                    {
-                        logger.LogDebug("ffmpeg (news music): {Line}", line.Data);
-                    }
-                };
-                process.BeginErrorReadLine();
-                return new Music(process, playlist);
-            }
-            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
-            {
-                logger.LogWarning("News: couldn't start ffmpeg for the music: {Message}", ex.Message);
-                File.Delete(playlist);
-                return null;
-            }
-        }
-
-        /// <summary>The next 20 ms of music; false once it has ended.</summary>
-        public bool Read(short[] samples)
-        {
-            int read = 0;
-            while (read < _buffer.Length)
-            {
-                int got = _output.Read(_buffer, read, _buffer.Length - read);
-                if (got == 0)
-                {
-                    return false;
-                }
-
-                read += got;
-            }
-
-            for (int sample = 0; sample < samples.Length; sample++)
-            {
-                samples[sample] = BinaryPrimitives.ReadInt16LittleEndian(_buffer.AsSpan(sample * 2));
-            }
-
-            return true;
-        }
-
-        public void Dispose()
-        {
-            Kill(_process);
-            _process.Dispose();
-            try
-            {
-                File.Delete(_playlist);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-            }
-        }
-    }
 }

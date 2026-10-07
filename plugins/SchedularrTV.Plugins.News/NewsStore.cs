@@ -109,7 +109,8 @@ public sealed partial class NewsStore
         show.VoiceProvider = Trimmed(show.VoiceProvider);
         show.Voice = Trimmed(show.Voice);
         show.SpeechVolume = Math.Clamp(show.SpeechVolume, 0, 2);
-        show.MusicFolder = Trimmed(show.MusicFolder)?.Trim('"');
+        show.Music = SchedularrTV.Core.Media.BackgroundMusic.Tidy(show.Music, show.MusicFolder);
+        show.MusicFolder = null;
         show.MusicVolume = Math.Clamp(show.MusicVolume, 0, 1);
         show.SecondsPerStory = Math.Clamp(show.SecondsPerStory, 4, 120);
         show.SecondsPerDesk = Math.Clamp(show.SecondsPerDesk, 4, 120);
@@ -130,7 +131,15 @@ public sealed partial class NewsStore
     {
         try
         {
-            return File.Exists(path) ? JsonSerializer.Deserialize<List<NewsShow>>(File.ReadAllText(path), Json) ?? [] : [];
+            List<NewsShow> shows = File.Exists(path) ? JsonSerializer.Deserialize<List<NewsShow>>(File.ReadAllText(path), Json) ?? [] : [];
+            foreach (NewsShow show in shows)
+            {
+                // An earlier version's music folder is shown, and can be changed, as the show's music.
+                show.Music = SchedularrTV.Core.Media.BackgroundMusic.Tidy(show.Music, show.MusicFolder);
+                show.MusicFolder = null;
+            }
+
+            return shows;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {

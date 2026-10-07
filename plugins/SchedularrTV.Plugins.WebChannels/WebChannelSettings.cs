@@ -36,10 +36,15 @@ public sealed class WebChannelSettings(IPluginContext context) : LivePageSetting
     public string PageUrl(WebChannel channel) => channel.PresetInfo.PageUrl(channel, ForBrowser);
 
     /// <summary>What a channel plays when it's on air.</summary>
-    public LiveStreamSpec Spec(WebChannel channel) => BaseSpec(channel.Id, channel.Name, PageUrl(channel)) with
+    public LiveStreamSpec Spec(WebChannel channel)
     {
-        Audio = string.IsNullOrWhiteSpace(channel.MusicFolder) ? LiveAudio.Silence : LiveAudio.Music,
-        MusicFolder = channel.MusicFolder,
-        Volume = channel.MusicVolume
-    };
+        // A channel not yet tidied may still have its music as an earlier version's folder.
+        SchedularrTV.Core.Media.BackgroundMusic? music = channel.Music ?? SchedularrTV.Core.Media.BackgroundMusic.Tidy(null, channel.MusicFolder);
+        return BaseSpec(channel.Id, channel.Name, PageUrl(channel)) with
+        {
+            Audio = music is { IsSet: true } ? LiveAudio.Music : LiveAudio.Silence,
+            Music = music,
+            Volume = channel.MusicVolume
+        };
+    }
 }

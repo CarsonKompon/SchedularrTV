@@ -36,7 +36,8 @@ public sealed partial class GeneratedPromoService(
     ILogger<GeneratedPromoService> logger,
     SchedulerConfigProvider? config = null,
     IChannelViewers? viewers = null,
-    SchedularrTV.Service.Writing.AiTextWriter? writer = null) : BackgroundService, IScheduleFinisher
+    SchedularrTV.Service.Writing.AiTextWriter? writer = null,
+    IEnumerable<IMusicLibrary>? musicLibraries = null) : BackgroundService, IScheduleFinisher
 {
     private const double MaxTempo = 1.35;
 
@@ -323,6 +324,11 @@ public sealed partial class GeneratedPromoService(
                 BackgroundAudio = await AudibleAsync(composition.BackgroundAudio, cancellationToken).ConfigureAwait(false),
                 OverlayAudio = await AudibleAsync(composition.OverlayAudio, cancellationToken).ConfigureAwait(false)
             };
+            if (composition.Music is null && template.Music is { FromLibrary: true } fromLibrary)
+            {
+                composition = composition with { Music = await LibraryMusicAsync(fromLibrary, promo.Key, cancellationToken).ConfigureAwait(false) };
+            }
+
             await new PromoRenderer(_options.FfmpegPath)
                 .RenderAsync(composition, partial, cancellationToken)
                 .ConfigureAwait(false);
@@ -344,6 +350,37 @@ public sealed partial class GeneratedPromoService(
         }
 
         return new GeneratedPromoRender(target, voiceError);
+    }
+
+    /// <summary>Where songs from a music library are copied for rendering (those that aren't files already).</summary>
+    public string MusicDirectory => Path.Combine(Root, "music");
+
+    /// <summary>
+    /// The promo's song from its music library (Jellyfin's, local music folders, a plugin's), fixed by the promo's key so
+    /// a re-render sounds the same; null, and the promo rendered without music, when there's none or it can't be had.
+    /// </summary>
+    private async Task<PromoMusic?> LibraryMusicAsync(GeneratedMusicConfig music, string key, CancellationToken cancellationToken)
+    {
+        try
+        {
+            string? song = await SchedularrTV.Plugins.MusicFiles.PickFileAsync(music.Library!, musicLibraries ?? [], key, _options.FfmpegPath, MusicDirectory, cancellationToken)
+                .ConfigureAwait(false);
+            if (song is null)
+            {
+                logger.LogWarning("Generated promo: no songs from {Music}; rendering without music.", music.Library!.Describe(musicLibraries));
+                return null;
+            }
+
+            return await AudibleAsync(new PromoMusic(song, music.EffectiveVolume(song), music.StartFor(song), music.FadeIn, music.FadeOut, music.DuckUnderVoice)
+            {
+                DuckUnderBackground = music.DuckUnderClip == true
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("Generated promo: couldn't get a song from {Music}: {Message}. Rendering without music.", music.Library!.Describe(musicLibraries), ex.Message);
+            return null;
+        }
     }
 
     /// <summary>The bed itself, or null when its file has no audio track, which ffmpeg would reject.</summary>

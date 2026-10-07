@@ -84,8 +84,10 @@ whose file name merely ends in a word like "short" (`The Big Short.mkv` is a mov
 
 ## Music folders
 
-Add a music folder (**Add a music folder** under App settings → Local TV and movies) and radio channels can play from
-it without Jellyfin: choose **Local music folders** under *Music from* on the Radio shows page.
+Add a music folder (**Add a music folder** under App settings → Local TV and movies) and it becomes the **Local music
+folders** music library: radio channels can play from it without Jellyfin (*Music from* on the Radio shows page), and so
+can everything else with [background music](background-music.md) (web page channels, the TV guide, news shows,
+streamer channels, generated promos).
 
 ```
 Music/
@@ -101,7 +103,7 @@ Music/
   ffprobe and kept in `state/music-cache.json`. Without tags, `Artist/Album/01 - Title` (or `Artist - Title`) is used.
 - Lyrics come from an `.lrc` file beside the song (timed), a `.txt` file, or the song's lyrics tag, else LRCLIB online.
 - `.m3u` and `.m3u8` files are playlists; genres and artists come from the tags, for stations that play some of them.
-- Music folders aren't scheduled as shows; they're only for radio channels. Like videos, songs ffprobe can't read are
+- Music folders aren't scheduled as shows; they're for music. Like videos, songs ffprobe can't read are
   left out.
 
 ## Intros and outros

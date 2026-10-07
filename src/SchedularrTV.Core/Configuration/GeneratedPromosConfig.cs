@@ -192,6 +192,18 @@ public sealed class GeneratedMusicConfig
     /// <summary>Single-song form from older files; moved into <see cref="Paths"/> on load.</summary>
     public string? Path { get; set; }
 
+    /// <summary>
+    /// Songs from a music library (Jellyfin's, local music folders, a plugin's) instead of <see cref="Paths"/>: one per
+    /// promo, chosen by what the promo is, so a re-render sounds the same. While it's set, <see cref="Paths"/> are kept
+    /// but not used. Null (rather than empty) keeps render keys of templates without it unchanged.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public SchedularrTV.Core.Media.BackgroundMusic? Library { get; set; }
+
+    /// <summary>Whether the songs come from <see cref="Library"/> rather than <see cref="Paths"/>.</summary>
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public bool FromLibrary => Library is { FromLibrary: true };
+
     [YamlIgnore]
     public IReadOnlyList<string> Songs =>
         [.. (Path is { Length: > 0 } path ? Paths.Prepend(path) : Paths).Where(song => !string.IsNullOrWhiteSpace(song)).Distinct(StringComparer.OrdinalIgnoreCase)];

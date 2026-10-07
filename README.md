@@ -75,7 +75,8 @@ Optional extras, installed from the **Plugins** page (each release has a `Schedu
 | [Generated promos](docs/generated-promos.md) | Promo templates, voices, music, external generators |
 | [Overlays](docs/overlays.md) | Screen bugs, lower thirds and "up next" graphics, designed visually and timed per programme |
 | [Local AI writer](docs/local-ai.md) | A free model on your own computer that words promo voice-overs and captions naturally, fit for more long-form promos |
-| [Radio shows](docs/radio.md) | Music from Jellyfin or an internet station, with cover art, lyrics and a visualizer |
+| [Radio shows](docs/radio.md) | Music from any music library (Jellyfin, local music folders) or an internet station, with cover art, lyrics and a visualizer |
+| [Background music](docs/background-music.md) | Music under web pages, the guide, news, streamer channels and generated promos, from a folder or any music library |
 | [News shows](docs/news.md) | Local news breaks from your RSS feeds, with weather, markets, scores, a map and lottery results, in teletext, news desk, cable news or retro looks, optionally read out |
 | [IPTV passthrough](docs/iptv.md) | Channels from an IPTV playlist (M3U) and its XMLTV guide, or free channels from iptv-org with guides from iptv-org/epg |
 | [Streamer channels](docs/streamers.md) | Twitch and YouTube streamers in priority order, with chat, "also live" pop-ups, replays and a countdown to the next stream |

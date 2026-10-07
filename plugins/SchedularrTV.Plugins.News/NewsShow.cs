@@ -235,7 +235,11 @@ public sealed class NewsShow
     /// <summary>0 to 2.</summary>
     public double SpeechVolume { get; set; } = 1.0;
 
-    /// <summary>A folder of songs shuffled under the news; none plays no music.</summary>
+    /// <summary>Music shuffled under the news (a folder, or any music library); none plays no music.</summary>
+    public SchedularrTV.Core.Media.BackgroundMusic? Music { get; set; }
+
+    /// <summary>The music folder from earlier versions; moved into <see cref="Music"/> when the shows are read.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? MusicFolder { get; set; }
 
     /// <summary>0 to 1. Lowered under the voice.</summary>
@@ -275,6 +279,7 @@ public sealed class NewsShow
         copy.Leagues = [.. Leagues];
         copy.Lotteries = [.. Lotteries];
         copy.Lengths = [.. Lengths];
+        copy.Music = Music?.Copy();
         return copy;
     }
 

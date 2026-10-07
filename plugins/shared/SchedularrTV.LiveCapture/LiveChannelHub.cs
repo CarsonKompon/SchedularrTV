@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using SchedularrTV.Core.Media;
 
 namespace SchedularrTV.LiveCapture;
 
@@ -24,7 +25,11 @@ public abstract class LiveChannelHub(LiveStreamHub streams) : IAsyncDisposable
         Func<LiveStreamHub, THub> wrap, params Action<Action>[] changes)
         where THub : LiveChannelHub
     {
-        var hub = new LiveStreamHub(resolve, () => settings.KeepAlive, services.GetRequiredService<ILoggerFactory>().CreateLogger(category));
+        // Every channel can play music from any installed music library, so each is handed them as it starts.
+        LiveStreamSpec? Resolve(string id) =>
+            resolve(id) is { } spec ? spec with { MusicLibraries = [.. services.GetServices<IMusicLibrary>()] } : null;
+
+        var hub = new LiveStreamHub(Resolve, () => settings.KeepAlive, services.GetRequiredService<ILoggerFactory>().CreateLogger(category));
 
         // A channel whose settings changed starts again with them; ErsatzTV reconnects.
         foreach (Action<Action> subscribe in changes)

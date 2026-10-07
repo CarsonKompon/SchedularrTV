@@ -99,7 +99,7 @@ public sealed class GuideSettings(IPluginContext context) : LivePageSettings(con
             Window = window is null ? null : guide.Window,
             Audio = sound is not null ? LiveAudio.Stream : guide.Sound == GuideSound.Silence ? LiveAudio.Silence : LiveAudio.Music,
             AudioStreamUrl = sound,
-            MusicFolder = guide.MusicFolder,
+            Music = guide.Music ?? SchedularrTV.Core.Media.BackgroundMusic.Tidy(null, guide.MusicFolder),
             Volume = guide.Volume
         };
     }

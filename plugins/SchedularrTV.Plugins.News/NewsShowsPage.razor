@@ -391,16 +391,13 @@
                         </div>
                         <p class="hint">Voice-overs are made each time the news is fetched (and kept while a story stays in the news), so the first break after a refresh can take a moment to have its voice.</p>
                     }
-                    <div class="grid grid-2">
-                        <label class="field"><span>Music folder <span class="muted">(optional; shuffled under the news)</span></span>
-                            <input type="text" value="@show.MusicFolder" placeholder="D:\Music\News beds" @onchange="e => Change(() => show.MusicFolder = Text(e))" /></label>
+                    <MusicPicker Value="show.Music" ValueChanged="value => Change(() => show.Music = value)" Label="Music (shuffled under the news)"
+                                 FolderPlaceholder="D:\Music\News beds" />
+                    @if (show.Music is not null)
+                    {
                         <label class="field"><span>Music volume: @((int)Math.Round(show.MusicVolume * 100))% <span class="muted">(lowered under the voice)</span></span>
                             <input type="range" min="0" max="1" step="0.05" value="@show.MusicVolume.ToString(CultureInfo.InvariantCulture)"
                                    @onchange="e => Change(() => show.MusicVolume = Number(e, 0.35))" /></label>
-                    </div>
-                    @if (!string.IsNullOrWhiteSpace(show.MusicFolder) && !Directory.Exists(show.MusicFolder))
-                    {
-                        <p class="hint warn">That music folder doesn't exist on this computer; there'll be no music.</p>
                     }
 
                     <div class="row" style="gap:8px;margin-top:14px;align-items:center;">
@@ -577,7 +574,7 @@
         string desks = show.Desks.Count == 0 ? "" : " · " + string.Join(", ", show.Desks.Select(DeskName));
         string place = show.Location.Length > 0 ? $" · {show.Location}" : "";
         string speech = show.Speaks ? " · read out" : "";
-        string music = string.IsNullOrWhiteSpace(show.MusicFolder) ? "" : " · music";
+        string music = show.Music is { IsSet: true } ? " · music" : "";
         return $"{feeds}{desks}{place} · {ThemeName(show.Theme)}{speech}{music}";
     }
 

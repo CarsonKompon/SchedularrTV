@@ -22,7 +22,11 @@ channel and each block. The canvas is drawn by the renderer itself, so it matche
 - Songs, backgrounds and images are chosen with **Browse**, which lists the scheduler machine's folders.
 - The inspector covers per-layer settings: Up Next offset, show count and start times, text, fonts,
   colour, transparency, timing and animation.
-- Each song has its own start point; its **▶ Play** button plays exactly the stretch a promo of the
+- **Songs from** chooses song files, or a [music library](background-music.md) (Jellyfin's, local music folders, a
+  plugin's: every song, a playlist, some genres or some artists). From a library, each promo gets one of its songs,
+  the same one every time that promo is rendered; songs a library serves rather than keeps as files (Jellyfin's) are
+  copied once into the promos folder's `music` folder for rendering.
+- Each song file has its own start point; its **▶ Play** button plays exactly the stretch a promo of the
   template's length would use, with the fades applied.
 - **Render preview video** makes the full promo with voice and music, using the channel's real upcoming
   shows once its schedule is built.

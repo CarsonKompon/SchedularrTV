@@ -105,7 +105,8 @@ public sealed class ChannelStore
         channel.Longitude = Math.Clamp(channel.Longitude, -180, 180);
         channel.Zoom = channel.Zoom == 0 || !preset.HasZoom ? channel.Zoom : Math.Clamp(channel.Zoom, preset.MinZoom, preset.MaxZoom);
         channel.ClockStyle = channel.ClockStyle == "analog" ? "analog" : "digital";
-        channel.MusicFolder = Trimmed(channel.MusicFolder)?.Trim('"');
+        channel.Music = SchedularrTV.Core.Media.BackgroundMusic.Tidy(channel.Music, channel.MusicFolder);
+        channel.MusicFolder = null;
         channel.Url = Trimmed(channel.Url);
         channel.TimeZone = Trimmed(channel.TimeZone);
         channel.Message = Trimmed(channel.Message) is { } message && message.Length > 500 ? message[..500] : Trimmed(channel.Message);
@@ -117,7 +118,15 @@ public sealed class ChannelStore
     {
         try
         {
-            return File.Exists(path) ? JsonSerializer.Deserialize<List<WebChannel>>(File.ReadAllText(path), Json) ?? [] : [];
+            List<WebChannel> channels = File.Exists(path) ? JsonSerializer.Deserialize<List<WebChannel>>(File.ReadAllText(path), Json) ?? [] : [];
+            foreach (WebChannel channel in channels)
+            {
+                // An earlier version's music folder is shown, and can be changed, as the channel's music.
+                channel.Music = SchedularrTV.Core.Media.BackgroundMusic.Tidy(channel.Music, channel.MusicFolder);
+                channel.MusicFolder = null;
+            }
+
+            return channels;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {

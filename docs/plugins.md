@@ -161,7 +161,7 @@ service. These helpers fill the scheduler's extension points:
 | A show's extras, offered as intros and outros | `services.AddExtrasSource<T>()` | `IExtrasSource` |
 | Where items' end credits start (for Credit squeeze), beyond chapters named Credits | `services.AddCreditsSource<T>()` | `ICreditsSource` |
 | Who's watching a media server's live TV (for channel stats) | `services.AddLiveViewerSource<T>()` | `ILiveViewerSource` |
-| A music library radio channels can play from | `services.AddMusicLibrary<T>()` | `IMusicLibrary` |
+| A music library radio channels and background music can play from | `services.AddMusicLibrary<T>()` | `IMusicLibrary` |
 | Extra details on library items (chapter markers found in the file, say) | `services.AddMediaEnricher<T>()` (API 1.2) | `IMediaEnricher` |
 | Output (another playout engine, M3U files…) | `services.AddPlayoutOutput<T>()` | `IPlayoutPublisher` |
 | Voice for generated promos | `services.AddSpeechProvider<T>()` | `ITextToSpeechProvider` |
@@ -189,7 +189,26 @@ optional and adds one thing:
 - `ICreditsSource`: where credits start, asked in the background by Credit squeeze for items it owns.
 - `ILiveViewerSource`: live TV sessions, matched to channels by number, then name, for channel stats.
 - `IMusicLibrary`: songs, playlists, genres, artists, lyrics, a stream ffmpeg can read (a path, or an address with
-  headers) and covers, for radio channels. Its `Id` is saved with each station that uses it.
+  headers) and covers, for radio channels and [background music](background-music.md). Its `Id` is saved with
+  each station and each piece of background music that uses it.
+
+### Background music in your plugin
+
+Anything that plays music under something should offer every music library, not just a folder. The pieces are in
+`SchedularrTV.Core.Media` and `SchedularrTV.Plugins`:
+
+- `BackgroundMusic`: the setting to save (a folder, or a library's every song, playlist, genres or artists). Pass it
+  through `BackgroundMusic.Tidy(music, oldFolder)` when loading, which also carries over a plain folder setting from
+  an earlier version.
+- `<MusicPicker Value="x.Music" ValueChanged="v => x.Music = v" />`: the picker every built-in page uses (none, a
+  folder, or any installed library, with its playlists, genres and artists).
+- `MusicBed.Start(ffmpeg, music, libraries, logger)`: endless 48 kHz stereo PCM of the songs, shuffled and looped,
+  each decoded by its own ffmpeg. Read it 20 ms at a time to mix it (`Read`), or `Serve` it at a local `tcp://`
+  address for an ffmpeg to read with `-f s16le -ar 48000 -ac 2 -i`.
+- `MusicFiles.PickFileAsync` / `LocalFileAsync`: one song as a file (copied once into a cache folder when the library
+  serves it rather than keeps it as a file), for renders that need one.
+- Live page channels (`SchedularrTV.LiveCapture`) take it as `LiveStreamSpec.Music`; the hub hands the stream the
+  installed libraries itself.
 
 Throw `MediaSourceConfigurationException` for a problem the user has to fix (a missing address or key): the scheduler
 logs its message without a stack trace. Every one of these lists follows the plugin's switch, so a source that's

@@ -350,10 +350,10 @@ public static class SchedulerConfigLoader
             }
 
             if (template.Music is { } music
-                && (music.Songs.Count == 0 || music.Volume is < 0 or > 1
+                && ((music.Songs.Count == 0 && !music.FromLibrary) || (music.FromLibrary && !music.Library!.IsComplete) || music.Volume is < 0 or > 1
                     || music.StartAt < TimeSpan.Zero || music.SongStarts?.Values.Any(start => start < TimeSpan.Zero) == true || music.FadeIn < TimeSpan.Zero || music.FadeOut < TimeSpan.Zero))
             {
-                errors.Add($"{templateScope}.music: needs at least one song, a volume between 0 and 1, and non-negative start and fades.");
+                errors.Add($"{templateScope}.music: needs at least one song (or a music library), a volume between 0 and 1, and non-negative start and fades.");
             }
 
             if (template.BackgroundClip is { } clip && (clip.Volume is < 0 or > 1 || clip.StartAt < TimeSpan.Zero))
@@ -452,6 +452,7 @@ public static class SchedulerConfigLoader
             {
                 music.Paths = [.. music.Songs];
                 music.Path = null;
+                music.Library = SchedularrTV.Core.Media.BackgroundMusic.Tidy(music.Library) is { FromLibrary: true } library ? library : null;
 
                 // Starts for songs no longer listed are dropped; an empty map goes back to null so it isn't written.
                 Dictionary<string, TimeSpan> starts = new(StringComparer.OrdinalIgnoreCase);

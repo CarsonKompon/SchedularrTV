@@ -227,7 +227,7 @@
                     <div class="grid grid-2">
                         <label class="field"><span>Plays</span>
                             <select value="@guide.Sound" @onchange="e => Change(() => guide.Sound = Enum.Parse<GuideSound>(Text(e)))">
-                                <option value="Music">Music from a folder</option>
+                                <option value="Music">Music (a folder, or your music library)</option>
                                 @if (guide.Top != TopPanel.Info)
                                 {
                                     <option value="Window">The top panel's sound (@(guide.Top == TopPanel.Ads ? "the commercials" : "the channel shown"))</option>
@@ -241,12 +241,9 @@
                     </div>
                     @if (guide.Sound == GuideSound.Music)
                     {
-                        <label class="field"><span>Music folder <span class="muted">(shuffled)</span></span>
-                            <input type="text" value="@guide.MusicFolder" placeholder="D:\Music\Smooth Jazz" @onchange="e => Change(() => guide.MusicFolder = Text(e))" /></label>
-                        @if (!string.IsNullOrWhiteSpace(guide.MusicFolder) && !Directory.Exists(guide.MusicFolder))
-                        {
-                            <p class="hint warn">That folder doesn't exist on this computer; the guide will be silent.</p>
-                        }
+                        <MusicPicker Value="guide.Music" ValueChanged="value => Change(() => guide.Music = value)" Label="Music from (shuffled)"
+                                     AllowNone="false" NoneLabel="Choose…" FolderPlaceholder="D:\Music\Smooth Jazz"
+                                     MissingFolderText="That folder doesn't exist on this computer; the guide will be silent." />
                     }
                     @if (guide.Sound == GuideSound.Channel)
                     {

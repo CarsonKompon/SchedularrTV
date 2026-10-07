@@ -184,12 +184,21 @@ public sealed class OfflineOptions
     /// <summary>Lists every streamer's next predicted stream, not just the soonest.</summary>
     public bool ShowEveryone { get; set; } = true;
 
-    /// <summary>Songs played while nobody is live; silent when empty.</summary>
+    /// <summary>Songs played while nobody is live (a folder, or any music library); silent when none.</summary>
+    public SchedularrTV.Core.Media.BackgroundMusic? Music { get; set; }
+
+    /// <summary>The music folder from earlier versions; moved into <see cref="Music"/> when the channels are read.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? MusicFolder { get; set; }
 
     public double MusicVolume { get; set; } = 0.4;
 
-    public OfflineOptions Copy() => (OfflineOptions)MemberwiseClone();
+    public OfflineOptions Copy()
+    {
+        var copy = (OfflineOptions)MemberwiseClone();
+        copy.Music = Music?.Copy();
+        return copy;
+    }
 }
 
 /// <summary>A channel of streamers: whoever is live (the highest in the list wins), else a countdown to the next stream.</summary>

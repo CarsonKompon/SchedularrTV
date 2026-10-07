@@ -62,7 +62,7 @@ Open **Streamer channels** in the sidebar and choose **Add a streamer channel**:
   takes over straight away. A recording that can't be opened (deleted, or subscriber-only) is skipped for the next
   newest. With nothing to replay, the countdown shows. The rest of this section's settings:
 - **While nobody is live**: the heading, an optional message, colours, whether everyone else's next stream is listed, and
-  optional music from a folder.
+  optional music from a folder or any [music library](background-music.md).
 
 The preview beside the form shows the result with made-up streamers; switch between **Someone's live** and **Nobody's live**.
 

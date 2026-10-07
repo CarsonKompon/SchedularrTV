@@ -144,6 +144,11 @@ public sealed class GuideStation
 
     public GuideSound Sound { get; set; } = GuideSound.Music;
 
+    /// <summary>The music for <see cref="GuideSound.Music"/>: a folder, or any music library.</summary>
+    public SchedularrTV.Core.Media.BackgroundMusic? Music { get; set; }
+
+    /// <summary>The music folder from earlier versions; moved into <see cref="Music"/> when the guides are read.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? MusicFolder { get; set; }
 
     /// <summary>0 to 1.</summary>
@@ -161,6 +166,7 @@ public sealed class GuideStation
         copy.HiddenChannels = [.. HiddenChannels];
         copy.CycleChannelNumbers = [.. CycleChannelNumbers];
         copy.Lengths = [.. Lengths];
+        copy.Music = Music?.Copy();
         return copy;
     }
 

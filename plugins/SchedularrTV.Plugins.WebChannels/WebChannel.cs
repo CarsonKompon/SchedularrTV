@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using SchedularrTV.Core.Media;
 
 namespace SchedularrTV.WebChannels;
 
@@ -72,7 +73,11 @@ public sealed class WebChannel
     /// <summary>The lengths, in minutes, this channel can be scheduled for; each becomes an "episode".</summary>
     public List<int> Lengths { get; set; } = [3, 4, 5, 10, 15, 30, 60];
 
-    /// <summary>A folder of songs shuffled under the page; none plays silence.</summary>
+    /// <summary>Music shuffled under the page (a folder, or any music library); none plays silence.</summary>
+    public BackgroundMusic? Music { get; set; }
+
+    /// <summary>The music folder from earlier versions; moved into <see cref="Music"/> when the channels are read.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? MusicFolder { get; set; }
 
     /// <summary>0 to 1.</summary>
@@ -92,6 +97,7 @@ public sealed class WebChannel
     {
         var copy = (WebChannel)MemberwiseClone();
         copy.Lengths = [.. Lengths];
+        copy.Music = Music?.Copy();
         return copy;
     }
 

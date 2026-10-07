@@ -127,10 +127,11 @@ public static class StreamerPage
             };
         }
 
+        SchedularrTV.Core.Media.BackgroundMusic? music = channel.Offline.Music ?? SchedularrTV.Core.Media.BackgroundMusic.Tidy(null, channel.Offline.MusicFolder);
         return spec with
         {
-            Audio = channel.Offline.MusicFolder is { Length: > 0 } ? LiveAudio.Music : LiveAudio.Silence,
-            MusicFolder = channel.Offline.MusicFolder,
+            Audio = music is { IsSet: true } ? LiveAudio.Music : LiveAudio.Silence,
+            Music = music,
             Volume = channel.Offline.MusicVolume
         };
     }

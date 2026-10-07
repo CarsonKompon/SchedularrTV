@@ -6,6 +6,7 @@
 @inject TextToSpeechCatalog Voices
 @inject ConfigEditor Editor
 @inject IJSRuntime JS
+@inject IEnumerable<IMusicLibrary> MusicLibraries
 
 <div class="card promo-template visual-editor">
     <div class="card-head">
@@ -603,6 +604,22 @@
     @if (Template.Music is { } music)
     {
         List<string> songs = Songs(music);
+        <label class="field">
+            <span>Songs from</span>
+            <select value="@(music.FromLibrary ? "library" : "files")" @onchange="e => ChooseSongSource(music, e.Value?.ToString())">
+                <option value="files">Song files I choose</option>
+                <option value="library">A music library (Jellyfin, local music folders, a plugin's)</option>
+            </select>
+        </label>
+        @if (music.FromLibrary)
+        {
+            <MusicPicker Value="music.Library" ValueChanged="value => SetLibraryMusic(music, value)" Label="Music library"
+                         AllowNone="false" AllowFolder="false" NoneLabel="Choose…" />
+            <p class="hint">One of these songs is picked for each promo (the same one each time that promo is rendered), and loops if shorter than the promo.
+                Songs a library serves rather than keeps as files are copied once into the promos folder for rendering.</p>
+        }
+        else
+        {
         <div class="field">
             <span>Songs (one is picked for each promo; each loops if shorter than the promo)</span>
             <ol class="song-list">
@@ -681,6 +698,7 @@
                 }
             </div>
         </div>
+        }
         <div class="grid grid-3">
             <label class="field">
                 <span>Master volume: @($"{music.Volume:P0}")</span>
@@ -1232,6 +1250,18 @@
 
     private Task ToggleMusic(ChangeEventArgs e) =>
         Set(() => Template.Music = e.Value is true ? Template.Music ?? new GeneratedMusicConfig() : null);
+
+    /// <summary>Songs from files, or from a music library (the first one set up, to start with); the file list is kept either way.</summary>
+    private Task ChooseSongSource(GeneratedMusicConfig music, string? value) => Set(() =>
+        music.Library = value == "library"
+            ? music.Library ?? new BackgroundMusic
+            {
+                LibraryId = (MusicLibraries.FirstOrDefault(library => library.IsConfigured) ?? MusicLibraries.FirstOrDefault())?.Id ?? "local"
+            }
+            : null);
+
+    private Task SetLibraryMusic(GeneratedMusicConfig music, BackgroundMusic? value) =>
+        Set(() => music.Library = value is { FromLibrary: true } ? value : music.Library);
 
     private Task SetMadeWith(ChangeEventArgs e) => Set(() =>
         Template.Generator = Text(e) == GeneratorMode ? Template.Generator ?? new GeneratedScriptConfig() : null);

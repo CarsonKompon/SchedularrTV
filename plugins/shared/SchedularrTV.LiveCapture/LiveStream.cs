@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Threading.Channels;
+using SchedularrTV.Core.Media;
+using SchedularrTV.Plugins;
 
 namespace SchedularrTV.LiveCapture;
 
@@ -11,7 +13,7 @@ public enum LiveAudio
 {
     Silence,
 
-    /// <summary>Songs from <see cref="LiveStreamSpec.MusicFolder"/>, shuffled and looped.</summary>
+    /// <summary>Songs from <see cref="LiveStreamSpec.Music"/> (a folder, or a music library), shuffled and looped.</summary>
     Music,
 
     /// <summary>The sound of <see cref="LiveStreamSpec.AudioStreamUrl"/>, e.g. another channel.</summary>
@@ -42,7 +44,11 @@ public sealed record LiveStreamSpec
 
     public LiveAudio Audio { get; init; } = LiveAudio.Silence;
 
-    public string? MusicFolder { get; init; }
+    /// <summary>The music for <see cref="LiveAudio.Music"/>: a folder's songs, or a music library's.</summary>
+    public BackgroundMusic? Music { get; init; }
+
+    /// <summary>The music libraries <see cref="Music"/> can name (the installed <see cref="IMusicLibrary"/>s). Not part of <see cref="Fingerprint"/>.</summary>
+    public IReadOnlyList<IMusicLibrary> MusicLibraries { get; init; } = [];
 
     /// <summary>0 to 1.</summary>
     public double Volume { get; init; } = 0.6;
@@ -98,7 +104,7 @@ public sealed record LiveStreamSpec
 
     /// <summary>Changes whenever anything that affects the running stream does, so it's started again with the new settings.</summary>
     public string Fingerprint =>
-        string.Join('|', PageUrl, Ffmpeg, BrowserPath, CaptureFrameRate, WindowStreamUrl, Window, Audio, MusicFolder,
+        string.Join('|', PageUrl, Ffmpeg, BrowserPath, CaptureFrameRate, WindowStreamUrl, Window, Audio, Music?.Key,
             Volume.ToString(CultureInfo.InvariantCulture), AudioStreamUrl, Visualizer, VisualizerRect, PageOnTop, Recorded, RestartToken,
             Encoding.Fingerprint, HardwareDecoding, PaceAnimations);
 
@@ -152,9 +158,8 @@ public sealed class LiveStream : IAsyncDisposable
     }
 
     private const int PacketSize = 188;
-    private static readonly string[] MusicExtensions = [".mp3", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".wav"];
-
     private readonly ILogger _logger;
+    private MusicBed? _bed;
     private readonly CancellationTokenSource _life = new();
     private readonly List<Channel<byte[]>> _viewers = [];
     private readonly string _workFolder;
@@ -190,7 +195,13 @@ public sealed class LiveStream : IAsyncDisposable
     public static string ImageType(byte[] frame) => frame is [0x89, 0x50, ..] ? "image/png" : "image/jpeg";
 
     /// <summary>Why something isn't showing (no browser, a page or channel that can't be reached), or null.</summary>
-    public string? Problem { get; private set; }
+    public string? Problem
+    {
+        get => _problem ?? _bed?.Problem;
+        private set => _problem = value;
+    }
+
+    private string? _problem;
 
     public bool Ended => _life.IsCancellationRequested;
 
@@ -251,7 +262,16 @@ public sealed class LiveStream : IAsyncDisposable
             RedirectStandardError = true,
             CreateNoWindow = true
         };
-        foreach (string argument in Arguments(Spec, MusicPlaylist()))
+        // A music library's songs are decoded one by one (each may need its own address and headers) and handed to
+        // ffmpeg as raw sound over a local connection; a folder's are read by ffmpeg itself.
+        string? musicInput = null;
+        if (Spec.Audio == LiveAudio.Music && Spec.Music is { FromLibrary: true } fromLibrary)
+        {
+            _bed = MusicBed.Start(Spec.Ffmpeg, fromLibrary, Spec.MusicLibraries, _logger);
+            musicInput = _bed?.Serve(_life.Token);
+        }
+
+        foreach (string argument in Arguments(Spec, musicInput is null ? MusicPlaylist() : null, musicInput))
         {
             start.ArgumentList.Add(argument);
         }
@@ -306,9 +326,10 @@ public sealed class LiveStream : IAsyncDisposable
 
     /// <summary>
     /// The ffmpeg command: paced JPEG frames of the page in (input 0), the window's stream scaled over it, the chosen
-    /// sound (music, a stream, or silence), MPEG-TS out. <paramref name="playlist"/> is the music list, if there is one.
+    /// sound (music, a stream, or silence), MPEG-TS out. <paramref name="playlist"/> is a folder's music list, if there
+    /// is one; <paramref name="musicInput"/> the address a <see cref="MusicBed"/> serves a library's music at.
     /// </summary>
-    public static IReadOnlyList<string> Arguments(LiveStreamSpec spec, string? playlist)
+    public static IReadOnlyList<string> Arguments(LiveStreamSpec spec, string? playlist, string? musicInput = null)
     {
         string Number(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
         LiveEncodingSettings encoding = spec.Encoding;
@@ -358,6 +379,12 @@ public sealed class LiveStream : IAsyncDisposable
 
             // apad: if the channel drops out, the stream carries on with silence rather than losing its sound track.
             audioFilter = $"[{audio}:a]asetpts=PTS-STARTPTS,aresample=48000:async=1,aformat=channel_layouts=stereo,volume={Number(Math.Clamp(spec.Volume, 0, 2))},apad[a]";
+        }
+        else if (spec.Audio == LiveAudio.Music && musicInput is not null)
+        {
+            arguments.AddRange(["-f", "s16le", "-ar", "48000", "-ac", "2", "-thread_queue_size", "1024", "-i", musicInput]);
+            audio = next++;
+            audioFilter = $"[{audio}:a]aformat=channel_layouts=stereo,volume={Number(Math.Clamp(spec.Volume, 0, 2))}[a]";
         }
         else if (spec.Audio == LiveAudio.Music && playlist is not null)
         {
@@ -442,19 +469,17 @@ public sealed class LiveStream : IAsyncDisposable
     /// <summary>The songs in a fresh random order, as an ffmpeg concat list; null for none.</summary>
     private string? MusicPlaylist()
     {
-        if (Spec.Audio != LiveAudio.Music || string.IsNullOrWhiteSpace(Spec.MusicFolder) || !Directory.Exists(Spec.MusicFolder))
+        if (Spec.Audio != LiveAudio.Music || Spec.Music is not { FromLibrary: false } music)
         {
             return null;
         }
 
-        string[] songs = [.. Directory.EnumerateFiles(Spec.MusicFolder, "*", SearchOption.AllDirectories)
-            .Where(path => MusicExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase))];
+        string[] songs = BackgroundMusic.FolderSongs(music.Folder);
         if (songs.Length == 0)
         {
             return null;
         }
 
-        Random.Shared.Shuffle(songs);
         string list = Path.Combine(_workFolder, "music.txt");
         File.WriteAllLines(list, songs.Select(song => $"file '{ConcatPath(song)}'").Prepend("ffconcat version 1.0"));
         return list;
@@ -686,7 +711,7 @@ public sealed class LiveStream : IAsyncDisposable
         {
             _drawing = true;
             // Problems with drawing are over; ones about a channel that couldn't be reached still stand.
-            if (Problem == NotDrawing || Problem?.StartsWith("The browser", StringComparison.Ordinal) == true)
+            if (_problem == NotDrawing || _problem?.StartsWith("The browser", StringComparison.Ordinal) == true)
             {
                 Problem = null;
             }
@@ -744,7 +769,7 @@ public sealed class LiveStream : IAsyncDisposable
             _logger.LogDebug(ex, "Live channel {Stream}: couldn't take a picture of the page.", Spec.Name);
         }
 
-        if (!_drawing && Environment.TickCount64 - _startedAt > 20_000 && Problem is null)
+        if (!_drawing && Environment.TickCount64 - _startedAt > 20_000 && _problem is null)
         {
             Problem = NotDrawing;
             _logger.LogWarning("Live channel {Stream}: the browser has drawn nothing in 20 seconds.", Spec.Name);
@@ -843,6 +868,7 @@ public sealed class LiveStream : IAsyncDisposable
         }
 
         _ffmpeg?.Dispose();
+        _bed?.Dispose();
         try
         {
             if (Directory.Exists(_workFolder))

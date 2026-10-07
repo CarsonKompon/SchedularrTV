@@ -35,7 +35,7 @@ news and runs through the segments on the show's own timing. Anything that could
 | Sports | NFL, NBA, MLB, NHL, WNBA, college football and basketball, Premier League, MLS, LaLiga, Champions League, CFL, or any ESPN `sport/league` |
 | Map | Drawn on streets, light, dark or satellite (or the look's own); zoom (region to streets); rain radar, as the last hour on a loop or the latest picture, and how strong; a marker on the place; a slow camera drift; with a TomTom key, traffic flow colours and up to 10 incidents |
 | Lottery | US: Powerball, Mega Millions, NY Lotto. Canada: Lotto Max, Lotto 6/49, Daily Grand |
-| Sound | What's read (nothing, headlines, headlines and a short summary, or the whole summary); the voice; whether the data segments are read too; the opening and closing lines; a music folder and its volume (it dips under the voice) |
+| Sound | What's read (nothing, headlines, headlines and a short summary, or the whole summary); the voice; whether the data segments are read too; the opening and closing lines; music (a folder, or any [music library](background-music.md)) and its volume (it dips under the voice) |
 
 ### The looks
 
