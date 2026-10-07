@@ -1,0 +1,72 @@
+{
+  "id": "news",
+  "name": "News shows",
+  "version": "1.0.0",
+  "description": "Local news breaks as virtual shows: headlines from your RSS or Atom feeds, with the weather, the markets, scores, a local map (rain radar, and traffic with a TomTom key) and lottery results, in a teletext, news desk, 24-hour cable news or 80s/90s local station look. Optionally read out by any installed voice (Piper, TikTok, MiniMax) over your own music. A 24/7 news channel, or short news breaks between shows. Needs Chrome or Edge on this computer.",
+  "author": "SchedularrTV",
+  "apiVersion": "1.8",
+  "entryAssembly": "SchedularrTV.Plugins.News.dll",
+  "lowPowerNotice": "each show on air is a hidden browser drawing the page without a graphics chip, plus a live encode. The teletext look is the lightest; capture at about 8 frames per second.",
+  "settings": [
+    {
+      "key": "RefreshMinutes",
+      "label": "Fetch the news again every (minutes)",
+      "type": "Number",
+      "placeholder": "15",
+      "description": "How often each show's feeds and data are fetched while it's in use (5 to 240). New voice-overs are made each time, so with a paid voice keep this longer."
+    },
+    {
+      "key": "TomTomKey",
+      "label": "TomTom API key",
+      "type": "Text",
+      "placeholder": "Optional",
+      "description": "For traffic on the map segment (flow colours and incidents). Free from developer.tomtom.com. Without one the map shows rain radar only."
+    },
+    {
+      "key": "BrowserPath",
+      "label": "Browser",
+      "type": "File",
+      "description": "Chrome, Edge or Chromium, run hidden to draw the news. Leave empty to find one automatically.",
+      "lowPowerNote": "On Raspberry Pi OS, install chromium (sudo apt install chromium); Chrome and Edge have no ARM Linux builds."
+    },
+    {
+      "key": "FfmpegPath",
+      "label": "ffmpeg",
+      "type": "File",
+      "description": "Leave empty to use the ffmpeg set under App settings."
+    },
+    {
+      "key": "StreamAddress",
+      "label": "Stream address",
+      "type": "Text",
+      "placeholder": "http://localhost:5252",
+      "description": "How ErsatzTV reaches this scheduler. Leave empty unless ErsatzTV runs on another machine or in a container."
+    },
+    {
+      "key": "FrameRate",
+      "label": "Capture frames per second",
+      "type": "Number",
+      "placeholder": "15",
+      "lowPowerPlaceholder": "8",
+      "description": "How often the page is captured (5 to 30). The ticker scrolls more smoothly higher up; the stream's own frame rate is set under App settings → Hardware and video encoding.",
+      "lowPowerNote": "About 8 here (the default)."
+    },
+    {
+      "key": "KeepAliveSeconds",
+      "label": "Keep a show running after it goes off air (seconds)",
+      "type": "Number",
+      "placeholder": "90",
+      "description": "So back-to-back news breaks don't restart the browser each time. A break that starts after this begins again from the top."
+    },
+    {
+      "key": "PaceAnimations",
+      "label": "Draw animations at the capture rate",
+      "type": "Boolean",
+      "default": "true",
+      "description": "The hidden browser moves the page's animations (the ticker, the transitions) on only as often as it's captured, instead of redrawing 60 times a second for frames that are never used. They move at the same speed. Turn off only if something stops or stutters."
+    }
+  ],
+  "pages": [
+    { "path": "/plugins/news", "title": "News shows", "icon": "newspaper" }
+  ]
+}

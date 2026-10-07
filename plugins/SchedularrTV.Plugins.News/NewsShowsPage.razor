@@ -1,0 +1,743 @@
+@page "/plugins/news"
+@* News shows: headlines from feeds with weather, markets, scores, a map and lottery results, edited with a live preview. *@
+@implements IDisposable
+@inject NewsStore Store
+@inject NewsSettings Settings
+@inject NewsHub Hub
+@inject NewsPreviews Previews
+@inject NewsSources Sources
+@inject NewsVoice Voice
+@inject IJSRuntime JS
+
+<div class="page-header">
+    <div>
+        <div class="eyebrow">News shows</div>
+        <h1>News shows</h1>
+        <p class="muted">Local news breaks from your own feeds, with the weather, the markets, scores, a local map and lottery results, in a
+            teletext, news desk, cable news or 80s/90s local station look, and read out by any voice you have installed.</p>
+    </div>
+</div>
+
+<VirtualShowNotice />
+
+@if (BrowserLocator.Find(Settings.BrowserPath) is null)
+{
+    <div class="banner banner-error" role="alert">
+        No Chrome, Edge or Chromium was found on this computer. The news is drawn by one running hidden; install one, or choose it
+        in this plugin's settings (its gear on the Plugins page).
+    </div>
+}
+@if (_message is not null)
+{
+    <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status">@_message</div>
+}
+
+<LowPowerNotice Title="@($"News shows on {HardwareProfile.DeviceName}")" Advice="LowPowerAdvice">
+    Each show on air is a hidden browser drawing the page without a graphics chip, plus a live encode. One at a time is comfortable.
+</LowPowerNotice>
+
+@foreach (NewsShow show in _shows)
+{
+    bool editing = ReferenceEquals(show, _editing);
+    LiveStatus? status = string.IsNullOrEmpty(show.Id) ? null : Hub.Streams.Status(show.Id);
+    <div class="card" @key="show">
+        <div class="card-head">
+            <h2>@Title(show)</h2>
+            <span class="pill pill-muted">@ThemeName(show.Theme)</span>
+            @if (show.Speaks)
+            {
+                <span class="pill pill-muted">Read out</span>
+            }
+            @if (string.IsNullOrEmpty(show.Id))
+            {
+                <span class="pill pill-warn">Not saved yet</span>
+            }
+            @if (status is not null)
+            {
+                <span class="pill pill-ok">On air · @status.Viewers watching</span>
+            }
+            <div class="spacer"></div>
+            @if (_confirmDelete == show.Id && !string.IsNullOrEmpty(show.Id))
+            {
+                <button class="btn btn-sm btn-danger" type="button" @onclick="() => Remove(show)">Delete @(show.Name)?</button>
+                <button class="btn btn-sm" type="button" @onclick="() => _confirmDelete = null">Keep</button>
+            }
+            else
+            {
+                @if (!editing)
+                {
+                    <button class="btn btn-sm" type="button" @onclick="() => EditAsync(show)">Edit</button>
+                }
+                <button class="btn btn-sm btn-ghost" type="button" @onclick="() => AskDelete(show)">Delete</button>
+            }
+        </div>
+
+        @if (!editing)
+        {
+            <p class="muted" style="margin:0 0 8px;">@Describe(show)</p>
+            <p class="hint" style="margin:0 0 8px;">
+                Schedule it as the show <strong>@show.Name</strong>: as a channel's base rotation for a 24/7 news channel, or between
+                programmes (lengths @string.Join(", ", show.ValidLengths.Select(minutes => minutes + " min"))). Stream: <code>@Settings.LiveUrl(show.Id)</code>
+            </p>
+            @if (status?.Problem is { } problem)
+            {
+                <p class="hint warn">@problem</p>
+            }
+            @if (status is not null)
+            {
+                <img class="news-snapshot" src="@($"plugins/news/snapshot/{Uri.EscapeDataString(show.Id)}.jpg?t={_tick}")" alt="What's on air now" />
+            }
+        }
+        else
+        {
+            <div class="news-editor">
+                <div class="news-form">
+                    <h3>Show</h3>
+                    <div class="grid grid-2">
+                        <label class="field"><span>Show name</span>
+                            <input type="text" value="@show.Name" placeholder="Channel 7 News" @onchange="e => Change(() => show.Name = Text(e))" /></label>
+                        <label class="field"><span>Lengths it can be scheduled for (minutes)</span>
+                            <input type="text" value="@(string.Join(", ", show.Lengths))" @onchange="e => Change(() => show.Lengths = Lengths(e))" /></label>
+                    </div>
+                    <div class="news-choices">
+                        @foreach (NewsTheme theme in Enum.GetValues<NewsTheme>())
+                        {
+                            <button type="button" class="news-choice @(show.Theme == theme ? "on" : "")" @onclick="() => Change(() => show.Theme = theme)">
+                                <strong>@ThemeName(theme)</strong>
+                                <span>@ThemeBlurb(theme)</span>
+                            </button>
+                        }
+                    </div>
+                    <div class="row row-wrap" style="gap:18px;align-items:center;margin-bottom:10px;">
+                        <div class="field" style="margin:0;"><span>Station colour</span>
+                            <input type="color" value="@show.AccentColor" @onchange="e => Change(() => show.AccentColor = Text(e))" style="width:56px;height:34px;padding:2px;" /></div>
+                        <label class="check" style="margin:0;"><input type="checkbox" checked="@show.ShowTicker" @onchange="e => Change(() => show.ShowTicker = e.Value is true)" /><span>Ticker</span></label>
+                        <label class="check" style="margin:0;"><input type="checkbox" checked="@show.ShowSidebar" @onchange="e => Change(() => show.ShowSidebar = e.Value is true)" /><span>Side panel (data at a glance, up next)</span></label>
+                        <label class="check" style="margin:0;"><input type="checkbox" checked="@show.ShowImages" @onchange="e => Change(() => show.ShowImages = e.Value is true)" /><span>Story pictures</span></label>
+                    </div>
+                    @if (show.Theme == NewsTheme.Teletext)
+                    {
+                        <p class="hint">Teletext pages have no pictures, side panel or ticker; the map is drawn in mosaic blocks.</p>
+                    }
+                    <label class="field"><span>Ticker message <span class="muted">(optional; first along the ticker)</span></span>
+                        <input type="text" value="@show.TickerMessage" maxlength="300" placeholder="Welcome to Channel 7" @onchange="e => Change(() => show.TickerMessage = Text(e))" /></label>
+
+                    <h3>Stories</h3>
+                    @foreach (NewsFeed feed in show.Feeds)
+                    {
+                        <div class="row" style="gap:6px;margin-bottom:6px;">
+                            <input type="text" value="@feed.Url" placeholder="https://example.com/rss.xml" style="flex:2;min-width:0;" @onchange="e => Change(() => feed.Url = Text(e))" />
+                            <input type="text" value="@feed.Label" placeholder="Shown as (optional)" style="flex:1;min-width:0;" @onchange="e => Change(() => feed.Label = Text(e))" />
+                            <button class="btn btn-sm btn-ghost" type="button" aria-label="Remove this feed" @onclick="() => Change(() => show.Feeds.Remove(feed))">Remove</button>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(feed.Url) && !NewsShow.IsWebAddress(feed.Url))
+                        {
+                            <p class="hint warn" style="margin-top:-2px;">That isn't a web address; it has to start with http:// or https://.</p>
+                        }
+                    }
+                    <div class="row row-wrap" style="gap:6px;margin-bottom:10px;">
+                        <button class="btn btn-sm" type="button" @onclick="() => Change(() => show.Feeds.Add(new NewsFeed()))">Add a feed</button>
+                        @if (show.Location.Length > 0)
+                        {
+                            <button class="btn btn-sm" type="button" @onclick="() => Change(() => AddLocalNews(show))">Add Google News for @NewsRundown.Short(show.Location)</button>
+                        }
+                        @foreach ((string url, string label) in SuggestedFeeds.Where(suggestion => show.Feeds.All(feed => feed.Url != suggestion.Url)))
+                        {
+                            <button class="btn btn-sm btn-ghost" type="button" @onclick="() => Change(() => AddFeed(show, url, label))">+ @label</button>
+                        }
+                    </div>
+                    <div class="grid grid-3">
+                        <label class="field"><span>Stories each time round</span>
+                            <input type="number" min="1" max="40" value="@show.StoryCount" @onchange="e => Change(() => show.StoryCount = (int)Number(e, 8))" /></label>
+                        <label class="field"><span>Leave out stories older than</span>
+                            <select value="@show.MaxAgeHours" @onchange="e => Change(() => show.MaxAgeHours = (int)Number(e, 24))">
+                                <option value="6">6 hours</option>
+                                <option value="12">12 hours</option>
+                                <option value="24">a day</option>
+                                <option value="72">3 days</option>
+                                <option value="168">a week</option>
+                                <option value="0">Keep them all</option>
+                            </select></label>
+                        <label class="field"><span>Seconds per story <span class="muted">(when not read out)</span></span>
+                            <input type="number" min="4" max="120" value="@show.SecondsPerStory" @onchange="e => Change(() => show.SecondsPerStory = (int)Number(e, 12))" /></label>
+                    </div>
+
+                    <h3>Segments between the stories</h3>
+                    <div class="row row-wrap" style="gap:16px;margin-bottom:10px;">
+                        @foreach (NewsDesk desk in Enum.GetValues<NewsDesk>())
+                        {
+                            <label class="check" style="margin:0;"><input type="checkbox" checked="@show.Desks.Contains(desk)" @onchange="e => Change(() => Toggle(show.Desks, desk, e.Value is true))" />
+                                <span>@DeskName(desk)</span></label>
+                        }
+                    </div>
+                    <label class="field" style="max-width:260px;"><span>Seconds per segment <span class="muted">(when not read out)</span></span>
+                        <input type="number" min="4" max="120" value="@show.SecondsPerDesk" @onchange="e => Change(() => show.SecondsPerDesk = (int)Number(e, 15))" /></label>
+
+                    @if (show.Desks.Contains(NewsDesk.Weather) || show.Desks.Contains(NewsDesk.Map))
+                    {
+                        <h4>Place <span class="muted">(weather, map and clock)</span></h4>
+                        <div class="row" style="gap:6px;margin-bottom:8px;">
+                            <input type="text" value="@_query" placeholder="Search for a city" style="flex:1;min-width:0;" @onchange="e => _query = Text(e)" @onkeydown="SearchOnEnter" />
+                            <button class="btn btn-sm" type="button" disabled="@_searching" @onclick="SearchAsync">@(_searching ? "Searching…" : "Search")</button>
+                        </div>
+                        @if (_places.Count > 0)
+                        {
+                            <div class="row row-wrap" style="gap:6px;margin-bottom:10px;">
+                                @foreach (Place place in _places)
+                                {
+                                    <button class="btn btn-sm" type="button" @onclick="() => Change(() => Pick(show, place))">@place.Label</button>
+                                }
+                            </div>
+                        }
+                        <p class="hint">@PlaceText(show)</p>
+                        <div class="row row-wrap" style="gap:18px;margin-bottom:10px;">
+                            <label class="check" style="margin:0;"><input type="checkbox" checked="@show.Imperial" @onchange="e => Change(() => show.Imperial = e.Value is true)" /><span>°F and mph</span></label>
+                            <label class="check" style="margin:0;"><input type="checkbox" checked="@show.TwelveHourClock" @onchange="e => Change(() => show.TwelveHourClock = e.Value is true)" /><span>12-hour clock</span></label>
+                        </div>
+                    }
+                    @if (show.Desks.Contains(NewsDesk.Markets))
+                    {
+                        <h4>Markets</h4>
+                        <label class="field"><span>Symbols <span class="muted">(Yahoo Finance: ^GSPC S&amp;P 500, ^DJI Dow, ^IXIC Nasdaq, ^GSPTSE TSX, ^FTSE, AAPL, BTC-USD, CADUSD=X)</span></span>
+                            <input type="text" value="@(string.Join(", ", show.Symbols))" @onchange="e => Change(() => show.Symbols = List(e))" /></label>
+                    }
+                    @if (show.Desks.Contains(NewsDesk.Sports))
+                    {
+                        <h4>Sports <span class="muted">(ESPN scoreboards)</span></h4>
+                        <div class="row row-wrap" style="gap:6px 16px;margin-bottom:8px;">
+                            @foreach ((string id, string name) in SportsLeagues.Common)
+                            {
+                                <label class="check" style="margin:0;"><input type="checkbox" checked="@show.Leagues.Contains(id)" @onchange="e => Change(() => Toggle(show.Leagues, id, e.Value is true))" /><span>@name</span></label>
+                            }
+                        </div>
+                        <label class="field"><span>Other leagues <span class="muted">(as ESPN names them, sport/league, e.g. soccer/ger.1)</span></span>
+                            <input type="text" value="@OtherLeagues(show)" @onchange="e => Change(() => SetOtherLeagues(show, List(e)))" /></label>
+                    }
+                    @if (show.Desks.Contains(NewsDesk.Map))
+                    {
+                        <h4>Map</h4>
+                        <div class="grid grid-2">
+                            <label class="field"><span>Zoom: @show.MapZoom @(show.MapZoom <= 8 ? "(region)" : show.MapZoom >= 12 ? "(streets)" : "(city)")</span>
+                                <input type="range" min="6" max="14" step="1" value="@show.MapZoom" @onchange="e => Change(() => show.MapZoom = (int)Number(e, 10))" /></label>
+                            <label class="check" style="align-self:end;margin-bottom:14px;"><input type="checkbox" checked="@show.MapRadar" @onchange="e => Change(() => show.MapRadar = e.Value is true)" /><span>Rain radar</span></label>
+                        </div>
+                        <p class="hint">@(Settings.TomTomKey is null
+                                            ? "Traffic needs a TomTom key in this plugin's settings (free from developer.tomtom.com); without one the map shows the radar."
+                                            : "Traffic flow and incidents come from TomTom.")</p>
+                    }
+                    @if (show.Desks.Contains(NewsDesk.Lottery))
+                    {
+                        <h4>Lottery <span class="muted">(New York State's published results)</span></h4>
+                        <div class="row row-wrap" style="gap:16px;margin-bottom:10px;">
+                            @foreach (LotteryGames.Game game in LotteryGames.All)
+                            {
+                                <label class="check" style="margin:0;"><input type="checkbox" checked="@show.Lotteries.Contains(game.Id)" @onchange="e => Change(() => Toggle(show.Lotteries, game.Id, e.Value is true))" /><span>@game.Name</span></label>
+                            }
+                        </div>
+                    }
+
+                    <h3>Sound</h3>
+                    <div class="grid grid-2">
+                        <label class="field"><span>Read out</span>
+                            <select value="@show.Speech" @onchange="e => Change(() => show.Speech = Enum.Parse<SpeechMode>(Text(e)))">
+                                <option value="Off">Nothing (music only)</option>
+                                <option value="Headlines">The headlines</option>
+                                <option value="HeadlineAndSummary">Headlines and a short summary</option>
+                                <option value="FullSummary">Headlines and the whole summary</option>
+                            </select></label>
+                        @if (show.Speech != SpeechMode.Off)
+                        {
+                            <label class="field"><span>Voice from</span>
+                                <select value="@(show.VoiceProvider ?? "")" @onchange="e => ChooseProviderAsync(show, Text(e))">
+                                    <option value="">Choose…</option>
+                                    @foreach (ITextToSpeechProvider provider in Voice.Providers)
+                                    {
+                                        <option value="@provider.Id">@provider.DisplayName</option>
+                                    }
+                                </select></label>
+                        }
+                    </div>
+                    @if (show.Speech != SpeechMode.Off)
+                    {
+                        @if (Voice.Providers.Count == 0)
+                        {
+                            <p class="hint warn">No voice plugins are switched on. Install Piper (offline), TikTok or MiniMax voices from the Plugins page.</p>
+                        }
+                        else if (Voice.Find(show.VoiceProvider) is { } chosen)
+                        {
+                            @if (chosen.SetupProblem is { } setup)
+                            {
+                                <p class="hint warn">@setup</p>
+                            }
+                            <div class="grid grid-2">
+                                <label class="field"><span>Voice</span>
+                                    <select value="@(show.Voice ?? "")" @onchange="e => Change(() => show.Voice = Text(e))">
+                                        <option value="">Choose…</option>
+                                        @foreach (TtsVoice voice in _voices)
+                                        {
+                                            <option value="@voice.Id">@voice.Name @(voice.Language.Length > 0 ? $"({voice.Language})" : "")</option>
+                                        }
+                                    </select></label>
+                                <label class="field"><span>Voice volume: @((int)Math.Round(show.SpeechVolume * 100))%</span>
+                                    <input type="range" min="0" max="2" step="0.05" value="@show.SpeechVolume.ToString(CultureInfo.InvariantCulture)"
+                                           @onchange="e => Change(() => show.SpeechVolume = Number(e, 1))" /></label>
+                            </div>
+                            @if (_voicesProblem is { } voicesProblem)
+                            {
+                                <p class="hint warn">@voicesProblem</p>
+                            }
+                        }
+                        <label class="check"><input type="checkbox" checked="@show.ReadDesks" @onchange="e => Change(() => show.ReadDesks = e.Value is true)" />
+                            <span>Read the weather, markets, scores, traffic and lottery too</span></label>
+                        <div class="grid grid-2">
+                            <label class="field"><span>Opening line <span class="muted">(optional)</span></span>
+                                <input type="text" value="@show.Intro" maxlength="300" placeholder="@($"This is {Title(show)}. Here are the latest headlines.")" @onchange="e => Change(() => show.Intro = Text(e))" /></label>
+                            <label class="field"><span>Closing line <span class="muted">(optional)</span></span>
+                                <input type="text" value="@show.Outro" maxlength="300" placeholder="That's the news for now. Stay with us." @onchange="e => Change(() => show.Outro = Text(e))" /></label>
+                        </div>
+                        <p class="hint">Voice-overs are made each time the news is fetched (and kept while a story stays in the news), so the first break after a refresh can take a moment to have its voice.</p>
+                    }
+                    <div class="grid grid-2">
+                        <label class="field"><span>Music folder <span class="muted">(optional; shuffled under the news)</span></span>
+                            <input type="text" value="@show.MusicFolder" placeholder="D:\Music\News beds" @onchange="e => Change(() => show.MusicFolder = Text(e))" /></label>
+                        <label class="field"><span>Music volume: @((int)Math.Round(show.MusicVolume * 100))% <span class="muted">(lowered under the voice)</span></span>
+                            <input type="range" min="0" max="1" step="0.05" value="@show.MusicVolume.ToString(CultureInfo.InvariantCulture)"
+                                   @onchange="e => Change(() => show.MusicVolume = Number(e, 0.35))" /></label>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(show.MusicFolder) && !Directory.Exists(show.MusicFolder))
+                    {
+                        <p class="hint warn">That music folder doesn't exist on this computer; there'll be no music.</p>
+                    }
+
+                    <div class="row" style="gap:8px;margin-top:14px;align-items:center;">
+                        @if (SaveProblem(show) is { } saveProblem)
+                        {
+                            <span class="hint warn" style="margin:0;">@saveProblem</span>
+                        }
+                        <div class="spacer"></div>
+                        <button class="btn btn-sm" type="button" @onclick="Done">Done</button>
+                    </div>
+                </div>
+
+                <div class="news-preview-column">
+                    <div class="news-preview">
+                        <iframe name="newsPreview" title="Live preview" src="@($"plugins/news/view/{Uri.EscapeDataString(_previewKey)}?preview=true")"></iframe>
+                    </div>
+                    <p class="hint">Live preview with the real news (it isn't read out here). It runs through the segments on the show's own timing;
+                        what can't be fetched is shown along the top.</p>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<div class="row" style="gap:8px;">
+    <button class="btn btn-primary" type="button" @onclick="AddAsync">Add a news show</button>
+</div>
+
+<SaveDock Dirty="_dirty" Label="Unsaved news shows" CanSave="@_shows.All(show => SaveProblem(show) is null)"
+          Problem="@(_shows.FirstOrDefault(show => SaveProblem(show) is not null) is { } unfinished ? $"{Title(unfinished)}: {SaveProblem(unfinished)}" : null)"
+          OnSave="Save" OnDiscard="Discard" />
+
+<div class="card" style="margin-top:16px;">
+    <div class="card-head"><h2>How it works</h2></div>
+    <ul class="hint" style="margin:0;padding-left:18px;line-height:1.6;">
+        <li>Each news show is a show (under TV Shows and in collection pickers), with one "episode" per length.</li>
+        <li><strong>A 24/7 news channel:</strong> make the show a channel's base rotation, with long lengths (30, 60).</li>
+        <li><strong>News breaks:</strong> add it to a channel's interstitial shows with short lengths (2–5 minutes). A break starts from the top of the news.</li>
+        <li>The stories and data are fetched again every @((int)Settings.RefreshEvery.TotalMinutes) minutes while a show is in use; the new rundown takes over when the current one finishes.</li>
+        <li>Data comes from free sources: Open-Meteo (weather), Yahoo Finance (markets), ESPN (scores), New York State open data (lottery), OpenStreetMap
+            and RainViewer (map and radar), and TomTom (traffic, with a key).</li>
+    </ul>
+</div>
+
+<style>
+    .news-editor { display: grid; grid-template-columns: minmax(0, 1fr) 660px; gap: 22px; align-items: start; }
+    @@media (max-width: 1300px) { .news-editor { grid-template-columns: minmax(0, 1fr); } }
+    .news-form h3 { font-size: 13px; margin: 18px 0 8px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    .news-form h3:first-child { margin-top: 0; }
+    .news-form h4 { font-size: 14px; margin: 14px 0 6px; }
+    .news-preview-column { position: sticky; top: 16px; }
+    .news-preview { width: 640px; height: 360px; overflow: hidden; border-radius: 10px; background: #000; border: 1px solid var(--line); }
+    .news-preview iframe { width: 1280px; height: 720px; border: 0; transform: scale(.5); transform-origin: 0 0; display: block; }
+    .news-snapshot { width: 100%; max-width: 640px; border-radius: 10px; display: block; margin-top: 8px; }
+    .news-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-bottom: 12px; }
+    .news-choice { text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
+    .news-choice strong { display: block; margin-bottom: 4px; }
+    .news-choice span { font-size: 12px; color: var(--muted); }
+    .news-choice.on { border-color: var(--accent, #6f7fff); box-shadow: 0 0 0 1px var(--accent, #6f7fff); }
+    .hint.warn { color: #ffd08a; }
+</style>
+
+@code {
+    private static readonly (string Url, string Label)[] SuggestedFeeds =
+    [
+        ("https://feeds.bbci.co.uk/news/rss.xml", "BBC News"),
+        ("https://feeds.npr.org/1001/rss.xml", "NPR"),
+        ("https://www.cbc.ca/webfeed/rss/rss-topstories", "CBC News"),
+        ("https://www.theguardian.com/world/rss", "The Guardian"),
+        ("https://www.aljazeera.com/xml/rss/all.xml", "Al Jazeera")
+    ];
+
+    private List<NewsShow> _shows = [];
+    private NewsShow? _editing;
+    private string? _confirmDelete;
+    private string? _message;
+    private bool _messageOk;
+    private bool _dirty;
+    private long _tick;
+    private Timer? _refresh;
+    private string _query = string.Empty;
+    private IReadOnlyList<Place> _places = [];
+    private bool _searching;
+    private IReadOnlyList<TtsVoice> _voices = [];
+    private string? _voicesProblem;
+
+    // The editor's own key for its draft, so the preview shows unsaved changes (and two editors don't mix).
+    private readonly string _previewKey = "draft-" + Guid.NewGuid().ToString("N")[..12];
+
+    private IEnumerable<string?> LowPowerAdvice =>
+    [
+        Settings.CaptureFrameRate > 10
+            ? $"Capture frames per second is {Settings.CaptureFrameRate}. 8 is plenty for news pages (plugin settings)."
+            : null,
+        _shows.Any(show => show.Theme != NewsTheme.Teletext)
+            ? "The teletext look is the lightest to draw; the others have pictures, gradients and a moving ticker."
+            : null
+    ];
+
+    protected override void OnInitialized()
+    {
+        Load();
+        Hub.Streams.Changed += OnHubChanged;
+        _refresh = new Timer(_ => InvokeAsync(() => { _tick++; if (Hub.Streams.Running.Count > 0) StateHasChanged(); }), null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+    }
+
+    public void Dispose()
+    {
+        Hub.Streams.Changed -= OnHubChanged;
+        _refresh?.Dispose();
+    }
+
+    private void OnHubChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void Load()
+    {
+        _shows = [.. Store.Shows.Select(show => show.Copy())];
+        _editing = null;
+        _confirmDelete = null;
+        _dirty = false;
+    }
+
+    private static string Title(NewsShow show) => string.IsNullOrWhiteSpace(show.Name) ? "New news show" : show.Name;
+
+    private static string ThemeName(NewsTheme theme) => theme switch
+    {
+        NewsTheme.Teletext => "Teletext",
+        NewsTheme.CableNews => "24-hour cable news",
+        NewsTheme.RetroLocal => "80s/90s local news",
+        _ => "News desk"
+    };
+
+    private static string ThemeBlurb(NewsTheme theme) => theme switch
+    {
+        NewsTheme.Teletext => "Ceefax-style pages: page numbers, coloured bars, block graphics.",
+        NewsTheme.CableNews => "BREAKING banners, split panels, a crawl and a markets strip.",
+        NewsTheme.RetroLocal => "Gold bevels, serif titles, a neon grid and VHS lines.",
+        _ => "A modern broadcast: big pictures, lower thirds, a corner bug."
+    };
+
+    private static string DeskName(NewsDesk desk) => desk switch
+    {
+        NewsDesk.Weather => "Weather",
+        NewsDesk.Markets => "Markets",
+        NewsDesk.Sports => "Sports scores",
+        NewsDesk.Map => "Map (radar, traffic)",
+        _ => "Lottery results"
+    };
+
+    private static string Describe(NewsShow show)
+    {
+        string feeds = show.ValidFeeds.Count switch
+        {
+            0 => "No feeds",
+            1 => show.ValidFeeds[0].Label ?? "1 feed",
+            var count => $"{count} feeds"
+        };
+        string desks = show.Desks.Count == 0 ? "" : " · " + string.Join(", ", show.Desks.Select(DeskName));
+        string place = show.Location.Length > 0 ? $" · {show.Location}" : "";
+        string speech = show.Speaks ? " · read out" : "";
+        string music = string.IsNullOrWhiteSpace(show.MusicFolder) ? "" : " · music";
+        return $"{feeds}{desks}{place} · {ThemeName(show.Theme)}{speech}{music}";
+    }
+
+    /// <summary>What's missing before the show can be saved, or null.</summary>
+    private static string? SaveProblem(NewsShow show)
+    {
+        if (show.Feeds.Any(feed => !string.IsNullOrWhiteSpace(feed.Url) && !NewsShow.IsWebAddress(feed.Url)))
+        {
+            return "A feed's address isn't a web address.";
+        }
+
+        if (show.ValidFeeds.Count == 0 && show.Desks.Count == 0)
+        {
+            return "Add a feed or a segment.";
+        }
+
+        return (show.Desks.Contains(NewsDesk.Weather) || show.Desks.Contains(NewsDesk.Map)) && !show.HasPlace
+            ? "Choose a place for the weather and the map."
+            : null;
+    }
+
+    private async Task EditAsync(NewsShow show)
+    {
+        _editing = show;
+        _message = null;
+        _query = show.Location;
+        _places = [];
+        await LoadVoicesAsync(show.VoiceProvider);
+        await PushPreviewAsync();
+    }
+
+    private async Task AddAsync()
+    {
+        var show = new NewsShow { Name = string.Empty, Feeds = [new NewsFeed { Url = SuggestedFeeds[0].Url, Label = SuggestedFeeds[0].Label }] };
+        _shows.Add(show);
+        _dirty = true;
+        await EditAsync(show);
+    }
+
+    private void Done() => _editing = null;
+
+    private void Discard()
+    {
+        Load();
+        _message = null;
+    }
+
+    private void AskDelete(NewsShow show)
+    {
+        if (string.IsNullOrEmpty(show.Id))
+        {
+            Remove(show);
+            return;
+        }
+
+        _confirmDelete = show.Id;
+    }
+
+    private void Remove(NewsShow show)
+    {
+        _confirmDelete = null;
+        _shows.Remove(show);
+        if (ReferenceEquals(_editing, show))
+        {
+            _editing = null;
+        }
+
+        _dirty = true;
+    }
+
+    private void Save()
+    {
+        if (_shows.Any(show => SaveProblem(show) is not null))
+        {
+            return;
+        }
+
+        try
+        {
+            bool removed = Store.Shows.Any(saved => !_shows.Any(show => string.Equals(show.Id, saved.Id, StringComparison.OrdinalIgnoreCase)));
+            foreach (NewsShow show in _shows)
+            {
+                show.Feeds.RemoveAll(feed => string.IsNullOrWhiteSpace(feed.Url));
+            }
+
+            Store.Save(_shows);
+            Load();
+            Say("Saved. News shows are under TV Shows (and in the show pickers); one that's on air picks up the changes by itself."
+                + (removed ? " Channels that used a deleted show fill that time with their other programming from the next rebuild." : ""), ok: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Say($"Couldn't save: {ex.Message}", ok: false);
+        }
+    }
+
+    private async Task Change(Action change)
+    {
+        change();
+        _dirty = true;
+        await PushPreviewAsync();
+    }
+
+    /// <summary>Hands the draft to the preview, and tells the preview to fetch it now rather than at its next poll.</summary>
+    private async Task PushPreviewAsync()
+    {
+        if (_editing is not { } show)
+        {
+            return;
+        }
+
+        Previews.Set(_previewKey, show);
+        try
+        {
+            await JS.InvokeVoidAsync("eval", "document.querySelector('iframe[name=\"newsPreview\"]')?.contentWindow?.postMessage({ type: 'news-refresh' }, '*')");
+        }
+        catch (JSException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    private async Task ChooseProviderAsync(NewsShow show, string providerId)
+    {
+        show.VoiceProvider = providerId.Length == 0 ? null : providerId;
+        show.Voice = null;
+        _dirty = true;
+        await LoadVoicesAsync(show.VoiceProvider);
+        if (_voices.Count > 0)
+        {
+            show.Voice = _voices[0].Id;
+        }
+
+        await PushPreviewAsync();
+    }
+
+    private async Task LoadVoicesAsync(string? providerId)
+    {
+        _voices = [];
+        _voicesProblem = null;
+        if (Voice.Find(providerId) is not { } provider)
+        {
+            return;
+        }
+
+        try
+        {
+            _voices = await provider.GetVoicesAsync(CancellationToken.None);
+            if (_voices.Count == 0)
+            {
+                _voicesProblem = $"{provider.DisplayName} has no voices yet.";
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _voicesProblem = $"Couldn't list {provider.DisplayName}'s voices: {ex.Message}";
+        }
+    }
+
+    private async Task SearchAsync()
+    {
+        _searching = true;
+        try
+        {
+            _places = await Sources.SearchPlacesAsync(_query, CancellationToken.None);
+            if (_places.Count == 0)
+            {
+                Say($"No places called \"{_query}\" were found.", ok: false);
+            }
+            else
+            {
+                _message = null;
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            Say($"Couldn't search for places: {ex.Message}", ok: false);
+        }
+        finally
+        {
+            _searching = false;
+        }
+    }
+
+    private async Task SearchOnEnter(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SearchAsync();
+        }
+    }
+
+    private void Pick(NewsShow show, Place place)
+    {
+        show.Location = string.Join(", ", place.Label.Split(", ").Take(2));
+        show.Latitude = Math.Round(place.Latitude, 4);
+        show.Longitude = Math.Round(place.Longitude, 4);
+        show.TimeZone = place.TimeZone;
+        // Fahrenheit where it's the custom.
+        show.Imperial = place.Label.EndsWith("United States", StringComparison.OrdinalIgnoreCase) || show.Imperial;
+        _query = place.Label;
+        _places = [];
+    }
+
+    /// <summary>Google News's feed for the show's town.</summary>
+    private static void AddLocalNews(NewsShow show)
+    {
+        string town = NewsRundown.Short(show.Location);
+        AddFeed(show, $"https://news.google.com/rss/search?q={Uri.EscapeDataString(town)}&hl=en", town + " News");
+    }
+
+    private static string PlaceText(NewsShow show)
+    {
+        if (!show.HasPlace)
+        {
+            return "No place chosen yet.";
+        }
+
+        string where = string.Create(CultureInfo.InvariantCulture, $"{show.Location} ({show.Latitude:0.###}, {show.Longitude:0.###})");
+        return show.TimeZone is null ? where : $"{where}, {show.TimeZone}";
+    }
+
+    /// <summary>The leagues that aren't among the common ones (typed in by hand).</summary>
+    private static string OtherLeagues(NewsShow show) =>
+        string.Join(", ", show.Leagues.Where(id => SportsLeagues.Common.All(common => common.Id != id)));
+
+    private static void SetOtherLeagues(NewsShow show, List<string> typed)
+    {
+        List<string> common = [.. show.Leagues.Where(id => SportsLeagues.Common.Any(league => league.Id == id))];
+        show.Leagues = [.. common, .. typed.Select(id => id.ToLowerInvariant()).Except(common)];
+    }
+
+    private static void AddFeed(NewsShow show, string url, string label)
+    {
+        show.Feeds.RemoveAll(feed => string.IsNullOrWhiteSpace(feed.Url));
+        if (show.Feeds.All(feed => !string.Equals(feed.Url, url, StringComparison.OrdinalIgnoreCase)))
+        {
+            show.Feeds.Add(new NewsFeed { Url = url, Label = label });
+        }
+    }
+
+    private static void Toggle<T>(List<T> list, T value, bool on)
+    {
+        list.Remove(value);
+        if (on)
+        {
+            list.Add(value);
+        }
+    }
+
+    private void Say(string message, bool ok)
+    {
+        _message = message;
+        _messageOk = ok;
+    }
+
+    private static string Text(ChangeEventArgs e) => e.Value?.ToString()?.Trim() ?? string.Empty;
+
+    private static double Number(ChangeEventArgs e, double fallback) =>
+        double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ? value : fallback;
+
+    private static List<string> List(ChangeEventArgs e) =>
+        [.. Text(e).Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries).Select(part => part.Trim()).Where(part => part.Length > 0).Distinct()];
+
+    private static List<int> Lengths(ChangeEventArgs e) =>
+        [.. Text(e).Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out int minutes) ? minutes : 0)
+            .Where(minutes => minutes is > 0 and <= 1440)
+            .Distinct()
+            .Order()];
+}

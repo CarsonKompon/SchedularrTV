@@ -8,7 +8,8 @@ Jellyfin, local media folders, ErsatzTV Next, Promos and Archive Follow (off unt
 built-in plugins. Generated promos (which needs Promos), the TikTok, MiniMax and Piper voices for it, and
 [Web page shows](web-channels.md) (live pages such as WeatherStar forecasts, a clock and weather radar), [IPTV passthrough](iptv.md) (channels from an
 M3U playlist and its guide), [Streamer channels](streamers.md) (Twitch and YouTube streamers, with chat and a countdown to the next
-stream), [Radio shows](radio.md) (music with cover art, lyrics and a visualizer), [Overlays](overlays.md)
+stream), [Radio shows](radio.md) (music with cover art, lyrics and a visualizer), [News shows](news.md) (local
+news breaks from your feeds, with weather, markets, scores and more, optionally read out), [Overlays](overlays.md)
 (screen bugs and lower thirds), the [Local AI writer](local-ai.md) (natural, AI-written voice-overs and captions), the [TV Guide channel](tv-guide.md)
 (scrolling listings in the style of the Prevue Channel or TV Guide Channel), [Credit squeeze](credit-squeeze.md) (end credits
 shrunk beside what's on next) and [Auto Chapters](auto-chapters.md)

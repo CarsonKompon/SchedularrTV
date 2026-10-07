@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>News</title>
+<style>
+  /* The stage is always 1280×720: the hidden browser's window, and what the editor's preview scales. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1280px; height: 720px; overflow: hidden; background: #000; }
+  body { --accent: #d7263d; --ink: #fff; --soft: rgba(255,255,255,.72); --faint: rgba(255,255,255,.45);
+         font-family: "Segoe UI", "Helvetica Neue", Arial, "Liberation Sans", "DejaVu Sans", sans-serif; color: var(--ink); }
+  .hidden { display: none !important; }
+  #stage { position: absolute; inset: 0; overflow: hidden; }
+  #bg { position: absolute; inset: 0; }
+  #top { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center; z-index: 5; }
+  #main { position: absolute; z-index: 2; overflow: hidden; }
+  #side { position: absolute; z-index: 3; overflow: hidden; }
+  #ticker { position: absolute; left: 0; right: 0; z-index: 6; display: flex; align-items: stretch; overflow: hidden; }
+  #ticker .label { flex: none; display: flex; align-items: center; padding: 0 18px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  #ticker .track { position: relative; flex: 1; overflow: hidden; display: flex; align-items: center; }
+  #ticker .run { position: absolute; left: 0; white-space: nowrap; animation: crawl linear infinite; will-change: transform; }
+  #ticker .run span { padding-right: 60px; }
+  @keyframes crawl { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  #progress { position: absolute; z-index: 7; height: 4px; left: 0; width: 0; background: var(--accent); }
+  #problem { position: absolute; z-index: 20; left: 12px; right: 12px; top: 12px; padding: 8px 12px; border-radius: 6px;
+             background: rgba(120,20,20,.92); color: #fff; font-size: 17px; line-height: 1.35; }
+  #tt, #fastext { display: none; }
+
+  /* Segments: each new one fades in over the old. */
+  .seg { position: absolute; inset: 0; opacity: 0; animation: segin .55s ease forwards; }
+  .seg.leave { animation: segout .45s ease forwards; }
+  @keyframes segin { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  @keyframes segout { from { opacity: 1; } to { opacity: 0; } }
+  h1, h2, h3 { font-weight: 800; }
+  .icon svg { width: 100%; height: 100%; display: block; }
+  .clip { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; }
+
+  /* Shared pieces, styled further per look. */
+  .card-title { font-size: 15px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; }
+  .up { color: #39d98a; } .down { color: #ff5a6a; } .flat { color: var(--soft); }
+
+  /* --- The segments' common layout ------------------------------------------------------------------------- */
+  .intro, .outro, .standby, .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 18px; }
+  .intro .big, .outro .big, .standby .big, .empty .big { font-size: 78px; font-weight: 900; letter-spacing: -.01em; line-height: 1; }
+  .intro .sub, .outro .sub, .standby .sub, .empty .sub { font-size: 28px; color: var(--soft); max-width: 900px; }
+  .intro .date { font-size: 22px; letter-spacing: .2em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+
+  .story .pic { position: absolute; inset: 0; background: #111; }
+  .story .pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .story .pic::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 30%, rgba(0,0,0,.82) 100%); }
+  .story.no-pic .pic { display: none; }
+  .story .lt { position: absolute; left: 36px; right: 36px; bottom: 30px; }
+  .story .banner { display: none; }
+  .story .kicker { display: inline-block; font-size: 17px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; padding: 6px 12px; background: var(--accent); }
+  .story h1 { font-size: 46px; line-height: 1.1; margin-top: 12px; -webkit-line-clamp: 3; }
+  .story p { font-size: 23px; line-height: 1.4; color: var(--soft); margin-top: 12px; -webkit-line-clamp: 3; }
+  .story .count { position: absolute; right: 30px; top: 22px; font-size: 18px; font-weight: 700; padding: 4px 10px; background: rgba(0,0,0,.55); border-radius: 4px; }
+  .story.no-pic .lt { top: 60px; bottom: auto; }
+  .story.no-pic h1 { font-size: 58px; -webkit-line-clamp: 4; }
+  .story.no-pic p { font-size: 27px; -webkit-line-clamp: 6; }
+
+  .desk { padding: 34px 40px; display: flex; flex-direction: column; }
+  .desk > h2 { font-size: 34px; margin-bottom: 22px; display: flex; align-items: center; gap: 14px; }
+  .desk > h2 .tag { font-size: 16px; padding: 5px 10px; background: var(--accent); letter-spacing: .12em; text-transform: uppercase; }
+
+  .weather .now { display: flex; align-items: center; gap: 30px; }
+  .weather .now .icon { width: 170px; height: 170px; flex: none; }
+  .weather .temp { font-size: 120px; font-weight: 900; line-height: .9; }
+  .weather .cond { font-size: 34px; font-weight: 700; margin-top: 6px; }
+  .weather .extra { font-size: 20px; color: var(--soft); margin-top: 10px; }
+  .weather .days { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-top: auto; }
+  .weather .day { padding: 14px 10px; text-align: center; background: rgba(255,255,255,.07); border-radius: 10px; }
+  .weather .day .dn { font-size: 18px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+  .weather .day .icon { width: 64px; height: 64px; margin: 6px auto; }
+  .weather .day .hl { font-size: 24px; font-weight: 800; }
+  .weather .day .hl span { color: var(--faint); font-weight: 600; }
+  .weather .day .rc { font-size: 15px; color: #7cc4ff; margin-top: 2px; }
+
+  .markets .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .markets .q { padding: 16px 18px; background: rgba(255,255,255,.07); border-radius: 10px; display: grid; grid-template-columns: 1fr 150px; grid-template-rows: auto auto; column-gap: 12px; }
+  .markets .q .n { font-size: 20px; font-weight: 800; }
+  .markets .q .s { font-size: 14px; color: var(--faint); font-weight: 600; margin-left: 6px; }
+  .markets .q .p { font-size: 34px; font-weight: 800; margin-top: 4px; }
+  .markets .q .c { font-size: 20px; font-weight: 700; }
+  .markets .q svg { grid-column: 2; grid-row: 1 / span 2; width: 150px; height: 70px; align-self: center; }
+  .markets .q .c { white-space: nowrap; }
+
+  .sports .games { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .sports .g { background: rgba(255,255,255,.07); border-radius: 10px; overflow: hidden; }
+  .sports .t { display: flex; align-items: center; gap: 12px; padding: 8px 14px; font-size: 24px; font-weight: 700; border-left: 8px solid var(--team); }
+  .sports .t img { width: 34px; height: 34px; object-fit: contain; }
+  .sports .t .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sports .t .sc { font-size: 30px; font-weight: 900; min-width: 50px; text-align: right; }
+  .sports .t.lost { color: var(--soft); }
+  .sports .st { font-size: 15px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; padding: 5px 14px; background: rgba(0,0,0,.3); color: var(--soft); }
+  .sports .st.live { color: #fff; background: var(--accent); }
+
+  .map { padding: 0; }
+  .map .view { position: absolute; inset: 0; background: #1b2330; overflow: hidden; }
+  .map .layer { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .map .layer img { position: absolute; width: 256px; height: 256px; }
+  .map .radar { opacity: .75; }
+  .map .pin { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; border: 3px solid #fff; display: grid; place-items: center;
+              font-size: 15px; font-weight: 900; box-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  .map .pin.m1 { background: #f2b705; color: #000; } .map .pin.m2 { background: #ff8a00; } .map .pin.m3 { background: #e4252c; } .map .pin.m4 { background: #7a0019; } .map .pin.m0 { background: #888; }
+  .map .here { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 6px rgba(255,255,255,.35); }
+  .map .panel { position: absolute; left: 24px; top: 24px; width: 420px; max-height: calc(100% - 70px); padding: 18px 20px; background: rgba(8,12,20,.86); border-radius: 10px; overflow: hidden; }
+  .map .panel h2 { font-size: 30px; margin-bottom: 6px; }
+  .map .panel .lead { font-size: 18px; color: var(--soft); margin-bottom: 10px; }
+  .map .inc { display: flex; gap: 10px; align-items: baseline; font-size: 17px; line-height: 1.3; padding: 6px 0; border-top: 1px solid rgba(255,255,255,.12); }
+  .map .inc b { flex: none; width: 26px; height: 26px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 14px; }
+  .map .attrib { position: absolute; right: 8px; bottom: 6px; font-size: 12px; color: rgba(255,255,255,.75); background: rgba(0,0,0,.5); padding: 2px 6px; border-radius: 4px; }
+
+  .lottery .draws { display: flex; flex-direction: column; gap: 26px; }
+  .lottery .draw .name { font-size: 26px; font-weight: 800; }
+  .lottery .draw .when { font-size: 17px; color: var(--soft); margin-left: 10px; font-weight: 600; }
+  .lottery .balls { display: flex; gap: 14px; margin-top: 12px; align-items: center; }
+  .lottery .ball { width: 74px; height: 74px; border-radius: 50%; display: grid; place-items: center; font-size: 32px; font-weight: 900; color: #111;
+                   background: radial-gradient(circle at 32% 28%, #fff 0 18%, #e9edf2 40%, #9aa3ad 100%); box-shadow: 0 6px 14px rgba(0,0,0,.45);
+                   opacity: 0; transform: scale(.3) translateY(-40px); animation: drop .5s cubic-bezier(.3,1.6,.5,1) forwards; }
+  .lottery .ball.bonus { color: #fff; background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.9) 0 14%, var(--game) 45%, color-mix(in srgb, var(--game) 55%, #000) 100%); margin-left: 14px; }
+  .lottery .x { font-size: 22px; font-weight: 800; color: var(--soft); margin-left: 12px; }
+  @keyframes drop { to { opacity: 1; transform: none; } }
+
+  /* Side panel cards. */
+  .side-card { position: absolute; inset: 0; padding: 18px 20px; opacity: 0; animation: segin .5s ease forwards; }
+  .side-card .w { display: flex; align-items: center; gap: 14px; }
+  .side-card .w .icon { width: 84px; height: 84px; flex: none; }
+  .side-card .w .tp { font-size: 58px; font-weight: 900; line-height: 1; }
+  .side-card .w .cd { font-size: 18px; color: var(--soft); }
+  .side-card .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 9px 0; border-top: 1px solid rgba(255,255,255,.1); font-size: 19px; }
+  .side-card .row:first-of-type { border-top: 0; }
+  .side-card .row .k { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side-card .row .v { font-weight: 800; white-space: nowrap; }
+  .side-card .next { font-size: 18px; line-height: 1.3; padding: 9px 0; border-top: 1px solid rgba(255,255,255,.1); }
+  .side-card .next:first-of-type { border-top: 0; }
+  .side-card .next .clip { -webkit-line-clamp: 2; }
+
+  /* === News desk ============================================================================================ */
+  .t-NewsDesk #bg { background: radial-gradient(1200px 700px at 20% 0%, #1d2d4f 0%, #0b1222 55%, #060a14 100%); }
+  .t-NewsDesk #top { height: 66px; padding: 0 28px; gap: 16px; background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,0)); }
+  .t-NewsDesk #top .bug { display: flex; align-items: center; gap: 10px; font-size: 24px; font-weight: 900; letter-spacing: .02em; }
+  .t-NewsDesk #top .bug i { width: 14px; height: 30px; background: var(--accent); display: inline-block; }
+  .t-NewsDesk #top .live { margin-left: auto; font-size: 15px; font-weight: 900; letter-spacing: .14em; padding: 4px 10px; background: var(--accent); }
+  .t-NewsDesk #top .clock { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .t-NewsDesk #main { left: 24px; right: 24px; top: 74px; bottom: 76px; border-radius: 12px; background: rgba(255,255,255,.03); }
+  .t-NewsDesk.has-side #main { right: 372px; }
+  .t-NewsDesk #side { right: 24px; width: 332px; top: 74px; bottom: 76px; border-radius: 12px; background: rgba(255,255,255,.06); border-top: 4px solid var(--accent); }
+  .t-NewsDesk #ticker { bottom: 0; height: 56px; background: #f4f6fa; color: #0b1222; font-size: 24px; font-weight: 700; }
+  .t-NewsDesk #ticker .label { background: var(--accent); color: #fff; font-size: 18px; }
+  .t-NewsDesk #progress { bottom: 56px; }
+  .t-NewsDesk .story .lt { background: linear-gradient(90deg, rgba(6,10,20,.92), rgba(6,10,20,.75)); padding: 20px 24px; border-left: 8px solid var(--accent); left: 0; right: 0; bottom: 0; }
+  .t-NewsDesk .story.no-pic .lt { background: none; border-left: 0; padding: 0; left: 36px; right: 36px; }
+
+  /* === 24-hour cable news ===================================================================================== */
+  .t-CableNews #bg { background: linear-gradient(135deg, #0a0f1c 0%, #121a33 50%, #0a0f1c 100%); }
+  .t-CableNews #bg::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, rgba(255,255,255,.025) 0 2px, transparent 2px 80px); }
+  .t-CableNews #top { height: 50px; padding: 0 20px; gap: 14px; background: #0a0f1c; border-bottom: 3px solid var(--accent); }
+  .t-CableNews #top .bug { font-size: 22px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; display: flex; align-items: center; gap: 10px; }
+  .t-CableNews #top .bug i { width: 30px; height: 30px; border-radius: 4px; background: var(--accent); display: inline-block; }
+  .t-CableNews #top .live { margin-left: auto; font-size: 14px; font-weight: 900; letter-spacing: .16em; padding: 3px 10px; border: 2px solid #fff; }
+  .t-CableNews #top .clock { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .t-CableNews #main { left: 18px; right: 18px; top: 62px; bottom: 120px; background: #000; border: 2px solid rgba(255,255,255,.15); }
+  .t-CableNews.has-side #main { right: 330px; }
+  .t-CableNews #side { right: 18px; width: 300px; top: 62px; bottom: 120px; background: rgba(5,8,16,.9); border: 2px solid rgba(255,255,255,.15); }
+  .t-CableNews #side::before { content: attr(data-title); display: block; padding: 8px 14px; font-size: 15px; font-weight: 900; letter-spacing: .14em; background: var(--accent); }
+  .t-CableNews .side-card { top: 38px; }
+  .t-CableNews #side .card-title { display: none; }
+  .t-CableNews #ticker { bottom: 36px; height: 44px; background: #141414; color: #ffd400; font-size: 22px; font-weight: 700; border-top: 2px solid var(--accent); }
+  .t-CableNews #ticker .label { background: #ffd400; color: #000; font-size: 16px; }
+  .t-CableNews #strip { display: flex; position: absolute; left: 0; right: 0; bottom: 0; height: 36px; background: #000; z-index: 6; font-size: 18px; font-weight: 700; align-items: center; overflow: hidden; }
+  .t-CableNews #strip .lbl { flex: none; padding: 0 14px; height: 100%; display: flex; align-items: center; background: #1e2a4a; letter-spacing: .1em; font-size: 14px; font-weight: 900; }
+  .t-CableNews #strip .items { display: flex; gap: 28px; padding: 0 18px; white-space: nowrap; }
+  .t-CableNews #progress { bottom: 80px; }
+  .t-CableNews .story .lt { left: 0; right: 0; bottom: 0; }
+  .t-CableNews .story .banner { display: inline-flex; align-items: stretch; font-size: 20px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+  .t-CableNews .story .banner .b1 { background: var(--accent); padding: 6px 14px; }
+  .t-CableNews .story .banner .b2 { background: #fff; color: #000; padding: 6px 14px; }
+  .t-CableNews .story .kicker { display: none; }
+  .t-CableNews .story h1 { margin: 0; padding: 12px 20px; background: rgba(255,255,255,.96); color: #0a0f1c; font-size: 38px; text-transform: uppercase; -webkit-line-clamp: 2; }
+  .t-CableNews .story p { margin: 0; padding: 8px 20px; background: rgba(0,0,0,.85); color: #fff; font-size: 21px; -webkit-line-clamp: 2; }
+  .t-CableNews .story.no-pic .lt { top: auto; bottom: 0; }
+  .t-CableNews .story.no-pic h1 { font-size: 40px; }
+  .t-CableNews .story.no-pic .pic { display: block; background: linear-gradient(135deg, #1a2550, #0a0f1c); }
+  .t-CableNews .story.no-pic .pic::before { content: attr(data-src); position: absolute; left: 40px; top: 40px; font-size: 54px; font-weight: 900; color: rgba(255,255,255,.12); text-transform: uppercase; }
+  .t-CableNews .story.no-pic .pic img { display: none; }
+  .t-CableNews .desk > h2 .tag { background: #ffd400; color: #000; }
+
+  /* === 80s/90s local station ================================================================================== */
+  .t-RetroLocal { font-family: Georgia, "Times New Roman", "Liberation Serif", "DejaVu Serif", serif; --gold: #f5c542; }
+  .t-RetroLocal #bg { background: linear-gradient(180deg, #1b1464 0%, #3a1c71 45%, #7a1f5c 100%); }
+  .t-RetroLocal #bg::before { content: ""; position: absolute; left: -10%; right: -10%; bottom: 0; height: 46%;
+    background: linear-gradient(transparent 0 0), repeating-linear-gradient(90deg, rgba(255,120,220,.35) 0 2px, transparent 2px 80px),
+                repeating-linear-gradient(0deg, rgba(255,120,220,.35) 0 2px, transparent 2px 40px);
+    transform: perspective(400px) rotateX(55deg); transform-origin: bottom; }
+  .t-RetroLocal #stage::after { content: ""; position: absolute; inset: 0; z-index: 30; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 2px, transparent 2px 4px); mix-blend-mode: multiply; }
+  .t-RetroLocal #top { height: 76px; padding: 0 30px; gap: 16px; }
+  .t-RetroLocal #top .bug { font-size: 30px; font-style: italic; font-weight: 900; padding: 6px 18px; color: #1b1464;
+    background: linear-gradient(180deg, #fff6c8, var(--gold) 55%, #b88a10); border: 3px solid #fff; border-radius: 6px; box-shadow: 0 4px 0 #5a3d00, 0 8px 18px rgba(0,0,0,.4); }
+  .t-RetroLocal #top .bug i { display: none; }
+  .t-RetroLocal #top .live { margin-left: auto; font-family: "Courier New", monospace; font-size: 26px; font-weight: 700; color: #fff; text-shadow: 2px 2px 0 #000; letter-spacing: .04em; }
+  .t-RetroLocal #top .clock { font-family: "Courier New", monospace; font-size: 26px; font-weight: 700; text-shadow: 2px 2px 0 #000; }
+  .t-RetroLocal #main { left: 30px; right: 30px; top: 90px; bottom: 86px; border: 4px solid var(--gold); border-radius: 14px; background: rgba(10,6,40,.72);
+    box-shadow: inset 0 0 0 3px #1b1464, 0 10px 30px rgba(0,0,0,.5); }
+  .t-RetroLocal.has-side #main { right: 370px; }
+  .t-RetroLocal #side { right: 30px; width: 320px; top: 90px; bottom: 86px; border: 4px solid #fff; border-radius: 14px; background: linear-gradient(180deg, #2d58c4, #1b1464); }
+  .t-RetroLocal #ticker { bottom: 18px; left: 30px; right: 30px; height: 52px; border-radius: 26px; background: linear-gradient(180deg, #3b6fe0, #1b3c99); border: 3px solid #fff;
+    font-size: 24px; font-weight: 700; font-style: italic; }
+  .t-RetroLocal #ticker .label { background: var(--gold); color: #1b1464; border-radius: 23px 0 0 23px; font-size: 18px; font-style: normal; }
+  .t-RetroLocal #progress { bottom: 76px; left: 30px; background: var(--gold); }
+  .t-RetroLocal h1, .t-RetroLocal h2, .t-RetroLocal .big { text-shadow: 3px 3px 0 #1b1464, 5px 5px 0 rgba(0,0,0,.4); }
+  .t-RetroLocal .story .pic { inset: 22px auto 22px 22px; width: 52%; border: 4px solid #fff; border-radius: 8px; overflow: hidden; }
+  .t-RetroLocal .story .pic::after { background: none; }
+  .t-RetroLocal .story .pic img { filter: saturate(1.35) contrast(1.08) sepia(.15); }
+  .t-RetroLocal .story .lt { left: calc(52% + 50px); right: 26px; top: 30px; bottom: auto; }
+  .t-RetroLocal .story .kicker { background: var(--gold); color: #1b1464; font-family: Arial, sans-serif; }
+  .t-RetroLocal .story h1 { font-size: 40px; -webkit-line-clamp: 5; }
+  .t-RetroLocal .story p { font-size: 22px; color: #e8dcff; -webkit-line-clamp: 6; }
+  .t-RetroLocal .story.no-pic .lt { left: 40px; right: 40px; }
+  .t-RetroLocal .story.no-pic h1 { font-size: 56px; }
+  .t-RetroLocal .desk > h2 .tag { background: var(--gold); color: #1b1464; font-family: Arial, sans-serif; text-shadow: none; }
+  .t-RetroLocal .story .count { right: auto; left: 36px; top: 36px; }
+  .t-RetroLocal .weather .day, .t-RetroLocal .markets .q, .t-RetroLocal .sports .g { background: linear-gradient(180deg, #2d58c4, #1b2f80); border: 2px solid #fff; }
+  .t-RetroLocal .weather .temp { color: var(--gold); }
+  .t-RetroLocal .card-title { color: var(--gold); }
+
+  /* === Teletext ================================================================================================ */
+  .t-Teletext { font-family: "Courier New", "Liberation Mono", "DejaVu Sans Mono", monospace; font-weight: 700; }
+  .t-Teletext #bg { background: #000; }
+  .t-Teletext #top, .t-Teletext #side, .t-Teletext #ticker, .t-Teletext #progress, .t-Teletext #strip { display: none !important; }
+  .t-Teletext #tt { display: block; position: absolute; left: 40px; right: 40px; top: 14px; height: 36px; font-size: 30px; line-height: 36px; white-space: pre; }
+  .t-Teletext #main { left: 40px; right: 40px; top: 56px; bottom: 60px; }
+  .t-Teletext #fastext { display: flex; position: absolute; left: 40px; right: 40px; bottom: 14px; height: 36px; font-size: 28px; line-height: 36px; }
+  .t-Teletext #fastext span { flex: 1; }
+  .t-Teletext .seg { animation: none; opacity: 1; }
+  .t-Teletext .seg.leave { display: none; }
+  .tt-r { color: #f00; } .tt-g { color: #0f0; } .tt-y { color: #ff0; } .tt-b { color: #00f; } .tt-m { color: #f0f; } .tt-c { color: #0ff; } .tt-w { color: #fff; }
+  .tt-band { display: flex; align-items: center; height: 72px; padding: 0 18px; font-size: 54px; letter-spacing: .06em; margin-bottom: 18px; }
+  .tt-band .bandsub { margin-left: auto; font-size: 28px; letter-spacing: 0; }
+  .tt-dh { display: block; font-size: 30px; line-height: 30px; transform: scale(1, 2); transform-origin: 0 0; height: 64px; }
+  .tt-p { font-size: 29px; line-height: 38px; }
+  .tt-lines { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; }
+  .tt-row { display: flex; font-size: 29px; line-height: 40px; white-space: pre; }
+  .tt-row > span { overflow: hidden; }
+  .mosaic { display: grid; gap: 0; }
+  .mosaic i { display: block; width: 16px; height: 16px; }
+  .tt-map canvas { image-rendering: pixelated; display: block; }
+  .tt-ball { display: inline-block; min-width: 72px; text-align: center; margin-right: 12px; padding: 4px 0; font-size: 36px; }
+
+  /* Preview only: what isn't working yet. */
+  .preview #problem:empty { display: none; }
+  body:not(.preview) #problem { display: none; }
+</style>
+</head>
+<body class="t-NewsDesk">
+<div id="stage">
+  <div id="bg"></div>
+  <header id="top"><div class="bug"><i></i><span id="name"></span></div><div class="live" id="live">LIVE</div><div class="clock" id="clock"></div></header>
+  <div id="tt"></div>
+  <main id="main"></main>
+  <aside id="side" data-title="UP NEXT"></aside>
+  <div id="progress"></div>
+  <footer id="ticker" class="hidden"><div class="label" id="tickerLabel">Headlines</div><div class="track"><div class="run" id="tickerRun"></div></div></footer>
+  <div id="strip" class="hidden"><div class="lbl">MARKETS</div><div class="items" id="stripItems"></div></div>
+  <div id="fastext"><span class="tt-r">Headlines</span><span class="tt-g">Sport</span><span class="tt-y">Weather</span><span class="tt-c">Markets</span></div>
+  <div id="problem"></div>
+</div>
+
+<script>window.NEWS_BOOT = __BOOT__;</script>
+<script>
+(() => {
+  "use strict";
+  const base = "/plugins/news";
+  const boot = window.NEWS_BOOT;
+  const $ = id => document.getElementById(id);
+  let state = null, cfg = null, offset = 0, shownKey = "", configKey = "", tickerKey = "", stripKey = "";
+  let sideAt = 0, sideIndex = 0, sideKind = "";
+
+  // --- Helpers ---------------------------------------------------------------------------------------------------
+
+  const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const now = () => Date.now() + offset;
+  const fmt = (value, digits = 2) => Number(value).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  const signed = value => (value > 0 ? "+" : value < 0 ? "−" : "") + fmt(Math.abs(value));
+  const arrow = value => value > 0.05 ? "▲" : value < -0.05 ? "▼" : "■";
+  const dir = value => value > 0.05 ? "up" : value < -0.05 ? "down" : "flat";
+  const teletext = () => cfg && cfg.theme === "Teletext";
+
+  function zoned(options) {
+    try { return new Intl.DateTimeFormat("en-GB", Object.assign({ timeZone: cfg && cfg.timeZone || undefined }, options)); }
+    catch { return new Intl.DateTimeFormat("en-GB", options); }
+  }
+
+  function clockText(seconds) {
+    const parts = zoned({ hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: !!(cfg && cfg.twelveHourClock) }).formatToParts(new Date(now()));
+    const get = type => (parts.find(part => part.type === type) || {}).value || "";
+    const hour = get("hour"), minute = get("minute"), second = get("second"), half = get("dayPeriod");
+    return seconds ? `${hour}:${minute}:${second}${half ? " " + half.toUpperCase() : ""}` : `${hour}:${minute}${half ? " " + half.toUpperCase() : ""}`;
+  }
+
+  function dayName(isoDate, long) {
+    const date = new Date(isoDate + "T12:00:00Z");
+    return new Intl.DateTimeFormat("en-GB", { weekday: long ? "long" : "short", timeZone: "UTC" }).format(date);
+  }
+
+  function ago(published) {
+    if (!published) return "";
+    const minutes = Math.round((now() - Date.parse(published)) / 60000);
+    if (!isFinite(minutes) || minutes < 0) return "";
+    if (minutes < 1) return "just now";
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.round(minutes / 60);
+    return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`;
+  }
+
+  // --- Weather icons ---------------------------------------------------------------------------------------------
+
+  const cloudPath = "M18 48h30a11 11 0 0 0 1-22 15 15 0 0 0-29-4 10 10 0 0 0-2 26z";
+  const ICONS = {
+    sun: `<circle cx="32" cy="32" r="12" fill="#ffc83d"/><g stroke="#ffc83d" stroke-width="4" stroke-linecap="round">${[0,45,90,135,180,225,270,315].map(a => {
+      const r = a * Math.PI / 180; return `<line x1="${32 + Math.cos(r) * 19}" y1="${32 + Math.sin(r) * 19}" x2="${32 + Math.cos(r) * 27}" y2="${32 + Math.sin(r) * 27}"/>`; }).join("")}</g>`,
+    moon: `<path d="M40 10a22 22 0 1 0 14 34A18 18 0 0 1 40 10z" fill="#f1ecc9"/>`,
+    cloud: `<path d="${cloudPath}" fill="#dfe6ee"/>`,
+    partly: `<circle cx="24" cy="24" r="11" fill="#ffc83d"/><path d="${cloudPath}" fill="#e9eef4" transform="translate(4 4)"/>`,
+    fog: `<g stroke="#cfd7e0" stroke-width="5" stroke-linecap="round"><line x1="10" y1="22" x2="54" y2="22"/><line x1="16" y1="32" x2="48" y2="32"/><line x1="10" y1="42" x2="54" y2="42"/></g>`,
+    drizzle: `<path d="${cloudPath}" fill="#c9d3de" transform="translate(0 -8)"/><g fill="#5fb4ff"><circle cx="22" cy="50" r="2.5"/><circle cx="32" cy="55" r="2.5"/><circle cx="42" cy="50" r="2.5"/></g>`,
+    rain: `<path d="${cloudPath}" fill="#b7c3d0" transform="translate(0 -8)"/><g stroke="#4aa3ff" stroke-width="4" stroke-linecap="round"><line x1="22" y1="46" x2="18" y2="58"/><line x1="33" y1="46" x2="29" y2="58"/><line x1="44" y1="46" x2="40" y2="58"/></g>`,
+    snow: `<path d="${cloudPath}" fill="#dfe6ee" transform="translate(0 -8)"/><g fill="#fff"><circle cx="21" cy="50" r="3.5"/><circle cx="33" cy="56" r="3.5"/><circle cx="44" cy="50" r="3.5"/></g>`,
+    storm: `<path d="${cloudPath}" fill="#8592a3" transform="translate(0 -8)"/><path d="M34 40 24 56h9l-4 10 14-18h-9l5-8z" fill="#ffd400"/>`
+  };
+  const icon = name => `<div class="icon"><svg viewBox="0 0 64 64">${ICONS[name] || ICONS.cloud}</svg></div>`;
+
+  // Teletext versions: 12×8 mosaic blocks.
+  const MOSAICS = {
+    sun: ["....y..y....", ".y..yyyy..y.", "...yyyyyy...", "yy.yyyyyy.yy", "...yyyyyy...", ".y..yyyy..y.", "....y..y....", "............"],
+    moon: ["....yyyy....", "..yyyy......", ".yyyy.......", ".yyy........", ".yyyy.......", "..yyyy......", "....yyyy....", "............"],
+    cloud: ["............", "....www.....", "..wwwwwww...", ".wwwwwwwwww.", "wwwwwwwwwwww", ".wwwwwwwwww.", "............", "............"],
+    partly: ["y.y.........", ".yyyy.www...", "yyyywwwwwww.", ".yywwwwwwwww", "wwwwwwwwwwww", ".wwwwwwwwww.", "............", "............"],
+    fog: ["............", "wwwwwwwwwww.", "............", "..wwwwwwwwww", "............", "wwwwwwwwwww.", "............", "..wwwwwwwwww"],
+    drizzle: ["....www.....", "..wwwwwww...", ".wwwwwwwwww.", "wwwwwwwwwwww", "............", "..c...c...c.", "............", "c...c...c..."],
+    rain: ["....www.....", "..wwwwwww...", ".wwwwwwwwww.", "wwwwwwwwwwww", ".c..c..c..c.", "c..c..c..c..", ".c..c..c..c.", "c..c..c..c.."],
+    snow: ["....www.....", "..wwwwwww...", ".wwwwwwwwww.", "wwwwwwwwwwww", "............", ".w...w...w..", "...w...w...w", ".w...w...w.."],
+    storm: ["....www.....", "..wwwwwww...", ".wwwwwwwwww.", "wwwwwwwwwwww", ".....yy.....", "....yy......", "...yyyy.....", ".....y......"]
+  };
+  const COLOURS = { r: "#f00", g: "#0f0", y: "#ff0", b: "#00f", m: "#f0f", c: "#0ff", w: "#fff" };
+  function mosaic(name, cell = 16) {
+    const rows = MOSAICS[name] || MOSAICS.cloud;
+    return `<div class="mosaic" style="grid-template-columns:repeat(${rows[0].length},${cell}px)">${rows.join("").split("")
+      .map(c => `<i style="width:${cell}px;height:${cell}px;background:${COLOURS[c] || "transparent"}"></i>`).join("")}</div>`;
+  }
+
+  function spark(values, up) {
+    if (!values || values.length < 2) return `<svg viewBox="0 0 180 80"></svg>`;
+    const min = Math.min(...values), max = Math.max(...values), span = max - min || 1;
+    const points = values.map((v, i) => `${(i / (values.length - 1) * 176 + 2).toFixed(1)},${(76 - (v - min) / span * 72).toFixed(1)}`).join(" ");
+    const colour = up ? "#39d98a" : "#ff5a6a";
+    return `<svg viewBox="0 0 180 80"><polyline points="${points}" fill="none" stroke="${colour}" stroke-width="3" stroke-linejoin="round"/>` +
+      `<polygon points="2,78 ${points} 178,78" fill="${colour}" opacity=".12"/></svg>`;
+  }
+
+  // --- Segments --------------------------------------------------------------------------------------------------
+
+  const data = () => (state && state.data) || { stories: [], quotes: [], scores: [], lottery: [] };
+  const storyCount = () => data().stories.length;
+
+  function render(item) {
+    if (teletext()) return TT[item.kind] ? TT[item.kind](item) : TT.empty(item);
+    return (SEG[item.kind] || SEG.empty)(item);
+  }
+
+  const SEG = {
+    intro: () => `<div class="seg intro"><div class="date">${esc(zoned({ weekday: "long", day: "numeric", month: "long" }).format(new Date(now())))}</div>
+      <div class="big">${esc(cfg.name)}</div><div class="sub">The latest headlines${cfg.location ? " for " + esc(cfg.location.split(",")[0]) : ""}</div></div>`,
+
+    outro: () => `<div class="seg outro"><div class="big">${esc(cfg.name)}</div><div class="sub">That's the news for now. Stay with us.</div></div>`,
+
+    empty: () => `<div class="seg empty"><div class="big">${esc(cfg.name)}</div><div class="sub">No news to bring you right now.</div></div>`,
+
+    story: item => {
+      const story = data().stories[item.index];
+      if (!story) return SEG.empty(item);
+      const picture = cfg.showImages && story.image;
+      const when = ago(story.published);
+      const breaking = item.index === 0 || (story.published && now() - Date.parse(story.published) < 3600000);
+      return `<div class="seg story ${picture ? "" : "no-pic"}">
+        <div class="pic" data-src="${esc(story.source)}">${picture ? `<img src="${esc(story.image)}" referrerpolicy="no-referrer" alt="" onerror="this.closest('.story').classList.add('no-pic')">` : ""}</div>
+        <div class="count">${item.index + 1} / ${storyCount()}</div>
+        <div class="lt">
+          <div class="banner"><span class="b1">${breaking ? "Breaking news" : "Latest"}</span><span class="b2">${esc(story.source)}</span></div>
+          <div class="kicker">${esc(story.source)}${when ? " · " + esc(when) : ""}</div>
+          <h1 class="clip">${esc(story.title)}</h1>
+          ${story.summary ? `<p class="clip">${esc(story.summary)}</p>` : ""}
+        </div></div>`;
+    },
+
+    weather: () => {
+      const w = data().weather;
+      if (!w) return SEG.empty();
+      const days = w.days.slice(1, 6).map(day => `<div class="day"><div class="dn">${esc(dayName(day.date))}</div>${icon(day.icon)}
+        <div class="hl">${Math.round(day.high)}° <span>${Math.round(day.low)}°</span></div>${day.rainChance != null ? `<div class="rc">${day.rainChance}% rain</div>` : ""}</div>`).join("");
+      return `<div class="seg desk weather"><h2><span class="tag">Weather</span>${esc(w.place.split(",")[0])}</h2>
+        <div class="now">${icon(w.icon)}<div><div class="temp">${Math.round(w.temperature)}${esc(w.temperatureUnit)}</div><div class="cond">${esc(w.condition)}</div>
+        <div class="extra">Feels like ${Math.round(w.feelsLike)}° · Wind ${Math.round(w.wind)} ${esc(w.windUnit)} ${esc(w.windFrom)} · Humidity ${w.humidity}%</div>
+        ${w.days[0] ? `<div class="extra">Today: high ${Math.round(w.days[0].high)}°, low ${Math.round(w.days[0].low)}°</div>` : ""}</div></div>
+        <div class="days">${days}</div></div>`;
+    },
+
+    markets: () => {
+      const quotes = data().quotes.slice(0, 6);
+      return `<div class="seg desk markets"><h2><span class="tag">Markets</span>${quotes.length > 4 ? "The markets now" : "On the markets"}</h2><div class="grid">${quotes.map(q => `
+        <div class="q"><div><span class="n">${esc(q.name)}</span><span class="s">${esc(q.symbol)}</span></div>${spark(q.spark, q.change >= 0)}
+        <div><div class="p">${fmt(q.price)}</div><div class="c ${dir(q.changePercent)}">${arrow(q.changePercent)} ${signed(q.change)} (${signed(q.changePercent)}%)</div></div></div>`).join("")}</div></div>`;
+    },
+
+    sports: item => {
+      const games = data().scores.filter(game => game.league === item.key).slice(0, 8);
+      const team = (t, other, state) => {
+        const lost = state === "post" && !t.winner && other.winner;
+        return `<div class="t ${lost ? "lost" : ""}" style="--team:${esc(t.colour)}">${t.logo ? `<img src="${esc(t.logo)}" referrerpolicy="no-referrer" alt="" onerror="this.remove()">` : ""}
+          <span class="nm">${esc(t.name)}</span><span class="sc">${state === "pre" ? "" : esc(t.score ?? "")}</span></div>`;
+      };
+      return `<div class="seg desk sports"><h2><span class="tag">Sports</span>${esc(item.key)}</h2><div class="games">${games.map(g => `
+        <div class="g">${team(g.away, g.home, g.state)}${team(g.home, g.away, g.state)}<div class="st ${g.state === "in" ? "live" : ""}">${esc(g.status)}</div></div>`).join("")}</div></div>`;
+    },
+
+    lottery: () => {
+      const draws = data().lottery;
+      return `<div class="seg desk lottery"><h2><span class="tag">Lottery</span>The latest numbers</h2><div class="draws">${draws.map((draw, row) => `
+        <div class="draw" style="--game:${esc(draw.colour)}"><span class="name">${esc(draw.name)}</span><span class="when">${draw.date ? esc(dayName(draw.date, true) + " " + draw.date.slice(8, 10) + "/" + draw.date.slice(5, 7)) : ""}</span>
+        <div class="balls">${draw.numbers.map((n, i) => `<div class="ball" style="animation-delay:${row * 1.4 + i * .28}s">${n}</div>`).join("")}
+        ${draw.bonus != null ? `<div class="ball bonus" style="animation-delay:${row * 1.4 + draw.numbers.length * .28 + .2}s">${draw.bonus}</div>` : ""}
+        ${draw.multiplier ? `<span class="x">${esc(draw.multiplier)}×</span>` : ""}</div></div>`).join("")}</div></div>`;
+    },
+
+    map: item => {
+      const m = data().map;
+      if (!m) return SEG.empty(item);
+      const incidents = m.incidents.slice(0, 6);
+      const lead = m.traffic
+        ? (m.incidents.length === 0 ? "Traffic is moving well." : `${m.incidents.length} incident${m.incidents.length === 1 ? "" : "s"} reported.`)
+        : "The latest rain radar.";
+      return `<div class="seg desk map"><div class="view" data-map="1"></div>
+        <div class="panel"><div class="card-title">${m.traffic ? "Traffic" : "Radar"}</div><h2>${esc(m.place.split(",")[0])}</h2><div class="lead">${esc(lead)}</div>
+        ${incidents.map((inc, i) => `<div class="inc"><b class="pin m${inc.magnitude}" style="position:static;margin:0;border-width:2px">${i + 1}</b>
+          <span><strong>${esc(inc.category)}</strong>${inc.road ? " · " + esc(inc.road) : ""}${inc.description && inc.description !== inc.category ? "<br>" + esc(inc.description) : ""}</span></div>`).join("")}</div>
+        <div class="attrib">© OpenStreetMap contributors${m.radar ? " · Radar: RainViewer" : ""}${m.traffic ? " · Traffic: TomTom" : ""}</div></div>`;
+    }
+  };
+
+  // --- The map ---------------------------------------------------------------------------------------------------
+
+  function toPixel(lat, lon, zoom) {
+    const scale = 256 * Math.pow(2, zoom);
+    const sin = Math.sin(Math.max(-85.05, Math.min(85.05, lat)) * Math.PI / 180);
+    return [(lon + 180) / 360 * scale, (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale];
+  }
+
+  // shift: how far right of the view's middle the place sits (so it isn't under the panel), in screen pixels.
+  function tileLayer(layer, zoom, centre, width, height, scale, cls, shift) {
+    const [cx, cy] = toPixel(centre[0], centre[1], zoom);
+    const w = width / scale, h = height / scale, left = cx - w / 2 - shift / scale, top = cy - h / 2, count = Math.pow(2, zoom);
+    let html = "";
+    for (let tx = Math.floor(left / 256); tx <= Math.floor((left + w) / 256); tx++) {
+      for (let ty = Math.floor(top / 256); ty <= Math.floor((top + h) / 256); ty++) {
+        if (ty < 0 || ty >= count) continue;
+        const wrapped = ((tx % count) + count) % count;
+        html += `<img src="${base}/tiles/${layer}/${zoom}/${wrapped}/${ty}.png" style="left:${(tx * 256 - left).toFixed(1)}px;top:${(ty * 256 - top).toFixed(1)}px" alt="" onerror="this.remove()">`;
+      }
+    }
+    return `<div class="layer ${cls}" style="transform:scale(${scale})">${html}</div>`;
+  }
+
+  function drawMap(view) {
+    const m = data().map;
+    if (!m || !view) return;
+    const width = view.clientWidth, height = view.clientHeight, centre = [m.latitude, m.longitude], zoom = m.zoom;
+    // The place goes in the middle of what the panel (on the left) leaves clear.
+    const shift = Math.min(234, width / 4);
+    let html = tileLayer("osm", zoom, centre, width, height, 1, "osm", shift);
+    if (m.traffic) html += tileLayer("traffic", zoom, centre, width, height, 1, "traffic", shift);
+    if (m.radar) {
+      // Radar only goes so close: drawn at zoom 7 at most and scaled up.
+      const radarZoom = Math.min(zoom, 7);
+      html += tileLayer("radar", radarZoom, centre, width, height, Math.pow(2, zoom - radarZoom), "radar", shift);
+    }
+    const [cx, cy] = toPixel(centre[0], centre[1], zoom);
+    const at = (lat, lon) => { const [x, y] = toPixel(lat, lon, zoom); return [x - cx + width / 2 + shift, y - cy + height / 2]; };
+    m.incidents.slice(0, 6).forEach((inc, i) => {
+      const [x, y] = at(inc.latitude, inc.longitude);
+      if (x > 0 && y > 0 && x < width && y < height) html += `<div class="pin m${inc.magnitude}" style="left:${x}px;top:${y}px">${i + 1}</div>`;
+    });
+    if (!m.traffic) html += `<div class="here" style="left:${width / 2 + shift}px;top:${height / 2}px"></div>`;
+    view.innerHTML = html;
+    view.querySelectorAll(".osm img").forEach(img => { img.style.filter = MAP_FILTERS[cfg.theme] || ""; });
+  }
+
+  const MAP_FILTERS = {
+    NewsDesk: "invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.55)",
+    CableNews: "invert(1) hue-rotate(180deg) brightness(.75) saturate(.4)",
+    RetroLocal: "sepia(.5) saturate(1.6) hue-rotate(-20deg) contrast(1.05)"
+  };
+
+  // --- Teletext --------------------------------------------------------------------------------------------------
+
+  const PAGES = { intro: 100, story: 101, weather: 401, markets: 220, sports: 302, map: 430, lottery: 555, outro: 199, empty: 100 };
+  let ttPage = 100;
+
+  function band(colour, title, sub, ink = "tt-y") {
+    return `<div class="tt-band" style="background:${COLOURS[colour]}"><span class="${ink}">${esc(title)}</span><span class="bandsub ${colour === "y" || colour === "c" || colour === "w" ? "tt-b" : "tt-w"}">${esc(sub || "")}</span></div>`;
+  }
+
+  const pad = (text, length) => { text = String(text ?? ""); return text.length > length ? text.slice(0, length - 1) + "…" : text + " ".repeat(length - text.length); };
+
+  const TT = {
+    intro: () => `<div class="seg">${band("b", cfg.name.toUpperCase(), "INDEX")}
+      <div class="tt-row"><span class="tt-c">${esc(zoned({ weekday: "long", day: "numeric", month: "long" }).format(new Date(now())).toUpperCase())}</span></div>
+      <div class="tt-row">&nbsp;</div>
+      ${data().stories.slice(0, 7).map((s, i) => `<div class="tt-row"><span class="tt-w">${esc(pad(s.title, 52))}</span><span class="tt-y"> ${101 + i}</span></div>`).join("")}
+      <div class="tt-row">&nbsp;</div><div class="tt-row"><span class="tt-g">${esc(pad("WEATHER", 20))}</span><span class="tt-y">401  </span><span class="tt-g">${esc(pad("SPORT", 18))}</span><span class="tt-y">302</span></div></div>`,
+
+    outro: () => `<div class="seg">${band("b", cfg.name.toUpperCase(), "")}
+      <div class="tt-row">&nbsp;</div><span class="tt-dh tt-y">THAT'S THE NEWS FOR NOW</span><div class="tt-p tt-c">Stay with us. More news on the hour.</div></div>`,
+
+    empty: () => `<div class="seg">${band("r", "NEWS", "")}<div class="tt-row">&nbsp;</div><span class="tt-dh tt-w">NO NEWS RIGHT NOW</span></div>`,
+
+    story: item => {
+      const story = data().stories[item.index];
+      if (!story) return TT.empty();
+      return `<div class="seg">${band("r", "NEWS", `${item.index + 1}/${storyCount()}`, "tt-w")}
+        <span class="tt-dh tt-y tt-lines" style="-webkit-line-clamp:2;height:${story.title.length > 44 ? 128 : 64}px">${esc(story.title)}</span>
+        <div class="tt-row">&nbsp;</div>
+        <div class="tt-p tt-w tt-lines" style="-webkit-line-clamp:8">${esc(story.summary || "")}</div>
+        <div class="tt-row" style="margin-top:12px"><span class="tt-c">${esc(story.source)}${story.published ? "  " + esc(ago(story.published)) : ""}</span></div></div>`;
+    },
+
+    weather: () => {
+      const w = data().weather;
+      if (!w) return TT.empty();
+      const rows = w.days.slice(1, 6).map(d => `<div class="tt-row"><span class="tt-c">${pad(dayName(d.date).toUpperCase(), 6)}</span><span class="tt-w">${pad(d.condition, 22)}</span>` +
+        `<span class="tt-y">${pad("MAX " + Math.round(d.high), 9)}</span><span class="tt-c">MIN ${Math.round(d.low)}</span></div>`).join("");
+      return `<div class="seg">${band("b", "WEATHER", w.place.split(",")[0].toUpperCase())}
+        <div style="display:flex;gap:34px;align-items:center">${mosaic(w.icon, 20)}<div>
+        <span class="tt-dh tt-y">${Math.round(w.temperature)}${esc(w.temperatureUnit.replace("°", ""))} ${esc(w.condition.toUpperCase())}</span>
+        <div class="tt-row"><span class="tt-w">WIND ${Math.round(w.wind)} ${esc(w.windUnit)} ${esc(w.windFrom)}  HUMIDITY ${w.humidity}%</span></div></div></div>
+        <div class="tt-row">&nbsp;</div>${rows}</div>`;
+    },
+
+    markets: () => `<div class="seg">${band("c", "MARKETS", "LATEST PRICES", "tt-b")}
+      ${data().quotes.slice(0, 9).map(q => `<div class="tt-row"><span class="tt-w">${pad(q.name.toUpperCase(), 24)}</span><span class="tt-y">${pad(fmt(q.price), 14)}</span>` +
+        `<span class="${q.change >= 0 ? "tt-g" : "tt-r"}">${q.change >= 0 ? "+" : "-"}${fmt(Math.abs(q.change))} ${q.change >= 0 ? "+" : "-"}${fmt(Math.abs(q.changePercent))}%</span></div>`).join("")}</div>`,
+
+    sports: item => `<div class="seg">${band("g", "SPORT", item.key.toUpperCase(), "tt-b")}
+      ${data().scores.filter(g => g.league === item.key).slice(0, 9).map(g => `<div class="tt-row"><span class="tt-w">${pad(g.away.name.toUpperCase(), 16)}</span>` +
+        `<span class="tt-y">${pad(g.state === "pre" ? "" : g.away.score ?? "", 4)}</span><span class="tt-w">${pad(g.home.name.toUpperCase(), 16)}</span>` +
+        `<span class="tt-y">${pad(g.state === "pre" ? "" : g.home.score ?? "", 4)}</span><span class="${g.state === "in" ? "tt-g" : "tt-c"}">${esc(g.status.toUpperCase())}</span></div>`).join("")}</div>`,
+
+    lottery: () => `<div class="seg">${band("y", "LOTTERY", "LATEST DRAWS", "tt-b")}
+      ${data().lottery.map(d => `<div class="tt-row"><span class="tt-c">${esc(d.name.toUpperCase())}  ${esc(d.date || "")}</span></div>
+        <div style="margin:6px 0 16px">${d.numbers.map(n => `<span class="tt-ball tt-w" style="background:#00f">${n}</span>`).join("")}${d.bonus != null ? `<span class="tt-ball tt-w" style="background:#f00">${d.bonus}</span>` : ""}</div>`).join("")}</div>`,
+
+    map: () => {
+      const m = data().map;
+      if (!m) return TT.empty();
+      const list = m.incidents.slice(0, 5).map((inc, i) => `<div class="tt-row"><span class="tt-y">${i + 1} </span><span class="tt-w">${pad((inc.category + (inc.road ? " " + inc.road : "")).toUpperCase(), 40)}</span></div>`).join("");
+      return `<div class="seg">${band("m", m.traffic ? "TRAVEL NEWS" : "RADAR", m.place.split(",")[0].toUpperCase(), "tt-w")}
+        <div class="tt-map" data-map="tt"></div>${list || `<div class="tt-row"><span class="tt-c">${m.traffic ? "NO INCIDENTS REPORTED" : "RAIN RADAR, LAST HOUR"}</span></div>`}</div>`;
+    }
+  };
+
+  // The map in mosaic colours: tiles drawn on a canvas, shrunk to big blocks, each block put in a teletext colour.
+  async function drawTeletextMap(holder) {
+    const m = data().map;
+    if (!m || !holder) return;
+    const width = 1200, height = m.incidents.length ? 380 : 470, block = 10, zoom = m.zoom;
+    const canvas = document.createElement("canvas");
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const [cx, cy] = toPixel(m.latitude, m.longitude, zoom);
+    const left = cx - width / 2, top = cy - height / 2;
+    const load = src => new Promise(resolve => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => resolve(null); img.src = src; setTimeout(() => resolve(null), 8000); });
+    const jobs = [];
+    for (let tx = Math.floor(left / 256); tx <= Math.floor((left + width) / 256); tx++)
+      for (let ty = Math.floor(top / 256); ty <= Math.floor((top + height) / 256); ty++)
+        jobs.push(load(`${base}/tiles/osm/${zoom}/${tx}/${ty}.png`).then(img => img && ctx.drawImage(img, tx * 256 - left, ty * 256 - top)));
+    await Promise.all(jobs);
+    const small = document.createElement("canvas");
+    small.width = width / block; small.height = height / block;
+    const sctx = small.getContext("2d", { willReadFrequently: true });
+    sctx.drawImage(canvas, 0, 0, small.width, small.height);
+    const pixels = sctx.getImageData(0, 0, small.width, small.height);
+    const p = pixels.data;
+    for (let i = 0; i < p.length; i += 4) {
+      const r = p[i], g = p[i + 1], b = p[i + 2];
+      let out = [0, 0, 0];
+      if (b > r + 25 && b > g) out = [0, 0, 255];                       // water
+      else if (r > 200 && g < 170 && b < 170) out = [255, 0, 0];         // motorways
+      else if (r > 220 && g > 190 && b < 160) out = [255, 255, 0];      // main roads
+      else if (g > r + 12 && g > b) out = [0, 255, 0];                   // parks
+      else if (r > 245 && g > 245 && b > 245) out = [255, 255, 255];    // streets
+      p[i] = out[0]; p[i + 1] = out[1]; p[i + 2] = out[2]; p[i + 3] = 255;
+    }
+    // The place itself, and the incidents, in magenta and cyan blocks.
+    const mark = (x, y, colour) => {
+      const bx = Math.round(x / block), by = Math.round(y / block);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        const px = bx + dx, py = by + dy;
+        if (px < 0 || py < 0 || px >= small.width || py >= small.height) continue;
+        const at = (py * small.width + px) * 4;
+        p[at] = colour[0]; p[at + 1] = colour[1]; p[at + 2] = colour[2];
+      }
+    };
+    m.incidents.slice(0, 5).forEach(inc => { const [x, y] = toPixel(inc.latitude, inc.longitude, zoom); mark(x - left, y - top, [0, 255, 255]); });
+    mark(width / 2, height / 2, [255, 0, 255]);
+    sctx.putImageData(pixels, 0, 0);
+    small.style.width = width + "px"; small.style.height = height + "px";
+    holder.replaceChildren(small);
+  }
+
+  function teletextHeader(item) {
+    const page = item ? (item.kind === "story" ? PAGES.story + item.index : item.kind === "sports" ? PAGES.sports : (PAGES[item.kind] || 100)) : 100;
+    ttPage = page;
+    const date = zoned({ weekday: "short", day: "2-digit", month: "short" }).format(new Date(now())).replace(/,/g, "");
+    const time = clockText(true).split(" ")[0];
+    $("tt").innerHTML = `<span class="tt-w">P${page} </span><span class="tt-y">${esc(pad(cfg.name.toUpperCase(), 14))}</span><span class="tt-w"> ${page} ${esc(date)} </span>` +
+      `<span class="tt-y">${esc(time.slice(0, 5))}</span><span class="tt-w">/${esc(time.slice(6, 8))}</span>`;
+  }
+
+  // --- Side panel and ticker ---------------------------------------------------------------------------------
+
+  function sideCards() {
+    const d = data(), cards = [];
+    if (d.weather) cards.push(() => `<div class="side-card"><div class="card-title">Weather · ${esc(d.weather.place.split(",")[0])}</div>
+      <div class="w">${icon(d.weather.icon)}<div><div class="tp">${Math.round(d.weather.temperature)}°</div><div class="cd">${esc(d.weather.condition)}</div></div></div>
+      ${d.weather.days.slice(1, 4).map(day => `<div class="row"><span class="k">${esc(dayName(day.date, true))}</span><span class="v">${Math.round(day.high)}° / ${Math.round(day.low)}°</span></div>`).join("")}</div>`);
+    if (d.quotes.length) cards.push(() => `<div class="side-card"><div class="card-title">Markets</div>
+      ${d.quotes.slice(0, 6).map(q => `<div class="row"><span class="k">${esc(q.name)}</span><span class="v ${dir(q.changePercent)}">${arrow(q.changePercent)} ${signed(q.changePercent)}%</span></div>`).join("")}</div>`);
+    const live = d.scores.filter(g => g.state !== "pre");
+    if (live.length) cards.push(() => `<div class="side-card"><div class="card-title">Scores</div>
+      ${live.slice(0, 6).map(g => `<div class="row"><span class="k">${esc(g.away.abbreviation)} ${esc(g.away.score)} · ${esc(g.home.abbreviation)} ${esc(g.home.score)}</span><span class="v" style="font-size:15px;color:var(--soft)">${esc(g.status)}</span></div>`).join("")}</div>`);
+    if (d.lottery.length) cards.push(() => `<div class="side-card"><div class="card-title">Lottery</div>
+      ${d.lottery.map(l => `<div class="next"><strong>${esc(l.name)}</strong><br>${l.numbers.join(" · ")}${l.bonus != null ? ` <span style="color:${esc(l.colour)}">● ${l.bonus}</span>` : ""}</div>`).join("")}</div>`);
+    return cards;
+  }
+
+  function upNext(position) {
+    const items = state.items, next = [];
+    for (let i = 1; i < items.length && next.length < 4; i++) {
+      const item = items[(position.index + i) % items.length];
+      if (item.kind === "intro" || item.kind === "outro") continue;
+      next.push(item);
+    }
+    return `<div class="side-card"><div class="card-title">Up next</div>${next.map(item => `<div class="next"><div class="clip">${esc(item.label)}</div></div>`).join("")}</div>`;
+  }
+
+  function updateSide(position) {
+    const side = $("side");
+    if (!cfg.showSidebar || teletext() || !position) { side.classList.add("hidden"); return; }
+    side.classList.remove("hidden");
+    const onStory = position.item.kind === "story" || position.item.kind === "intro";
+    const cards = onStory ? sideCards() : [];
+    const kind = onStory && cards.length ? "data" : "next";
+    side.dataset.title = kind === "data" ? "AT A GLANCE" : "UP NEXT";
+    const t = now();
+    if (kind !== sideKind || t - sideAt > 8000 || (kind === "next" && side.dataset.at !== String(position.index))) {
+      sideKind = kind; sideAt = t; side.dataset.at = String(position.index);
+      const html = kind === "data" ? cards[(sideIndex++) % cards.length]() : upNext(position);
+      side.innerHTML = html;
+    }
+  }
+
+  function tickerItems() {
+    const d = data(), items = [];
+    if (cfg.tickerMessage) items.push(cfg.tickerMessage);
+    d.stories.forEach(s => items.push(s.title));
+    if (d.weather) items.push(`${d.weather.place.split(",")[0]}: ${Math.round(d.weather.temperature)}${d.weather.temperatureUnit} ${d.weather.condition}`);
+    d.quotes.forEach(q => items.push(`${q.name} ${fmt(q.price)} ${arrow(q.changePercent)} ${signed(q.changePercent)}%`));
+    d.scores.filter(g => g.state !== "pre").slice(0, 8).forEach(g => items.push(`${g.league}: ${g.away.abbreviation} ${g.away.score}, ${g.home.abbreviation} ${g.home.score} (${g.status})`));
+    return items;
+  }
+
+  function updateTicker() {
+    const ticker = $("ticker");
+    if (!cfg.showTicker || teletext()) { ticker.classList.add("hidden"); return; }
+    ticker.classList.remove("hidden");
+    const items = tickerItems();
+    const separator = { NewsDesk: "  ■  ", CableNews: "  ●  ", RetroLocal: "  ★  " }[cfg.theme] || "  •  ";
+    const text = items.join(separator) + separator;
+    if (text === tickerKey) return;
+    tickerKey = text;
+    $("tickerLabel").textContent = cfg.theme === "CableNews" ? "Breaking" : cfg.theme === "RetroLocal" ? "News Update" : "Headlines";
+    const run = $("tickerRun");
+    // Twice over, so the crawl loops without a gap.
+    run.innerHTML = `<span>${esc(text)}</span><span>${esc(text)}</span>`;
+    requestAnimationFrame(() => { run.style.animationDuration = Math.max(20, run.scrollWidth / 2 / 110) + "s"; });
+  }
+
+  function updateStrip() {
+    const strip = $("strip");
+    const quotes = data().quotes;
+    if (cfg.theme !== "CableNews" || !quotes.length) { strip.classList.add("hidden"); return; }
+    strip.classList.remove("hidden");
+    const html = quotes.slice(0, 6).map(q => `<span>${esc(q.name)} <span class="${dir(q.changePercent)}">${arrow(q.changePercent)} ${fmt(q.price)} ${signed(q.changePercent)}%</span></span>`).join("");
+    if (html !== stripKey) { stripKey = html; $("stripItems").innerHTML = html; }
+  }
+
+  // --- The loop ----------------------------------------------------------------------------------------------
+
+  function applyConfig() {
+    const key = JSON.stringify(cfg);
+    if (key === configKey) return;
+    configKey = key;
+    document.body.className = `t-${cfg.theme}` + (boot.preview ? " preview" : "") + (cfg.showSidebar && cfg.theme !== "Teletext" ? " has-side" : "");
+    document.documentElement.style.setProperty("--accent", cfg.accent);
+    document.body.style.setProperty("--accent", cfg.accent);
+    $("name").textContent = cfg.name;
+    $("live").textContent = cfg.theme === "RetroLocal" ? "▶ PLAY" : "LIVE";
+    tickerKey = ""; stripKey = ""; shownKey = ""; sideKind = "";
+    updateTicker(); updateStrip();
+  }
+
+  function where() {
+    if (!state || !state.items.length) return null;
+    const items = state.items, last = items[items.length - 1], length = last.startMs + last.durationMs;
+    if (length <= 0) return null;
+    let at = now() - state.startedAt;
+    if (at < 0) at = 0;
+    at = state.loops ? at % length : Math.min(at, length - 1);
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index];
+      if (at < item.startMs + item.durationMs) return { item, index, at, into: at - item.startMs };
+    }
+    return null;
+  }
+
+  function show(html, after) {
+    const main = $("main");
+    main.querySelectorAll(".seg:not(.leave)").forEach(old => { old.classList.add("leave"); setTimeout(() => old.remove(), 500); });
+    main.insertAdjacentHTML("beforeend", html);
+    const added = main.lastElementChild;
+    if (after) requestAnimationFrame(() => after(added));
+  }
+
+  function tick() {
+    if (!cfg) return;
+    const position = where();
+    $("clock").textContent = cfg.theme === "RetroLocal"
+      ? zoned({ month: "short", day: "2-digit" }).format(new Date(now())).toUpperCase() + "  " + clockText(false)
+      : clockText(false);
+    if (teletext()) teletextHeader(position && position.item);
+
+    if (!position) {
+      if (shownKey !== "standby") {
+        shownKey = "standby";
+        show(teletext()
+          ? `<div class="seg">${band("b", cfg.name.toUpperCase(), "")}<div class="tt-row">&nbsp;</div><span class="tt-dh tt-c">PAGE ${ttPage} SEARCHING…</span></div>`
+          : `<div class="seg standby"><div class="big">${esc(cfg.name)}</div><div class="sub">${state && state.building ? "Getting the latest news…" : "Stand by"}</div></div>`);
+      }
+      updateSide(null);
+      $("progress").style.width = "0";
+      return;
+    }
+
+    const key = `${state.version}:${position.index}:${cfg.theme}`;
+    if (key !== shownKey) {
+      shownKey = key;
+      show(render(position.item), element => {
+        if (position.item.kind !== "map") return;
+        if (teletext()) drawTeletextMap(element.querySelector("[data-map=tt]"));
+        else drawMap(element.querySelector("[data-map]"));
+      });
+      // The next story's picture, ready when it's needed.
+      const next = state.items[(position.index + 1) % state.items.length];
+      const upcoming = next && next.kind === "story" && data().stories[next.index];
+      if (upcoming && upcoming.image && cfg.showImages) { const img = new Image(); img.referrerPolicy = "no-referrer"; img.src = upcoming.image; }
+    }
+
+    updateSide(position);
+    $("progress").style.width = (Math.min(1, position.into / position.item.durationMs) * 100).toFixed(2) + "%";
+  }
+
+  async function poll() {
+    try {
+      const response = await fetch(`${base}/state/${encodeURIComponent(boot.id)}.json${boot.preview ? "?preview=true" : ""}`, { cache: "no-store" });
+      if (response.ok) {
+        const fresh = await response.json();
+        offset = fresh.serverTime - Date.now();
+        const changed = !state || fresh.version !== state.version;
+        state = fresh;
+        cfg = fresh.config;
+        applyConfig();
+        if (changed) { shownKey = ""; updateTicker(); updateStrip(); }
+        $("problem").textContent = boot.preview && state.problems.length ? state.problems.join("  ·  ") : "";
+      }
+    } catch { /* keep what's on screen */ }
+    tick();
+  }
+
+  window.addEventListener("message", event => {
+    // The editor says when the draft has changed, so the preview catches up at once.
+    if (event.data && event.data.type === "news-refresh") poll();
+  });
+
+  cfg = { id: boot.id, name: "", theme: "NewsDesk", accent: "#d7263d", showSidebar: false, showTicker: false, desks: [] };
+  poll();
+  setInterval(poll, 1500);
+  setInterval(tick, 250);
+})();
+</script>
+</body>
+</html>

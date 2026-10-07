@@ -15,6 +15,7 @@
     <Project Path="plugins/SchedularrTV.Plugins.Iptv/SchedularrTV.Plugins.Iptv.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.LocalAi/SchedularrTV.Plugins.LocalAi.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.MiniMax/SchedularrTV.Plugins.MiniMax.csproj" />
+    <Project Path="plugins/SchedularrTV.Plugins.News/SchedularrTV.Plugins.News.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.Overlays/SchedularrTV.Plugins.Overlays.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.Piper/SchedularrTV.Plugins.Piper.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.Radio/SchedularrTV.Plugins.Radio.csproj" />

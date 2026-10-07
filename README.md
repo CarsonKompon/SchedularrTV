@@ -76,6 +76,7 @@ Optional extras, installed from the **Plugins** page (each release has a `Schedu
 | [Overlays](docs/overlays.md) | Screen bugs, lower thirds and "up next" graphics, designed visually and timed per programme |
 | [Local AI writer](docs/local-ai.md) | A free model on your own computer that words promo voice-overs and captions naturally, fit for more long-form promos |
 | [Radio shows](docs/radio.md) | Music from Jellyfin or an internet station, with cover art, lyrics and a visualizer |
+| [News shows](docs/news.md) | Local news breaks from your RSS feeds, with weather, markets, scores, a map and lottery results, in teletext, news desk, cable news or retro looks, optionally read out |
 | [IPTV passthrough](docs/iptv.md) | Channels from an IPTV playlist (M3U) and its XMLTV guide, or free channels from iptv-org with guides from iptv-org/epg |
 | [Streamer channels](docs/streamers.md) | Twitch and YouTube streamers in priority order, with chat, "also live" pop-ups, replays and a countdown to the next stream |
 | [Web page shows](docs/web-channels.md) | Live web pages as channels: WeatherStar retro weather, a clock, weather radar, the wind globe or any page |

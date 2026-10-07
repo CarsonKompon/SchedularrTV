@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!--
+    Local news breaks: headlines from one or more RSS or Atom feeds, with weather, the markets, scores, a local map
+    (radar, and traffic with a TomTom key) and lottery results, drawn in one of several looks (teletext, a news desk,
+    24-hour cable news, an 80s/90s local station) and optionally read out by any installed voice over a music bed.
+    Each show is a "virtual show" whose episodes are the lengths you allow, captured live by a hidden browser.
+
+    Not part of the main download: it ships in the all-plugins zip of each release.
+  -->
+  <PropertyGroup>
+    <RootNamespace>SchedularrTV.News</RootNamespace>
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+    <ScopedCssEnabled>false</ScopedCssEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Supplied by the scheduler at runtime, so it isn't copied into the plugin. -->
+    <ProjectReference Include="..\..\src\SchedularrTV.Plugins.Abstractions\SchedularrTV.Plugins.Abstractions.csproj" Private="false" />
+
+    <!-- Shared with the other live page channels; shipped beside this plugin's .dll. -->
+    <ProjectReference Include="..\shared\SchedularrTV.LiveCapture\SchedularrTV.LiveCapture.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The news page (HTML, CSS and script in one file, every look in it), served from the plugin. -->
+    <EmbeddedResource Include="Assets\news.html" LogicalName="news.html" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="SchedularrTV.Plugins" />
+    <Using Include="SchedularrTV.LiveCapture" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+</Project>

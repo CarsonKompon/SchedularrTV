@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.LocalAi\SchedularrTV.Plugins.LocalAi.csproj" />
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.Streamers\SchedularrTV.Plugins.Streamers.csproj" />
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.CreditSqueeze\SchedularrTV.Plugins.CreditSqueeze.csproj" />
+    <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.News\SchedularrTV.Plugins.News.csproj" />
   </ItemGroup>
 
   <ItemGroup>
