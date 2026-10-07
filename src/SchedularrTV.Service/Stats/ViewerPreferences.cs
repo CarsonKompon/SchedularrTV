@@ -78,7 +78,7 @@ public sealed class ViewerPreferences(ViewingStore store, TimeProvider clock) : 
     }
 
     /// <summary>The factors' bounds for a strength: (most often, least often).</summary>
-    public static (double Boost, double Rest) Bounds(ViewerAwareStrength strength) => strength switch
+    public static (double Boost, double Floor) Bounds(ViewerAwareStrength strength) => strength switch
     {
         ViewerAwareStrength.Gentle => (1.5, 2 / 3.0),
         ViewerAwareStrength.Strong => (4, 0.2),

@@ -18,20 +18,21 @@
     else
     {
         <div class="layouts">
-            @foreach (FolderLayout layout in _layouts)
+            @* Not named "layout": @layout is a Razor directive. *@
+            @foreach (FolderLayout tree in _layouts)
             {
                 <section class="layout">
                     <div class="layout-head">
-                        <strong>@layout.Title</strong>
-                        @if (layout.Summary is not null)
+                        <strong>@tree.Title</strong>
+                        @if (tree.Summary is not null)
                         {
-                            <span class="muted">@layout.Summary</span>
+                            <span class="muted">@tree.Summary</span>
                         }
                     </div>
                     <ol class="tree">
-                        @for (int i = 0; i < layout.Levels.Count; i++)
+                        @for (int i = 0; i < tree.Levels.Count; i++)
                         {
-                            FolderLevel level = layout.Levels[i];
+                            FolderLevel level = tree.Levels[i];
                             <li style="--depth:@i">
                                 <span class="branch" aria-hidden="true">@(i == 0 ? "" : "└─")</span>
                                 <span class="choices">
@@ -50,12 +51,12 @@
                                 <span class="caption">@Caption(level)</span>
                             </li>
                         }
-                        <li style="--depth:@layout.Levels.Count">
+                        <li style="--depth:@tree.Levels.Count">
                             <span class="branch" aria-hidden="true">└─</span>
-                            <span class="choices"><span class="file"><Icon Name="film" Size="12" />@layout.FileName</span></span>
+                            <span class="choices"><span class="file"><Icon Name="film" Size="12" />@tree.FileName</span></span>
                         </li>
                     </ol>
-                    @foreach (string note in layout.Notes.Distinct())
+                    @foreach (string note in tree.Notes.Distinct())
                     {
                         <p class="hint layout-note">@note</p>
                     }
