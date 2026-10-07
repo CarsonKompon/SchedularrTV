@@ -18,6 +18,8 @@
             </span>
         </a>
 
+        @* Only the links scroll; the brand above and the status below stay put. *@
+        <div class="sidebar-nav">
         <div class="nav-section">Overview</div>
         <NavLink class="nav-item" href="" Match="NavLinkMatch.All"><Icon Name="dashboard" /><span>Dashboard</span></NavLink>
 
@@ -52,6 +54,7 @@
         }
         <NavLink class="nav-item" href="yaml"><Icon Name="code" /><span>YAML</span></NavLink>
         <NavLink class="nav-item" href="backups"><Icon Name="history" /><span>Backups</span></NavLink>
+        </div>
 
         <div class="sidebar-foot">
             <div class="status-card" role="status" aria-live="polite">

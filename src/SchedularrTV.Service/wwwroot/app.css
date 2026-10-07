@@ -110,11 +110,20 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
     background: linear-gradient(180deg, rgba(19, 23, 34, .85), rgba(13, 16, 24, .85));
     border-right: 1px solid var(--line);
     backdrop-filter: blur(18px);
-    overflow-y: auto;
-    scrollbar-width: none;
+    overflow: hidden;
     z-index: 20;
 }
-.sidebar::-webkit-scrollbar { display: none; }
+
+/* The links between the brand and the status card: the only part that scrolls. The side margins let the active
+   link's accent bar (which sits out in the sidebar's padding) show instead of being clipped. */
+.sidebar-nav {
+    flex: 1 1 auto; min-height: 0;
+    display: flex; flex-direction: column; gap: 2px;
+    margin: 0 -14px; padding: 0 14px;
+    overflow-y: auto; overscroll-behavior: contain;
+    scrollbar-width: none;
+}
+.sidebar-nav::-webkit-scrollbar { display: none; }
 
 .brand { display: flex; align-items: center; gap: 11px; padding: 4px 8px 20px; color: var(--text); text-decoration: none; }
 .brand:hover { text-decoration: none; }
@@ -171,7 +180,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 .nav-item.active .icon { color: var(--accent); }
 .nav-badge { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; display: grid; place-items: center; font-size: 11px; font-weight: 600; background: rgba(242, 103, 109, .18); color: var(--error); }
 
-.sidebar-foot { margin-top: auto; padding-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+.sidebar-foot { flex: none; padding-top: 16px; display: flex; flex-direction: column; gap: 8px; }
 
 .status-card {
     display: flex; align-items: center; gap: 10px;
@@ -229,8 +238,12 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
         flex-direction: row; align-items: center; gap: 4px;
         padding: 10px 12px; overflow-x: auto; overflow-y: hidden;
         border-right: 0; border-bottom: 1px solid var(--line);
+        scrollbar-width: none;
     }
-    .brand { padding: 0 10px 0 2px; }
+    .sidebar::-webkit-scrollbar { display: none; }
+    /* A single scrolling row here, so the links sit straight in the bar. */
+    .sidebar-nav { display: contents; }
+    .brand { padding: 0 10px 0 2px; flex: none; }
     .brand-text, .nav-section, .sidebar-foot { display: none; }
     .nav-item { flex: none; padding: 8px 11px; }
     .nav-item.active::before { display: none; }
