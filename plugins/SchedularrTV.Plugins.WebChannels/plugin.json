@@ -2,11 +2,11 @@
   "id": "web-channels",
   "name": "Web page shows",
   "version": "1.0.0",
-  "description": "Any web page as a live channel you can schedule, with presets for the ones that make good television: WeatherStar 4000+ retro forecasts, a time-and-temperature clock, Windy's weather radar and the earth.nullschool wind globe. A 24/7 channel, or short segments between shows. Needs Chrome or Edge on this computer. Replaces the WeatherStar plugin and takes over its stations.",
+  "description": "Any web page as a live channel you can schedule, with presets for the ones that make good television: WeatherStar 4000+ retro forecasts, the Mist Weather Media simulators (Weatherscan v1, v2 and Local, WeatherStar Jr, 4000 and XL, IntelliStar) with their own music, and a time-and-temperature clock. A 24/7 channel, or short segments between shows. Needs Chrome or Edge on this computer. Replaces the WeatherStar plugin and takes over its stations.",
   "author": "SchedularrTV",
   "apiVersion": "1.8",
   "entryAssembly": "SchedularrTV.Plugins.WebChannels.dll",
-  "lowPowerNotice": "each channel on air is a hidden browser drawing the page without a graphics chip, plus a live encode. WeatherStar and the clock are fine one at a time; weather radar and the wind globe (WebGL animations) are too heavy.",
+  "lowPowerNotice": "each channel on air is a hidden browser drawing the page without a graphics chip, plus a live encode. WeatherStar 4000+ and the clock are fine one at a time; Weatherscan and the IntelliStar (large animated pictures) are heavy.",
   "settings": [
     {
       "key": "WeatherStarUrl",

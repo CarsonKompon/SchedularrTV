@@ -80,7 +80,7 @@ Optional extras, installed from the **Plugins** page (each release has a `Schedu
 | [News shows](docs/news.md) | Local news breaks from your RSS feeds, with weather, markets, scores, a map and lottery results, in teletext, news desk, cable news or retro looks, optionally read out |
 | [IPTV passthrough](docs/iptv.md) | Channels from an IPTV playlist (M3U) and its XMLTV guide, or free channels from iptv-org with guides from iptv-org/epg |
 | [Streamer channels](docs/streamers.md) | Twitch and YouTube streamers in priority order, with chat, "also live" pop-ups, replays and a countdown to the next stream |
-| [Web page shows](docs/web-channels.md) | Live web pages as channels: WeatherStar retro weather, a clock, weather radar, the wind globe or any page |
+| [Web page shows](docs/web-channels.md) | Live web pages as channels: WeatherStar, Weatherscan and IntelliStar retro weather with their music, a clock, or any page |
 | [TV Guide channel](docs/tv-guide.md) | A scrolling Prevue / TV Guide Channel-style listings channel from your own schedule |
 | [Credit squeeze](docs/credit-squeeze.md) | As the end credits roll they shrink into a box beside what's on next, like network TV |
 | [Auto Chapters](docs/auto-chapters.md) | Mid-roll breaks at the fades to black in files without chapter markers |

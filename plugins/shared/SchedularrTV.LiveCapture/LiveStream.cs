@@ -17,7 +17,10 @@ public enum LiveAudio
     Music,
 
     /// <summary>The sound of <see cref="LiveStreamSpec.AudioStreamUrl"/>, e.g. another channel.</summary>
-    Stream
+    Stream,
+
+    /// <summary>The page's own sound: what its audio and video elements play (see <see cref="HeadlessBrowser.SoundTapScript"/>).</summary>
+    Page
 }
 
 /// <summary>What a live page channel shows and plays.</summary>
@@ -49,6 +52,12 @@ public sealed record LiveStreamSpec
 
     /// <summary>The music libraries <see cref="Music"/> can name (the installed <see cref="IMusicLibrary"/>s). Not part of <see cref="Fingerprint"/>.</summary>
     public IReadOnlyList<IMusicLibrary> MusicLibraries { get; init; } = [];
+
+    /// <summary>
+    /// Scripts run at the start of every load of the page, for pages that have to be set up or started by script (a
+    /// settings screen to get past, a start button to press). See <see cref="HeadlessBrowser"/>'s <c>scripts</c>.
+    /// </summary>
+    public IReadOnlyList<string> PageScripts { get; init; } = [];
 
     /// <summary>0 to 1.</summary>
     public double Volume { get; init; } = 0.6;
@@ -106,7 +115,7 @@ public sealed record LiveStreamSpec
     public string Fingerprint =>
         string.Join('|', PageUrl, Ffmpeg, BrowserPath, CaptureFrameRate, WindowStreamUrl, Window, Audio, Music?.Key,
             Volume.ToString(CultureInfo.InvariantCulture), AudioStreamUrl, Visualizer, VisualizerRect, PageOnTop, Recorded, RestartToken,
-            Encoding.Fingerprint, HardwareDecoding, PaceAnimations);
+            Encoding.Fingerprint, HardwareDecoding, PaceAnimations, string.Join('\u001f', PageScripts));
 
     /// <summary>The options before a window or sound stream's <c>-i</c>.</summary>
     internal IEnumerable<string> InputOptions()
@@ -264,11 +273,17 @@ public sealed class LiveStream : IAsyncDisposable
         };
         // A music library's songs are decoded one by one (each may need its own address and headers) and handed to
         // ffmpeg as raw sound over a local connection; a folder's are read by ffmpeg itself.
+        // The page's own sound arrives from the browser as it plays, and is handed on the same way.
         string? musicInput = null;
         if (Spec.Audio == LiveAudio.Music && Spec.Music is { FromLibrary: true } fromLibrary)
         {
             _bed = MusicBed.Start(Spec.Ffmpeg, fromLibrary, Spec.MusicLibraries, _logger);
             musicInput = _bed?.Serve(_life.Token);
+        }
+        else if (Spec.Audio == LiveAudio.Page)
+        {
+            _bed = MusicBed.Live(_logger);
+            musicInput = _bed.Serve(_life.Token);
         }
 
         foreach (string argument in Arguments(Spec, musicInput is null ? MusicPlaylist() : null, musicInput))
@@ -380,7 +395,7 @@ public sealed class LiveStream : IAsyncDisposable
             // apad: if the channel drops out, the stream carries on with silence rather than losing its sound track.
             audioFilter = $"[{audio}:a]asetpts=PTS-STARTPTS,aresample=48000:async=1,aformat=channel_layouts=stereo,volume={Number(Math.Clamp(spec.Volume, 0, 2))},apad[a]";
         }
-        else if (spec.Audio == LiveAudio.Music && musicInput is not null)
+        else if (spec.Audio is LiveAudio.Music or LiveAudio.Page && musicInput is not null)
         {
             arguments.AddRange(["-f", "s16le", "-ar", "48000", "-ac", "2", "-thread_queue_size", "1024", "-i", musicInput]);
             audio = next++;
@@ -672,8 +687,14 @@ public sealed class LiveStream : IAsyncDisposable
                     {
                         // Frames beyond the capture rate would only be thrown away, so the browser isn't asked for them.
                         _browser = await HeadlessBrowser.StartAsync(browser, Spec.PageUrl, Width, Height, cancellationToken, transparent: Spec.PageOnTop,
-                                maxFrameRate: Math.Clamp(Spec.CaptureFrameRate, 5, 30), paceAnimations: Spec.PaceAnimations)
+                                maxFrameRate: Math.Clamp(Spec.CaptureFrameRate, 5, 30), paceAnimations: Spec.PaceAnimations,
+                                scripts: Spec.PageScripts, captureSound: Spec.Audio == LiveAudio.Page)
                             .ConfigureAwait(false);
+                        if (Spec.Audio == LiveAudio.Page && _bed is { } pageSound)
+                        {
+                            _browser.Sound += pcm => pageSound.Write(pcm);
+                        }
+
                         _screencastSeen = 0;
                         _settled = false;
                         Interlocked.Exchange(ref _lastFrameAt, Environment.TickCount64);

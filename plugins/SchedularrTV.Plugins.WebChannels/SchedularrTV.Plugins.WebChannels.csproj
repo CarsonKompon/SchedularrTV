@@ -3,7 +3,7 @@
   <!--
     Web page channels: any web page as a live, schedulable channel, captured by a hidden browser and streamed to
     ErsatzTV. Presets set up the pages that make good television (WeatherStar 4000+ forecasts, a time-and-temperature
-    clock served by the plugin itself, Windy's weather radar, the earth.nullschool wind globe), and "Custom web page"
+    clock served by the plugin itself, the Mist Weather Media weather simulators), and "Custom web page"
     takes any address. Each channel is a "show" whose episodes are the lengths you allow.
 
     Not part of the main download: it ships in the all-plugins zip of each release. Replaces the WeatherStar plugin

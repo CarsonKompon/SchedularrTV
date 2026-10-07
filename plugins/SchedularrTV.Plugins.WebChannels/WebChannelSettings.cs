@@ -40,11 +40,14 @@ public sealed class WebChannelSettings(IPluginContext context) : LivePageSetting
     {
         // A channel not yet tidied may still have its music as an earlier version's folder.
         SchedularrTV.Core.Media.BackgroundMusic? music = channel.Music ?? SchedularrTV.Core.Media.BackgroundMusic.Tidy(null, channel.MusicFolder);
+        bool pageSound = channel.PlaysPageSound;
         return BaseSpec(channel.Id, channel.Name, PageUrl(channel)) with
         {
-            Audio = music is { IsSet: true } ? LiveAudio.Music : LiveAudio.Silence,
-            Music = music,
-            Volume = channel.MusicVolume
+            // A simulator's own music and narration, or the channel's music.
+            Audio = pageSound ? LiveAudio.Page : music is { IsSet: true } ? LiveAudio.Music : LiveAudio.Silence,
+            Music = pageSound ? null : music,
+            Volume = channel.MusicVolume,
+            PageScripts = channel.PresetInfo.Scripts(channel)
         };
     }
 }

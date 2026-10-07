@@ -144,8 +144,14 @@ public sealed class HeadlessBrowser : IAsyncDisposable
     /// <param name="paceAnimations">
     /// With <paramref name="maxFrameRate"/>, the page's animations are drawn at that rate too (see <see cref="PacingScript"/>).
     /// </param>
+    /// <param name="scripts">
+    /// Scripts run at the start of every page load (the first one included: the page is reloaded once they're set up),
+    /// for pages that have to be set up or started by script. They run before the page's own, so they should wait for
+    /// what they need.
+    /// </param>
+    /// <param name="captureSound">Taps the page's audio and video elements and raises <see cref="Sound"/> with what they play.</param>
     public static async Task<HeadlessBrowser> StartAsync(string browser, string url, int width, int height, CancellationToken cancellationToken,
-        bool transparent = false, int maxFrameRate = 0, bool paceAnimations = false)
+        bool transparent = false, int maxFrameRate = 0, bool paceAnimations = false, IReadOnlyList<string>? scripts = null, bool captureSound = false)
     {
         List<string> problems = [];
         foreach (string[] mode in Modes)
@@ -153,7 +159,7 @@ public sealed class HeadlessBrowser : IAsyncDisposable
             try
             {
                 HeadlessBrowser started = await StartAsync(browser, mode, url, width, height, transparent, maxFrameRate,
-                    paceAnimations && maxFrameRate > 0, cancellationToken).ConfigureAwait(false);
+                    paceAnimations && maxFrameRate > 0, scripts ?? [], captureSound, cancellationToken).ConfigureAwait(false);
                 return started;
             }
             catch (BrowserClosedException ex)
@@ -167,7 +173,7 @@ public sealed class HeadlessBrowser : IAsyncDisposable
     }
 
     private static async Task<HeadlessBrowser> StartAsync(string browser, string[] mode, string url, int width, int height, bool transparent,
-        int maxFrameRate, bool paceAnimations, CancellationToken cancellationToken)
+        int maxFrameRate, bool paceAnimations, IReadOnlyList<string> scripts, bool captureSound, CancellationToken cancellationToken)
     {
         string profile = Path.Combine(BrowserProcesses.ProfilesRoot, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(profile);
@@ -245,6 +251,11 @@ public sealed class HeadlessBrowser : IAsyncDisposable
             if (paceAnimations)
             {
                 await browserProcess.PaceAsync(maxFrameRate, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (scripts.Count > 0 || captureSound)
+            {
+                await browserProcess.AddScriptsAsync(scripts, captureSound, cancellationToken).ConfigureAwait(false);
             }
 
             // Without a screencast the stream takes a picture every second instead, so this isn't fatal either.
@@ -507,6 +518,20 @@ public sealed class HeadlessBrowser : IAsyncDisposable
             return;
         }
 
+        if ((string?)message["method"] == "Runtime.bindingCalled" && message["params"] is JsonObject call
+            && (string?)call["name"] == SoundBinding && (string?)call["payload"] is { Length: > 0 } payload)
+        {
+            try
+            {
+                Sound?.Invoke(Convert.FromBase64String(payload));
+            }
+            catch (FormatException)
+            {
+            }
+
+            return;
+        }
+
         if ((string?)message["method"] == "Page.screencastFrame" && message["params"] is JsonObject frame)
         {
             byte[]? picture = (string?)frame["data"] is { } data ? Convert.FromBase64String(data) : null;
@@ -672,6 +697,96 @@ public sealed class HeadlessBrowser : IAsyncDisposable
             // The browser is going away.
         }
     }
+
+    /// <summary>The name the sound tap calls with each piece of sound (see <see cref="SoundTapScript"/>).</summary>
+    public const string SoundBinding = "__schedularrSoundOut";
+
+    /// <summary>
+    /// Raised from a background thread with the page's sound, as it plays: 48 kHz stereo 16-bit PCM, about 85 ms at a time.
+    /// Only when started with <c>captureSound</c>.
+    /// </summary>
+    public event Action<byte[]>? Sound;
+
+    /// <summary>
+    /// Sets up <paramref name="scripts"/> (and the sound tap) for every page load, then loads the page again so the one
+    /// already open has them from its start too.
+    /// </summary>
+    private async Task AddScriptsAsync(IReadOnlyList<string> scripts, bool captureSound, CancellationToken cancellationToken)
+    {
+        List<string> all = [.. scripts];
+        if (captureSound)
+        {
+            try
+            {
+                // The binding is on every page from now on, reloads included.
+                await RetryAsync("Runtime.enable", null, cancellationToken).ConfigureAwait(false);
+                await RetryAsync("Runtime.addBinding", new JsonObject { ["name"] = SoundBinding }, cancellationToken).ConfigureAwait(false);
+                all.Insert(0, SoundTapScript());
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
+            {
+                // The page plays silently.
+            }
+        }
+
+        foreach (string script in all)
+        {
+            await RetryAsync("Page.addScriptToEvaluateOnNewDocument", new JsonObject { ["source"] = script }, cancellationToken).ConfigureAwait(false);
+        }
+
+        await RetryAsync("Page.reload", new JsonObject { ["ignoreCache"] = false }, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The sound tap: every audio and video element the page plays is routed through one Web Audio graph at 48 kHz, whose
+    /// sound is handed back (as base64 PCM, through <see cref="SoundBinding"/>) instead of to the speakers. It runs at the
+    /// start of each page load, before the page's own scripts, so it sees every element as it starts playing.
+    /// </summary>
+    public static string SoundTapScript() => $$"""
+        (() => {
+          if (window.__schedularrSoundTap) return;
+          window.__schedularrSoundTap = true;
+          let context = null, collector = null;
+          const tapped = new WeakSet();
+          const clamp = value => Math.max(-32768, Math.min(32767, Math.round(value * 32767)));
+          function start() {
+            if (context) return context;
+            context = new AudioContext({ sampleRate: 48000 });
+            collector = context.createScriptProcessor(4096, 2, 2);
+            collector.onaudioprocess = event => {
+              const send = window['{{SoundBinding}}'];
+              if (typeof send !== 'function') return;
+              const input = event.inputBuffer;
+              const left = input.getChannelData(0);
+              const right = input.numberOfChannels > 1 ? input.getChannelData(1) : left;
+              const pcm = new Int16Array(left.length * 2);
+              for (let i = 0; i < left.length; i++) { pcm[2 * i] = clamp(left[i]); pcm[2 * i + 1] = clamp(right[i]); }
+              const bytes = new Uint8Array(pcm.buffer);
+              let text = '';
+              for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+              send(btoa(text));
+            };
+            collector.connect(context.destination);
+            return context;
+          }
+          function tap(element) {
+            if (!(element instanceof HTMLMediaElement) || tapped.has(element)) return;
+            tapped.add(element);
+            try {
+              const graph = start();
+              graph.createMediaElementSource(element).connect(collector);
+              if (graph.state !== 'running') graph.resume();
+            } catch (e) { }
+          }
+          const play = HTMLMediaElement.prototype.play;
+          HTMLMediaElement.prototype.play = function () { tap(this); return play.apply(this, arguments); };
+          document.addEventListener('play', event => tap(event.target), true);
+          setInterval(() => {
+            document.querySelectorAll('audio, video').forEach(element => { if (!element.paused) tap(element); });
+            if (context && context.state !== 'running') context.resume();
+          }, 1000);
+        })();
+        """;
 
     /// <summary>
     /// Has the page (and any it moves on to) draw its animations at <paramref name="frameRate"/>. Pacing that can't be

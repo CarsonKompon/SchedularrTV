@@ -6,7 +6,7 @@ loaded at startup.
 
 Jellyfin, local media folders, ErsatzTV Next, Promos and Archive Follow (off until you switch it on) are
 built-in plugins. Generated promos (which needs Promos), the TikTok, MiniMax and Piper voices for it, and
-[Web page shows](web-channels.md) (live pages such as WeatherStar forecasts, a clock and weather radar), [IPTV passthrough](iptv.md) (channels from an
+[Web page shows](web-channels.md) (live pages such as WeatherStar and Weatherscan forecasts, and a clock), [IPTV passthrough](iptv.md) (channels from an
 M3U playlist and its guide), [Streamer channels](streamers.md) (Twitch and YouTube streamers, with chat and a countdown to the next
 stream), [Radio shows](radio.md) (music with cover art, lyrics and a visualizer), [News shows](news.md) (local
 news breaks from your feeds, with weather, markets, scores and more, optionally read out), [Overlays](overlays.md)

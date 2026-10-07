@@ -96,6 +96,7 @@ public sealed class ChannelStore
     /// <summary>Keeps every value in a range the pages and the stream can use.</summary>
     public static void Tidy(WebChannel channel)
     {
+        WebPresets.Migrate(channel);
         WebPreset preset = channel.PresetInfo;
         channel.Preset = preset.Id;
         channel.Lengths = [.. channel.ValidLengths];
@@ -103,7 +104,11 @@ public sealed class ChannelStore
         channel.Speed = Math.Clamp(channel.Speed, 0.5, 1.5);
         channel.Latitude = Math.Clamp(channel.Latitude, -90, 90);
         channel.Longitude = Math.Clamp(channel.Longitude, -180, 180);
-        channel.Zoom = channel.Zoom == 0 || !preset.HasZoom ? channel.Zoom : Math.Clamp(channel.Zoom, preset.MinZoom, preset.MaxZoom);
+        channel.Segments = [.. (channel.Segments ?? []).Where(segment => WebPresets.LocalSegments.Any(option => option.Value == segment)).Distinct()];
+        channel.BottomBar = Trimmed(channel.BottomBar);
+        channel.Flavor = Trimmed(channel.Flavor);
+        channel.Graphics = Trimmed(channel.Graphics);
+        channel.Affiliate = Trimmed(channel.Affiliate) is { } affiliate && affiliate.Length > 60 ? affiliate[..60] : Trimmed(channel.Affiliate);
         channel.ClockStyle = channel.ClockStyle == "analog" ? "analog" : "digital";
         channel.Music = SchedularrTV.Core.Media.BackgroundMusic.Tidy(channel.Music, channel.MusicFolder);
         channel.MusicFolder = null;
@@ -121,9 +126,12 @@ public sealed class ChannelStore
             List<WebChannel> channels = File.Exists(path) ? JsonSerializer.Deserialize<List<WebChannel>>(File.ReadAllText(path), Json) ?? [] : [];
             foreach (WebChannel channel in channels)
             {
-                // An earlier version's music folder is shown, and can be changed, as the channel's music.
+                // An earlier version's music folder is shown, and can be changed, as the channel's music; a weather
+                // radar or wind globe channel (presets since removed) becomes a custom page showing the same.
                 channel.Music = SchedularrTV.Core.Media.BackgroundMusic.Tidy(channel.Music, channel.MusicFolder);
                 channel.MusicFolder = null;
+                WebPresets.Migrate(channel);
+                channel.Segments ??= [];
             }
 
             return channels;

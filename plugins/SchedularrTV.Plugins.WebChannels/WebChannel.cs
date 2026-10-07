@@ -25,7 +25,7 @@ public sealed class WebChannel
     /// <summary>The page to show, for the custom preset. {lat}, {lon}, {location} and {name} are filled in.</summary>
     public string? Url { get; set; }
 
-    // --- Place (WeatherStar, radar and globe centre on it; the clock takes its time zone and weather) -----------
+    // --- Place (the weather presets centre on it; the clock takes its time zone and weather) -----------------
 
     /// <summary>The place as shown, e.g. "Toronto, Ontario".</summary>
     public string Location { get; set; } = string.Empty;
@@ -53,11 +53,37 @@ public sealed class WebChannel
     /// <summary>WeatherStar's page speed: 0.5 very fast to 1.5 very slow.</summary>
     public double Speed { get; set; } = 1.0;
 
-    /// <summary>Radar and globe: how far in; 0 for the preset's own default.</summary>
+    /// <summary>The weather radar and wind globe presets of earlier versions: how far in; kept to turn them into custom pages.</summary>
     public int Zoom { get; set; }
 
-    /// <summary>Radar and globe: what the map shows (radar, wind, temperature…); null for the preset's default.</summary>
+    /// <summary>The weather radar and wind globe presets of earlier versions: what the map showed.</summary>
     public string? Layer { get; set; }
+
+    // --- Weather simulators (Weatherscan, WeatherStar Jr/4000/XL, IntelliStar) ---------------------------------
+
+    /// <summary>
+    /// Plays the page's own sound (a simulator's music and narration) instead of <see cref="Music"/>; null for the
+    /// preset's own choice (on for the simulators, off for a custom page).
+    /// </summary>
+    public bool? PageSound { get; set; }
+
+    /// <summary>Weatherscan Local: which segments it shows (its "packages"); empty for its usual ones.</summary>
+    public List<string> Segments { get; set; } = [];
+
+    /// <summary>The bar along the bottom (the "LDL"): current conditions, a scrolling message, both or nothing; null for the preset's default.</summary>
+    public string? BottomBar { get; set; }
+
+    /// <summary>WeatherStar XL and IntelliStar: the "flavor", i.e. how long each local forecast runs; null for the preset's default.</summary>
+    public string? Flavor { get; set; }
+
+    /// <summary>WeatherStar XL and IntelliStar: which year's graphics; null for the simulator's own choice.</summary>
+    public string? Graphics { get; set; }
+
+    /// <summary>Weatherscan Local: the cable company's name shown on it.</summary>
+    public string? Affiliate { get; set; }
+
+    /// <summary>Simulators: the voice-over narrations between songs.</summary>
+    public bool Narration { get; set; } = true;
 
     /// <summary>Clock: "digital" or "analog".</summary>
     public string ClockStyle { get; set; } = "digital";
@@ -89,6 +115,10 @@ public sealed class WebChannel
     [JsonIgnore]
     public WebPreset PresetInfo => WebPresets.Find(Preset);
 
+    /// <summary>Whether the page's own sound is played (see <see cref="PageSound"/>).</summary>
+    [JsonIgnore]
+    public bool PlaysPageSound => PresetInfo.CanPlayPageSound && (PageSound ?? PresetInfo.OwnSound);
+
     /// <summary>Lengths that can be scheduled: whole minutes from 1 to 24 hours, once each, shortest first.</summary>
     [JsonIgnore]
     public IReadOnlyList<int> ValidLengths => [.. Lengths.Where(minutes => minutes is > 0 and <= 1440).Distinct().Order()];
@@ -97,6 +127,7 @@ public sealed class WebChannel
     {
         var copy = (WebChannel)MemberwiseClone();
         copy.Lengths = [.. Lengths];
+        copy.Segments = [.. Segments];
         copy.Music = Music?.Copy();
         return copy;
     }

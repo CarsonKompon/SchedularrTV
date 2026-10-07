@@ -10,9 +10,24 @@ Presets set up the pages that make good television:
 | --- | --- | --- |
 | **WeatherStar 4000+** | Retro local forecasts from [WeatherStar 4000+ International](https://github.com/mwood77/ws4kp-international), in the style of 1990s cable weather. | Required |
 | **Clock** | Time and temperature: a big digital clock or a clock face for the place's time zone, its current conditions and an optional scrolling message. Served by the plugin itself. | Optional (time zone and weather) |
-| **Weather radar (Windy)** | [Windy](https://www.windy.com)'s animated map: radar, wind, rain and thunder, temperature or clouds, centred on the place. | Required |
-| **Earth wind map (nullschool)** | The [earth.nullschool.net](https://earth.nullschool.net) globe of the world's winds (or wind over temperature, or ocean currents). Lovely ambient filler with music. | Optional (where the globe faces) |
+| **Weatherscan v2** | [v2.weatherscan.net](https://v2.weatherscan.net/): the last design of the round-the-clock local weather channel, with its music and narration. | Optional |
+| **Weatherscan v1** | [v1.weatherscan.net](https://v1.weatherscan.net/): its first IntelliStar design. | Optional |
+| **Weatherscan Local** | [local.weatherscan.net](https://local.weatherscan.net/): the first Weatherscan; choose its segments, the cable company's name and a message. | Optional |
+| **WeatherStar Jr** | [jr.weatherstar.dev](https://jr.weatherstar.dev/): the local forecast on the WeatherStar Jr. | Optional |
+| **WeatherStar 4000 (classic)** | [4000.weatherstar.dev](https://4000.weatherstar.dev/): the original 1990s local forecast, with music. | Optional |
+| **WeatherStar XL** | [xl.weatherstar.dev](https://xl.weatherstar.dev/): the late-90s/2000s local forecast; choose its flavor, bottom line and graphics. | Optional |
+| **IntelliStar** | [i1.weatherstar.dev](https://i1.weatherstar.dev/): the 2000s local forecast; choose its flavor, graphics year and bottom line. | Optional |
 | **Custom web page** | Any address. `{lat}`, `{lon}`, `{location}` and `{name}` in it are filled in from the channel. | Optional |
+
+The Weatherscan, WeatherStar Jr/4000/XL and IntelliStar presets are [Mist Weather Media](https://mistwx.com/sims/)'s
+simulators. They take their forecasts from weather.com in °F and mph and are built for US places (others mostly work);
+for metric units or anywhere in the world, use **WeatherStar 4000+**. Without a place they show where the scheduler's
+computer is, from its internet address. Some open on a settings screen (Weatherscan Local, WeatherStar XL, IntelliStar):
+on air they're set up with the channel's settings and started automatically, every time they reload, so the editor's
+preview shows their settings screen rather than what airs.
+
+The weather radar (Windy) and wind globe (earth.nullschool.net) presets have been removed. Channels that used them
+carry on as custom pages showing the same map.
 
 It's optional: install `SchedularrTV-<version>-plugin-web-channels.zip` (or the all-plugins zip) from the **Plugins** page.
 
@@ -41,24 +56,31 @@ Open **Web shows** in the sidebar and choose **Add a show**:
 1. Choose what it **shows** (a preset) and name the show.
 2. For presets with a place, search for one and pick it. This fills in the latitude, longitude and (for the clock)
    the time zone. A custom page takes its address instead.
-3. Set its look: units, clock style, map layer and zoom, and so on, depending on the preset.
+3. Set its look: units, clock style, segments, flavor, bottom line, message and so on, depending on the preset.
 4. List the **lengths** it can be scheduled for, in minutes, e.g. `3, 4, 5` for short segments, or `30, 60` for a
    channel of its own.
-5. Optionally choose **music**, shuffled under the page at the volume you set: a folder on disk (MP3, M4A, AAC, OGG,
-   Opus, FLAC, WAV and other audio files, including those in subfolders), or any [music library](background-music.md)
-   (Jellyfin's, local music folders, a plugin's) with every song, a playlist, some genres or some artists. A page's
-   own sound isn't captured.
+5. Choose its **sound**. The weather simulators air their own music and narration (untick *Play its own music and
+   narration* to use yours instead); a custom page can air its own sound too. Otherwise choose **music**, shuffled
+   under the page at the volume you set: a folder on disk (MP3, M4A, AAC, OGG, Opus, FLAC, WAV and other audio files,
+   including those in subfolders), or any [music library](background-music.md) (Jellyfin's, local music folders, a
+   plugin's) with every song, a playlist, some genres or some artists.
+
+A page's own sound is what its audio and video elements play, taken from the hidden browser as it plays (it's never
+heard on the scheduler's computer). Sound a page makes some other way isn't picked up.
 
 The preview shows the page as it will look. While a channel is on air, the preview shows what's going out.
 
 Each channel appears in the library as a show of that name, tagged `Web channel` and with its preset's tags
-(`Weather` for WeatherStar, radar and the globe; `Clock` for clocks). Each length is an "episode", such as "Local
-Forecast (5 min)", "Time & Temperature (5 min)" or "Weather Radar (30 min)", so the scheduler picks one that fits.
+(`Weather` for the weather presets; `Clock` for clocks). Each length is an "episode", such as "Local Forecast (5 min)",
+"Time & Temperature (5 min)" or "Local Weather (30 min)", so the scheduler picks one that fits.
 
 ## Recipes
 
 **A 24/7 Toronto weather channel.** Make a WeatherStar channel for Toronto with lengths `30, 60` and make it a channel's
-base rotation. Add a Toronto radar channel to the same rotation to alternate them.
+base rotation.
+
+**A Weatherscan channel.** Weatherscan v2 for your town with lengths `60`, as a channel's base rotation, airing its own
+music: the 24/7 local weather channel as it was.
 
 **Short Washington forecasts between shows.** Make a WeatherStar channel for Washington, imperial, with lengths
 `3, 4, 5`. On a channel's **Breaks** tab, add *Washington Weather* to the interstitial shows, one per slot. You can
@@ -67,7 +89,7 @@ also put it in a block, such as a five-minute "Weather on the 8s" every hour.
 **Time and temperature filler.** A clock for your town with lengths `1, 2, 3` and a scrolling message makes a tidy
 interstitial for odd gaps.
 
-**An overnight ambient channel.** The wind globe with a folder of quiet music and lengths `60`.
+**Local on the 8s.** WeatherStar XL or the IntelliStar with lengths `1, 2` in a block every ten minutes.
 
 New or renamed channels reach the schedule on its next rebuild.
 
@@ -82,7 +104,8 @@ Check what's going out with the on-air preview, or the stream in VLC.
 
 When ErsatzTV reaches a segment, it opens the channel's live stream from the scheduler:
 `http://<scheduler>:5252/plugins/web-channels/live/<channel>.ts`. The first request starts the channel: a hidden
-browser opens the page and ffmpeg encodes its picture with the music into 720p H.264 and AAC. Every ErsatzTV channel
+browser opens the page (setting up and starting a simulator that needs it) and ffmpeg encodes its picture with the
+music, or the page's own sound, into 720p H.264 and AAC. Every ErsatzTV channel
 airing it shares one encoder. A channel stops 90 seconds after the last viewer leaves, so back-to-back segments don't
 restart it (see the settings below).
 
@@ -111,7 +134,12 @@ e.g. `http://192.168.1.20:5252`. The default is `localhost`, which only works wh
 - **A plain dark picture.** That's the stand-in shown until the browser draws the page. While the channel is on air,
   the Web shows page shows what's going out under **Preview**, and says under the channel why nothing is drawn
   (after 20 seconds). Check that a browser is installed and that the page opens in a browser on the scheduler's computer.
-- **The radar is empty.** Windy's radar only covers some parts of the world; choose *Rain and thunder* instead.
+- **A simulator shows the wrong place.** It searched weather.com for the place's name: use a plainer one ("Toronto",
+  "Denver, CO" or a ZIP code) under *Shown as*.
+- **A simulator stays on its settings screen.** It couldn't be started for you, often because the site has changed;
+  watch it in VLC, and try another preset meanwhile.
+- **A simulator is silent.** Its sound comes from the hidden browser; if it's silent, untick *Play its own music and
+  narration* and choose music instead.
 - **The clock shows no weather.** It needs a place, and internet access to Open-Meteo.
 - **No sound.** The music folder doesn't exist on the scheduler's computer, or has no music files in it; or the music
   library isn't set up, or has no songs for the playlist, genres or artists chosen.

@@ -59,6 +59,44 @@ public sealed class MusicBed : IDisposable
         return bed;
     }
 
+    /// <summary>
+    /// A player for sound that arrives as it plays (a web page's, say), handed in with <see cref="Write"/> rather than
+    /// decoded from songs; read and served like any other.
+    /// </summary>
+    public static MusicBed Live(ILogger logger) => new(string.Empty, logger) { Key = "live" };
+
+    /// <summary>
+    /// Adds sound that has just played (48 kHz stereo 16-bit PCM). The oldest is dropped when more than two seconds
+    /// are waiting, so a source running a little fast never builds up a delay.
+    /// </summary>
+    public void Write(ReadOnlySpan<byte> pcm)
+    {
+        const int Limit = Rate * BytesPerFrame * 2;
+        pcm = pcm[..(pcm.Length / BytesPerFrame * BytesPerFrame)];
+        if (pcm.Length > Limit)
+        {
+            pcm = pcm[^(Limit / BytesPerFrame * BytesPerFrame)..];
+        }
+
+        lock (_gate)
+        {
+            int excess = _count + pcm.Length - Limit;
+            if (excess > 0)
+            {
+                excess = (excess + BytesPerFrame - 1) / BytesPerFrame * BytesPerFrame;
+                excess = Math.Min(excess, _count);
+                _head = (_head + excess) % Capacity;
+                _count -= excess;
+            }
+
+            int tail = (_head + _count) % Capacity;
+            int first = Math.Min(pcm.Length, Capacity - tail);
+            pcm[..first].CopyTo(_ring.AsSpan(tail));
+            pcm[first..].CopyTo(_ring);
+            _count += pcm.Length;
+        }
+    }
+
     /// <summary>The next 20 ms (or however long <paramref name="samples"/> is): music where it's ready, silence otherwise.</summary>
     /// <returns>Whether any of it was music.</returns>
     public bool Read(short[] samples)

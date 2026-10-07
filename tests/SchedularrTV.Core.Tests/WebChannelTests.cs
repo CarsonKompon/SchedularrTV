@@ -120,39 +120,160 @@ public class WebChannelTests : IDisposable
     }
 
     [Fact]
-    public void The_radar_is_windys_embed_centred_on_the_place_with_its_layer_and_zoom()
+    public void A_weather_radar_channel_becomes_a_custom_page_of_windys_embed()
     {
-        WebChannel radar = Toronto(WebPresets.Radar);
+        WebChannel radar = Toronto(WebPresets.LegacyRadar);
         radar.Imperial = true;
         radar.Zoom = 99;
 
-        Dictionary<string, string> query = Query(WebPresets.WindyUrl(radar, Browser));
-
+        Assert.True(WebPresets.Migrate(radar));
+        Assert.Equal(WebPresets.Custom, radar.Preset);
+        Dictionary<string, string> query = Query(radar.Url!);
+        Assert.StartsWith("https://embed.windy.com/embed2.html?", radar.Url);
         Assert.Equal("43.7001", query["lat"]);
         Assert.Equal("-79.4163", query["lon"]);
         Assert.Equal("radar", query["overlay"]);
         Assert.Equal("11", query["zoom"]);
         Assert.Equal("mph", query["metricWind"]);
-        Assert.Equal("°F", query["metricTemp"]);
-
-        radar.Layer = "nonsense";
-        radar.Zoom = 0;
-        Assert.Equal("radar", Query(WebPresets.WindyUrl(radar, Browser))["overlay"]);
-        Assert.Equal("7", Query(WebPresets.WindyUrl(radar, Browser))["zoom"]);
+        Assert.Equal(radar.Url, WebPresets.CustomUrl(radar, Browser));
+        Assert.False(WebPresets.Migrate(radar));
     }
 
     [Fact]
-    public void The_globe_faces_the_place_or_the_atlantic()
+    public void A_wind_globe_channel_becomes_a_custom_page_facing_the_place_or_the_atlantic()
     {
-        WebChannel globe = Toronto(WebPresets.Globe);
+        WebChannel globe = Toronto(WebPresets.LegacyGlobe);
         globe.Layer = "ocean";
+        WebPresets.Migrate(globe);
+        Assert.Equal("https://earth.nullschool.net/#current/ocean/surface/currents/orthographic=-79.4163,43.7001,640", globe.Url);
+        Assert.Null(globe.Layer);
 
-        Assert.Equal("https://earth.nullschool.net/#current/ocean/surface/currents/orthographic=-79.4163,43.7001,640", WebPresets.GlobeUrl(globe, Browser));
+        WebChannel anywhere = Toronto(WebPresets.LegacyGlobe);
+        anywhere.Latitude = 0;
+        anywhere.Longitude = 0;
+        WebPresets.Migrate(anywhere);
+        Assert.Equal("https://earth.nullschool.net/#current/wind/surface/level/orthographic=-40,20,640", anywhere.Url);
+    }
 
-        globe.Latitude = 0;
-        globe.Longitude = 0;
-        globe.Layer = null;
-        Assert.Equal("https://earth.nullschool.net/#current/wind/surface/level/orthographic=-40,20,640", WebPresets.GlobeUrl(globe, Browser));
+    [Fact]
+    public void Saved_radar_channels_read_in_as_custom_pages()
+    {
+        Directory.CreateDirectory(_folder);
+        File.WriteAllText(Path.Combine(_folder, "channels.json"),
+            """[{ "id": "radar", "name": "Toronto Radar", "preset": "radar", "latitude": 43.7, "longitude": -79.4, "lengths": [5] }]""");
+
+        WebChannel channel = new ChannelStore(_folder).Channels.Single();
+
+        Assert.Equal(WebPresets.Custom, channel.Preset);
+        Assert.StartsWith("https://embed.windy.com/", channel.Url);
+        Assert.Equal("Toronto Radar", channel.Name);
+    }
+
+    // --- Weather simulators ----------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(WebPresets.WeatherscanV2, "https://v2.weatherscan.net/?Toronto,%20Ontario")]
+    [InlineData(WebPresets.WeatherscanV1, "https://v1.weatherscan.net/?Toronto,%20Ontario")]
+    [InlineData(WebPresets.WeatherStarJr, "https://jr.weatherstar.dev/?Toronto,%20Ontario")]
+    [InlineData(WebPresets.WeatherStar4000, "https://4000.weatherstar.dev/?Toronto,%20Ontario")]
+    [InlineData(WebPresets.WeatherscanLocal, "https://local.weatherscan.net/")]
+    [InlineData(WebPresets.WeatherStarXl, "https://xl.weatherstar.dev/")]
+    [InlineData(WebPresets.IntelliStar, "https://i1.weatherstar.dev/")]
+    public void Simulators_are_their_own_sites_with_the_place_in_the_address_where_they_read_it(string preset, string expected)
+    {
+        WebChannel channel = Toronto(preset);
+
+        Assert.Equal(expected, channel.PresetInfo.PageUrl(channel, Browser));
+        Assert.True(channel.PresetInfo.OwnSound);
+        Assert.True(channel.PlaysPageSound);
+    }
+
+    [Fact]
+    public void Without_a_name_the_simulators_look_up_the_coordinates_and_without_a_place_find_it_themselves()
+    {
+        WebChannel channel = Toronto(WebPresets.WeatherscanV2);
+        channel.Location = "";
+        Assert.Equal("https://v2.weatherscan.net/?43.7001,-79.4163", channel.PresetInfo.PageUrl(channel, Browser));
+
+        channel.Latitude = 0;
+        channel.Longitude = 0;
+        Assert.Equal("https://v2.weatherscan.net/", channel.PresetInfo.PageUrl(channel, Browser));
+    }
+
+    [Fact]
+    public void Simulators_that_open_on_settings_are_set_up_and_started_by_script()
+    {
+        WebChannel local = Toronto(WebPresets.WeatherscanLocal);
+        local.Segments = ["golf", "forecast"];
+        local.Affiliate = "Rogers \"Cable\"";
+        string localScript = Assert.Single(local.PresetInfo.Scripts(local));
+        Assert.Contains("val: \"43.7001,-79.4163\"", localScript);
+        Assert.Contains("slideLineup.push(golfPackage, forecastPackage)", localScript);
+        Assert.Contains("providerName = \"Rogers \\u0022Cable\\u0022\"", localScript);
+        Assert.Contains("startButton();", localScript);
+
+        WebChannel xl = Toronto(WebPresets.WeatherStarXl);
+        xl.Flavor = "d";
+        xl.BottomBar = "both";
+        string xlScript = Assert.Single(xl.PresetInfo.Scripts(xl));
+        Assert.Contains("mainquery = \"Toronto, Ontario\"", xlScript);
+        Assert.Contains("setFlavor(\"d\")", xlScript);
+        Assert.Contains("setLDLType(\"observations\")", xlScript);
+
+        WebChannel star = Toronto(WebPresets.IntelliStar);
+        string starScript = Assert.Single(star.PresetInfo.Scripts(star));
+        Assert.Contains("flavorChanger(\"120\")", starScript);
+        Assert.Contains("versionsChanger(2010)", starScript);
+        Assert.Contains("startProgram();", starScript);
+
+        Assert.Empty(Toronto(WebPresets.WeatherscanV2).PresetInfo.Scripts(Toronto(WebPresets.WeatherscanV2)));
+    }
+
+    [Fact]
+    public void The_classic_4000_has_its_music_started_unless_the_channel_plays_its_own()
+    {
+        WebChannel classic = Toronto(WebPresets.WeatherStar4000);
+        Assert.Contains("audioPlayer.startPlaying", Assert.Single(classic.PresetInfo.Scripts(classic)));
+
+        classic.PageSound = false;
+        Assert.DoesNotContain("audioPlayer.startPlaying", Assert.Single(classic.PresetInfo.Scripts(classic)));
+        Assert.DoesNotContain("audioPlayer.startPlaying", Assert.Single(Toronto(WebPresets.WeatherStarJr).PresetInfo.Scripts(Toronto(WebPresets.WeatherStarJr))));
+    }
+
+    [Fact]
+    public void A_simulator_airs_its_own_sound_with_its_scripts_unless_told_to_play_music()
+    {
+        var settings = new WebChannelSettings(new FakeContext(new ConfigurationBuilder().Build(), _folder));
+        WebChannel star = Toronto(WebPresets.IntelliStar);
+        star.Music = BackgroundMusic.FromFolder("D:/Music");
+
+        LiveStreamSpec spec = settings.Spec(star);
+        Assert.Equal(LiveAudio.Page, spec.Audio);
+        Assert.Null(spec.Music);
+        Assert.Single(spec.PageScripts);
+
+        star.PageSound = false;
+        Assert.Equal(LiveAudio.Music, settings.Spec(star).Audio);
+
+        // Custom pages play music unless asked for their own sound; the others can't.
+        WebChannel custom = Toronto(WebPresets.Custom);
+        custom.Url = "https://example.test/";
+        Assert.False(custom.PlaysPageSound);
+        custom.PageSound = true;
+        Assert.Equal(LiveAudio.Page, settings.Spec(custom).Audio);
+        WebChannel clock = Toronto(WebPresets.Clock);
+        clock.PageSound = true;
+        Assert.False(clock.PlaysPageSound);
+    }
+
+    [Fact]
+    public void A_live_page_can_air_its_own_sound_from_the_browser()
+    {
+        var spec = new LiveStreamSpec { Id = "p", Name = "P", PageUrl = "https://example.test/", Ffmpeg = "ffmpeg", Audio = LiveAudio.Page, Volume = 1 };
+        string arguments = string.Join(' ', LiveStream.Arguments(spec, null, "tcp://127.0.0.1:6000"));
+        Assert.Contains("-f s16le -ar 48000 -ac 2 -thread_queue_size 1024 -i tcp://127.0.0.1:6000", arguments, StringComparison.Ordinal);
+        Assert.NotEqual(spec.Fingerprint, (spec with { PageScripts = ["start();"] }).Fingerprint);
+        Assert.Contains("__schedularrSoundOut", HeadlessBrowser.SoundTapScript());
     }
 
     [Fact]
@@ -307,16 +428,16 @@ public class WebChannelTests : IDisposable
     {
         WebChannel clock = Toronto(WebPresets.Clock);
         clock.Id = "clock";
-        WebChannel globe = Toronto(WebPresets.Globe);
-        globe.Id = "globe";
+        WebChannel scan = Toronto(WebPresets.WeatherscanV2);
+        scan.Id = "scan";
         WebChannel broken = Toronto(WebPresets.Custom);
         broken.Id = "broken";
         broken.Url = "not a page";
 
-        MediaItem[] items = [.. Library(clock, globe, broken).Items()];
+        MediaItem[] items = [.. Library(clock, scan, broken).Items()];
 
         Assert.Equal("Time & Temperature (3 min)", items.First(item => item.SeriesId == "web-channels:clock").Title);
-        Assert.Equal("Earth Winds (3 min)", items.First(item => item.SeriesId == "web-channels:globe").Title);
+        Assert.Equal("Local Weather (3 min)", items.First(item => item.SeriesId == "web-channels:scan").Title);
         Assert.DoesNotContain(items, item => item.SeriesId == "web-channels:broken");
     }
 
