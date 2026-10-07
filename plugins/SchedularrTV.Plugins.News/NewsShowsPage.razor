@@ -126,15 +126,8 @@
                                 }
                             </div></div>
                         <label class="field" style="margin:0;min-width:200px;"><span>Lettering</span>
-                            <select value="@show.Font" @onchange="e => Change(() => show.Font = Enum.Parse<NewsFont>(Text(e)))">
-                                <option value="Theme">The look's own</option>
-                                <option value="Sans">Modern sans (Inter)</option>
-                                <option value="Condensed">Condensed (Oswald)</option>
-                                <option value="Serif">Serif (Merriweather)</option>
-                                <option value="Slab">Slab (Roboto Slab)</option>
-                                <option value="Rounded">Rounded (Nunito)</option>
-                                <option value="Mono">Typewriter (JetBrains Mono)</option>
-                            </select></label>
+                            <SchedularrTV.LiveCapture.FontSelect Value="@(show.FontFamily ?? SchedularrTV.LiveCapture.LiveFonts.FromPreset(show.Font.ToString()))"
+                                ValueChanged="family => Change(() => { show.FontFamily = family; show.Font = NewsFont.Theme; })" /></label>
                         <label class="field" style="margin:0;min-width:200px;"><span>Text size: @((int)Math.Round(show.TextScale * 100))%</span>
                             <input type="range" min="0.8" max="1.4" step="0.05" value="@show.TextScale.ToString(CultureInfo.InvariantCulture)"
                                    @onchange="e => Change(() => show.TextScale = Number(e, 1))" /></label>

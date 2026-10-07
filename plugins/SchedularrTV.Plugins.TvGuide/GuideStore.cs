@@ -76,6 +76,7 @@ public sealed class GuideStore
         guide.ScrollSpeed = Math.Clamp(guide.ScrollSpeed, 0, 300);
         guide.RowHeight = Math.Clamp(guide.RowHeight, 30, 140);
         guide.FontScale = Math.Clamp(guide.FontScale, 0.5, 2.5);
+        guide.FontFamily = LiveFonts.Clean(guide.FontFamily);
         guide.TopPercent = Math.Clamp(guide.TopPercent, 0, 70);
         guide.Volume = Math.Clamp(guide.Volume, 0, 1);
         guide.MusicFolder = string.IsNullOrWhiteSpace(guide.MusicFolder) ? null : guide.MusicFolder.Trim().Trim('"');

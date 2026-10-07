@@ -80,6 +80,9 @@ public sealed class RadioStore
         station.TextColor = RadioLayout.IsColour(station.TextColor) ? station.TextColor!.ToLowerInvariant() : null;
         station.VisualizerSize = Math.Clamp(station.VisualizerSize, 0.5, 1.5);
         station.VisualizerIntensity = Math.Clamp(station.VisualizerIntensity, 0.25, 3);
+        // The old lettering presets became font families.
+        station.FontFamily = LiveFonts.Clean(station.FontFamily) ?? LiveFonts.FromPreset(station.Font.ToString());
+        station.Font = RadioFont.Theme;
         station.TextScale = Math.Clamp(station.TextScale, 0.8, 1.4);
         station.Genres = [.. station.Genres.Where(genre => !string.IsNullOrWhiteSpace(genre)).Select(genre => genre.Trim()).Distinct(StringComparer.OrdinalIgnoreCase)];
         station.Artists = [.. station.Artists.Where(artist => !string.IsNullOrWhiteSpace(artist)).Select(artist => artist.Trim()).Distinct(StringComparer.OrdinalIgnoreCase)];

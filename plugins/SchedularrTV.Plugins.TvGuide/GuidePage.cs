@@ -26,7 +26,9 @@ public sealed record GuidePageConfig(
     int CycleMinutes,
     string Message,
     string AdsQuery,
-    bool Preview)
+    bool Preview,
+    string? Font = null,
+    string? FontUrl = null)
 {
     public static GuidePageConfig For(GuideStation guide, bool preview) => new(
         guide.Id,
@@ -51,7 +53,9 @@ public sealed record GuidePageConfig(
         guide.CycleMinutes,
         guide.Message,
         guide.AdsQuery,
-        preview);
+        preview,
+        LiveFonts.Stack(guide.FontFamily),
+        LiveFonts.StylesheetUrl(guide.FontFamily));
 }
 
 /// <summary>The guide page: one self-contained HTML file (in the plugin) with the guide's settings written in.</summary>

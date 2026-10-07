@@ -155,7 +155,14 @@ public sealed class RadioStation
     /// <summary>The visualizer's colour; null for the accent colour.</summary>
     public string? VisualizerColor { get; set; }
 
+    /// <summary>Superseded by <see cref="FontFamily"/>; read from older saves and carried over when the station is tidied.</summary>
     public RadioFont Font { get; set; } = RadioFont.Theme;
+
+    /// <summary>
+    /// The lettering: an installed font, a web font (<see cref="LiveFonts.Web"/>) or the segmented display
+    /// (<see cref="LiveFonts.Segmented"/>); null for the look's own (Retro FM's own is the segmented display).
+    /// </summary>
+    public string? FontFamily { get; set; }
 
     /// <summary>How big the words are, 0.8 to 1.4.</summary>
     public double TextScale { get; set; } = 1;

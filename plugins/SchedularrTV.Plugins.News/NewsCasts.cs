@@ -135,6 +135,7 @@ public sealed class NewsCasts(NewsSources sources, NewsVoice voice, NewsSettings
         content.ShowSidebar = content.ShowTicker = content.ShowImages = content.TwelveHourClock = false;
         content.TickerMessage = content.HighlightColor = content.LiveLabel = null;
         content.Font = NewsFont.Theme;
+        content.FontFamily = null;
         content.TextScale = 1;
         content.TickerSize = content.SidePanelSize = NewsSize.Normal;
         content.TickerSpeed = 0;

@@ -20,12 +20,17 @@ public sealed record RadioPageConfig(
     FrameRect? Vis,
     long LyricsOffsetMs,
     bool Preview,
-    string Font = "Theme",
+    string? Font = null,
     double TextScale = 1,
     string? TextColor = null,
     bool ScanLines = false,
-    bool GhostSegments = true)
+    bool GhostSegments = true,
+    string? FontUrl = null,
+    bool Segmented = false)
 {
+    /// <summary>The station's lettering, carrying over an old preset: null for the look's own.</summary>
+    private static string? Family(RadioStation station) => LiveFonts.Clean(station.FontFamily) ?? LiveFonts.FromPreset(station.Font.ToString());
+
     public static RadioPageConfig For(RadioStation station, bool preview) => new RadioPageConfig(
         station.Id,
         station.Name,
@@ -41,11 +46,14 @@ public sealed record RadioPageConfig(
         station.VisualizerRect,
         (long)(station.LyricsOffset * 1000),
         preview,
-        station.Font.ToString(),
+        LiveFonts.Stack(Family(station)),
         station.TextScale,
         RadioLayout.IsColour(station.TextColor) ? station.TextColor : null,
         station.ScanLines,
-        station.GhostSegments);
+        station.GhostSegments,
+        LiveFonts.StylesheetUrl(Family(station)),
+        string.Equals(Family(station), LiveFonts.Segmented, StringComparison.OrdinalIgnoreCase)
+            || (Family(station) is null && station.Preset == RadioPreset.RetroFm));
 }
 
 /// <summary>The radio page: one self-contained HTML file (in the plugin) with the station's settings written in.</summary>

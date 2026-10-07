@@ -25,7 +25,7 @@ in the live preview beside the form, with your real listings.
 | Section | Options |
 | --- | --- |
 | Guide | Show name, look (see below), lengths it can be scheduled for |
-| Listings | Time shown (1 to 3 hours), scroll speed, row height, text size, channel logos, 24-hour clock, which channels are listed |
+| Listings | Time shown (1 to 3 hours), scroll speed, row height, text size, lettering (the look's own, any installed font, as in the canvas editors, or a web font from Google Fonts), channel logos, 24-hour clock, which channels are listed |
 | Colours | Background, rows, text and highlights, or the theme's own |
 | Top panel | Information (clock, date, a message and a rotating "Now on…"), commercials round the clock, or a channel's picture (one channel, or a different one at random every few minutes); its height |
 | Sound | Music from a folder (shuffled), the top panel's sound (the commercials, or the channel shown), a channel's sound (the old cable "barker" channel), or nothing; volume |

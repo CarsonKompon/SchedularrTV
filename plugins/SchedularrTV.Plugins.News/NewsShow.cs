@@ -106,7 +106,11 @@ public sealed class NewsShow
     /// <summary>A second colour (cable news's yellow, the 80s look's gold, the news desk's tags); null for the look's own.</summary>
     public string? HighlightColor { get; set; }
 
+    /// <summary>Superseded by <see cref="FontFamily"/>; read from older saves and carried over by <see cref="NewsStore.Tidy"/>.</summary>
     public NewsFont Font { get; set; } = NewsFont.Theme;
+
+    /// <summary>The lettering: an installed font or one of the web fonts (<see cref="LiveFonts.Web"/>); null for the look's own.</summary>
+    public string? FontFamily { get; set; }
 
     /// <summary>How big the headlines and text are, 0.8 to 1.4.</summary>
     public double TextScale { get; set; } = 1.0;

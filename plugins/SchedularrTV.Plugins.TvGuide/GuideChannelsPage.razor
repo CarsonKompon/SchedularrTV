@@ -119,6 +119,9 @@
                         <label class="field"><span>Text size: @((int)Math.Round(guide.FontScale * 100))%</span>
                             <input type="range" min="0.7" max="1.6" step="0.05" value="@guide.FontScale.ToString(CultureInfo.InvariantCulture)"
                                    @oninput="e => Change(() => guide.FontScale = Number(e, 1))" /></label>
+                        <label class="field"><span>Lettering</span>
+                            <SchedularrTV.LiveCapture.FontSelect Value="@guide.FontFamily"
+                                ValueChanged="family => Change(() => guide.FontFamily = family)" /></label>
                     </div>
                     <div class="row row-wrap" style="gap:18px;margin-bottom:8px;">
                         <label class="check"><input type="checkbox" checked="@guide.ShowLogos" @onchange="e => Change(() => guide.ShowLogos = e.Value is true)" /><span>Channel logos</span></label>

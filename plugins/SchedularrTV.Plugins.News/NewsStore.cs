@@ -97,6 +97,9 @@ public sealed partial class NewsStore
         show.MapRadarOpacity = Math.Clamp(show.MapRadarOpacity, 0.2, 1);
         show.MapIncidentCount = Math.Clamp(show.MapIncidentCount, 1, 10);
         show.HighlightColor = IsColour(show.HighlightColor) ? show.HighlightColor : null;
+        // The old lettering presets became font families.
+        show.FontFamily = LiveFonts.Clean(show.FontFamily) ?? LiveFonts.FromPreset(show.Font.ToString());
+        show.Font = NewsFont.Theme;
         show.TextScale = Math.Clamp(show.TextScale, 0.8, 1.4);
         show.TickerSpeed = Math.Clamp(show.TickerSpeed, 40, 240);
         show.LiveLabel = show.LiveLabel is null ? null : Limit(show.LiveLabel.Trim(), 16);

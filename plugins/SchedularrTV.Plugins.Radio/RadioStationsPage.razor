@@ -213,16 +213,9 @@
                     }
                     <div class="grid grid-3">
                         <label class="field"><span>Lettering</span>
-                            <select value="@station.Font" @onchange="e => Change(() => station.Font = Enum.Parse<RadioFont>(Text(e)))">
-                                <option value="Theme">@(station.Preset == RadioPreset.RetroFm ? "The look's own (segmented display)" : "The look's own")</option>
-                                <option value="Sans">Modern sans (Inter)</option>
-                                <option value="Condensed">Condensed (Oswald)</option>
-                                <option value="Serif">Serif (Merriweather)</option>
-                                <option value="Slab">Slab (Roboto Slab)</option>
-                                <option value="Rounded">Rounded (Nunito)</option>
-                                <option value="Mono">Typewriter (JetBrains Mono)</option>
-                                <option value="Segment">Segmented display (DSEG14)</option>
-                            </select></label>
+                            <SchedularrTV.LiveCapture.FontSelect Value="@(station.FontFamily ?? SchedularrTV.LiveCapture.LiveFonts.FromPreset(station.Font.ToString()))" WebFonts="RadioFonts"
+                                DefaultLabel="@(station.Preset == RadioPreset.RetroFm ? "The look's own (segmented display)" : "The look's own")"
+                                ValueChanged="family => Change(() => { station.FontFamily = family; station.Font = RadioFont.Theme; })" /></label>
                         <label class="field"><span>Text size: @((int)Math.Round(station.TextScale * 100))%</span>
                             <input type="range" min="0.8" max="1.4" step="0.05" value="@station.TextScale.ToString(CultureInfo.InvariantCulture)"
                                    @onchange="e => Change(() => station.TextScale = Number(e, 1))" /></label>
@@ -242,7 +235,7 @@
                         <label class="check"><input type="checkbox" checked="@station.ShowUpNext" @onchange="e => Change(() => station.ShowUpNext = e.Value is true)" /><span>Up next</span></label>
                         <label class="check"><input type="checkbox" checked="@station.ShowClock" @onchange="e => Change(() => station.ShowClock = e.Value is true)" /><span>Clock</span></label>
                         <label class="check"><input type="checkbox" checked="@station.ScanLines" @onchange="e => Change(() => station.ScanLines = e.Value is true)" /><span>Scan lines</span></label>
-                        @if (station.Preset == RadioPreset.RetroFm && station.Font is RadioFont.Theme or RadioFont.Segment)
+                        @if (station.Preset == RadioPreset.RetroFm && (station.FontFamily ?? SchedularrTV.LiveCapture.LiveFonts.FromPreset(station.Font.ToString())) is null or SchedularrTV.LiveCapture.LiveFonts.Segmented)
                         {
                             <label class="check"><input type="checkbox" checked="@station.GhostSegments" @onchange="e => Change(() => station.GhostSegments = e.Value is true)" /><span>Unlit segments</span></label>
                         }
@@ -583,6 +576,10 @@
         station.PlaylistId = id.Length == 0 ? null : id;
         station.PlaylistName = _choices.FirstOrDefault(choice => choice.Id == id)?.Name;
     }
+
+    /// <summary>The web fonts on offer, with the segmented display face radio.html brings.</summary>
+    private static readonly IReadOnlyList<SchedularrTV.LiveCapture.WebFont> RadioFonts =
+        [.. SchedularrTV.LiveCapture.LiveFonts.Web, SchedularrTV.LiveCapture.LiveFonts.SegmentFont];
 
     private async Task Change(Action change)
     {

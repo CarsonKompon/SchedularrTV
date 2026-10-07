@@ -24,7 +24,7 @@ your library with your settings as you change them.
 | Station | Show name; music from the Jellyfin library or an internet station; lengths it can be scheduled for |
 | Music (Jellyfin) | Every song, a playlist, some genres or some artists; shuffled or in order |
 | Station (internet) | The stream's address, or an `.m3u` / `.pls` playlist that names it |
-| Look | Now Playing, Karaoke, Vinyl, Retro FM or Minimal; the visualizer (bars, waveform, spectrum, oscilloscope or none), its size (50–150%), how strongly it moves, and its colour; background (the cover blurred, a moving gradient, or a colour); accent colour; lettering (the look's own, Inter, Oswald, Merriweather, Roboto Slab, Nunito, JetBrains Mono or a segmented display), text size and text colour; cover, lyrics, up next, clock and scan lines on or off; a message along the bottom; lyrics timing |
+| Look | Now Playing, Karaoke, Vinyl, Retro FM or Minimal; the visualizer (bars, waveform, spectrum, oscilloscope or none), its size (50–150%), how strongly it moves, and its colour; background (the cover blurred, a moving gradient, or a colour); accent colour; lettering (the look's own, any installed font, as in the canvas editors, or a web font: Inter, Oswald, Merriweather, Roboto Slab, Nunito, JetBrains Mono or a segmented display), text size and text colour; cover, lyrics, up next, clock and scan lines on or off; a message along the bottom; lyrics timing |
 | Sound | Volume |
 
 ### The looks

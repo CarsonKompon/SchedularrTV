@@ -95,6 +95,9 @@ public sealed class GuideStation
     /// <summary>Text size, 1 being the theme's own.</summary>
     public double FontScale { get; set; } = 1;
 
+    /// <summary>The lettering: an installed font or a web font (<see cref="LiveFonts.Web"/>); null for the look's own.</summary>
+    public string? FontFamily { get; set; }
+
     public bool ShowLogos { get; set; } = true;
 
     public bool TwentyFourHourClock { get; set; }

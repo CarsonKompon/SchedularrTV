@@ -219,6 +219,7 @@
   const themeKey = () => ({ TvGuide: "tvguide", Interactive: "interactive", Classic: "classic" }[cfg.theme] || "prevue");
   const promoLook = () => themeKey() === "interactive" || themeKey() === "classic";
   let fontLoaded = "";
+  let chosenFontLoaded = "";
 
   function applyConfig() {
     const root = document.documentElement.style;
@@ -231,6 +232,15 @@
       link.href = `https://fonts.googleapis.com/css2?family=${defaults.font}&display=swap`;
       document.head.appendChild(link);
     }
+    // A chosen lettering (an installed font, or a web font loaded from Google Fonts) over the look's own.
+    if (cfg.fontUrl && chosenFontLoaded !== cfg.fontUrl) {
+      chosenFontLoaded = cfg.fontUrl;
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = cfg.fontUrl;
+      document.head.appendChild(link);
+    }
+    $("screen").style.fontFamily = cfg.font || "";
     document.body.className = "theme-" + theme;
     root.setProperty("--bg", cfg.background || defaults.background);
     root.setProperty("--row", cfg.rowColor || defaults.row);

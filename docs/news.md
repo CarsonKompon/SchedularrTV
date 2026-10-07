@@ -26,7 +26,7 @@ news and runs through the segments on the show's own timing. Anything that could
 | Section | Options |
 | --- | --- |
 | Show | Name, lengths it can be scheduled for, look |
-| Colours and lettering | Station colour; highlight colour (cable news's yellow, the 80s look's gold, the news desk's tags); lettering (the look's own, or Inter, Oswald, Merriweather, Roboto Slab, Nunito or JetBrains Mono from Google Fonts, with a close match on the computer if they can't be fetched); text size (80–140%) |
+| Colours and lettering | Station colour; highlight colour (cable news's yellow, the 80s look's gold, the news desk's tags); lettering (the look's own, any font installed on the computer, the same list as the canvas editors, or a web font: Inter, Oswald, Merriweather, Roboto Slab, Nunito or JetBrains Mono from Google Fonts, with a close match on the computer if they can't be fetched); text size (80–140%) |
 | Ticker, side panel and corner | Ticker on or off, its size, speed and opening message; side panel on or off and its width; story pictures; clock; scan lines (off unless you turn them on); the word in the corner ("LIVE" by default; empty for none) |
 | Stories | Any number of RSS or Atom feeds (each with an optional name to show), one-click BBC, NPR, CBC, Guardian and Al Jazeera feeds, and Google News for your town; how many stories each time round; how old a story can be; seconds per story when it isn't read out |
 | Segments | Weather, markets, sports scores, map, lottery: each one you tick comes between the stories |

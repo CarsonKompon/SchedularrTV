@@ -38,7 +38,8 @@ public sealed record NewsPageConfig(
         traffic,
         preview,
         new NewsLookConfig(
-            show.Font.ToString(),
+            LiveFonts.Stack(show.FontFamily ?? LiveFonts.FromPreset(show.Font.ToString())),
+            LiveFonts.StylesheetUrl(show.FontFamily ?? LiveFonts.FromPreset(show.Font.ToString())),
             show.TextScale,
             Factor(show.TickerSize),
             show.TickerSpeed,
@@ -63,9 +64,12 @@ public sealed record NewsPageConfig(
 }
 
 /// <summary>The show's own touches on its look: lettering, sizes, scan lines, colours.</summary>
+/// <param name="Font">The CSS font stack; null for the look's own.</param>
+/// <param name="FontUrl">The stylesheet a web font needs; null for an installed font.</param>
 /// <param name="LiveLabel">The word in the corner; empty to leave it out, null for the look's own.</param>
 public sealed record NewsLookConfig(
-    string Font,
+    string? Font,
+    string? FontUrl,
     double TextScale,
     double TickerSize,
     int TickerSpeed,

@@ -350,24 +350,17 @@
     return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`;
   }
 
-  // Lettering: loaded from Google Fonts when chosen, with the computer's own close match until (or unless) it arrives.
-  const FONTS = {
-    Sans: ["Inter:wght@400;600;800;900", `"Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif`],
-    Condensed: ["Oswald:wght@400;500;600;700", `"Oswald", "Arial Narrow", "Liberation Sans Narrow", sans-serif`],
-    Serif: ["Merriweather:wght@400;700;900", `"Merriweather", Georgia, "Times New Roman", serif`],
-    Slab: ["Roboto+Slab:wght@400;600;800;900", `"Roboto Slab", Rockwell, "Courier New", serif`],
-    Rounded: ["Nunito:wght@400;700;800;900", `"Nunito", "Arial Rounded MT Bold", "Segoe UI", sans-serif`],
-    Mono: ["JetBrains+Mono:wght@400;700;800", `"JetBrains Mono", Consolas, "Courier New", monospace`]
-  };
-
+  // Lettering: an installed font, or a web font loaded from Google Fonts (with the computer's own close match until, or
+  // unless, it arrives). The server sends the CSS stack and, for a web font, its stylesheet.
   function applyFont() {
-    const font = FONTS[look().font];
-    document.body.style.fontFamily = font && !teletext() ? font[1] : "";
-    if (font && fontLoaded !== font[0]) {
-      fontLoaded = font[0];
+    const stack = look().font;
+    document.body.style.fontFamily = stack && !teletext() ? stack : "";
+    const url = look().fontUrl;
+    if (url && fontLoaded !== url) {
+      fontLoaded = url;
       const link = document.createElement("link");
       link.rel = "stylesheet";
-      link.href = `https://fonts.googleapis.com/css2?family=${font[0]}&display=swap`;
+      link.href = url;
       document.head.appendChild(link);
       // Sizes are fitted to the lettering, so fit again once it's in.
       link.onload = () => document.fonts && document.fonts.ready.then(() => fitAll($("main")));

@@ -198,6 +198,8 @@ public static class SchedulerHost
         // Plugins say when their media sources change, so the library pages show it at once.
         builder.Services.AddSingleton<SchedularrTV.Plugins.IMediaLibraryNotifier>(sp => sp.GetRequiredService<LibraryBrowser>());
         builder.Services.AddSingleton<LogoStore>();
+        // Installed fonts, for the font pickers of the live page channels (news, radio, guide).
+        builder.Services.AddSingleton<SchedularrTV.Plugins.Editor.IFontCatalog, SystemFontCatalog>();
         builder.Services.AddSingleton<SchedularrTV.Service.Import.ChannelImporter>();
 
         // Language models from the writer plugins (Local AI) word voice-overs and captions; what they write is kept here.
