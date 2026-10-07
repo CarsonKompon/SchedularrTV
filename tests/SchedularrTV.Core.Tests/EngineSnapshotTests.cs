@@ -188,6 +188,7 @@ public sealed class EngineSnapshotTests : IDisposable
                 order: shuffle
               interstitials:
                 max_shows_per_slot: 1
+                show_chance: 100
                 shows:
                   include:
                   - show: Oh Yeah
