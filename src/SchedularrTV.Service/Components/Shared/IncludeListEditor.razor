@@ -74,19 +74,26 @@
         </div>
     }
 
-    <div class="row" style="margin-top:8px;">
-        <select @onchange="OnPickerChanged" value="@_pickerKind">
+    <div class="row include-add-row" style="margin-top:8px;">
+        <select class="include-add-kind" @onchange="OnPickerChanged" value="@_pickerKind">
             <option value="show">Show</option>
             <option value="movie">Movie</option>
             <option value="collection">Jellyfin collection</option>
         </select>
         @* Picking a suggestion adds it straight away; a name typed out is added with the button (or Enter). *@
-        <TitlePicker @key="_pickerKind" Options="_options" Value="@_pending" ValueChanged="v => _pending = v" OnPicked="AddPicked"
+        <TitlePicker @key="_pickerKind" Class="include-add-picker" Options="_options" Value="@_pending" ValueChanged="v => _pending = v" OnPicked="AddPicked"
                      Thumbnails="@(_pickerKind != CollectionKind)" AriaLabel="@($"Add a {_pickerKind}")"
                      Placeholder="@(_pickerKind == CollectionKind ? SearchCollections : SearchTitles)" />
         <button class="btn btn-sm" @onclick="Add">Add</button>
     </div>
 </div>
+
+<style>
+    /* Kind of title on a third, the search on two thirds; selects are width:100% by default, which would squeeze the search. */
+    .include-add-row > .include-add-kind { flex: 1 1 0; width: auto; min-width: 0; }
+    .include-add-row > .title-picker.include-add-picker { flex: 2 1 0; }
+    .include-add-row > .btn { flex: none; }
+</style>
 
 @if (_editing is not null)
 {
