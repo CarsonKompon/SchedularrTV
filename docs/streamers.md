@@ -10,7 +10,7 @@ listed in priority order:
   streams, and when everyone else is expected.
 
 Each streamer channel is a channel of its own in ErsatzTV (and Jellyfin's guide), alongside your others. It's listed on the
-**Channels** page and the dashboard (marked *Streamers*), where Edit opens it on the Streamers page.
+**Channels** page and the dashboard (marked *Streamers*), where Edit opens it on the Streamer channels page.
 
 No API keys or accounts are needed: the plugin reads Twitch and YouTube the way their own sites do. That's unofficial, so a
 change on their side can break something until the plugin is updated.
@@ -19,7 +19,7 @@ change on their side can break something until the plugin is updated.
 
 - **Chrome, Edge or Chromium** on the scheduler's computer, run hidden to draw the countdown, chat and pop-ups (as for
   [Radio shows](radio.md)).
-- **yt-dlp**, which opens the streams. The **Streamers** page downloads it for you (from yt-dlp's GitHub releases), or
+- **yt-dlp**, which opens the streams. The **Streamer channels** page downloads it for you (from yt-dlp's GitHub releases), or
   installs on the PATH are found automatically. Use **Update** now and then: Twitch and YouTube change often, and new
   yt-dlp versions keep up.
 - ffmpeg, as for the rest of the scheduler.
@@ -28,7 +28,7 @@ The plugin ships in `SchedularrTV-<version>-all-plugins.zip`; install it on the 
 
 ## Making a channel
 
-Open **Streamers** in the sidebar and choose **Add a streamer channel**:
+Open **Streamer channels** in the sidebar and choose **Add a streamer channel**:
 
 - **Logo**: drop an image on it (or paste an image address) for the guide and channel lists. Without one, the top
   streamer's profile picture is used.
@@ -138,7 +138,7 @@ The plugin already asks for a stream's 30 frames a second copy over a 60 one of 
 ## Troubleshooting
 
 - **The channel shows "… is live: opening their stream" and stays there.** yt-dlp couldn't open it; the reason is under the
-  channel on the Streamers page. Update yt-dlp first. Subscriber-only, age-restricted or region-locked streams can't be
+  channel on the Streamer channels page. Update yt-dlp first. Subscriber-only, age-restricted or region-locked streams can't be
   opened without signing in.
 - **A streamer always says "Couldn't reach …" or never goes live.** Check the name or handle (open their page in a browser).
   YouTube handles are case-insensitive, but must be the handle (`@name`), not the display name.

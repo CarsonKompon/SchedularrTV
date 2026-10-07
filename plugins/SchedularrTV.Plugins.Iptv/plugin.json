@@ -66,6 +66,6 @@
     }
   ],
   "pages": [
-    { "path": "/plugins/iptv", "title": "IPTV", "icon": "radio" }
+    { "path": "/plugins/iptv", "title": "IPTV channels", "icon": "radio" }
   ]
 }

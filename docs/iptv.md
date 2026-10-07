@@ -9,7 +9,7 @@ It needs ErsatzTV Next with `WriteLineup` on (the default), and ffmpeg.
 
 ## Adding a provider
 
-Open **IPTV** in the sidebar and add a provider:
+Open **IPTV channels** in the sidebar and add a provider:
 
 1. Give it a name and its **playlist** address: the M3U link your provider gives you (for Xtream Codes providers,
    `http://host/get.php?username=…&password=…&type=m3u_plus&output=ts`), or a `.m3u` file on this computer.
@@ -36,7 +36,7 @@ Open **IPTV** in the sidebar and add a provider:
   It then runs iptv-org/epg's grabber for those channels and reads the result in like any other guide.
   - **Setup.** The first time, the plugin sets the grabber up in its data folder (`plugin-data/iptv/iptv-org`). It uses
     the Node.js installed on this computer (20 or newer), or else downloads a copy just for this plugin. It also
-    downloads iptv-org/epg and installs its packages. That's a few hundred MB and a few minutes; the IPTV page shows
+    downloads iptv-org/epg and installs its packages. That's a few hundred MB and a few minutes; the IPTV channels page shows
     progress. iptv-org/epg is downloaded again weekly, as listings sites change.
   - **Grabbing.** The guide is grabbed every 12 hours, and straight away when the carried channels change; **Grab now**
     does it on demand. The provider shows how many channels got listings.
@@ -63,11 +63,11 @@ pass on. Off, each channel is re-encoded to its `channel.json` settings, like yo
 - Playlists and guides are read again every 6 hours (see the settings), when you save, and on **Refresh now**. The
   channels are published again each time, and on every schedule rebuild.
 - Carried channels aren't planned: they're the provider's schedule, as it is. They're listed on the Channels page and
-  the dashboard (marked *IPTV*), where Edit brings you back to the IPTV page.
+  the dashboard (marked *IPTV*), where Edit brings you back to the IPTV channels page.
 
 ## Channel numbers
 
-A channel whose number is already used by one of your own channels is left out (the IPTV page marks it *Number
+A channel whose number is already used by one of your own channels is left out (the IPTV channels page marks it *Number
 taken*); your own channels always win. Change the provider's first number or your channel's number. Give each
 provider its own block of numbers (the page suggests 1000, 2000, and so on).
 

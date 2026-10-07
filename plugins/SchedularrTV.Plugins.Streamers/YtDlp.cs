@@ -118,7 +118,7 @@ public sealed class YtDlp(StreamerSettings settings, ILogger<YtDlp> logger)
     /// </summary>
     public async Task<string> ResolveAsync(string pageUrl, CancellationToken cancellationToken)
     {
-        string program = Executable ?? throw new InvalidOperationException("yt-dlp isn't installed: download it on the Streamers page.");
+        string program = Executable ?? throw new InvalidOperationException("yt-dlp isn't installed: download it on the Streamer channels page.");
         int height = settings.MaxHeight;
         (int code, string output, string errors) = await RunAsync(program,
             ["--no-warnings", "--no-playlist", "--no-cache-dir", "-f", $"best[height<={height}]/best", "-S", Preference(height), "-g", pageUrl],
@@ -139,7 +139,7 @@ public sealed class YtDlp(StreamerSettings settings, ILogger<YtDlp> logger)
     /// </summary>
     public async Task<(string Video, string? Audio)> ResolveRecordingAsync(string pageUrl, StreamPlatform platform, CancellationToken cancellationToken)
     {
-        string program = Executable ?? throw new InvalidOperationException("yt-dlp isn't installed: download it on the Streamers page.");
+        string program = Executable ?? throw new InvalidOperationException("yt-dlp isn't installed: download it on the Streamer channels page.");
         int height = settings.MaxHeight;
         string format = platform == StreamPlatform.YouTube
             ? $"bv*[height<={height}][vcodec^=avc1]+ba[acodec^=mp4a]/bv*[height<={height}]+ba/b[height<={height}]/b"

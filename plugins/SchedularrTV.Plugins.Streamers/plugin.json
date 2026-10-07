@@ -12,7 +12,7 @@
       "key": "YtDlpPath",
       "label": "yt-dlp",
       "type": "File",
-      "description": "Opens the streams. Leave empty to use the copy downloaded on the Streamers page, or one installed on this computer."
+      "description": "Opens the streams. Leave empty to use the copy downloaded on the Streamer channels page, or one installed on this computer."
     },
     {
       "key": "BrowserPath",
@@ -94,6 +94,6 @@
     }
   ],
   "pages": [
-    { "path": "/plugins/streamers", "title": "Streamers", "icon": "video" }
+    { "path": "/plugins/streamers", "title": "Streamer channels", "icon": "video" }
   ]
 }
