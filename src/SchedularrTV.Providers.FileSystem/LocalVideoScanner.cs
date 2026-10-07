@@ -32,10 +32,13 @@ public static class LocalLibraryIds
         id is not null && (id.StartsWith(ItemPrefix, StringComparison.Ordinal) || id.StartsWith(SeriesPrefix, StringComparison.Ordinal));
 }
 
-/// <summary>What a TV or movie folder holds: its items, and the pictures for them (and for each show) by id.</summary>
-internal sealed record LocalScan(IReadOnlyList<MediaItem> Items, IReadOnlyDictionary<string, LocalImages> Images)
+/// <summary>A local show's extra (a theme, trailer, featurette…), for its intros and outros.</summary>
+public sealed record LocalExtra(string Name, string Path, TimeSpan Duration);
+
+/// <summary>What a TV or movie folder holds: its items, the pictures for them (and for each show) by id, and each show's folder by id.</summary>
+internal sealed record LocalScan(IReadOnlyList<MediaItem> Items, IReadOnlyDictionary<string, LocalImages> Images, IReadOnlyDictionary<string, string> ShowFolders)
 {
-    public static readonly LocalScan Empty = new([], new Dictionary<string, LocalImages>());
+    public static readonly LocalScan Empty = new([], new Dictionary<string, LocalImages>(), new Dictionary<string, string>());
 }
 
 /// <summary>
@@ -62,6 +65,7 @@ internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaP
     private static readonly string[] MoviePosters = ["poster", "folder", "cover", "movie", "default"];
 
     private HashSet<string> _extensions = [];
+    private readonly Dictionary<string, string> _showFolders = new(StringComparer.Ordinal);
 
     /// <summary>A file found, and how to describe it once it's been probed (null leaves it out).</summary>
     private sealed record Candidate(FileInfo File, Func<ProbeResult?, (MediaItem Item, LocalImages Images)?> Build);
@@ -92,7 +96,7 @@ internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaP
         if (candidates.Count == 0)
         {
             logger.LogWarning("No {Kind} found under {Path}.", folder.Kind == MediaKind.Movie ? "movies" : "shows", root);
-            return new LocalScan([], images);
+            return new LocalScan([], images, _showFolders);
         }
 
         IReadOnlyDictionary<string, ProbeResult> probed = await probe.ProbeAllAsync([.. candidates.Select(c => c.File)], chapters: true, cancellationToken)
@@ -120,7 +124,7 @@ internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaP
             logger.LogInformation("Skipped {Count} unreadable or too-short files under {Path}.", skipped, root);
         }
 
-        return new LocalScan(items, images);
+        return new LocalScan(items, images, _showFolders);
     }
 
     // ---- TV -------------------------------------------------------------------------------------------------------
@@ -186,6 +190,7 @@ internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaP
         NfoInfo? nfo = NfoReader.ReadOne(Path.Combine(show.FullName, "tvshow.nfo"), "tvshow");
         FolderName name = LocalNaming.Folder(show.Name);
         string seriesId = Id(SeriesPrefix, show.FullName);
+        _showFolders[seriesId] = show.FullName;
         string seriesName = nfo?.Title ?? name.Title;
         int? seriesYear = nfo?.Year ?? name.Year;
 

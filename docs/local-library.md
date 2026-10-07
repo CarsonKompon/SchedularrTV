@@ -82,6 +82,14 @@ that ErsatzTV would pick up: videos in a season's `Extras`/`Trailers` folders (E
 whose file name merely ends in a word like "short" (`The Big Short.mkv` is a movie here; extras need a dash,
 `Movie-short.mkv`). Music videos, songs and image libraries aren't supported.
 
+## Intros and outros
+
+A local show's extras are offered when choosing its intros and outros (**Intros/outros…** on the TV Shows page or in
+a collection), as Jellyfin's are for its shows: the videos in the show's `Extras`, `Trailers`, `Featurettes`… folders
+(or a season's) and those named as extras (`Daria-theme.mkv`, `Daria - S01E01-featurette.mkv`), which are never
+scheduled as episodes. Any other file can still be added with **Browse files on disk**. Jellyfin doesn't need to be set
+up for this.
+
 ## .nfo files
 
 Kodi-style .nfo files (as written by Kodi, Jellyfin, Emby, Sonarr, Radarr, tinyMediaManager…) are read where they

@@ -44,6 +44,15 @@ internal static partial class LocalNaming
         || File.Exists(Path.Combine(path, ".etvignore"))
         || File.Exists(Path.Combine(path, ".ignore"));
 
+    /// <summary>Housekeeping folders among <see cref="ExtrasFolders"/>, which hold pictures and system files rather than extras.</summary>
+    private static readonly HashSet<string> Housekeeping = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "metadata", "backdrops", ".actors", "@eadir", "#recycle", "$recycle.bin", "lost+found"
+    };
+
+    /// <summary>A folder of a show's or movie's extras (<c>Extras</c>, <c>Trailers</c>, <c>Featurettes</c>…).</summary>
+    public static bool IsExtrasFolder(string name) => ExtrasFolders.Contains(name) && !Housekeeping.Contains(name);
+
     /// <summary>A macOS resource fork (<c>._Movie.mkv</c>), which only looks like a video.</summary>
     public static bool IsResourceFork(string fileName) => fileName.StartsWith("._", StringComparison.Ordinal);
 
@@ -264,7 +273,7 @@ internal static partial class LocalNaming
         return Spaces().Replace(cleaned, " ").Trim(' ', '-', '.', '_');
     }
 
-    [GeneratedRegex(@"-(?:trailer|sample|featurette|behindthescenes|deleted|deletedscene|interview|scene|short|other|extra|clip)\d*$", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"-(?:trailer|sample|featurette|behindthescenes|deleted|deletedscene|interview|scene|short|other|extra|clip|theme)\d*$", RegexOptions.IgnoreCase)]
     private static partial Regex ExtraSuffix();
 
     [GeneratedRegex(@"^(?:season|series|s)[ ._-]*(?<s>\d{1,4})$", RegexOptions.IgnoreCase)]

@@ -124,6 +124,25 @@ public sealed class LocalLibraryTests : IDisposable
     }
 
     [Fact]
+    public async Task A_local_shows_extras_are_listed_for_its_intros_and_outros()
+    {
+        string tv = Path.Combine(_folder, "TV");
+        string show = Path.Combine(tv, "Daria");
+        Video(Path.Combine(show, "Season 1", "Daria - S01E01.mkv"), "<episodedetails><runtime>22</runtime></episodedetails>");
+        Write(Path.Combine(show, "Extras", "Opening Theme.mkv"));
+        Write(Path.Combine(show, "Season 1", "Trailers", "Season Trailer.mkv"));
+        Write(Path.Combine(show, "Season 1", "Daria - S01E01-featurette.mkv"));
+        Write(Path.Combine(show, "Extras", "._Opening Theme.mkv"));
+
+        FileSystemMediaLibrary library = Library(new MediaFolderOptions { Path = tv, Kind = MediaKind.Episode });
+        MediaItem episode = Assert.Single(await library.SearchAsync(QueryExpression.All));
+
+        IReadOnlyList<LocalExtra> extras = await library.ExtrasAsync(episode.SeriesId!);
+        Assert.Equal(["Daria - S01E01-featurette", "Opening Theme", "Season Trailer"], extras.Select(extra => extra.Name).Order());
+        Assert.Empty(await library.ExtrasAsync("local-show:unknown"));
+    }
+
+    [Fact]
     public void Clip_folders_skip_hidden_and_ignored_folders_and_untagged_ones_take_their_name()
     {
         string root = Path.Combine(_folder, "Commercials");

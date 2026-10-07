@@ -1,6 +1,8 @@
 @* Clip blocks played around a title's episodes, laid out as a timeline. *@
+@using SchedularrTV.Providers.FileSystem
 @using SchedularrTV.Providers.Jellyfin
-@inject JellyfinClient Jellyfin
+@* Optional: Jellyfin's and the local folders' services are only there while their plugins are loaded. *@
+@inject IServiceProvider Services
 @inject LibraryBrowser Library
 @inject ConfigEditor Editor
 
@@ -188,12 +190,12 @@
                     }
                     else
                     {
-                        List<JellyfinExtra> available = [.. _extras.Where(x => !target.Clips.Any(c => SamePath(c.Path, x.Path)))];
-                        List<JellyfinExtra> shown = [.. available.Where(x => string.IsNullOrWhiteSpace(_filter) || x.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase))];
+                        List<ExtraClip> available = [.. _extras.Where(x => !target.Clips.Any(c => SamePath(c.Path, x.Path)))];
+                        List<ExtraClip> shown = [.. available.Where(x => string.IsNullOrWhiteSpace(_filter) || x.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase))];
 
                         @if (_extras.Count == 0)
                         {
-                            <div class="empty" style="padding:22px;">This show has no extras in Jellyfin. Browse files on disk instead.</div>
+                            <div class="empty" style="padding:22px;">@NoExtras</div>
                         }
                         else if (available.Count == 0)
                         {
@@ -211,7 +213,7 @@
                             </div>
 
                             <div class="scroll-list" style="max-height:300px;">
-                                @foreach (JellyfinExtra extra in shown)
+                                @foreach (ExtraClip extra in shown)
                                 {
                                     <label class="check bumper-extra">
                                         <input type="checkbox" checked="@_picked.Contains(extra.Path)"
@@ -294,7 +296,20 @@
             && string.Equals(include.Show, Include.Show, StringComparison.OrdinalIgnoreCase)))
         .Select(pair => pair.Key)];
 
-    private IReadOnlyList<JellyfinExtra>? _extras;
+    /// <summary>One of the show's extras, from Jellyfin or from its local folder.</summary>
+    private sealed record ExtraClip(string Name, string Path, TimeSpan Duration);
+
+    private IReadOnlyList<ExtraClip>? _extras;
+    private enum ExtrasSource { None, Local, Jellyfin }
+
+    private ExtrasSource _source;
+
+    private string NoExtras => _source switch
+    {
+        ExtrasSource.Local => "This show's folder has no extras (videos in an Extras, Trailers or Featurettes folder, or named like Show-trailer.mkv). Browse files on disk instead.",
+        ExtrasSource.Jellyfin => "This show has no extras in Jellyfin. Browse files on disk instead.",
+        _ => "This show's extras can't be listed here (it isn't from Jellyfin or a local TV folder). Browse files on disk instead."
+    };
     private IReadOnlyList<LibraryEpisode> _episodes = [];
     private IReadOnlyList<int> _seasons = [];
     private string? _seriesId;
@@ -324,12 +339,36 @@
 
             _seriesId = show.Id;
             _seasons = show.Seasons;
-            _extras = await Jellyfin.GetSpecialFeaturesAsync(show.Id, CancellationToken.None);
+            _extras = await ExtrasAsync(show.Id);
         }
         catch (Exception ex)
         {
             _error = $"Could not read extras: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// The show's extras from where the show comes from: its local folder for a show from local TV folders, else
+    /// Jellyfin (none when Jellyfin isn't set up, rather than an error).
+    /// </summary>
+    private async Task<IReadOnlyList<ExtraClip>> ExtrasAsync(string showId)
+    {
+        if (LocalLibraryIds.IsLocalId(showId))
+        {
+            _source = ExtrasSource.Local;
+            return Services.GetService<FileSystemMediaLibrary>() is { } local
+                ? [.. (await local.ExtrasAsync(showId)).Select(extra => new ExtraClip(extra.Name, extra.Path, extra.Duration))]
+                : [];
+        }
+
+        if (Services.GetService<JellyfinMediaLibrary>() is not { IsConfigured: true } || Services.GetService<JellyfinClient>() is not { } jellyfin)
+        {
+            return [];
+        }
+
+        _source = ExtrasSource.Jellyfin;
+        return [.. (await jellyfin.GetSpecialFeaturesAsync(showId, CancellationToken.None))
+            .Select(extra => new ExtraClip(extra.Name, extra.Path, extra.Duration))];
     }
 
     private IEnumerable<BumperBlock> Ordered(BumperPosition position) =>
@@ -435,7 +474,7 @@
 
     private string LengthOf(BumperClip clip)
     {
-        JellyfinExtra? extra = _extras?.FirstOrDefault(x => SamePath(x.Path, clip.Path));
+        ExtraClip? extra = _extras?.FirstOrDefault(x => SamePath(x.Path, clip.Path));
         return extra is null ? "—" : $"{extra.Duration.TotalSeconds:0}s";
     }
 
@@ -545,9 +584,9 @@
         }
     }
 
-    private void SelectShown(IEnumerable<JellyfinExtra> shown)
+    private void SelectShown(IEnumerable<ExtraClip> shown)
     {
-        foreach (JellyfinExtra extra in shown)
+        foreach (ExtraClip extra in shown)
         {
             _picked.Add(extra.Path);
         }
@@ -555,7 +594,7 @@
 
     private async Task AddPicked(BumperBlock block)
     {
-        foreach (JellyfinExtra extra in (_extras ?? []).Where(x => _picked.Contains(x.Path)))
+        foreach (ExtraClip extra in (_extras ?? []).Where(x => _picked.Contains(x.Path)))
         {
             if (!block.Clips.Any(c => SamePath(c.Path, extra.Path)))
             {

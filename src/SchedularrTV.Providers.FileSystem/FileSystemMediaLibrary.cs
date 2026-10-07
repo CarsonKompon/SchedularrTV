@@ -32,7 +32,61 @@ public sealed class FileSystemMediaLibrary(
 
     private IReadOnlyList<MediaItem> _snapshot = [];
     private IReadOnlyDictionary<string, LocalImages> _images = new Dictionary<string, LocalImages>();
+    private IReadOnlyDictionary<string, string> _showFolders = new Dictionary<string, string>();
     private DateTimeOffset _scannedAt = DateTimeOffset.MinValue;
+
+    /// <summary>
+    /// A local TV show's extras (by the show's id): the videos in its <c>Extras</c>, <c>Trailers</c>, <c>Featurettes</c>…
+    /// folders (in the show's folder or a season's) and those named as extras (<c>Show-trailer.mkv</c>), measured with
+    /// ffprobe. Empty for a show that isn't from a local folder, or has none.
+    /// </summary>
+    public async ValueTask<IReadOnlyList<LocalExtra>> ExtrasAsync(string seriesId, CancellationToken cancellationToken = default)
+    {
+        await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        if (!_showFolders.TryGetValue(seriesId, out string? folder) || !Directory.Exists(folder))
+        {
+            return [];
+        }
+
+        HashSet<string> extensions = new(_options.Extensions, StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, bool> ignored = new(StringComparer.OrdinalIgnoreCase);
+        List<FileInfo> files = [.. new DirectoryInfo(folder)
+            .EnumerateFiles("*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true })
+            .Where(file => extensions.Contains(file.Extension) && !LocalNaming.IsResourceFork(file.Name)
+                && !InIgnoredFolder(folder, file.DirectoryName, ignored)
+                && (LocalNaming.IsExtraFile(file.Name) || InExtrasFolder(folder, file)))
+            .OrderBy(file => file.FullName, StringComparer.OrdinalIgnoreCase)];
+        if (files.Count == 0)
+        {
+            return [];
+        }
+
+        // One probe at a time, so this and a scan never write the probe cache together.
+        IReadOnlyDictionary<string, TimeSpan> durations;
+        await _scanLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            durations = await new MediaProbe(_options, logger).ProbeAllAsync(files, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _scanLock.Release();
+        }
+
+        return [.. files.Select(file => new LocalExtra(
+            Path.GetFileNameWithoutExtension(file.Name),
+            file.FullName,
+            durations.TryGetValue(file.FullName, out TimeSpan duration) ? duration : TimeSpan.Zero))];
+    }
+
+    /// <summary>Whether a folder between the show's and the file is an extras folder.</summary>
+    private static bool InExtrasFolder(string showFolder, FileInfo file)
+    {
+        string? relative = Path.GetDirectoryName(Path.GetRelativePath(showFolder, file.FullName));
+        return !string.IsNullOrEmpty(relative)
+            && relative.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries)
+                .Any(LocalNaming.IsExtrasFolder);
+    }
 
     /// <summary>The pictures found beside a TV show, episode or movie in a local library (by its id), or null.</summary>
     public async ValueTask<LocalImages?> ImagesAsync(string id, CancellationToken cancellationToken = default)
@@ -88,6 +142,7 @@ public sealed class FileSystemMediaLibrary(
             var probe = new MediaProbe(_options, logger);
             List<MediaItem> items = [];
             Dictionary<string, LocalImages> images = new(StringComparer.Ordinal);
+            Dictionary<string, string> showFolders = new(StringComparer.Ordinal);
 
             foreach (MediaFolderOptions folder in _options.Folders)
             {
@@ -100,6 +155,11 @@ public sealed class FileSystemMediaLibrary(
                     {
                         images[id] = found;
                     }
+
+                    foreach ((string id, string showFolder) in scan.ShowFolders)
+                    {
+                        showFolders[id] = showFolder;
+                    }
                 }
                 else
                 {
@@ -109,6 +169,7 @@ public sealed class FileSystemMediaLibrary(
 
             _snapshot = items;
             _images = images;
+            _showFolders = showFolders;
             _scannedAt = _time.GetUtcNow();
             _scannedWith = scanningWith;
 
