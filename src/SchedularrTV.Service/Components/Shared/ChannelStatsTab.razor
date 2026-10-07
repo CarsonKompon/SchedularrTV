@@ -7,6 +7,7 @@
 @inject ViewingStore Store
 @inject ViewingRecorder Recorder
 @inject AudienceReader Audience
+@inject ViewerPreferences Preferences
 @inject AppRuntime Runtime
 @inject TimeProvider Clock
 @implements IDisposable
@@ -318,6 +319,120 @@ else
 
 <div class="card">
     <div class="card-head">
+        <h2>Viewer-aware scheduling</h2>
+        @if (!Current.Enabled)
+        {
+            <span class="pill pill-muted">Off</span>
+        }
+        else if (_aware is { Active: true })
+        {
+            <span class="pill pill-ok">Active</span>
+        }
+        else
+        {
+            <span class="pill pill-warn">Waiting for enough viewing</span>
+        }
+    </div>
+    <label class="check">
+        <input type="checkbox" checked="@Current.Enabled" @onchange="e => EditAware(() => Aware.Enabled = (bool)(e.Value ?? false))" />
+        <span>Bring forward the shows people watch on this channel, and rest the ones they skip</span>
+    </label>
+    <p class="hint">
+        Works where the channel already chooses between shows: among a block's shows, and among the titles of a pool that
+        rotates titles. Anchored programmes stay where they are, and no show is ever dropped entirely.
+    </p>
+
+    @if (Current.Enabled)
+    {
+        <div class="aware-strengths">
+            @foreach (ViewerAwareStrength strength in Enum.GetValues<ViewerAwareStrength>())
+            {
+                <button type="button" class="aware-strength @(Current.Strength == strength ? "on" : "")" @onclick="() => EditAware(() => Aware.Strength = strength)">
+                    <strong>@StrengthName(strength)</strong>
+                    <span>@StrengthBlurb(strength)</span>
+                </button>
+            }
+        </div>
+
+        <h3>Wait until</h3>
+        <div class="aware-thresholds">
+            <label class="field"><span>Days of history</span>
+                <input type="number" min="0" max="365" value="@Current.MinHistoryDays" @onchange="e => SetNumber(e, v => Aware.MinHistoryDays = (int)v, 0, 365)" /></label>
+            <label class="field"><span>Average daily viewers</span>
+                <input type="number" min="0" max="10000" step="0.5" value="@Current.MinAverageDailyViewers.ToString(CultureInfo.CurrentCulture)" @onchange="e => SetNumber(e, v => Aware.MinAverageDailyViewers = v, 0, 10000)" /></label>
+            <label class="field"><span>Hours watched</span>
+                <input type="number" min="0" max="100000" value="@Current.MinWatchedHours.ToString(CultureInfo.CurrentCulture)" @onchange="e => SetNumber(e, v => Aware.MinWatchedHours = v, 0, 100000)" /></label>
+        </div>
+        <div class="aware-thresholds">
+            <label class="field"><span>Judge on the last (days)</span>
+                <input type="number" min="1" max="3650" value="@Current.LookbackDays" @onchange="e => SetNumber(e, v => Aware.LookbackDays = (int)v, 1, 3650)" /></label>
+            <label class="field"><span>Judge a show after (minutes aired)</span>
+                <input type="number" min="1" max="100000" value="@Current.MinShowMinutes" @onchange="e => SetNumber(e, v => Aware.MinShowMinutes = (int)v, 1, 100000)" /></label>
+            <span></span>
+        </div>
+
+        @if (_aware is { } aware)
+        {
+            <ul class="aware-checks">
+                @foreach (ViewerAwareCheck check in aware.Checks)
+                {
+                    <li class="@(check.Met ? "met" : "")">
+                        <Icon Name="@(check.Met ? "check-circle" : "clock")" Size="15" />
+                        <span>@check.Label</span>
+                        <strong>@check.Current</strong>
+                        <span class="muted">of @check.Needed</span>
+                    </li>
+                }
+            </ul>
+
+            List<ShowFactor> forward = [.. aware.Shows.Where(show => show.Factor > 1 + ViewerWeights.Neutral)];
+            List<ShowFactor> resting = [.. aware.Shows.Where(show => show.Factor < 1 - ViewerWeights.Neutral).OrderBy(show => show.Factor)];
+            @if (forward.Count + resting.Count == 0)
+            {
+                <p class="muted">@NoneStandOut(aware)</p>
+            }
+            else
+            {
+                <p class="hint">
+                    @(aware.Active ? "In effect from the next schedule build:" : "Once the thresholds are met, this is what would change:")
+                    on average @Percent(aware.ChannelShare) of a show's airtime is watched here.
+                </p>
+                <div class="stats-split">
+                    <div>
+                        <h3>Brought forward</h3>
+                        @if (forward.Count == 0)
+                        {
+                            <p class="muted">None yet.</p>
+                        }
+                        <ul class="aware-shows">
+                            @foreach (ShowFactor show in forward)
+                            {
+                                <li><span class="rank-name">@show.Show</span><span class="muted">@Percent(show.Share) watched</span><span class="aware-up">@Times(show.Factor)</span></li>
+                            }
+                        </ul>
+                    </div>
+                    <div>
+                        <h3>Resting</h3>
+                        @if (resting.Count == 0)
+                        {
+                            <p class="muted">None yet.</p>
+                        }
+                        <ul class="aware-shows">
+                            @foreach (ShowFactor show in resting)
+                            {
+                                <li><span class="rank-name">@show.Show</span><span class="muted">@Percent(show.Share) watched</span><span class="aware-down">@Times(show.Factor)</span></li>
+                            }
+                        </ul>
+                    </div>
+                </div>
+            }
+        }
+        <p class="hint" style="margin-top:10px;">Save the channel to apply changes here; schedules use them from their next build.</p>
+    }
+</div>
+
+<div class="card">
+    <div class="card-head">
         <h2>Where viewers come from</h2>
         <span class="muted">Shared by every channel</span>
     </div>
@@ -387,6 +502,50 @@ else
     /// <summary>The channel's time zone (its own, or the scheduler's), for days and hours.</summary>
     [Parameter] public string? TimeZoneId { get; set; }
 
+    /// <summary>Raised when the channel's own settings (viewer-aware scheduling) change, so the page can save them.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private ViewerAwareStatus? _aware;
+
+    private static readonly ViewerAwareConfig AwareDefaults = new();
+
+    /// <summary>The channel's settings for reading; only an edit adds them to the channel.</summary>
+    private ViewerAwareConfig Current => Channel.ViewerAware ?? AwareDefaults;
+
+    /// <summary>The channel's settings for an edit.</summary>
+    private ViewerAwareConfig Aware => Channel.ViewerAware ??= new ViewerAwareConfig();
+
+    private Task SetNumber(ChangeEventArgs e, Action<double> set, double min, double max) =>
+        double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.CurrentCulture, out double value)
+            ? EditAware(() => set(Math.Clamp(value, min, max)))
+            : Task.CompletedTask;
+
+    private async Task EditAware(Action change)
+    {
+        change();
+        _aware = Preferences.Status(Channel, fresh: true);
+        await Changed.InvokeAsync();
+    }
+
+    private static string StrengthName(ViewerAwareStrength strength) => strength switch
+    {
+        ViewerAwareStrength.Gentle => "Gentle",
+        ViewerAwareStrength.Strong => "Strong",
+        _ => "Balanced"
+    };
+
+    private static string StrengthBlurb(ViewerAwareStrength strength)
+    {
+        (double boost, double rest) = ViewerPreferences.Bounds(strength);
+        return $"Favourites up to {boost:0.#}× as often; skipped shows down to {rest:0%} as often.";
+    }
+
+    private string NoneStandOut(ViewerAwareStatus aware) => aware.Shows.Count == 0
+        ? $"No show has aired {Current.MinShowMinutes} minutes in the last {Current.LookbackDays} days yet, so none can be judged."
+        : "No show stands out from the rest yet.";
+
+    private static string Times(double factor) => $"×{factor.ToString("0.0#", CultureInfo.CurrentCulture)}";
+
     // Drawing sizes: the full-width chart, and those that sit two to a row.
     private const int WideWidth = 960;
     private const int ChartWidth = 480;
@@ -440,6 +599,7 @@ else
     {
         TimeZoneInfo zone = string.IsNullOrWhiteSpace(TimeZoneId) ? TimeZoneInfo.Local : SchedularrTV.Core.Scheduling.SchedulingEngine.ResolveTimeZone(TimeZoneId);
         _report = ChannelStats.Build(Store, Channel.Id, _period, Clock.GetUtcNow(), zone);
+        _aware = Preferences.Status(Channel, fresh: true);
     }
 
     private void OnSampled() => _ = InvokeAsync(() =>

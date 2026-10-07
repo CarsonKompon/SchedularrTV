@@ -155,6 +155,9 @@ public sealed class ChannelConfig
     /// <summary>Places breaks inside a programme rather than only after it.</summary>
     public MidRollConfig? MidRoll { get; set; }
 
+    /// <summary>Brings forward the shows people watch on this channel and rests the ones they skip.</summary>
+    public ViewerAwareConfig? ViewerAware { get; set; }
+
     /// <summary>Fallback rotation used whenever no anchor or block is active (spec 2.1 Base Flow).</summary>
     public ContentSelector? BaseRotation { get; set; }
 

@@ -166,7 +166,11 @@ public static class SchedulerHost
             sp.GetRequiredService<IMediaLibrary>(),
             sp.GetRequiredService<IPlaybackStateStore>(),
             sp.GetRequiredService<ILoggerFactory>(),
-            () => [.. sp.GetServices<PlannerFeature>()]));
+            () => [.. sp.GetServices<PlannerFeature>()])
+        {
+            // Viewer-aware scheduling reads the viewing history (see Stats below).
+            ViewerPreference = sp.GetRequiredService<SchedularrTV.Service.Stats.ViewerPreferences>()
+        });
 
         builder.Services.AddSingleton<ScheduleCoordinator>();
         builder.Services.AddSingleton<SchedularrTV.Plugins.Playout.IScheduleRepublisher, ScheduleRepublisher>();
@@ -177,6 +181,7 @@ public static class SchedulerHost
         // Viewing stats: who's watching each channel (Jellyfin, Plex, ErsatzTV direct), noted every minute.
         builder.Services.Configure<SchedularrTV.Service.Stats.StatsOptions>(builder.Configuration.GetSection(SchedularrTV.Service.Stats.StatsOptions.SectionName));
         builder.Services.AddSingleton(new SchedularrTV.Service.Stats.ViewingStore(Path.Combine(dataDirectory, "stats", "viewing.db")));
+        builder.Services.AddSingleton<SchedularrTV.Service.Stats.ViewerPreferences>();
         builder.Services.AddSingleton<SchedularrTV.Service.Stats.AudienceReader>();
         builder.Services.AddSingleton<SchedularrTV.Service.Stats.ViewingRecorder>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<SchedularrTV.Service.Stats.ViewingRecorder>());

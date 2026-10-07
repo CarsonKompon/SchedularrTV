@@ -38,6 +38,9 @@ public sealed class SchedulingEngine(
     // Settable so a builder can switch features as plugins are turned on or off between builds.
     internal EngineModules Modules { get; set; } = EngineModules.Default;
 
+    /// <summary>What viewers watch, for channels with viewer-aware scheduling; null leaves every channel as configured.</summary>
+    public IViewerPreference? ViewerPreference { get; set; }
+
     public async Task<ChannelSchedule> BuildAsync(
         SchedulerConfig config,
         ChannelConfig channel,
@@ -56,7 +59,11 @@ public sealed class SchedulingEngine(
 
         TimeZoneInfo timeZone = ResolveTimeZone(
             string.IsNullOrWhiteSpace(channel.TimeZone) ? config.Settings.TimeZone : channel.TimeZone);
-        var session = new ScheduleBuildSession(config, library, stateStore, channel, timeZone, start) { Overlays = Modules.Overlays };
+        var session = new ScheduleBuildSession(config, library, stateStore, channel, timeZone, start)
+        {
+            Overlays = Modules.Overlays,
+            TitleFactors = channel.ViewerAware is { Enabled: true } ? ViewerPreference?.TitleFactors(channel) : null
+        };
 
         List<ScheduleDiagnostic> diagnostics = [];
         List<ScheduleEntry> entries = [];
@@ -565,6 +572,15 @@ public sealed class SchedulingEngine(
         string rotationKey = activeBlock?.Block.Name ?? "__base__";
         rotationIndex.TryGetValue(rotationKey, out int offset);
 
+        if (selectors.Count > 1 && session.TitleFactors is { Count: > 0 })
+        {
+            ProgramPick? weighted = await TakeWeightedAsync(session, selectors, rotationKey, offset, gap, cancellationToken).ConfigureAwait(false);
+            if (weighted is not null)
+            {
+                return weighted;
+            }
+        }
+
         // Round-robin across the pool's selectors so multi-show blocks interleave rather than
         // draining the first show completely.
         for (int i = 0; i < selectors.Count; i++)
@@ -582,6 +598,66 @@ public sealed class SchedulingEngine(
                 rotationIndex[rotationKey] = (offset + i + 1) % selectors.Count;
                 return new ProgramPick(chosen, sequence, selector);
             }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Viewer-aware turns among a block's shows: a smooth weighted round-robin, each show weighted by its viewer
+    /// factor (the mean over its titles), so a favourite comes round more often but still spread out, and a skipped
+    /// show still gets the odd turn. Null when no show here moves, or none has anything that fits, so the ordinary
+    /// round-robin decides.
+    /// </summary>
+    private static async ValueTask<ProgramPick?> TakeWeightedAsync(
+        ScheduleBuildSession session,
+        IReadOnlyList<ContentSelector> selectors,
+        string rotationKey,
+        int offset,
+        TimeSpan gap,
+        CancellationToken cancellationToken)
+    {
+        double[] weights = new double[selectors.Count];
+        bool moves = false;
+        for (int i = 0; i < selectors.Count; i++)
+        {
+            IReadOnlySet<string> titles = await session.TitlesOfAsync(selectors[i], cancellationToken).ConfigureAwait(false);
+            weights[i] = titles.Count == 0 ? 1 : titles.Average(title => ViewerWeights.Of(session.TitleFactors, title));
+            moves |= Math.Abs(weights[i] - 1) > ViewerWeights.Neutral;
+        }
+
+        if (!moves)
+        {
+            return null;
+        }
+
+        if (!session.SelectorCredits.TryGetValue(rotationKey, out double[]? credits) || credits.Length != selectors.Count)
+        {
+            credits = new double[selectors.Count];
+            session.SelectorCredits[rotationKey] = credits;
+        }
+
+        double total = weights.Sum();
+        double[] earned = [.. credits.Select((credit, i) => credit + weights[i])];
+
+        // Highest credit first; ties go in the ordinary round-robin order so the result stays deterministic.
+        IEnumerable<int> order = Enumerable.Range(0, selectors.Count)
+            .OrderByDescending(i => earned[i])
+            .ThenBy(i => (i - offset + selectors.Count) % selectors.Count);
+
+        foreach (int i in order)
+        {
+            ContentSelector selector = selectors[i];
+            MediaSequence? sequence = await session.GetSequenceAsync(selector, "shared", cancellationToken).ConfigureAwait(false);
+            if (sequence is null || sequence.IsEmpty
+                || !sequence.TryTake(item => item.Duration > TimeSpan.Zero && item.Duration <= gap, out MediaItem chosen))
+            {
+                continue;
+            }
+
+            Array.Copy(earned, credits, credits.Length);
+            credits[i] -= total;
+            return new ProgramPick(chosen, sequence, selector);
         }
 
         return null;

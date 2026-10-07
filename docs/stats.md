@@ -37,6 +37,44 @@ History begins when SchedularrTV starts recording; there's no record from before
 
 Choose the period at the top: 24 hours, 7, 30 or 90 days, a year, or everything.
 
+## Viewer-aware scheduling
+
+Switch it on from a channel's Stats tab (it's saved with the channel, as `viewer_aware`). Shows people watch on the
+channel come round more often; shows they skip are rested.
+
+It works wherever the channel already chooses between shows:
+
+- **Among a block's shows.** A block with several shows normally gives each one turn in order. With viewer-aware
+  scheduling, the turns are weighted, still spread out, so a favourite isn't played back to back.
+- **Among the titles of a pool that rotates titles.** Each title's weight, including any weight you set, is scaled
+  by its factor.
+
+Anchored programmes stay where they are, and a show is never dropped entirely.
+
+**How shows are judged.** Each show's factor compares the share of its airtime someone watched with the channel's
+average share. A show watched twice as much as average earns more turns; a show nobody watches earns fewer. A show
+that has aired only briefly stays near its usual share, and the longer it airs, the more its own figures count. The
+strength sets the limits:
+
+| Strength | Favourites, at most | Skipped shows, at least |
+| --- | --- | --- |
+| Gentle | 1.5× as often | 67% as often |
+| Balanced (default) | 2.5× | 40% |
+| Strong | 4× | 20% |
+
+**Thresholds.** Nothing changes until the channel passes all of these, over the period it judges on (30 days by
+default):
+
+| Threshold | Default |
+| --- | --- |
+| Days of history | 7 |
+| Average daily viewers (different viewers a day) | 1 |
+| Hours watched | 10 |
+| Minutes a show must air before it's judged | 60 |
+
+The tab shows where the channel stands against each threshold, and which shows are brought forward or resting, with
+their factors. Changes apply from the next schedule build after the channel is saved.
+
 ## Settings
 
 These live under **Where viewers come from** on any channel's Stats tab and apply to every channel (`Stats` in

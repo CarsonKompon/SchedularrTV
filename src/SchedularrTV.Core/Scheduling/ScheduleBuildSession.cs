@@ -32,6 +32,12 @@ internal sealed class ScheduleBuildSession(
 
     public int InterstitialShowsInSlot { get; set; }
 
+    /// <summary>Viewer-aware scheduling's factors by show title for this build; null when it isn't in effect.</summary>
+    public IReadOnlyDictionary<string, double>? TitleFactors { get; init; }
+
+    /// <summary>Each block's turn credits among its shows, while viewer-aware scheduling weights them.</summary>
+    public Dictionary<string, double[]> SelectorCredits { get; } = new(StringComparer.Ordinal);
+
     /// <summary>The features that lay slots over the timeline (Archive Follow). Set by the engine.</summary>
     public IReadOnlyList<ITimelineContributor> Overlays { get; init; } = EngineModules.Default.Overlays;
 
@@ -88,6 +94,19 @@ internal sealed class ScheduleBuildSession(
     {
         (Dictionary<string, TitleRotation.TitleRule> rules, List<string> order) =
             TitleRotation.RulesFrom(ResolveIncludes(selector, 0));
+
+        // Viewer-aware scheduling: favourites earn more turns in the rotation, skipped shows fewer. Every title is
+        // rescaled together (so an untouched title keeps its share relative to the others), and only when some
+        // title in this pool actually moves, so pools viewers haven't judged are left exactly as they were.
+        string[] titles = [.. items.Select(TitleRotation.TitleOf).Distinct(StringComparer.OrdinalIgnoreCase)];
+        if (ViewerWeights.Moves(TitleFactors, titles))
+        {
+            foreach (string title in titles)
+            {
+                rules.TryGetValue(title, out TitleRotation.TitleRule? rule);
+                rules[title] = new TitleRotation.TitleRule(rule?.Order, ViewerWeights.Weight(rule?.Weight ?? 1, ViewerWeights.Of(TitleFactors, title)));
+            }
+        }
 
         return MediaSequence.CreateRotation(
             key,
@@ -172,7 +191,7 @@ internal sealed class ScheduleBuildSession(
     }
 
     /// <summary>Every title a selector could play, keyed by the query so two rules sharing a pool cost one search.</summary>
-    private async ValueTask<IReadOnlySet<string>> TitlesOfAsync(ContentSelector selector, CancellationToken cancellationToken)
+    public async ValueTask<IReadOnlySet<string>> TitlesOfAsync(ContentSelector selector, CancellationToken cancellationToken)
     {
         QueryExpression expression;
         try

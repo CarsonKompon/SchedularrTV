@@ -52,6 +52,13 @@ public sealed class ScheduleBuilder
         _liveFeatures = features;
     }
 
+    /// <summary>What viewers watch, for channels with viewer-aware scheduling switched on.</summary>
+    public IViewerPreference? ViewerPreference
+    {
+        get => _engine.ViewerPreference;
+        set => _engine.ViewerPreference = value;
+    }
+
     /// <summary>The planner features this builder runs.</summary>
     public IReadOnlyList<PlannerFeature> Features
     {
