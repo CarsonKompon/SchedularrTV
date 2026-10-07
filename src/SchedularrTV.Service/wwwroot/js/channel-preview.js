@@ -27,8 +27,7 @@ function explain(number, code, body) {
     if (code === 502 || code === 504) {
         return `${body || 'ErsatzTV isn\'t answering.'} Check that it's running (App settings → ErsatzTV Next) and that the streaming port is right.`;
     }
-    return `The channel didn't start (${code}). The scheduler's log has ErsatzTV's output saying why, `
-        + `for example a channel.json it refuses or a media file it can't open.${detail}`;
+    return `The channel didn't start (${code}). ${detail}`;
 }
 
 export async function start(video, url, number, status) {
