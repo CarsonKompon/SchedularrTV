@@ -133,7 +133,14 @@ public sealed class NewsCasts(NewsSources sources, NewsVoice voice, NewsSettings
         content.Theme = NewsTheme.NewsDesk;
         content.AccentColor = "";
         content.ShowSidebar = content.ShowTicker = content.ShowImages = content.TwelveHourClock = false;
-        content.TickerMessage = null;
+        content.TickerMessage = content.HighlightColor = content.LiveLabel = null;
+        content.Font = NewsFont.Theme;
+        content.TextScale = 1;
+        content.TickerSize = content.SidePanelSize = NewsSize.Normal;
+        content.TickerSpeed = 0;
+        content.ScanLines = content.ShowClock = content.MapDrift = content.MapMarker = false;
+        content.MapStyle = MapStyle.Auto;
+        content.MapRadarOpacity = 0;
         content.Name = speak ? show.Name : "";
         string fingerprint = JsonSerializer.Serialize(content, FingerprintJson) + (speak ? "|voiced" : "");
 
@@ -324,11 +331,16 @@ public sealed class NewsCasts(NewsSources sources, NewsVoice voice, NewsSettings
             : Task.FromResult(Array.Empty<LotteryDraw?>());
 
         string? key = settings.TomTomKey;
-        Task<IReadOnlyList<TrafficIncident>?> incidents = Wants(NewsDesk.Map) && show.HasPlace && key is not null
-            ? Try("traffic", () => sources.IncidentsAsync(key, show.Latitude, show.Longitude, show.MapZoom, cancellationToken))
+        bool mapping = Wants(NewsDesk.Map) && show.HasPlace;
+        Task<IReadOnlyList<TrafficIncident>?> incidents = mapping && key is not null && show.MapIncidents
+            ? Try("traffic incidents", () => sources.IncidentsAsync(key, show.Latitude, show.Longitude, show.MapZoom, cancellationToken))
             : Task.FromResult<IReadOnlyList<TrafficIncident>?>(null);
 
-        await Task.WhenAll(feeds, weather, quotes, scores, lottery, incidents).ConfigureAwait(false);
+        Task<IReadOnlyList<NewsSources.RadarFrame>?> radar = mapping && show.MapRadar
+            ? Try("the radar", () => sources.RadarFramesAsync(cancellationToken))
+            : Task.FromResult<IReadOnlyList<NewsSources.RadarFrame>?>(null);
+
+        await Task.WhenAll(feeds, weather, quotes, scores, lottery, incidents, radar).ConfigureAwait(false);
 
         if ((Wants(NewsDesk.Weather) || Wants(NewsDesk.Map)) && !show.HasPlace)
         {
@@ -340,8 +352,18 @@ public sealed class NewsCasts(NewsSources sources, NewsVoice voice, NewsSettings
             problems.Add("Add a news feed (an RSS or Atom address) for stories.");
         }
 
-        MapReport? map = Wants(NewsDesk.Map) && show.HasPlace
-            ? new MapReport(show.Location, show.Latitude, show.Longitude, show.MapZoom, show.MapRadar, key is not null, (await incidents.ConfigureAwait(false)) ?? [])
+        IReadOnlyList<NewsSources.RadarFrame> frames = (await radar.ConfigureAwait(false)) ?? [];
+        MapReport? map = mapping
+            ? new MapReport(
+                show.Location,
+                show.Latitude,
+                show.Longitude,
+                show.MapZoom,
+                show.MapRadar && frames.Count > 0,
+                show.WantsTraffic(key is not null),
+                show.MapTrafficFlow && key is not null,
+                [.. ((await incidents.ConfigureAwait(false)) ?? []).Take(show.MapIncidentCount)],
+                [.. (show.MapRadarLoop ? frames : frames.TakeLast(1)).Select(frame => frame.Time)])
             : null;
 
         return new NewsSnapshot(
@@ -391,7 +413,7 @@ public sealed class NewsCasts(NewsSources sources, NewsVoice voice, NewsSettings
     private static string Reason(Exception ex) => ex switch
     {
         HttpRequestException { StatusCode: { } code } => $"the server answered {(int)code} {code}",
-        TaskCanceledException => "it took too long",
+        TaskCanceledException => "it didn't answer in time (tried twice)",
         System.Xml.XmlException => "it isn't an RSS or Atom feed",
         _ => ex.GetBaseException().Message
     };

@@ -23,17 +23,24 @@ public sealed class NewsTiles(NewsSources sources, NewsSettings settings, IHttpC
 
         try
         {
-            byte[]? image = layer switch
+            // radar-<time>: the radar picture taken then (Unix seconds); plain "radar" is the latest.
+            long? radarTime = layer.StartsWith("radar-", StringComparison.Ordinal) && long.TryParse(layer[6..], out long time) ? time : null;
+            byte[]? image = null;
+            if (BaseLayers.TryGetValue(layer, out string? address))
             {
-                "osm" => await StreetsAsync(z, x, y, cancellationToken).ConfigureAwait(false),
-                "radar" => await RemembersAsync($"radar|{z}/{x}/{y}", async () =>
-                    (await sources.RadarTemplateAsync(cancellationToken).ConfigureAwait(false))
-                        .Replace("{z}", $"{z}").Replace("{x}", $"{x}").Replace("{y}", $"{y}"), cancellationToken).ConfigureAwait(false),
-                "traffic" when settings.TomTomKey is { } key => await RemembersAsync($"traffic|{z}/{x}/{y}", () => Task.FromResult(
-                    $"https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?tileSize=256&key={Uri.EscapeDataString(key)}"), cancellationToken).ConfigureAwait(false),
-                _ => null
-            };
-            return image is null ? Results.NotFound() : Results.File(image, "image/png");
+                image = await BaseAsync(layer, address, z, x, y, cancellationToken).ConfigureAwait(false);
+            }
+            else if (layer == "radar" || radarTime is not null)
+            {
+                image = await RemembersAsync($"radar|{radarTime}|{z}/{x}/{y}", async () =>
+                    Fill(await sources.RadarTemplateAsync(radarTime, cancellationToken).ConfigureAwait(false), z, x, y), cancellationToken).ConfigureAwait(false);
+            }
+            else if (layer == "traffic" && settings.TomTomKey is { } key)
+            {
+                image = await RemembersAsync($"traffic|{z}/{x}/{y}", () => Task.FromResult(
+                    $"https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?tileSize=256&key={Uri.EscapeDataString(key)}"), cancellationToken).ConfigureAwait(false);
+            }
+            return image is null ? Results.NotFound() : Results.File(image, image is [0xFF, 0xD8, ..] ? "image/jpeg" : "image/png");
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or IOException or System.Text.Json.JsonException)
         {
@@ -42,16 +49,28 @@ public sealed class NewsTiles(NewsSources sources, NewsSettings settings, IHttpC
         }
     }
 
-    private async Task<byte[]> StreetsAsync(int z, int x, int y, CancellationToken cancellationToken)
+    /// <summary>The maps drawn under everything, by name, with {z}/{x}/{y} to fill in. Each one's terms ask for its credit on screen.</summary>
+    public static readonly IReadOnlyDictionary<string, string> BaseLayers = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        string path = Path.Combine(_folder, "osm", $"{z}", $"{x}", $"{y}.png");
+        ["osm"] = "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        ["light"] = "https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+        ["dark"] = "https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+        ["satellite"] = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+    };
+
+    private static string Fill(string template, int z, int x, int y) =>
+        template.Replace("{z}", $"{z}", StringComparison.Ordinal).Replace("{x}", $"{x}", StringComparison.Ordinal).Replace("{y}", $"{y}", StringComparison.Ordinal);
+
+    private async Task<byte[]> BaseAsync(string layer, string template, int z, int x, int y, CancellationToken cancellationToken)
+    {
+        string path = Path.Combine(_folder, layer, $"{z}", $"{x}", $"{y}.tile");
         if (File.Exists(path) && DateTime.UtcNow - File.GetLastWriteTimeUtc(path) < TimeSpan.FromDays(7))
         {
             return await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
         }
 
         using HttpClient http = httpClients.CreateClient(NewsSources.ClientName);
-        byte[] image = await http.GetByteArrayAsync($"https://tile.openstreetmap.org/{z}/{x}/{y}.png", cancellationToken).ConfigureAwait(false);
+        byte[] image = await http.GetByteArrayAsync(Fill(template, z, x, y), cancellationToken).ConfigureAwait(false);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         await File.WriteAllBytesAsync(path, image, cancellationToken).ConfigureAwait(false);
         return image;

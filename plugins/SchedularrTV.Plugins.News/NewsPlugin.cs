@@ -39,7 +39,26 @@ public sealed class NewsPlugin : IPlugin, IPluginEndpoints
             http.Timeout = TimeSpan.FromSeconds(20);
             // OpenStreetMap's tile policy and Yahoo both want to know who's asking.
             http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (compatible; SchedularrTV/1.0; +https://github.com/) news-plugin");
-            http.DefaultRequestHeaders.Accept.ParseAdd("application/rss+xml, application/atom+xml, application/xml, application/json, image/png, */*;q=0.8");
+            http.DefaultRequestHeaders.Accept.ParseAdd("application/json, image/png, image/jpeg, */*;q=0.8");
+        }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            AutomaticDecompression = System.Net.DecompressionMethods.All,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5)
+        });
+
+        // Feeds and pages: asked for the way a browser asks (some news sites' networks stall anything else).
+        services.AddHttpClient(NewsSources.PageClientName, http =>
+        {
+            http.Timeout = TimeSpan.FromSeconds(25);
+            http.DefaultRequestVersion = System.Net.HttpVersion.Version20;
+            http.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36");
+            http.DefaultRequestHeaders.Accept.ParseAdd("application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9, text/html;q=0.8, */*;q=0.7");
+            http.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-CA,en;q=0.9");
+        }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            AutomaticDecompression = System.Net.DecompressionMethods.All,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5)
         });
         services.AddSingleton(sp =>
         {

@@ -18,7 +18,9 @@ public sealed record NewsPageConfig(
     bool TwelveHourClock,
     IReadOnlyList<string> Desks,
     bool Traffic,
-    bool Preview)
+    bool Preview,
+    NewsLookConfig Look,
+    NewsMapConfig Map)
 {
     public static NewsPageConfig For(NewsShow show, bool traffic, bool preview) => new(
         show.Id,
@@ -34,8 +36,47 @@ public sealed record NewsPageConfig(
         show.TwelveHourClock,
         [.. show.Desks.Select(desk => desk.ToString().ToLowerInvariant())],
         traffic,
-        preview);
+        preview,
+        new NewsLookConfig(
+            show.Font.ToString(),
+            show.TextScale,
+            Factor(show.TickerSize),
+            show.TickerSpeed,
+            Factor(show.SidePanelSize),
+            show.ScanLines,
+            NewsStore.IsColour(show.HighlightColor) ? show.HighlightColor : null,
+            show.ShowClock,
+            show.LiveLabel),
+        new NewsMapConfig(
+            show.MapStyle.ToString(),
+            show.MapRadarOpacity,
+            show.MapDrift,
+            show.MapMarker));
+
+    /// <summary>Small, normal and large as a scale.</summary>
+    private static double Factor(NewsSize size) => size switch
+    {
+        NewsSize.Small => 0.8,
+        NewsSize.Large => 1.25,
+        _ => 1.0
+    };
 }
+
+/// <summary>The show's own touches on its look: lettering, sizes, scan lines, colours.</summary>
+/// <param name="LiveLabel">The word in the corner; empty to leave it out, null for the look's own.</param>
+public sealed record NewsLookConfig(
+    string Font,
+    double TextScale,
+    double TickerSize,
+    int TickerSpeed,
+    double SideSize,
+    bool ScanLines,
+    string? Highlight,
+    bool ShowClock,
+    string? LiveLabel);
+
+/// <summary>How the map is drawn: what it's drawn on, how strong the radar is, and its movement and marker.</summary>
+public sealed record NewsMapConfig(string Style, double RadarOpacity, bool Drift, bool Marker);
 
 /// <summary>The news page: one self-contained HTML file (in the plugin), every look in it.</summary>
 public static class NewsPage

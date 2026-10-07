@@ -24,17 +24,40 @@ public sealed class NewsSources(IHttpClientFactory httpClients, TimeProvider clo
 {
     public const string ClientName = "news";
 
+    /// <summary>
+    /// For feeds and web pages: asks like a browser does (its User-Agent, languages, compressed answers), since some
+    /// sites' networks (CBC's, for one) hold a request that doesn't look like one until it times out.
+    /// </summary>
+    public const string PageClientName = "news-pages";
+
+    /// <summary>How long a last good answer is used in place of one that fails.</summary>
+    private static readonly TimeSpan StaleFor = TimeSpan.FromHours(6);
+
     private readonly ConcurrentDictionary<string, (DateTimeOffset At, object Value)> _cache = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// The answer kept for <paramref name="key"/> if it's fresh, else a new one; when fetching fails and there's an
+    /// answer from the last few hours, that's used instead, so a feed that's briefly slow doesn't drop out.
+    /// </summary>
     private async Task<T> CachedAsync<T>(string key, TimeSpan life, Func<Task<T>> fetch) where T : notnull
     {
         DateTimeOffset now = clock.GetUtcNow();
-        if (_cache.TryGetValue(key, out var cached) && now - cached.At < life && cached.Value is T value)
+        bool have = _cache.TryGetValue(key, out var cached) && cached.Value is T;
+        if (have && now - cached.At < life)
         {
-            return value;
+            return (T)cached.Value;
         }
 
-        T fresh = await fetch().ConfigureAwait(false);
+        T fresh;
+        try
+        {
+            fresh = await fetch().ConfigureAwait(false);
+        }
+        catch (Exception) when (have && now - cached.At < StaleFor)
+        {
+            return (T)cached.Value;
+        }
+
         _cache[key] = (now, fresh);
 
         // Old answers don't pile up.
@@ -60,11 +83,30 @@ public sealed class NewsSources(IHttpClientFactory httpClients, TimeProvider clo
 
     public Task<FeedContent> FeedAsync(NewsFeed feed, CancellationToken cancellationToken) =>
         CachedAsync($"feed|{feed.Url}|{feed.Label}", TimeSpan.FromMinutes(4), async () =>
+            FeedReader.Parse(await PageAsync(feed.Url, cancellationToken).ConfigureAwait(false), feed.Label));
+
+    private static bool Retryable(Exception ex) =>
+        ex is TaskCanceledException || (ex is HttpRequestException failed && (failed.StatusCode is null || (int)failed.StatusCode >= 500));
+
+    /// <summary>A page or feed's text, asked for as a browser would; tried a second time if the first try is too slow.</summary>
+    private async Task<string> PageAsync(string url, CancellationToken cancellationToken)
+    {
+        using HttpClient http = httpClients.CreateClient(PageClientName);
+        for (int attempt = 1; ; attempt++)
         {
-            using HttpClient http = httpClients.CreateClient(ClientName);
-            string xml = await http.GetStringAsync(feed.Url, cancellationToken).ConfigureAwait(false);
-            return FeedReader.Parse(xml, feed.Label);
-        });
+            try
+            {
+                using HttpResponseMessage response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+                response.EnsureSuccessStatusCode();
+                return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (attempt == 1 && !cancellationToken.IsCancellationRequested && Retryable(ex))
+            {
+                // A dropped connection, a time-out or a server error: once more after a moment.
+                await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
 
     // --- Places and weather --------------------------------------------------------------------------------------
 
@@ -130,8 +172,13 @@ public sealed class NewsSources(IHttpClientFactory httpClients, TimeProvider clo
     public Task<LotteryDraw> LotteryAsync(LotteryGames.Game game, CancellationToken cancellationToken) =>
         CachedAsync("lottery|" + game.Id, TimeSpan.FromMinutes(30), async () =>
         {
+            if (game.Source == LotterySource.Wclc)
+            {
+                return Lottery.ReadWclc(await PageAsync(game.Address, cancellationToken).ConfigureAwait(false), game);
+            }
+
             using JsonDocument json = await JsonAsync(
-                $"https://data.ny.gov/resource/{game.Dataset}.json?$order=draw_date%20DESC&$limit=1", cancellationToken).ConfigureAwait(false);
+                $"https://data.ny.gov/resource/{game.Address}.json?$order=draw_date%20DESC&$limit=1", cancellationToken).ConfigureAwait(false);
             JsonElement row = json.RootElement.ValueKind == JsonValueKind.Array && json.RootElement.GetArrayLength() > 0
                 ? json.RootElement[0]
                 : throw new InvalidOperationException($"No {game.Name} results.");
@@ -140,21 +187,40 @@ public sealed class NewsSources(IHttpClientFactory httpClients, TimeProvider clo
 
     // --- Radar and traffic ---------------------------------------------------------------------------------------
 
-    /// <summary>The latest radar picture's tile address, with {z}/{x}/{y} to fill in; null when there's none.</summary>
-    public Task<string> RadarTemplateAsync(CancellationToken cancellationToken) =>
+    /// <summary>One radar picture: when it was taken (Unix seconds) and its tile address, with {z}/{x}/{y} to fill in.</summary>
+    public sealed record RadarFrame(long Time, string Template);
+
+    /// <summary>The radar pictures of the last hour or so, oldest first.</summary>
+    public Task<IReadOnlyList<RadarFrame>> RadarFramesAsync(CancellationToken cancellationToken) =>
         CachedAsync("radar", TimeSpan.FromMinutes(5), async () =>
         {
             using JsonDocument json = await JsonAsync("https://api.rainviewer.com/public/weather-maps.json", cancellationToken).ConfigureAwait(false);
             string host = Str(json.RootElement, "host") ?? "https://tilecache.rainviewer.com";
-            JsonElement past = json.RootElement.GetProperty("radar").GetProperty("past");
-            string path = Str(past[past.GetArrayLength() - 1], "path") ?? throw new InvalidOperationException("No radar picture.");
+            JsonElement past = Path(json.RootElement, "radar", "past");
+            if (past.ValueKind != JsonValueKind.Array || past.GetArrayLength() == 0)
+            {
+                throw new InvalidOperationException("No radar pictures.");
+            }
+
             // 256 px tiles, colour scheme 2 (universal blue), smoothed, with snow shown.
-            return $"{host}{path}/256/{{z}}/{{x}}/{{y}}/2/1_1.png";
+            IReadOnlyList<RadarFrame> frames = [.. past.EnumerateArray()
+                .Where(frame => Str(frame, "path") is not null)
+                .Select(frame => new RadarFrame((long)(Num(frame, "time") ?? 0), $"{host}{Str(frame, "path")}/256/{{z}}/{{x}}/{{y}}/2/1_1.png"))
+                .TakeLast(7)];
+            return frames;
         });
+
+    /// <summary>The tile address of the radar picture taken at <paramref name="time"/> (Unix seconds), or the latest one.</summary>
+    public async Task<string> RadarTemplateAsync(long? time, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<RadarFrame> frames = await RadarFramesAsync(cancellationToken).ConfigureAwait(false);
+        return (frames.FirstOrDefault(frame => frame.Time == time) ?? frames[^1]).Template;
+    }
 
     public Task<IReadOnlyList<TrafficIncident>> IncidentsAsync(string key, double latitude, double longitude, int zoom, CancellationToken cancellationToken)
     {
-        (double west, double south, double east, double north) = MapMath.Bounds(latitude, longitude, zoom, 1280, 720);
+        // TomTom answers 400 for an area over 10,000 km², which a city at zoom 10 already is: the middle of the picture is asked about.
+        (double west, double south, double east, double north) = MapMath.Within(MapMath.Bounds(latitude, longitude, zoom, 1280, 720), 9_000);
         string bbox = string.Join(',', new[] { west, south, east, north }.Select(value => value.ToString("0.#####", CultureInfo.InvariantCulture)));
         const string fields = "{incidents{type,geometry{type,coordinates},properties{iconCategory,magnitudeOfDelay,events{description},from,to,delay,roadNumbers}}}";
         string url = $"https://api.tomtom.com/traffic/services/5/incidentDetails?key={Uri.EscapeDataString(key)}&bbox={bbox}"
@@ -226,6 +292,29 @@ public static class MapMath
         (double north, double west) = FromPixel(x - width / 2.0, y - height / 2.0, zoom);
         (double south, double east) = FromPixel(x + width / 2.0, y + height / 2.0, zoom);
         return (west, south, east, north);
+    }
+
+    /// <summary>A box's area in square kilometres (near enough, for boxes a city across).</summary>
+    public static double AreaKm2((double West, double South, double East, double North) box)
+    {
+        const double KmPerDegree = 111.32;
+        double middle = (box.North + box.South) / 2 * Math.PI / 180;
+        return (box.East - box.West) * KmPerDegree * Math.Cos(middle) * (box.North - box.South) * KmPerDegree;
+    }
+
+    /// <summary>The box shrunk about its middle, keeping its shape, until it's at most <paramref name="km2"/>.</summary>
+    public static (double West, double South, double East, double North) Within((double West, double South, double East, double North) box, double km2)
+    {
+        double area = AreaKm2(box);
+        if (area <= km2)
+        {
+            return box;
+        }
+
+        double factor = Math.Sqrt(km2 / area) / 2;
+        double centreX = (box.West + box.East) / 2, centreY = (box.South + box.North) / 2;
+        double halfWidth = (box.East - box.West) * factor, halfHeight = (box.North - box.South) * factor;
+        return (centreX - halfWidth, centreY - halfHeight, centreX + halfWidth, centreY + halfHeight);
     }
 }
 
@@ -445,6 +534,88 @@ public static class Lottery
         string? multiplier = NewsSources.Str(row, "multiplier") is { Length: > 0 } times ? times.TrimStart('0') : null;
         return new LotteryDraw(game.Id, game.Name, date, numbers[..game.MainBalls], bonus, game.BonusName,
             string.IsNullOrEmpty(multiplier) ? null : multiplier, game.Colour);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex WclcDate = new(
+        @"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+([A-Za-z]+\s+\d{1,2},\s+\d{4})$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    private static readonly System.Text.RegularExpressions.Regex WclcBonus = new(
+        @"^(?:Bonus|Grand\s*Number)\s*:?\s*(\d{1,2})?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// The latest draw on one of WCLC's winning-numbers pages: the first date heading ("Friday, October 02, 2026"), the
+    /// numbers after it, then "Bonus 26" (or the Grand Number). The page's markup is read as lines of text, so it
+    /// doesn't depend on its tags or classes.
+    /// </summary>
+    public static LotteryDraw ReadWclc(string html, LotteryGames.Game game)
+    {
+        string text = System.Text.RegularExpressions.Regex.Replace(html, @"<(script|style)[^>]*>.*?</\1>", " ",
+            System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        text = System.Text.RegularExpressions.Regex.Replace(text, "<[^>]+>", "\n");
+        string[] lines = [.. System.Net.WebUtility.HtmlDecode(text).Split('\n')
+            .Select(line => System.Text.RegularExpressions.Regex.Replace(line, @"\s+", " ").Trim())
+            .Where(line => line.Length > 0)];
+
+        for (int start = 0; start < lines.Length; start++)
+        {
+            System.Text.RegularExpressions.Match heading = WclcDate.Match(lines[start]);
+            if (!heading.Success)
+            {
+                continue;
+            }
+
+            List<int> numbers = [];
+            int? bonus = null;
+            for (int at = start + 1; at < lines.Length && at < start + 40; at++)
+            {
+                string line = lines[at];
+                if (WclcDate.IsMatch(line))
+                {
+                    break;
+                }
+
+                if (numbers.Count < game.MainBalls)
+                {
+                    if (int.TryParse(line, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number) && number is > 0 and < 100)
+                    {
+                        numbers.Add(number);
+                    }
+
+                    continue;
+                }
+
+                // "Bonus26", or "Bonus" on one line and "26" on the next.
+                System.Text.RegularExpressions.Match label = WclcBonus.Match(line);
+                if (label.Success)
+                {
+                    if (label.Groups[1].Success)
+                    {
+                        bonus = int.Parse(label.Groups[1].Value, CultureInfo.InvariantCulture);
+                    }
+                    else if (at + 1 < lines.Length && int.TryParse(lines[at + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int next))
+                    {
+                        bonus = next;
+                    }
+
+                    break;
+                }
+
+                if (!int.TryParse(line, out _))
+                {
+                    // Something else (a "Gold Ball draw", "MAXPLUS" heading): there's no bonus to find.
+                    break;
+                }
+            }
+
+            if (numbers.Count == game.MainBalls)
+            {
+                string? date = DateTime.TryParseExact(heading.Groups[2].Value, ["MMMM dd, yyyy", "MMMM d, yyyy"], CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out DateTime drawn) ? drawn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null;
+                return new LotteryDraw(game.Id, game.Name, date, numbers, bonus, game.BonusName, null, game.Colour);
+            }
+        }
+
+        throw new InvalidOperationException($"{game.Name}'s latest result couldn't be found on its page.");
     }
 }
 

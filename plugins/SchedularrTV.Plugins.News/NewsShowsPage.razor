@@ -108,19 +108,80 @@
                             </button>
                         }
                     </div>
-                    <div class="row row-wrap" style="gap:18px;align-items:center;margin-bottom:10px;">
+                    @if (show.Theme == NewsTheme.Teletext)
+                    {
+                        <p class="hint">Teletext pages keep their own lettering and have no pictures, side panel or ticker; the map is drawn in mosaic blocks.</p>
+                    }
+
+                    <h4>Colours and lettering</h4>
+                    <div class="row row-wrap" style="gap:18px;align-items:flex-end;margin-bottom:10px;">
                         <div class="field" style="margin:0;"><span>Station colour</span>
                             <input type="color" value="@show.AccentColor" @onchange="e => Change(() => show.AccentColor = Text(e))" style="width:56px;height:34px;padding:2px;" /></div>
+                        <div class="field" style="margin:0;"><span>Highlight colour</span>
+                            <div class="row" style="gap:6px;align-items:center;">
+                                <input type="color" value="@(show.HighlightColor ?? DefaultHighlight(show.Theme))" @onchange="e => Change(() => show.HighlightColor = Text(e))" style="width:56px;height:34px;padding:2px;" />
+                                @if (show.HighlightColor is not null)
+                                {
+                                    <button class="btn btn-sm btn-ghost" type="button" @onclick="() => Change(() => show.HighlightColor = null)">Look's own</button>
+                                }
+                            </div></div>
+                        <label class="field" style="margin:0;min-width:200px;"><span>Lettering</span>
+                            <select value="@show.Font" @onchange="e => Change(() => show.Font = Enum.Parse<NewsFont>(Text(e)))">
+                                <option value="Theme">The look's own</option>
+                                <option value="Sans">Modern sans (Inter)</option>
+                                <option value="Condensed">Condensed (Oswald)</option>
+                                <option value="Serif">Serif (Merriweather)</option>
+                                <option value="Slab">Slab (Roboto Slab)</option>
+                                <option value="Rounded">Rounded (Nunito)</option>
+                                <option value="Mono">Typewriter (JetBrains Mono)</option>
+                            </select></label>
+                        <label class="field" style="margin:0;min-width:200px;"><span>Text size: @((int)Math.Round(show.TextScale * 100))%</span>
+                            <input type="range" min="0.8" max="1.4" step="0.05" value="@show.TextScale.ToString(CultureInfo.InvariantCulture)"
+                                   @onchange="e => Change(() => show.TextScale = Number(e, 1))" /></label>
+                    </div>
+                    <p class="hint" style="margin-top:-4px;">The highlight is cable news's yellow, the 80s look's gold and the news desk's tags. Headlines too long for their space are shrunk to fit.</p>
+
+                    <h4>Ticker, side panel and corner</h4>
+                    <div class="row row-wrap" style="gap:18px;margin-bottom:8px;">
                         <label class="check" style="margin:0;"><input type="checkbox" checked="@show.ShowTicker" @onchange="e => Change(() => show.ShowTicker = e.Value is true)" /><span>Ticker</span></label>
                         <label class="check" style="margin:0;"><input type="checkbox" checked="@show.ShowSidebar" @onchange="e => Change(() => show.ShowSidebar = e.Value is true)" /><span>Side panel (data at a glance, up next)</span></label>
                         <label class="check" style="margin:0;"><input type="checkbox" checked="@show.ShowImages" @onchange="e => Change(() => show.ShowImages = e.Value is true)" /><span>Story pictures</span></label>
+                        <label class="check" style="margin:0;"><input type="checkbox" checked="@show.ShowClock" @onchange="e => Change(() => show.ShowClock = e.Value is true)" /><span>Clock</span></label>
+                        <label class="check" style="margin:0;"><input type="checkbox" checked="@show.ScanLines" @onchange="e => Change(() => show.ScanLines = e.Value is true)" /><span>Scan lines</span></label>
                     </div>
-                    @if (show.Theme == NewsTheme.Teletext)
-                    {
-                        <p class="hint">Teletext pages have no pictures, side panel or ticker; the map is drawn in mosaic blocks.</p>
-                    }
-                    <label class="field"><span>Ticker message <span class="muted">(optional; first along the ticker)</span></span>
-                        <input type="text" value="@show.TickerMessage" maxlength="300" placeholder="Welcome to Channel 7" @onchange="e => Change(() => show.TickerMessage = Text(e))" /></label>
+                    <div class="grid grid-3">
+                        @if (show.ShowTicker)
+                        {
+                            <label class="field"><span>Ticker size</span>
+                                <select value="@show.TickerSize" @onchange="e => Change(() => show.TickerSize = Enum.Parse<NewsSize>(Text(e)))">
+                                    <option value="Small">Small</option>
+                                    <option value="Normal">Normal</option>
+                                    <option value="Large">Large</option>
+                                </select></label>
+                            <label class="field"><span>Ticker speed</span>
+                                <select value="@SpeedName(show.TickerSpeed)" @onchange="e => Change(() => show.TickerSpeed = SpeedOf(Text(e)))">
+                                    <option value="slow">Slow</option>
+                                    <option value="normal">Normal</option>
+                                    <option value="fast">Fast</option>
+                                </select></label>
+                        }
+                        @if (show.ShowSidebar)
+                        {
+                            <label class="field"><span>Side panel width</span>
+                                <select value="@show.SidePanelSize" @onchange="e => Change(() => show.SidePanelSize = Enum.Parse<NewsSize>(Text(e)))">
+                                    <option value="Small">Narrow</option>
+                                    <option value="Normal">Normal</option>
+                                    <option value="Large">Wide</option>
+                                </select></label>
+                        }
+                    </div>
+                    <div class="grid grid-2">
+                        <label class="field"><span>Ticker message <span class="muted">(optional; first along the ticker)</span></span>
+                            <input type="text" value="@show.TickerMessage" maxlength="300" placeholder="Welcome to Channel 7" @onchange="e => Change(() => show.TickerMessage = Text(e))" /></label>
+                        <label class="field"><span>Word in the corner <span class="muted">(empty for none)</span></span>
+                            <input type="text" value="@(show.LiveLabel ?? (show.Theme == NewsTheme.RetroLocal ? "▶ PLAY" : "LIVE"))" maxlength="16"
+                                   @onchange="e => Change(() => show.LiveLabel = Text(e))" /></label>
+                    </div>
 
                     <h3>Stories</h3>
                     @foreach (NewsFeed feed in show.Feeds)
@@ -217,23 +278,63 @@
                     {
                         <h4>Map</h4>
                         <div class="grid grid-2">
+                            <label class="field"><span>Drawn on</span>
+                                <select value="@show.MapStyle" @onchange="e => Change(() => show.MapStyle = Enum.Parse<MapStyle>(Text(e)))">
+                                    <option value="Auto">The look's own</option>
+                                    <option value="Streets">Streets (OpenStreetMap)</option>
+                                    <option value="Light">Light (CARTO)</option>
+                                    <option value="Dark">Dark (CARTO)</option>
+                                    <option value="Satellite">Satellite (Esri)</option>
+                                </select></label>
                             <label class="field"><span>Zoom: @show.MapZoom @(show.MapZoom <= 8 ? "(region)" : show.MapZoom >= 12 ? "(streets)" : "(city)")</span>
                                 <input type="range" min="6" max="14" step="1" value="@show.MapZoom" @onchange="e => Change(() => show.MapZoom = (int)Number(e, 10))" /></label>
-                            <label class="check" style="align-self:end;margin-bottom:14px;"><input type="checkbox" checked="@show.MapRadar" @onchange="e => Change(() => show.MapRadar = e.Value is true)" /><span>Rain radar</span></label>
                         </div>
-                        <p class="hint">@(Settings.TomTomKey is null
-                                            ? "Traffic needs a TomTom key in this plugin's settings (free from developer.tomtom.com); without one the map shows the radar."
-                                            : "Traffic flow and incidents come from TomTom.")</p>
+                        <div class="row row-wrap" style="gap:18px;margin-bottom:8px;">
+                            <label class="check" style="margin:0;"><input type="checkbox" checked="@show.MapRadar" @onchange="e => Change(() => show.MapRadar = e.Value is true)" /><span>Rain radar</span></label>
+                            @if (show.MapRadar)
+                            {
+                                <label class="check" style="margin:0;"><input type="checkbox" checked="@show.MapRadarLoop" @onchange="e => Change(() => show.MapRadarLoop = e.Value is true)" /><span>Play the last hour as a loop</span></label>
+                            }
+                            <label class="check" style="margin:0;"><input type="checkbox" checked="@show.MapMarker" @onchange="e => Change(() => show.MapMarker = e.Value is true)" /><span>Mark the place</span></label>
+                            <label class="check" style="margin:0;"><input type="checkbox" checked="@show.MapDrift" @onchange="e => Change(() => show.MapDrift = e.Value is true)" /><span>Slow camera drift</span></label>
+                        </div>
+                        @if (show.MapRadar)
+                        {
+                            <label class="field" style="max-width:300px;"><span>Radar strength: @((int)Math.Round(show.MapRadarOpacity * 100))%</span>
+                                <input type="range" min="0.2" max="1" step="0.05" value="@show.MapRadarOpacity.ToString(CultureInfo.InvariantCulture)"
+                                       @onchange="e => Change(() => show.MapRadarOpacity = Number(e, 0.7))" /></label>
+                        }
+                        @if (Settings.TomTomKey is null)
+                        {
+                            <p class="hint">Traffic needs a TomTom key in this plugin's settings (free from developer.tomtom.com).</p>
+                        }
+                        else
+                        {
+                            <div class="row row-wrap" style="gap:18px;align-items:center;margin-bottom:8px;">
+                                <label class="check" style="margin:0;"><input type="checkbox" checked="@show.MapTrafficFlow" @onchange="e => Change(() => show.MapTrafficFlow = e.Value is true)" /><span>Traffic flow colours</span></label>
+                                <label class="check" style="margin:0;"><input type="checkbox" checked="@show.MapIncidents" @onchange="e => Change(() => show.MapIncidents = e.Value is true)" /><span>Incidents</span></label>
+                                @if (show.MapIncidents)
+                                {
+                                    <label class="field" style="margin:0;width:160px;"><span>Up to</span>
+                                        <input type="number" min="1" max="10" value="@show.MapIncidentCount" @onchange="e => Change(() => show.MapIncidentCount = (int)Number(e, 6))" /></label>
+                                }
+                            </div>
+                        }
                     }
                     @if (show.Desks.Contains(NewsDesk.Lottery))
                     {
-                        <h4>Lottery <span class="muted">(New York State's published results)</span></h4>
-                        <div class="row row-wrap" style="gap:16px;margin-bottom:10px;">
-                            @foreach (LotteryGames.Game game in LotteryGames.All)
-                            {
-                                <label class="check" style="margin:0;"><input type="checkbox" checked="@show.Lotteries.Contains(game.Id)" @onchange="e => Change(() => Toggle(show.Lotteries, game.Id, e.Value is true))" /><span>@game.Name</span></label>
-                            }
-                        </div>
+                        <h4>Lottery</h4>
+                        @foreach (IGrouping<string, LotteryGames.Game> country in LotteryGames.All.GroupBy(game => game.Country))
+                        {
+                            <div class="row row-wrap" style="gap:16px;margin-bottom:8px;align-items:center;">
+                                <span class="muted" style="width:70px;">@country.Key</span>
+                                @foreach (LotteryGames.Game game in country)
+                                {
+                                    <label class="check" style="margin:0;"><input type="checkbox" checked="@show.Lotteries.Contains(game.Id)" @onchange="e => Change(() => Toggle(show.Lotteries, game.Id, e.Value is true))" /><span>@game.Name</span></label>
+                                }
+                            </div>
+                        }
+                        <p class="hint">US results from New York State's open data; Canadian ones from the Western Canada Lottery Corporation.</p>
                     }
 
                     <h3>Sound</h3>
@@ -445,6 +546,22 @@
         NewsTheme.CableNews => "BREAKING banners, split panels, a crawl and a markets strip.",
         NewsTheme.RetroLocal => "Gold bevels, serif titles, a neon grid and VHS lines.",
         _ => "A modern broadcast: big pictures, lower thirds, a corner bug."
+    };
+
+    private static string DefaultHighlight(NewsTheme theme) => theme switch
+    {
+        NewsTheme.CableNews => "#ffd400",
+        NewsTheme.RetroLocal => "#f5c542",
+        _ => "#d7263d"
+    };
+
+    private static string SpeedName(int speed) => speed < 90 ? "slow" : speed > 140 ? "fast" : "normal";
+
+    private static int SpeedOf(string name) => name switch
+    {
+        "slow" => 70,
+        "fast" => 170,
+        _ => 110
     };
 
     private static string DeskName(NewsDesk desk) => desk switch

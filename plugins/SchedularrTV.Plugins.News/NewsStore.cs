@@ -94,6 +94,12 @@ public sealed partial class NewsStore
         show.Leagues = [.. show.Leagues.Select(league => league.Trim().ToLowerInvariant()).Where(SportsLeagues.IsValid).Distinct().Take(6)];
         show.Lotteries = [.. show.Lotteries.Where(id => LotteryGames.Find(id) is not null).Select(id => LotteryGames.Find(id)!.Id).Distinct()];
         show.MapZoom = Math.Clamp(show.MapZoom, 6, 14);
+        show.MapRadarOpacity = Math.Clamp(show.MapRadarOpacity, 0.2, 1);
+        show.MapIncidentCount = Math.Clamp(show.MapIncidentCount, 1, 10);
+        show.HighlightColor = IsColour(show.HighlightColor) ? show.HighlightColor : null;
+        show.TextScale = Math.Clamp(show.TextScale, 0.8, 1.4);
+        show.TickerSpeed = Math.Clamp(show.TickerSpeed, 40, 240);
+        show.LiveLabel = show.LiveLabel is null ? null : Limit(show.LiveLabel.Trim(), 16);
         show.TickerMessage = Limit(Trimmed(show.TickerMessage), 300);
         show.Intro = Limit(Trimmed(show.Intro), 300);
         show.Outro = Limit(Trimmed(show.Outro), 300);

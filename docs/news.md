@@ -25,14 +25,16 @@ news and runs through the segments on the show's own timing. Anything that could
 
 | Section | Options |
 | --- | --- |
-| Show | Name, lengths it can be scheduled for, look, station colour, ticker, side panel, story pictures, a ticker message |
+| Show | Name, lengths it can be scheduled for, look |
+| Colours and lettering | Station colour; highlight colour (cable news's yellow, the 80s look's gold, the news desk's tags); lettering (the look's own, or Inter, Oswald, Merriweather, Roboto Slab, Nunito or JetBrains Mono from Google Fonts, with a close match on the computer if they can't be fetched); text size (80–140%) |
+| Ticker, side panel and corner | Ticker on or off, its size, speed and opening message; side panel on or off and its width; story pictures; clock; scan lines (off unless you turn them on); the word in the corner ("LIVE" by default; empty for none) |
 | Stories | Any number of RSS or Atom feeds (each with an optional name to show), one-click BBC, NPR, CBC, Guardian and Al Jazeera feeds, and Google News for your town; how many stories each time round; how old a story can be; seconds per story when it isn't read out |
 | Segments | Weather, markets, sports scores, map, lottery: each one you tick comes between the stories |
 | Place | The town for the weather, the map and the clock (searched by name) |
 | Markets | Yahoo Finance symbols: `^GSPC` (S&P 500), `^DJI`, `^IXIC`, `^GSPTSE`, `^FTSE`, shares like `AAPL`, `BTC-USD`, currencies like `CADUSD=X` |
 | Sports | NFL, NBA, MLB, NHL, WNBA, college football and basketball, Premier League, MLS, LaLiga, Champions League, CFL, or any ESPN `sport/league` |
-| Map | Zoom (region to streets) and rain radar; traffic when a TomTom key is set |
-| Lottery | Powerball, Mega Millions, NY Lotto |
+| Map | Drawn on streets, light, dark or satellite (or the look's own); zoom (region to streets); rain radar, as the last hour on a loop or the latest picture, and how strong; a marker on the place; a slow camera drift; with a TomTom key, traffic flow colours and up to 10 incidents |
+| Lottery | US: Powerball, Mega Millions, NY Lotto. Canada: Lotto Max, Lotto 6/49, Daily Grand |
 | Sound | What's read (nothing, headlines, headlines and a short summary, or the whole summary); the voice; whether the data segments are read too; the opening and closing lines; a music folder and its volume (it dips under the voice) |
 
 ### The looks
@@ -56,11 +58,19 @@ All free, with no keys, except traffic:
 | Weather | [Open-Meteo](https://open-meteo.com) (current conditions and five days), and its place search |
 | Markets | Yahoo Finance's chart data (the day's prices, drawn as a sparkline) |
 | Sports | ESPN's public scoreboards (live games first, then finished, then still to come) |
-| Lottery | New York State's open data (Powerball, Mega Millions, NY Lotto) |
-| Map | [OpenStreetMap](https://www.openstreetmap.org) tiles, kept for a week; [RainViewer](https://www.rainviewer.com) radar |
+| Lottery | New York State's open data (Powerball, Mega Millions, NY Lotto); the Western Canada Lottery Corporation's winning-numbers pages (Lotto Max, Lotto 6/49, Daily Grand) |
+| Map | [OpenStreetMap](https://www.openstreetmap.org) streets, [CARTO](https://carto.com/basemaps) light and dark, [Esri](https://www.esri.com) satellite imagery, all kept for a week; [RainViewer](https://www.rainviewer.com) radar |
 | Traffic | [TomTom](https://developer.tomtom.com) traffic flow and incidents, with a free key in the plugin's settings |
 
-Map tiles are fetched through the scheduler, so the TomTom key never reaches the page.
+Map tiles are fetched through the scheduler, so the TomTom key never reaches the page. TomTom only answers about an
+area up to 10,000 km², so incidents are looked for in the middle of the map when it shows more than that.
+
+Feeds and pages are fetched the way a browser asks for them (some news sites' networks hold anything else until it
+times out), tried a second time if the first is slow, and if a source still fails, its last answer from the past six
+hours is used instead.
+
+Long headlines are shrunk to fit their space (down to a readable minimum, then cut with "…"), so a headline never runs
+off the screen in any look.
 
 ## Scheduling it
 
@@ -104,6 +114,8 @@ reach, e.g. `http://192.168.1.20:5252`.
 
 - **"Couldn't get … : the server answered 403/404".** The feed moved or blocks automated readers; try its other feed
   address, or Google News for the topic.
+- **"Couldn't get … : it didn't answer in time (tried twice)".** The site was slow twice running and there was no
+  copy from the last few hours to fall back on; it's tried again at the next refresh.
 - **No markets.** Yahoo Finance sometimes refuses requests for a while; the segment is left out until it answers again.
 - **No voice.** The voice plugin is switched off or not set up (the editor says which), or the voice-overs are still
   being made after a refresh; segments run for their standard length in the meantime.

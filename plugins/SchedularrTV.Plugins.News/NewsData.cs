@@ -38,8 +38,20 @@ public sealed record LotteryDraw(string Game, string Name, string? Date, IReadOn
 /// <summary>A traffic incident on the map. <paramref name="Magnitude"/>: 0 unknown, 1 minor to 4 closed.</summary>
 public sealed record TrafficIncident(string Category, string Description, string Road, int Magnitude, int DelaySeconds, double Latitude, double Longitude);
 
-/// <summary>The map segment: where it's centred, and what's drawn over it.</summary>
-public sealed record MapReport(string Place, double Latitude, double Longitude, int Zoom, bool Radar, bool Traffic, IReadOnlyList<TrafficIncident> Incidents);
+/// <summary>
+/// The map segment: where it's centred, and what's drawn over it. <paramref name="Traffic"/> is whether there's any traffic
+/// (flow colours or incidents); <paramref name="RadarFrames"/> are the radar pictures' times (Unix seconds), oldest first.
+/// </summary>
+public sealed record MapReport(
+    string Place,
+    double Latitude,
+    double Longitude,
+    int Zoom,
+    bool Radar,
+    bool Traffic,
+    bool TrafficFlow,
+    IReadOnlyList<TrafficIncident> Incidents,
+    IReadOnlyList<long> RadarFrames);
 
 /// <summary>Everything fetched for a show at one time, with what couldn't be.</summary>
 public sealed record NewsSnapshot(

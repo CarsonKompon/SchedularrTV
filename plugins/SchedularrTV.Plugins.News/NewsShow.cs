@@ -44,6 +44,37 @@ public enum NewsDesk
     Lottery
 }
 
+/// <summary>The lettering, besides the look's own (teletext always keeps its own).</summary>
+public enum NewsFont
+{
+    Theme,
+    Sans,
+    Condensed,
+    Serif,
+    Slab,
+    Rounded,
+    Mono
+}
+
+/// <summary>A size for the ticker or the side panel.</summary>
+public enum NewsSize
+{
+    Small,
+    Normal,
+    Large
+}
+
+/// <summary>What the map is drawn on.</summary>
+public enum MapStyle
+{
+    /// <summary>The look's own: dark streets for the news desk and cable news, warm streets for the 80s look.</summary>
+    Auto,
+    Streets,
+    Light,
+    Dark,
+    Satellite
+}
+
 /// <summary>An RSS or Atom feed, with what to call it on screen.</summary>
 public sealed class NewsFeed
 {
@@ -71,6 +102,29 @@ public sealed class NewsShow
 
     /// <summary>The station's colour (bars, the bug, the ticker), as #rrggbb.</summary>
     public string AccentColor { get; set; } = "#d7263d";
+
+    /// <summary>A second colour (cable news's yellow, the 80s look's gold, the news desk's tags); null for the look's own.</summary>
+    public string? HighlightColor { get; set; }
+
+    public NewsFont Font { get; set; } = NewsFont.Theme;
+
+    /// <summary>How big the headlines and text are, 0.8 to 1.4.</summary>
+    public double TextScale { get; set; } = 1.0;
+
+    public NewsSize TickerSize { get; set; } = NewsSize.Normal;
+
+    /// <summary>How fast the ticker moves, in pixels a second (40 to 240).</summary>
+    public int TickerSpeed { get; set; } = 110;
+
+    public NewsSize SidePanelSize { get; set; } = NewsSize.Normal;
+
+    /// <summary>CRT scan lines over the whole picture.</summary>
+    public bool ScanLines { get; set; }
+
+    public bool ShowClock { get; set; } = true;
+
+    /// <summary>The word in the corner ("LIVE"); empty to leave it out, null for the look's own.</summary>
+    public string? LiveLabel { get; set; }
 
     // --- Stories -------------------------------------------------------------------------------------------------
 
@@ -122,6 +176,32 @@ public sealed class NewsShow
 
     /// <summary>Rain radar over the map.</summary>
     public bool MapRadar { get; set; } = true;
+
+    public MapStyle MapStyle { get; set; } = MapStyle.Auto;
+
+    /// <summary>The radar plays its last hour as a loop, rather than only the latest picture.</summary>
+    public bool MapRadarLoop { get; set; } = true;
+
+    /// <summary>0.2 to 1.</summary>
+    public double MapRadarOpacity { get; set; } = 0.7;
+
+    /// <summary>Traffic flow colours on the roads (with a TomTom key).</summary>
+    public bool MapTrafficFlow { get; set; } = true;
+
+    /// <summary>Numbered traffic incidents, on the map and listed (with a TomTom key).</summary>
+    public bool MapIncidents { get; set; } = true;
+
+    /// <summary>How many incidents are shown, 1 to 10.</summary>
+    public int MapIncidentCount { get; set; } = 6;
+
+    /// <summary>The map drifts slowly while it's on, like a camera move.</summary>
+    public bool MapDrift { get; set; } = true;
+
+    /// <summary>A dot on the place itself.</summary>
+    public bool MapMarker { get; set; } = true;
+
+    /// <summary>Whether traffic is on the map: wanted, and the key to fetch it is set.</summary>
+    public bool WantsTraffic(bool haveKey) => haveKey && (MapTrafficFlow || MapIncidents);
 
     // --- Ticker and wording --------------------------------------------------------------------------------------
 
@@ -218,20 +298,33 @@ public sealed class NewsShow
     }
 }
 
-/// <summary>The lottery games the plugin knows, with where their results come from (New York State's open data, free).</summary>
+/// <summary>Where a lottery's results are read from.</summary>
+public enum LotterySource
+{
+    /// <summary>New York State's open data (JSON); the address is the dataset's id.</summary>
+    NewYork,
+
+    /// <summary>The Western Canada Lottery Corporation's winning numbers page (official, national games); the address is the page.</summary>
+    Wclc
+}
+
+/// <summary>The lottery games the plugin knows, with where their results come from (all free, no keys).</summary>
 public static class LotteryGames
 {
-    /// <param name="MainBalls">How many of winning_numbers are main balls; any after them are the bonus ball.</param>
-    public sealed record Game(string Id, string Name, string Dataset, int MainBalls, string BonusName, string Colour);
+    /// <param name="MainBalls">How many numbers are main balls; any after them are the bonus ball.</param>
+    public sealed record Game(string Id, string Name, string Country, LotterySource Source, string Address, int MainBalls, string BonusName, string Colour);
 
     public static readonly IReadOnlyList<Game> All =
     [
         // winning_numbers holds the five numbers and the Powerball last.
-        new("powerball", "Powerball", "d6yy-54nr", 5, "Powerball", "#e4252c"),
+        new("powerball", "Powerball", "US", LotterySource.NewYork, "d6yy-54nr", 5, "Powerball", "#e4252c"),
         // winning_numbers holds the five numbers; mega_ball the Mega Ball.
-        new("megamillions", "Mega Millions", "5xaw-6ayf", 5, "Mega Ball", "#f2b705"),
+        new("megamillions", "Mega Millions", "US", LotterySource.NewYork, "5xaw-6ayf", 5, "Mega Ball", "#f2b705"),
         // winning_numbers holds the six numbers; bonus the bonus number.
-        new("nylotto", "NY Lotto", "6nbc-h7bj", 6, "Bonus", "#1c6ee8")
+        new("nylotto", "NY Lotto", "US", LotterySource.NewYork, "6nbc-h7bj", 6, "Bonus", "#1c6ee8"),
+        new("lottomax", "Lotto Max", "Canada", LotterySource.Wclc, "https://www.wclc.com/winning-numbers/lotto-max-extra.htm", 7, "Bonus", "#7b2cbf"),
+        new("lotto649", "Lotto 6/49", "Canada", LotterySource.Wclc, "https://www.wclc.com/winning-numbers/lotto-649-extra.htm", 6, "Bonus", "#0057b8"),
+        new("dailygrand", "Daily Grand", "Canada", LotterySource.Wclc, "https://www.wclc.com/winning-numbers/daily-grand-extra.htm", 5, "Grand Number", "#c9a227")
     ];
 
     public static Game? Find(string id) => All.FirstOrDefault(game => string.Equals(game.Id, id, StringComparison.OrdinalIgnoreCase));

@@ -310,6 +310,49 @@ public class NewsTests : IDisposable
         Assert.Equal([5391.0, 5410.5, 5432.17], quote.Spark);
     }
 
+    [Fact]
+    public void Lotto_max_and_649_read_from_wcls_page_whatever_its_markup()
+    {
+        // As the page has them: the newest draw first, the numbers in a list, "Bonus" and its number together, then other draws.
+        const string max = """
+            <h4>Friday, October 02, 2026</h4>
+            <ul class="pastWinNum"><li>2</li><li>4</li><li>20</li><li>23</li><li>25</li><li>41</li><li>47</li>
+            <li class="pastWinNumBonus"><span>Bonus</span>26</li></ul>
+            <p>MAXPLUS WINNING NUMBERS</p><ul><li>1</li><li>3</li><li>14</li><li>28</li><li>32</li><li>33</li><li>45</li></ul>
+            <h4>Tuesday, September 29, 2026</h4><ul><li>6</li><li>10</li><li>13</li><li>22</li><li>23</li><li>43</li><li>49</li><li>Bonus17</li></ul>
+            """;
+        const string six49 = """
+            <script>var x = "Monday, January 01, 2024";</script>
+            <h4>Saturday, October 03, 2026</h4><p>CLASSIC DRAW</p>
+            <ul><li>1</li><li>4</li><li>7</li><li>23</li><li>28</li><li>37</li><li>Bonus38</li></ul><p>GOLD BALL DRAW</p>
+            """;
+
+        LotteryDraw lottoMax = Lottery.ReadWclc(max, LotteryGames.Find("lottomax")!);
+        LotteryDraw lotto649 = Lottery.ReadWclc(six49, LotteryGames.Find("lotto649")!);
+
+        Assert.Equal([2, 4, 20, 23, 25, 41, 47], lottoMax.Numbers);
+        Assert.Equal(26, lottoMax.Bonus);
+        Assert.Equal("2026-10-02", lottoMax.Date);
+        Assert.Equal([1, 4, 7, 23, 28, 37], lotto649.Numbers);
+        Assert.Equal(38, lotto649.Bonus);
+        Assert.Equal("2026-10-03", lotto649.Date);
+        Assert.Throws<InvalidOperationException>(() => Lottery.ReadWclc("<p>Down for maintenance</p>", LotteryGames.Find("lottomax")!));
+    }
+
+    [Fact]
+    public void Traffic_is_asked_about_an_area_tomtom_accepts()
+    {
+        var city = MapMath.Bounds(43.65, -79.38, 10, 1280, 720);
+        Assert.True(MapMath.AreaKm2(city) > 10_000);
+
+        var asked = MapMath.Within(city, 9_000);
+
+        Assert.InRange(MapMath.AreaKm2(asked), 8_900, 9_001);
+        Assert.Equal((city.West + city.East) / 2, (asked.West + asked.East) / 2, 6);
+        // Already small enough: left as it is.
+        Assert.Equal(asked, MapMath.Within(asked, 9_100));
+    }
+
     [Theory]
     [InlineData(0, true, "sun")]
     [InlineData(0, false, "moon")]

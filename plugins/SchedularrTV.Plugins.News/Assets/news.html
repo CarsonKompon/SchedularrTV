@@ -7,7 +7,8 @@
   /* The stage is always 1280×720: the hidden browser's window, and what the editor's preview scales. */
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 1280px; height: 720px; overflow: hidden; background: #000; }
-  body { --accent: #d7263d; --ink: #fff; --soft: rgba(255,255,255,.72); --faint: rgba(255,255,255,.45);
+  /* --ts text size, --tk ticker size, --sw side panel width (all scales); --hl the highlight colour when set. */
+  body { --accent: #d7263d; --ink: #fff; --soft: rgba(255,255,255,.72); --faint: rgba(255,255,255,.45); --ts: 1; --tk: 1; --sw: 1;
          font-family: "Segoe UI", "Helvetica Neue", Arial, "Liberation Sans", "DejaVu Sans", sans-serif; color: var(--ink); }
   .hidden { display: none !important; }
   #stage { position: absolute; inset: 0; overflow: hidden; }
@@ -25,6 +26,8 @@
   #problem { position: absolute; z-index: 20; left: 12px; right: 12px; top: 12px; padding: 8px 12px; border-radius: 6px;
              background: rgba(120,20,20,.92); color: #fff; font-size: 17px; line-height: 1.35; }
   #tt, #fastext { display: none; }
+  .scanlines #stage::after { content: ""; position: absolute; inset: 0; z-index: 30; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 2px, transparent 2px 4px); }
 
   /* Segments: each new one fades in over the old. */
   .seg { position: absolute; inset: 0; opacity: 0; animation: segin .55s ease forwards; }
@@ -32,18 +35,18 @@
   @keyframes segin { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
   @keyframes segout { from { opacity: 1; } to { opacity: 0; } }
   h1, h2, h3 { font-weight: 800; }
+  h1, p { overflow-wrap: anywhere; }
   .icon svg { width: 100%; height: 100%; display: block; }
   .clip { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; }
 
-  /* Shared pieces, styled further per look. */
   .card-title { font-size: 15px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; }
   .up { color: #39d98a; } .down { color: #ff5a6a; } .flat { color: var(--soft); }
 
   /* --- The segments' common layout ------------------------------------------------------------------------- */
-  .intro, .outro, .standby, .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 18px; }
-  .intro .big, .outro .big, .standby .big, .empty .big { font-size: 78px; font-weight: 900; letter-spacing: -.01em; line-height: 1; }
-  .intro .sub, .outro .sub, .standby .sub, .empty .sub { font-size: 28px; color: var(--soft); max-width: 900px; }
-  .intro .date { font-size: 22px; letter-spacing: .2em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+  .intro, .outro, .standby, .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 18px; padding: 0 30px; }
+  .intro .big, .outro .big, .standby .big, .empty .big { font-size: calc(78px * var(--ts)); font-weight: 900; letter-spacing: -.01em; line-height: 1; }
+  .intro .sub, .outro .sub, .standby .sub, .empty .sub { font-size: calc(28px * var(--ts)); color: var(--soft); max-width: 900px; }
+  .intro .date { font-size: calc(22px * var(--ts)); letter-spacing: .2em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
 
   .story .pic { position: absolute; inset: 0; background: #111; }
   .story .pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -51,73 +54,82 @@
   .story.no-pic .pic { display: none; }
   .story .lt { position: absolute; left: 36px; right: 36px; bottom: 30px; }
   .story .banner { display: none; }
-  .story .kicker { display: inline-block; font-size: 17px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; padding: 6px 12px; background: var(--accent); }
-  .story h1 { font-size: 46px; line-height: 1.1; margin-top: 12px; -webkit-line-clamp: 3; }
-  .story p { font-size: 23px; line-height: 1.4; color: var(--soft); margin-top: 12px; -webkit-line-clamp: 3; }
+  .story .kicker { display: inline-block; font-size: calc(17px * var(--ts)); font-weight: 800; letter-spacing: .1em; text-transform: uppercase; padding: 6px 12px; background: var(--accent); }
+  .story h1 { font-size: calc(46px * var(--ts)); line-height: 1.1; margin-top: 12px; -webkit-line-clamp: 3; }
+  .story p { font-size: calc(23px * var(--ts)); line-height: 1.4; color: var(--soft); margin-top: 12px; -webkit-line-clamp: 3; }
   .story .count { position: absolute; right: 30px; top: 22px; font-size: 18px; font-weight: 700; padding: 4px 10px; background: rgba(0,0,0,.55); border-radius: 4px; }
   .story.no-pic .lt { top: 60px; bottom: auto; }
-  .story.no-pic h1 { font-size: 58px; -webkit-line-clamp: 4; }
-  .story.no-pic p { font-size: 27px; -webkit-line-clamp: 6; }
+  .story.no-pic h1 { font-size: calc(58px * var(--ts)); -webkit-line-clamp: 5; }
+  .story.no-pic p { font-size: calc(27px * var(--ts)); -webkit-line-clamp: 6; }
 
   .desk { padding: 34px 40px; display: flex; flex-direction: column; }
-  .desk > h2 { font-size: 34px; margin-bottom: 22px; display: flex; align-items: center; gap: 14px; }
+  .desk > h2 { font-size: calc(34px * var(--ts)); margin-bottom: 22px; display: flex; align-items: center; gap: 14px; }
   .desk > h2 .tag { font-size: 16px; padding: 5px 10px; background: var(--accent); letter-spacing: .12em; text-transform: uppercase; }
 
   .weather .now { display: flex; align-items: center; gap: 30px; }
   .weather .now .icon { width: 170px; height: 170px; flex: none; }
   .weather .temp { font-size: 120px; font-weight: 900; line-height: .9; }
-  .weather .cond { font-size: 34px; font-weight: 700; margin-top: 6px; }
-  .weather .extra { font-size: 20px; color: var(--soft); margin-top: 10px; }
+  .weather .now, .weather .days { flex-shrink: 0; }
+  .weather .cond { font-size: calc(34px * var(--ts)); font-weight: 700; margin-top: 6px; }
+  .weather .extra { font-size: calc(20px * var(--ts)); color: var(--soft); margin-top: 10px; }
   .weather .days { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-top: auto; }
   .weather .day { padding: 14px 10px; text-align: center; background: rgba(255,255,255,.07); border-radius: 10px; }
-  .weather .day .dn { font-size: 18px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+  .weather .day .dn { font-size: calc(18px * var(--ts)); font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
   .weather .day .icon { width: 64px; height: 64px; margin: 6px auto; }
-  .weather .day .hl { font-size: 24px; font-weight: 800; }
+  .weather .day .hl { font-size: calc(24px * var(--ts)); font-weight: 800; }
   .weather .day .hl span { color: var(--faint); font-weight: 600; }
-  .weather .day .rc { font-size: 15px; color: #7cc4ff; margin-top: 2px; }
+  .weather .day .rc { font-size: calc(15px * var(--ts)); color: #7cc4ff; margin-top: 2px; }
 
   .markets .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
   .markets .q { padding: 16px 18px; background: rgba(255,255,255,.07); border-radius: 10px; display: grid; grid-template-columns: 1fr 150px; grid-template-rows: auto auto; column-gap: 12px; }
-  .markets .q .n { font-size: 20px; font-weight: 800; }
+  .markets .q .n { font-size: calc(20px * var(--ts)); font-weight: 800; }
   .markets .q .s { font-size: 14px; color: var(--faint); font-weight: 600; margin-left: 6px; }
-  .markets .q .p { font-size: 34px; font-weight: 800; margin-top: 4px; }
-  .markets .q .c { font-size: 20px; font-weight: 700; }
+  .markets .q .p { font-size: calc(34px * var(--ts)); font-weight: 800; margin-top: 4px; }
+  .markets .q .c { font-size: calc(20px * var(--ts)); font-weight: 700; white-space: nowrap; }
   .markets .q svg { grid-column: 2; grid-row: 1 / span 2; width: 150px; height: 70px; align-self: center; }
-  .markets .q .c { white-space: nowrap; }
 
   .sports .games { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
   .sports .g { background: rgba(255,255,255,.07); border-radius: 10px; overflow: hidden; }
-  .sports .t { display: flex; align-items: center; gap: 12px; padding: 8px 14px; font-size: 24px; font-weight: 700; border-left: 8px solid var(--team); }
+  .sports .t { display: flex; align-items: center; gap: 12px; padding: 8px 14px; font-size: calc(24px * var(--ts)); font-weight: 700; border-left: 8px solid var(--team); }
   .sports .t img { width: 34px; height: 34px; object-fit: contain; }
   .sports .t .nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .sports .t .sc { font-size: 30px; font-weight: 900; min-width: 50px; text-align: right; }
+  .sports .t .sc { font-size: calc(30px * var(--ts)); font-weight: 900; min-width: 50px; text-align: right; }
   .sports .t.lost { color: var(--soft); }
   .sports .st { font-size: 15px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; padding: 5px 14px; background: rgba(0,0,0,.3); color: var(--soft); }
   .sports .st.live { color: #fff; background: var(--accent); }
 
   .map { padding: 0; }
   .map .view { position: absolute; inset: 0; background: #1b2330; overflow: hidden; }
+  .map .pan { position: absolute; inset: 0; transform-origin: 62% 50%; }
+  .map .pan.drift { animation: drift linear forwards; }
+  @keyframes drift { from { transform: scale(1); } to { transform: scale(1.09) translate(-1.2%, -.8%); } }
   .map .layer { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
   .map .layer img { position: absolute; width: 256px; height: 256px; }
-  .map .radar { opacity: .75; }
+  .map .radar { opacity: 0; }
+  .map .radar.on { opacity: var(--radar, .7); }
   .map .pin { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; border: 3px solid #fff; display: grid; place-items: center;
               font-size: 15px; font-weight: 900; box-shadow: 0 2px 8px rgba(0,0,0,.6); }
   .map .pin.m1 { background: #f2b705; color: #000; } .map .pin.m2 { background: #ff8a00; } .map .pin.m3 { background: #e4252c; } .map .pin.m4 { background: #7a0019; } .map .pin.m0 { background: #888; }
-  .map .here { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 6px rgba(255,255,255,.35); }
-  .map .panel { position: absolute; left: 24px; top: 24px; width: 420px; max-height: calc(100% - 70px); padding: 18px 20px; background: rgba(8,12,20,.86); border-radius: 10px; overflow: hidden; }
-  .map .panel h2 { font-size: 30px; margin-bottom: 6px; }
-  .map .panel .lead { font-size: 18px; color: var(--soft); margin-bottom: 10px; }
-  .map .inc { display: flex; gap: 10px; align-items: baseline; font-size: 17px; line-height: 1.3; padding: 6px 0; border-top: 1px solid rgba(255,255,255,.12); }
+  .map .here { position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; background: var(--accent); border: 3px solid #fff;
+               box-shadow: 0 0 0 8px rgba(255,255,255,.25); animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 14px rgba(255,255,255,.08); } }
+  .map .panel { position: absolute; left: 24px; top: 24px; width: 420px; max-height: calc(100% - 70px); padding: 18px 20px; background: rgba(8,12,20,.86); border-radius: 10px; overflow: hidden; z-index: 2; }
+  .map .panel h2 { font-size: calc(30px * var(--ts)); margin-bottom: 6px; }
+  .map .panel .lead { font-size: calc(18px * var(--ts)); color: var(--soft); margin-bottom: 10px; }
+  .map .inc { display: flex; gap: 10px; align-items: baseline; font-size: calc(17px * var(--ts)); line-height: 1.3; padding: 6px 0; border-top: 1px solid rgba(255,255,255,.12); }
   .map .inc b { flex: none; width: 26px; height: 26px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 14px; }
-  .map .attrib { position: absolute; right: 8px; bottom: 6px; font-size: 12px; color: rgba(255,255,255,.75); background: rgba(0,0,0,.5); padding: 2px 6px; border-radius: 4px; }
+  .map .stamp { position: absolute; right: 12px; top: 12px; z-index: 2; font-size: 18px; font-weight: 800; padding: 5px 10px; border-radius: 6px; background: rgba(0,0,0,.6); font-variant-numeric: tabular-nums; }
+  .map .attrib { position: absolute; right: 8px; bottom: 6px; z-index: 2; font-size: 12px; color: rgba(255,255,255,.8); background: rgba(0,0,0,.5); padding: 2px 6px; border-radius: 4px; }
 
-  .lottery .draws { display: flex; flex-direction: column; gap: 26px; }
-  .lottery .draw .name { font-size: 26px; font-weight: 800; }
-  .lottery .draw .when { font-size: 17px; color: var(--soft); margin-left: 10px; font-weight: 600; }
-  .lottery .balls { display: flex; gap: 14px; margin-top: 12px; align-items: center; }
-  .lottery .ball { width: 74px; height: 74px; border-radius: 50%; display: grid; place-items: center; font-size: 32px; font-weight: 900; color: #111;
+  .lottery .draws { display: flex; flex-direction: column; gap: 22px; }
+  .lottery .draw .name { font-size: calc(26px * var(--ts)); font-weight: 800; }
+  .lottery .draw .when { font-size: calc(17px * var(--ts)); color: var(--soft); margin-left: 10px; font-weight: 600; }
+  .lottery .balls { display: flex; gap: 12px; margin-top: 10px; align-items: center; }
+  .lottery .ball { width: 70px; height: 70px; border-radius: 50%; display: grid; place-items: center; font-size: 30px; font-weight: 900; color: #111;
                    background: radial-gradient(circle at 32% 28%, #fff 0 18%, #e9edf2 40%, #9aa3ad 100%); box-shadow: 0 6px 14px rgba(0,0,0,.45);
                    opacity: 0; transform: scale(.3) translateY(-40px); animation: drop .5s cubic-bezier(.3,1.6,.5,1) forwards; }
+  .lottery.many .ball { width: 54px; height: 54px; font-size: 24px; }
+  .lottery.many .draws { gap: 12px; }
   .lottery .ball.bonus { color: #fff; background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.9) 0 14%, var(--game) 45%, color-mix(in srgb, var(--game) 55%, #000) 100%); margin-left: 14px; }
   .lottery .x { font-size: 22px; font-weight: 800; color: var(--soft); margin-left: 12px; }
   @keyframes drop { to { opacity: 1; transform: none; } }
@@ -126,33 +138,48 @@
   .side-card { position: absolute; inset: 0; padding: 18px 20px; opacity: 0; animation: segin .5s ease forwards; }
   .side-card .w { display: flex; align-items: center; gap: 14px; }
   .side-card .w .icon { width: 84px; height: 84px; flex: none; }
-  .side-card .w .tp { font-size: 58px; font-weight: 900; line-height: 1; }
-  .side-card .w .cd { font-size: 18px; color: var(--soft); }
-  .side-card .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 9px 0; border-top: 1px solid rgba(255,255,255,.1); font-size: 19px; }
+  .side-card .w .tp { font-size: calc(58px * var(--ts)); font-weight: 900; line-height: 1; }
+  .side-card .w .cd { font-size: calc(18px * var(--ts)); color: var(--soft); }
+  .side-card .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 9px 0; border-top: 1px solid rgba(255,255,255,.1); font-size: calc(19px * var(--ts)); }
   .side-card .row:first-of-type { border-top: 0; }
   .side-card .row .k { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .side-card .row .v { font-weight: 800; white-space: nowrap; }
-  .side-card .next { font-size: 18px; line-height: 1.3; padding: 9px 0; border-top: 1px solid rgba(255,255,255,.1); }
+  .side-card .next { display: flex; align-items: center; gap: 12px; font-size: calc(17px * var(--ts)); line-height: 1.25; padding: 8px 0; border-top: 1px solid rgba(255,255,255,.1); }
   .side-card .next:first-of-type { border-top: 0; }
-  .side-card .next .clip { -webkit-line-clamp: 2; }
+  .side-card .next .clip { -webkit-line-clamp: 2; min-width: 0; }
+  .side-card .note { font-size: calc(17px * var(--ts)); line-height: 1.3; padding: 8px 0; border-top: 1px solid rgba(255,255,255,.1); }
+  .thumb { flex: none; width: 88px; height: 50px; border-radius: 6px; overflow: hidden; position: relative; background: rgba(255,255,255,.1);
+           display: grid; place-items: center; font-weight: 900; font-size: 22px; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb .icon { width: 44px; height: 44px; }
+  .thumb svg { display: block; }
+  .thumb.letter { background: var(--accent); }
+  .thumb.logos { grid-auto-flow: column; gap: 4px; padding: 0 6px; }
+  .thumb.logos img { width: 34px; height: 34px; object-fit: contain; }
+  .thumb.tile img { position: absolute; width: 256px; height: 256px; max-width: none; }
 
   /* === News desk ============================================================================================ */
+  .t-NewsDesk { --tkh: calc(56px * var(--tk)); }
   .t-NewsDesk #bg { background: radial-gradient(1200px 700px at 20% 0%, #1d2d4f 0%, #0b1222 55%, #060a14 100%); }
   .t-NewsDesk #top { height: 66px; padding: 0 28px; gap: 16px; background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,0)); }
   .t-NewsDesk #top .bug { display: flex; align-items: center; gap: 10px; font-size: 24px; font-weight: 900; letter-spacing: .02em; }
   .t-NewsDesk #top .bug i { width: 14px; height: 30px; background: var(--accent); display: inline-block; }
   .t-NewsDesk #top .live { margin-left: auto; font-size: 15px; font-weight: 900; letter-spacing: .14em; padding: 4px 10px; background: var(--accent); }
   .t-NewsDesk #top .clock { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .t-NewsDesk #main { left: 24px; right: 24px; top: 74px; bottom: 76px; border-radius: 12px; background: rgba(255,255,255,.03); }
-  .t-NewsDesk.has-side #main { right: 372px; }
-  .t-NewsDesk #side { right: 24px; width: 332px; top: 74px; bottom: 76px; border-radius: 12px; background: rgba(255,255,255,.06); border-top: 4px solid var(--accent); }
-  .t-NewsDesk #ticker { bottom: 0; height: 56px; background: #f4f6fa; color: #0b1222; font-size: 24px; font-weight: 700; }
-  .t-NewsDesk #ticker .label { background: var(--accent); color: #fff; font-size: 18px; }
-  .t-NewsDesk #progress { bottom: 56px; }
+  .t-NewsDesk #main, .t-NewsDesk #side { top: 74px; bottom: calc(var(--tkh) + 20px); border-radius: 12px; }
+  .t-NewsDesk #main { left: 24px; right: 24px; background: rgba(255,255,255,.03); }
+  .t-NewsDesk.has-side #main { right: calc(40px + 332px * var(--sw)); }
+  .t-NewsDesk #side { right: 24px; width: calc(332px * var(--sw)); background: rgba(255,255,255,.06); border-top: 4px solid var(--hl, var(--accent)); }
+  .t-NewsDesk #ticker { bottom: 0; height: var(--tkh); background: #f4f6fa; color: #0b1222; font-size: calc(24px * var(--tk)); font-weight: 700; }
+  .t-NewsDesk #ticker .label { background: var(--accent); color: #fff; font-size: calc(18px * var(--tk)); }
+  .t-NewsDesk #progress { bottom: var(--tkh); }
+  .t-NewsDesk .story .kicker { background: var(--hl, var(--accent)); }
   .t-NewsDesk .story .lt { background: linear-gradient(90deg, rgba(6,10,20,.92), rgba(6,10,20,.75)); padding: 20px 24px; border-left: 8px solid var(--accent); left: 0; right: 0; bottom: 0; }
   .t-NewsDesk .story.no-pic .lt { background: none; border-left: 0; padding: 0; left: 36px; right: 36px; }
 
   /* === 24-hour cable news ===================================================================================== */
+  .t-CableNews { --strip: 0px; --tkh: calc(44px * var(--tk)); --yellow: var(--hl, #ffd400); }
+  .t-CableNews.has-strip { --strip: 36px; }
   .t-CableNews #bg { background: linear-gradient(135deg, #0a0f1c 0%, #121a33 50%, #0a0f1c 100%); }
   .t-CableNews #bg::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, rgba(255,255,255,.025) 0 2px, transparent 2px 80px); }
   .t-CableNews #top { height: 50px; padding: 0 20px; gap: 14px; background: #0a0f1c; border-bottom: 3px solid var(--accent); }
@@ -160,73 +187,80 @@
   .t-CableNews #top .bug i { width: 30px; height: 30px; border-radius: 4px; background: var(--accent); display: inline-block; }
   .t-CableNews #top .live { margin-left: auto; font-size: 14px; font-weight: 900; letter-spacing: .16em; padding: 3px 10px; border: 2px solid #fff; }
   .t-CableNews #top .clock { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .t-CableNews #main { left: 18px; right: 18px; top: 62px; bottom: 120px; background: #000; border: 2px solid rgba(255,255,255,.15); }
-  .t-CableNews.has-side #main { right: 330px; }
-  .t-CableNews #side { right: 18px; width: 300px; top: 62px; bottom: 120px; background: rgba(5,8,16,.9); border: 2px solid rgba(255,255,255,.15); }
+  .t-CableNews #main, .t-CableNews #side { top: 62px; bottom: calc(var(--strip) + var(--tkh) + 16px); border: 2px solid rgba(255,255,255,.15); }
+  .t-CableNews #main { left: 18px; right: 18px; background: #000; }
+  .t-CableNews.has-side #main { right: calc(30px + 300px * var(--sw)); }
+  .t-CableNews #side { right: 18px; width: calc(300px * var(--sw)); background: rgba(5,8,16,.9); }
   .t-CableNews #side::before { content: attr(data-title); display: block; padding: 8px 14px; font-size: 15px; font-weight: 900; letter-spacing: .14em; background: var(--accent); }
   .t-CableNews .side-card { top: 38px; }
   .t-CableNews #side .card-title { display: none; }
-  .t-CableNews #ticker { bottom: 36px; height: 44px; background: #141414; color: #ffd400; font-size: 22px; font-weight: 700; border-top: 2px solid var(--accent); }
-  .t-CableNews #ticker .label { background: #ffd400; color: #000; font-size: 16px; }
+  .t-CableNews #ticker { bottom: var(--strip); height: var(--tkh); background: #141414; color: var(--yellow); font-size: calc(22px * var(--tk)); font-weight: 700; border-top: 2px solid var(--accent); }
+  .t-CableNews #ticker .label { background: var(--yellow); color: #000; font-size: calc(16px * var(--tk)); }
   .t-CableNews #strip { display: flex; position: absolute; left: 0; right: 0; bottom: 0; height: 36px; background: #000; z-index: 6; font-size: 18px; font-weight: 700; align-items: center; overflow: hidden; }
   .t-CableNews #strip .lbl { flex: none; padding: 0 14px; height: 100%; display: flex; align-items: center; background: #1e2a4a; letter-spacing: .1em; font-size: 14px; font-weight: 900; }
   .t-CableNews #strip .items { display: flex; gap: 28px; padding: 0 18px; white-space: nowrap; }
-  .t-CableNews #progress { bottom: 80px; }
+  .t-CableNews #progress { bottom: calc(var(--strip) + var(--tkh)); }
   .t-CableNews .story .lt { left: 0; right: 0; bottom: 0; }
   .t-CableNews .story .banner { display: inline-flex; align-items: stretch; font-size: 20px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
   .t-CableNews .story .banner .b1 { background: var(--accent); padding: 6px 14px; }
-  .t-CableNews .story .banner .b2 { background: #fff; color: #000; padding: 6px 14px; }
+  .t-CableNews .story .banner .b2 { background: #fff; color: #000; padding: 6px 14px; max-width: 560px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .t-CableNews .story .kicker { display: none; }
-  .t-CableNews .story h1 { margin: 0; padding: 12px 20px; background: rgba(255,255,255,.96); color: #0a0f1c; font-size: 38px; text-transform: uppercase; -webkit-line-clamp: 2; }
-  .t-CableNews .story p { margin: 0; padding: 8px 20px; background: rgba(0,0,0,.85); color: #fff; font-size: 21px; -webkit-line-clamp: 2; }
+  /* The bars' spacing is a transparent border, not padding: clamped text is clipped at the padding edge, so a cut-off
+     line would otherwise peek into the padding. */
+  .t-CableNews .story h1 { margin: 0; padding: 0; border: solid transparent; border-width: 12px 20px; background: rgba(255,255,255,.96); color: #0a0f1c;
+    font-size: calc(38px * var(--ts)); line-height: 1.12; text-transform: uppercase; -webkit-line-clamp: 3; }
+  .t-CableNews .story p { margin: 0; padding: 0; border: solid transparent; border-width: 8px 20px; background: rgba(0,0,0,.85); color: #fff; font-size: calc(21px * var(--ts)); -webkit-line-clamp: 2; }
   .t-CableNews .story.no-pic .lt { top: auto; bottom: 0; }
-  .t-CableNews .story.no-pic h1 { font-size: 40px; }
+  .t-CableNews .story.no-pic h1 { font-size: calc(40px * var(--ts)); }
+  .t-CableNews .story.no-pic p { font-size: calc(22px * var(--ts)); -webkit-line-clamp: 3; }
   .t-CableNews .story.no-pic .pic { display: block; background: linear-gradient(135deg, #1a2550, #0a0f1c); }
-  .t-CableNews .story.no-pic .pic::before { content: attr(data-src); position: absolute; left: 40px; top: 40px; font-size: 54px; font-weight: 900; color: rgba(255,255,255,.12); text-transform: uppercase; }
+  .t-CableNews .story.no-pic .pic::before { content: attr(data-src); position: absolute; left: 40px; top: 40px; right: 40px; font-size: 54px; font-weight: 900; color: rgba(255,255,255,.12);
+    text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .t-CableNews .story.no-pic .pic img { display: none; }
-  .t-CableNews .desk > h2 .tag { background: #ffd400; color: #000; }
+  .t-CableNews .desk > h2 .tag { background: var(--yellow); color: #000; }
 
   /* === 80s/90s local station ================================================================================== */
-  .t-RetroLocal { font-family: Georgia, "Times New Roman", "Liberation Serif", "DejaVu Serif", serif; --gold: #f5c542; }
+  .t-RetroLocal { font-family: Georgia, "Times New Roman", "Liberation Serif", "DejaVu Serif", serif; --gold: var(--hl, #f5c542); --tkh: calc(52px * var(--tk)); }
   .t-RetroLocal #bg { background: linear-gradient(180deg, #1b1464 0%, #3a1c71 45%, #7a1f5c 100%); }
   .t-RetroLocal #bg::before { content: ""; position: absolute; left: -10%; right: -10%; bottom: 0; height: 46%;
-    background: linear-gradient(transparent 0 0), repeating-linear-gradient(90deg, rgba(255,120,220,.35) 0 2px, transparent 2px 80px),
+    background: repeating-linear-gradient(90deg, rgba(255,120,220,.35) 0 2px, transparent 2px 80px),
                 repeating-linear-gradient(0deg, rgba(255,120,220,.35) 0 2px, transparent 2px 40px);
     transform: perspective(400px) rotateX(55deg); transform-origin: bottom; }
-  .t-RetroLocal #stage::after { content: ""; position: absolute; inset: 0; z-index: 30; pointer-events: none;
-    background: repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 2px, transparent 2px 4px); mix-blend-mode: multiply; }
   .t-RetroLocal #top { height: 76px; padding: 0 30px; gap: 16px; }
   .t-RetroLocal #top .bug { font-size: 30px; font-style: italic; font-weight: 900; padding: 6px 18px; color: #1b1464;
-    background: linear-gradient(180deg, #fff6c8, var(--gold) 55%, #b88a10); border: 3px solid #fff; border-radius: 6px; box-shadow: 0 4px 0 #5a3d00, 0 8px 18px rgba(0,0,0,.4); }
+    background: linear-gradient(180deg, #fff6c8, var(--gold) 55%, color-mix(in srgb, var(--gold) 70%, #000)); border: 3px solid #fff; border-radius: 6px; box-shadow: 0 4px 0 #5a3d00, 0 8px 18px rgba(0,0,0,.4); }
   .t-RetroLocal #top .bug i { display: none; }
   .t-RetroLocal #top .live { margin-left: auto; font-family: "Courier New", monospace; font-size: 26px; font-weight: 700; color: #fff; text-shadow: 2px 2px 0 #000; letter-spacing: .04em; }
   .t-RetroLocal #top .clock { font-family: "Courier New", monospace; font-size: 26px; font-weight: 700; text-shadow: 2px 2px 0 #000; }
-  .t-RetroLocal #main { left: 30px; right: 30px; top: 90px; bottom: 86px; border: 4px solid var(--gold); border-radius: 14px; background: rgba(10,6,40,.72);
-    box-shadow: inset 0 0 0 3px #1b1464, 0 10px 30px rgba(0,0,0,.5); }
-  .t-RetroLocal.has-side #main { right: 370px; }
-  .t-RetroLocal #side { right: 30px; width: 320px; top: 90px; bottom: 86px; border: 4px solid #fff; border-radius: 14px; background: linear-gradient(180deg, #2d58c4, #1b1464); }
-  .t-RetroLocal #ticker { bottom: 18px; left: 30px; right: 30px; height: 52px; border-radius: 26px; background: linear-gradient(180deg, #3b6fe0, #1b3c99); border: 3px solid #fff;
-    font-size: 24px; font-weight: 700; font-style: italic; }
-  .t-RetroLocal #ticker .label { background: var(--gold); color: #1b1464; border-radius: 23px 0 0 23px; font-size: 18px; font-style: normal; }
-  .t-RetroLocal #progress { bottom: 76px; left: 30px; background: var(--gold); }
+  .t-RetroLocal #main, .t-RetroLocal #side { top: 90px; bottom: calc(var(--tkh) + 34px); border-radius: 14px; }
+  .t-RetroLocal #main { left: 30px; right: 30px; border: 4px solid var(--gold); background: rgba(10,6,40,.72); box-shadow: inset 0 0 0 3px #1b1464, 0 10px 30px rgba(0,0,0,.5); }
+  .t-RetroLocal.has-side #main { right: calc(50px + 320px * var(--sw)); }
+  .t-RetroLocal #side { right: 30px; width: calc(320px * var(--sw)); border: 4px solid #fff; background: linear-gradient(180deg, #2d58c4, #1b1464); }
+  .t-RetroLocal #ticker { bottom: 18px; left: 30px; right: 30px; height: var(--tkh); border-radius: 26px; background: linear-gradient(180deg, #3b6fe0, #1b3c99); border: 3px solid #fff;
+    font-size: calc(24px * var(--tk)); font-weight: 700; font-style: italic; }
+  .t-RetroLocal #ticker .label { background: var(--gold); color: #1b1464; border-radius: 23px 0 0 23px; font-size: calc(18px * var(--tk)); font-style: normal; }
+  .t-RetroLocal #progress { bottom: calc(var(--tkh) + 24px); left: 30px; background: var(--gold); }
   .t-RetroLocal h1, .t-RetroLocal h2, .t-RetroLocal .big { text-shadow: 3px 3px 0 #1b1464, 5px 5px 0 rgba(0,0,0,.4); }
   .t-RetroLocal .story .pic { inset: 22px auto 22px 22px; width: 52%; border: 4px solid #fff; border-radius: 8px; overflow: hidden; }
   .t-RetroLocal .story .pic::after { background: none; }
   .t-RetroLocal .story .pic img { filter: saturate(1.35) contrast(1.08) sepia(.15); }
+  .t-RetroLocal .story .count { right: auto; left: 36px; top: 36px; }
   .t-RetroLocal .story .lt { left: calc(52% + 50px); right: 26px; top: 30px; bottom: auto; }
   .t-RetroLocal .story .kicker { background: var(--gold); color: #1b1464; font-family: Arial, sans-serif; }
-  .t-RetroLocal .story h1 { font-size: 40px; -webkit-line-clamp: 5; }
-  .t-RetroLocal .story p { font-size: 22px; color: #e8dcff; -webkit-line-clamp: 6; }
+  .t-RetroLocal .story h1 { font-size: calc(40px * var(--ts)); -webkit-line-clamp: 6; }
+  .t-RetroLocal .story p { font-size: calc(22px * var(--ts)); color: #e8dcff; -webkit-line-clamp: 6; }
   .t-RetroLocal .story.no-pic .lt { left: 40px; right: 40px; }
-  .t-RetroLocal .story.no-pic h1 { font-size: 56px; }
+  .t-RetroLocal .story.no-pic h1 { font-size: calc(56px * var(--ts)); }
   .t-RetroLocal .desk > h2 .tag { background: var(--gold); color: #1b1464; font-family: Arial, sans-serif; text-shadow: none; }
-  .t-RetroLocal .story .count { right: auto; left: 36px; top: 36px; }
   .t-RetroLocal .weather .day, .t-RetroLocal .markets .q, .t-RetroLocal .sports .g { background: linear-gradient(180deg, #2d58c4, #1b2f80); border: 2px solid #fff; }
   .t-RetroLocal .weather .temp { color: var(--gold); }
   .t-RetroLocal .card-title { color: var(--gold); }
 
+  /* With no ticker, the main area goes down to the bottom margin. */
+  .no-ticker { --tkh: 0px !important; }
+
   /* === Teletext ================================================================================================ */
-  .t-Teletext { font-family: "Courier New", "Liberation Mono", "DejaVu Sans Mono", monospace; font-weight: 700; }
+  .t-Teletext { font-family: "Courier New", "Liberation Mono", "DejaVu Sans Mono", monospace !important; font-weight: 700; }
   .t-Teletext #bg { background: #000; }
   .t-Teletext #top, .t-Teletext #side, .t-Teletext #ticker, .t-Teletext #progress, .t-Teletext #strip { display: none !important; }
   .t-Teletext #tt { display: block; position: absolute; left: 40px; right: 40px; top: 14px; height: 36px; font-size: 30px; line-height: 36px; white-space: pre; }
@@ -275,7 +309,7 @@
   const boot = window.NEWS_BOOT;
   const $ = id => document.getElementById(id);
   let state = null, cfg = null, offset = 0, shownKey = "", configKey = "", tickerKey = "", stripKey = "";
-  let sideAt = 0, sideIndex = 0, sideKind = "";
+  let sideAt = 0, sideIndex = 0, sideKind = "", radarTimer = 0, fontLoaded = "";
 
   // --- Helpers ---------------------------------------------------------------------------------------------------
 
@@ -286,14 +320,16 @@
   const arrow = value => value > 0.05 ? "▲" : value < -0.05 ? "▼" : "■";
   const dir = value => value > 0.05 ? "up" : value < -0.05 ? "down" : "flat";
   const teletext = () => cfg && cfg.theme === "Teletext";
+  const look = () => (cfg && cfg.look) || {};
+  const mapLook = () => (cfg && cfg.map) || { style: "Auto", radarOpacity: .7, drift: true, marker: true };
 
   function zoned(options) {
     try { return new Intl.DateTimeFormat("en-GB", Object.assign({ timeZone: cfg && cfg.timeZone || undefined }, options)); }
     catch { return new Intl.DateTimeFormat("en-GB", options); }
   }
 
-  function clockText(seconds) {
-    const parts = zoned({ hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: !!(cfg && cfg.twelveHourClock) }).formatToParts(new Date(now()));
+  function clockText(seconds, at) {
+    const parts = zoned({ hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: !!(cfg && cfg.twelveHourClock) }).formatToParts(new Date(at ?? now()));
     const get = type => (parts.find(part => part.type === type) || {}).value || "";
     const hour = get("hour"), minute = get("minute"), second = get("second"), half = get("dayPeriod");
     return seconds ? `${hour}:${minute}:${second}${half ? " " + half.toUpperCase() : ""}` : `${hour}:${minute}${half ? " " + half.toUpperCase() : ""}`;
@@ -312,6 +348,72 @@
     if (minutes < 60) return `${minutes} min ago`;
     const hours = Math.round(minutes / 60);
     return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`;
+  }
+
+  // Lettering: loaded from Google Fonts when chosen, with the computer's own close match until (or unless) it arrives.
+  const FONTS = {
+    Sans: ["Inter:wght@400;600;800;900", `"Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif`],
+    Condensed: ["Oswald:wght@400;500;600;700", `"Oswald", "Arial Narrow", "Liberation Sans Narrow", sans-serif`],
+    Serif: ["Merriweather:wght@400;700;900", `"Merriweather", Georgia, "Times New Roman", serif`],
+    Slab: ["Roboto+Slab:wght@400;600;800;900", `"Roboto Slab", Rockwell, "Courier New", serif`],
+    Rounded: ["Nunito:wght@400;700;800;900", `"Nunito", "Arial Rounded MT Bold", "Segoe UI", sans-serif`],
+    Mono: ["JetBrains+Mono:wght@400;700;800", `"JetBrains Mono", Consolas, "Courier New", monospace`]
+  };
+
+  function applyFont() {
+    const font = FONTS[look().font];
+    document.body.style.fontFamily = font && !teletext() ? font[1] : "";
+    if (font && fontLoaded !== font[0]) {
+      fontLoaded = font[0];
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = `https://fonts.googleapis.com/css2?family=${font[0]}&display=swap`;
+      document.head.appendChild(link);
+      // Sizes are fitted to the lettering, so fit again once it's in.
+      link.onload = () => document.fonts && document.fonts.ready.then(() => fitAll($("main")));
+    }
+  }
+
+  // --- Fitting text --------------------------------------------------------------------------------------------
+
+  // Shrinks [data-fit] text (to its minimum) until it fits its box, then the story's lower third until it fits the screen.
+  function fitAll(scope) {
+    if (!scope || teletext()) return;
+    scope.querySelectorAll(".seg:not(.leave)").forEach(seg => {
+      const fits = [...seg.querySelectorAll("[data-fit]")];
+      fits.forEach(el => { el.style.fontSize = ""; });
+      // Over by at least half a line (a pixel or two is only rounding).
+      const over = el => { const half = parseFloat(getComputedStyle(el).fontSize) / 2; return el.scrollHeight > el.clientHeight + half || el.scrollWidth > el.clientWidth + half; };
+      fits.forEach(el => shrink(el, () => over(el)));
+      const block = seg.querySelector(".lt");
+      if (block) {
+        // What's in the lower third (not the box itself, which some looks stretch to the bottom) must be on screen.
+        const box = seg.getBoundingClientRect();
+        const outside = () => {
+          const rects = [...block.children].map(child => child.getBoundingClientRect()).filter(rect => rect.height > 0);
+          return rects.length > 0 && (Math.min(...rects.map(rect => rect.top)) < box.top + 8 || Math.max(...rects.map(rect => rect.bottom)) > box.bottom - 8);
+        };
+        // The summary stays smaller than the headline it follows.
+        const headline = block.querySelector("h1"), summary = block.querySelector("p");
+        if (headline && summary) {
+          const most = Math.max(parseFloat(summary.dataset.fit) || 15, parseFloat(getComputedStyle(headline).fontSize) * .62);
+          if (parseFloat(getComputedStyle(summary).fontSize) > most) summary.style.fontSize = most + "px";
+        }
+        for (let guard = 0; guard < 30 && outside(); guard++) {
+          if (!fits.some(el => shrink(el, () => true, 1))) break;
+        }
+      }
+    });
+  }
+
+  // Two pixels at a time while too big; at most `steps` times. Whether it could shrink at all.
+  function shrink(el, tooBig, steps = 40) {
+    let size = parseFloat(getComputedStyle(el).fontSize), changed = false;
+    const min = parseFloat(el.dataset.fit) || 14;
+    for (let i = 0; i < steps && size > min && tooBig(); i++) {
+      size -= 2; el.style.fontSize = size + "px"; changed = true;
+    }
+    return changed;
   }
 
   // --- Weather icons ---------------------------------------------------------------------------------------------
@@ -350,13 +452,13 @@
       .map(c => `<i style="width:${cell}px;height:${cell}px;background:${COLOURS[c] || "transparent"}"></i>`).join("")}</div>`;
   }
 
-  function spark(values, up) {
-    if (!values || values.length < 2) return `<svg viewBox="0 0 180 80"></svg>`;
+  function spark(values, up, width = 180, height = 80) {
+    if (!values || values.length < 2) return `<svg viewBox="0 0 ${width} ${height}"></svg>`;
     const min = Math.min(...values), max = Math.max(...values), span = max - min || 1;
-    const points = values.map((v, i) => `${(i / (values.length - 1) * 176 + 2).toFixed(1)},${(76 - (v - min) / span * 72).toFixed(1)}`).join(" ");
+    const points = values.map((v, i) => `${(i / (values.length - 1) * (width - 4) + 2).toFixed(1)},${(height - 4 - (v - min) / span * (height - 8)).toFixed(1)}`).join(" ");
     const colour = up ? "#39d98a" : "#ff5a6a";
-    return `<svg viewBox="0 0 180 80"><polyline points="${points}" fill="none" stroke="${colour}" stroke-width="3" stroke-linejoin="round"/>` +
-      `<polygon points="2,78 ${points} 178,78" fill="${colour}" opacity=".12"/></svg>`;
+    return `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}"><polyline points="${points}" fill="none" stroke="${colour}" stroke-width="3" stroke-linejoin="round"/>` +
+      `<polygon points="2,${height - 2} ${points} ${width - 2},${height - 2}" fill="${colour}" opacity=".12"/></svg>`;
   }
 
   // --- Segments --------------------------------------------------------------------------------------------------
@@ -371,11 +473,11 @@
 
   const SEG = {
     intro: () => `<div class="seg intro"><div class="date">${esc(zoned({ weekday: "long", day: "numeric", month: "long" }).format(new Date(now())))}</div>
-      <div class="big">${esc(cfg.name)}</div><div class="sub">The latest headlines${cfg.location ? " for " + esc(cfg.location.split(",")[0]) : ""}</div></div>`,
+      <div class="big" data-fit="40">${esc(cfg.name)}</div><div class="sub">The latest headlines${cfg.location ? " for " + esc(cfg.location.split(",")[0]) : ""}</div></div>`,
 
-    outro: () => `<div class="seg outro"><div class="big">${esc(cfg.name)}</div><div class="sub">That's the news for now. Stay with us.</div></div>`,
+    outro: () => `<div class="seg outro"><div class="big" data-fit="40">${esc(cfg.name)}</div><div class="sub">That's the news for now. Stay with us.</div></div>`,
 
-    empty: () => `<div class="seg empty"><div class="big">${esc(cfg.name)}</div><div class="sub">No news to bring you right now.</div></div>`,
+    empty: () => `<div class="seg empty"><div class="big" data-fit="40">${esc(cfg.name)}</div><div class="sub">No news to bring you right now.</div></div>`,
 
     story: item => {
       const story = data().stories[item.index];
@@ -389,8 +491,8 @@
         <div class="lt">
           <div class="banner"><span class="b1">${breaking ? "Breaking news" : "Latest"}</span><span class="b2">${esc(story.source)}</span></div>
           <div class="kicker">${esc(story.source)}${when ? " · " + esc(when) : ""}</div>
-          <h1 class="clip">${esc(story.title)}</h1>
-          ${story.summary ? `<p class="clip">${esc(story.summary)}</p>` : ""}
+          <h1 class="clip" data-fit="22">${esc(story.title)}</h1>
+          ${story.summary ? `<p class="clip" data-fit="15">${esc(story.summary)}</p>` : ""}
         </div></div>`;
     },
 
@@ -409,7 +511,7 @@
     markets: () => {
       const quotes = data().quotes.slice(0, 6);
       return `<div class="seg desk markets"><h2><span class="tag">Markets</span>${quotes.length > 4 ? "The markets now" : "On the markets"}</h2><div class="grid">${quotes.map(q => `
-        <div class="q"><div><span class="n">${esc(q.name)}</span><span class="s">${esc(q.symbol)}</span></div>${spark(q.spark, q.change >= 0)}
+        <div class="q"><div><span class="n">${esc(q.name)}</span><span class="s">${esc(q.symbol)}</span></div>${spark(q.spark, q.change >= 0, 150, 70)}
         <div><div class="p">${fmt(q.price)}</div><div class="c ${dir(q.changePercent)}">${arrow(q.changePercent)} ${signed(q.change)} (${signed(q.changePercent)}%)</div></div></div>`).join("")}</div></div>`;
     },
 
@@ -426,29 +528,40 @@
 
     lottery: () => {
       const draws = data().lottery;
-      return `<div class="seg desk lottery"><h2><span class="tag">Lottery</span>The latest numbers</h2><div class="draws">${draws.map((draw, row) => `
+      const many = draws.length > 3 || draws.some(draw => draw.numbers.length > 6);
+      return `<div class="seg desk lottery ${many ? "many" : ""}"><h2><span class="tag">Lottery</span>The latest numbers</h2><div class="draws">${draws.map((draw, row) => `
         <div class="draw" style="--game:${esc(draw.colour)}"><span class="name">${esc(draw.name)}</span><span class="when">${draw.date ? esc(dayName(draw.date, true) + " " + draw.date.slice(8, 10) + "/" + draw.date.slice(5, 7)) : ""}</span>
-        <div class="balls">${draw.numbers.map((n, i) => `<div class="ball" style="animation-delay:${row * 1.4 + i * .28}s">${n}</div>`).join("")}
-        ${draw.bonus != null ? `<div class="ball bonus" style="animation-delay:${row * 1.4 + draw.numbers.length * .28 + .2}s">${draw.bonus}</div>` : ""}
+        <div class="balls">${draw.numbers.map((n, i) => `<div class="ball" style="animation-delay:${row * 1.2 + i * .22}s">${n}</div>`).join("")}
+        ${draw.bonus != null ? `<div class="ball bonus" style="animation-delay:${row * 1.2 + draw.numbers.length * .22 + .2}s">${draw.bonus}</div>` : ""}
         ${draw.multiplier ? `<span class="x">${esc(draw.multiplier)}×</span>` : ""}</div></div>`).join("")}</div></div>`;
     },
 
     map: item => {
       const m = data().map;
       if (!m) return SEG.empty(item);
-      const incidents = m.incidents.slice(0, 6);
+      const incidents = m.incidents;
       const lead = m.traffic
-        ? (m.incidents.length === 0 ? "Traffic is moving well." : `${m.incidents.length} incident${m.incidents.length === 1 ? "" : "s"} reported.`)
-        : "The latest rain radar.";
+        ? (incidents.length === 0 ? (m.trafficFlow ? "Traffic flow on the main roads." : "No incidents reported.") : `${incidents.length} incident${incidents.length === 1 ? "" : "s"} reported.`)
+        : m.radar ? (m.radarFrames.length > 1 ? "Rain radar, the last hour." : "The latest rain radar.") : "";
+      const style = baseLayer();
+      const credit = style === "satellite" ? "Imagery © Esri, Maxar, Earthstar Geographics" : style === "osm" ? "© OpenStreetMap contributors" : "© OpenStreetMap contributors © CARTO";
       return `<div class="seg desk map"><div class="view" data-map="1"></div>
-        <div class="panel"><div class="card-title">${m.traffic ? "Traffic" : "Radar"}</div><h2>${esc(m.place.split(",")[0])}</h2><div class="lead">${esc(lead)}</div>
+        <div class="panel"><div class="card-title">${m.traffic ? "Traffic" : "Radar"}</div><h2>${esc(m.place.split(",")[0])}</h2>${lead ? `<div class="lead">${esc(lead)}</div>` : ""}
         ${incidents.map((inc, i) => `<div class="inc"><b class="pin m${inc.magnitude}" style="position:static;margin:0;border-width:2px">${i + 1}</b>
           <span><strong>${esc(inc.category)}</strong>${inc.road ? " · " + esc(inc.road) : ""}${inc.description && inc.description !== inc.category ? "<br>" + esc(inc.description) : ""}</span></div>`).join("")}</div>
-        <div class="attrib">© OpenStreetMap contributors${m.radar ? " · Radar: RainViewer" : ""}${m.traffic ? " · Traffic: TomTom" : ""}</div></div>`;
+        ${m.radar ? `<div class="stamp"></div>` : ""}
+        <div class="attrib">${credit}${m.radar ? " · Radar: RainViewer" : ""}${m.traffic ? " · Traffic: TomTom" : ""}</div></div>`;
     }
   };
 
   // --- The map ---------------------------------------------------------------------------------------------------
+
+  // The tiles the map is drawn on: the show's choice, or the look's own.
+  function baseLayer() {
+    const chosen = { Streets: "osm", Light: "light", Dark: "dark", Satellite: "satellite" }[mapLook().style];
+    if (chosen) return chosen;
+    return cfg.theme === "RetroLocal" || cfg.theme === "Teletext" ? "osm" : "dark";
+  }
 
   function toPixel(lat, lon, zoom) {
     const scale = 256 * Math.pow(2, zoom);
@@ -471,35 +584,49 @@
     return `<div class="layer ${cls}" style="transform:scale(${scale})">${html}</div>`;
   }
 
-  function drawMap(view) {
+  function drawMap(view, item) {
     const m = data().map;
     if (!m || !view) return;
+    clearInterval(radarTimer);
     const width = view.clientWidth, height = view.clientHeight, centre = [m.latitude, m.longitude], zoom = m.zoom;
     // The place goes in the middle of what the panel (on the left) leaves clear.
     const shift = Math.min(234, width / 4);
-    let html = tileLayer("osm", zoom, centre, width, height, 1, "osm", shift);
-    if (m.traffic) html += tileLayer("traffic", zoom, centre, width, height, 1, "traffic", shift);
-    if (m.radar) {
-      // Radar only goes so close: drawn at zoom 7 at most and scaled up.
-      const radarZoom = Math.min(zoom, 7);
-      html += tileLayer("radar", radarZoom, centre, width, height, Math.pow(2, zoom - radarZoom), "radar", shift);
-    }
+    const layer = baseLayer();
+    let html = tileLayer(layer, zoom, centre, width, height, 1, "base", shift);
+    if (m.trafficFlow) html += tileLayer("traffic", zoom, centre, width, height, 1, "traffic", shift);
+    // Radar only goes so close: drawn at zoom 7 at most and scaled up. One layer per picture, shown in turn.
+    const radarZoom = Math.min(zoom, 7), frames = m.radar ? m.radarFrames : [];
+    frames.forEach((time, i) => {
+      html += tileLayer(`radar-${time}`, radarZoom, centre, width, height, Math.pow(2, zoom - radarZoom), `radar${i === frames.length - 1 ? " on" : ""}`, shift);
+    });
     const [cx, cy] = toPixel(centre[0], centre[1], zoom);
     const at = (lat, lon) => { const [x, y] = toPixel(lat, lon, zoom); return [x - cx + width / 2 + shift, y - cy + height / 2]; };
-    m.incidents.slice(0, 6).forEach((inc, i) => {
+    m.incidents.forEach((inc, i) => {
       const [x, y] = at(inc.latitude, inc.longitude);
       if (x > 0 && y > 0 && x < width && y < height) html += `<div class="pin m${inc.magnitude}" style="left:${x}px;top:${y}px">${i + 1}</div>`;
     });
-    if (!m.traffic) html += `<div class="here" style="left:${width / 2 + shift}px;top:${height / 2}px"></div>`;
-    view.innerHTML = html;
-    view.querySelectorAll(".osm img").forEach(img => { img.style.filter = MAP_FILTERS[cfg.theme] || ""; });
-  }
+    if (mapLook().marker) html += `<div class="here" style="left:${width / 2 + shift}px;top:${height / 2}px"></div>`;
+    const drift = mapLook().drift;
+    view.innerHTML = `<div class="pan ${drift ? "drift" : ""}" style="animation-duration:${(item ? item.durationMs : 15000) / 1000}s;--radar:${mapLook().radarOpacity ?? .7}">${html}</div>`;
+    if (layer === "osm" && cfg.theme === "RetroLocal") view.querySelectorAll(".base img").forEach(img => { img.style.filter = "sepia(.5) saturate(1.6) hue-rotate(-20deg) contrast(1.05)"; });
 
-  const MAP_FILTERS = {
-    NewsDesk: "invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.55)",
-    CableNews: "invert(1) hue-rotate(180deg) brightness(.75) saturate(.4)",
-    RetroLocal: "sepia(.5) saturate(1.6) hue-rotate(-20deg) contrast(1.05)"
-  };
+    // The radar's last hour as a loop: each picture half a second, the latest held a little longer.
+    const stamp = view.parentElement.querySelector(".stamp");
+    const layers = [...view.querySelectorAll(".radar")];
+    const label = i => { if (stamp) stamp.textContent = (frames.length > 1 ? "Radar " : "") + clockText(false, frames[i] * 1000); };
+    label(frames.length - 1);
+    if (layers.length > 1) {
+      let shown = layers.length - 1, hold = 0;
+      radarTimer = setInterval(() => {
+        if (shown === layers.length - 1 && hold++ < 3) return;
+        hold = 0;
+        layers[shown].classList.remove("on");
+        shown = (shown + 1) % layers.length;
+        layers[shown].classList.add("on");
+        label(shown);
+      }, 500);
+    }
+  }
 
   // --- Teletext --------------------------------------------------------------------------------------------------
 
@@ -557,14 +684,14 @@
 
     lottery: () => `<div class="seg">${band("y", "LOTTERY", "LATEST DRAWS", "tt-b")}
       ${data().lottery.map(d => `<div class="tt-row"><span class="tt-c">${esc(d.name.toUpperCase())}  ${esc(d.date || "")}</span></div>
-        <div style="margin:6px 0 16px">${d.numbers.map(n => `<span class="tt-ball tt-w" style="background:#00f">${n}</span>`).join("")}${d.bonus != null ? `<span class="tt-ball tt-w" style="background:#f00">${d.bonus}</span>` : ""}</div>`).join("")}</div>`,
+        <div style="margin:4px 0 10px">${d.numbers.map(n => `<span class="tt-ball tt-w" style="background:#00f">${n}</span>`).join("")}${d.bonus != null ? `<span class="tt-ball tt-w" style="background:#f00">${d.bonus}</span>` : ""}</div>`).join("")}</div>`,
 
     map: () => {
       const m = data().map;
       if (!m) return TT.empty();
       const list = m.incidents.slice(0, 5).map((inc, i) => `<div class="tt-row"><span class="tt-y">${i + 1} </span><span class="tt-w">${pad((inc.category + (inc.road ? " " + inc.road : "")).toUpperCase(), 40)}</span></div>`).join("");
       return `<div class="seg">${band("m", m.traffic ? "TRAVEL NEWS" : "RADAR", m.place.split(",")[0].toUpperCase(), "tt-w")}
-        <div class="tt-map" data-map="tt"></div>${list || `<div class="tt-row"><span class="tt-c">${m.traffic ? "NO INCIDENTS REPORTED" : "RAIN RADAR, LAST HOUR"}</span></div>`}</div>`;
+        <div class="tt-map" data-map="tt"></div>${list || `<div class="tt-row"><span class="tt-c">${m.traffic ? "NO INCIDENTS REPORTED" : "RAIN RADAR"}</span></div>`}</div>`;
     }
   };
 
@@ -611,7 +738,7 @@
       }
     };
     m.incidents.slice(0, 5).forEach(inc => { const [x, y] = toPixel(inc.latitude, inc.longitude, zoom); mark(x - left, y - top, [0, 255, 255]); });
-    mark(width / 2, height / 2, [255, 0, 255]);
+    if (mapLook().marker) mark(width / 2, height / 2, [255, 0, 255]);
     sctx.putImageData(pixels, 0, 0);
     small.style.width = width + "px"; small.style.height = height + "px";
     holder.replaceChildren(small);
@@ -639,8 +766,45 @@
     if (live.length) cards.push(() => `<div class="side-card"><div class="card-title">Scores</div>
       ${live.slice(0, 6).map(g => `<div class="row"><span class="k">${esc(g.away.abbreviation)} ${esc(g.away.score)} · ${esc(g.home.abbreviation)} ${esc(g.home.score)}</span><span class="v" style="font-size:15px;color:var(--soft)">${esc(g.status)}</span></div>`).join("")}</div>`);
     if (d.lottery.length) cards.push(() => `<div class="side-card"><div class="card-title">Lottery</div>
-      ${d.lottery.map(l => `<div class="next"><strong>${esc(l.name)}</strong><br>${l.numbers.join(" · ")}${l.bonus != null ? ` <span style="color:${esc(l.colour)}">● ${l.bonus}</span>` : ""}</div>`).join("")}</div>`);
+      ${d.lottery.map(l => `<div class="note"><strong>${esc(l.name)}</strong><br>${l.numbers.join(" · ")}${l.bonus != null ? ` <span style="color:${esc(l.colour)}">● ${l.bonus}</span>` : ""}</div>`).join("")}</div>`);
     return cards;
+  }
+
+  // A small picture for what's coming up: the story's own, the weather's symbol, the market's line, the teams, the map…
+  function thumb(item) {
+    const d = data();
+    switch (item.kind) {
+      case "story": {
+        // The source's letter, with the picture over it (if there is one and it loads).
+        const story = d.stories[item.index];
+        const letter = esc(((story && story.source) || "N")[0]);
+        return story && story.image && cfg.showImages
+          ? `<div class="thumb letter">${letter}<img src="${esc(story.image)}" referrerpolicy="no-referrer" alt="" style="position:absolute;inset:0" onerror="this.remove()"></div>`
+          : `<div class="thumb letter">${letter}</div>`;
+      }
+      case "weather": return d.weather ? `<div class="thumb">${icon(d.weather.icon)}</div>` : "";
+      case "markets": return d.quotes.length ? `<div class="thumb">${spark(d.quotes[0].spark, d.quotes[0].change >= 0, 84, 46)}</div>` : "";
+      case "sports": {
+        const game = d.scores.find(g => g.league === item.key);
+        const logos = game ? [game.away.logo, game.home.logo].filter(Boolean) : [];
+        return logos.length
+          ? `<div class="thumb logos">${logos.map(src => `<img src="${esc(src)}" referrerpolicy="no-referrer" alt="" onerror="this.remove()">`).join("")}</div>`
+          : `<div class="thumb letter" style="font-size:15px">${esc(item.key || "")}</div>`;
+      }
+      case "map": {
+        const m = d.map;
+        if (!m) return "";
+        const zoom = Math.max(3, m.zoom - 2), [x, y] = toPixel(m.latitude, m.longitude, zoom);
+        const tx = Math.floor(x / 256), ty = Math.floor(y / 256);
+        return `<div class="thumb tile"><img src="${base}/tiles/${baseLayer()}/${zoom}/${tx}/${ty}.png" style="left:${(44 - (x - tx * 256)).toFixed(0)}px;top:${(25 - (y - ty * 256)).toFixed(0)}px" alt="" onerror="this.remove()"></div>`;
+      }
+      case "lottery": {
+        const draw = d.lottery[0];
+        const colour = draw ? draw.colour : "#e4252c";
+        return `<div class="thumb"><svg width="84" height="46" viewBox="0 0 84 46"><circle cx="20" cy="23" r="13" fill="#e9edf2"/><circle cx="42" cy="23" r="13" fill="#e9edf2"/><circle cx="64" cy="23" r="13" fill="${esc(colour)}"/></svg></div>`;
+      }
+      default: return "";
+    }
   }
 
   function upNext(position) {
@@ -650,7 +814,7 @@
       if (item.kind === "intro" || item.kind === "outro") continue;
       next.push(item);
     }
-    return `<div class="side-card"><div class="card-title">Up next</div>${next.map(item => `<div class="next"><div class="clip">${esc(item.label)}</div></div>`).join("")}</div>`;
+    return `<div class="side-card"><div class="card-title">Up next</div>${next.map(item => `<div class="next">${thumb(item)}<div class="clip">${esc(item.label)}</div></div>`).join("")}</div>`;
   }
 
   function updateSide(position) {
@@ -664,8 +828,7 @@
     const t = now();
     if (kind !== sideKind || t - sideAt > 8000 || (kind === "next" && side.dataset.at !== String(position.index))) {
       sideKind = kind; sideAt = t; side.dataset.at = String(position.index);
-      const html = kind === "data" ? cards[(sideIndex++) % cards.length]() : upNext(position);
-      side.innerHTML = html;
+      side.innerHTML = kind === "data" ? cards[(sideIndex++) % cards.length]() : upNext(position);
     }
   }
 
@@ -681,24 +844,29 @@
 
   function updateTicker() {
     const ticker = $("ticker");
-    if (!cfg.showTicker || teletext()) { ticker.classList.add("hidden"); return; }
+    const on = cfg.showTicker && !teletext();
+    document.body.classList.toggle("no-ticker", !on);
+    if (!on) { ticker.classList.add("hidden"); return; }
     ticker.classList.remove("hidden");
     const items = tickerItems();
     const separator = { NewsDesk: "  ■  ", CableNews: "  ●  ", RetroLocal: "  ★  " }[cfg.theme] || "  •  ";
     const text = items.join(separator) + separator;
-    if (text === tickerKey) return;
-    tickerKey = text;
+    const speed = look().tickerSpeed || 110;
+    if (text + speed === tickerKey) return;
+    tickerKey = text + speed;
     $("tickerLabel").textContent = cfg.theme === "CableNews" ? "Breaking" : cfg.theme === "RetroLocal" ? "News Update" : "Headlines";
     const run = $("tickerRun");
     // Twice over, so the crawl loops without a gap.
     run.innerHTML = `<span>${esc(text)}</span><span>${esc(text)}</span>`;
-    requestAnimationFrame(() => { run.style.animationDuration = Math.max(20, run.scrollWidth / 2 / 110) + "s"; });
+    requestAnimationFrame(() => { run.style.animationDuration = Math.max(10, run.scrollWidth / 2 / speed) + "s"; });
   }
 
   function updateStrip() {
     const strip = $("strip");
     const quotes = data().quotes;
-    if (cfg.theme !== "CableNews" || !quotes.length) { strip.classList.add("hidden"); return; }
+    const on = cfg.theme === "CableNews" && quotes.length > 0;
+    document.body.classList.toggle("has-strip", on);
+    if (!on) { strip.classList.add("hidden"); return; }
     strip.classList.remove("hidden");
     const html = quotes.slice(0, 6).map(q => `<span>${esc(q.name)} <span class="${dir(q.changePercent)}">${arrow(q.changePercent)} ${fmt(q.price)} ${signed(q.changePercent)}%</span></span>`).join("");
     if (html !== stripKey) { stripKey = html; $("stripItems").innerHTML = html; }
@@ -710,11 +878,20 @@
     const key = JSON.stringify(cfg);
     if (key === configKey) return;
     configKey = key;
-    document.body.className = `t-${cfg.theme}` + (boot.preview ? " preview" : "") + (cfg.showSidebar && cfg.theme !== "Teletext" ? " has-side" : "");
-    document.documentElement.style.setProperty("--accent", cfg.accent);
-    document.body.style.setProperty("--accent", cfg.accent);
+    const l = look();
+    document.body.className = `t-${cfg.theme}` + (boot.preview ? " preview" : "") + (cfg.showSidebar && cfg.theme !== "Teletext" ? " has-side" : "") + (l.scanLines ? " scanlines" : "");
+    const style = document.body.style;
+    style.setProperty("--accent", cfg.accent);
+    style.setProperty("--ts", String(l.textScale || 1));
+    style.setProperty("--tk", String(l.tickerSize || 1));
+    style.setProperty("--sw", String(l.sideSize || 1));
+    if (l.highlight) style.setProperty("--hl", l.highlight); else style.removeProperty("--hl");
+    applyFont();
     $("name").textContent = cfg.name;
-    $("live").textContent = cfg.theme === "RetroLocal" ? "▶ PLAY" : "LIVE";
+    const label = l.liveLabel == null ? (cfg.theme === "RetroLocal" ? "▶ PLAY" : "LIVE") : l.liveLabel;
+    $("live").textContent = label;
+    $("live").classList.toggle("hidden", !label);
+    $("clock").classList.toggle("hidden", l.showClock === false);
     tickerKey = ""; stripKey = ""; shownKey = ""; sideKind = "";
     updateTicker(); updateStrip();
   }
@@ -735,10 +912,11 @@
 
   function show(html, after) {
     const main = $("main");
+    clearInterval(radarTimer);
     main.querySelectorAll(".seg:not(.leave)").forEach(old => { old.classList.add("leave"); setTimeout(() => old.remove(), 500); });
     main.insertAdjacentHTML("beforeend", html);
     const added = main.lastElementChild;
-    if (after) requestAnimationFrame(() => after(added));
+    requestAnimationFrame(() => { fitAll(main); if (after) after(added); });
   }
 
   function tick() {
@@ -764,10 +942,11 @@
     const key = `${state.version}:${position.index}:${cfg.theme}`;
     if (key !== shownKey) {
       shownKey = key;
-      show(render(position.item), element => {
-        if (position.item.kind !== "map") return;
+      const item = position.item;
+      show(render(item), element => {
+        if (item.kind !== "map") return;
         if (teletext()) drawTeletextMap(element.querySelector("[data-map=tt]"));
-        else drawMap(element.querySelector("[data-map]"));
+        else drawMap(element.querySelector("[data-map]"), item);
       });
       // The next story's picture, ready when it's needed.
       const next = state.items[(position.index + 1) % state.items.length];
@@ -801,7 +980,7 @@
     if (event.data && event.data.type === "news-refresh") poll();
   });
 
-  cfg = { id: boot.id, name: "", theme: "NewsDesk", accent: "#d7263d", showSidebar: false, showTicker: false, desks: [] };
+  cfg = { id: boot.id, name: "", theme: "NewsDesk", accent: "#d7263d", showSidebar: false, showTicker: false, desks: [], look: {}, map: {} };
   poll();
   setInterval(poll, 1500);
   setInterval(tick, 250);
