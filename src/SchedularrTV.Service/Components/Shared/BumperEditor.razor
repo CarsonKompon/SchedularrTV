@@ -1,8 +1,6 @@
 @* Clip blocks played around a title's episodes, laid out as a timeline. *@
-@using SchedularrTV.Providers.FileSystem
-@using SchedularrTV.Providers.Jellyfin
-@* Optional: Jellyfin's and the local folders' services are only there while their plugins are loaded. *@
-@inject IServiceProvider Services
+@* Every running source that can list extras (Jellyfin, local folders, library plugins). *@
+@inject IEnumerable<IExtrasSource> ExtrasSources
 @inject LibraryBrowser Library
 @inject ConfigEditor Editor
 
@@ -300,16 +298,12 @@
     private sealed record ExtraClip(string Name, string Path, TimeSpan Duration);
 
     private IReadOnlyList<ExtraClip>? _extras;
-    private enum ExtrasSource { None, Local, Jellyfin }
+    /// <summary>Whether a running source owns the show, so its having no extras is an answer rather than a gap.</summary>
+    private bool _owned;
 
-    private ExtrasSource _source;
-
-    private string NoExtras => _source switch
-    {
-        ExtrasSource.Local => "This show's folder has no extras (videos in an Extras, Trailers or Featurettes folder, or named like Show-trailer.mkv). Browse files on disk instead.",
-        ExtrasSource.Jellyfin => "This show has no extras in Jellyfin. Browse files on disk instead.",
-        _ => "This show's extras can't be listed here (it isn't from Jellyfin or a local TV folder). Browse files on disk instead."
-    };
+    private string NoExtras => _owned
+        ? "This show has no extras (for a local show: videos in an Extras, Trailers or Featurettes folder, or named like Show-trailer.mkv). Browse files on disk instead."
+        : "This show's extras can't be listed here: none of your media sources can say. Browse files on disk instead.";
     private IReadOnlyList<LibraryEpisode> _episodes = [];
     private IReadOnlyList<int> _seasons = [];
     private string? _seriesId;
@@ -347,28 +341,16 @@
         }
     }
 
-    /// <summary>
-    /// The show's extras from where the show comes from: its local folder for a show from local TV folders, else
-    /// Jellyfin (none when Jellyfin isn't set up, rather than an error).
-    /// </summary>
+    /// <summary>The show's extras, from the running source that owns it (none, rather than an error, when no source does).</summary>
     private async Task<IReadOnlyList<ExtraClip>> ExtrasAsync(string showId)
     {
-        if (LocalLibraryIds.IsLocalId(showId))
-        {
-            _source = ExtrasSource.Local;
-            return Services.GetService<FileSystemMediaLibrary>() is { } local
-                ? [.. (await local.ExtrasAsync(showId)).Select(extra => new ExtraClip(extra.Name, extra.Path, extra.Duration))]
-                : [];
-        }
-
-        if (Services.GetService<JellyfinMediaLibrary>() is not { IsConfigured: true } || Services.GetService<JellyfinClient>() is not { } jellyfin)
+        if (ExtrasSources.FirstOrDefault(source => source.Owns(showId)) is not { } owner)
         {
             return [];
         }
 
-        _source = ExtrasSource.Jellyfin;
-        return [.. (await jellyfin.GetSpecialFeaturesAsync(showId, CancellationToken.None))
-            .Select(extra => new ExtraClip(extra.Name, extra.Path, extra.Duration))];
+        _owned = true;
+        return [.. (await owner.GetExtrasAsync(showId)).Select(extra => new ExtraClip(extra.Name, extra.Path, extra.Duration))];
     }
 
     private IEnumerable<BumperBlock> Ordered(BumperPosition position) =>

@@ -73,11 +73,16 @@ public sealed class MediaFolderOptions
     /// What the folder holds. <see cref="MediaKind.Filler"/> (the default): commercials, bumpers and promos, tagged by
     /// their folders. <see cref="MediaKind.Episode"/>: a TV library (show folders with season folders, as Sonarr lays
     /// them out). <see cref="MediaKind.Movie"/>: a movie library (a folder per movie, as Radarr lays them out). Both
-    /// read .nfo files and the pictures beside the videos.
+    /// read .nfo files and the pictures beside the videos. <see cref="MediaKind.Music"/>: songs for radio channels
+    /// (<c>Artist/Album/01 - Title.flac</c>, read by <see cref="LocalMusicLibrary"/>).
     /// </summary>
     public MediaKind Kind { get; set; } = MediaKind.Filler;
 
-    /// <summary>A TV or movie library rather than commercials.</summary>
+    /// <summary>A TV, movie or music library rather than commercials.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
-    public bool IsLibrary => Kind is MediaKind.Episode or MediaKind.Movie;
+    public bool IsLibrary => Kind is MediaKind.Episode or MediaKind.Movie or MediaKind.Music;
+
+    /// <summary>A TV or movie library, whose shows and movies can be scheduled.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsVideoLibrary => Kind is MediaKind.Episode or MediaKind.Movie;
 }

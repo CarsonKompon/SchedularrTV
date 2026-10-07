@@ -1,7 +1,7 @@
 namespace SchedularrTV.Providers.Jellyfin;
 
 /// <summary>Configuration problem the operator must fix; not worth a stack trace in the log.</summary>
-public sealed class JellyfinConfigurationException(string message) : Exception(message);
+public sealed class JellyfinConfigurationException(string message) : SchedularrTV.Core.Media.MediaSourceConfigurationException(message);
 
 public sealed class JellyfinOptions
 {
@@ -34,4 +34,7 @@ public sealed class JellyfinOptions
     public string[] AttributeTagPrefixes { get; set; } = ["promo_type", "show_id", "channel", "brand", "trimmable", "stop_before_end"];
 
     public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>Whether a server address and key are set.</summary>
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(BaseUrl) && !string.IsNullOrWhiteSpace(ApiKey);
 }

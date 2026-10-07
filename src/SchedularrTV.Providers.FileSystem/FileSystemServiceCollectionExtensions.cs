@@ -16,6 +16,12 @@ public static class FileSystemServiceCollectionExtensions
         services.AddSingleton<LocalArtworkSource>();
         services.AddSingleton<IArtworkSource>(sp => sp.GetRequiredService<LocalArtworkSource>());
 
+        // What the folders offer besides items and pictures, through the generic contracts.
+        services.AddSingleton<IMediaSourceInfo>(sp => sp.GetRequiredService<FileSystemMediaLibrary>());
+        services.AddSingleton<IExtrasSource>(sp => sp.GetRequiredService<FileSystemMediaLibrary>());
+        services.AddSingleton<LocalMusicLibrary>();
+        services.AddSingleton<IMusicLibrary>(sp => sp.GetRequiredService<LocalMusicLibrary>());
+
         return services;
     }
 }

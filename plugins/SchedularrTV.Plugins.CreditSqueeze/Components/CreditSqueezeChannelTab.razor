@@ -585,14 +585,14 @@
     {
         if (!status.CanAsk)
         {
-            return "Jellyfin isn't being asked where credits start (it isn't set up, or asking is off in the plugin's settings), so only chapters named Credits are used.";
+            return "No media server is being asked where credits start (none that can say is set up, or asking is off in the plugin's settings), so only chapters named Credits are used.";
         }
 
-        string known = $"Jellyfin knows where the credits start for {status.Marked} of the {status.Asked} episodes asked about.";
+        string known = $"Your media server knows where the credits start for {status.Marked} of the {status.Asked} episodes asked about.";
         if (status.Waiting > 0)
         {
             string left = status.Remaining < TimeSpan.FromMinutes(1) ? "under a minute" : $"about {Math.Ceiling(status.Remaining.TotalMinutes)} minutes";
-            return $"Asking Jellyfin about {status.Waiting} more episodes ({left} left). {known}";
+            return $"Asking about {status.Waiting} more episodes ({left} left). {known}";
         }
 
         if (status.Asked >= 20 && status.Marked == 0)

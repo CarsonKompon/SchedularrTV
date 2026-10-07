@@ -5,7 +5,6 @@ using SchedularrTV.Core.Ordering;
 using SchedularrTV.Core.Query;
 using SchedularrTV.Core.Scheduling;
 using SchedularrTV.Core.Temporal;
-using SchedularrTV.Providers.Jellyfin;
 using SchedularrTV.Service.Editor;
 
 namespace SchedularrTV.Service;
@@ -255,13 +254,13 @@ public static partial class ApiEndpoints
             return Results.Ok(new { refreshed = true });
         }).RequireApiKey();
 
-        // Only well-formed ids (Jellyfin's, or local shows' and movies') and a fixed set of image types are looked up:
-        // from the media server, or the pictures beside local files.
+        // Only ids a running media source owns and a fixed set of image types are looked up: from the media server, the
+        // pictures beside local files, or a library plugin.
         group.MapGet("/artwork/{id}", async (string id, string? type, int? w, [Microsoft.AspNetCore.Mvc.FromServices] IEnumerable<IArtworkSource> sources, HttpContext http,
             CancellationToken ct) =>
         {
             string imageType = type ?? ArtworkTypes.Primary;
-            if (!ArtworkLinks.IsValidId(id) || !ArtworkLinks.ImageTypes.Contains(imageType))
+            if (id.Length > 256 || !sources.Any(source => source.Owns(id)) || !ArtworkLinks.ImageTypes.Contains(imageType))
             {
                 return Results.NotFound();
             }

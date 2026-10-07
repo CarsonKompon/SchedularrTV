@@ -26,7 +26,7 @@ public sealed class JellyfinProgressTests
             return $$"""{"Items":[{{items}}],"TotalRecordCount":5}""";
         });
         JellyfinMediaLibrary library = Library(handler, pageSize: 2);
-        List<JellyfinLoadProgress?> seen = [];
+        List<SchedularrTV.Core.Media.MediaSourceProgress?> seen = [];
         library.LoadingChanged += () => seen.Add(library.Loading);
 
         await library.RefreshAsync();

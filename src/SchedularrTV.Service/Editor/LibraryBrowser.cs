@@ -96,7 +96,8 @@ public sealed class LibraryBrowser(IMediaLibrary library, TimeProvider timeProvi
         return _programmes;
     }
 
-    public async Task<IReadOnlyList<string>> GetJellyfinCollectionsAsync(CancellationToken cancellationToken = default)
+    /// <summary>The collections items belong to, from any source (Jellyfin's BoxSets, the <c>set</c> in a local movie's .nfo…).</summary>
+    public async Task<IReadOnlyList<string>> GetLibraryCollectionsAsync(CancellationToken cancellationToken = default)
     {
         await EnsureAsync(cancellationToken).ConfigureAwait(false);
         return _collections;

@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Options;
 using SchedularrTV.Core.Configuration;
-using SchedularrTV.Providers.Jellyfin;
 
 namespace SchedularrTV.Service;
 
@@ -74,7 +73,7 @@ public sealed class ScheduleRebuildService(
                 {
                     break;
                 }
-                catch (JellyfinConfigurationException ex)
+                catch (SchedularrTV.Core.Media.MediaSourceConfigurationException ex)
                 {
                     logger.LogError("{Message}", ex.Message);
                 }

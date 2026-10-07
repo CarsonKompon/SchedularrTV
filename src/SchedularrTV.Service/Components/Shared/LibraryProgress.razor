@@ -1,14 +1,13 @@
-@* How far reading the Jellyfin library has got: shown wherever a page waits for it (the library pages). *@
+@* How far reading the library has got: shown wherever a page waits for it (the library pages). Asks every media source. *@
 @using System.Globalization
-@using SchedularrTV.Providers.Jellyfin
 @implements IDisposable
-@inject IServiceProvider Services
+@inject IEnumerable<IMediaSourceInfo> Sources
 
 <div class="activity" role="status" aria-live="polite">
     <div class="spinner spinner-sm"></div>
     <div class="activity-body">
-        <div class="activity-title">Reading your Jellyfin library</div>
-        @if (_jellyfin?.Loading is { } loading)
+        <div class="activity-title">@Title</div>
+        @if (Busy is { } busy && busy.Loading is { } loading)
         {
             <div class="activity-detail">
                 @loading.Stage
@@ -36,15 +35,20 @@
 </div>
 
 @code {
-    private JellyfinMediaLibrary? _jellyfin;
+    private IMediaSourceInfo[] _sources = [];
     private Timer? _clock;
+
+    /// <summary>The source being read now, if any says so.</summary>
+    private IMediaSourceInfo? Busy => _sources.FirstOrDefault(source => source.Loading is not null);
+
+    private string Title => Busy is { } busy ? $"Reading your {busy.Name} library" : "Reading your library";
 
     protected override void OnInitialized()
     {
-        _jellyfin = Services.GetService<JellyfinMediaLibrary>();
-        if (_jellyfin is not null)
+        _sources = [.. Sources];
+        foreach (IMediaSourceInfo source in _sources)
         {
-            _jellyfin.LoadingChanged += OnChanged;
+            source.LoadingChanged += OnChanged;
         }
 
         // The elapsed time keeps moving even while a slow stage reports nothing.
@@ -53,9 +57,9 @@
 
     public void Dispose()
     {
-        if (_jellyfin is not null)
+        foreach (IMediaSourceInfo source in _sources)
         {
-            _jellyfin.LoadingChanged -= OnChanged;
+            source.LoadingChanged -= OnChanged;
         }
 
         _clock?.Dispose();
@@ -75,7 +79,7 @@
         _ = InvokeAsync(StateHasChanged);
     }
 
-    private static string Count(JellyfinLoadProgress loading) =>
+    private static string Count(MediaSourceProgress loading) =>
         loading.Total is > 0 ? $"{loading.Items:N0} of {loading.Total:N0}" : $"{loading.Items:N0} items";
 
     private static string Elapsed(DateTimeOffset started)

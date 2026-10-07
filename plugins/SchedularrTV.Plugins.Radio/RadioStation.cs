@@ -7,11 +7,14 @@ namespace SchedularrTV.Radio;
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum RadioSource
 {
-    /// <summary>Songs from the Jellyfin music library.</summary>
+    /// <summary>Older saves' "songs from Jellyfin"; read as <see cref="Library"/> with the Jellyfin music library.</summary>
     Jellyfin,
 
     /// <summary>An internet radio station's stream.</summary>
-    Internet
+    Internet,
+
+    /// <summary>Songs from a music library (<see cref="RadioStation.MusicLibraryId"/>: Jellyfin's, local folders, a plugin's).</summary>
+    Library
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -100,7 +103,17 @@ public sealed class RadioStation
 
     // --- Music ---
 
-    public RadioSource Source { get; set; } = RadioSource.Jellyfin;
+    public RadioSource Source { get; set; } = RadioSource.Library;
+
+    /// <summary>
+    /// The music library songs come from, by its <see cref="SchedularrTV.Core.Media.IMusicLibrary.Id"/> ("jellyfin",
+    /// "local"…); null for the first that's set up.
+    /// </summary>
+    public string? MusicLibraryId { get; set; }
+
+    /// <summary>Songs from a music library (rather than an internet station), however it was saved.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool FromLibrary => Source != RadioSource.Internet;
 
     public MusicPick Pick { get; set; } = MusicPick.All;
 

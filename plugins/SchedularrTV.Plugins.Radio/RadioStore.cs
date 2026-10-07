@@ -71,6 +71,14 @@ public sealed class RadioStore
     /// <summary>Keeps every value in a range the page and the stream can use.</summary>
     public static void Tidy(RadioStation station)
     {
+        // Older saves' "songs from Jellyfin" are songs from the Jellyfin music library.
+        if (station.Source == RadioSource.Jellyfin)
+        {
+            station.Source = RadioSource.Library;
+            station.MusicLibraryId ??= "jellyfin";
+        }
+
+        station.MusicLibraryId = string.IsNullOrWhiteSpace(station.MusicLibraryId) ? null : station.MusicLibraryId.Trim();
         station.Lengths = [.. station.ValidLengths];
         station.Volume = Math.Clamp(station.Volume, 0, 2);
         station.LyricsOffset = Math.Clamp(station.LyricsOffset, -30, 30);

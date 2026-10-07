@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
-using SchedularrTV.Providers.Jellyfin;
+using SchedularrTV.Core.Media;
 
 namespace SchedularrTV.Radio;
 
@@ -100,38 +100,37 @@ public sealed class RadioPreviews(RadioStore store, OnlineLookups online, IServi
             state = new NowPlayingState(new SongInfo("Song title", "Artist", null, null, null, null,
                 [new LyricLine("Lyrics appear here when the station's song is found", null)]), now, null);
         }
-        else if (services.GetService<JellyfinClient>() is { } jellyfin)
+        else if (RadioSound.MusicLibrary(services, station) is { IsConfigured: true } library)
         {
             try
             {
-                IReadOnlyList<JellyfinTrack> tracks = await jellyfin.GetTracksAsync(new JellyfinMusicQuery(Limit: 2), shuffle: true, cancellationToken).ConfigureAwait(false);
+                IReadOnlyList<MusicTrack> tracks = await library.GetTracksAsync(new MusicQuery(Limit: 2), shuffle: true, cancellationToken).ConfigureAwait(false);
                 if (tracks.Count == 0)
                 {
-                    state = new NowPlayingState(null, now, null, "No songs in the Jellyfin library.");
+                    state = new NowPlayingState(null, now, null, $"No songs in the {library.Name} library.");
                 }
                 else
                 {
-                    JellyfinTrack track = tracks[0];
-                    IReadOnlyList<LyricLine> lyrics = [.. (await jellyfin.GetLyricsAsync(track.Id, cancellationToken).ConfigureAwait(false))
-                        .Select(line => new LyricLine(line.Text, line.Start is { } start ? (long)start.TotalMilliseconds : null))];
+                    MusicTrack track = tracks[0];
+                    IReadOnlyList<LyricLine> lyrics = RadioSound.Lyrics(await library.GetLyricsAsync(track.Id, cancellationToken).ConfigureAwait(false));
                     if (lyrics.Count == 0 && station.LookUpOnline && track.Artist.Length > 0)
                     {
                         lyrics = await online.LyricsAsync(track.Artist, track.Title, track.Album, track.Duration, cancellationToken).ConfigureAwait(false);
                     }
 
                     // Started a little while ago, so the preview shows lyrics part-way through.
-                    state = new NowPlayingState(RadioSound.Library(track, lyrics), now - TimeSpan.FromSeconds(45),
-                        tracks.Count > 1 ? RadioSound.Library(tracks[1], []) : null);
+                    state = new NowPlayingState(RadioSound.Library(library, track, lyrics), now - TimeSpan.FromSeconds(45),
+                        tracks.Count > 1 ? RadioSound.Library(library, tracks[1], []) : null);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                state = new NowPlayingState(null, now, null, $"Couldn't reach Jellyfin: {ex.Message}");
+                state = new NowPlayingState(null, now, null, $"Couldn't reach {library.Name}: {ex.Message}");
             }
         }
         else
         {
-            state = new NowPlayingState(null, now, null, "Jellyfin isn't set up.");
+            state = new NowPlayingState(null, now, null, "No music library is set up (Jellyfin, or a music folder under App settings).");
         }
 
         _samples[stationId] = (now, state);

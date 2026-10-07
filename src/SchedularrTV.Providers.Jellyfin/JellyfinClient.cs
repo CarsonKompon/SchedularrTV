@@ -219,10 +219,6 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
     }
 
     /// <summary>
-    /// A title's extras, which are the only place an intro or outro can be found. Needs a user
-    /// context: the unscoped endpoint rejects the request outright.
-    /// </summary>
-    /// <summary>
     /// Where an item's end credits are, from Jellyfin's media segments (Jellyfin 10.10 and newer, with a segment provider
     /// such as Intro Skipper): the start and end of its first <c>Outro</c> segment. Null when there's none, or Jellyfin is
     /// older.
@@ -240,6 +236,10 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
         return outro is null ? null : (TimeSpan.FromTicks(outro.StartTicks), TimeSpan.FromTicks(outro.EndTicks));
     }
 
+    /// <summary>
+    /// A title's extras, which are the only place an intro or outro can be found. Needs a user
+    /// context: the unscoped endpoint rejects the request outright.
+    /// </summary>
     public async Task<IReadOnlyList<JellyfinExtra>> GetSpecialFeaturesAsync(string itemId, CancellationToken cancellationToken)
     {
         string? userId = _options.UserId ?? await FirstUserIdAsync(cancellationToken).ConfigureAwait(false);

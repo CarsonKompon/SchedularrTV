@@ -3,8 +3,7 @@
 @using System.IO
 @using Microsoft.Extensions.Options
 @using SchedularrTV.Providers.FileSystem
-@using SchedularrTV.Providers.Jellyfin
-@inject JellyfinClient Jellyfin
+@inject IEnumerable<IMediaSourceInfo> MediaSources
 @inject IOptions<FileSystemLibraryOptions> MediaFolders
 @inject IServiceProvider Services
 @inject LibraryBrowser Browser
@@ -99,33 +98,52 @@
 <div class="card">
     <div class="card-head"><h2>Libraries</h2></div>
     <p class="hint">
-        Which Jellyfin libraries the scheduler draws from. Unticking one hides its content everywhere,
+        Which of your media servers' libraries the scheduler draws from. Unticking one hides its content everywhere,
         which is the fix for a show that appears twice because a DVR or cache library holds its own copy.
     </p>
 
-    @if (_libraryError is not null)
-    {
-        <div class="empty">@_libraryError</div>
-    }
-    else if (_libraries is null)
+    @if (_libraries is null)
     {
         <p class="hint">Loading libraries…</p>
     }
     else
     {
-        @foreach (JellyfinLibrary library in _libraries)
+        @foreach ((string source, IReadOnlyList<MediaSourceLibrary> libraries) in _libraries)
         {
-            <label class="check">
-                <input type="checkbox" checked="@IsIncluded(library.Name)"
-                       @onchange="e => ToggleLibrary(library.Name, (bool)(e.Value ?? true))" />
-                <span>
-                    @library.Name
-                    <span class="opt">@string.Join(" · ", library.Locations)</span>
-                </span>
-            </label>
+            @if (_libraries.Count > 1)
+            {
+                <h3>@source</h3>
+            }
+
+            @foreach (MediaSourceLibrary library in libraries)
+            {
+                <label class="check">
+                    <input type="checkbox" checked="@IsIncluded(library.Name)"
+                           @onchange="e => ToggleLibrary(library.Name, (bool)(e.Value ?? true))" />
+                    <span>
+                        @library.Name
+                        @if (library.Detail is not null)
+                        {
+                            <span class="opt">@library.Detail</span>
+                        }
+                    </span>
+                </label>
+            }
         }
 
-        <p class="hint">Save, then Rescan on the TV Shows page to apply.</p>
+        @foreach (string error in _libraryErrors)
+        {
+            <div class="empty">@error</div>
+        }
+
+        @if (_libraries.Count == 0 && _libraryErrors.Count == 0)
+        {
+            <p class="hint">No media server with libraries to choose from is set up.</p>
+        }
+        else if (_libraries.Count > 0)
+        {
+            <p class="hint">Save, then Rescan on the TV Shows page to apply.</p>
+        }
     }
 
     <h3>Local folders</h3>
@@ -152,6 +170,7 @@
                         {
                             SchedularrTV.Core.Media.MediaKind.Episode => "TV shows",
                             SchedularrTV.Core.Media.MediaKind.Movie => "Movies",
+                            SchedularrTV.Core.Media.MediaKind.Music => "Music (radio channels)",
                             _ => "Commercials"
                         })
                         @if (folder.Tags.Count > 0)
@@ -199,8 +218,8 @@
     private SchedulerSettings Global => Editor.Working.Settings;
     private TemporalTagOptions Temporal => Global.TemporalTags;
 
-    private IReadOnlyList<JellyfinLibrary>? _libraries;
-    private string? _libraryError;
+    private List<(string Source, IReadOnlyList<MediaSourceLibrary> Libraries)>? _libraries;
+    private readonly List<string> _libraryErrors = [];
     private bool _rescanning;
     private string? _rescanMessage;
 
@@ -239,15 +258,25 @@
 
     protected override async Task OnInitializedAsync()
     {
-        try
+        List<(string, IReadOnlyList<MediaSourceLibrary>)> found = [];
+        foreach (IMediaSourceInfo source in MediaSources.Where(source => source.IsConfigured))
         {
-            _libraries = await Jellyfin.GetLibrariesAsync(CancellationToken.None);
+            try
+            {
+                IReadOnlyList<MediaSourceLibrary> libraries = await source.GetLibrariesAsync(CancellationToken.None);
+                if (libraries.Count > 0)
+                {
+                    found.Add((source.Name, libraries));
+                }
+            }
+            catch (Exception ex)
+            {
+                // The rest of settings stays usable when a media server is unreachable.
+                _libraryErrors.Add($"Could not reach {source.Name} to list libraries: {ex.Message} Check the connection under App settings.");
+            }
         }
-        catch (Exception ex)
-        {
-            // The rest of settings stays usable when the media server is unreachable.
-            _libraryError = $"Could not reach Jellyfin to list libraries: {ex.Message} Check the connection under App settings.";
-        }
+
+        _libraries = found;
     }
 
     private bool IsIncluded(string name) =>

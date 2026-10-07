@@ -1,9 +1,8 @@
 @* Guided creation of a channel: what plays, how breaks work, which commercials, and an optional block. *@
-@using SchedularrTV.Providers.Jellyfin
 @implements IDisposable
 @inject ConfigEditor Editor
 @inject LibraryBrowser Library
-@inject JellyfinMediaLibrary Jellyfin
+@inject IEnumerable<IMediaSourceInfo> Sources
 
 <div class="modal-backdrop">
     <div class="modal wizard" role="dialog" aria-modal="true" aria-label="Create a channel">
@@ -21,7 +20,7 @@
             <div class="wizard-loading" role="status" aria-live="polite">
                 <div class="spinner"></div>
                 <strong style="color:var(--text);">Reading your library…</strong>
-                @if (Jellyfin.Loading is { } progress)
+                @if (Sources.Select(source => source.Loading).FirstOrDefault(loading => loading is not null) is { } progress)
                 {
                     <span>
                         @progress.Stage
@@ -82,11 +81,11 @@
                         <strong>Pick shows and movies</strong>
                         <span>Choose exactly which titles air.</span>
                     </button>
-                    @if (Jellyfin.IsConfigured && _jellyfinCollections.Count > 0)
+                    @if (_libraryCollections.Count > 0)
                     {
-                        <button type="button" class="wizard-choice @(_source == Source.JellyfinCollection ? "on" : "")" @onclick="() => _source = Source.JellyfinCollection">
-                            <strong>A Jellyfin collection</strong>
-                            <span>Everything in one of your @_jellyfinCollections.Count collections.</span>
+                        <button type="button" class="wizard-choice @(_source == Source.LibraryCollection ? "on" : "")" @onclick="() => _source = Source.LibraryCollection">
+                            <strong>A collection from your library</strong>
+                            <span>Everything in one of your library's @_libraryCollections.Count collections.</span>
                         </button>
                     }
                     @if (Editor.Working.GlobalCollections.Count > 0)
@@ -107,12 +106,12 @@
                     case Source.Titles:
                         <IncludeListEditor Includes="_includes" Changed="StateHasChanged" />
                         break;
-                    case Source.JellyfinCollection:
+                    case Source.LibraryCollection:
                         <label class="field">
-                            <span>Jellyfin collection</span>
-                            <select value="@_jellyfinCollection" @onchange="e => _jellyfinCollection = e.Value?.ToString()">
+                            <span>Collection</span>
+                            <select value="@_libraryCollection" @onchange="e => _libraryCollection = e.Value?.ToString()">
                                 <option value="">Choose…</option>
-                                @foreach (string collection in _jellyfinCollections)
+                                @foreach (string collection in _libraryCollections)
                                 {
                                     <option value="@collection">@collection</option>
                                 }
@@ -313,7 +312,7 @@
     [Parameter] public EventCallback<string> OnCreated { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
 
-    private enum Source { Titles, JellyfinCollection, SavedCollection, Everything }
+    private enum Source { Titles, LibraryCollection, SavedCollection, Everything }
 
     private static readonly string[] Steps = ["Name", "Programming", "Timing", "Ad breaks", "Block", "Review"];
 
@@ -342,7 +341,7 @@
 
     private Source _source = Source.Titles;
     private readonly List<ContentInclude> _includes = [];
-    private string? _jellyfinCollection;
+    private string? _libraryCollection;
     private string? _savedCollection;
     private PlaybackOrder _order = PlaybackOrder.Shuffle;
     private bool _skipSpecials = true;
@@ -387,7 +386,7 @@
         }
     }
 
-    private IReadOnlyList<string> _jellyfinCollections = [];
+    private IReadOnlyList<string> _libraryCollections = [];
     private int _showCount;
     private string? _libraryError;
 
@@ -400,21 +399,21 @@
 
         // Nothing can be picked until the library is in memory, so the steps wait behind a progress screen.
         _loading = true;
-        Jellyfin.LoadingChanged += OnLoadingChanged;
+        Watch(true);
         try
         {
             _showCount = (await Library.GetShowsAsync()).Count;
-            _jellyfinCollections = await Library.GetJellyfinCollectionsAsync();
+            _libraryCollections = await Library.GetLibraryCollectionsAsync();
             _folders = await Library.GetCommercialFoldersAsync();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _libraryError = $"Couldn't read the library ({ex.GetBaseException().Message}). Check the Jellyfin connection under App settings.";
+            _libraryError = $"Couldn't read the library ({ex.GetBaseException().Message}). Check your media sources under App settings.";
         }
         finally
         {
             _loading = false;
-            Jellyfin.LoadingChanged -= OnLoadingChanged;
+            Watch(false);
         }
 
         _useCommercials = _folders.Roots.Count > 0;
@@ -431,7 +430,31 @@
     // Raised on the loading thread.
     private void OnLoadingChanged() => InvokeAsync(StateHasChanged);
 
-    public void Dispose() => Jellyfin.LoadingChanged -= OnLoadingChanged;
+    private bool _watching;
+
+    /// <summary>Follows (or stops following) every media source's reading progress.</summary>
+    private void Watch(bool on)
+    {
+        if (on == _watching)
+        {
+            return;
+        }
+
+        _watching = on;
+        foreach (IMediaSourceInfo source in Sources)
+        {
+            if (on)
+            {
+                source.LoadingChanged += OnLoadingChanged;
+            }
+            else
+            {
+                source.LoadingChanged -= OnLoadingChanged;
+            }
+        }
+    }
+
+    public void Dispose() => Watch(false);
 
     private bool NumberTaken => Editor.Working.Channels.Any(c => c.Number == _number);
 
@@ -441,7 +464,7 @@
         0 when string.IsNullOrWhiteSpace(_name) => "Give the channel a name.",
         0 when NumberTaken => "Choose a channel number that isn't taken.",
         1 when _source == Source.Titles && _includes.Count == 0 => "Add at least one show or movie, or choose another option.",
-        1 when _source == Source.JellyfinCollection && string.IsNullOrWhiteSpace(_jellyfinCollection) => "Choose a Jellyfin collection.",
+        1 when _source == Source.LibraryCollection && string.IsNullOrWhiteSpace(_libraryCollection) => "Choose a collection.",
         1 when _source == Source.SavedCollection && string.IsNullOrWhiteSpace(_savedCollection) => "Choose a saved collection.",
         4 when _addBlock && string.IsNullOrWhiteSpace(_block.Name) => "Give the block a name.",
         4 when _addBlock && !_block.FollowOnly && _block.Time is null => "Choose when the block starts.",
@@ -503,7 +526,7 @@
             Group = "SchedularrTV",
             BaseRotation = Selector(_source switch
             {
-                Source.JellyfinCollection => new ContentSelector { Include = [new ContentInclude { Collection = _jellyfinCollection }] },
+                Source.LibraryCollection => new ContentSelector { Include = [new ContentInclude { Collection = _libraryCollection }] },
                 Source.SavedCollection => new ContentSelector { Collection = _savedCollection },
                 Source.Everything => new ContentSelector { Query = "kind == 'Episode'" },
                 _ => new ContentSelector { Include = [.. _includes] }
@@ -574,7 +597,7 @@
 
     private string SourceSummary() => _source switch
     {
-        Source.JellyfinCollection => $"the Jellyfin collection “{_jellyfinCollection}”",
+        Source.LibraryCollection => $"the collection “{_libraryCollection}”",
         Source.SavedCollection => $"the saved collection “{_savedCollection}”",
         Source.Everything => "every TV episode",
         _ => $"{_includes.Count} chosen title(s)"

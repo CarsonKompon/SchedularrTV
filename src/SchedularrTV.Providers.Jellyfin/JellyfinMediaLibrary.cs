@@ -20,8 +20,23 @@ public sealed class JellyfinMediaLibrary(
     IOptions<JellyfinOptions> options,
     ILogger<JellyfinMediaLibrary> logger,
     ILibraryScope? scope = null,
-    TimeProvider? timeProvider = null) : IMediaLibrary
+    TimeProvider? timeProvider = null) : IMediaLibrary, IMediaSourceInfo
 {
+    public string Name => "Jellyfin";
+
+    /// <summary>Jellyfin's own library scan while it runs.</summary>
+    public async ValueTask<MediaSourceActivity?> GetActivityAsync(CancellationToken cancellationToken = default) =>
+        IsConfigured && await client.GetLibraryScanAsync(cancellationToken).ConfigureAwait(false) is { } scan
+            ? new MediaSourceActivity($"Jellyfin is scanning its library ({scan.Name})", scan.Percent)
+            : null;
+
+    /// <summary>Jellyfin's libraries (its "virtual folders"), which can be left out of the schedule.</summary>
+    public async ValueTask<IReadOnlyList<MediaSourceLibrary>> GetLibrariesAsync(CancellationToken cancellationToken = default) =>
+        IsConfigured
+            ? [.. (await client.GetLibrariesAsync(cancellationToken).ConfigureAwait(false))
+                .Select(library => new MediaSourceLibrary(library.Name, library.Locations.Count > 0 ? string.Join(" · ", library.Locations) : null))]
+            : [];
+
     // Read on each use: settings saved in the app apply straight away.
     private JellyfinOptions _options => options.Value;
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
@@ -30,17 +45,17 @@ public sealed class JellyfinMediaLibrary(
     private IReadOnlyList<MediaItem> _snapshot = [];
     private DateTimeOffset _snapshotTakenAt = DateTimeOffset.MinValue;
     private string _snapshotScope = string.Empty;
-    private volatile JellyfinLoadProgress? _loading;
+    private volatile MediaSourceProgress? _loading;
 
     /// <summary>Set while the library is being read from Jellyfin; null otherwise.</summary>
-    public JellyfinLoadProgress? Loading => _loading;
+    public MediaSourceProgress? Loading => _loading;
 
     /// <summary>Raised from the loading thread whenever <see cref="Loading"/> changes.</summary>
     public event Action? LoadingChanged;
 
     private void Report(string stage, int items = 0, int? total = null)
     {
-        _loading = new JellyfinLoadProgress(stage, items, total, _loading?.StartedAt ?? _time.GetUtcNow());
+        _loading = new MediaSourceProgress(stage, items, total, _loading?.StartedAt ?? _time.GetUtcNow());
         LoadingChanged?.Invoke();
     }
 

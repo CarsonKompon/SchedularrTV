@@ -139,11 +139,6 @@ internal sealed class JellyfinScheduledTask
 /// <summary>Jellyfin scanning its own folders for new or changed files.</summary>
 public sealed record JellyfinServerScan(string Name, double? Percent);
 
-/// <summary>How far the scheduler has got reading the library from Jellyfin.</summary>
-public sealed record JellyfinLoadProgress(string Stage, int Items, int? Total, DateTimeOffset StartedAt)
-{
-    public double? Percent => Total is > 0 ? Math.Min(100, Items * 100.0 / Total.Value) : null;
-}
 internal sealed class JellyfinChapter
 {
     [JsonPropertyName("StartPositionTicks")]

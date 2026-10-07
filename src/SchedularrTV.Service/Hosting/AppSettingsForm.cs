@@ -24,7 +24,8 @@ public sealed class AppSettingsForm(
     IOptions<ErsatzTvOptions> ersatz,
     IHttpClientFactory httpClients,
     ScheduleRebuildService? rebuilds = null,
-    SchedularrTV.Service.Editor.LibraryBrowser? library = null)
+    SchedularrTV.Service.Editor.LibraryBrowser? library = null,
+    IEnumerable<SchedularrTV.Core.Media.IMediaSourceInfo>? sources = null)
 {
     public const string OnboardingKey = "Onboarding:Completed";
 
@@ -114,12 +115,16 @@ public sealed class AppSettingsForm(
     public bool JellyfinConfiguredInUse =>
         !string.IsNullOrWhiteSpace(jellyfin.Value.BaseUrl) && !string.IsNullOrWhiteSpace(jellyfin.Value.ApiKey);
 
-    /// <summary>Whether the running server has somewhere to get shows and movies from: Jellyfin, or a local TV or movie folder.</summary>
+    /// <summary>
+    /// Whether the running server has somewhere to get shows and movies from: Jellyfin, a local TV or movie folder, or
+    /// any other library plugin that's set up.
+    /// </summary>
     public bool LibraryConfiguredInUse =>
-        JellyfinConfiguredInUse || folders.Value.Folders.Any(folder => folder.IsLibrary && !string.IsNullOrWhiteSpace(folder.Path));
+        JellyfinConfiguredInUse || folders.Value.Folders.Any(folder => folder.IsVideoLibrary && !string.IsNullOrWhiteSpace(folder.Path))
+        || (sources ?? []).Any(source => source is not JellyfinMediaLibrary and not FileSystemMediaLibrary && source.IsConfigured);
 
     /// <summary>The same for the settings being edited (before they're saved).</summary>
-    public bool LibraryFolderFilled => Folders.Any(folder => folder.IsLibrary && !string.IsNullOrWhiteSpace(folder.Path));
+    public bool LibraryFolderFilled => Folders.Any(folder => folder.IsVideoLibrary && !string.IsNullOrWhiteSpace(folder.Path));
 
     public bool OnboardingCompleted => AppSettingsFile.GetBool(runtime.Settings.Load(), OnboardingKey) == true;
 

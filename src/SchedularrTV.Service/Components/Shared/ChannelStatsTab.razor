@@ -491,7 +491,7 @@ else
         }
     </div>
     <p class="hint" style="margin-top:10px;">
-        Jellyfin viewers are read with the Jellyfin connection from App settings. For Plex, find the token by opening any item's
+        Media servers' viewers (Jellyfin's, a library plugin's) are read with their own connections. For Plex, find the token by opening any item's
         <strong>⋯ → Get Info → View XML</strong> and copying the <code>X-Plex-Token</code> from the address.
     </p>
 </div>
@@ -571,7 +571,7 @@ else
         Recorder.Now.TryGetValue(Channel.Id, out IReadOnlyList<Viewer>? viewers) ? viewers : [];
 
     private string SourcesText =>
-        Audience.Sources.Count == 0 ? "nowhere yet (set up Jellyfin, Plex or ErsatzTV below)" : string.Join(", ", Audience.Sources);
+        Audience.Sources.Count == 0 ? "nowhere yet (set up a media server, Plex or ErsatzTV below)" : string.Join(", ", Audience.Sources);
 
     protected override void OnInitialized()
     {
@@ -608,10 +608,18 @@ else
         StateHasChanged();
     });
 
+    /// <summary>Every media server that can say who's watching (Jellyfin's plugin, Plex, any other), then ErsatzTV's direct players.</summary>
     private IEnumerable<(string Source, string Detail)> SourceRows()
     {
-        yield return ("Jellyfin", Audience.Sources.Contains("Jellyfin") ? "Each user watching through Jellyfin Live TV." : "Connect Jellyfin in App settings to count its Live TV viewers.");
-        yield return ("Plex", Audience.PlexConfigured ? "Each user watching through Plex Live TV." : "Add Plex's address and token below to count its Live TV viewers.");
+        foreach (SchedularrTV.Core.Media.ILiveViewerSource viewers in Audience.ViewerSources)
+        {
+            yield return (viewers.Name, viewers.IsConfigured
+                ? $"Each user watching through {viewers.Name} Live TV."
+                : viewers.Name == "Plex"
+                    ? "Add Plex's address and token below to count its Live TV viewers."
+                    : $"Set up {viewers.Name} (App settings or its plugin) to count its Live TV viewers.");
+        }
+
         yield return ("Direct", Audience.Sources.Contains("Direct") ? "Players pulling a channel straight from ErsatzTV (VLC, IPTV apps), counted as one."
             : "ErsatzTV isn't set up, so players watching it directly can't be seen.");
     }

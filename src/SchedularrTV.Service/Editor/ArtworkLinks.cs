@@ -1,6 +1,4 @@
 using SchedularrTV.Core.Media;
-using SchedularrTV.Providers.FileSystem;
-using SchedularrTV.Providers.Jellyfin;
 
 namespace SchedularrTV.Service.Editor;
 
@@ -13,10 +11,17 @@ public static class ArtworkLinks
     public static IReadOnlySet<string> ImageTypes => ArtworkTypes.All;
 
     /// <summary>
-    /// Ids that can have artwork: Jellyfin's, and local TV shows, episodes and movies (pictures beside the files).
-    /// Commercials (<c>fs:</c>) and name fallbacks have none.
+    /// The running media sources' pictures (Jellyfin's, local folders', any library plugin's), set by the host once it's
+    /// built; read on each use, so a source switched on or off applies at once.
     /// </summary>
-    public static bool IsValidId(string? id) => JellyfinArtworkSource.IsJellyfinId(id) || LocalLibraryIds.IsLocalId(id);
+    public static Func<IEnumerable<IArtworkSource>>? Sources { get; set; }
+
+    /// <summary>
+    /// Ids that can have artwork: those a running source owns (a media server's items, local TV shows, episodes and
+    /// movies). Commercials (<c>fs:</c>) and name fallbacks have none.
+    /// </summary>
+    public static bool IsValidId(string? id) =>
+        !string.IsNullOrEmpty(id) && id.Length <= 256 && (Sources?.Invoke() ?? []).Any(source => source.Owns(id));
 
     public static string? Url(string? id, int width, string type = "Primary") =>
         IsValidId(id) ? $"api/library/artwork/{Uri.EscapeDataString(id!)}?w={width}&type={type}" : null;

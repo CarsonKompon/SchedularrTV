@@ -23,8 +23,38 @@ namespace SchedularrTV.Providers.FileSystem;
 public sealed class FileSystemMediaLibrary(
     IOptions<FileSystemLibraryOptions> options,
     ILogger<FileSystemMediaLibrary> logger,
-    TimeProvider? timeProvider = null) : IMediaLibrary
+    TimeProvider? timeProvider = null) : IMediaLibrary, IMediaSourceInfo, IExtrasSource
 {
+    public string Name => "Local folders";
+
+    /// <summary>Whether any folder (commercials, TV or movies) is set up.</summary>
+    public bool IsConfigured => _options.Folders.Count > 0;
+
+    private volatile MediaSourceProgress? _loading;
+
+    /// <summary>Set while the folders are being read; null otherwise.</summary>
+    public MediaSourceProgress? Loading => _loading;
+
+    public event Action? LoadingChanged;
+
+    private void Report(MediaSourceProgress? progress)
+    {
+        _loading = progress;
+        LoadingChanged?.Invoke();
+    }
+
+    /// <summary>Folders have no server of their own doing anything.</summary>
+    public ValueTask<MediaSourceActivity?> GetActivityAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult<MediaSourceActivity?>(null);
+
+    /// <summary>Folders are added and removed one by one rather than left out by name.</summary>
+    public ValueTask<IReadOnlyList<MediaSourceLibrary>> GetLibrariesAsync(CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult<IReadOnlyList<MediaSourceLibrary>>([]);
+
+    public bool Owns(string id) => id.StartsWith(LocalLibraryIds.SeriesPrefix, StringComparison.Ordinal);
+
+    public async ValueTask<IReadOnlyList<MediaExtra>> GetExtrasAsync(string id, CancellationToken cancellationToken = default) =>
+        await ExtrasAsync(id, cancellationToken).ConfigureAwait(false);
+
     // Read on each use: settings saved in the app apply straight away.
     private FileSystemLibraryOptions _options => options.Value;
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
@@ -40,7 +70,7 @@ public sealed class FileSystemMediaLibrary(
     /// folders (in the show's folder or a season's) and those named as extras (<c>Show-trailer.mkv</c>), measured with
     /// ffprobe. Empty for a show that isn't from a local folder, or has none.
     /// </summary>
-    public async ValueTask<IReadOnlyList<LocalExtra>> ExtrasAsync(string seriesId, CancellationToken cancellationToken = default)
+    public async ValueTask<IReadOnlyList<MediaExtra>> ExtrasAsync(string seriesId, CancellationToken cancellationToken = default)
     {
         await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
         if (!_showFolders.TryGetValue(seriesId, out string? folder) || !Directory.Exists(folder))
@@ -73,7 +103,7 @@ public sealed class FileSystemMediaLibrary(
             _scanLock.Release();
         }
 
-        return [.. files.Select(file => new LocalExtra(
+        return [.. files.Select(file => new MediaExtra(
             Path.GetFileNameWithoutExtension(file.Name),
             file.FullName,
             durations.TryGetValue(file.FullName, out TimeSpan duration) ? duration : TimeSpan.Zero))];
@@ -143,9 +173,19 @@ public sealed class FileSystemMediaLibrary(
             List<MediaItem> items = [];
             Dictionary<string, LocalImages> images = new(StringComparer.Ordinal);
             Dictionary<string, string> showFolders = new(StringComparer.Ordinal);
+            DateTimeOffset started = _time.GetUtcNow();
+            int done = 0;
 
             foreach (MediaFolderOptions folder in _options.Folders)
             {
+                Report(new MediaSourceProgress($"Reading {Path.GetFileName(folder.Path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))}",
+                    done++, _options.Folders.Count, started));
+                if (folder.Kind == MediaKind.Music)
+                {
+                    // Songs aren't schedule items; radio channels read them through LocalMusicLibrary.
+                    continue;
+                }
+
                 if (folder.Kind is MediaKind.Episode or MediaKind.Movie)
                 {
                     // A TV or movie library: shows, seasons and movies read the way Sonarr, Radarr and Kodi lay them out.
@@ -178,6 +218,11 @@ public sealed class FileSystemMediaLibrary(
         }
         finally
         {
+            if (_loading is not null)
+            {
+                Report(null);
+            }
+
             _scanLock.Release();
         }
     }

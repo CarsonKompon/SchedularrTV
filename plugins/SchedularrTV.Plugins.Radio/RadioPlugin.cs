@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using SchedularrTV.Providers.Jellyfin;
+using SchedularrTV.Core.Media;
 
 namespace SchedularrTV.Radio;
 
-/// <summary>Radio channels: music from Jellyfin or an internet station, with its cover, lyrics and a visualizer.</summary>
+/// <summary>Radio channels: music from a music library (Jellyfin's, local folders, a plugin's) or an internet station, with its cover, lyrics and a visualizer.</summary>
 public sealed class RadioPlugin : IPlugin, IPluginEndpoints
 {
     public void ConfigureServices(IServiceCollection services, IPluginContext context)
@@ -71,11 +71,12 @@ public sealed class RadioPlugin : IPlugin, IPluginEndpoints
                 now.ToUnixTimeMilliseconds()), RadioPage.Json);
         });
 
-        // A library song's cover, from Jellyfin (so its API key never reaches the page).
-        endpoints.MapGet(prefix + "/art/{itemId}", async (string itemId, HttpContext http, CancellationToken cancellationToken) =>
+        // A library song's cover, from the music library it's in (so a media server's key never reaches the page).
+        endpoints.MapGet(prefix + "/art/{libraryId}/{artId}", async (string libraryId, string artId, HttpContext http, CancellationToken cancellationToken) =>
         {
-            if (http.RequestServices.GetService<JellyfinClient>() is not { } jellyfin
-                || await jellyfin.GetImageAsync(itemId, "Primary", 800, cancellationToken) is not { } image)
+            IMusicLibrary? library = http.RequestServices.GetServices<IMusicLibrary>()
+                .FirstOrDefault(candidate => string.Equals(candidate.Id, libraryId, StringComparison.OrdinalIgnoreCase));
+            if (library is null || await library.GetArtAsync(artId, 800, cancellationToken) is not { } image)
             {
                 return Results.NotFound();
             }

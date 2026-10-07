@@ -32,9 +32,6 @@ public static class LocalLibraryIds
         id is not null && (id.StartsWith(ItemPrefix, StringComparison.Ordinal) || id.StartsWith(SeriesPrefix, StringComparison.Ordinal));
 }
 
-/// <summary>A local show's extra (a theme, trailer, featurette…), for its intros and outros.</summary>
-public sealed record LocalExtra(string Name, string Path, TimeSpan Duration);
-
 /// <summary>What a TV or movie folder holds: its items, the pictures for them (and for each show) by id, and each show's folder by id.</summary>
 internal sealed record LocalScan(IReadOnlyList<MediaItem> Items, IReadOnlyDictionary<string, LocalImages> Images, IReadOnlyDictionary<string, string> ShowFolders)
 {

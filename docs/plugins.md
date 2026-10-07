@@ -156,6 +156,12 @@ service. These helpers fill the scheduler's extension points:
 | Extension point | Register with | Interface |
 | --- | --- | --- |
 | Media source (Plex, Emby, a web API…) | `services.AddMediaSource<T>(key)` | `IMediaLibrary` |
+| A media source's name, set-up state, loading progress, server activity and libraries (shown on the dashboard, library pages, setup checks and Settings → Libraries) | `services.AddMediaSourceInfo<T>()` | `IMediaSourceInfo` |
+| A media source's pictures (posters, stills, fanart) for the ids it owns | `services.AddArtworkSource<T>()` | `IArtworkSource` |
+| A show's extras, offered as intros and outros | `services.AddExtrasSource<T>()` | `IExtrasSource` |
+| Where items' end credits start (for Credit squeeze), beyond chapters named Credits | `services.AddCreditsSource<T>()` | `ICreditsSource` |
+| Who's watching a media server's live TV (for channel stats) | `services.AddLiveViewerSource<T>()` | `ILiveViewerSource` |
+| A music library radio channels can play from | `services.AddMusicLibrary<T>()` | `IMusicLibrary` |
 | Extra details on library items (chapter markers found in the file, say) | `services.AddMediaEnricher<T>()` (API 1.2) | `IMediaEnricher` |
 | Output (another playout engine, M3U files…) | `services.AddPlayoutOutput<T>()` | `IPlayoutPublisher` |
 | Voice for generated promos | `services.AddSpeechProvider<T>()` | `ITextToSpeechProvider` |
@@ -166,6 +172,28 @@ service. These helpers fill the scheduler's extension points:
 | Who's watching which channel | `services.AddChannelViewers<T>()` | `IChannelViewers` |
 | Tell the library pages a media source changed (a show added or renamed), so they update at once | inject `IMediaLibraryNotifier` (API 1.4) and call `LibraryChanged()` | |
 | HTTP endpoints | implement `IPluginEndpoints` on the plugin class | |
+
+### Library sources
+
+Nothing in the scheduler depends on a particular library. Jellyfin and local folders are built-in plugins that use the
+same contracts (in `SchedularrTV.Core.Media`) a library plugin would, so a new source works everywhere they do as soon
+as it implements them. `IMediaLibrary` alone is enough for its shows and movies to be scheduled; each of the others is
+optional and adds one thing:
+
+- `IMediaSourceInfo`: its name, `IsConfigured`, `Loading` progress (with `LoadingChanged`), `GetActivityAsync` (what its
+  own server is busy with, such as a library scan) and `GetLibrariesAsync` (libraries that can be left out by name;
+  they're read back through `ILibraryScope`). Usually the same class as the `IMediaLibrary`.
+- `IArtworkSource`: pictures for the ids it `Owns`. Artwork links and the `/api/library/artwork` endpoint ask whichever
+  running source owns an id.
+- `IExtrasSource`: a show's extras for the Intros/outros dialog.
+- `ICreditsSource`: where credits start, asked in the background by Credit squeeze for items it owns.
+- `ILiveViewerSource`: live TV sessions, matched to channels by number, then name, for channel stats.
+- `IMusicLibrary`: songs, playlists, genres, artists, lyrics, a stream ffmpeg can read (a path, or an address with
+  headers) and covers, for radio channels. Its `Id` is saved with each station that uses it.
+
+Throw `MediaSourceConfigurationException` for a problem the user has to fix (a missing address or key): the scheduler
+logs its message without a stack trace. Every one of these lists follows the plugin's switch, so a source that's
+switched off drops out of all of them at once.
 
 `IPluginContext` gives the plugin its manifest, its own settings (`Configuration`), the whole app
 configuration (`AppConfiguration`), its folder, a private writable `DataDirectory` that survives updates,

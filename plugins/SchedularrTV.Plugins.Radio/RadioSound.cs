@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
-using SchedularrTV.Providers.Jellyfin;
+using SchedularrTV.Core.Media;
 
 namespace SchedularrTV.Radio;
 
@@ -61,79 +61,100 @@ public sealed class RadioSound(
 
     // --- Library songs ---------------------------------------------------------------------------
 
+    /// <summary>The music library a station plays from: the one it names, else the first that's set up.</summary>
+    public static IMusicLibrary? MusicLibrary(IServiceProvider services, RadioStation station) =>
+        MusicLibraries.Pick(services.GetServices<IMusicLibrary>(), station.MusicLibraryId);
+
     private async Task LibraryAsync(RadioStation station, Stream output, Stopwatch clock, CancellationToken cancellationToken)
     {
-        Queue<JellyfinTrack> queue = new();
+        Queue<MusicTrack> queue = new();
+        string? queuedFrom = null;
         while (!cancellationToken.IsCancellationRequested)
         {
             station = store.Find(station.Id) ?? station;
-            JellyfinClient? jellyfin = services.GetService<JellyfinClient>();
-            if (queue.Count < 2 && jellyfin is not null)
+            IMusicLibrary? library = MusicLibrary(services, station);
+            if (library?.Id != queuedFrom)
+            {
+                // The station was pointed at another library: its songs, not the old one's.
+                queue.Clear();
+                queuedFrom = library?.Id;
+            }
+
+            if (queue.Count < 2 && library is { IsConfigured: true })
             {
                 try
                 {
-                    foreach (JellyfinTrack track in await jellyfin.GetTracksAsync(Query(station), station.Shuffle, cancellationToken).ConfigureAwait(false))
+                    foreach (MusicTrack track in await library.GetTracksAsync(Query(station), station.Shuffle, cancellationToken).ConfigureAwait(false))
                     {
                         queue.Enqueue(track);
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    logger.LogWarning("Radio {Station}: couldn't get songs from Jellyfin: {Message}", station.Name, ex.Message);
+                    logger.LogWarning("Radio {Station}: couldn't get songs from {Library}: {Message}", station.Name, library.Name, ex.Message);
                 }
             }
 
-            if (jellyfin is null || queue.Count == 0)
+            MusicStream? stream = null;
+            MusicTrack? song = null;
+            if (library is { IsConfigured: true } && queue.TryDequeue(out song))
+            {
+                stream = await library.GetStreamAsync(song.Id, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (library is not { IsConfigured: true } || song is null || stream is null)
             {
                 players.Set(station.Id, new NowPlayingState(null, DateTimeOffset.UtcNow, null,
-                    jellyfin is null ? "Jellyfin isn't set up." : "No songs match this station's music."));
+                    library is not { IsConfigured: true } ? "No music library is set up (Jellyfin, or a music folder under App settings)." : "No songs match this station's music."));
                 await PlayAsync(output, Silence(TimeSpan.FromSeconds(15), clock.Elapsed), clock, null, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
-            JellyfinTrack song = queue.Dequeue();
-            SongInfo info = Library(song, []);
-            SongInfo? next = queue.TryPeek(out JellyfinTrack? following) ? Library(following, []) : null;
-            (string url, string authorization) = jellyfin.GetAudioStream(song.Id);
+            SongInfo info = Library(library, song, []);
+            SongInfo? next = queue.TryPeek(out MusicTrack? following) ? Library(library, following, []) : null;
 
             // The page shows the song from its first sound; its lyrics follow as soon as they're found.
             RadioStation current = station;
-            List<string> arguments = SongArguments(url, authorization, song.Duration, clock.Elapsed);
+            MusicTrack playing = song;
+            List<string> arguments = SongArguments(stream, playing.Duration, clock.Elapsed);
             await PlayAsync(output, arguments, clock, () =>
             {
                 players.Set(current.Id, new NowPlayingState(info, DateTimeOffset.UtcNow, next));
                 if (current.ShowLyrics)
                 {
-                    _ = AddLyricsAsync(current, song, jellyfin, cancellationToken);
+                    _ = AddLyricsAsync(current, playing, library, cancellationToken);
                 }
             }, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private static JellyfinMusicQuery Query(RadioStation station) => station.Pick switch
+    private static MusicQuery Query(RadioStation station) => station.Pick switch
     {
-        MusicPick.Playlist when station.PlaylistId is { } playlist => new JellyfinMusicQuery(PlaylistId: playlist),
-        MusicPick.Genres when station.Genres.Count > 0 => new JellyfinMusicQuery(Genres: station.Genres),
-        MusicPick.Artists when station.Artists.Count > 0 => new JellyfinMusicQuery(Artists: station.Artists),
-        _ => new JellyfinMusicQuery(Limit: 500)
+        MusicPick.Playlist when station.PlaylistId is { } playlist => new MusicQuery(PlaylistId: playlist),
+        MusicPick.Genres when station.Genres.Count > 0 => new MusicQuery(Genres: station.Genres),
+        MusicPick.Artists when station.Artists.Count > 0 => new MusicQuery(Artists: station.Artists),
+        _ => new MusicQuery(Limit: 500)
     };
 
-    /// <summary>A library song as the page shows it; its cover comes through the plugin, which asks Jellyfin.</summary>
-    public static SongInfo Library(JellyfinTrack track, IReadOnlyList<LyricLine> lyrics) => new(
+    /// <summary>A library song as the page shows it; its cover comes through the plugin, which asks the library.</summary>
+    public static SongInfo Library(IMusicLibrary library, MusicTrack track, IReadOnlyList<LyricLine> lyrics) => new(
         track.Title,
         track.Artist,
         track.Album,
         track.Year,
-        $"{RadioSettings.RoutePrefix}/art/{Uri.EscapeDataString(track.ArtItemId)}",
+        track.ArtId is { } art ? $"{RadioSettings.RoutePrefix}/art/{Uri.EscapeDataString(library.Id)}/{Uri.EscapeDataString(art)}" : null,
         (long)track.Duration.TotalMilliseconds,
         lyrics);
 
-    private async Task AddLyricsAsync(RadioStation station, JellyfinTrack song, JellyfinClient jellyfin, CancellationToken cancellationToken)
+    /// <summary>A library's lyrics as the page shows them: milliseconds where they're timed.</summary>
+    public static IReadOnlyList<LyricLine> Lyrics(IEnumerable<MusicLyricLine> lines) =>
+        [.. lines.Select(line => new LyricLine(line.Text, line.Start is { } start ? (long)start.TotalMilliseconds : null))];
+
+    private async Task AddLyricsAsync(RadioStation station, MusicTrack song, IMusicLibrary library, CancellationToken cancellationToken)
     {
         try
         {
-            IReadOnlyList<LyricLine> lyrics = [.. (await jellyfin.GetLyricsAsync(song.Id, cancellationToken).ConfigureAwait(false))
-                .Select(line => new LyricLine(line.Text, line.Start is { } start ? (long)start.TotalMilliseconds : null))];
+            IReadOnlyList<LyricLine> lyrics = Lyrics(await library.GetLyricsAsync(song.Id, cancellationToken).ConfigureAwait(false));
             if (lyrics.Count == 0 && station.LookUpOnline && song.Artist.Length > 0)
             {
                 lyrics = await online.LyricsAsync(song.Artist, song.Title, song.Album, song.Duration, cancellationToken).ConfigureAwait(false);
@@ -150,12 +171,15 @@ public sealed class RadioSound(
         }
     }
 
-    /// <summary>The ffmpeg command for one library song: read at its own speed, its sound only, stamped on the running clock.</summary>
-    public static List<string> SongArguments(string url, string authorization, TimeSpan duration, TimeSpan offset) =>
+    /// <summary>
+    /// The ffmpeg command for one library song: read at its own speed (from a file, or an address with the headers it
+    /// needs), its sound only, stamped on the running clock.
+    /// </summary>
+    public static List<string> SongArguments(MusicStream stream, TimeSpan duration, TimeSpan offset) =>
     [
         "-hide_banner", "-loglevel", "warning", "-nostdin", "-re",
-        "-headers", authorization + "\r\n",
-        "-i", url,
+        .. stream.Headers is { Length: > 0 } headers ? (string[])["-headers", headers + "\r\n"] : [],
+        "-i", stream.Input,
         "-vn", "-map", "0:a:0", "-t", Seconds(duration + TimeSpan.FromSeconds(1)),
         .. Encode(offset)
     ];

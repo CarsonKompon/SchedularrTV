@@ -33,11 +33,11 @@ public class StatsTests : IDisposable
             ]
             """);
 
-        IReadOnlyList<LiveSession> sessions = AudienceReader.ReadJellyfin(json.RootElement);
+        IReadOnlyList<LiveViewerSession> sessions = SchedularrTV.Providers.Jellyfin.JellyfinLiveViewers.Parse(json.RootElement);
 
         Assert.Equal(2, sessions.Count);
-        Assert.Equal(new LiveSession(5, "Cartoon Toons", "carson", "Jellyfin", "Living room"), sessions[0]);
-        Assert.Equal(new LiveSession(null, "Movie Night", "sam", "Jellyfin", "Jellyfin Web"), sessions[1]);
+        Assert.Equal(new LiveViewerSession(5, "Cartoon Toons", "carson", "Jellyfin", "Living room"), sessions[0]);
+        Assert.Equal(new LiveViewerSession(null, "Movie Night", "sam", "Jellyfin", "Jellyfin Web"), sessions[1]);
     }
 
     [Fact]
@@ -51,11 +51,11 @@ public class StatsTests : IDisposable
             ] } }
             """);
 
-        IReadOnlyList<LiveSession> sessions = AudienceReader.ReadPlex(json.RootElement);
+        IReadOnlyList<LiveViewerSession> sessions = PlexLiveViewers.Parse(json.RootElement);
 
         Assert.Equal(2, sessions.Count);
-        Assert.Equal(new LiveSession(7, "Retro TV", "carson", "Plex", "Shield"), sessions[0]);
-        Assert.Equal(new LiveSession(null, "Movie Night", "sam", "Plex", null), sessions[1]);
+        Assert.Equal(new LiveViewerSession(7, "Retro TV", "carson", "Plex", "Shield"), sessions[0]);
+        Assert.Equal(new LiveViewerSession(null, "Movie Night", "sam", "Plex", null), sessions[1]);
     }
 
     [Fact]
@@ -63,10 +63,10 @@ public class StatsTests : IDisposable
     {
         AudienceChannel[] channels = [new("toons", 5, "Cartoon Toons"), new("movies", 9, "Movie Night")];
 
-        Assert.Equal("toons", AudienceReader.Match(channels, new LiveSession(5, "Something else", "u", "Jellyfin", null))?.Id);
-        Assert.Equal("movies", AudienceReader.Match(channels, new LiveSession(null, " movie night ", "u", "Plex", null))?.Id);
-        Assert.Equal("movies", AudienceReader.Match(channels, new LiveSession(42, "Movie Night", "u", "Plex", null))?.Id);
-        Assert.Null(AudienceReader.Match(channels, new LiveSession(42, "Nope", "u", "Plex", null)));
+        Assert.Equal("toons", AudienceReader.Match(channels, new LiveViewerSession(5, "Something else", "u", "Jellyfin", null))?.Id);
+        Assert.Equal("movies", AudienceReader.Match(channels, new LiveViewerSession(null, " movie night ", "u", "Plex", null))?.Id);
+        Assert.Equal("movies", AudienceReader.Match(channels, new LiveViewerSession(42, "Movie Night", "u", "Plex", null))?.Id);
+        Assert.Null(AudienceReader.Match(channels, new LiveViewerSession(42, "Nope", "u", "Plex", null)));
     }
 
     [Theory]
@@ -76,7 +76,7 @@ public class StatsTests : IDisposable
     [InlineData("", null)]
     [InlineData("abc", null)]
     public void Channel_numbers_are_read_from_text(string text, int? expected) =>
-        Assert.Equal(expected, AudienceReader.Number(text));
+        Assert.Equal(expected, LiveChannelNumbers.Read(text));
 
     // --- Describing what aired -----------------------------------------------------------------------------------
 

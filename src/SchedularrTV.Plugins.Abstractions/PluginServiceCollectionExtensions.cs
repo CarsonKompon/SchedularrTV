@@ -75,6 +75,63 @@ public static class PluginServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>A media source's pictures (posters, stills, fanart) for the ids it owns; see <see cref="IArtworkSource"/>.</summary>
+    public static IServiceCollection AddArtworkSource<TSource>(this IServiceCollection services)
+        where TSource : class, IArtworkSource
+    {
+        services.TryAddSingleton<TSource>();
+        services.AddSingleton<IArtworkSource>(provider => provider.GetRequiredService<TSource>());
+        return services;
+    }
+
+    /// <summary>
+    /// Describes a media source to the app (its name, whether it's set up, loading progress, its libraries); see
+    /// <see cref="IMediaSourceInfo"/>. Usually the same class as the <see cref="AddMediaSource{TLibrary}"/> library.
+    /// </summary>
+    public static IServiceCollection AddMediaSourceInfo<TInfo>(this IServiceCollection services)
+        where TInfo : class, IMediaSourceInfo
+    {
+        services.TryAddSingleton<TInfo>();
+        services.AddSingleton<IMediaSourceInfo>(provider => provider.GetRequiredService<TInfo>());
+        return services;
+    }
+
+    /// <summary>Lists its shows' extras for intros and outros; see <see cref="IExtrasSource"/>.</summary>
+    public static IServiceCollection AddExtrasSource<TSource>(this IServiceCollection services)
+        where TSource : class, IExtrasSource
+    {
+        services.TryAddSingleton<TSource>();
+        services.AddSingleton<IExtrasSource>(provider => provider.GetRequiredService<TSource>());
+        return services;
+    }
+
+    /// <summary>Says where items' end credits start; see <see cref="ICreditsSource"/>.</summary>
+    public static IServiceCollection AddCreditsSource<TSource>(this IServiceCollection services)
+        where TSource : class, ICreditsSource
+    {
+        services.TryAddSingleton<TSource>();
+        services.AddSingleton<ICreditsSource>(provider => provider.GetRequiredService<TSource>());
+        return services;
+    }
+
+    /// <summary>Says who is watching a media server's live TV, for viewing stats; see <see cref="ILiveViewerSource"/>.</summary>
+    public static IServiceCollection AddLiveViewerSource<TSource>(this IServiceCollection services)
+        where TSource : class, ILiveViewerSource
+    {
+        services.TryAddSingleton<TSource>();
+        services.AddSingleton<ILiveViewerSource>(provider => provider.GetRequiredService<TSource>());
+        return services;
+    }
+
+    /// <summary>A music library radio channels can play from; see <see cref="IMusicLibrary"/>.</summary>
+    public static IServiceCollection AddMusicLibrary<TLibrary>(this IServiceCollection services)
+        where TLibrary : class, IMusicLibrary
+    {
+        services.TryAddSingleton<TLibrary>();
+        services.AddSingleton<IMusicLibrary>(provider => provider.GetRequiredService<TLibrary>());
+        return services;
+    }
+
     /// <summary>Tells the scheduler which channels are being watched, e.g. from a playout engine's activity.</summary>
     public static IServiceCollection AddChannelViewers<TViewers>(this IServiceCollection services)
         where TViewers : class, IChannelViewers

@@ -16,7 +16,6 @@ using SchedularrTV.Core.Ordering;
 using SchedularrTV.Core.Scheduling;
 using SchedularrTV.Providers.ErsatzTv;
 using SchedularrTV.Providers.FileSystem;
-using SchedularrTV.Providers.Jellyfin;
 using SchedularrTV.Service.Components;
 using SchedularrTV.Service.Editor;
 using SchedularrTV.Service.Plugins;
@@ -183,6 +182,9 @@ public static class SchedulerHost
         builder.Services.AddSingleton(new SchedularrTV.Service.Stats.ViewingStore(Path.Combine(dataDirectory, "stats", "viewing.db")));
         builder.Services.AddSingleton<SchedularrTV.Service.Stats.ViewerPreferences>();
         builder.Services.AddSingleton<SchedularrTV.Service.Stats.AudienceReader>();
+        // Plex can only say who's watching (it isn't a library source here); media server plugins add their own.
+        builder.Services.AddSingleton<SchedularrTV.Service.Stats.PlexLiveViewers>();
+        builder.Services.AddSingleton<ILiveViewerSource>(sp => sp.GetRequiredService<SchedularrTV.Service.Stats.PlexLiveViewers>());
         builder.Services.AddSingleton<SchedularrTV.Service.Stats.ViewingRecorder>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<SchedularrTV.Service.Stats.ViewingRecorder>());
         builder.Services.AddHttpClient(SchedularrTV.Service.Stats.AudienceReader.ClientName, http => http.Timeout = TimeSpan.FromSeconds(10));
@@ -224,6 +226,9 @@ public static class SchedulerHost
         builder.Services.Replace(ServiceDescriptor.Singleton(typeof(IOptions<>), typeof(LiveOptions<>)));
 
         WebApplication app = builder.Build();
+
+        // Artwork links follow whichever media sources are running (Jellyfin, local folders, library plugins).
+        SchedularrTV.Service.Editor.ArtworkLinks.Sources = () => app.Services.GetServices<IArtworkSource>();
 
         app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Hardware").LogInformation(
             "Running on {Hardware}; {Profile} defaults ({Mode}).", SchedularrTV.Core.Platform.HardwareProfile.Detected.Summary,

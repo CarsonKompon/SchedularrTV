@@ -2,14 +2,13 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using SchedularrTV.Core.Media;
-using SchedularrTV.Providers.Jellyfin;
 
 namespace SchedularrTV.CreditSqueeze;
 
 /// <summary>Where looking up credits stands, for the Credit Squeeze tab.</summary>
 /// <param name="Waiting">Episodes still to be asked about.</param>
 /// <param name="Remaining">Roughly how long they'll take.</param>
-/// <param name="CanAsk">Jellyfin is set up and asking it is on.</param>
+/// <param name="CanAsk">A source that can say (Jellyfin, a library plugin) is set up and asking is on.</param>
 public sealed record CreditsLookupStatus(int Waiting, TimeSpan Remaining, int Marked, int Asked, bool CanAsk, string? Problem);
 
 /// <summary>
@@ -48,7 +47,7 @@ public sealed class CreditsMarkers(IServiceProvider services, CreditSqueezeSetti
             return chapter;
         }
 
-        if (!settings.UseSegments || !Guid.TryParse(item.Id, out _))
+        if (!settings.UseSegments || Source(item.Id) is null)
         {
             return null;
         }
@@ -67,6 +66,10 @@ public sealed class CreditsMarkers(IServiceProvider services, CreditSqueezeSetti
         Want(item.Id);
         return null;
     }
+
+    /// <summary>The running source that owns an item and can say where its credits start (Jellyfin's segments, a plugin's…).</summary>
+    private ICreditsSource? Source(string itemId) =>
+        services.GetServices<ICreditsSource>().FirstOrDefault(source => source.Owns(itemId) && source.IsAvailable);
 
     private void Want(string itemId)
     {
@@ -105,7 +108,7 @@ public sealed class CreditsMarkers(IServiceProvider services, CreditSqueezeSetti
             }
 
             _queued.TryRemove(itemId, out _);
-            if (services.GetService<JellyfinClient>() is not { } jellyfin)
+            if (Source(itemId) is not { } source)
             {
                 continue;
             }
@@ -113,12 +116,12 @@ public sealed class CreditsMarkers(IServiceProvider services, CreditSqueezeSetti
             try
             {
                 long started = System.Diagnostics.Stopwatch.GetTimestamp();
-                (TimeSpan Start, TimeSpan End)? segment = await jellyfin.GetCreditsSegmentAsync(itemId, stoppingToken).ConfigureAwait(false);
+                TimeSpan? start = await source.GetCreditsStartAsync(itemId, stoppingToken).ConfigureAwait(false);
                 _askedTicks += System.Diagnostics.Stopwatch.GetElapsedTime(started).Ticks;
                 _askedThisRun++;
                 _lastProblem = null;
-                _known[itemId] = new Marker(segment?.Start.TotalSeconds, clock.GetUtcNow());
-                if (segment is not null)
+                _known[itemId] = new Marker(start?.TotalSeconds, clock.GetUtcNow());
+                if (start is not null)
                 {
                     found++;
                 }
@@ -133,8 +136,8 @@ public sealed class CreditsMarkers(IServiceProvider services, CreditSqueezeSetti
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException && !stoppingToken.IsCancellationRequested)
             {
-                logger.LogDebug(ex, "Credit squeeze: couldn't ask Jellyfin for the credits of {Item}.", itemId);
-                _lastProblem = $"Couldn't reach Jellyfin: {ex.Message}";
+                logger.LogDebug(ex, "Credit squeeze: couldn't ask {Source} for the credits of {Item}.", source.Name, itemId);
+                _lastProblem = $"Couldn't reach {source.Name}: {ex.Message}";
                 _known[itemId] = new Marker(null, clock.GetUtcNow());
             }
         }
@@ -195,9 +198,9 @@ public sealed class CreditsMarkers(IServiceProvider services, CreditSqueezeSetti
         Load();
         int waiting = _queued.Count;
         TimeSpan each = _askedThisRun > 0 ? TimeSpan.FromTicks(_askedTicks / _askedThisRun) : TimeSpan.FromMilliseconds(150);
-        bool jellyfin = services.GetService<JellyfinClient>() is not null;
+        bool canAsk = services.GetServices<ICreditsSource>().Any(source => source.IsAvailable);
         (int marked, int asked) = Coverage();
-        return new CreditsLookupStatus(waiting, waiting * each, marked, asked, settings.UseSegments && jellyfin, _lastProblem);
+        return new CreditsLookupStatus(waiting, waiting * each, marked, asked, settings.UseSegments && canAsk, _lastProblem);
     }
 
     private string? _lastProblem;

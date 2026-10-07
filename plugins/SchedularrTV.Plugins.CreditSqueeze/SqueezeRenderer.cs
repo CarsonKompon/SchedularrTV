@@ -10,7 +10,6 @@ using SchedularrTV.Core.Media;
 using SchedularrTV.Core.Platform;
 using SchedularrTV.Core.Scheduling;
 using SchedularrTV.Plugins.Promos;
-using SchedularrTV.Providers.Jellyfin;
 using SchedularrTV.Service;
 using SkiaSharp;
 

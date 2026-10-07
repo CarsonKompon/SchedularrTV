@@ -137,7 +137,8 @@ public sealed class LocalLibraryTests : IDisposable
         FileSystemMediaLibrary library = Library(new MediaFolderOptions { Path = tv, Kind = MediaKind.Episode });
         MediaItem episode = Assert.Single(await library.SearchAsync(QueryExpression.All));
 
-        IReadOnlyList<LocalExtra> extras = await library.ExtrasAsync(episode.SeriesId!);
+        Assert.True(library.Owns(episode.SeriesId!));
+        IReadOnlyList<MediaExtra> extras = await library.GetExtrasAsync(episode.SeriesId!);
         Assert.Equal(["Daria - S01E01-featurette", "Opening Theme", "Season Trailer"], extras.Select(extra => extra.Name).Order());
         Assert.Empty(await library.ExtrasAsync("local-show:unknown"));
     }

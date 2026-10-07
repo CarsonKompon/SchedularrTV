@@ -25,7 +25,7 @@ public sealed class ContentInclude
     /// <summary>Movie title, exactly as Jellyfin reports it.</summary>
     public string? Movie { get; set; }
 
-    /// <summary>A Jellyfin collection (BoxSet) name.</summary>
+    /// <summary>A library collection's name: a Jellyfin BoxSet, a local movie's <c>set</c>, any source's collection.</summary>
     public string? Collection { get; set; }
 
     /// <summary>Escape hatch for anything the other fields cannot express.</summary>

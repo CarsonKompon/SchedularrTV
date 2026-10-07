@@ -1,8 +1,6 @@
 @* The list of explicitly picked shows/movies inside a collection. *@
 @inject LibraryBrowser Library
 @inject ConfigEditor Editor
-@* Optional: the Jellyfin library is only registered while its plugin is loaded. *@
-@inject IServiceProvider Services
 
 <div class="field">
     <span style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px;">
@@ -80,9 +78,9 @@
         <select class="include-add-kind" @onchange="OnPickerChanged" value="@_pickerKind">
             <option value="show">Show</option>
             <option value="movie">Movie</option>
-            @if (JellyfinConfigured)
+            @if (_hasCollections || _pickerKind == CollectionKind)
             {
-                <option value="collection">Jellyfin collection</option>
+                <option value="collection">Collection from your library</option>
             }
         </select>
         @* Picking a suggestion adds it straight away; a name typed out is added with the button (or Enter). *@
@@ -150,9 +148,8 @@
 }
 
 @code {
-    /// <summary>Jellyfin is loaded and connected, so its collections can be picked.</summary>
-    private bool JellyfinConfigured =>
-        Services.GetService(typeof(SchedularrTV.Providers.Jellyfin.JellyfinMediaLibrary)) is SchedularrTV.Providers.Jellyfin.JellyfinMediaLibrary { IsConfigured: true };
+    /// <summary>The library has collections (Jellyfin's BoxSets, local movies' sets…), so they can be picked.</summary>
+    private bool _hasCollections;
 
     [Parameter, EditorRequired] public List<ContentInclude> Includes { get; set; } = [];
     [Parameter] public EventCallback Changed { get; set; }
@@ -193,6 +190,7 @@
     protected override async Task OnInitializedAsync()
     {
         IReadOnlyList<LibraryShow> shows = await Library.GetShowsAsync();
+        _hasCollections = (await Library.GetLibraryCollectionsAsync()).Count > 0;
 
         _showsById = shows.ToDictionary(s => s.Id, s => s, StringComparer.Ordinal);
 
@@ -235,7 +233,7 @@
     private async Task LoadOptions() => _options = _pickerKind switch
     {
         "movie" => (await Library.GetMoviesAsync()).Select(m => m.Title).ToList(),
-        "collection" => (await Library.GetJellyfinCollectionsAsync()).ToList(),
+        "collection" => (await Library.GetLibraryCollectionsAsync()).ToList(),
         _ => (await Library.GetShowsAsync()).Select(s => s.Name).ToList()
     };
 

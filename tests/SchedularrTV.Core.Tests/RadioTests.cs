@@ -3,7 +3,6 @@ using Microsoft.Extensions.Configuration;
 using SchedularrTV.Core.Media;
 using SchedularrTV.LiveCapture;
 using SchedularrTV.Plugins;
-using SchedularrTV.Providers.Jellyfin;
 using SchedularrTV.Radio;
 using Xunit;
 
@@ -104,21 +103,40 @@ public sealed class RadioTests : IDisposable
     [Fact]
     public void Library_songs_show_their_album_cover_through_the_plugin()
     {
-        var track = new JellyfinTrack("t1", "Song", ["A", "B"], "Album", "al1", "A", TimeSpan.FromMinutes(3), 1999, ["Pop"]);
+        var track = new MusicTrack("t1", "Song", ["A", "B"], "Album", "A", TimeSpan.FromMinutes(3), 1999, ["Pop"], "al1");
 
-        SongInfo song = RadioSound.Library(track, [new LyricLine("Hi", 1000)]);
+        SongInfo song = RadioSound.Library(new NamedMusicLibrary("jellyfin"), track, [new LyricLine("Hi", 1000)]);
 
         Assert.Equal("A, B", song.Artist);
-        Assert.Equal("/plugins/radio/art/al1", song.Art);
+        Assert.Equal("/plugins/radio/art/jellyfin/al1", song.Art);
         Assert.Equal(180_000, song.DurationMs);
         Assert.True(song.Synced);
+
+        Assert.Null(RadioSound.Library(new NamedMusicLibrary("local"), track with { ArtId = null }, []).Art);
+    }
+
+    [Fact]
+    public void A_station_plays_from_the_library_it_names_else_the_first_set_up()
+    {
+        NamedMusicLibrary jellyfin = new("jellyfin", configured: false), local = new("local");
+
+        Assert.Same(jellyfin, MusicLibraries.Pick([jellyfin, local], "jellyfin"));
+        Assert.Same(local, MusicLibraries.Pick([jellyfin, local], null));
+        Assert.Same(local, MusicLibraries.Pick([jellyfin, local], "gone"));
+
+        // Older saves' "Jellyfin" source is the Jellyfin music library.
+        var station = new RadioStation { Id = "s", Name = "S", Source = RadioSource.Jellyfin };
+        RadioStore.Tidy(station);
+        Assert.Equal((RadioSource.Library, "jellyfin"), (station.Source, station.MusicLibraryId));
     }
 
     [Fact]
     public void Each_song_is_read_at_its_own_speed_with_the_key_in_a_header_and_stamped_on_the_clock()
     {
-        List<string> arguments = RadioSound.SongArguments("http://jellyfin.test/Audio/t1/stream?static=true", "Authorization: MediaBrowser Token=\"k\"",
+        List<string> arguments = RadioSound.SongArguments(new MusicStream("http://jellyfin.test/Audio/t1/stream?static=true", "Authorization: MediaBrowser Token=\"k\""),
             TimeSpan.FromSeconds(200), TimeSpan.FromSeconds(42.5));
+
+        Assert.DoesNotContain("-headers", RadioSound.SongArguments(new MusicStream(@"D:\Music\song.flac"), TimeSpan.FromSeconds(200), TimeSpan.Zero));
 
         Assert.Contains("-re", arguments);
         Assert.Equal("Authorization: MediaBrowser Token=\"k\"\r\n", arguments[arguments.IndexOf("-headers") + 1]);
@@ -264,5 +282,20 @@ public sealed class RadioTests : IDisposable
         public IConfiguration AppConfiguration => app;
         public bool IsLoaded(string pluginId) => false;
         public string StaticFilesPath => "/plugins/radio/";
+    }
+
+    /// <summary>A music library with nothing in it, known by its id.</summary>
+    private sealed class NamedMusicLibrary(string id, bool configured = true) : IMusicLibrary
+    {
+        public string Id => id;
+        public string Name => id;
+        public bool IsConfigured => configured;
+        public Task<IReadOnlyList<MusicTrack>> GetTracksAsync(MusicQuery query, bool shuffle, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<MusicTrack>>([]);
+        public Task<IReadOnlyList<MusicChoice>> GetPlaylistsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<MusicChoice>>([]);
+        public Task<IReadOnlyList<MusicChoice>> GetGenresAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<MusicChoice>>([]);
+        public Task<IReadOnlyList<MusicChoice>> GetArtistsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<MusicChoice>>([]);
+        public Task<IReadOnlyList<MusicLyricLine>> GetLyricsAsync(string trackId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<MusicLyricLine>>([]);
+        public ValueTask<MusicStream?> GetStreamAsync(string trackId, CancellationToken cancellationToken = default) => ValueTask.FromResult<MusicStream?>(null);
+        public ValueTask<ArtworkImage?> GetArtAsync(string artId, int width, CancellationToken cancellationToken = default) => ValueTask.FromResult<ArtworkImage?>(null);
     }
 }

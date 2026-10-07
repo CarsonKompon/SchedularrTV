@@ -1,7 +1,7 @@
 # Radio shows
 
-The radio plugin (`radio`) makes music into a channel: songs from your **Jellyfin music library**, or an **internet
-radio station**, shown with the song's cover, its lyrics and a visualizer that moves with the sound. Use one as a 24/7
+The radio plugin (`radio`) makes music into a channel: songs from a **music library** (Jellyfin's, music folders on
+disk, or any library plugin's), or an **internet radio station**, shown with the song's cover, its lyrics and a visualizer that moves with the sound. Use one as a 24/7
 music channel, or as music between programmes.
 
 It's optional: install `SchedularrTV-<version>-plugin-radio.zip` (or the all-plugins zip) from the **Plugins** page.
@@ -12,7 +12,8 @@ Like the TV Guide channel, it's built against the scheduler itself, so install t
 - **Chrome, Edge, Chromium or Brave** on the scheduler's computer: the station's picture is a web page drawn by one
   running hidden.
 - **ffmpeg**, the same one as the rest of SchedularrTV.
-- For library music, Jellyfin set up under App settings. Lyrics from Jellyfin need Jellyfin 10.9 or later.
+- For library music, Jellyfin set up under App settings (its lyrics need Jellyfin 10.9 or later), or a music folder
+  added there (see [Local TV and movies](local-library.md#music-folders)).
 
 ## Making a station
 
@@ -21,8 +22,8 @@ your library with your settings as you change them.
 
 | Section | Options |
 | --- | --- |
-| Station | Show name; music from the Jellyfin library or an internet station; lengths it can be scheduled for |
-| Music (Jellyfin) | Every song, a playlist, some genres or some artists; shuffled or in order |
+| Station | Show name; music from one of your music libraries (Jellyfin, Local music folders, a plugin's) or an internet station; lengths it can be scheduled for |
+| Music (library) | Every song, a playlist, some genres or some artists; shuffled or in order |
 | Station (internet) | The stream's address, or an `.m3u` / `.pls` playlist that names it |
 | Look | Now Playing, Karaoke, Vinyl, Retro FM or Minimal; the visualizer (bars, waveform, spectrum, oscilloscope or none), its size (50–150%), how strongly it moves, and its colour; background (the cover blurred, a moving gradient, or a colour); accent colour; lettering (the look's own, any installed font, as in the canvas editors, or a web font: Inter, Oswald, Merriweather, Roboto Slab, Nunito, JetBrains Mono or a segmented display), text size and text colour; cover, lyrics, up next, clock and scan lines on or off; a message along the bottom; lyrics timing |
 | Sound | Volume |
@@ -39,7 +40,7 @@ your library with your settings as you change them.
 
 ## Lyrics and covers
 
-Library songs use their Jellyfin cover and Jellyfin's lyrics; timed lyrics (from `.lrc` files or embedded) follow the
+Library songs use their library's cover and lyrics (Jellyfin's, or a music folder's `cover.jpg` and `.lrc` files); timed lyrics follow the
 song line by line, untimed ones scroll through it. When a song has no lyrics, and *Look up covers and lyrics online* is
 on, they're looked up on [LRCLIB](https://lrclib.net). If lyrics run early or late, move **Lyrics timing**.
 
@@ -58,7 +59,7 @@ Each station appears in the library as a show of that name (tagged `Radio` and `
 
 When ErsatzTV reaches a station, it opens its live stream from the scheduler
 (`http://<scheduler>:5252/plugins/radio/live/<station>.ts`). The first viewer starts it: the plugin plays the songs
-one after another (from Jellyfin, read as they are, with the API key kept out of the address) or relays the station; a
+one after another (from the library, read as they are: a music folder's files directly, Jellyfin's with its API key kept out of the address) or relays the station; a
 hidden browser draws the page, which asks every second what's playing; and ffmpeg encodes it at 720p with the sound,
 drawing the visualizer from the sound itself, so it's always in step. A station stops 90 seconds after the last viewer
 leaves.
@@ -80,6 +81,6 @@ reach, e.g. `http://192.168.1.20:5252`.
 ## Troubleshooting
 
 - **Silence, and "No songs match this station's music".** The playlist, genres or artists chosen have no songs; or
-  Jellyfin isn't reachable.
-- **No lyrics.** The song has none in Jellyfin and none on LRCLIB (or looking online is off).
+  the music library isn't reachable (or set up).
+- **No lyrics.** The song has none in its library and none on LRCLIB (or looking online is off).
 - **An internet station stays on its name.** It doesn't send titles (or it's HLS).

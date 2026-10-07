@@ -1,13 +1,11 @@
 @page "/"
 @implements IDisposable
 @using System.Globalization
-@using SchedularrTV.Providers.Jellyfin
 @inject IEnumerable<DashboardCard> Cards
 @inject ConfigEditor Editor
 @inject ScheduleCoordinator Coordinator
 @inject SchedulerConfigProvider Provider
-@inject JellyfinMediaLibrary Library
-@inject JellyfinClient Jellyfin
+@inject IEnumerable<IMediaSourceInfo> MediaSources
 @inject IServiceProvider Services
 
 <PageHeader Title="Dashboard" Eyebrow="Overview">
@@ -67,41 +65,44 @@
     </div>
 }
 
-@if (_serverScan is { } scan)
+@foreach (MediaSourceActivity scan in _serverActivity)
 {
     <div class="activity">
         <div class="spinner spinner-sm"></div>
         <div class="activity-body" role="status" aria-live="polite">
-            <div class="activity-title">Jellyfin is scanning its library@(scan.Percent is { } scanned ? $" ({scanned:0}%)" : "")</div>
-            <div class="activity-detail">New and changed files reach the scheduler on its next library refresh after the scan.</div>
+            <div class="activity-title">@scan.Description@(scan.Percent is { } scanned ? $" ({scanned:0}%)" : "")</div>
+            <div class="activity-detail">New and changed files reach the scheduler on its next library refresh after this.</div>
             @if (scan.Percent is { } percent)
             {
-                <progress aria-label="Jellyfin library scan" max="100" value="@percent.ToString("0.#", CultureInfo.InvariantCulture)"></progress>
+                <progress aria-label="@scan.Description" max="100" value="@percent.ToString("0.#", CultureInfo.InvariantCulture)"></progress>
             }
         </div>
     </div>
 }
 
-@if (Library.Loading is { } loading)
+@foreach (IMediaSourceInfo source in _sources)
 {
-    <div class="activity">
-        <div class="spinner spinner-sm"></div>
-        <div class="activity-body" role="status" aria-live="polite">
-            <div class="activity-title">Reading the Jellyfin library</div>
-            <div class="activity-detail">
-                @loading.Stage
-                @if (loading.Items > 0)
+    @if (source.Loading is { } loading)
+    {
+        <div class="activity">
+            <div class="spinner spinner-sm"></div>
+            <div class="activity-body" role="status" aria-live="polite">
+                <div class="activity-title">Reading the @source.Name library</div>
+                <div class="activity-detail">
+                    @loading.Stage
+                    @if (loading.Items > 0)
+                    {
+                        <span> &middot; @loading.Items.ToString("N0")@(loading.Total is > 0 ? $" of {loading.Total:N0}" : " items")</span>
+                    }
+                    <span> &middot; @Elapsed(loading.StartedAt)</span>
+                </div>
+                @if (loading.Percent is { } percent)
                 {
-                    <span> &middot; @loading.Items.ToString("N0")@(loading.Total is > 0 ? $" of {loading.Total:N0}" : " items")</span>
+                    <progress aria-label="@($"{source.Name} library read")" max="100" value="@percent.ToString("0.#", CultureInfo.InvariantCulture)"></progress>
                 }
-                <span> &middot; @Elapsed(loading.StartedAt)</span>
             </div>
-            @if (loading.Percent is { } percent)
-            {
-                <progress aria-label="Jellyfin library read" max="100" value="@percent.ToString("0.#", CultureInfo.InvariantCulture)"></progress>
-            }
         </div>
-    </div>
+    }
 }
 
 @if (Coordinator.IsBuilding)
@@ -394,15 +395,24 @@ else
 
     protected override void OnInitialized()
     {
+        _sources = [.. MediaSources];
         Coordinator.StateChanged += OnBuildStateChanged;
-        Library.LoadingChanged += OnBuildStateChanged;
+        foreach (IMediaSourceInfo source in _sources)
+        {
+            source.LoadingChanged += OnBuildStateChanged;
+        }
+
         _ = PollAsync(_life.Token);
     }
 
     public void Dispose()
     {
         Coordinator.StateChanged -= OnBuildStateChanged;
-        Library.LoadingChanged -= OnBuildStateChanged;
+        foreach (IMediaSourceInfo source in _sources)
+        {
+            source.LoadingChanged -= OnBuildStateChanged;
+        }
+
         _life.Cancel();
         _life.Dispose();
     }
@@ -411,28 +421,36 @@ else
     private void OnBuildStateChanged() => _ = InvokeAsync(StateHasChanged);
 
     private readonly CancellationTokenSource _life = new();
-    private JellyfinServerScan? _serverScan;
+    private IMediaSourceInfo[] _sources = [];
+    private IReadOnlyList<MediaSourceActivity> _serverActivity = [];
 
-    /// <summary>Jellyfin has no push for its own scans, so ask while the page is open; this also ticks the elapsed times.</summary>
+    /// <summary>Media servers have no push for their own scans, so ask while the page is open; this also ticks the elapsed times.</summary>
     private async Task PollAsync(CancellationToken cancellationToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(4));
         do
         {
-            try
+            List<MediaSourceActivity> activity = [];
+            foreach (IMediaSourceInfo source in _sources.Where(source => source.IsConfigured))
             {
-                _serverScan = await Jellyfin.GetLibraryScanAsync(cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception)
-            {
-                // Unreachable or not configured: the dashboard just doesn't show a scan.
-                _serverScan = null;
+                try
+                {
+                    if (await source.GetActivityAsync(cancellationToken) is { } busy)
+                    {
+                        activity.Add(busy);
+                    }
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception)
+                {
+                    // Unreachable: the dashboard just doesn't show its activity.
+                }
             }
 
+            _serverActivity = activity;
             await InvokeAsync(StateHasChanged);
         }
         while (await SafeTickAsync(timer, cancellationToken));

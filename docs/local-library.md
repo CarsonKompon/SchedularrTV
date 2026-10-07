@@ -82,6 +82,28 @@ that ErsatzTV would pick up: videos in a season's `Extras`/`Trailers` folders (E
 whose file name merely ends in a word like "short" (`The Big Short.mkv` is a movie here; extras need a dash,
 `Movie-short.mkv`). Music videos, songs and image libraries aren't supported.
 
+## Music folders
+
+Add a music folder (**Add a music folder** under App settings → Local TV and movies) and radio channels can play from
+it without Jellyfin: choose **Local music folders** under *Music from* on the Radio shows page.
+
+```
+Music/
+  Daft Punk/
+    Discovery/
+      cover.jpg                    the album's cover (or folder.jpg, front.jpg, album.jpg)
+      01 - One More Time.flac
+      01 - One More Time.lrc       timed lyrics (or a .txt for plain ones)
+  Road Trip.m3u                    a playlist (paths relative to it, or full paths)
+```
+
+- Titles, artists, album artists, albums, genres, years and track numbers come from the files' tags, read once with
+  ffprobe and kept in `state/music-cache.json`. Without tags, `Artist/Album/01 - Title` (or `Artist - Title`) is used.
+- Lyrics come from an `.lrc` file beside the song (timed), a `.txt` file, or the song's lyrics tag, else LRCLIB online.
+- `.m3u` and `.m3u8` files are playlists; genres and artists come from the tags, for stations that play some of them.
+- Music folders aren't scheduled as shows; they're only for radio channels. Like videos, songs ffprobe can't read are
+  left out.
+
 ## Intros and outros
 
 A local show's extras are offered when choosing its intros and outros (**Intros/outros…** on the TV Shows page or in
