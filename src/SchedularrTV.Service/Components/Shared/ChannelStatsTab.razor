@@ -100,7 +100,7 @@ else
             {
                 double y = ChartHeight - tick / barMax * ChartHeight;
                 <line class="grid-line" x1="@Gutter" x2="@WideWidth" y1="@F(y)" y2="@F(y)" />
-                <text class="axis" x="0" y="@F(y + 3)">@Number(tick)h</text>
+                @Axis(0, y + 3, $"{Number(tick)}h")
             }
             @for (int i = 0; i < report.Bars.Count; i++)
             {
@@ -112,7 +112,7 @@ else
                 </rect>
                 @if (i % labelEvery == 0)
                 {
-                    <text class="axis" x="@F(x + slot * 0.35)" y="@(ChartHeight + 16)" text-anchor="middle">@bar.Label</text>
+                    @Axis(x + slot * 0.35, ChartHeight + 16, bar.Label, "middle")
                 }
             }
         </svg>
@@ -134,7 +134,7 @@ else
                 {
                     double y = ChartHeight - tick / lineMax * ChartHeight;
                     <line class="grid-line" x1="@Gutter" x2="@ChartWidth" y1="@F(y)" y2="@F(y)" />
-                    <text class="axis" x="0" y="@F(y + 3)">@Number(tick)</text>
+                    @Axis(0, y + 3, Number(tick))
                 }
                 @if (report.Recent.Count > 1)
                 {
@@ -142,7 +142,8 @@ else
                     <polyline class="line" points="@points" />
                     @for (int i = 0; i < report.Recent.Count; i += 16)
                     {
-                        <text class="axis" x="@F(Gutter + i * step)" y="@(ChartHeight + 16)" text-anchor="@(i == 0 ? "start" : i + 16 >= report.Recent.Count ? "end" : "middle")">@report.Recent[i].At.ToString("HH:mm", CultureInfo.CurrentCulture)</text>
+                        string anchor = i == 0 ? "start" : i + 16 >= report.Recent.Count ? "end" : "middle";
+                        @Axis(Gutter + i * step, ChartHeight + 16, report.Recent[i].At.ToString("HH:mm", CultureInfo.CurrentCulture), anchor)
                     }
                 }
             </svg>
@@ -509,6 +510,13 @@ else
         _confirmClear = false;
         Refresh();
     }
+
+    /// <summary>
+    /// An SVG axis label. Razor reserves the <c>&lt;text&gt;</c> tag, so it's written out here; styled inline, since
+    /// markup written this way doesn't get the component's scoped CSS.
+    /// </summary>
+    private static MarkupString Axis(double x, double y, string label, string anchor = "start") => new(
+        $"<text x=\"{F(x)}\" y=\"{F(y)}\" text-anchor=\"{anchor}\" style=\"fill:var(--faint);font-size:10px\">{System.Net.WebUtility.HtmlEncode(label)}</text>");
 
     private static string PeakText(ChannelStatsReport report) =>
         report.PeakAt is not { } at ? "Nobody yet"

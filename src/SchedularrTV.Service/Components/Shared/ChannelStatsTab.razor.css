@@ -22,7 +22,6 @@
 
 .chart { display: block; width: 100%; height: auto; overflow: visible; }
 .chart .grid-line { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.chart .axis { fill: var(--faint); font-size: 10px; }
 .chart .bar { fill: var(--accent); opacity: .85; }
 .chart .bar:hover { opacity: 1; }
 .chart .line { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
