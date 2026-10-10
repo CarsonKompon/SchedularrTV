@@ -286,13 +286,38 @@ public static class SchedulerHost
             // Read from the file each time the options are rebuilt (after every save), not once at startup.
             if (AppSettingsFile.Get(settingsFile.Load(), $"{FileSystemLibraryOptions.SectionName}:Folders") is System.Text.Json.Nodes.JsonArray folders)
             {
-                options.Folders = folders.Deserialize<List<MediaFolderOptions>>(AppSettingsJson.Options) ?? [];
+                options.Folders = ReadFolders(folders);
             }
         });
         services.PostConfigure<ErsatzTvOptions>(options =>
         {
             options.ConfigRoot = AppPaths.Rooted(data, options.ConfigRoot);
         });
+    }
+
+    /// <summary>
+    /// The folders saved in the app, one by one: a folder this version can't read (a kind added by a newer version,
+    /// such as music, when an older copy shares the data folder) is left out rather than failing them all, which
+    /// would stop every channel from building.
+    /// </summary>
+    internal static List<MediaFolderOptions> ReadFolders(System.Text.Json.Nodes.JsonArray folders)
+    {
+        List<MediaFolderOptions> read = [];
+        foreach (System.Text.Json.Nodes.JsonNode? folder in folders)
+        {
+            try
+            {
+                if (folder?.Deserialize<MediaFolderOptions>(AppSettingsJson.Options) is { } options)
+                {
+                    read.Add(options);
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+            }
+        }
+
+        return read;
     }
 
     /// <summary>Marks an endpoint as a plugin's, so it answers only while the plugin is switched on.</summary>
