@@ -1,0 +1,373 @@
+@page "/performance"
+@implements IDisposable
+@using System.Globalization
+@using SchedularrTV.Service.Performance
+@inject ResourceMonitor Monitor
+@inject AlwaysOnKeeper AlwaysOn
+
+<PageHeader Title="Performance" Eyebrow="System">
+    <ChildContent>
+        What SchedularrTV, ErsatzTV and everything they start take of this computer, measured every
+        @((int)ResourceMonitor.Interval.TotalSeconds) seconds over the last @((int)ResourceMonitor.HistoryLength.TotalMinutes) minutes.
+        CPU is a share of the whole computer (every core together is 100%).
+    </ChildContent>
+</PageHeader>
+
+@if (_latest is not { } latest)
+{
+    <div class="empty">Taking the first measurements…</div>
+}
+else
+{
+    UsageGroup? ersatz = latest.Group(ResourceMonitor.ErsatzKey);
+    GpuUsage? gpu = latest.Gpus.FirstOrDefault();
+
+    <div class="stat-grid">
+        <div class="stat @(latest.SetupCpuPercent > 70 ? "warn" : "")">
+            <div class="stat-label"><Icon Name="activity" Size="14" />CPU, this setup</div>
+            <div class="stat-value">@Pct(latest.SetupCpuPercent)</div>
+            <div class="stat-sub">
+                @(latest.SystemCpuPercent is not null ? $"{Maybe(latest.SystemCpuPercent)} for the whole computer · " : "")@latest.Cores cores
+            </div>
+        </div>
+        <div class="stat">
+            <div class="stat-label"><Icon Name="layers" Size="14" />Memory, this setup</div>
+            <div class="stat-value">@ResourceMonitor.Bytes(latest.SetupMemoryBytes)</div>
+            <div class="stat-sub">
+                @if (latest.SystemMemoryTotalBytes is not null)
+                {
+                    @(latest.SystemMemoryUsedBytes is not null
+                        ? $"{ResourceMonitor.Bytes(latest.SystemMemoryUsedBytes.Value)} of {ResourceMonitor.Bytes(latest.SystemMemoryTotalBytes.Value)} in use overall"
+                        : $"{ResourceMonitor.Bytes(latest.SystemMemoryTotalBytes.Value)} installed")
+                }
+            </div>
+        </div>
+        <div class="stat">
+            <div class="stat-label"><Icon Name="radio" Size="14" />Channels transcoding</div>
+            <div class="stat-value">@latest.Transcodes</div>
+            <div class="stat-sub">
+                @TranscodingNote(ersatz)
+            </div>
+        </div>
+        <div class="stat">
+            <div class="stat-label"><Icon Name="dashboard" Size="14" />Graphics card</div>
+            @if (gpu is not null)
+            {
+                <div class="stat-value">@Maybe(gpu.Encoder ?? gpu.Utilization)</div>
+                <div class="stat-sub" title="@gpu.Name">
+                    @(gpu.Encoder is not null ? "video encoder" : "busy") · @gpu.Name
+                </div>
+            }
+            else
+            {
+                <div class="stat-value">–</div>
+                <div class="stat-sub">@(Monitor.GpuProblem ?? "Not read yet")</div>
+            }
+        </div>
+    </div>
+
+    @if (_advice.Count > 0)
+    {
+        <div class="perf-advice">
+            @foreach (PerformanceAdvice advice in _advice)
+            {
+                <div class="activity @(advice.Level == AdviceLevel.Warning ? "warn" : "")">
+                    <Icon Name="@(advice.Level == AdviceLevel.Warning ? "alert" : "activity")" Size="16" />
+                    <div class="activity-body">
+                        <div class="activity-title">@advice.Title</div>
+                        <div class="activity-detail">@advice.Detail</div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    <div class="perf-split">
+        <div class="card">
+            <div class="card-head">
+                <h2>CPU</h2>
+                <span class="muted">% of the whole computer</span>
+            </div>
+            @Chart(_history, 100, "%", CpuSeries())
+            @LegendFor(CpuSeries())
+        </div>
+
+        <div class="card">
+            <div class="card-head">
+                <h2>Memory</h2>
+                <span class="muted">In use</span>
+            </div>
+            @{
+                double memoryMax = Math.Max(256L << 20, _history.Count == 0 ? 0 : _history.Max(sample => (double)sample.SetupMemoryBytes)) * 1.15;
+            }
+            @Chart(_history, memoryMax / (1 << 30), "GB", MemorySeries())
+            @LegendFor(MemorySeries())
+        </div>
+    </div>
+
+    @foreach (UsageGroup group in latest.Groups)
+    {
+        <div class="card">
+            <div class="card-head">
+                <h2><span class="perf-swatch" style="background:@Colour(group.Key)"></span>@group.Name</h2>
+                <span class="muted">@Pct(group.CpuPercent) CPU · @ResourceMonitor.Bytes(group.MemoryBytes)</span>
+            </div>
+            <p class="hint" style="margin-top:0;">@group.Description</p>
+            @if (group.Processes.Count == 0)
+            {
+                <p class="muted" style="margin:0;">Nothing running right now.</p>
+            }
+            else
+            {
+                <table class="perf-table">
+                    <thead>
+                        <tr><th>Process</th><th>What it is</th><th class="num">PID</th><th class="num">CPU</th><th class="num">Memory</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (ProcessUsage process in group.Processes.Take(_expanded.Contains(group.Key) ? int.MaxValue : 8))
+                        {
+                            <tr>
+                                <td>@process.Name</td>
+                                <td class="muted">@process.Role</td>
+                                <td class="num muted">@process.Pid</td>
+                                <td class="num">@Pct(process.CpuPercent)</td>
+                                <td class="num">@ResourceMonitor.Bytes(process.MemoryBytes)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @if (group.Processes.Count > 8)
+                {
+                    <button class="btn btn-sm btn-ghost" type="button" style="margin-top:8px;" @onclick="() => Toggle(group.Key)">
+                        @(_expanded.Contains(group.Key) ? "Show fewer" : $"Show all {group.Processes.Count}")
+                    </button>
+                }
+            }
+        </div>
+    }
+
+    @if (AlwaysOn.Statuses is { Count: > 0 } statuses)
+    {
+        <div class="card">
+            <div class="card-head">
+                <h2>24/7 channels</h2>
+                <span class="muted">Kept playing in ErsatzTV, checked every @((int)AlwaysOnKeeper.Interval.TotalSeconds) seconds</span>
+            </div>
+            <table class="perf-table">
+                <thead><tr><th>Channel</th><th>State</th></tr></thead>
+                <tbody>
+                    @foreach (AlwaysOnStatus status in statuses)
+                    {
+                        <tr>
+                            <td>@status.Number · @status.Name</td>
+                            <td>
+                                @if (status.Problem is not null)
+                                {
+                                    <span class="pill pill-warn">Not playing</span> <span class="muted">@status.Problem</span>
+                                }
+                                else
+                                {
+                                    <span class="pill pill-ok">Playing</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (latest.Gpus.Count > 0)
+    {
+        <div class="card">
+            <div class="card-head"><h2>Graphics cards</h2></div>
+            <table class="perf-table">
+                <thead>
+                    <tr><th>Card</th><th class="num">Busy</th><th class="num">Encoder</th><th class="num">Decoder</th><th class="num">Memory</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (GpuUsage card in latest.Gpus)
+                    {
+                        <tr>
+                            <td>@card.Name</td>
+                            <td class="num">@Maybe(card.Utilization)</td>
+                            <td class="num">@Maybe(card.Encoder)</td>
+                            <td class="num">@Maybe(card.Decoder)</td>
+                            <td class="num">@(card.MemoryUsedBytes is not null && card.MemoryTotalBytes is not null ? $"{ResourceMonitor.Bytes(card.MemoryUsedBytes.Value)} / {ResourceMonitor.Bytes(card.MemoryTotalBytes.Value)}" : "–")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    private const double Width = 600;
+    private const double Height = 160;
+    private const double Gutter = 40;
+
+    private ResourceSample? _latest;
+    private IReadOnlyList<ResourceSample> _history = [];
+    private IReadOnlyList<PerformanceAdvice> _advice = [];
+    private readonly HashSet<string> _expanded = [];
+
+    /// <summary>One line on a chart: its name, colour, dashed or not, and its value at a sample (null leaves a gap).</summary>
+    public sealed record Series(string Name, string Colour, bool Dashed, Func<ResourceSample, double?> Value);
+
+    protected override void OnInitialized()
+    {
+        Refresh();
+        Monitor.Sampled += OnSampled;
+    }
+
+    public void Dispose() => Monitor.Sampled -= OnSampled;
+
+    private void OnSampled() => InvokeAsync(() =>
+    {
+        Refresh();
+        StateHasChanged();
+    });
+
+    private void Refresh()
+    {
+        _history = Monitor.History;
+        _latest = _history.Count > 0 ? _history[^1] : null;
+        _advice = Monitor.Advice();
+    }
+
+    private void Toggle(string key)
+    {
+        if (!_expanded.Remove(key))
+        {
+            _expanded.Add(key);
+        }
+    }
+
+    private static string Colour(string key) => key switch
+    {
+        ResourceMonitor.SetupKey => "var(--accent)",
+        ResourceMonitor.ErsatzKey => "var(--ok)",
+        ResourceMonitor.HelpersKey => "var(--warn)",
+        _ => "var(--muted)"
+    };
+
+    private static IReadOnlyList<Series> CpuSeries() =>
+    [
+        new("Whole computer", "var(--muted)", true, sample => sample.SystemCpuPercent),
+        new("SchedularrTV", Colour(ResourceMonitor.SetupKey), false, sample => sample.Group(ResourceMonitor.SetupKey)?.CpuPercent),
+        new("ErsatzTV", Colour(ResourceMonitor.ErsatzKey), false, sample => sample.Group(ResourceMonitor.ErsatzKey)?.CpuPercent),
+        new("Helpers", Colour(ResourceMonitor.HelpersKey), false, sample => sample.Group(ResourceMonitor.HelpersKey)?.CpuPercent),
+        new("GPU encoder", "#b07ad0", true, sample => sample.Gpus.FirstOrDefault()?.Encoder)
+    ];
+
+    private static double? Gigabytes(long? bytes) => bytes is { } value ? value / (double)(1 << 30) : null;
+
+    private static IReadOnlyList<Series> MemorySeries() =>
+    [
+        new("SchedularrTV", Colour(ResourceMonitor.SetupKey), false, sample => Gigabytes(sample.Group(ResourceMonitor.SetupKey)?.MemoryBytes)),
+        new("ErsatzTV", Colour(ResourceMonitor.ErsatzKey), false, sample => Gigabytes(sample.Group(ResourceMonitor.ErsatzKey)?.MemoryBytes)),
+        new("Helpers", Colour(ResourceMonitor.HelpersKey), false, sample => Gigabytes(sample.Group(ResourceMonitor.HelpersKey)?.MemoryBytes))
+    ];
+
+    private static RenderFragment LegendFor(IReadOnlyList<Series> series) => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "perf-legend");
+        foreach (Series line in series)
+        {
+            builder.OpenElement(2, "span");
+            builder.OpenElement(3, "i");
+            builder.AddAttribute(4, "class", line.Dashed ? "dashed" : null);
+            builder.AddAttribute(5, "style", $"border-color:{line.Colour}");
+            builder.CloseElement();
+            builder.AddContent(6, line.Name);
+            builder.CloseElement();
+        }
+
+        builder.CloseElement();
+    };
+
+    private string TranscodingNote(UsageGroup? ersatz) =>
+        $"{AlwaysOn.Statuses.Count} set to 24/7" + (ersatz is { Processes.Count: 0 } ? " · ErsatzTV isn't running" : string.Empty);
+
+    private static string Maybe(double? value) => value is { } known ? Pct(known) : "–";
+
+    private static string Pct(double value) => value < 10 ? $"{value.ToString("0.0", CultureInfo.CurrentCulture)}%" : $"{value.ToString("0", CultureInfo.CurrentCulture)}%";
+
+    private static string F(double value) => value.ToString("0.#", CultureInfo.InvariantCulture);
+
+    /// <summary>A line chart of <paramref name="series"/> over the history, from 0 to <paramref name="max"/>, across the whole window.</summary>
+    private static RenderFragment Chart(IReadOnlyList<ResourceSample> history, double max, string unit, IReadOnlyList<Series> series) => builder =>
+    {
+        DateTimeOffset end = history.Count > 0 ? history[^1].At : DateTimeOffset.UtcNow;
+        DateTimeOffset start = end - ResourceMonitor.HistoryLength;
+        double X(DateTimeOffset at) => Gutter + (at - start).TotalSeconds / ResourceMonitor.HistoryLength.TotalSeconds * (Width - Gutter);
+        double Y(double value) => Height - Math.Clamp(value / max, 0, 1) * Height;
+
+        int seq = 0;
+        builder.OpenElement(seq++, "svg");
+        builder.AddAttribute(seq++, "class", "perf-chart");
+        builder.AddAttribute(seq++, "viewBox", $"0 0 {F(Width)} {F(Height + 22)}");
+        builder.AddAttribute(seq++, "role", "img");
+
+        foreach (double tick in new[] { 0, 0.25, 0.5, 0.75, 1 })
+        {
+            double y = Y(tick * max);
+            builder.OpenElement(seq++, "line");
+            builder.AddAttribute(seq++, "class", "grid-line");
+            builder.AddAttribute(seq++, "x1", F(Gutter));
+            builder.AddAttribute(seq++, "x2", F(Width));
+            builder.AddAttribute(seq++, "y1", F(y));
+            builder.AddAttribute(seq++, "y2", F(y));
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "text");
+            builder.AddAttribute(seq++, "class", "axis");
+            builder.AddAttribute(seq++, "x", "0");
+            builder.AddAttribute(seq++, "y", F(y + 3));
+            double label = tick * max;
+            builder.AddContent(seq++, unit == "%" ? $"{label:0}%" : $"{label.ToString(label < 1 ? "0.##" : "0.#", CultureInfo.CurrentCulture)} {unit}");
+            builder.CloseElement();
+        }
+
+        foreach ((string text, DateTimeOffset at, string anchor) in new[] { ($"-{(int)ResourceMonitor.HistoryLength.TotalMinutes} min", start, "start"), ("now", end, "end") })
+        {
+            builder.OpenElement(seq++, "text");
+            builder.AddAttribute(seq++, "class", "axis");
+            builder.AddAttribute(seq++, "x", F(X(at)));
+            builder.AddAttribute(seq++, "y", F(Height + 16));
+            builder.AddAttribute(seq++, "text-anchor", anchor);
+            builder.AddContent(seq++, text);
+            builder.CloseElement();
+        }
+
+        foreach (Series line in series)
+        {
+            // A gap in the data (null, or the app restarting) starts a new line rather than joining across it.
+            List<List<string>> runs = [[]];
+            foreach (ResourceSample sample in history)
+            {
+                if (line.Value(sample) is { } value)
+                {
+                    runs[^1].Add($"{F(X(sample.At))},{F(Y(value))}");
+                }
+                else if (runs[^1].Count > 0)
+                {
+                    runs.Add([]);
+                }
+            }
+
+            foreach (List<string> run in runs.Where(run => run.Count > 1))
+            {
+                builder.OpenElement(seq++, "polyline");
+                builder.AddAttribute(seq++, "class", line.Dashed ? "line dashed" : "line");
+                builder.AddAttribute(seq++, "style", $"stroke:{line.Colour}");
+                builder.AddAttribute(seq++, "points", string.Join(' ', run));
+                builder.CloseElement();
+            }
+        }
+
+        builder.CloseElement();
+    };
+}

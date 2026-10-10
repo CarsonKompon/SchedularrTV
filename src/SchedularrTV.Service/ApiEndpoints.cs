@@ -123,6 +123,15 @@ public static partial class ApiEndpoints
             warnings = config.Validation.Warnings
         }));
 
+        // What SchedularrTV, ErsatzTV and their helpers are using of the computer now, what to change, and the 24/7 channels.
+        api.MapGet("/performance", (Performance.ResourceMonitor monitor, AlwaysOnKeeper alwaysOn) => Results.Ok(new
+        {
+            latest = monitor.Latest,
+            advice = monitor.Advice(),
+            gpuProblem = monitor.GpuProblem,
+            alwaysOn = alwaysOn.Statuses
+        }));
+
         // Lets the tray stop its server cleanly (ErsatzTV and ffmpeg children included) instead of killing it.
         api.MapPost("/app/shutdown", (HttpContext http, Hosting.AppRuntime runtime) =>
         {

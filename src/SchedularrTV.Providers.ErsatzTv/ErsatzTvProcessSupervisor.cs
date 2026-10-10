@@ -42,6 +42,22 @@ public sealed class ErsatzTvProcessSupervisor(
         }
     }
 
+    /// <summary>The supervised ErsatzTV process's id while it's alive; null when it isn't running or isn't managed here.</summary>
+    public int? ProcessId
+    {
+        get
+        {
+            try
+            {
+                return _process is { HasExited: false } process ? process.Id : null;
+            }
+            catch (InvalidOperationException)
+            {
+                return null;
+            }
+        }
+    }
+
     /// <summary>Signals that a lineup has been published and the process may start.</summary>
     public void NotifyLineupPublished(string channelFingerprint)
     {

@@ -58,6 +58,48 @@ SchedularrTV, without opening ErsatzTV's port. Browsers that can't play HLS them
 [hls.js](https://github.com/video-dev/hls.js), loaded from cdn.jsdelivr.net when a preview first opens. While a
 preview is open it counts as a viewer, like Jellyfin would.
 
+## 24/7 channels
+
+ErsatzTV starts a channel when a player asks for it and stops it 90 seconds after the last request. Ticking
+**Play around the clock (24/7)** on a channel's General tab (`always_on: true` in the YAML) keeps it playing all
+the time instead: SchedularrTV asks ErsatzTV for the channel's playlists every 20 seconds, the way a player would,
+without downloading the video. Tuning in is then instant and lands mid-programme, but ErsatzTV transcodes the
+channel non-stop, so check the **Performance** page for what it costs.
+
+Keeping a channel open looks the same to ErsatzTV as someone watching, so its heartbeat can no longer tell real
+viewers apart. Each 24/7 channel says how the watched-only features (generated promos, credit squeezing, chapter
+scanning) should treat it: always watched (the default) or never watched
+(`always_on_counts_as_watched: false`). A 24/7 channel is never counted as a direct viewer in the viewing stats;
+viewers through Jellyfin or Plex still are.
+
+```yaml
+channels:
+- id: news
+  name: News
+  number: 3
+  always_on: true
+  always_on_counts_as_watched: false   # optional; leave out to count it as watched
+```
+
+Only the channels defined in the schedule can be set to 24/7; IPTV and streamer channels from plugins start on
+demand as before.
+
+## Performance
+
+**System → Performance** shows what SchedularrTV, ErsatzTV and the processes they start take of the computer,
+every 5 seconds over the last 15 minutes:
+
+- **SchedularrTV**: the app itself (and the tray, when it started the app).
+- **ErsatzTV**: the server, its channel workers and an ffmpeg transcoder for each channel that's playing. Found
+  from the process SchedularrTV started, or any running `ersatztv` program when it's started some other way.
+- **Helpers**: what SchedularrTV starts itself, such as the hidden browsers and ffmpeg behind live page channels,
+  IPTV relays and promo or credit renders.
+
+It also shows the whole computer's CPU and memory, NVIDIA graphics cards' load (including the video encoder) when
+`nvidia-smi` is installed, and suggestions drawn from the last minute: how much CPU each playing channel costs and
+how many more fit, channels whose `channel.json` leaves `accel` unset so ErsatzTV encodes on the CPU, and when the
+CPU, memory or video encoder is nearly full. The same numbers are at `GET /api/performance`.
+
 ## What is written
 
 `ConfigRoot` (the **Lineup folder**, `etv/config` in the data folder by default) receives:

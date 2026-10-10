@@ -10,10 +10,15 @@ namespace SchedularrTV.Providers.ErsatzTv;
 /// Reads ErsatzTV Next's per-channel <c>.heartbeat</c> file, which it touches on every HLS request
 /// for that channel and removes once the stream is reaped after 90 seconds without one.
 /// </summary>
+/// <remarks>
+/// A channel kept on around the clock has a fresh heartbeat whether anyone is watching or not, so for those the
+/// channel's own "counts as watched" setting is the answer instead.
+/// </remarks>
 public sealed class ErsatzTvViewerMonitor(
     IOptions<ErsatzTvOptions> options,
     TimeProvider clock,
-    ILogger<ErsatzTvViewerMonitor> logger) : IChannelViewers
+    ILogger<ErsatzTvViewerMonitor> logger,
+    AlwaysOnChannels? alwaysOn = null) : IChannelViewers
 {
     private const string HeartbeatFileName = ".heartbeat";
 
@@ -29,6 +34,11 @@ public sealed class ErsatzTvViewerMonitor(
 
     public bool? IsWatched(int channelNumber)
     {
+        if (alwaysOn?.Watched(channelNumber) is { } setting)
+        {
+            return setting;
+        }
+
         if (OutputFolder() is not { } folder)
         {
             return null;

@@ -109,10 +109,13 @@ public sealed class AudienceReader(IServiceProvider services, ILogger<AudienceRe
         }
 
         // ErsatzTV says a channel is being pulled; with nobody from a media server on it, a player is watching it directly.
+        // A channel kept on around the clock is always being pulled, by us, so it's never taken for a direct viewer.
         IChannelViewers[] direct = [.. services.GetServices<IChannelViewers>()];
+        AlwaysOnChannels? alwaysOn = services.GetService<AlwaysOnChannels>();
         foreach (AudienceChannel channel in channels)
         {
-            if (!watching.ContainsKey(channel.Id) && direct.Any(source => source.IsWatched(channel.Number) == true))
+            if (!watching.ContainsKey(channel.Id) && alwaysOn?.IsAlwaysOn(channel.Number) != true
+                && direct.Any(source => source.IsWatched(channel.Number) == true))
             {
                 watching[channel.Id] = [new Viewer("Direct viewer", "Direct")];
             }

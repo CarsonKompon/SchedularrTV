@@ -4,6 +4,7 @@
 @inject RotationResetter Rotation
 @inject LogoStore Logos
 @inject IEnumerable<PluginEditorSection> EditorSections
+@inject AlwaysOnKeeper AlwaysOn
 
 @if (_channel is null)
 {
@@ -34,6 +35,10 @@ else
                 @if (!string.IsNullOrWhiteSpace(_channel.Group))
                 {
                     <span class="pill pill-muted">@_channel.Group</span>
+                }
+                @if (_channel.AlwaysOn == true)
+                {
+                    <span class="pill pill-accent" title="Plays around the clock">24/7</span>
                 }
             </span>
         </ChildContent>
@@ -160,6 +165,46 @@ else
                     </div>
                 </div>
             </div>
+        </div>
+
+        <div class="card">
+            <div class="card-head"><h2>Playback</h2></div>
+            <label class="check">
+                <input type="checkbox" checked="@(_channel.AlwaysOn ?? false)"
+                       @onchange="e => { _channel.AlwaysOn = (bool)(e.Value ?? false) ? true : null; Editor.MarkDirty(); }" />
+                <span>Play around the clock (24/7)</span>
+            </label>
+            <p class="hint">
+                Normally a channel only starts when someone tunes in and stops 90 seconds after they leave. A 24/7 channel
+                keeps playing all the time, so tuning in is instant and lands mid-programme, but ErsatzTV transcodes it
+                non-stop. See <a href="performance">Performance</a> for what that costs.
+            </p>
+            @if (_channel.AlwaysOn == true)
+            {
+                <label class="field" style="max-width:420px;">
+                    <span>For promos, credit squeezing and chapter scanning, treat it as</span>
+                    <select value="@((_channel.AlwaysOnCountsAsWatched ?? true) ? "watched" : "unwatched")"
+                            @onchange="e => { _channel.AlwaysOnCountsAsWatched = e.Value?.ToString() == "unwatched" ? false : null; Editor.MarkDirty(); }">
+                        <option value="watched">Always watched</option>
+                        <option value="unwatched">Never watched</option>
+                    </select>
+                </label>
+                <p class="hint">
+                    Keeping a channel playing looks the same to ErsatzTV as someone watching it, so real viewers can't be told
+                    apart. Pick how the watched-only features should treat it. It's never counted as a viewer in the stats.
+                </p>
+                @if (AlwaysOn.Statuses.FirstOrDefault(candidate => candidate.Number == _channel.Number) is { } status)
+                {
+                    @if (status.Problem is not null)
+                    {
+                        <div class="banner banner-warn" role="status">Not playing: @status.Problem</div>
+                    }
+                    else if (status.LastPlaying is { } playing)
+                    {
+                        <p class="hint"><span class="status-dot"></span> Playing (last checked @playing.ToLocalTime().ToString("HH:mm:ss")).</p>
+                    }
+                }
+            }
         </div>
 
         <div class="card">

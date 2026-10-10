@@ -147,6 +147,15 @@ public static class SchedulerHost
         builder.Services.AddSingleton<SchedulerConfigProvider>();
         builder.Services.AddSingleton<ILibraryScope, SchedulerConfigLibraryScope>();
 
+        // Channels set to play around the clock are held open in ErsatzTV, and the viewer sources are told which they are.
+        builder.Services.AddSingleton<SchedularrTV.Core.Publishing.AlwaysOnChannels>();
+        builder.Services.AddSingleton<AlwaysOnKeeper>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<AlwaysOnKeeper>());
+
+        // What SchedularrTV, ErsatzTV and their helpers are costing the computer, for the Performance page.
+        builder.Services.AddSingleton<SchedularrTV.Service.Performance.ResourceMonitor>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<SchedularrTV.Service.Performance.ResourceMonitor>());
+
         // Every running media source plugin's library merged into one, so the engine never knows there are several.
         // Asked for on each search, so a source switched off on the Plugins page drops out at once.
         Func<IServiceProvider, IReadOnlyList<IMediaLibrary>> mediaSources = PluginServiceGate.MediaSources(plugins, builder.Services);

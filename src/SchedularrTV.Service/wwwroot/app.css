@@ -1104,3 +1104,28 @@ progress::-moz-progress-bar { background: var(--accent-gradient); border-radius:
 .dropdown-item .icon { flex: none; margin-top: 2px; color: var(--accent); }
 .dropdown-item small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
 .dropdown-scrim { position: fixed; inset: 0; z-index: 49; }
+
+/* ==========================================================================
+   Performance (global rather than scoped: the charts are built in code, which scoped styles don't reach)
+   ========================================================================== */
+
+.perf-advice { margin-bottom: 16px; }
+.perf-advice .activity > .icon { color: var(--accent); margin-top: 2px; flex: none; }
+.perf-advice .activity.warn > .icon { color: var(--warn); }
+.perf-split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.perf-split > .card { min-width: 0; }
+@media (max-width: 900px) { .perf-split { grid-template-columns: 1fr; } }
+.perf-chart { display: block; width: 100%; height: auto; overflow: visible; }
+.perf-chart .grid-line { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.perf-chart .axis { font-size: 10px; fill: var(--faint); }
+.perf-chart .line { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.perf-chart .line.dashed { stroke-dasharray: 4 3; stroke-width: 1.5; }
+.perf-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+.perf-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.perf-legend i { display: inline-block; width: 16px; border-top: 2px solid; }
+.perf-legend i.dashed { border-top-style: dashed; }
+.perf-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; vertical-align: middle; }
+.perf-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.perf-table th { text-align: left; font-size: 12px; font-weight: 500; color: var(--muted); padding: 0 8px 8px 0; }
+.perf-table td { padding: 7px 8px 7px 0; border-top: 1px solid var(--line); border-bottom: 0; }
+.perf-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }

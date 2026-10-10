@@ -152,6 +152,21 @@ public sealed class ChannelConfig
     /// </summary>
     public bool? StackToFill { get; set; }
 
+    /// <summary>
+    /// Keeps the channel playing around the clock, as a broadcast channel would, rather than starting when someone
+    /// tunes in and stopping 90 seconds after the last viewer leaves. Tuning in is instant and the channel is always
+    /// mid-programme, at the cost of transcoding it all the time. Null or false is the usual on-demand behaviour.
+    /// </summary>
+    public bool? AlwaysOn { get; set; }
+
+    /// <summary>
+    /// Whether an <see cref="AlwaysOn"/> channel counts as watched for the features that only work on watched channels
+    /// (generated promos, credit squeezing, chapter scanning). Keeping the channel playing looks the same to ErsatzTV
+    /// as someone watching, so real viewers can no longer be told apart: this decides which way to treat it. Null is
+    /// true. Never counted as a direct viewer in the viewing stats either way.
+    /// </summary>
+    public bool? AlwaysOnCountsAsWatched { get; set; }
+
     /// <summary>Places breaks inside a programme rather than only after it.</summary>
     public MidRollConfig? MidRoll { get; set; }
 
