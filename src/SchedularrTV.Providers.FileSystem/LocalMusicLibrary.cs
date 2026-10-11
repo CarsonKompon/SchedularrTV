@@ -66,6 +66,9 @@ public sealed partial class LocalMusicLibrary(
 
     public bool IsConfigured => Roots.Any();
 
+    public async Task<int> CountTracksAsync(CancellationToken cancellationToken = default) =>
+        (await EnsureAsync(cancellationToken).ConfigureAwait(false)).Tracks.Count;
+
     public async Task<IReadOnlyList<MusicTrack>> GetTracksAsync(MusicQuery query, bool shuffle, CancellationToken cancellationToken = default)
     {
         Snapshot snapshot = await EnsureAsync(cancellationToken).ConfigureAwait(false);

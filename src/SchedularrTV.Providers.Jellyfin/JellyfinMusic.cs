@@ -70,6 +70,25 @@ public sealed partial class JellyfinClient
                 item.Genres ?? []))];
     }
 
+    /// <summary>How many songs the library holds, without fetching them (Jellyfin counts them itself).</summary>
+    public async Task<int> CountTracksAsync(CancellationToken cancellationToken)
+    {
+        string? userId = _options.UserId ?? await FirstUserIdAsync(cancellationToken).ConfigureAwait(false);
+        var parameters = new Dictionary<string, string?>
+        {
+            ["recursive"] = "true",
+            ["includeItemTypes"] = "Audio",
+            ["isMissing"] = "false",
+            ["enableImages"] = "false",
+            ["enableTotalRecordCount"] = "true",
+            ["limit"] = "0",
+            ["userId"] = userId
+        };
+
+        JellyfinItemsResponse? response = await GetAsync<JellyfinItemsResponse>(BuildUrl("/Items", parameters), cancellationToken).ConfigureAwait(false);
+        return response?.TotalRecordCount ?? 0;
+    }
+
     /// <summary>The music playlists, for the station editor.</summary>
     public Task<IReadOnlyList<JellyfinMusicChoice>> GetMusicPlaylistsAsync(CancellationToken cancellationToken) =>
         ChoicesAsync("/Items", new Dictionary<string, string?> { ["recursive"] = "true", ["includeItemTypes"] = "Playlist", ["mediaTypes"] = "Audio" }, cancellationToken);

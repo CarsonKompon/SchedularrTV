@@ -7,6 +7,12 @@
 @inject SchedulerConfigProvider Provider
 @inject IEnumerable<IMediaSourceInfo> MediaSources
 @inject IServiceProvider Services
+@inject LibraryBrowser Library
+@inject IEnumerable<IMusicLibrary> MusicLibraries
+@inject PluginRegistry Plugins
+@inject Microsoft.Extensions.Options.IOptionsMonitor<SchedularrTV.Providers.ErsatzTv.ErsatzTvOptions> Ersatz
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
 
 <PageHeader Title="Dashboard" Eyebrow="Overview">
     <ChildContent>What is on air across your channels right now.</ChildContent>
@@ -23,35 +29,84 @@
     </Actions>
 </PageHeader>
 
-<div class="stat-grid">
-    <div class="stat">
+@* What to add to an IPTV player, up front: it's what everything else here is for. *@
+<section class="watch-links" aria-label="Watch your channels">
+    <div class="watch-links-intro">
+        <div class="watch-links-title"><Icon Name="tv" Size="16" />Watch in any IPTV player</div>
+        <div class="watch-links-sub">
+            Add these two addresses to your player.
+            @if (!Ersatz.CurrentValue.ManageProcess)
+            {
+                <span>They're served by ErsatzTV Next, so it needs to be running.</span>
+            }
+        </div>
+    </div>
+    @foreach ((string label, string hint, string url) in WatchLinks)
+    {
+        <div class="watch-link">
+            <div class="watch-link-label">@label<small>@hint</small></div>
+            <code class="watch-link-url" title="@url">@url</code>
+            <div class="watch-link-actions">
+                <button type="button" class="btn btn-sm" @onclick="() => Copy(url)" aria-label="@($"Copy the {label.ToLowerInvariant()} address")">
+                    <Icon Name="@(_copied == url ? "check" : "copy")" Size="14" />@(_copied == url ? "Copied" : "Copy")
+                </button>
+                <a class="btn btn-sm btn-ghost btn-icon" href="@url" target="_blank" rel="noopener noreferrer" title="Open" aria-label="@($"Open the {label.ToLowerInvariant()}")">
+                    <Icon Name="external-link" Size="14" />
+                </a>
+            </div>
+        </div>
+    }
+    @if (_copyFailed)
+    {
+        <div class="watch-links-sub">This browser wouldn't copy from here; select the address and copy it yourself.</div>
+    }
+</section>
+
+<div class="stat-grid dash-stats">
+    <a class="stat stat-link" href="library/shows">
+        <div class="stat-label"><Icon Name="tv" Size="14" />TV shows</div>
+        <div class="stat-value">@Total(_shows)</div>
+        <div class="stat-sub">in your library</div>
+    </a>
+    <a class="stat stat-link" href="library/movies">
+        <div class="stat-label"><Icon Name="film" Size="14" />Movies</div>
+        <div class="stat-value">@Total(_movies)</div>
+        <div class="stat-sub">in your library</div>
+    </a>
+    @if (_songs > 0)
+    {
+        <div class="stat">
+            <div class="stat-label"><Icon Name="music" Size="14" />Music</div>
+            <div class="stat-value">@_songs.Value.ToString("N0")</div>
+            <div class="stat-sub">@(_songs == 1 ? "song" : "songs")</div>
+        </div>
+    }
+    <a class="stat stat-link" href="channels">
         <div class="stat-label"><Icon Name="radio" Size="14" />Channels</div>
-        <div class="stat-value">@Editor.Working.Channels.Count</div>
-        <div class="stat-sub">@Editor.Working.GlobalCollections.Count collection(s)</div>
-    </div>
-    <div class="stat">
-        <div class="stat-label"><Icon Name="play" Size="14" />On air now</div>
-        <div class="stat-value">@OnAirCount</div>
-        <div class="stat-sub">of @Coordinator.Latest.Count scheduled</div>
-    </div>
-    <div class="stat">
-        <div class="stat-label"><Icon Name="history" Size="14" />Last build</div>
-        <div class="stat-value">@(Coordinator.LastBuiltAt?.ToLocalTime().ToString("HH:mm") ?? "—")</div>
-        <div class="stat-sub">@(Coordinator.LastBuiltAt is { } built ? Ago(built) : "never built")</div>
-    </div>
-    <div class="stat @(TotalPadding > TimeSpan.FromSeconds(1) ? "warn" : "ok")">
-        <div class="stat-label"><Icon Name="@(TotalPadding > TimeSpan.FromSeconds(1) ? "alert" : "check-circle")" Size="14" />Dead air</div>
-        @if (Coordinator.Latest.Count == 0)
-        {
-            <div class="stat-value">—</div>
-            <div class="stat-sub">nothing scheduled yet</div>
-        }
-        else
-        {
-            <div class="stat-value">@(TotalPadding > TimeSpan.FromSeconds(1) ? Length(TotalPadding) : "None")</div>
-            <div class="stat-sub">@(TotalPadding > TimeSpan.FromSeconds(1) ? "padding across all channels" : "every slot is filled")</div>
-        }
-    </div>
+        <div class="stat-value">@(Editor.Working.Channels.Count + Coordinator.External.Count)</div>
+        <div class="stat-sub">
+            @(Coordinator.External.Count > 0 ? $"{Coordinator.External.Count} from plugins" : $"{OnAirCount} on air now")
+        </div>
+    </a>
+    <a class="stat stat-link" href="collections">
+        <div class="stat-label"><Icon Name="layers" Size="14" />Collections</div>
+        <div class="stat-value">@Editor.Working.GlobalCollections.Count</div>
+        <div class="stat-sub">shared by channels</div>
+    </a>
+    <a class="stat stat-link @(FailedPlugins > 0 ? "warn" : "")" href="settings/plugins">
+        <div class="stat-label"><Icon Name="@(FailedPlugins > 0 ? "alert" : "puzzle")" Size="14" />Plugins</div>
+        <div class="stat-value">@LoadedPlugins</div>
+        <div class="stat-sub">
+            @if (FailedPlugins > 0)
+            {
+                <span class="stat-sub-warn">@FailedPlugins failed to load</span>
+            }
+            else
+            {
+                <span>loaded and on</span>
+            }
+        </div>
+    </a>
 </div>
 
 @if (Editor.Warnings.Count > 0)
@@ -368,7 +423,107 @@ else
     private ExternalChannel? ExternalFor(ChannelSchedule schedule) =>
         Coordinator.External.FirstOrDefault(external => ReferenceEquals(external.Schedule, schedule));
 
-    private TimeSpan TotalPadding => Coordinator.Latest.Aggregate(TimeSpan.Zero, (sum, s) => sum + s.TotalPadding);
+    private IReadOnlyList<LibraryShow>? _shows;
+    private IReadOnlyList<LibraryMovie>? _movies;
+    private int? _songs;
+    private string? _copied;
+    private bool _copyFailed;
+
+    private static string Total<T>(IReadOnlyList<T>? items) => items is null ? "…" : items.Count.ToString("N0");
+
+    private int LoadedPlugins => Plugins.Plugins.Count(plugin => plugin.IsActive);
+
+    // Turned on, but it didn't load: broken, built for another version, or missing a plugin it needs.
+    private int FailedPlugins => Plugins.Plugins.Count(plugin =>
+        plugin.Status is PluginStatus.Failed or PluginStatus.Incompatible or PluginStatus.MissingDependency);
+
+    /// <summary>
+    /// ErsatzTV's playlist and guide, at the address this page was opened with: <c>localhost</c> here, the computer's
+    /// name or IP from another device, so what's shown works in a player on that same device.
+    /// </summary>
+    private IEnumerable<(string Label, string Hint, string Url)> WatchLinks
+    {
+        get
+        {
+            string host = new Uri(Navigation.BaseUri).Host;
+            if (host.Contains(':'))
+            {
+                host = $"[{host}]"; // An IPv6 address.
+            }
+
+            string root = $"http://{host}:{Ersatz.CurrentValue.Lineup.Port}";
+            yield return ("Playlist", "M3U", $"{root}/channels.m3u");
+            yield return ("Guide", "XMLTV", $"{root}/xmltv.xml");
+        }
+    }
+
+    private async Task Copy(string url)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+            _copied = url;
+            _copyFailed = false;
+            StateHasChanged();
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            if (_copied == url)
+            {
+                _copied = null;
+            }
+        }
+        catch (JSException)
+        {
+            // The clipboard only works on https or localhost; from another device over http it's refused.
+            _copyFailed = true;
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    /// <summary>The library totals, read in the background so the page shows straight away.</summary>
+    private async Task LoadTotalsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            _shows = await Library.GetShowsAsync(cancellationToken);
+            _movies = await Library.GetMoviesAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception)
+        {
+            // No library set up yet, or it can't be reached: show nothing rather than an error here.
+            _shows ??= [];
+            _movies ??= [];
+        }
+
+        await InvokeAsync(StateHasChanged);
+
+        int songs = 0;
+        foreach (IMusicLibrary music in MusicLibraries.Where(music => music.IsConfigured))
+        {
+            try
+            {
+                songs += await music.CountTracksAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception)
+            {
+                // A music library that can't be read just isn't counted.
+            }
+        }
+
+        _songs = songs;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnLibraryChanged() => _ = LoadTotalsAsync(_life.Token);
 
     private int OnAirCount
     {
@@ -403,10 +558,15 @@ else
         }
 
         _ = PollAsync(_life.Token);
+        _ = LoadTotalsAsync(_life.Token);
+        Library.Changed += OnLibraryChanged;
+        Plugins.Changed += OnBuildStateChanged;
     }
 
     public void Dispose()
     {
+        Library.Changed -= OnLibraryChanged;
+        Plugins.Changed -= OnBuildStateChanged;
         Coordinator.StateChanged -= OnBuildStateChanged;
         foreach (IMediaSourceInfo source in _sources)
         {
@@ -472,15 +632,6 @@ else
     {
         TimeSpan elapsed = DateTimeOffset.UtcNow - since;
         return elapsed.TotalMinutes >= 1 ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds:00}s" : $"{Math.Max(0, (int)elapsed.TotalSeconds)}s";
-    }
-
-    private static string Ago(DateTimeOffset at)
-    {
-        TimeSpan ago = DateTimeOffset.UtcNow - at;
-        return ago.TotalMinutes < 1 ? "just now"
-            : ago.TotalHours < 1 ? $"{(int)ago.TotalMinutes} min ago"
-            : ago.TotalDays < 1 ? $"{(int)ago.TotalHours}h {ago.Minutes}m ago"
-            : at.ToLocalTime().ToString("ddd d MMM");
     }
 
     private static double Elapsed(UpcomingEntry entry)

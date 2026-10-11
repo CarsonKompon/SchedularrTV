@@ -102,6 +102,8 @@ public sealed class JellyfinMusicLibrary(JellyfinClient client, IOptions<Jellyfi
         [.. (await client.GetTracksAsync(new JellyfinMusicQuery(query.PlaylistId, query.Genres, query.Artists, query.Limit), shuffle, cancellationToken).ConfigureAwait(false))
             .Select(track => new MusicTrack(track.Id, track.Title, track.Artists, track.Album, track.AlbumArtist, track.Duration, track.Year, track.Genres, track.ArtItemId))];
 
+    public Task<int> CountTracksAsync(CancellationToken cancellationToken = default) => client.CountTracksAsync(cancellationToken);
+
     public async Task<IReadOnlyList<MusicChoice>> GetPlaylistsAsync(CancellationToken cancellationToken = default) =>
         Choices(await client.GetMusicPlaylistsAsync(cancellationToken).ConfigureAwait(false));
 

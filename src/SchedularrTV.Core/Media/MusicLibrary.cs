@@ -59,6 +59,13 @@ public interface IMusicLibrary
 
     /// <summary>A song's cover (by its <see cref="MusicTrack.ArtId"/>), about <paramref name="width"/> pixels wide; null when there's none.</summary>
     ValueTask<ArtworkImage?> GetArtAsync(string artId, int width, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// How many songs it holds, for the dashboard. The default asks for every song and counts them (up to 10,000);
+    /// libraries that can count more cheaply override it.
+    /// </summary>
+    async Task<int> CountTracksAsync(CancellationToken cancellationToken = default) =>
+        (await GetTracksAsync(new MusicQuery(Limit: 10000), shuffle: false, cancellationToken).ConfigureAwait(false)).Count;
 }
 
 public static class MusicLibraries

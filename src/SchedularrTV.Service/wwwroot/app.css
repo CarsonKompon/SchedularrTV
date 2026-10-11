@@ -612,6 +612,44 @@ progress::-moz-progress-bar { background: var(--accent-gradient); border-radius:
 .stat.ok .stat-label .icon { color: var(--ok); }
 .stat.warn .stat-label .icon { color: var(--warn); }
 
+/* The dashboard's totals: as many across as fit, each a link to its page. */
+.stat-grid.dash-stats { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+@media (max-width: 1000px) { .stat-grid.dash-stats { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); } }
+a.stat-link { color: inherit; text-decoration: none; transition: border-color .15s var(--ease), transform .15s var(--ease); }
+a.stat-link:hover { text-decoration: none; border-color: rgba(123, 139, 255, .4); transform: translateY(-1px); }
+.stat.warn { border-color: rgba(243, 183, 79, .35); }
+.stat-sub-warn { color: var(--warn); font-weight: 500; }
+
+/* The playlist and guide addresses, front and centre on the dashboard. */
+.watch-links {
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px;
+    margin-bottom: 16px; padding: 18px 20px;
+    border-radius: var(--r-lg);
+    background: linear-gradient(135deg, rgba(111, 127, 255, .14), rgba(192, 123, 255, .06) 60%, transparent), var(--panel);
+    border: 1px solid rgba(123, 139, 255, .28);
+    box-shadow: var(--shadow);
+}
+.watch-links-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; }
+.watch-links-title .icon { color: var(--accent); }
+.watch-links-sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.watch-link {
+    display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; align-items: center; gap: 12px;
+    padding: 8px 8px 8px 14px; border-radius: var(--r);
+    background: rgba(5, 7, 12, .45); border: 1px solid var(--line);
+}
+.watch-link-label { display: flex; flex-direction: column; font-weight: 600; line-height: 1.25; }
+.watch-link-label small { color: var(--faint); font-size: 11px; font-weight: 500; letter-spacing: .04em; }
+.watch-link-url {
+    padding: 6px 10px; font-size: 13.5px; background: transparent; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; user-select: all;
+}
+.watch-link-actions { display: flex; gap: 4px; }
+@media (max-width: 640px) {
+    .watch-link { grid-template-columns: minmax(0, 1fr) auto; }
+    .watch-link-label { flex-direction: row; align-items: baseline; gap: 6px; }
+    .watch-link-url { grid-column: 1 / -1; grid-row: 2; padding: 0; }
+}
+
 .activity {
     display: flex; align-items: flex-start; gap: 14px;
     padding: 14px 16px; margin-bottom: 12px;

@@ -38,9 +38,9 @@
             @foreach (DocSection section in Library.Sections)
             {
                 <div class="docs-nav-section"><Icon Name="@section.Icon" Size="13" />@section.Name</div>
-                @foreach (DocPage page in section.Pages)
+                @foreach (DocPage guide in section.Pages)
                 {
-                    <NavLink class="docs-nav-link" href="@($"docs/{page.Slug}")">@page.Title</NavLink>
+                    <NavLink class="docs-nav-link" href="@($"docs/{guide.Slug}")">@guide.Title</NavLink>
                 }
             }
         }
@@ -58,13 +58,13 @@
                 <section class="docs-group">
                     <h2><Icon Name="@section.Icon" Size="15" />@section.Name</h2>
                     <div class="docs-cards">
-                        @foreach (DocPage page in section.Pages)
+                        @foreach (DocPage guide in section.Pages)
                         {
-                            <a class="docs-card" href="@($"docs/{page.Slug}")">
-                                <span class="docs-card-title">@page.Title<Icon Name="arrow-right" Size="14" /></span>
-                                @if (page.Summary.Length > 0)
+                            <a class="docs-card" href="@($"docs/{guide.Slug}")">
+                                <span class="docs-card-title">@guide.Title<Icon Name="arrow-right" Size="14" /></span>
+                                @if (guide.Summary.Length > 0)
                                 {
-                                    <span class="docs-card-summary">@page.Summary</span>
+                                    <span class="docs-card-summary">@guide.Summary</span>
                                 }
                             </a>
                         }
