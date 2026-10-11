@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using SchedularrTV.Core.Configuration;
 using SchedularrTV.Core.Platform;
 using SchedularrTV.Core.Publishing;
 using SchedularrTV.Providers.ErsatzTv;
@@ -312,7 +313,7 @@ public sealed class ResourceMonitor(
         {
             advice.Add(new PerformanceAdvice(AdviceLevel.Warning, "The CPU is nearly flat out",
                 $"The computer has averaged {systemCpu:0}% CPU over the last minute. Channels that can't encode in real time stutter and buffer. "
-                + "Turn off 24/7 on channels nobody needs instantly, lower the resolution or bitrate in their channel.json, or move transcoding to the graphics card."));
+                + "Turn off 24/7 on channels nobody needs instantly, lower the picture size or bitrate, or move encoding to the graphics card (App settings › Hardware and video encoding)."));
         }
 
         if (latest.SystemMemoryUsedBytes is { } used && latest.SystemMemoryTotalBytes is { } total && total > 0 && used > total * 0.9)
@@ -335,8 +336,8 @@ public sealed class ResourceMonitor(
         if (software > 0 && (transcodes >= 0.5 && ersatzCpu / transcodes > 10 || systemCpu is > 60))
         {
             advice.Add(new PerformanceAdvice(AdviceLevel.Info, "ErsatzTV is encoding on the CPU",
-                $"{software} of {channels} channel{(channels == 1 ? "" : "s")} have no hardware acceleration set (\"accel\": null in their channel.json under {ChannelsFolder()}). "
-                + "Setting accel to your graphics card's (nvenc, qsv, vaapi, videotoolbox) usually cuts a channel's CPU by most of it."));
+                $"{software} of {channels} channel{(channels == 1 ? " is" : "s are")} encoded on the processor. Choosing your graphics card under "
+                + "App settings › Hardware and video encoding › ErsatzTV channels (or on a channel's General tab, for just that one) usually cuts a channel's CPU by most of it."));
         }
 
         if (helperCpu > 20 && !LiveEncodingSettings.Current.Video.Encoder.Hardware)
@@ -362,15 +363,25 @@ public sealed class ResourceMonitor(
 
     private string ChannelsFolder() => Path.Combine(Path.GetFullPath(ersatzOptions.Value.ConfigRoot), "channels");
 
-    /// <summary>How many channel.json files leave ErsatzTV encoding in software, of how many; read at most once a minute.</summary>
+    /// <summary>
+    /// How many channels ErsatzTV encodes on the processor, of how many: by the channel's own setting, else the app-wide
+    /// default. Worked out at most every 15 seconds.
+    /// </summary>
     private (int Software, int Total) SoftwareEncodedChannels(DateTimeOffset now)
     {
-        if (now - _encoders.At < TimeSpan.FromMinutes(1))
+        if (now - _encoders.At < TimeSpan.FromSeconds(15))
         {
             return (_encoders.Software, _encoders.Total);
         }
 
         int software = 0, total = 0;
+        ErsatzTvEncodingOptions global = ersatzOptions.Value.Encoding;
+        Dictionary<int, ChannelEncodingConfig?> own = [];
+        foreach (ChannelConfig configured in services.GetService<SchedulerConfigProvider>()?.Current.Channels ?? [])
+        {
+            own.TryAdd(configured.Number, configured.Encoding);
+        }
+
         try
         {
             string folder = ChannelsFolder();
@@ -385,7 +396,10 @@ public sealed class ResourceMonitor(
                     }
 
                     total++;
-                    if (IsSoftwareEncoded(File.ReadAllText(path)))
+                    ChannelEncodingConfig? channelEncoding = int.TryParse(Path.GetFileName(channel), out int number)
+                        ? own.GetValueOrDefault(number)
+                        : null;
+                    if (ErsatzTvEncoding.Resolve(global, channelEncoding).Hardware == ErsatzTvEncoding.Software)
                     {
                         software++;
                     }

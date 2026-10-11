@@ -14,6 +14,9 @@ public sealed class IptvPlugin : IPlugin, IPluginEndpoints
         services.AddSingleton<IptvCatalog>();
         services.AddSingleton<IptvFetcher>();
         services.AddSingleton<RelayHub>();
+        // Each carried channel's picture size as the relay saw it, for ErsatzTV to keep.
+        services.AddSingleton(sp => new PictureSizes(Path.Combine(context.DataDirectory, PictureSizes.FileName),
+            sp.GetService<SchedularrTV.Plugins.Playout.IScheduleRepublisher>(), sp.GetService<ILogger<PictureSizes>>()));
         services.AddHttpClient(IptvFetcher.ClientName, http => http.Timeout = TimeSpan.FromMinutes(5));
         services.AddExternalChannels<IptvChannels>();
 

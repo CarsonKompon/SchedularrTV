@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using SchedularrTV.Core.Configuration;
 using SchedularrTV.Core.Publishing;
+using SchedularrTV.Core.Scheduling;
 using SchedularrTV.Providers.ErsatzTv;
 using SchedularrTV.Service;
 using SchedularrTV.Service.Performance;
@@ -168,6 +169,166 @@ public sealed class AlwaysOnAndPerformanceTests
     [InlineData("not json", false)]
     public void A_channel_without_hardware_acceleration_is_noticed(string json, bool software) =>
         Assert.Equal(software, ResourceMonitor.IsSoftwareEncoded(json));
+
+    [Fact]
+    public void A_channel_overrides_the_app_wide_defaults_field_by_field()
+    {
+        var global = new ErsatzTvEncodingOptions { Hardware = "CUDA", Height = "720", BitrateKbps = "" };
+
+        EffectiveEncoding inherited = ErsatzTvEncoding.Defaults(global);
+        Assert.Equal(new EffectiveEncoding("cuda", 720, ErsatzTvEncoding.DefaultBitrateKbps, null, null), inherited);
+
+        EffectiveEncoding own = ErsatzTvEncoding.Resolve(global, new ChannelEncodingConfig { Hardware = "none", BitrateKbps = 3000 });
+        Assert.Equal(new EffectiveEncoding("none", 720, 3000, null, null), own);
+
+        // Nothing set anywhere: the defaults, so every channel is always encoded as SchedularrTV says.
+        Assert.Equal(new EffectiveEncoding(ErsatzTvEncoding.DefaultHardware, ErsatzTvEncoding.DefaultHeight, ErsatzTvEncoding.DefaultBitrateKbps, null, null),
+            ErsatzTvEncoding.Defaults(new ErsatzTvEncodingOptions()));
+
+        // An unknown choice (a typo in the YAML) is ignored rather than handed to ErsatzTV.
+        Assert.Equal("cuda", ErsatzTvEncoding.Resolve(global, new ChannelEncodingConfig { Hardware = "nvidia" }).Hardware);
+    }
+
+    [Fact]
+    public void The_encoding_overlay_is_versioned_and_sets_everything()
+    {
+        string overlay = ErsatzTvEncoding.Overlay(new EffectiveEncoding("vaapi", 1080, 6000, "/dev/dri/renderD129", "ihd"));
+        using var document = System.Text.Json.JsonDocument.Parse(overlay);
+        System.Text.Json.JsonElement root = document.RootElement;
+        System.Text.Json.JsonElement video = root.GetProperty("normalization").GetProperty("video");
+
+        Assert.Equal(ErsatzTvEncoding.OverlayVersion, root.GetProperty("version").GetString());
+        Assert.Equal("vaapi", video.GetProperty("accel").GetString());
+        Assert.Equal(1920, video.GetProperty("width").GetInt32());
+        Assert.Equal(1080, video.GetProperty("height").GetInt32());
+        Assert.Equal(12000, video.GetProperty("buffer_kbps").GetInt32());
+        Assert.Equal("ihd", video.GetProperty("vaapi_driver").GetString());
+
+        // The processor is chosen by removing the acceleration channel.json may have, which a null in an overlay does.
+        using var software = System.Text.Json.JsonDocument.Parse(ErsatzTvEncoding.Overlay(new EffectiveEncoding("none", 720, 3000, null, null)));
+        System.Text.Json.JsonElement softwareVideo = software.RootElement.GetProperty("normalization").GetProperty("video");
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, softwareVideo.GetProperty("accel").ValueKind);
+        Assert.Equal(1280, softwareVideo.GetProperty("width").GetInt32());
+        Assert.False(softwareVideo.TryGetProperty("vaapi_device", out _));
+
+        Assert.NotEqual(ErsatzTvEncoding.FileName(overlay), ErsatzTvEncoding.FileName(software.RootElement.GetRawText()));
+    }
+
+    [Fact]
+    public void A_channels_own_encoding_reaches_the_lineup_through_its_schedule()
+    {
+        var config = new SchedulerConfig
+        {
+            Channels =
+            [
+                new() { Id = "own", Name = "Own", Number = 1, Encoding = new ChannelEncodingConfig { Hardware = "qsv", Height = 540 } },
+                new() { Id = "inherits", Name = "Inherits", Number = 2 }
+            ]
+        };
+        ChannelSchedule Schedule(string id, int number) => new()
+        {
+            ChannelId = id, ChannelName = id, ChannelNumber = number,
+            Start = DateTimeOffset.UnixEpoch, End = DateTimeOffset.UnixEpoch.AddHours(1), Entries = []
+        };
+
+        IReadOnlyList<ChannelSchedule> annotated = ScheduleCoordinator.WithEncoding(config, [Schedule("own", 1), Schedule("inherits", 2)]);
+
+        var global = new ErsatzTvEncodingOptions { Hardware = "cuda", Height = "1080", BitrateKbps = "6000" };
+        Assert.Equal(new EffectiveEncoding("qsv", 540, 6000, null, null), ErsatzTvEncoding.Resolve(global, annotated[0]));
+        Assert.Equal(new EffectiveEncoding("cuda", 1080, 6000, null, null), ErsatzTvEncoding.Resolve(global, annotated[1]));
+        Assert.Null(annotated[1].Annotations);
+    }
+
+    [Fact]
+    public void A_channel_made_from_one_source_keeps_its_picture_size_and_the_default_encoder()
+    {
+        var global = new ErsatzTvEncodingOptions { Hardware = "cuda", Height = "1080", BitrateKbps = "6000" };
+        ChannelSchedule Schedule(Dictionary<string, string>? annotations) => new()
+        {
+            ChannelId = "iptv-a-1", ChannelName = "News", ChannelNumber = 1001,
+            Start = DateTimeOffset.UnixEpoch, End = DateTimeOffset.UnixEpoch.AddHours(1), Entries = [], Annotations = annotations
+        };
+
+        EffectiveEncoding source = ErsatzTvEncoding.Resolve(global, Schedule(new() { [ErsatzTvEncoding.PictureAnnotation] = "720x577" }));
+        Assert.Equal(new EffectiveEncoding("cuda", 576, 6000, null, null, 720), source);
+        Assert.Equal(720, source.Width);
+
+        // A size the channel chooses itself still wins over its source's.
+        string own = ErsatzTvEncoding.ToAnnotation(new ChannelEncodingConfig { Height = 480 })!;
+        EffectiveEncoding chosen = ErsatzTvEncoding.Resolve(global,
+            Schedule(new() { [ErsatzTvEncoding.PictureAnnotation] = "1280x720", [ErsatzTvEncoding.Annotation] = own }));
+        Assert.Equal(480, chosen.Height);
+        Assert.Equal(854, chosen.Width);
+
+        Assert.Null(ErsatzTvEncoding.ParsePicture("garbage"));
+        Assert.Equal(1080, ErsatzTvEncoding.Resolve(global, Schedule(new() { [ErsatzTvEncoding.PictureAnnotation] = "10x10" })).Height);
+    }
+
+    [Theory]
+    [InlineData("  Stream #0:0: Video: h264 (High) ([27][0][0][0] / 0x001B), yuv420p(tv, bt709, progressive), 1280x720 [SAR 1:1 DAR 16:9], q=2-31, 50 fps", "1280x720")]
+    [InlineData("  Stream #0:1: Video: mpeg2video (Main), yuv420p(tv, top first), 720x576 [SAR 16:15 DAR 4:3], 25 fps", "720x576")]
+    [InlineData("  Stream #0:1: Audio: aac (LC), 48000 Hz, stereo, fltp", null)]
+    public void The_relays_picture_size_is_read_from_ffmpegs_stream_line(string line, string? size) =>
+        Assert.Equal(size, SchedularrTV.Iptv.PictureSizes.Parse(line));
+
+    [Fact]
+    public void Only_the_relays_output_stream_gives_the_size_not_the_variants_an_input_lists()
+    {
+        var watcher = new SchedularrTV.Iptv.RelayHub.OutputSizeWatcher();
+        Assert.Null(watcher.Read("Input #0, hls, from 'http://provider.test/master.m3u8':"));
+        Assert.Null(watcher.Read("  Stream #0:0: Video: h264 (Main), yuv420p, 640x360, 25 fps"));
+        Assert.Null(watcher.Read("  Stream #0:2: Video: h264 (High), yuv420p, 1920x1080, 25 fps"));
+        Assert.Null(watcher.Read("Output #0, mpegts, to 'pipe:1':"));
+        Assert.Equal("1920x1080", watcher.Read("  Stream #0:0: Video: h264 (High), yuv420p, 1920x1080, q=2-31, 25 fps"));
+        Assert.Null(watcher.Read("  Stream #0:0: Video: h264 (High), yuv420p, 1920x1080, q=2-31, 25 fps"));
+    }
+
+    [Fact]
+    public void A_relayed_size_is_remembered_across_restarts()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"iptv-pictures-{Guid.NewGuid():N}.json");
+        try
+        {
+            new SchedularrTV.Iptv.PictureSizes(path).Note("acme/1001", "1280x720");
+            Assert.Equal("1280x720", new SchedularrTV.Iptv.PictureSizes(path).For("acme/1001"));
+            Assert.Null(new SchedularrTV.Iptv.PictureSizes(path).For("acme/1002"));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void A_streamer_channel_says_the_size_its_picture_is_made_at()
+    {
+        var encoding = new SchedularrTV.Core.Platform.LiveEncodingSettings { Height = 540 };
+        Assert.Equal("960x540", SchedularrTV.Streamers.StreamerChannels.Picture(encoding));
+        Assert.Equal(ErsatzTvEncoding.PictureAnnotation, SchedularrTV.Streamers.StreamerChannels.PictureAnnotation);
+        Assert.Equal(ErsatzTvEncoding.PictureAnnotation, SchedularrTV.Iptv.IptvChannels.PictureAnnotation);
+    }
+
+    [Fact]
+    public void A_channels_encoding_is_kept_in_the_yaml_only_when_set()
+    {
+        SchedulerConfig config = SchedulerConfigLoader.Parse("""
+            channels:
+            - id: news
+              name: News
+              number: 3
+              encoding:
+                hardware: cuda
+                height: 720
+            """);
+
+        Assert.Equal("cuda", config.Channels[0].Encoding?.Hardware);
+        Assert.Equal(720, config.Channels[0].Encoding?.Height);
+
+        string yaml = SchedulerConfigLoader.Serialize(config);
+        Assert.Contains("hardware: cuda", yaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("is_empty", yaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("bitrate_kbps", yaml, StringComparison.Ordinal);
+    }
 
     [Theory]
     [InlineData("ffmpeg", "Transcoder (ffmpeg)")]

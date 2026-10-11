@@ -1,5 +1,7 @@
-@* Hardware profile and video encoding (live page channels, rendered clips); part of App settings. *@
+@* Hardware profile and video encoding (ErsatzTV channels, live page channels, rendered clips); part of App settings. *@
 @using SchedularrTV.Service.Hosting
+@using SchedularrTV.Providers.ErsatzTv
+@inject IServiceProvider Services
 
 <div class="grid grid-2">
     <div class="field">
@@ -27,6 +29,69 @@
     Only defaults change; anything you've set yourself is kept. A changed profile applies once saved.
 </p>
 <LowPowerNotice Title="@($"Running on {HardwareProfile.DeviceName}")" Advice="GeneralAdvice" />
+
+<h3 style="margin:18px 0 6px;">ErsatzTV channels</h3>
+<p class="hint">
+    The defaults for every channel ErsatzTV plays; encoding is usually the heaviest work on this computer. A channel can
+    override any of them on its General tab.
+</p>
+<div class="grid grid-3">
+    <label class="field">
+        <span>Encode on</span>
+        <select value="@EtvDefaults.Hardware" @onchange="e => Edit(EtvHardwareKey, e.Value?.ToString())">
+            @foreach (ErsatzTvHardware choice in ErsatzTvEncoding.Hardware)
+            {
+                <option value="@choice.Value">@choice.Label</option>
+            }
+        </select>
+    </label>
+    <label class="field">
+        <span>Picture size</span>
+        <select value="@EtvDefaults.Height" @onchange="e => Edit(EtvHeightKey, e.Value?.ToString())">
+            @foreach (int height in ErsatzTvEncoding.Heights)
+            {
+                <option value="@height">@(height)p (@(ErsatzTvEncoding.WidthFor(height))×@height)</option>
+            }
+        </select>
+    </label>
+    <label class="field">
+        <span>Bitrate (kbps)</span>
+        <input type="number" min="300" max="100000" value="@EtvDefaults.BitrateKbps"
+               @onchange="e => Edit(EtvBitrateKey, e.Value?.ToString())" />
+    </label>
+</div>
+<p class="hint">@HintFor(EtvDefaults.Hardware)</p>
+@if (EtvDefaults.Hardware == "vaapi")
+{
+    <div class="grid grid-2">
+        <label class="field">
+            <span>VA-API device</span>
+            <input type="text" value="@Form.PerformanceValue(EtvVaapiDeviceKey)" placeholder="/dev/dri/renderD128"
+                   @onchange="e => Edit(EtvVaapiDeviceKey, e.Value?.ToString())" />
+        </label>
+        <label class="field">
+            <span>VA-API driver</span>
+            <select value="@Form.PerformanceValue(EtvVaapiDriverKey)" @onchange="e => Edit(EtvVaapiDriverKey, e.Value?.ToString())">
+                <option value="">Let libva choose</option>
+                <option value="ihd">ihd (Intel, newer)</option>
+                <option value="i965">i965 (Intel, older)</option>
+                <option value="radeonsi">radeonsi (AMD)</option>
+            </select>
+        </label>
+    </div>
+}
+@if (DetectedGpu is { } gpu && EtvDefaults.Hardware == ErsatzTvEncoding.Software)
+{
+    <p class="hint">This computer has an <strong>@gpu</strong>: choose NVIDIA (CUDA / NVENC) to take ErsatzTV's encoding off the processor.</p>
+}
+@if (EtvDefaults.Hardware != ErsatzTvEncoding.Software)
+{
+    <p class="hint warn">
+        ErsatzTV checks for the hardware when a channel starts and falls back to the processor if it isn't there (see its log).
+        Check the Performance page afterwards.
+    </p>
+}
+<p class="hint">Saving a change restarts ErsatzTV, so anyone watching drops for a few seconds.</p>
 
 <h3 style="margin:18px 0 6px;">Live page channels</h3>
 <p class="hint">Web page channels, radio stations, the TV guide channel and streamer channels: each one on air is a hidden browser and one live encode.</p>
@@ -150,6 +215,28 @@
     private const string RenderPresetKey = "Rendering:Preset";
     private const string RenderThreadsKey = "Rendering:Threads";
     private const string RenderBitrateKey = "Rendering:HardwareBitrateKbps";
+    private const string EtvHardwareKey = AppSettingsForm.ErsatzEncodingPrefix + "Hardware";
+    private const string EtvHeightKey = AppSettingsForm.ErsatzEncodingPrefix + "Height";
+    private const string EtvBitrateKey = AppSettingsForm.ErsatzEncodingPrefix + "BitrateKbps";
+    private const string EtvVaapiDeviceKey = AppSettingsForm.ErsatzEncodingPrefix + "VaapiDevice";
+    private const string EtvVaapiDriverKey = AppSettingsForm.ErsatzEncodingPrefix + "VaapiDriver";
+
+    // What every channel gets, with what's typed here and the defaults for anything not set.
+    private EffectiveEncoding EtvDefaults => ErsatzTvEncoding.Defaults(new ErsatzTvEncodingOptions
+    {
+        Hardware = Typed(EtvHardwareKey),
+        Height = Typed(EtvHeightKey),
+        BitrateKbps = Typed(EtvBitrateKey),
+        VaapiDevice = Typed(EtvVaapiDeviceKey),
+        VaapiDriver = Typed(EtvVaapiDriverKey)
+    });
+
+    private static string? HintFor(string? hardware) =>
+        ErsatzTvEncoding.Hardware.FirstOrDefault(choice => choice.Value == hardware)?.Hint;
+
+    // An NVIDIA card the Performance page has seen, to point at it; other cards aren't read.
+    private string? DetectedGpu =>
+        Services.GetService<SchedularrTV.Service.Performance.ResourceMonitor>()?.Latest?.Gpus.FirstOrDefault()?.Name;
 
     private static string RenderThreadsPlaceholder => HardwareProfile.IsLowPower ? "2" : "All of them";
 

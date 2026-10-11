@@ -25,7 +25,8 @@ public sealed class AppSettingsForm(
     IHttpClientFactory httpClients,
     ScheduleRebuildService? rebuilds = null,
     SchedularrTV.Service.Editor.LibraryBrowser? library = null,
-    IEnumerable<SchedularrTV.Core.Media.IMediaSourceInfo>? sources = null)
+    IEnumerable<SchedularrTV.Core.Media.IMediaSourceInfo>? sources = null,
+    SchedularrTV.Plugins.Playout.IScheduleRepublisher? republisher = null)
 {
     public const string OnboardingKey = "Onboarding:Completed";
 
@@ -73,8 +74,13 @@ public sealed class AppSettingsForm(
     [
         SchedularrTV.Core.Platform.HardwareProfile.SettingKey,
         "LiveEncoding:Encoder", "LiveEncoding:Preset", "LiveEncoding:Height", "LiveEncoding:FrameRate", "LiveEncoding:BitrateKbps", "LiveEncoding:Threads",
-        "Rendering:Encoder", "Rendering:Preset", "Rendering:Threads", "Rendering:HardwareBitrateKbps"
+        "Rendering:Encoder", "Rendering:Preset", "Rendering:Threads", "Rendering:HardwareBitrateKbps",
+        ErsatzEncodingPrefix + "Hardware", ErsatzEncodingPrefix + "Height", ErsatzEncodingPrefix + "BitrateKbps",
+        ErsatzEncodingPrefix + "VaapiDevice", ErsatzEncodingPrefix + "VaapiDriver"
     ];
+
+    /// <summary>The app-wide ErsatzTV encoding (<see cref="ErsatzTvEncodingOptions"/>), which every channel inherits.</summary>
+    public const string ErsatzEncodingPrefix = "ErsatzTv:Encoding:";
 
     public string PerformanceValue(string key) => Performance.TryGetValue(key, out string? value) ? value : string.Empty;
 
@@ -211,11 +217,14 @@ public sealed class AppSettingsForm(
         }
 
         bool liveEncodingChanged = false;
+        bool ersatzEncodingChanged = false;
         foreach (string key in PerformanceKeys)
         {
             string value = PerformanceValue(key);
+            bool changed = !string.Equals(_original.GetValueOrDefault(key) ?? string.Empty, value, StringComparison.Ordinal);
             liveEncodingChanged |= (key.StartsWith("LiveEncoding:", StringComparison.Ordinal) || key == SchedularrTV.Core.Platform.HardwareProfile.SettingKey)
-                                   && !string.Equals(_original.GetValueOrDefault(key) ?? string.Empty, value, StringComparison.Ordinal);
+                                   && changed;
+            ersatzEncodingChanged |= key.StartsWith(ErsatzEncodingPrefix, StringComparison.Ordinal) && changed;
             SetIfChanged(file, key, value);
         }
 
@@ -234,6 +243,12 @@ public sealed class AppSettingsForm(
         if (liveEncodingChanged && !sourcesChanged)
         {
             rebuilds?.RequestFullRebuild();
+        }
+
+        // ErsatzTV's encoding is only in the lineup, so publishing again (no rebuild) applies it; ErsatzTV restarts for it.
+        if (ersatzEncodingChanged && !liveEncodingChanged && !sourcesChanged)
+        {
+            republisher?.RequestRepublish();
         }
 
         // A different media server or folder changes what the schedule can use, so it's replanned now.

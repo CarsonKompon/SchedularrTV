@@ -441,6 +441,8 @@ public sealed class ScheduleCoordinator(
 
     private async Task PublishAsync(IReadOnlyList<ChannelSchedule> schedules, CancellationToken cancellationToken)
     {
+        // From the schedule as it is now, so a republish (not only a rebuild) carries a channel's latest encoding.
+        schedules = WithEncoding(configProvider.Current, schedules);
         schedules = await ProcessAsync(schedules, cancellationToken).ConfigureAwait(false);
 
         // After the processors, which work on the scheduler's own channels and their configuration.
@@ -465,6 +467,44 @@ public sealed class ScheduleCoordinator(
                 logger.LogError(ex, "Publisher {Publisher} failed.", publisher.Name);
             }
         }
+    }
+
+    /// <summary>
+    /// Each channel's own ErsatzTV encoding (<see cref="ChannelConfig.Encoding"/>), as an annotation on its schedule for
+    /// the lineup to apply; channels without one are left as they are, and inherit the app-wide setting.
+    /// </summary>
+    public static IReadOnlyList<ChannelSchedule> WithEncoding(SchedulerConfig config, IReadOnlyList<ChannelSchedule> schedules)
+    {
+        Dictionary<string, string> own = new(StringComparer.OrdinalIgnoreCase);
+        foreach (ChannelConfig channel in config.Channels)
+        {
+            if (SchedularrTV.Providers.ErsatzTv.ErsatzTvEncoding.ToAnnotation(channel.Encoding) is { } annotation)
+            {
+                own[channel.Id] = annotation;
+            }
+        }
+
+        const string key = SchedularrTV.Providers.ErsatzTv.ErsatzTvEncoding.Annotation;
+        return [.. schedules.Select(schedule =>
+        {
+            bool had = schedule.Annotations?.ContainsKey(key) == true;
+            if (!own.TryGetValue(schedule.ChannelId, out string? annotation) && !had)
+            {
+                return schedule;
+            }
+
+            Dictionary<string, string> annotations = new(schedule.Annotations ?? new Dictionary<string, string>(), StringComparer.Ordinal);
+            if (annotation is null)
+            {
+                annotations.Remove(key);
+            }
+            else
+            {
+                annotations[key] = annotation;
+            }
+
+            return schedule with { Annotations = annotations };
+        })];
     }
 
     /// <summary>

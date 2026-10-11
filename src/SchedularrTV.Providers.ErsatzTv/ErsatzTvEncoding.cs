@@ -1,0 +1,203 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using SchedularrTV.Core.Configuration;
+using SchedularrTV.Core.Scheduling;
+
+namespace SchedularrTV.Providers.ErsatzTv;
+
+/// <summary>One of ErsatzTV's video accelerations, as channel.json names it, and what the UI calls it.</summary>
+public sealed record ErsatzTvHardware(string Value, string Label, string Hint);
+
+/// <summary>How a channel ends up encoded.</summary>
+/// <param name="Hardware">An ErsatzTV acceleration, or <see cref="ErsatzTvEncoding.Software"/> for the processor.</param>
+/// <param name="SourceWidth">
+/// The width when the picture size comes from the channel's source (an IPTV stream, a streamer channel's picture), which
+/// keeps its own shape; null for 16:9 at <paramref name="Height"/>.
+/// </param>
+public sealed record EffectiveEncoding(string Hardware, int Height, int BitrateKbps, string? VaapiDevice, string? VaapiDriver, int? SourceWidth = null)
+{
+    public int Width => SourceWidth ?? ErsatzTvEncoding.WidthFor(Height);
+}
+
+/// <summary>
+/// ErsatzTV encoding chosen in SchedularrTV: app-wide defaults (App settings), which each channel can override field by
+/// field. Applied to every channel as a channel config overlay that ErsatzTV merges over its channel.json, so the
+/// encoding is always what SchedularrTV says, without rewriting that file.
+/// </summary>
+public static class ErsatzTvEncoding
+{
+    /// <summary>Channel annotation carrying a channel's own settings (<see cref="ChannelEncodingConfig"/> as JSON).</summary>
+    public const string Annotation = "ersatztv.encoding";
+
+    /// <summary>
+    /// Channel annotation giving the picture size of what the channel plays, <c>1280x720</c>, set by channels made from
+    /// one source (IPTV, streamers). Its picture is then kept at that size rather than scaled to the default; a size the
+    /// channel chooses itself still wins.
+    /// </summary>
+    public const string PictureAnnotation = "ersatztv.picture";
+
+    /// <summary>The value for encoding on the processor.</summary>
+    public const string Software = "none";
+
+    /// <summary>Overlays must name a channel config version ErsatzTV reads; every 0.1.x build reads 0.1.0.</summary>
+    public const string OverlayVersion = "https://ersatztv.org/channel/version/0.1.0";
+
+    /// <summary>What can be chosen, as ErsatzTV Next spells it in channel.json.</summary>
+    public static readonly IReadOnlyList<ErsatzTvHardware> Hardware =
+    [
+        new(Software, "Processor (software)", "Works everywhere; the heaviest on the CPU."),
+        new("cuda", "NVIDIA (CUDA / NVENC)", "GeForce, Quadro and Tesla cards, on Windows or Linux."),
+        new("qsv", "Intel Quick Sync", "Intel processors with graphics, and Arc cards."),
+        new("amf", "AMD (AMF)", "Radeon cards and Ryzen graphics, on Windows."),
+        new("vaapi", "VA-API", "Intel or AMD graphics on Linux."),
+        new("videotoolbox", "Apple VideoToolbox", "Any Mac."),
+        new("rkmpp", "Rockchip (RKMPP)", "Rockchip boards such as the Orange Pi 5."),
+        new("vulkan", "Vulkan", "Newer, and experimental in ErsatzTV.")
+    ];
+
+    public static readonly IReadOnlyList<int> Heights = [480, 540, 720, 1080, 1440, 2160];
+
+    public static readonly IReadOnlyList<string> VaapiDrivers = ["ihd", "i965", "radeonsi"];
+
+    /// <summary>Where the video is encoded until App settings says otherwise: the processor, which works everywhere.</summary>
+    public const string DefaultHardware = Software;
+
+    /// <summary>The picture height until App settings says otherwise: as a new channel.json has it (720p on a Raspberry Pi).</summary>
+    public static int DefaultHeight => SchedularrTV.Core.Platform.HardwareProfile.IsLowPower ? 720 : 1080;
+
+    /// <summary>The bitrate until App settings says otherwise, as a new channel.json has it.</summary>
+    public static int DefaultBitrateKbps => SchedularrTV.Core.Platform.HardwareProfile.IsLowPower ? 3000 : 6000;
+
+    public static string Label(string? hardware) =>
+        Hardware.FirstOrDefault(choice => string.Equals(choice.Value, hardware, StringComparison.OrdinalIgnoreCase))?.Label ?? hardware ?? string.Empty;
+
+    /// <summary>The app-wide settings with the defaults filled in, as every channel inherits them.</summary>
+    public static EffectiveEncoding Defaults(ErsatzTvEncodingOptions global) => Resolve(global, (ChannelEncodingConfig?)null);
+
+    /// <summary>The 16:9 width for a height, rounded to an even number.</summary>
+    public static int WidthFor(int height) => (height * 16 / 9 + 1) / 2 * 2;
+
+    /// <summary>A channel's own settings as the annotation carries them; null when it has none.</summary>
+    public static string? ToAnnotation(ChannelEncodingConfig? channel) =>
+        channel is null || channel.IsEmpty
+            ? null
+            : JsonSerializer.Serialize(new { hardware = Clean(channel.Hardware), height = channel.Height, bitrate_kbps = channel.BitrateKbps });
+
+    /// <summary>
+    /// The settings a channel ends up with: its own (from its annotation), else its source's picture size (from its
+    /// picture annotation), else the app-wide defaults.
+    /// </summary>
+    public static EffectiveEncoding Resolve(ErsatzTvEncodingOptions global, ChannelSchedule schedule)
+    {
+        ChannelEncodingConfig? own = schedule.Annotations?.TryGetValue(Annotation, out string? json) == true ? FromAnnotation(json) : null;
+        EffectiveEncoding resolved = Resolve(global, own);
+        return own?.Height is null && schedule.Annotations?.TryGetValue(PictureAnnotation, out string? picture) == true
+               && ParsePicture(picture) is { } size
+            ? resolved with { Height = size.Height, SourceWidth = size.Width }
+            : resolved;
+    }
+
+    /// <summary>A picture annotation's value, for a channel source to set.</summary>
+    public static string Picture(int width, int height) =>
+        string.Create(CultureInfo.InvariantCulture, $"{width}x{height}");
+
+    /// <summary>A <c>1280x720</c> size, made even (encoders need it); null when it isn't one or is out of range.</summary>
+    public static (int Width, int Height)? ParsePicture(string? text)
+    {
+        string[] parts = (text ?? string.Empty).Split('x', 'X');
+        return parts.Length == 2
+               && int.TryParse(parts[0].Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int width)
+               && int.TryParse(parts[1].Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int height)
+               && width is >= 160 and <= 7680 && height is >= 120 and <= 4320
+            ? (width / 2 * 2, height / 2 * 2)
+            : null;
+    }
+
+    /// <summary>A channel's settings: each field its own where it sets one, else the app-wide setting, else the default.</summary>
+    public static EffectiveEncoding Resolve(ErsatzTvEncodingOptions global, ChannelEncodingConfig? channel)
+    {
+        string hardware = Known(channel?.Hardware) ?? Known(global.Hardware) ?? DefaultHardware;
+        int height = Valid(channel?.Height) ?? Valid(Number(global.Height)) ?? DefaultHeight;
+        int bitrate = Bitrate(channel?.BitrateKbps) ?? Bitrate(Number(global.BitrateKbps)) ?? DefaultBitrateKbps;
+        bool vaapi = hardware == "vaapi";
+        return new EffectiveEncoding(hardware, height, bitrate,
+            vaapi ? Clean(global.VaapiDevice) : null,
+            vaapi && Clean(global.VaapiDriver) is { } driver && VaapiDrivers.Contains(driver) ? driver : null);
+    }
+
+    /// <summary>The overlay that gives a channel <paramref name="encoding"/>, whatever its channel.json says.</summary>
+    public static string Overlay(EffectiveEncoding encoding)
+    {
+        var video = new JsonObject
+        {
+            // Null in an overlay removes the key, so any acceleration in channel.json gives way to the processor.
+            ["accel"] = encoding.Hardware == Software ? null : encoding.Hardware,
+            ["width"] = encoding.Width,
+            ["height"] = encoding.Height,
+            ["bitrate_kbps"] = encoding.BitrateKbps,
+            ["buffer_kbps"] = encoding.BitrateKbps * 2
+        };
+
+        if (encoding.VaapiDevice is { } device)
+        {
+            video["vaapi_device"] = device;
+        }
+
+        if (encoding.VaapiDriver is { } driver)
+        {
+            video["vaapi_driver"] = driver;
+        }
+
+        var overlay = new JsonObject
+        {
+            ["version"] = OverlayVersion,
+            ["normalization"] = new JsonObject { ["video"] = video }
+        };
+        return overlay.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+    }
+
+    /// <summary>A file name that changes with the overlay's content, so ErsatzTV is restarted to pick a new one up.</summary>
+    public static string FileName(string overlay) =>
+        $"encoding-{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(overlay)))[..12]}.json";
+
+    internal static ChannelEncodingConfig? FromAnnotation(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            JsonElement root = document.RootElement;
+            return new ChannelEncodingConfig
+            {
+                Hardware = root.TryGetProperty("hardware", out JsonElement hardware) && hardware.ValueKind == JsonValueKind.String ? hardware.GetString() : null,
+                Height = root.TryGetProperty("height", out JsonElement height) && height.ValueKind == JsonValueKind.Number ? height.GetInt32() : null,
+                BitrateKbps = root.TryGetProperty("bitrate_kbps", out JsonElement bitrate) && bitrate.ValueKind == JsonValueKind.Number ? bitrate.GetInt32() : null
+            };
+        }
+        catch (Exception ex) when (ex is JsonException or FormatException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    // A choice ErsatzTV understands; anything else (a typo in the YAML) is ignored rather than stopping the channel.
+    private static string? Known(string? value) =>
+        Clean(value) is { } hardware && Hardware.Any(choice => choice.Value == hardware) ? hardware : null;
+
+    private static string? Clean(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
+
+    private static int? Number(string? text) =>
+        int.TryParse(text?.Trim().Trim('"'), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) ? value : null;
+
+    private static int? Valid(int? height) => height is >= 240 and <= 4320 ? height : null;
+
+    private static int? Bitrate(int? kbps) => kbps is >= 300 and <= 100_000 ? kbps : null;
+}

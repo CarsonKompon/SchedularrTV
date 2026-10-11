@@ -41,6 +41,9 @@ public sealed class ErsatzTvOptions
 
     public LineupServerOptions Lineup { get; set; } = new();
 
+    /// <summary>How every channel is encoded, unless the channel says otherwise (see <see cref="ErsatzTvEncoding"/>).</summary>
+    public ErsatzTvEncodingOptions Encoding { get; set; } = new();
+
     /// <summary>
     /// Launch and supervise ErsatzTV Next as a child process: started after the first playout is
     /// written, restarted if it dies or the channel list changes, killed on shutdown.
@@ -109,6 +112,27 @@ public sealed class LineupServerOptions
 
     /// <summary>Per-channel normalization config, relative to the channel folder.</summary>
     public string ChannelConfigFileName { get; set; } = "channel.json";
+}
+
+/// <summary>
+/// App-wide encoding for ErsatzTV's channels (<c>ErsatzTv:Encoding</c>). Blank leaves each channel's own channel.json
+/// as it is. Kept as text, as App settings saves it, so a blank field never fails to bind.
+/// </summary>
+public sealed class ErsatzTvEncodingOptions
+{
+    /// <summary><c>none</c> for the processor, or an ErsatzTV acceleration (<see cref="ErsatzTvEncoding.Hardware"/>).</summary>
+    public string? Hardware { get; set; }
+
+    /// <summary>Picture height; the width follows at 16:9.</summary>
+    public string? Height { get; set; }
+
+    public string? BitrateKbps { get; set; }
+
+    /// <summary>VA-API only: the render device, when it isn't <c>/dev/dri/renderD128</c>.</summary>
+    public string? VaapiDevice { get; set; }
+
+    /// <summary>VA-API only: <c>ihd</c>, <c>i965</c> or <c>radeonsi</c>; blank lets libva choose.</summary>
+    public string? VaapiDriver { get; set; }
 }
 
 public enum GuideMode

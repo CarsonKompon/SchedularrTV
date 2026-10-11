@@ -167,6 +167,12 @@ public sealed class ChannelConfig
     /// </summary>
     public bool? AlwaysOnCountsAsWatched { get; set; }
 
+    /// <summary>
+    /// How ErsatzTV encodes this channel, where it should differ from the app-wide setting (App settings, Hardware and
+    /// video encoding). Null, or any field left out, takes the app-wide value.
+    /// </summary>
+    public ChannelEncodingConfig? Encoding { get; set; }
+
     /// <summary>Places breaks inside a programme rather than only after it.</summary>
     public MidRollConfig? MidRoll { get; set; }
 

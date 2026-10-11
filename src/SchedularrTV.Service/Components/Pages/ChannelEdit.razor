@@ -5,6 +5,8 @@
 @inject LogoStore Logos
 @inject IEnumerable<PluginEditorSection> EditorSections
 @inject AlwaysOnKeeper AlwaysOn
+@inject Microsoft.Extensions.Options.IOptions<SchedularrTV.Providers.ErsatzTv.ErsatzTvOptions> ErsatzOptions
+@using SchedularrTV.Providers.ErsatzTv
 
 @if (_channel is null)
 {
@@ -204,6 +206,42 @@ else
                     }
                 }
             }
+        </div>
+
+        <div class="card">
+            <div class="card-head"><h2>Encoding</h2></div>
+            <div class="grid grid-3">
+                <label class="field">
+                    <span>Encode on</span>
+                    <select value="@(_channel.Encoding?.Hardware ?? string.Empty)" @onchange="SetEncodingHardware">
+                        <option value="">Default (@InheritedHardware)</option>
+                        @foreach (ErsatzTvHardware choice in ErsatzTvEncoding.Hardware)
+                        {
+                            <option value="@choice.Value">@choice.Label</option>
+                        }
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Picture size</span>
+                    <select value="@(_channel.Encoding?.Height?.ToString() ?? string.Empty)" @onchange="SetEncodingHeight">
+                        <option value="">Default (@InheritedHeight)</option>
+                        @foreach (int height in ErsatzTvEncoding.Heights)
+                        {
+                            <option value="@height">@(height)p</option>
+                        }
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Bitrate (kbps)</span>
+                    <input type="number" min="300" max="100000" value="@(_channel.Encoding?.BitrateKbps)" placeholder="@InheritedBitrate"
+                           @onchange="SetEncodingBitrate" />
+                </label>
+            </div>
+            <p class="hint">
+                How ErsatzTV encodes this channel. Default uses the defaults in
+                <a href="settings/app">App settings › Hardware and video encoding</a>; anything chosen here overrides them for this
+                channel only. Saving a change restarts ErsatzTV, so anyone watching drops for a few seconds.
+            </p>
         </div>
 
         <div class="card">
@@ -452,6 +490,35 @@ else
 
         _channel.Logo = null;
         _logoError = null;
+        Editor.MarkDirty();
+    }
+
+    // The app-wide encoding this channel inherits, read live so a setting saved in App settings shows at once.
+    private ErsatzTvEncodingOptions GlobalEncoding => ErsatzOptions.Value.Encoding;
+
+    private EffectiveEncoding Inherited => ErsatzTvEncoding.Defaults(GlobalEncoding);
+
+    private string InheritedHardware => ErsatzTvEncoding.Label(Inherited.Hardware);
+
+    private string InheritedHeight => $"{Inherited.Height}p";
+
+    private string InheritedBitrate => $"Default ({Inherited.BitrateKbps})";
+
+    private void SetEncodingHardware(ChangeEventArgs e) =>
+        EditEncoding(encoding => encoding.Hardware = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString());
+
+    private void SetEncodingHeight(ChangeEventArgs e) =>
+        EditEncoding(encoding => encoding.Height = int.TryParse(e.Value?.ToString(), out int height) ? height : null);
+
+    private void SetEncodingBitrate(ChangeEventArgs e) =>
+        EditEncoding(encoding => encoding.BitrateKbps = int.TryParse(e.Value?.ToString(), out int kbps) && kbps > 0 ? Math.Clamp(kbps, 300, 100_000) : null);
+
+    // An empty section is removed, so a channel that inherits everything has no encoding: key in the YAML.
+    private void EditEncoding(Action<ChannelEncodingConfig> edit)
+    {
+        ChannelEncodingConfig encoding = _channel!.Encoding ?? new ChannelEncodingConfig();
+        edit(encoding);
+        _channel.Encoding = encoding.IsEmpty ? null : encoding;
         Editor.MarkDirty();
     }
 

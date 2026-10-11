@@ -187,9 +187,18 @@ public sealed class StreamerChannels(StreamerStore store, StreamerMonitor monito
             ChannelLogo = logo ?? channel.Logo,
             Start = start,
             End = end,
-            Entries = entries
+            Entries = entries,
+            // The picture the live stream is made at (App settings, Live page channels), which ErsatzTV keeps rather
+            // than scaling it to the app-wide default for its channels.
+            Annotations = new Dictionary<string, string> { [PictureAnnotation] = Picture(SchedularrTV.Core.Platform.LiveEncodingSettings.Current) }
         };
     }
+
+    /// <summary>The ErsatzTV output reads a channel's picture size from this (<c>1280x720</c>).</summary>
+    public const string PictureAnnotation = "ersatztv.picture";
+
+    public static string Picture(SchedularrTV.Core.Platform.LiveEncodingSettings encoding) =>
+        string.Create(CultureInfo.InvariantCulture, $"{encoding.Width}x{encoding.Height}");
 
     /// <summary>The parts of [from, to) not already taken.</summary>
     private static IEnumerable<(DateTimeOffset Start, DateTimeOffset End)> Free(List<GuideSlot> placed, DateTimeOffset from, DateTimeOffset to)

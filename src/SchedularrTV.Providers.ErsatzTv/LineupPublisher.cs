@@ -57,6 +57,7 @@ public sealed class LineupPublisher(
             Xmltv = new LineupFolder { Folder = xmltvFolder }
         };
 
+        HashSet<string> encodingOverlays = new(StringComparer.OrdinalIgnoreCase);
         foreach (ChannelSchedule schedule in schedules.OrderBy(s => s.ChannelNumber))
         {
             string number = schedule.ChannelNumber.ToString(CultureInfo.InvariantCulture);
@@ -76,12 +77,24 @@ public sealed class LineupPublisher(
                 await ChannelConfigSchema.UpgradeFileAsync(channelConfigPath, logger, cancellationToken).ConfigureAwait(false);
             }
 
+            // Copying first, then the encoding chosen in SchedularrTV, which applies to whatever can't be copied.
+            List<string> overlays = [];
+            if (IsPassthrough(schedule))
+            {
+                overlays.Add(await EnsureCopyOverlayAsync(root, cancellationToken).ConfigureAwait(false));
+            }
+
+            string encoding = ErsatzTvEncoding.Overlay(ErsatzTvEncoding.Resolve(_options.Encoding, schedule));
+            string encodingPath = await EnsureOverlayAsync(root, ErsatzTvEncoding.FileName(encoding), encoding, cancellationToken).ConfigureAwait(false);
+            encodingOverlays.Add(encodingPath);
+            overlays.Add(encodingPath);
+
             lineup.Channels.Add(new LineupChannel
             {
                 Number = number,
                 Name = schedule.ChannelName,
                 Config = channelConfigPath,
-                Overlays = IsPassthrough(schedule) ? [await EnsureCopyOverlayAsync(root, cancellationToken).ConfigureAwait(false)] : null,
+                Overlays = overlays,
                 TvgId = schedule.TvgId,
                 Logo = schedule.ChannelLogo,
                 Group = schedule.ChannelGroup
@@ -100,6 +113,7 @@ public sealed class LineupPublisher(
         logger.LogInformation("Wrote lineup with {Count} channel(s) to {Path}.", lineup.Channels.Count, lineupPath);
 
         WarnAboutOrphanedChannels(root, lineup.Channels.Select(c => c.Number));
+        RemoveUnusedEncodingOverlays(root, encodingOverlays);
 
         // Everything ErsatzTV reads from the lineup belongs here: it loads the file once at startup,
         // so any field that changes without a restart would silently keep serving the old value.
@@ -131,17 +145,58 @@ public sealed class LineupPublisher(
         }
         """;
 
-    private static async Task<string> EnsureCopyOverlayAsync(string root, CancellationToken cancellationToken)
+    private static Task<string> EnsureCopyOverlayAsync(string root, CancellationToken cancellationToken) =>
+        EnsureOverlayAsync(root, "copy.json", CopyOverlay, cancellationToken);
+
+    /// <summary>Writes an overlay into the overlays folder unless it's already there as it should be; returns its path.</summary>
+    private static async Task<string> EnsureOverlayAsync(string root, string name, string content, CancellationToken cancellationToken)
     {
         string folder = Path.Combine(root, "overlays");
-        string path = Path.Combine(folder, "copy.json");
-        if (!File.Exists(path) || await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false) != CopyOverlay)
+        string path = Path.Combine(folder, name);
+        if (!File.Exists(path) || await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false) != content)
         {
             Directory.CreateDirectory(folder);
-            await File.WriteAllTextAsync(path, CopyOverlay, cancellationToken).ConfigureAwait(false);
+            await File.WriteAllTextAsync(path, content, cancellationToken).ConfigureAwait(false);
         }
 
         return path;
+    }
+
+    // The encoding overlays the previous lineup used, which the ErsatzTV still running may yet start a channel with.
+    private HashSet<string> _previousEncodingOverlays = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Encoding overlays are named after their content, so a changed setting leaves the old file behind. It's removed
+    /// once neither this lineup nor the one before uses it: until ErsatzTV restarts for the new lineup, it starts
+    /// channels from the old one.
+    /// </summary>
+    private void RemoveUnusedEncodingOverlays(string root, HashSet<string> used)
+    {
+        HashSet<string> previous = _previousEncodingOverlays;
+        _previousEncodingOverlays = used;
+        string folder = Path.Combine(root, "overlays");
+        if (!Directory.Exists(folder))
+        {
+            return;
+        }
+
+        foreach (string file in Directory.EnumerateFiles(folder, "encoding-*.json"))
+        {
+            string full = Path.GetFullPath(file);
+            if (used.Contains(full) || previous.Contains(full))
+            {
+                continue;
+            }
+
+            try
+            {
+                File.Delete(file);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogDebug(ex, "Couldn't remove the unused encoding overlay {Path}.", file);
+            }
+        }
     }
 
     /// <summary>

@@ -16,7 +16,7 @@ public sealed record RelayStatus(string Key, string Name, int Viewers, DateTimeO
 /// (never re-encoding) whatever the provider sends, HLS included. A stream stays open for a short while after its last
 /// viewer leaves, because ErsatzTV reconnects at every programme change and some providers allow only one connection.
 /// </summary>
-public sealed class RelayHub(IptvSettings settings, ILogger<RelayHub> logger) : IAsyncDisposable
+public sealed class RelayHub(IptvSettings settings, ILogger<RelayHub> logger, PictureSizes? pictures = null) : IAsyncDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, Relay> _running = new(StringComparer.Ordinal);
@@ -38,7 +38,8 @@ public sealed class RelayHub(IptvSettings settings, ILogger<RelayHub> logger) : 
     /// <summary>The ffmpeg command: the provider's stream in, its best video and audio copied, MPEG-TS out.</summary>
     public static IReadOnlyList<string> Arguments(RelayTarget target)
     {
-        List<string> arguments = ["-hide_banner", "-loglevel", "warning", "-nostdin"];
+        // Info level, for the stream descriptions that give the picture size (PictureSizes); no progress lines.
+        List<string> arguments = ["-hide_banner", "-loglevel", "info", "-nostats", "-nostdin"];
         if (IptvFetcher.IsWeb(target.Url))
         {
             arguments.AddRange(["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_on_network_error", "1", "-reconnect_delay_max", "5",
@@ -128,7 +129,7 @@ public sealed class RelayHub(IptvSettings settings, ILogger<RelayHub> logger) : 
                 await stale.DisposeAsync().ConfigureAwait(false);
             }
 
-            Relay relay = Relay.Start(target, settings.Ffmpeg, logger);
+            Relay relay = Relay.Start(target, settings.Ffmpeg, logger, size => pictures?.Note(target.Key, size));
             relay.Stopped += ended => _ = RemoveAsync(ended);
             lock (_running)
             {
@@ -205,6 +206,39 @@ public sealed class RelayHub(IptvSettings settings, ILogger<RelayHub> logger) : 
         _gate.Dispose();
     }
 
+    /// <summary>
+    /// Finds the picture size in ffmpeg's description of its output: the first video stream after <c>Output #0</c>, which
+    /// is the one stream copied out, rather than the input, where an HLS playlist can list several sizes.
+    /// </summary>
+    public sealed class OutputSizeWatcher
+    {
+        private bool _inOutput;
+        private bool _found;
+
+        /// <summary>The size, the once it's found; null for every other line.</summary>
+        public string? Read(string line)
+        {
+            if (_found)
+            {
+                return null;
+            }
+
+            if (line.StartsWith("Output #", StringComparison.Ordinal))
+            {
+                _inOutput = true;
+                return null;
+            }
+
+            if (!_inOutput || PictureSizes.Parse(line) is not { } size)
+            {
+                return null;
+            }
+
+            _found = true;
+            return size;
+        }
+    }
+
     /// <summary>One ffmpeg relaying one stream, its output handed out in whole TS packets.</summary>
     private sealed class Relay : IAsyncDisposable
     {
@@ -241,7 +275,7 @@ public sealed class RelayHub(IptvSettings settings, ILogger<RelayHub> logger) : 
 
         public event Action<Relay>? Stopped;
 
-        public static Relay Start(RelayTarget target, string ffmpeg, ILogger logger)
+        public static Relay Start(RelayTarget target, string ffmpeg, ILogger logger, Action<string>? pictureSize = null)
         {
             var start = new ProcessStartInfo(ffmpeg)
             {
@@ -258,9 +292,21 @@ public sealed class RelayHub(IptvSettings settings, ILogger<RelayHub> logger) : 
 
             Process process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start ffmpeg ({ffmpeg}).");
             var relay = new Relay(target, process, logger);
+            var watcher = new OutputSizeWatcher();
             process.ErrorDataReceived += (_, line) =>
             {
-                if (!string.IsNullOrWhiteSpace(line.Data))
+                if (string.IsNullOrWhiteSpace(line.Data))
+                {
+                    return;
+                }
+
+                if (watcher.Read(line.Data) is { } size)
+                {
+                    pictureSize?.Invoke(size);
+                }
+
+                // An HLS input logs every segment it opens at info level; that's noise even in a debug log.
+                if (!line.Data.Contains("Opening '", StringComparison.Ordinal))
                 {
                     logger.LogDebug("ffmpeg (IPTV {Channel}): {Line}", target.Name, line.Data);
                 }

@@ -84,6 +84,39 @@ channels:
 Only the channels defined in the schedule can be set to 24/7; IPTV and streamer channels from plugins start on
 demand as before.
 
+## Encoding and hardware acceleration
+
+**App settings › Hardware and video encoding › ErsatzTV channels** sets the defaults for how ErsatzTV encodes every
+channel: on the processor or a graphics card (NVIDIA `cuda`, Intel `qsv`, AMD `amf`, Linux `vaapi`, Mac
+`videotoolbox`, Rockchip `rkmpp`, `vulkan`), the picture size and the bitrate. Until they're changed they're the
+processor, 1080p and 6000 kbps (720p and 3000 kbps on a Raspberry Pi), as a new `channel.json` has them. A channel can
+override any of them on its General tab (`encoding:` in the YAML); what it leaves out takes the default.
+
+Channels made from one source keep that source's picture size instead of the default, and use the default encoder
+and bitrate:
+
+- **IPTV** channels take the size of the provider's stream, which the relay reads from ffmpeg the first time the
+  channel plays and remembers (`iptv-pictures.json` in the data folder). Until then they use the default size. A
+  passed-through (copied) stream isn't re-encoded at all; the size only matters for anything that can't be copied.
+- **Streamer** channels take the size their picture is made at (App settings, Live page channels).
+
+```yaml
+channels:
+- id: news
+  name: News
+  number: 3
+  encoding:
+    hardware: none      # this one on the processor, whatever the app-wide setting
+    height: 720
+    bitrate_kbps: 3000
+```
+
+`channel.json` is never rewritten. The settings go into an overlay in `overlays/` (named after its content) that the
+lineup lists for each channel, which ErsatzTV merges over `channel.json`, so these settings win over any acceleration,
+size or bitrate written there by hand (its other settings, such as audio, still apply). A changed setting changes the lineup, so
+ErsatzTV restarts to pick it up and anyone watching drops for a few seconds. ErsatzTV checks for the hardware when a
+channel starts and falls back to the processor if it isn't there, saying so in its log.
+
 ## Performance
 
 **System → Performance** shows what SchedularrTV, ErsatzTV and the processes they start take of the computer,
@@ -97,7 +130,7 @@ every 5 seconds over the last 15 minutes:
 
 It also shows the whole computer's CPU and memory, NVIDIA graphics cards' load (including the video encoder) when
 `nvidia-smi` is installed, and suggestions drawn from the last minute: how much CPU each playing channel costs and
-how many more fit, channels whose `channel.json` leaves `accel` unset so ErsatzTV encodes on the CPU, and when the
+how many more fit, how many channels are encoded on the processor, and when the
 CPU, memory or video encoder is nearly full. The same numbers are at `GET /api/performance`.
 
 ## What is written

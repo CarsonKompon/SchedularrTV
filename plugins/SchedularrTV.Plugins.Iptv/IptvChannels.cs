@@ -12,8 +12,14 @@ public sealed record CarriedChannel(string SourceId, PlaylistChannel Channel, in
 /// The carried IPTV channels as whole channels for the scheduler to publish: each one's playout follows its guide,
 /// one live item per listing, so ErsatzTV's guide is the provider's and the picture is the provider's stream, relayed.
 /// </summary>
-public sealed class IptvChannels(SourceStore store, IptvCatalog catalog, IptvSettings settings) : IExternalChannelSource
+public sealed class IptvChannels(SourceStore store, IptvCatalog catalog, IptvSettings settings, PictureSizes? pictures = null) : IExternalChannelSource
 {
+    /// <summary>
+    /// Channel annotation with the stream's picture size (<c>1280x720</c>), once the relay has seen it, so ErsatzTV keeps
+    /// that size for whatever it re-encodes instead of scaling it to the app-wide default.
+    /// </summary>
+    public const string PictureAnnotation = "ersatztv.picture";
+
     /// <summary>Entry annotation for a listing's original guide element (the ErsatzTV output's XMLTV writer reads it).</summary>
     public const string SourceProgrammeAnnotation = "xmltv.programme";
 
@@ -87,7 +93,9 @@ public sealed class IptvChannels(SourceStore store, IptvCatalog catalog, IptvSet
             IReadOnlyList<GuideProgramme> programmes = carried.GuideId is not null && loaded.Guide!.Programmes.TryGetValue(carried.GuideId, out List<GuideProgramme>? listed)
                 ? listed
                 : [];
-            schedules.Add(Build(source, carried.Channel, carried.Number, programmes, settings.LiveUrl(source.Id, carried.Number), request.Now, request.Until));
+            string relayKey = $"{source.Id}/{carried.Number.ToString(CultureInfo.InvariantCulture)}";
+            schedules.Add(Build(source, carried.Channel, carried.Number, programmes, settings.LiveUrl(source.Id, carried.Number), request.Now, request.Until,
+                pictures?.For(relayKey)));
         }
 
         return ValueTask.FromResult<IReadOnlyList<ChannelSchedule>>(schedules);
@@ -98,7 +106,7 @@ public sealed class IptvChannels(SourceStore store, IptvCatalog catalog, IptvSet
     /// listing, and the channel's own name over any stretch the guide doesn't cover, all playing the same live stream.
     /// </summary>
     public static ChannelSchedule Build(IptvSource source, PlaylistChannel channel, int number, IReadOnlyList<GuideProgramme> programmes,
-        string streamUrl, DateTimeOffset now, DateTimeOffset until)
+        string streamUrl, DateTimeOffset now, DateTimeOffset until, string? picture = null)
     {
         DateTimeOffset floor = new(now.Ticks - now.Ticks % TimeSpan.TicksPerMinute, now.Offset);
         DateTimeOffset start = floor;
@@ -157,8 +165,24 @@ public sealed class IptvChannels(SourceStore store, IptvCatalog catalog, IptvSet
             Start = start,
             End = end,
             Entries = entries,
-            Annotations = source.Passthrough ? new Dictionary<string, string> { [CopyAnnotation] = "true" } : null
+            Annotations = ChannelAnnotations(source.Passthrough, picture)
         };
+    }
+
+    private static Dictionary<string, string>? ChannelAnnotations(bool passthrough, string? picture)
+    {
+        Dictionary<string, string> annotations = new(StringComparer.Ordinal);
+        if (passthrough)
+        {
+            annotations[CopyAnnotation] = "true";
+        }
+
+        if (!string.IsNullOrWhiteSpace(picture))
+        {
+            annotations[PictureAnnotation] = picture;
+        }
+
+        return annotations.Count > 0 ? annotations : null;
     }
 
     private static ScheduleEntry Entry(IptvSource source, PlaylistChannel channel, int number, string streamUrl,
