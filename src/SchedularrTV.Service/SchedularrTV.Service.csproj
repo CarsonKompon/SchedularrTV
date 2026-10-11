@@ -27,6 +27,13 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
     <!-- Pinned past the SQLite it brings by default (2.1.11 bundles a SQLite with CVE-2025-6965, GHSA-2m69-gcr7-jv3q). -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
+    <!-- Renders the guides in docs/ for the in-app Documentation pages. -->
+    <PackageReference Include="Markdig" Version="1.3.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The guides are built into the app, so the Documentation pages always match the version that's running. -->
+    <EmbeddedResource Include="..\..\docs\*.md" LogicalName="docs/%(Filename)%(Extension)" Link="docs\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

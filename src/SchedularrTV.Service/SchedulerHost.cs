@@ -156,6 +156,9 @@ public static class SchedulerHost
         builder.Services.AddSingleton<SchedularrTV.Service.Performance.ResourceMonitor>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<SchedularrTV.Service.Performance.ResourceMonitor>());
 
+        // The guides in docs/, built into the app and rendered for the Documentation pages.
+        builder.Services.AddSingleton<SchedularrTV.Service.Docs.DocsLibrary>();
+
         // Every running media source plugin's library merged into one, so the engine never knows there are several.
         // Asked for on each search, so a source switched off on the Plugins page drops out at once.
         Func<IServiceProvider, IReadOnlyList<IMediaLibrary>> mediaSources = PluginServiceGate.MediaSources(plugins, builder.Services);

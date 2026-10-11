@@ -2,34 +2,22 @@
 
 **Local TV like it used to be**
 
-SchedularrTV builds round-the-clock linear TV schedules from your Jellyfin library (or plain folders of
-shows and movies), complete with time
-slots, programming blocks, ad breaks, bumpers and promos, and hands them to
-[ErsatzTV Next](https://github.com/ErsatzTV/next) to stream to any IPTV player with a full programme guide.
+SchedularrTV builds round-the-clock linear TV schedules from your Jellyfin library (or plain folders of shows and movies), complete with time slots, programming blocks, ad breaks, bumpers and promos. It hands them to [ErsatzTV Next](https://github.com/ErsatzTV/next) to stream to any IPTV player with a full programme guide.
 
 ## Features
 
-- **Schedules like a real network.** Anchored time slots, recurring and holiday blocks, marathons and a
-  fallback rotation that keeps every channel full 24/7.
-- **Ad breaks that fit.** Breaks are packed with commercials from folders on disk, tagged by folder
-  name, and finished with bumpers and station IDs so programmes start on time. Mid-roll breaks can use
-  chapter markers.
-- **Seasonal commercials.** Holiday and seasonal ads (Christmas, Halloween, winter) air at the right time
-  of year automatically.
-- **Promos.** Use your own Up Next and Coming Up clips, or generate them: a visual template editor with
-  text-to-speech voice-overs and background music.
-- **Archive Follow.** Replay what a real network aired on a matching date in history, using your copies
-  of the shows.
-- **Repeatable.** Shuffles and rotations are deterministic and remembered, so schedules don't repeat
-  themselves and rebuilding doesn't reshuffle what's already planned.
+- **Schedules like a real network.** Anchored time slots, recurring and holiday blocks, marathons and a fallback rotation that keeps every channel full 24/7.
+- **Ad breaks that fit.** Breaks are packed with commercials from folders on disk, tagged by folder name, and finished with bumpers and station IDs so programmes start on time. Mid-roll breaks can use chapter markers.
+- **Seasonal commercials.** Holiday and seasonal ads (Christmas, Halloween, winter) air at the right time of year automatically.
+- **Promos.** Use your own Up Next and Coming Up clips, or generate them: a visual template editor with text-to-speech voice-overs and background music.
+- **Archive Follow.** Replay what a real network aired on a matching date in history, using your copies of the shows.
+- **Repeatable.** Shuffles and rotations are deterministic and remembered, so schedules don't repeat themselves and rebuilding doesn't reshuffle what's already planned.
 - **Plugins** for new media sources, outputs, voices and playout tweaks, installed from a zip.
-- **Web UI** for everything, plus a tray app for Windows, macOS and Linux that can start with your
-  computer and run ErsatzTV Next for you.
+- **Web UI** for everything, plus a tray app for Windows, macOS and Linux that can start with your computer and run ErsatzTV Next for you.
 
 ## Getting started
 
-1. **Download** the build for your system from [Releases](../../releases) and unzip it. No other
-   install is needed.
+1. **Download** the build for your system from [Releases](https://github.com/CarsonKompon/tv_scheduler/releases) and unzip it. No other install is needed.
 
    | Windows | macOS | Linux |
    | --- | --- | --- |
@@ -37,38 +25,40 @@ slots, programming blocks, ad breaks, bumpers and promos, and hands them to
 
    `<version>` is the release's tag (`v1.0.0`), or `nightly` for the nightly build.
 
-2. **Run** `SchedularrTV`. It appears in the notification area or menu bar and opens at
-   <http://localhost:5252>. The builds aren't code-signed, so Windows and macOS warn the first time; see
-   [Installation](docs/installation.md) for how to open them.
-3. **Follow the setup guide** that opens the first time: connect Jellyfin or add your TV and movie folders, choose the ErsatzTV Next
-   program, and check ffmpeg was found.
-4. **Create a channel** with the Channel Creation Wizard at the end of the guide (or later from
-   **Channels → New channel**), then add ErsatzTV's playlist
-   (`http://localhost:8409/channels.m3u`) and guide (`http://localhost:8409/xmltv.xml`) to your IPTV
-   player.
+2. **Run** `SchedularrTV`. It appears in the notification area or menu bar and opens at <http://localhost:5252>. The builds aren't code-signed, so Windows and macOS warn the first time; see [Installation](docs/installation.md) for how to open them.
+3. **Follow the setup guide** that opens the first time: connect Jellyfin or add your TV and movie folders, choose the ErsatzTV Next program, and check ffmpeg was found.
+4. **Create a channel** with the Channel Creation Wizard at the end of the guide (or later from **Channels → New channel**).
+5. **Add ErsatzTV's playlist and guide to your IPTV player:**
+   - Playlist: `http://localhost:8409/channels.m3u`
+   - Guide: `http://localhost:8409/xmltv.xml`
 
 ### Requirements
 
-- Your shows and movies: in [Jellyfin](https://jellyfin.org), or in [folders on disk](docs/local-library.md) laid out as Sonarr, Radarr or Kodi do (or both)
-- [ErsatzTV Next](https://github.com/ErsatzTV/next) for streaming
-- [ffmpeg](https://ffmpeg.org/download.html) (`winget install ffmpeg`, `brew install ffmpeg`, or your package manager)
+- Your shows and movies: in [Jellyfin](https://jellyfin.org), or in [folders on disk](docs/local-library.md) laid out as Sonarr, Radarr or Kodi do (or both).
+- [ErsatzTV Next](https://github.com/ErsatzTV/next) for streaming.
+- [ffmpeg](https://ffmpeg.org/download.html) (`winget install ffmpeg`, `brew install ffmpeg`, or your package manager).
 
 ## Documentation
+
+The same guides can be read in the app under **Help → Documentation** (the **Documentation** link in the sidebar).
 
 | Guide | Covers |
 | --- | --- |
 | [Installation](docs/installation.md) | Downloads, first run, the data folder, updating, running headless or under systemd |
 | [Configuration](docs/configuration.md) | App settings, the schedule file, commercials on disk, Jellyfin tags |
 | [Local TV and movies](docs/local-library.md) | Shows and movies from folders without Jellyfin: naming, .nfo files and pictures |
+| [Importing from ErsatzTV or Tunarr](docs/import.md) | Bringing another app's channels over as SchedularrTV channels |
 | [How scheduling works](docs/scheduling.md) | Blocks and anchors, ad break packing, mid-rolls, the query language, seasonal tags |
+| [Channel stats](docs/stats.md) | Each channel's Stats tab: who watches it, when, and what |
 | [ErsatzTV Next](docs/ersatztv.md) | What is published and how ErsatzTV is managed |
 | [Plugins](docs/plugins.md) | Installing plugins and writing your own |
 | [REST API](docs/rest-api.md) | Endpoints for scripting |
+| [Schedule build profiling](docs/schedule-performance.md) | Measuring schedule build times and diagnosing ad breaks |
 | [Development](docs/development.md) | Building from source, tests, releases |
 
 ## Plugins
 
-Optional extras, installed from the **Plugins** page (each release has a `SchedularrTV-<version>-all-plugins.zip` with all of them).
+Optional extras, installed from the **Plugins** page. Each release has a `SchedularrTV-<version>-all-plugins.zip` with all of them.
 
 | Plugin | What it does |
 | --- | --- |
