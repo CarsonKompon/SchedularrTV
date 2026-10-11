@@ -32,7 +32,7 @@
 
         <div class="nav-section">System</div>
         <NavLink class="nav-item" href="settings" Match="NavLinkMatch.All">
-            <Icon Name="sliders" /><span>Settings</span>
+            <Icon Name="sliders" /><span>Channel settings</span>
             @if (Updates.Available is { } update)
             {
                 <span class="nav-update-dot" title="@($"SchedularrTV {update.Tag} is available")" aria-label="Update available"></span>
@@ -53,9 +53,9 @@
             }
         }
         <NavLink class="nav-item" href="yaml"><Icon Name="code" /><span>YAML</span></NavLink>
-        <NavLink class="nav-item" href="backups"><Icon Name="history" /><span>Backups</span></NavLink>
 
         <div class="nav-section">Help</div>
+        <NavLink class="nav-item" href="backups"><Icon Name="history" /><span>Backups</span></NavLink>
         <NavLink class="nav-item" href="docs"><Icon Name="book" /><span>Documentation</span></NavLink>
         </div>
 

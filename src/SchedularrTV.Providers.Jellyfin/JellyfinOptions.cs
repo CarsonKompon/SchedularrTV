@@ -16,6 +16,14 @@ public sealed class JellyfinOptions
     /// <summary>Optional user id used to scope library visibility.</summary>
     public string? UserId { get; set; }
 
+    /// <summary>Explicit plugin selection; false preserves legacy schedule.yaml exclusions.</summary>
+    public bool LibrarySelectionConfigured { get; set; }
+
+    public List<string> ExcludedLibraries { get; set; } = [];
+
+    public IReadOnlyList<string> LibraryExclusions(SchedularrTV.Core.Media.ILibraryScope? legacyScope) =>
+        LibrarySelectionConfigured ? ExcludedLibraries : legacyScope?.ExcludedLibraries ?? [];
+
     public int PageSize { get; set; } = 500;
 
     /// <summary>

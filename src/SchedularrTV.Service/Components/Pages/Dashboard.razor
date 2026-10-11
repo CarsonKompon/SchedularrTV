@@ -8,6 +8,7 @@
 @inject IEnumerable<IMediaSourceInfo> MediaSources
 @inject ViewingStore Viewing
 @inject ViewingRecorder Recorder
+@inject LibraryBrowser Library
 @inject Microsoft.Extensions.Options.IOptionsMonitor<SchedularrTV.Providers.ErsatzTv.ErsatzTvOptions> Ersatz
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
@@ -116,18 +117,22 @@
             <dd><strong>@(HasRecentSample ? Recorder.Now.Values.Sum(viewers => viewers.Count).ToString("N0") : "—")</strong><span>@(HasRecentSample ? "watching" : "awaiting sample")</span></dd>
         </div>
         <div>
-            <dt>Guide coverage · earliest end</dt>
-            <dd><strong class="status-time">@(GuideThrough is { } through ? through.ToLocalTime().ToString("ddd HH:mm") : "—")</strong><span>@(GuideThrough is { } end && end <= DateTimeOffset.UtcNow ? "expired" : "scheduled")</span></dd>
+            <dt>Total TV shows</dt>
+            <dd><strong>@(_showCount?.ToString("N0") ?? "—")</strong><span>@(_episodeCount is { } episodes ? $"{episodes:N0} episodes" : "loading library")</span></dd>
         </div>
         <div>
-            <dt>Last schedule build</dt>
-            <dd><strong class="status-time">@(Coordinator.LastBuiltAt is { } built ? built.ToLocalTime().ToString("ddd HH:mm") : "—")</strong><span>@(Coordinator.IsBuilding ? "rebuilding" : "local time")</span></dd>
+            <dt>Total movies</dt>
+            <dd><strong>@(_movieCount?.ToString("N0") ?? "—")</strong><span>in library</span></dd>
         </div>
     </dl>
 </div>
 @if (_statsError is not null)
 {
     <div class="banner banner-warn" role="status">@_statsError</div>
+}
+@if (_libraryError is not null)
+{
+    <div class="banner banner-warn" role="status">@_libraryError</div>
 }
 
 @if (Editor.Warnings.Count > 0)
@@ -204,6 +209,8 @@
     <div class="banner banner-error" role="alert">@_rebuildError</div>
 }
 
+@if (!Coordinator.IsBuilding || Coordinator.LastBuiltAt is not null)
+{
 <section class="card" aria-label="Channel guide">
     <div class="card-head"><h2>Guide</h2><span class="muted">@AllSchedules.Count channels · Local time</span></div>
     @if (AllSchedules.Count > 0)
@@ -222,6 +229,7 @@
         </div>
     }
 </section>
+}
 
 @code {
     private readonly CancellationTokenSource _life = new();
@@ -231,11 +239,14 @@
     private bool _statsLoaded, _copyFailed;
     private string? _statsError, _copied, _rebuilding, _rebuildError;
     private DateTimeOffset _statsAt = DateTimeOffset.MinValue;
+    private int? _showCount, _movieCount;
+    private long? _episodeCount;
+    private string? _libraryError;
+    private int _libraryVersion;
 
     private IReadOnlyList<ChannelSchedule> AllSchedules => [.. Coordinator.Latest, .. Coordinator.External.Select(e => e.Schedule)];
     private int OnAirCount => AllSchedules.Count(s => s.Entries.Any(e => e.Start <= DateTimeOffset.UtcNow && e.End > DateTimeOffset.UtcNow));
     private string ChannelName(string id) => Editor.FindChannel(id)?.Name ?? Coordinator.External.FirstOrDefault(e => e.Schedule.ChannelId == id)?.Schedule.ChannelName ?? id;
-    private DateTimeOffset? GuideThrough => AllSchedules.Select(s => (DateTimeOffset?)s.End).Min();
     private bool HasRecentSample => Recorder.LastSample is { } sample && DateTimeOffset.UtcNow - sample < TimeSpan.FromMinutes(2);
     private string SampleDescription => Recorder.LastSample is { } sample ? $"Last sampled {sample.ToLocalTime():ddd HH:mm:ss}" : "No audience sample recorded yet";
     private static string Duration(long minutes) => minutes >= 60 ? $"{minutes / 60:N0}h {minutes % 60}m" : $"{minutes}m";
@@ -257,8 +268,34 @@
         _sources = [.. MediaSources];
         Coordinator.StateChanged += OnChanged;
         Editor.Changed += OnChanged;
+        Library.Changed += OnLibraryChanged;
         foreach (IMediaSourceInfo source in _sources) source.LoadingChanged += OnChanged;
         _ = PollAsync(_life.Token);
+        _ = LoadLibraryTotals(_life.Token);
+    }
+
+    private void OnLibraryChanged() => _ = InvokeAsync(() => LoadLibraryTotals(_life.Token));
+
+    private async Task LoadLibraryTotals(CancellationToken token)
+    {
+        int version = ++_libraryVersion;
+        try
+        {
+            var shows = await Library.GetShowsAsync(token);
+            var movies = await Library.GetMoviesAsync(token);
+            if (token.IsCancellationRequested || version != _libraryVersion) return;
+            _showCount = shows.Count;
+            _episodeCount = shows.Sum(show => (long)show.EpisodeCount);
+            _movieCount = movies.Count;
+            _libraryError = null;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
+        catch (Exception)
+        {
+            if (token.IsCancellationRequested || version != _libraryVersion) return;
+            _libraryError = "Library totals are unavailable. Check your media source plugins.";
+        }
+        if (!token.IsCancellationRequested) await InvokeAsync(StateHasChanged);
     }
 
     private void OnChanged() => _ = InvokeAsync(StateHasChanged);
@@ -331,6 +368,7 @@
     {
         Coordinator.StateChanged -= OnChanged;
         Editor.Changed -= OnChanged;
+        Library.Changed -= OnLibraryChanged;
         foreach (IMediaSourceInfo source in _sources) source.LoadingChanged -= OnChanged;
         _life.Cancel();
         _life.Dispose();

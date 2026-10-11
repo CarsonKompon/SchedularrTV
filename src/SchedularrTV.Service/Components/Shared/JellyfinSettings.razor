@@ -1,5 +1,7 @@
-@* Jellyfin address, key and a connection test; shared by App settings and the setup wizard. *@
+@* Jellyfin plugin settings; connection fields are also used during initial setup. *@
 @using SchedularrTV.Service.Hosting
+@using SchedularrTV.Providers.Jellyfin
+@inject IEnumerable<IMediaSourceInfo> Sources
 @implements IDisposable
 
 <div class="grid grid-2">
@@ -34,6 +36,37 @@
     In Jellyfin, open <strong>Dashboard → API Keys</strong>, press <strong>+</strong>, name it "SchedularrTV" and paste the key here.
 </p>
 
+@if (ShowUser)
+{
+    <h3>Libraries</h3>
+    <p class="hint">Select libraries to include. Exclude duplicate or cache libraries to avoid repeated content.</p>
+    @if (_loadingLibraries)
+    {
+        <p class="hint" role="status">Loading libraries…</p>
+    }
+    else
+    {
+        @foreach (MediaSourceLibrary library in _libraries)
+        {
+            <label class="check">
+                <input type="checkbox" checked="@(!Form.JellyfinExcludedLibraries.Contains(library.Name, StringComparer.OrdinalIgnoreCase))"
+                       @onchange="e => ToggleLibrary(library.Name, e.Value is true)" />
+                <span>@library.Name @if (library.Detail is not null) { <span class="opt">@library.Detail</span> }</span>
+            </label>
+        }
+        @if (_libraryError is not null)
+        {
+            <p class="hint warn" role="status">@_libraryError</p>
+        }
+        else if (_libraries.Count == 0)
+        {
+            <p class="hint">No libraries found on the saved connection.</p>
+        }
+    }
+    <button class="btn btn-sm" type="button" disabled="@_loadingLibraries" @onclick="LoadLibraries">Refresh libraries</button>
+    <p class="hint">Save connection changes before refreshing. Saving library selection refreshes the library and rebuilds schedules.</p>
+}
+
 @code {
     [Parameter, EditorRequired] public AppSettingsForm Form { get; set; } = default!;
     [Parameter] public EventCallback Changed { get; set; }
@@ -45,6 +78,36 @@
 
     private readonly CancellationTokenSource _life = new();
     private bool _testing;
+    private bool _loadingLibraries;
+    private IReadOnlyList<MediaSourceLibrary> _libraries = [];
+    private string? _libraryError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (ShowUser) await LoadLibraries();
+    }
+
+    private async Task LoadLibraries()
+    {
+        _loadingLibraries = true;
+        _libraryError = null;
+        try
+        {
+            if (Sources.OfType<JellyfinMediaLibrary>().FirstOrDefault() is { IsConfigured: true } source)
+                _libraries = await source.GetLibrariesAsync(_life.Token);
+            else
+                _libraryError = "Enable Jellyfin and save its connection settings to choose libraries.";
+        }
+        catch (OperationCanceledException) when (_life.IsCancellationRequested) { }
+        catch (Exception ex) { _libraryError = $"Couldn't load Jellyfin libraries: {ex.Message}"; }
+        finally { _loadingLibraries = false; }
+    }
+
+    private Task ToggleLibrary(string name, bool include) => Edit(() =>
+    {
+        Form.JellyfinExcludedLibraries.RemoveAll(value => string.Equals(value, name, StringComparison.OrdinalIgnoreCase));
+        if (!include) Form.JellyfinExcludedLibraries.Add(name);
+    });
 
     private async Task Edit(Action change)
     {

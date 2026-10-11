@@ -64,6 +64,50 @@ public sealed class LiveSettingsTests : IDisposable
     }
 
     [Fact]
+    public void Jellyfin_library_selection_preserves_legacy_defaults_and_saves_an_explicit_empty_selection()
+    {
+        string settings = Path.Combine(_data, "settings.json");
+        File.WriteAllText(settings, "{}");
+        IConfigurationRoot configuration = new ConfigurationBuilder().AddJsonFile(settings, optional: false).Build();
+        var services = new ServiceCollection();
+        services.Configure<SchedularrTV.Providers.Jellyfin.JellyfinOptions>(configuration.GetSection("Jellyfin"));
+        services.Replace(ServiceDescriptor.Singleton(typeof(IOptions<>), typeof(LiveOptions<>)));
+        using ServiceProvider provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<SchedularrTV.Providers.Jellyfin.JellyfinOptions>>();
+        var runtime = new AppRuntime(_data, _data, null!, configuration);
+        var legacy = new LegacyScope();
+        var form = new AppSettingsForm(runtime, configuration, options,
+            Options.Create(new SchedularrTV.Providers.FileSystem.FileSystemLibraryOptions()),
+            Options.Create(new SchedularrTV.Providers.ErsatzTv.ErsatzTvOptions()), null!, libraryScope: legacy);
+
+        form.Load();
+        Assert.Equal(["DVR"], form.JellyfinExcludedLibraries);
+        form.Save(); // Saving unrelated settings must not override the legacy selection.
+        Assert.False(options.Value.LibrarySelectionConfigured);
+
+        form.JellyfinExcludedLibraries.Clear();
+        form.Load(); // Cancel/reopen keeps the saved selection.
+        Assert.Equal(["DVR"], form.JellyfinExcludedLibraries);
+        form.JellyfinExcludedLibraries.Add("Duplicates");
+        form.Save();
+        Assert.True(options.Value.LibrarySelectionConfigured);
+        Assert.Equal(["DVR", "Duplicates"], options.Value.LibraryExclusions(legacy));
+
+        form.JellyfinExcludedLibraries.Clear();
+        form.Save();
+        Assert.True(options.Value.LibrarySelectionConfigured);
+        Assert.Empty(options.Value.LibraryExclusions(legacy));
+        form.Load();
+        Assert.Empty(form.JellyfinExcludedLibraries);
+        Assert.Equal(["DVR"], legacy.ExcludedLibraries);
+    }
+
+    private sealed class LegacyScope : SchedularrTV.Core.Media.ILibraryScope
+    {
+        public IReadOnlyList<string> ExcludedLibraries => ["DVR"];
+    }
+
+    [Fact]
     public async Task A_combined_library_asks_for_its_sources_on_each_use()
     {
         List<SchedularrTV.Core.Media.IMediaLibrary> sources = [];

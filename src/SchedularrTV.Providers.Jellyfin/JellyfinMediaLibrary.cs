@@ -81,7 +81,7 @@ public sealed class JellyfinMediaLibrary(
             return [];
         }
 
-        string[] excluded = [.. scope?.ExcludedLibraries ?? []];
+        string[] excluded = [.. _options.LibraryExclusions(scope)];
         // The server and user are part of it too, so pointing App settings at another server reloads at once.
         string scopeKey = string.Join('\u001f', new[] { _options.BaseUrl, _options.UserId ?? string.Empty }.Concat(excluded));
 

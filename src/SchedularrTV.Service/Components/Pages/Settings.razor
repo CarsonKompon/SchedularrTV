@@ -3,14 +3,13 @@
 @using System.IO
 @using Microsoft.Extensions.Options
 @using SchedularrTV.Providers.FileSystem
-@inject IEnumerable<IMediaSourceInfo> MediaSources
 @inject IOptions<FileSystemLibraryOptions> MediaFolders
 @inject IServiceProvider Services
 @inject LibraryBrowser Browser
 @inject ScheduleCoordinator Coordinator
 @inject IEnumerable<PluginEditorSection> EditorSections
 
-<PageHeader Title="Settings" Eyebrow="System">Global defaults for channels and blocks.</PageHeader>
+<PageHeader Title="Channel settings" Eyebrow="System">Global defaults for channels and blocks.</PageHeader>
 <UpdateBanner />
 
 <div class="card">
@@ -96,56 +95,7 @@
 </div>
 
 <div class="card">
-    <div class="card-head"><h2>Libraries</h2></div>
-    <p class="hint">
-        Select libraries to include. Exclude duplicate or cache libraries to avoid repeated content.
-    </p>
-
-    @if (_libraries is null)
-    {
-        <p class="hint">Loading libraries…</p>
-    }
-    else
-    {
-        @foreach ((string source, IReadOnlyList<MediaSourceLibrary> libraries) in _libraries)
-        {
-            @if (_libraries.Count > 1)
-            {
-                <h3>@source</h3>
-            }
-
-            @foreach (MediaSourceLibrary library in libraries)
-            {
-                <label class="check">
-                    <input type="checkbox" checked="@IsIncluded(library.Name)"
-                           @onchange="e => ToggleLibrary(library.Name, (bool)(e.Value ?? true))" />
-                    <span>
-                        @library.Name
-                        @if (library.Detail is not null)
-                        {
-                            <span class="opt">@library.Detail</span>
-                        }
-                    </span>
-                </label>
-            }
-        }
-
-        @foreach (string error in _libraryErrors)
-        {
-            <div class="empty">@error</div>
-        }
-
-        @if (_libraries.Count == 0 && _libraryErrors.Count == 0)
-        {
-            <p class="hint">No media server with libraries to choose from is set up.</p>
-        }
-        else if (_libraries.Count > 0)
-        {
-            <p class="hint">Save, then Rescan on the TV Shows page to apply.</p>
-        }
-    }
-
-    <h3>Local folders</h3>
+    <div class="card-head"><h2>Local folders</h2></div>
     <p class="hint">
         Folders on disk holding TV shows, movies, adverts, bumpers and promos. Add or change them under
         <a href="settings/app">App settings</a>.
@@ -217,8 +167,6 @@
     private SchedulerSettings Global => Editor.Working.Settings;
     private TemporalTagOptions Temporal => Global.TemporalTags;
 
-    private List<(string Source, IReadOnlyList<MediaSourceLibrary> Libraries)>? _libraries;
-    private readonly List<string> _libraryErrors = [];
     private bool _rescanning;
     private string? _rescanMessage;
 
@@ -254,44 +202,6 @@
 
     private static string Humanise(TimeSpan value) =>
         value.TotalHours >= 1 ? $"{value.TotalHours:0.#} hours" : $"{value.TotalMinutes:0} minutes";
-
-    protected override async Task OnInitializedAsync()
-    {
-        List<(string, IReadOnlyList<MediaSourceLibrary>)> found = [];
-        foreach (IMediaSourceInfo source in MediaSources.Where(source => source.IsConfigured))
-        {
-            try
-            {
-                IReadOnlyList<MediaSourceLibrary> libraries = await source.GetLibrariesAsync(CancellationToken.None);
-                if (libraries.Count > 0)
-                {
-                    found.Add((source.Name, libraries));
-                }
-            }
-            catch (Exception ex)
-            {
-                // The rest of settings stays usable when a media server is unreachable.
-                _libraryErrors.Add($"Could not reach {source.Name} to list libraries: {ex.Message} Check the connection under App settings.");
-            }
-        }
-
-        _libraries = found;
-    }
-
-    private bool IsIncluded(string name) =>
-        !Global.ExcludedLibraries.Contains(name, StringComparer.OrdinalIgnoreCase);
-
-    private void ToggleLibrary(string name, bool include)
-    {
-        Global.ExcludedLibraries.RemoveAll(l => string.Equals(l, name, StringComparison.OrdinalIgnoreCase));
-
-        if (!include)
-        {
-            Global.ExcludedLibraries.Add(name);
-        }
-
-        Editor.MarkDirty();
-    }
 
     private void OnTimeZoneChanged(ChangeEventArgs e)
     {

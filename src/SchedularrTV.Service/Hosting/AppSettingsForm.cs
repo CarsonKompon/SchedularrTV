@@ -26,7 +26,8 @@ public sealed class AppSettingsForm(
     ScheduleRebuildService? rebuilds = null,
     SchedularrTV.Service.Editor.LibraryBrowser? library = null,
     IEnumerable<SchedularrTV.Core.Media.IMediaSourceInfo>? sources = null,
-    SchedularrTV.Plugins.Playout.IScheduleRepublisher? republisher = null)
+    SchedularrTV.Plugins.Playout.IScheduleRepublisher? republisher = null,
+    SchedularrTV.Core.Media.ILibraryScope? libraryScope = null)
 {
     public const string OnboardingKey = "Onboarding:Completed";
 
@@ -47,6 +48,8 @@ public sealed class AppSettingsForm(
     public bool JellyfinKeySet { get; private set; }
 
     public string JellyfinUser { get; set; } = string.Empty;
+    public List<string> JellyfinExcludedLibraries { get; private set; } = [];
+    private List<string> _originalJellyfinExcludedLibraries = [];
 
     public bool ErsatzManage { get; set; }
 
@@ -144,6 +147,8 @@ public sealed class AppSettingsForm(
         JellyfinKey = string.Empty;
         JellyfinKeySet = !string.IsNullOrWhiteSpace(jellyfin.Value.ApiKey);
         JellyfinUser = jellyfin.Value.UserId ?? string.Empty;
+        JellyfinExcludedLibraries = [.. jellyfin.Value.LibraryExclusions(libraryScope)];
+        _originalJellyfinExcludedLibraries = [.. JellyfinExcludedLibraries];
 
         ErsatzManage = ersatz.Value.ManageProcess;
         ErsatzExe = ersatz.Value.ExecutablePath ?? string.Empty;
@@ -185,6 +190,12 @@ public sealed class AppSettingsForm(
 
         SetIfChanged(file, "Jellyfin:BaseUrl", JellyfinUrl);
         SetIfChanged(file, "Jellyfin:UserId", JellyfinUser);
+        bool librarySelectionChanged = !JellyfinExcludedLibraries.SequenceEqual(_originalJellyfinExcludedLibraries, StringComparer.OrdinalIgnoreCase);
+        if (librarySelectionChanged)
+        {
+            AppSettingsFile.Set(file, "Jellyfin:LibrarySelectionConfigured", JsonValue.Create(true));
+            AppSettingsFile.Set(file, "Jellyfin:ExcludedLibraries", JsonSerializer.SerializeToNode(JellyfinExcludedLibraries));
+        }
         if (!string.IsNullOrWhiteSpace(JellyfinKey))
         {
             AppSettingsFile.Set(file, "Jellyfin:ApiKey", JsonValue.Create(JellyfinKey.Trim()));
@@ -233,7 +244,7 @@ public sealed class AppSettingsForm(
             AppSettingsFile.Set(file, OnboardingKey, JsonValue.Create(true));
         }
 
-        bool sourcesChanged = FoldersChanged || !string.IsNullOrWhiteSpace(JellyfinKey)
+        bool sourcesChanged = librarySelectionChanged || FoldersChanged || !string.IsNullOrWhiteSpace(JellyfinKey)
             || _original.Keys.Any(key => key.StartsWith("Jellyfin:", StringComparison.Ordinal) && _original[key] != Current(key))
             || Ffprobe != _original["GeneratedPromos:FfprobePath"];
         runtime.SaveSettings(file);
@@ -273,6 +284,7 @@ public sealed class AppSettingsForm(
         }
 
         FoldersChanged = false;
+        _originalJellyfinExcludedLibraries = [.. JellyfinExcludedLibraries];
     }
 
     /// <summary>Asks Jellyfin who it is, with the typed key or else the saved one.</summary>

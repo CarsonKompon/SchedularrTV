@@ -215,6 +215,19 @@ else if (Registry.RestartRequired)
 
     protected override void OnInitialized() => Registry.Changed += OnRegistryChanged;
 
+    [SupplyParameterFromQuery(Name = "plugin")] public string? RequestedPlugin { get; set; }
+    private string? _openedFromQuery;
+
+    protected override void OnParametersSet()
+    {
+        if (Local.IsLocal && RequestedPlugin is { Length: > 0 } id && id != _openedFromQuery
+            && Registry.Plugins.FirstOrDefault(candidate => candidate.Id == id) is { } plugin && HasSettings(plugin))
+        {
+            _openedFromQuery = id;
+            OpenSettings(plugin);
+        }
+    }
+
     private void OnRegistryChanged() => InvokeAsync(StateHasChanged);
 
     public void Dispose() => Registry.Changed -= OnRegistryChanged;
