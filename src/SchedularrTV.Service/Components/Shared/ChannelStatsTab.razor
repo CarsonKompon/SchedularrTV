@@ -36,7 +36,11 @@
     </div>
 </div>
 
-@if (_report is not { } report)
+@if (_refreshError is not null)
+{
+    <div class="banner banner-error" role="alert">@_refreshError <button class="btn btn-sm" @onclick="Refresh">Retry</button></div>
+}
+else if (_report is not { } report)
 {
     <div class="card"><p class="muted">Loading…</p></div>
 }
@@ -46,8 +50,7 @@ else if (report.HistoryStart is null)
         <Icon Name="activity" Size="28" />
         <h2>No viewing recorded yet</h2>
         <p class="muted">
-            Every minute, SchedularrTV notes what this channel is airing and who's watching it, from @SourcesText.
-            Stats appear here once the channel has been on air for a little while.
+            Viewing is sampled every minute from @SourcesText. Stats appear after the channel starts airing.
         </p>
     </div>
 }
@@ -556,6 +559,9 @@ else
     private StatsPeriod _period = StatsPeriod.Find("week");
     private ChannelStatsReport? _report;
     private string? _loadedFor;
+    private int _refreshVersion;
+    private bool _disposed;
+    private string? _refreshError;
 
     private string _plexUrl = string.Empty;
     private string _plexToken = string.Empty;
@@ -579,33 +585,48 @@ else
         LoadSettings();
     }
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         if (_loadedFor != Channel.Id)
         {
             _loadedFor = Channel.Id;
             _confirmClear = false;
-            Refresh();
+            await Refresh();
         }
     }
 
-    private void Pick(StatsPeriod period)
+    private async Task Pick(StatsPeriod period)
     {
         _period = period;
-        Refresh();
+        _report = null;
+        await Refresh();
     }
 
-    private void Refresh()
+    private async Task Refresh()
     {
-        TimeZoneInfo zone = string.IsNullOrWhiteSpace(TimeZoneId) ? TimeZoneInfo.Local : SchedularrTV.Core.Scheduling.SchedulingEngine.ResolveTimeZone(TimeZoneId);
-        _report = ChannelStats.Build(Store, Channel.Id, _period, Clock.GetUtcNow(), zone);
-        _aware = Preferences.Status(Channel, fresh: true);
+        if (_disposed) return;
+        int version = ++_refreshVersion;
+        ChannelConfig channel = Channel;
+        StatsPeriod period = _period;
+        _refreshError = null;
+        try
+        {
+            TimeZoneInfo zone = string.IsNullOrWhiteSpace(TimeZoneId) ? TimeZoneInfo.Local : SchedularrTV.Core.Scheduling.SchedulingEngine.ResolveTimeZone(TimeZoneId);
+            var result = await Task.Run(() => (ChannelStats.Build(Store, channel.Id, period, Clock.GetUtcNow(), zone), Preferences.Status(channel, fresh: true)));
+            if (_disposed || version != _refreshVersion) return;
+            _report = result.Item1;
+            _aware = result.Item2;
+        }
+        catch (Exception ex)
+        {
+            if (!_disposed && version == _refreshVersion) _refreshError = $"Couldn't load stats: {ex.Message}";
+        }
     }
 
-    private void OnSampled() => _ = InvokeAsync(() =>
+    private void OnSampled() => _ = InvokeAsync(async () =>
     {
-        Refresh();
-        StateHasChanged();
+        await Refresh();
+        if (!_disposed) StateHasChanged();
     });
 
     /// <summary>Every media server that can say who's watching (Jellyfin's plugin, Plex, any other), then ErsatzTV's direct players.</summary>
@@ -663,7 +684,7 @@ else
         try
         {
             await Recorder.SampleAsync(CancellationToken.None);
-            Refresh();
+            await Refresh();
             _message = Audience.Problems.Count == 0 ? "All sources answered" : null;
         }
         finally
@@ -672,11 +693,12 @@ else
         }
     }
 
-    private void Clear()
+    private async Task Clear()
     {
-        Store.Clear(Channel.Id);
+        string id = Channel.Id;
+        await Task.Run(() => Store.Clear(id));
         _confirmClear = false;
-        Refresh();
+        await Refresh();
     }
 
     /// <summary>
@@ -731,5 +753,9 @@ else
         }
     }
 
-    public void Dispose() => Recorder.Sampled -= OnSampled;
+    public void Dispose()
+    {
+        _disposed = true;
+        Recorder.Sampled -= OnSampled;
+    }
 }

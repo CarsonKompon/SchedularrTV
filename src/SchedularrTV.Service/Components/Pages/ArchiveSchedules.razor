@@ -9,7 +9,7 @@
 @inject NavigationManager Navigation
 
 <PageHeader Title="Archive schedules" Eyebrow="Archive Follow">
-    <ChildContent>See what an archive aired on any day, correct it, or build days of your own for a channel to follow.</ChildContent>
+    <ChildContent>Browse and edit daily archive schedules.</ChildContent>
 </PageHeader>
 
 @if (!Registry.IsActive(BuiltInPluginIds.ArchiveFollow))
@@ -45,8 +45,7 @@ else
             </label>
         </div>
         <p class="hint">
-            Each day is a file at <code>YYYY/MM/YYYY-MM-DD.json</code> in the folder. Pick an empty folder to start a new archive:
-            days you save here are written in the same format, and their block labels added to <code>_block_index.json</code>.
+            Daily files use <code>YYYY/MM/YYYY-MM-DD.json</code>. Choose an empty folder to start an archive.
         </p>
         @if (_folderError is not null)
         {

@@ -6,15 +6,14 @@
 
 <PageHeader Title="Import channels" Eyebrow="Programming">
     <ChildContent>
-        Coming from ErsatzTV or Tunarr? Bring your channels over: their schedules, shows, collections, filler and logos, set up as
-        SchedularrTV channels from your Jellyfin library. Nothing in the other app is changed.
+        Import ErsatzTV or Tunarr channels using your Jellyfin library. Source files are unchanged.
     </ChildContent>
 </PageHeader>
 
 @if (!Local.IsLocal)
 {
     <div class="banner banner-warn" role="status">
-        For safety, importing reads files on the computer running the scheduler, so it's only offered in a browser on that computer.
+        Open this page on the scheduler's computer to import local files.
     </div>
 }
 else
@@ -63,8 +62,7 @@ else
                     : "It isn't in the usual place on this computer. In Docker it's in the folder mapped to /config/tunarr; copy db.db and the channel-lineups folder beside it.")
             </p>
         }
-        <p class="hint">Read from a copy, so the other app can stay running. Programmes are matched to your Jellyfin library by Jellyfin's ids, then by
-            their files, then by show and episode (or a film's title and year), so a library from Plex works too as long as Jellyfin has the same media.</p>
+        <p class="hint">Media is matched by ID, file, then title and episode. Jellyfin must contain the imported media.</p>
 
         <div class="row" style="gap:8px;">
             <button class="btn btn-primary" type="button" disabled="@(_reading || string.IsNullOrWhiteSpace(_path))" @onclick="ReadAsync">

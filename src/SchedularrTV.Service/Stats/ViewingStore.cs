@@ -37,6 +37,8 @@ public sealed record WatchedMinute(long Minute, int Viewers);
 /// <summary>Someone's (or a direct player's) minute on a channel.</summary>
 public sealed record ViewerMinute(long Minute, string Name, string Via);
 
+public sealed record ChannelViewingTotal(string ChannelId, long ViewerMinutes);
+
 /// <summary>
 /// The viewing history: a small SQLite database in the data folder (<c>stats/viewing.db</c>).
 /// <list type="bullet">
@@ -185,6 +187,27 @@ public sealed class ViewingStore
         }
 
         return rows;
+    }
+
+    /// <summary>Channels ranked by viewer-minutes within retained history, with an exclusive upper bound.</summary>
+    public IReadOnlyList<ChannelViewingTotal> ChannelTotals(long fromMinute, long toMinute)
+    {
+        List<ChannelViewingTotal> totals = [];
+        lock (_gate)
+        {
+            using SqliteConnection db = Open();
+            using SqliteCommand command = db.CreateCommand();
+            command.CommandText = """
+                SELECT channel, SUM(viewers) AS total FROM watched
+                WHERE minute >= $from AND minute < $to
+                GROUP BY channel ORDER BY total DESC, channel ASC
+                """;
+            command.Parameters.AddWithValue("$from", fromMinute);
+            command.Parameters.AddWithValue("$to", toMinute);
+            using SqliteDataReader reader = command.ExecuteReader();
+            while (reader.Read()) totals.Add(new ChannelViewingTotal(reader.GetString(0), reader.GetInt64(1)));
+        }
+        return totals;
     }
 
     public IReadOnlyList<WatchedMinute> Watched(string channelId, long fromMinute)

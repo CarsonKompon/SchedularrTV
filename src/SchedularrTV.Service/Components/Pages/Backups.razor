@@ -5,8 +5,7 @@
 
 <PageHeader Title="Backups" Eyebrow="System">
     <ChildContent>
-        Earlier versions of schedule.yaml, put aside automatically before every change: saves here, the API, restores and edits
-        made to the file outside SchedularrTV. The newest @Provider.Backups.Keep are kept, in <code>@Provider.Backups.Folder</code>.
+        Keeps the latest @Provider.Backups.Keep versions of schedule.yaml in <code>@Provider.Backups.Folder</code>.
     </ChildContent>
     <Actions>
         <button class="btn" type="button" disabled="@(!Provider.Backups.Enabled)" @onclick="BackUpNow"><Icon Name="save" Size="15" />Back up now</button>
@@ -65,9 +64,8 @@ else
                     <span class="pill pill-muted">@selected.Describe()</span>
                 </div>
                 <p class="hint" style="margin-top:0;">
-                    What the schedule was just before that change. <strong>Restore</strong> writes it back exactly as it was (what's there now is
-                    backed up first, so a restore can be undone too). <strong>Open in the editor</strong> loads it as unsaved changes to look over or
-                    adjust before saving.
+                    <strong>Restore</strong> replaces the schedule and backs up the current version.
+                    <strong>Open in the editor</strong> loads it for review before saving.
                 </p>
                 <div class="row row-wrap" style="gap:8px;margin-bottom:12px;">
                     @if (_confirmRestore)

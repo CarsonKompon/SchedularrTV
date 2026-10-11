@@ -13,7 +13,6 @@
             <span class="brand-mark"><Icon Name="tv" Size="18" /></span>
             <span class="brand-text">
                 <span class="brand-name">SchedularrTV</span>
-                <span class="brand-sub">Local TV like it used to be</span>
                 <span class="brand-version" title="Version @SchedularrTV.Service.Hosting.AppRuntime.Version">@VersionBadge</span>
             </span>
         </a>
@@ -75,7 +74,7 @@
         <div class="content-inner">
             @if (Editor.SaveError is not null)
             {
-                <div class="banner banner-error">@Editor.SaveError</div>
+                <div class="banner banner-error" role="alert">@Editor.SaveError</div>
             }
             @if (Editor.Errors.Count > 0)
             {
@@ -95,10 +94,14 @@
     <div class="save-dock" role="region" aria-label="Unsaved changes">
         <div class="save-dock-text">
             <span class="status-dot warn"></span>
-            <span>Unsaved changes</span>
+            <span role="status">@(Editor.IsBusy ? "Applying changes…" : "Unsaved changes")</span>
         </div>
-        <button class="btn btn-sm btn-ghost" @onclick="Editor.Reload"><Icon Name="undo" Size="14" />Discard</button>
-        <button class="btn btn-sm btn-primary" @onclick="Save"><Icon Name="save" Size="14" />Save changes</button>
+        <button class="btn btn-sm btn-ghost" type="button" disabled="@Editor.IsBusy" @onclick="Editor.ReloadAsync"><Icon Name="undo" Size="14" />Discard</button>
+        <button class="btn btn-sm btn-primary" type="button" disabled="@Editor.IsBusy" @onclick="Save"><Icon Name="save" Size="14" />Save changes</button>
+        @if (Editor.SaveError is not null || Editor.Errors.Count > 0)
+        {
+            <span class="field-error" role="alert">Not saved. Review the errors above.</span>
+        }
     </div>
 }
 
@@ -170,7 +173,7 @@
 
     private async Task Save()
     {
-        if (!Editor.Save())
+        if (!await Editor.SaveAsync())
         {
             return;
         }
@@ -178,7 +181,7 @@
         _toast?.Cancel();
         _toast = new CancellationTokenSource();
         CancellationToken token = _toast.Token;
-        _saveMessage = "Changes saved";
+        _saveMessage = Editor.IsDirty ? "Saved. Newer edits are still unsaved." : "Changes saved";
 
         try
         {

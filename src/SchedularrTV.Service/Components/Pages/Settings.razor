@@ -10,7 +10,7 @@
 @inject ScheduleCoordinator Coordinator
 @inject IEnumerable<PluginEditorSection> EditorSections
 
-<PageHeader Title="Settings" Eyebrow="System">Global defaults. Channels and blocks override anything here.</PageHeader>
+<PageHeader Title="Settings" Eyebrow="System">Global defaults for channels and blocks.</PageHeader>
 <UpdateBanner />
 
 <div class="card">
@@ -98,8 +98,7 @@
 <div class="card">
     <div class="card-head"><h2>Libraries</h2></div>
     <p class="hint">
-        Which of your media servers' libraries the scheduler draws from. Unticking one hides its content everywhere,
-        which is the fix for a show that appears twice because a DVR or cache library holds its own copy.
+        Select libraries to include. Exclude duplicate or cache libraries to avoid repeated content.
     </p>
 
     @if (_libraries is null)

@@ -134,6 +134,28 @@ public class StatsTests : IDisposable
     // --- The report ----------------------------------------------------------------------------------------------
 
     [Fact]
+    public void Dashboard_totals_rank_viewer_time_and_respect_exact_window_and_retention()
+    {
+        var store = new ViewingStore(Path.Combine(_folder, "viewing.db"));
+        MinuteSample sample = Sample(1000, 59_000, "Show", [new Viewer("one", "Direct")]);
+        store.Record([
+            sample with { Minute = 999, ChannelId = "old", Viewers = 20 },
+            sample with { ChannelId = "alpha", Viewers = 2 },
+            sample with { ChannelId = "beta", Viewers = 3 },
+            sample with { Minute = 1001, ChannelId = "alpha", Viewers = 2 },
+            sample with { Minute = 1002, ChannelId = "future", Viewers = 50 },
+            sample with { ChannelId = "unwatched", Viewers = 0 }
+        ]);
+        Assert.Equal(new[] { new ChannelViewingTotal("alpha", 4), new ChannelViewingTotal("beta", 3) }, store.ChannelTotals(1000, 1002));
+        Assert.Equal("old", store.ChannelTotals(0, 1002)[0].ChannelId);
+        store.Prune(1000);
+        Assert.Equal("alpha", store.ChannelTotals(0, 1002)[0].ChannelId);
+        store.Clear("alpha");
+        Assert.Equal("beta", Assert.Single(store.ChannelTotals(1000, 1002)).ChannelId);
+        Assert.Empty(store.ChannelTotals(2000, 3000));
+    }
+
+    [Fact]
     public void Report_finds_peak_sessions_and_most_and_least_watched()
     {
         // 60 minutes of Space Show (watched 30 of them, two people for 10), then a 5 minute break (left during it),

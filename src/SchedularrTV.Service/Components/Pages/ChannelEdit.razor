@@ -80,14 +80,15 @@ else
     }
 
     <div @key="_channel">
-    <div class="tabs" role="tablist">
+    <nav class="tabs channel-tabs" aria-label="Channel sections">
         @foreach ((string key, string label, string icon) in AllTabs)
         {
-            <button type="button" role="tab" class="tab @(_tab == key ? "active" : "")" aria-selected="@(_tab == key ? "true" : "false")"
-                    @onclick="() => SelectTab(key)"><Icon Name="@icon" Size="15" />@label</button>
+            <a class="tab @(_tab == key ? "active" : "")" aria-current="@(_tab == key ? "page" : null)"
+               href="@Nav.GetUriWithQueryParameter("tab", key == "general" ? null : key)"><Icon Name="@icon" Size="15" />@label</a>
         }
-    </div>
+    </nav>
 
+    <div @key="_tab">
     @if (_tab == "general")
     {
         <div class="card">
@@ -177,9 +178,7 @@ else
                 <span>Play around the clock (24/7)</span>
             </label>
             <p class="hint">
-                Normally a channel only starts when someone tunes in and stops 90 seconds after they leave. A 24/7 channel
-                keeps playing all the time, so tuning in is instant and lands mid-programme, but ErsatzTV transcodes it
-                non-stop. See <a href="performance">Performance</a> for what that costs.
+                24/7 playback tunes in faster but transcodes continuously. See <a href="performance">Performance</a> for resource use.
             </p>
             @if (_channel.AlwaysOn == true)
             {
@@ -191,8 +190,7 @@ else
                     </select>
                 </label>
                 <p class="hint">
-                    Keeping a channel playing looks the same to ErsatzTV as someone watching it, so real viewers can't be told
-                    apart. Pick how the watched-only features should treat it. It's never counted as a viewer in the stats.
+                    Choose how watched-only features treat 24/7 playback. Keep-alive playback is excluded from viewing stats.
                 </p>
                 @if (AlwaysOn.Statuses.FirstOrDefault(candidate => candidate.Number == _channel.Number) is { } status)
                 {
@@ -238,9 +236,7 @@ else
                 </label>
             </div>
             <p class="hint">
-                How ErsatzTV encodes this channel. Default uses the defaults in
-                <a href="settings/app">App settings › Hardware and video encoding</a>; anything chosen here overrides them for this
-                channel only. Saving a change restarts ErsatzTV, so anyone watching drops for a few seconds.
+                Overrides <a href="settings/app">app encoding defaults</a>. Saving encoding changes restarts ErsatzTV and briefly interrupts viewers.
             </p>
         </div>
 
@@ -262,9 +258,7 @@ else
                 <span>Fill a slot with more episodes of the same show</span>
             </label>
             <p class="hint">
-                For short-form shows: two 11-minute episodes make a half-hour slot instead of one
-                episode and 19 minutes of adverts. Only whole episodes are added, and the leftover is
-                shared out as breaks between them.
+                Adds whole episodes to fill a slot, with breaks between them.
             </p>
 
             <label class="field">
@@ -272,8 +266,7 @@ else
                 <input type="datetime-local" value="@AnchorText()" @onchange="SetAnchor" />
             </label>
             <p class="hint">
-                Slot boundaries are measured from here, and a rebuild resumes on a boundary rather than
-                at the moment it runs, so regenerating never knocks the schedule off the grid.
+                Slot boundaries and rebuilds align to this time.
             </p>
 
             <label class="check">
@@ -286,8 +279,7 @@ else
         <div class="card">
             <div class="card-head"><h2>Rotation position</h2></div>
             <p class="hint">
-                Each collection remembers the last thing it played and carries on from there, so adding
-                episodes or editing a collection will not send the channel back to the first episode.
+                Reset to start each collection from its first episode.
             </p>
             <div class="row row-wrap">
                 <button class="btn btn-sm btn-danger" type="button" disabled="@_resetting" @onclick="ResetRotation">
@@ -333,7 +325,7 @@ else
         @if (_channel.Interstitials is null)
         {
             <div class="card">
-                <p>This channel has no interstitial configuration; it inherits the global one.</p>
+                <p>Using global break settings.</p>
                 <button class="btn btn-primary" @onclick="() => { _channel.Interstitials = new InterstitialsConfig(); Editor.MarkDirty(); }">
                     Configure for this channel
                 </button>
@@ -376,6 +368,7 @@ else
         @* Promos, Generated Promos, Archive Follow and any installed plugin's channel tab. *@
         <DynamicComponent @key="pluginSection.Id" Type="pluginSection.Component" Parameters="SectionParameters(pluginSection)" />
     }
+    </div>
     </div>
 }
 
@@ -575,15 +568,9 @@ else
         _tab = Tab is { Length: > 0 } wanted && AllTabs.Any(tab => tab.Key == wanted) ? wanted : "general";
     }
 
-    private void SelectTab(string key)
-    {
-        _tab = key;
-        // Replaces the history entry rather than adding one, so Back still leaves the channel.
-        Nav.NavigateTo(Nav.GetUriWithQueryParameter("tab", key == "general" ? null : key), replace: true);
-    }
-
     protected override void OnInitialized()
     {
+        base.OnInitialized();
         _channel = Editor.FindChannel(ChannelId);
         _commercialTags = _channel?.CommercialBaseTags ?? [];
     }

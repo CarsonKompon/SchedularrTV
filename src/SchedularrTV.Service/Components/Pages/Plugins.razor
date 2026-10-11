@@ -9,7 +9,7 @@
 @inject NavigationManager Navigation
 
 <PageHeader Title="Plugins" Eyebrow="System">
-    <ChildContent>Media sources, outputs, features and voices. Switches and settings apply straight away; installing or removing a plugin takes a restart.</ChildContent>
+    <ChildContent>Settings apply immediately. Installs and removals require a restart.</ChildContent>
     <Actions>
         @if (Local.IsLocal)
         {
@@ -39,9 +39,7 @@ else if (Registry.RestartRequired)
     @if (Local.IsLocal)
     {
         <p class="hint">
-            Choose a plugin's <code>.zip</code>, or the all-plugins zip from a release to install all of them at once (Generated
-            promos, the TikTok, MiniMax and Piper voices, web page channels and more). Plugins run with the same access to this computer as the scheduler
-            itself, so only install ones you trust.
+            Upload a plugin or all-plugins <code>.zip</code>. Only install trusted plugins; they have the scheduler's system access.
         </p>
         <div class="row row-wrap" style="gap:10px;align-items:center;">
             <InputFile OnChange="Install" accept=".zip" disabled="@_installing" />
@@ -54,15 +52,12 @@ else if (Registry.RestartRequired)
     else
     {
         <p class="hint">
-            For safety, plugins can only be installed, removed, switched on or off and configured from a browser on the computer
-            running the scheduler. You can also copy a plugin's folder into <code>@Registry.UserDirectory</code> and restart.
+            Manage plugins from a browser on the scheduler's computer.
         </p>
     }
     <p class="hint" style="margin-top:10px;">
-        Plugins are kept in <code>@Registry.UserDirectory</code>. Updating SchedularrTV leaves that folder alone, and you can
-        update a plugin by replacing its folder there and restarting.
+        Folder: <code>@Registry.UserDirectory</code>. Replace a plugin's folder and restart to update it.
     </p>
-    <p class="hint" style="margin-top:6px;">Writing your own? See <code>docs/plugins.md</code> in the source repository.</p>
 </div>
 
 @foreach (IGrouping<PluginSource, PluginDescriptor> group in Registry.Plugins.GroupBy(plugin => plugin.Source).OrderBy(group => group.Key))

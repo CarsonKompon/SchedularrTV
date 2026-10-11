@@ -5,7 +5,7 @@
 @inject TimeProvider Clock
 
 <PageHeader Title="Channels" Eyebrow="Programming">
-    <ChildContent>Each channel becomes an ErsatzTV channel and a Jellyfin guide entry.</ChildContent>
+    <ChildContent>@Editor.Working.Channels.Count configured channels</ChildContent>
     <Actions>
         <div class="dropdown">
             <button class="btn btn-primary" aria-haspopup="menu" aria-expanded="@(_menuOpen ? "true" : "false")" @onclick="() => _menuOpen = !_menuOpen">
@@ -165,7 +165,7 @@
 
 @if (Coordinator.External.Count > 0)
 {
-    <p class="hint" style="margin-top:12px;">Channels marked with a plugin's name are made by that plugin and set up on its page; Edit takes you there.</p>
+    <p class="hint" style="margin-top:12px;">Plugin channels are edited on their plugin's page.</p>
 }
 
 @code {

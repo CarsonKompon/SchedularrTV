@@ -3,6 +3,7 @@
 @inject ConfigEditor Editor
 @inject LibraryBrowser Library
 @inject IEnumerable<IMediaSourceInfo> Sources
+@using SchedularrTV.Providers.ErsatzTv
 
 <div class="modal-backdrop">
     <div class="modal wizard" role="dialog" aria-modal="true" aria-label="Create a channel">
@@ -12,10 +13,10 @@
                 <span class="wizard-step @(index < _step ? "done" : index == _step ? "current" : "")" title="@Steps[index]"></span>
             }
         </div>
-        <div class="wizard-eyebrow">New channel · Step @(_step + 1) of @Steps.Length · @Steps[_step]</div>
+        <div class="wizard-eyebrow" role="status" aria-live="polite">New channel · Step @(_step + 1) of @Steps.Length · @Steps[_step]</div>
 
         <div class="wizard-body">
-        @if (_loading)
+        @if (WaitingForLibrary)
         {
             <div class="wizard-loading" role="status" aria-live="polite">
                 <div class="spinner"></div>
@@ -43,7 +44,6 @@
                     <span>Checking shows, collections and commercials folders</span>
                     <progress></progress>
                 }
-                <span class="hint">The wizard needs the full list to offer shows and ad folders. A large library takes a minute the first time.</span>
             </div>
         }
         else
@@ -52,7 +52,6 @@
         {
             case 0:
                 <h2>Name your channel</h2>
-                <p>The name and number appear in your IPTV player's channel list and guide.</p>
                 <div class="grid grid-2">
                     <label class="field">
                         <span>Channel name</span>
@@ -69,9 +68,9 @@
                 }
                 break;
 
-            case 1:
+            case 2:
                 <h2>What should it play?</h2>
-                <p>This is the channel's main rotation: what airs whenever nothing more specific is scheduled.</p>
+                <p class="hint">Plays outside scheduled blocks and anchors.</p>
                 @if (_libraryError is not null)
                 {
                     <p class="hint warn">@_libraryError</p>
@@ -161,13 +160,13 @@
                         <input type="checkbox" checked="@_rotateTitles" @onchange="e => _rotateTitles = e.Value is true" />
                         <span>Take turns between shows</span>
                     </label>
-                    <p class="hint">Each show continues where it left off, and shows alternate, instead of playing one whole series before the next.</p>
+                    <p class="hint">Alternate shows while keeping each show's episode order.</p>
                 }
                 break;
 
-            case 2:
+            case 3:
                 <h2>How should time be laid out?</h2>
-                <p>Real TV starts programmes on the hour or half hour, with ad breaks making up the difference.</p>
+                <p class="hint">Use fixed slots or play programmes back to back.</p>
                 <div class="wizard-choices">
                     @foreach ((TimeSpan? grid, string title, string detail) in Grids)
                     {
@@ -183,9 +182,8 @@
                         <input type="checkbox" checked="@_stack" @onchange="e => _stack = e.Value is true" />
                         <span>Play more than one short episode in a slot</span>
                     </label>
-                    <p class="hint">Two 11-minute cartoons fill a half hour the way they did on air, instead of one followed by 19 minutes of ads.</p>
                     <DurationInput Label="Longest ad break (blank = no limit)" Placeholder="e.g. 8m" Value="_maxBreak" ValueChanged="v => _maxBreak = v" />
-                    <p class="hint">When a programme is much shorter than its slot, the break is capped here and the next programme starts early.</p>
+                    <p class="hint">At the break limit, the next programme starts early.</p>
                 }
                 <label class="check">
                     <input type="checkbox" checked="@_midRoll" @onchange="e => _midRoll = e.Value is true" />
@@ -194,13 +192,13 @@
                 <p class="hint">Breaks land on chapter markers where there are any, roughly every 15 minutes.</p>
                 break;
 
-            case 3:
+            case 4:
                 <h2>Ad breaks</h2>
                 @if (_folders.Roots.Count == 0)
                 {
                     <p>
-                        No commercials were found. Add folders of adverts and bumpers under <strong>App settings → Commercials library</strong>,
-                        then pick them for this channel on its <strong>Breaks</strong> tab. Until then, breaks are short black gaps.
+                        No commercials found. Add them in <strong>App settings → Commercials library</strong>.
+                        Unfilled breaks may show black gaps.
                     </p>
                 }
                 else
@@ -233,11 +231,10 @@
                 }
                 break;
 
-            case 4:
+            case 5:
                 <h2>Add a programming block <span class="pill pill-muted">Optional</span></h2>
                 <p>
-                    A block gives part of the day its own line-up, like Saturday morning cartoons or a late-night anime hour.
-                    Outside blocks the channel plays its main rotation. You can add more blocks, fixed-time slots and marathons later.
+                    Give part of the day its own line-up. Add more blocks later in the channel editor.
                 </p>
                 <label class="check">
                     <input type="checkbox" checked="@_addBlock" @onchange="e => _addBlock = e.Value is true" />
@@ -250,6 +247,63 @@
                 }
                 break;
 
+            case 1:
+                <h2>Branding and region <span class="pill pill-muted">Optional</span></h2>
+                <div class="grid grid-2">
+                    <label class="field"><span>Group</span><input type="text" @bind="_group" /></label>
+                    <label class="field"><span>Time zone</span><input type="text" @bind="_timeZone" placeholder="@Editor.Working.Settings.TimeZone" /></label>
+                </div>
+                <p class="hint">Leave time zone blank to use the global setting.</p>
+                <label class="field"><span>Logo URL</span><input type="url" @bind="_logo" placeholder="https://…" /></label>
+                <p class="hint">You can upload a logo in the channel editor.</p>
+                break;
+
+            case 6:
+                <h2>Playback</h2>
+                <label class="field">
+                    <span>Run this channel</span>
+                    <select @bind="_alwaysOn">
+                        <option value="false">On demand</option>
+                        <option value="true">Always on (24/7)</option>
+                    </select>
+                </label>
+                <p class="hint">On demand stops when viewers leave. Always on tunes in faster but transcodes continuously.</p>
+                @if (_alwaysOn)
+                {
+                    <label class="check"><input type="checkbox" @bind="_countsAsWatched" /><span>Enable watched-only features while always on</span></label>
+                    <p class="hint">Applies to promos, credit squeezing and chapter scanning. Keep-alive playback is excluded from viewing stats.</p>
+                }
+                break;
+
+            case 7:
+                <h2>Video encoding</h2>
+                <p class="hint">Leave these at default to use app encoding settings.</p>
+                <div class="grid grid-2">
+                    <label class="field">
+                        <span>Encode on</span>
+                        <select @bind="_hardware">
+                            <option value="">App default</option>
+                            @foreach (ErsatzTvHardware hardware in ErsatzTvEncoding.Hardware)
+                            {
+                                <option value="@hardware.Value">@hardware.Label</option>
+                            }
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span>Picture size</span>
+                        <select @bind="_height">
+                            <option value="">App default</option>
+                            @foreach (int height in ErsatzTvEncoding.Heights)
+                            {
+                                <option value="@height">@(height)p</option>
+                            }
+                        </select>
+                    </label>
+                    <label class="field"><span>Bitrate (kbps)</span><input type="number" min="300" max="100000" @bind="_bitrate" placeholder="App default" /></label>
+                </div>
+                <p class="hint">Encoding changes may restart ErsatzTV and briefly interrupt viewers.</p>
+                break;
+
             default:
                 <h2>Ready to create @(_name.Trim())</h2>
                 <ul class="checklist">
@@ -257,6 +311,8 @@
                     <li><Icon Name="tv" Size="15" /><span>Plays @SourceSummary()@(_source == Source.SavedCollection ? " in its own order" : $", {OrderSummary()}{(_skipSpecials ? ", skipping specials" : "")}")</span></li>
                     <li><Icon Name="clock" Size="15" /><span>@TimingSummary()</span></li>
                     <li><Icon Name="megaphone" Size="15" /><span>@BreakSummary()</span></li>
+                    <li><Icon Name="sliders" Size="15" /><span>@(string.IsNullOrWhiteSpace(_timeZone) ? Editor.Working.Settings.TimeZone : _timeZone) · @(_alwaysOn ? "Always on" : "On demand")</span></li>
+                    <li><Icon Name="tv" Size="15" /><span>@(string.IsNullOrWhiteSpace(_hardware) ? "Default encoder" : ErsatzTvEncoding.Label(_hardware)) · @(_height is null ? "Default size" : $"{_height}p") · @(_bitrate is null ? "Default bitrate" : $"{_bitrate} kbps")</span></li>
                     @if (_addBlock)
                     {
                         <li><Icon Name="layers" Size="15" /><span>Block “@_block.Name.Trim()”, @BlockTimes() @DaysSummary(), with @BlockTitles() title(s)</span></li>
@@ -265,7 +321,6 @@
                 <p class="hint">
                     @(_wasDirty ? "You have other unsaved changes, so the channel is added but not saved; use Save changes when you're ready."
                                : "The channel is saved and its schedule is built in the background.")
-                    It opens in the channel editor, where you can fine-tune everything.
                 </p>
                 break;
         }
@@ -274,11 +329,15 @@
         {
             <p class="hint warn" role="alert">@problem</p>
         }
+        @if (_creationError is not null)
+        {
+            <p class="field-error" role="alert">@_creationError</p>
+        }
         }
         </div>
 
         <div class="wizard-foot">
-            @if (_loading)
+            @if (WaitingForLibrary)
             {
                 <button class="btn btn-ghost" type="button" @onclick="Cancel">Cancel</button>
             }
@@ -288,16 +347,16 @@
             }
             else
             {
-                <button class="btn btn-ghost" type="button" @onclick="Back"><Icon Name="arrow-left" Size="14" />Back</button>
+                <button class="btn btn-ghost" type="button" disabled="@_creating" @onclick="Back"><Icon Name="arrow-left" Size="14" />Back</button>
             }
             <div class="spacer"></div>
-            @if (_loading)
+            @if (WaitingForLibrary)
             {
                 <button class="btn btn-primary" type="button" disabled>Next<Icon Name="chevron-right" Size="14" /></button>
             }
             else if (_step == Steps.Length - 1)
             {
-                <button class="btn btn-primary" type="button" disabled="@_creating" @onclick="Create"><Icon Name="check" Size="14" />Create channel</button>
+                <button class="btn btn-primary" type="button" disabled="@(_creating || Editor.IsBusy)" @onclick="Create"><Icon Name="check" Size="14" />@(_creating ? "Creating…" : "Create channel")</button>
             }
             else
             {
@@ -314,7 +373,7 @@
 
     private enum Source { Titles, LibraryCollection, SavedCollection, Everything }
 
-    private static readonly string[] Steps = ["Name", "Programming", "Timing", "Ad breaks", "Block", "Review"];
+    private static readonly string[] Steps = ["Name", "Branding", "Programming", "Timing", "Ad breaks", "Block", "Playback", "Encoding", "Review"];
 
     private static readonly (TimeSpan? Grid, string Title, string Detail)[] Grids =
     [
@@ -335,6 +394,13 @@
     private bool _creating;
     private bool _loading = true;
     private bool _wasDirty;
+    private bool WaitingForLibrary => _loading && _step == 2;
+    private string? _creationError;
+    private string _group = "SchedularrTV";
+    private string? _logo, _timeZone, _hardware;
+    private int? _height, _bitrate;
+    private bool _alwaysOn;
+    private bool _countsAsWatched = true;
 
     private string _name = string.Empty;
     private int _number;
@@ -397,7 +463,7 @@
         _name = $"Channel {_number}";
         _wasDirty = Editor.IsDirty;
 
-        // Nothing can be picked until the library is in memory, so the steps wait behind a progress screen.
+        // Name and branding can be edited immediately; programming waits for the library.
         _loading = true;
         Watch(true);
         try
@@ -463,16 +529,26 @@
     {
         0 when string.IsNullOrWhiteSpace(_name) => "Give the channel a name.",
         0 when NumberTaken => "Choose a channel number that isn't taken.",
-        1 when _source == Source.Titles && _includes.Count == 0 => "Add at least one show or movie, or choose another option.",
-        1 when _source == Source.LibraryCollection && string.IsNullOrWhiteSpace(_libraryCollection) => "Choose a collection.",
-        1 when _source == Source.SavedCollection && string.IsNullOrWhiteSpace(_savedCollection) => "Choose a saved collection.",
-        4 when _addBlock && string.IsNullOrWhiteSpace(_block.Name) => "Give the block a name.",
-        4 when _addBlock && !_block.FollowOnly && _block.Time is null => "Choose when the block starts.",
-        4 when _addBlock && _block.Time is not null && _block.Time == _block.EndTime => "The block's start and end times must differ.",
-        4 when _addBlock && _block.Recurrence == Recurrence.DaysOfWeek && _block.Days.Count == 0 => "Choose at least one day for the block.",
-        4 when _addBlock && !_block.Shows.Any(HasContent) => "Give the block something to play, or untick “Add a block now”.",
+        1 when !ValidTimeZone() => "Enter a valid time zone, or leave it blank to use the global setting.",
+        2 when _source == Source.Titles && _includes.Count == 0 => "Add at least one show or movie, or choose another option.",
+        2 when _source == Source.LibraryCollection && string.IsNullOrWhiteSpace(_libraryCollection) => "Choose a collection.",
+        2 when _source == Source.SavedCollection && string.IsNullOrWhiteSpace(_savedCollection) => "Choose a saved collection.",
+        5 when _addBlock && string.IsNullOrWhiteSpace(_block.Name) => "Give the block a name.",
+        5 when _addBlock && !_block.FollowOnly && _block.Time is null => "Choose when the block starts.",
+        5 when _addBlock && _block.Time is not null && _block.Time == _block.EndTime => "The block's start and end times must differ.",
+        5 when _addBlock && _block.Recurrence == Recurrence.DaysOfWeek && _block.Days.Count == 0 => "Choose at least one day for the block.",
+        5 when _addBlock && !_block.Shows.Any(HasContent) => "Give the block something to play, or untick “Add a block now”.",
+        7 when _bitrate is < 300 or > 100000 => "Bitrate must be between 300 and 100000 kbps.",
         _ => null
     };
+
+    private bool ValidTimeZone()
+    {
+        if (string.IsNullOrWhiteSpace(_timeZone)) return true;
+        try { _ = TimeZoneInfo.FindSystemTimeZoneById(_timeZone.Trim()); return true; }
+        catch (TimeZoneNotFoundException) { return false; }
+        catch (InvalidTimeZoneException) { return false; }
+    }
 
     private void Next()
     {
@@ -497,23 +573,34 @@
     private async Task Create()
     {
         // A double click would otherwise add the channel twice.
-        if (_creating)
+        if (_creating || Editor.IsBusy)
         {
             return;
         }
 
-        _creating = true;
-        ChannelConfig channel = Build();
-        Editor.Working.Channels.Add(channel);
-        Editor.MarkDirty();
-
-        // Don't sweep up unrelated edits the user hasn't chosen to save.
-        if (!_wasDirty)
+        if (NumberTaken)
         {
-            Editor.Save();
+            _step = 0;
+            _tried = true;
+            return;
         }
-
-        await OnCreated.InvokeAsync(channel.Id);
+        _creating = true;
+        _creationError = null;
+        try
+        {
+            bool save = !_wasDirty && !Editor.IsDirty;
+            ChannelConfig channel = Build();
+            Editor.Working.Channels.Add(channel);
+            Editor.MarkDirty();
+            // A failed save leaves the channel editable, with validation errors in the editor.
+            if (save) await Editor.SaveAsync();
+            await OnCreated.InvokeAsync(channel.Id);
+        }
+        catch (Exception ex)
+        {
+            _creationError = ex.Message;
+        }
+        finally { _creating = false; }
     }
 
     private ChannelConfig Build()
@@ -523,7 +610,13 @@
             Id = Draft.Id,
             Name = _name.Trim(),
             Number = _number,
-            Group = "SchedularrTV",
+            Group = string.IsNullOrWhiteSpace(_group) ? null : _group.Trim(),
+            Logo = string.IsNullOrWhiteSpace(_logo) ? null : _logo.Trim(),
+            TimeZone = string.IsNullOrWhiteSpace(_timeZone) ? null : _timeZone.Trim(),
+            AlwaysOn = _alwaysOn ? true : null,
+            AlwaysOnCountsAsWatched = _alwaysOn && !_countsAsWatched ? false : null,
+            Encoding = string.IsNullOrWhiteSpace(_hardware) && _height is null && _bitrate is null ? null
+                : new ChannelEncodingConfig { Hardware = string.IsNullOrWhiteSpace(_hardware) ? null : _hardware, Height = _height, BitrateKbps = _bitrate },
             BaseRotation = Selector(_source switch
             {
                 Source.LibraryCollection => new ContentSelector { Include = [new ContentInclude { Collection = _libraryCollection }] },

@@ -16,10 +16,12 @@ public abstract class EditorPage : ComponentBase, IDisposable
     [Inject]
     protected ConfigEditor Editor { get; set; } = default!;
 
-    protected override void OnInitialized() => Editor.Changed += OnEditorChanged;
+    protected override void OnInitialized() => Editor.Changed += DispatchEditorChanged;
+
+    private void DispatchEditorChanged() => _ = InvokeAsync(OnEditorChanged);
 
     /// <summary>Override to refresh anything cached from the working copy before re-rendering.</summary>
     protected virtual void OnEditorChanged() => InvokeAsync(StateHasChanged);
 
-    public virtual void Dispose() => Editor.Changed -= OnEditorChanged;
+    public virtual void Dispose() => Editor.Changed -= DispatchEditorChanged;
 }

@@ -20,6 +20,9 @@ public sealed class ConfigEditor(SchedulerConfigProvider provider)
 
     public bool IsDirty { get; private set; }
 
+    public bool IsBusy { get; private set; }
+    private long _revision;
+
     public IReadOnlyList<string> Errors { get; private set; } = [];
 
     public IReadOnlyList<string> Warnings { get; private set; } = [];
@@ -31,6 +34,7 @@ public sealed class ConfigEditor(SchedulerConfigProvider provider)
     /// <summary>Call after any mutation so the UI and dirty state stay in step.</summary>
     public void MarkDirty()
     {
+        _revision++;
         IsDirty = true;
         Validate();
         Changed?.Invoke();
@@ -46,6 +50,7 @@ public sealed class ConfigEditor(SchedulerConfigProvider provider)
 
     public void Reload()
     {
+        if (IsBusy) return;
         _working = Clone(provider.Current);
         IsDirty = false;
         SaveError = null;
@@ -55,6 +60,7 @@ public sealed class ConfigEditor(SchedulerConfigProvider provider)
 
     public bool Save()
     {
+        if (IsBusy) return false;
         SaveError = null;
 
         try
@@ -69,6 +75,7 @@ public sealed class ConfigEditor(SchedulerConfigProvider provider)
 
             if (!result.IsValid)
             {
+                Changed?.Invoke();
                 return false;
             }
 
@@ -76,11 +83,71 @@ public sealed class ConfigEditor(SchedulerConfigProvider provider)
             Changed?.Invoke();
             return true;
         }
-        catch (Exception ex) when (ex is SchedulerConfigException or YamlDotNet.Core.YamlException or IOException)
+        catch (Exception ex) when (ex is SchedulerConfigException or YamlDotNet.Core.YamlException or IOException or UnauthorizedAccessException)
         {
             SaveError = ex.Message;
             Changed?.Invoke();
             return false;
+        }
+    }
+
+    /// <summary>Persist a snapshot without blocking the UI; edits made while saving remain dirty.</summary>
+    public async Task<bool> SaveAsync()
+    {
+        if (IsBusy) return false;
+        IsBusy = true;
+        SaveError = null;
+        long revision = _revision;
+        Changed?.Invoke();
+        try
+        {
+            string snapshot = ToYaml();
+            ConfigValidationResult result = await Task.Run(() =>
+                provider.Save(YamlCommentMerger.Merge(provider.ReadRaw(), snapshot)));
+            if (_revision == revision)
+            {
+                Errors = result.Errors;
+                Warnings = result.Warnings;
+                if (result.IsValid) IsDirty = false;
+            }
+            return result.IsValid;
+        }
+        catch (Exception ex) when (ex is SchedulerConfigException or YamlDotNet.Core.YamlException or IOException or UnauthorizedAccessException)
+        {
+            SaveError = ex.Message;
+            return false;
+        }
+        finally
+        {
+            IsBusy = false;
+            Changed?.Invoke();
+        }
+    }
+
+    public async Task ReloadAsync()
+    {
+        if (IsBusy) return;
+        IsBusy = true;
+        SaveError = null;
+        long revision = _revision;
+        Changed?.Invoke();
+        try
+        {
+            SchedulerConfig saved = provider.Current;
+            SchedulerConfig copy = await Task.Run(() => Clone(saved));
+            if (_revision != revision)
+            {
+                SaveError = "New edits were made during discard. Discard again to remove them.";
+                return;
+            }
+            _working = copy;
+            IsDirty = false;
+            Validate();
+        }
+        finally
+        {
+            IsBusy = false;
+            Changed?.Invoke();
         }
     }
 

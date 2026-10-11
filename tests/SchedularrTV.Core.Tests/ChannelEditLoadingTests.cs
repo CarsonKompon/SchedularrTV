@@ -19,6 +19,50 @@ namespace SchedularrTV.Core.Tests;
 
 public sealed class ChannelEditLoadingTests
 {
+    [Fact]
+    public async Task Channel_wizard_shows_first_step_while_library_is_loading()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), $"wizard-loading-{Guid.NewGuid():N}");
+        var library = new PausedLibrary();
+        try
+        {
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddSingleton<IOptions<SchedulerServiceOptions>>(Options.Create(new SchedulerServiceOptions
+            {
+                ConfigPath = Path.Combine(directory, "schedule.yaml"), WatchConfig = false, AutoRebuild = false
+            }));
+            services.AddSingleton(TimeProvider.System);
+            services.AddSingleton<IMediaLibrary>(library);
+            services.AddSingleton<SchedulerConfigProvider>();
+            services.AddSingleton<ConfigEditor>();
+            services.AddSingleton<LibraryBrowser>();
+            await using ServiceProvider provider = services.BuildServiceProvider();
+            await using var renderer = new HtmlRenderer(provider, provider.GetRequiredService<ILoggerFactory>());
+            await renderer.Dispatcher.InvokeAsync(async () =>
+            {
+                var rendered = renderer.BeginRenderingComponent<ChannelWizard>();
+                try
+                {
+                    Assert.False(rendered.QuiescenceTask.IsCompleted);
+                    string html = rendered.ToHtmlString();
+                    Assert.Contains("Name your channel", html);
+                    Assert.Contains("Step 1 of 9", html);
+                    Assert.DoesNotContain("wizard-loading", html);
+                }
+                finally
+                {
+                    library.Complete();
+                    await rendered.QuiescenceTask;
+                }
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
     [Theory]
     [InlineData("collection")]
     [InlineData("query")]
@@ -128,6 +172,8 @@ public sealed class ChannelEditLoadingTests
                 {
                     Assert.Contains("Configured Channel", html);
                     Assert.Contains("Follow", html);
+                    Assert.Contains("?tab=schedule", html);
+                    Assert.Contains("aria-current=\"page\"", html);
                     Assert.DoesNotContain("Channel not found", html);
                 }
                 else
@@ -139,6 +185,18 @@ public sealed class ChannelEditLoadingTests
             {
                 library.Complete();
                 await rendered.QuiescenceTask;
+            }
+            if (exists)
+            {
+                ConfigEditor editor = provider.GetRequiredService<ConfigEditor>();
+                editor.Replace(new SchedulerConfig
+                {
+                    Channels = [new() { Id = "existing", Name = "Replacement Channel", Number = 48 }]
+                });
+                Assert.Contains("Replacement Channel", rendered.ToHtmlString());
+                Assert.DoesNotContain("Configured Channel", rendered.ToHtmlString());
+                await editor.ReloadAsync();
+                Assert.Contains("Channel not found", rendered.ToHtmlString());
             }
         });
     }
