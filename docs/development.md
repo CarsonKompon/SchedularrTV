@@ -79,3 +79,23 @@ folder's `plugins`; a plugin installed from the Plugins page goes in `.plugins/`
 
 macOS builds are wrapped in a menu-bar-only `SchedularrTV.app` with ad-hoc signatures; nothing is notarised or
 code-signed.
+
+### Building the downloads locally
+
+`scripts/package.ps1` builds the same files as CI, named the same way, into `publish/dist` (needs PowerShell 7.4+
+and the .NET 10 SDK; every system can be built from Windows, macOS or Linux). Started from Windows PowerShell 5.1, it
+runs itself again in PowerShell 7 (`pwsh`), or says how to install it (`winget install --id Microsoft.PowerShell`):
+
+```powershell
+./scripts/package.ps1                                  # everything, as the nightly
+./scripts/package.ps1 -Targets win-x64 -NoPlugins      # just the Windows download
+./scripts/package.ps1 -PluginsOnly                     # just the plugin zips
+./scripts/package.ps1 -Test                            # run the tests first, as CI does
+./scripts/package.ps1 -Version 1.2.0 -Release          # stamped and named as release v1.2.0
+```
+
+A local nightly is numbered like CI's (just past the latest `v*` tag) with run number 0 (`-RunNumber` to change it),
+so the app never takes it for a newer nightly. The Linux tarballs and the macOS and plugin zips carry Unix
+permissions, so the programs are executable when unpacked even when built on Windows. Built on a Mac, the `.app` is
+signed with `codesign` and zipped with `ditto` exactly as CI does; elsewhere it relies on the ad-hoc signature the
+.NET SDK gives the programs it publishes.
