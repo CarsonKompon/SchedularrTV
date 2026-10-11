@@ -389,11 +389,14 @@ public sealed class AiTextWriter : IDisposable
             }
 
             DateTime cutoff = DateTime.UtcNow - KeepFor;
+            // A save in progress has a .tmp file for a moment; only ones left behind well before now are leftovers.
+            DateTime abandoned = DateTime.UtcNow - TimeSpan.FromHours(1);
             foreach (string file in Directory.EnumerateFiles(folder))
             {
                 try
                 {
-                    if (file.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) || File.GetLastWriteTimeUtc(file) < cutoff)
+                    DateTime written = File.GetLastWriteTimeUtc(file);
+                    if (file.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) ? written < abandoned : written < cutoff)
                     {
                         File.Delete(file);
                     }

@@ -94,6 +94,10 @@ public sealed class ChannelEditLoadingTests
         services.AddSingleton<ScheduleBuilder>();
         services.AddSingleton<ScheduleCoordinator>();
         services.AddSingleton<RotationResetter>();
+        // The General tab shows whether a 24/7 channel is playing (never started here, so it has nothing to say).
+        services.AddHttpClient();
+        services.AddSingleton<SchedularrTV.Core.Publishing.AlwaysOnChannels>();
+        services.AddSingleton<AlwaysOnKeeper>();
         // The Archive Follow plugin's channel tab, as the plugin registers it.
         services.AddSingleton(new SchedularrTV.Plugins.Editor.PluginEditorSection
         {

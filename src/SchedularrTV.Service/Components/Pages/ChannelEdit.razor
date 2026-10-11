@@ -183,8 +183,7 @@ else
             {
                 <label class="field" style="max-width:420px;">
                     <span>For promos, credit squeezing and chapter scanning, treat it as</span>
-                    <select value="@((_channel.AlwaysOnCountsAsWatched ?? true) ? "watched" : "unwatched")"
-                            @onchange="e => { _channel.AlwaysOnCountsAsWatched = e.Value?.ToString() == "unwatched" ? false : null; Editor.MarkDirty(); }">
+                    <select value="@WatchedChoice" @onchange="SetWatchedChoice">
                         <option value="watched">Always watched</option>
                         <option value="unwatched">Never watched</option>
                     </select>
@@ -453,6 +452,15 @@ else
 
         _channel.Logo = null;
         _logoError = null;
+        Editor.MarkDirty();
+    }
+
+    // How a 24/7 channel counts for the watched-only features; null (the default) is watched, so only "never" is written.
+    private string WatchedChoice => _channel?.AlwaysOnCountsAsWatched ?? true ? "watched" : "unwatched";
+
+    private void SetWatchedChoice(ChangeEventArgs e)
+    {
+        _channel!.AlwaysOnCountsAsWatched = e.Value?.ToString() == "unwatched" ? false : null;
         Editor.MarkDirty();
     }
 
