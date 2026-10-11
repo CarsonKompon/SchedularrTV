@@ -1,90 +1,34 @@
-@* A path box with a Browse button that picks files from the scheduler's own disks. *@
+@* A path box with a Browse button that opens the system's own file dialog, on the computer running SchedularrTV. *@
 
 @if (Multiple)
 {
-    <button class="btn btn-sm" type="button" @onclick="Open">@ButtonText</button>
+    @if (CanBrowse)
+    {
+        <button class="btn btn-sm" type="button" disabled="@_browsing" @onclick="Browse">@(_browsing ? "Choosing…" : ButtonText)</button>
+    }
+    else
+    {
+        @* The dialog would open on the server's screen, so from another computer paths are typed, one at a time. *@
+        <div class="file-field">
+            <input type="text" value="@_typed" placeholder="@($"Full path of {Label} on the server")" aria-label="@Label"
+                   @onchange="e => _typed = e.Value?.ToString()" />
+            <button class="btn btn-sm" type="button" disabled="@string.IsNullOrWhiteSpace(_typed)" @onclick="AddTyped">Add</button>
+        </div>
+    }
 }
 else
 {
     <div class="file-field">
         <input type="text" value="@Value" placeholder="@Placeholder" aria-label="@Label" @onchange="Typed" />
-        <button class="btn btn-sm" type="button" @onclick="Open">Browse…</button>
+        @if (CanBrowse)
+        {
+            <button class="btn btn-sm" type="button" disabled="@_browsing" @onclick="Browse">@(_browsing ? "Choosing…" : "Browse…")</button>
+        }
     </div>
 }
-
-@if (_listing is { } listing)
+@if (_problem is not null)
 {
-    <div class="modal-backdrop" @onclick="Close">
-        <div class="modal file-picker" role="dialog" aria-label="@($"Choose {Label}")" @onclick:stopPropagation="true">
-            <h2>@(Multiple ? ButtonText : $"Choose {Label}")</h2>
-            <div class="file-picker-path">
-                <button class="btn btn-sm" type="button" disabled="@(listing.Folder is null)" @onclick="() => Navigate(listing.Parent)"
-                        title="Up one folder" aria-label="Up one folder">↑</button>
-                <input type="text" value="@(listing.Folder ?? FileBrowsing.RootLabel)" aria-label="Folder"
-                       @onchange="e => NavigateTyped(e.Value?.ToString())" />
-            </div>
-            <ul class="file-picker-list">
-                @* Inside the list, so a folder that can't be read doesn't change the dialog's height either. *@
-                @if (listing.Error is not null)
-                {
-                    <li class="hint warn">@listing.Error</li>
-                }
-                @foreach (string folder in listing.Folders)
-                {
-                    <li>
-                        <button type="button" class="file-picker-entry folder" @onclick="() => Navigate(folder)">
-                            @(listing.Folder is null ? folder : Path.GetFileName(folder) + Path.DirectorySeparatorChar)
-                        </button>
-                    </li>
-                }
-                @foreach (string file in PickFolder ? Array.Empty<string>() : listing.Files)
-                {
-                    <li>
-                        @if (Multiple)
-                        {
-                            <label class="file-picker-entry">
-                                <input type="checkbox" checked="@_chosen.Contains(file)" @onchange="e => Toggle(file, e.Value is true)" />
-                                @Path.GetFileName(file)
-                            </label>
-                        }
-                        else
-                        {
-                            <button type="button" class="file-picker-entry @(string.Equals(file, Value, PathComparison) ? "selected" : "")"
-                                    @onclick="() => Choose(file)">
-                                @Path.GetFileName(file)
-                            </button>
-                        }
-                    </li>
-                }
-                @if (listing.Folders.Count == 0 && (PickFolder || listing.Files.Count == 0) && listing.Error is null)
-                {
-                    <li class="hint">@(PickFolder ? "No folders here." : Extensions.Length == 0 ? "This folder is empty." : $"Nothing here matches ({string.Join(", ", Extensions)}).")</li>
-                }
-            </ul>
-            <div class="row row-wrap">
-                @if (PickFolder)
-                {
-                    <div class="spacer"></div>
-                    <button class="btn btn-primary btn-sm" type="button" disabled="@(listing.Folder is null)" @onclick="() => Choose(listing.Folder!)">
-                        Use this folder
-                    </button>
-                }
-                else if (Multiple)
-                {
-                    <button class="btn btn-sm" type="button" disabled="@(listing.Files.Count == 0)" @onclick="() => SelectAll(listing)">Select all here</button>
-                    <div class="spacer"></div>
-                    <button class="btn btn-primary btn-sm" type="button" disabled="@(_chosen.Count == 0)" @onclick="AddChosen">
-                        Add @_chosen.Count @(_chosen.Count == 1 ? "file" : "files")
-                    </button>
-                }
-                else
-                {
-                    <div class="spacer"></div>
-                }
-                <button class="btn btn-sm" type="button" @onclick="Close">Cancel</button>
-            </div>
-        </div>
-    </div>
+    <span class="field-error" role="alert">@_problem</span>
 }
 
 @code {
@@ -101,80 +45,82 @@ else
     /// <summary>Choose a folder instead of a file.</summary>
     [Parameter] public bool PickFolder { get; set; }
 
-    private static readonly StringComparison PathComparison =
-        OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+    /// <summary>Whether the browser is on the computer running SchedularrTV, where the dialog opens.</summary>
+    [CascadingParameter] public LocalAccess? Local { get; set; }
 
     // One user edits at a time, so remembering the last folder per file kind is enough.
     private static readonly Dictionary<string, string> LastFolders = new(StringComparer.Ordinal);
 
-    private FolderListing? _listing;
-    private readonly List<string> _chosen = [];
+    private bool _browsing;
+    private string? _problem;
+    private string? _typed;
 
-    private string KindKey => string.Join(',', Extensions);
+    private bool CanBrowse => Local?.IsLocal ?? true;
 
-    private void Open()
+    private string KindKey => PickFolder ? "folder" : string.Join(',', Extensions);
+
+    private string FilterName =>
+        Extensions.SequenceEqual(FileBrowsing.Audio) ? "Audio"
+        : Extensions.SequenceEqual(FileBrowsing.Images) ? "Images"
+        : Extensions.SequenceEqual(FileBrowsing.Videos) ? "Videos"
+        : Extensions.SequenceEqual(SettingsFiles.Programs) && Extensions.Length > 0 ? "Programs"
+        : "Supported files";
+
+    private async Task Browse()
     {
-        _chosen.Clear();
-        Navigate(FileBrowsing.StartFolder(Multiple ? null : Value, LastFolders.GetValueOrDefault(KindKey), StartIn));
-    }
-
-    private void Navigate(string? folder)
-    {
-        folder = string.IsNullOrWhiteSpace(folder) ? null : folder.Trim().Trim('"');
-        _listing = FileBrowsing.List(folder is not null && Directory.Exists(folder) ? folder : null, Extensions);
-        if (_listing.Folder is { } shown)
+        _browsing = true;
+        _problem = null;
+        try
         {
-            LastFolders[KindKey] = shown;
+            string title = Multiple ? ButtonText.TrimEnd('…', '.') : $"Choose {Label}";
+            var request = new FileDialogRequest(title, Extensions, FileBrowsing.StartFolder(Multiple ? null : Value, LastFolders.GetValueOrDefault(KindKey), StartIn),
+                Multiple, PickFolder) { FilterName = FilterName };
+            FileDialogResult result = await NativeFileDialog.ShowAsync(request);
+            _problem = result.Problem;
+            if (result.Paths.Count == 0)
+            {
+                return;
+            }
+
+            string first = result.Paths[0];
+            if (FileBrowsing.StartFolder(first, null, StartIn) is { } folder)
+            {
+                LastFolders[KindKey] = folder;
+            }
+
+            if (Multiple)
+            {
+                await OnPicked.InvokeAsync(result.Paths);
+            }
+            else
+            {
+                await ValueChanged.InvokeAsync(first);
+            }
+        }
+        finally
+        {
+            _browsing = false;
         }
     }
-
-    private void Close() => _listing = null;
-
-    // Removing a focused, edited box fires its change event after the dialog has closed.
-    private void NavigateTyped(string? folder)
-    {
-        if (_listing is not null)
-        {
-            Navigate(folder);
-        }
-    }
-
-    private Task Pick(string? value) => ValueChanged.InvokeAsync(value);
 
     private Task Typed(ChangeEventArgs e)
     {
-        string typed = (e.Value?.ToString() ?? string.Empty).Trim().Trim('"');
-        return Pick(typed.Length == 0 ? null : typed);
+        string typed = Clean(e.Value?.ToString());
+        _problem = null;
+        return ValueChanged.InvokeAsync(typed.Length == 0 ? null : typed);
     }
 
-    private async Task Choose(string file)
+    private async Task AddTyped()
     {
-        _listing = null;
-        await Pick(file);
-    }
-
-    private void Toggle(string file, bool on)
-    {
-        _chosen.Remove(file);
-        if (on)
+        string typed = Clean(_typed);
+        if (typed.Length == 0)
         {
-            _chosen.Add(file);
+            return;
         }
+
+        _typed = null;
+        await OnPicked.InvokeAsync([typed]);
     }
 
-    private void SelectAll(FolderListing listing)
-    {
-        foreach (string file in listing.Files.Where(file => !_chosen.Contains(file)))
-        {
-            _chosen.Add(file);
-        }
-    }
-
-    private async Task AddChosen()
-    {
-        List<string> chosen = [.. _chosen];
-        _listing = null;
-        _chosen.Clear();
-        await OnPicked.InvokeAsync(chosen);
-    }
+    private static string Clean(string? text) => (text ?? string.Empty).Trim().Trim('"');
 }

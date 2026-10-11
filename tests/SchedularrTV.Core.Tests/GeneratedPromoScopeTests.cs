@@ -213,20 +213,11 @@ public sealed class GeneratedPromoScopeTests : IDisposable
     }
 
     [Fact]
-    public void File_browser_lists_folders_and_matching_files_and_opens_beside_the_current_file()
+    public void File_dialog_opens_beside_the_current_file_else_the_last_folder()
     {
         string music = Path.Combine(_directory, "music");
-        Directory.CreateDirectory(Path.Combine(music, "Themes"));
-        File.WriteAllText(Path.Combine(music, "b.mp3"), "");
-        File.WriteAllText(Path.Combine(music, "A.WAV"), "");
-        File.WriteAllText(Path.Combine(music, "notes.txt"), "");
+        Directory.CreateDirectory(music);
 
-        FolderListing listing = FileBrowsing.List(music, FileBrowsing.Audio);
-
-        Assert.Equal(_directory, listing.Parent);
-        Assert.Equal([Path.Combine(music, "Themes")], listing.Folders);
-        Assert.Equal([Path.Combine(music, "A.WAV"), Path.Combine(music, "b.mp3")], listing.Files);
-        Assert.NotEmpty(FileBrowsing.List(null, FileBrowsing.Audio).Folders);
         Assert.Equal(music, FileBrowsing.StartFolder(Path.Combine(music, "gone.mp3"), null, Environment.SpecialFolder.MyMusic));
         Assert.Equal(music, FileBrowsing.StartFolder(null, music, Environment.SpecialFolder.MyMusic));
     }

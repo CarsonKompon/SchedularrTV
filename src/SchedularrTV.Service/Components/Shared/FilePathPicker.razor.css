@@ -1,18 +1,2 @@
 .file-field { display: flex; gap: 6px; }
 .file-field input { flex: 1; min-width: 0; }
-.file-picker { width: 640px; max-width: 94vw; display: flex; flex-direction: column; gap: 10px; }
-.file-picker h2 { margin: 0; }
-.file-picker-path { display: flex; gap: 6px; }
-.file-picker-path input { flex: 1; min-width: 0; }
-/* A fixed height, so the dialog doesn't jump about as folders with more or fewer entries are opened. */
-.file-picker-list { list-style: none; margin: 0; padding: 0; height: min(50vh, 440px); flex: none; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
-.file-picker-list li { border-bottom: 1px solid var(--line); }
-.file-picker-list li:last-child { border-bottom: 0; }
-.file-picker-list li.hint { padding: 10px 12px; }
-.file-picker-entry {
-    display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 12px; text-align: left;
-    background: none; border: 0; color: var(--text); cursor: pointer; font: inherit;
-}
-.file-picker-entry:hover { background: var(--panel-2); }
-.file-picker-entry.folder { color: var(--accent); }
-.file-picker-entry.selected { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--accent); }

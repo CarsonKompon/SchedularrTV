@@ -19,7 +19,9 @@ channel and each block. The canvas is drawn by the renderer itself, so it matche
 
 - Drag boxes to move them (they snap to the centre lines; hold Alt to place freely), use the handles to
   resize, and scrub the timeline to check transitions.
-- Songs, backgrounds and images are chosen with **Browse**, which lists the scheduler machine's folders.
+- Songs, backgrounds and images are chosen with **Browse**, which opens your system's own file dialog (several songs
+  can be chosen at once). The files are the scheduler's, so the dialog opens on the computer running SchedularrTV and
+  is only offered in a browser on that computer; from another one, type the path.
 - The inspector covers per-layer settings: Up Next offset, show count and start times, text, fonts,
   colour, transparency, timing and animation.
 - **Songs from** chooses song files, or a [music library](background-music.md) (Jellyfin's, local music folders, a

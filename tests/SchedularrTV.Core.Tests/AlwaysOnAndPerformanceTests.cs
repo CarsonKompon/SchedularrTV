@@ -4,6 +4,7 @@ using SchedularrTV.Core.Publishing;
 using SchedularrTV.Core.Scheduling;
 using SchedularrTV.Providers.ErsatzTv;
 using SchedularrTV.Service;
+using SchedularrTV.Service.Editor;
 using SchedularrTV.Service.Performance;
 using Xunit;
 
@@ -328,6 +329,29 @@ public sealed class AlwaysOnAndPerformanceTests
         Assert.Contains("hardware: cuda", yaml, StringComparison.Ordinal);
         Assert.DoesNotContain("is_empty", yaml, StringComparison.Ordinal);
         Assert.DoesNotContain("bitrate_kbps", yaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_system_file_dialogs_are_asked_for_the_right_files()
+    {
+        string start = Path.GetTempPath();
+        var songs = new FileDialogRequest("Add songs", [".mp3", ".wav"], start, Multiple: true) { FilterName = "Audio" };
+
+        string script = NativeFileDialog.AppleScript(songs);
+        Assert.Contains("choose file with prompt \"Add songs\" of type {\"mp3\", \"wav\"}", script, StringComparison.Ordinal);
+        Assert.Contains("with multiple selections allowed", script, StringComparison.Ordinal);
+        Assert.Contains("choose folder", NativeFileDialog.AppleScript(new FileDialogRequest("Choose a folder", [], null, Folder: true)), StringComparison.Ordinal);
+
+        IReadOnlyList<string> zenity = NativeFileDialog.ZenityArguments(songs);
+        Assert.Contains("--multiple", zenity);
+        Assert.Contains("--file-filter=Audio | *.mp3 *.MP3 *.wav *.WAV", zenity);
+        Assert.Contains("--directory", NativeFileDialog.ZenityArguments(new FileDialogRequest("Choose a folder", [], null, Folder: true)));
+
+        IReadOnlyList<string> kdialog = NativeFileDialog.KdialogArguments(songs);
+        Assert.Contains("--getopenfilename", kdialog);
+        Assert.Contains("--separate-output", kdialog);
+
+        Assert.Equal(["/music/a.mp3", "/music/b b.mp3", "/media/folder"], NativeFileDialog.SplitPaths("/music/a.mp3\n/music/b b.mp3\r\n/media/folder/\n\n"));
     }
 
     [Theory]
