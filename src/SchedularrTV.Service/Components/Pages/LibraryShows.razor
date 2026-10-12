@@ -121,7 +121,7 @@ else if (Grid)
                  aria-checked="@(selected ? "true" : "false")" aria-label="@show.Name"
                  @onclick="() => Toggle(show.Id)" @onkeydown="e => OnCardKey(e, show.Id)">
                 <span class="media-card-check" aria-hidden="true"><Icon Name="check" Size="14" StrokeWidth="3" /></span>
-                <div class="media-card-actions">
+                <div class="media-card-actions" @onkeydown:stopPropagation="true">
                     <button class="btn btn-sm" @onclick="() => OpenSeasons(show)" @onclick:stopPropagation="true" title="Pick seasons">
                         Seasons
                     </button>

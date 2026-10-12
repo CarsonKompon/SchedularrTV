@@ -329,7 +329,7 @@ input[type=text], input[type=number], input[type=search], input[type=url], input
 input[type=email], input[type=time], input[type=date], input[type=datetime-local], select, textarea {
     background: var(--bg);
     color: var(--text);
-    border: 1px solid var(--line-strong);
+    border: 0;
     border-radius: var(--r-sm);
     padding: 8px 11px;
     font: inherit;
@@ -337,10 +337,10 @@ input[type=email], input[type=time], input[type=date], input[type=datetime-local
 }
 input[type=text], input[type=number], input[type=search], input[type=url], input[type=password],
 input[type=email], input[type=datetime-local], select, textarea { width: 100%; }
-input:hover:not(:disabled):not(:focus), select:hover:not(:disabled):not(:focus), textarea:hover:not(:disabled):not(:focus) { border-color: var(--muted); }
-input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 2px; border-color: var(--accent); }
+input:hover:not(:disabled):not(:focus), select:hover:not(:disabled):not(:focus), textarea:hover:not(:disabled):not(:focus) { background-color: var(--bg-elev); }
+input:not([type=checkbox]):not([type=radio]):not([type=range]):focus, select:focus, textarea:focus { outline: none; box-shadow: inset 0 -2px var(--accent); }
 input:disabled, select:disabled, textarea:disabled { opacity: .55; cursor: not-allowed; }
-input[aria-invalid=true], select[aria-invalid=true], textarea[aria-invalid=true], input.invalid, select.invalid, textarea.invalid { border-color: var(--error); }
+input[aria-invalid=true], select[aria-invalid=true], textarea[aria-invalid=true], input.invalid, select.invalid, textarea.invalid { box-shadow: inset 0 -2px var(--error); }
 input::placeholder, textarea::placeholder { color: var(--faint); }
 select {
     appearance: none;
@@ -808,9 +808,22 @@ a.stat-link:hover { text-decoration: none; border-color: var(--accent); backgrou
 .media-card-meta { color: var(--muted); font-size: 12px; margin-top: 2px; display: flex; gap: 6px; align-items: center; }
 .media-card-in { position: absolute; bottom: 8px; left: 8px; right: 8px; z-index: 2; display: flex; flex-wrap: wrap; gap: 4px; }
 .media-card-in .pill { background: var(--bg); height: 19px; font-size: 10.5px; }
-.media-card-actions { position: absolute; top: 8px; right: 8px; z-index: 3; }
-.media-card:hover .media-card-actions, .media-card:focus-within .media-card-actions { opacity: 1; }
-.media-card-actions .btn { background: var(--panel); }
+.media-card-actions {
+    position: absolute; top: 40px; left: 8px; right: 8px; z-index: 3;
+    display: flex; flex-direction: column; gap: 6px;
+    opacity: 0; pointer-events: none; transition: opacity .15s;
+}
+.media-card:hover .media-card-actions, .media-card:focus-within .media-card-actions { opacity: 1; pointer-events: auto; }
+.media-card-actions .btn {
+    width: 100%; min-height: 34px; padding: 8px 10px;
+    white-space: normal; overflow-wrap: anywhere; line-height: 1.35;
+    background: var(--panel);
+}
+.media-card-actions .btn:hover { background: var(--panel-3); }
+@media (hover: none), (pointer: coarse) {
+    .media-card-actions { opacity: 1; pointer-events: auto; }
+    .media-card-actions .btn { min-height: 44px; }
+}
 
 .load-more { display: flex; justify-content: center; align-items: center; gap: 12px; padding: 22px 0 6px; color: var(--muted); font-size: 12.5px; }
 
@@ -1246,10 +1259,11 @@ details.card[open] > summary { margin-bottom: 14px; }
 .docs-search {
     display: flex; align-items: center; gap: 8px;
     padding: 0 10px; min-height: 34px; margin-bottom: 8px;
-    border-radius: var(--r-sm); border: 1px solid var(--line-strong); background: rgba(255, 255, 255, .03);
+    border-radius: var(--r-sm); border: 0; background: rgba(255, 255, 255, .03);
     color: var(--muted);
 }
-.docs-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.docs-search:focus-within { box-shadow: inset 0 -2px var(--accent); }
+.docs-search input:focus { box-shadow: none; }
 .docs-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; padding: 7px 0; }
 .docs-search input::-webkit-search-cancel-button { display: none; }
 .docs-search-clear { display: grid; place-items: center; border: 0; padding: 2px; background: none; color: var(--muted); cursor: pointer; border-radius: 4px; }

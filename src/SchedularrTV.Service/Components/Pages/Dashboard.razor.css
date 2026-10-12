@@ -13,8 +13,7 @@
 .player-addresses { display: grid; gap: 13px; }
 .player-address label { display: block; color: var(--muted); font-size: 11px; font-weight: 600; margin-bottom: 5px; }
 .player-address-controls { display: flex; align-items: center; gap: 6px; }
-.player-address-controls input { min-width: 0; flex: 1; font: 12px/1.4 var(--mono); background: var(--bg-elev); padding: 9px 10px; border: 1px solid var(--line-strong); border-radius: var(--r-xs); color: var(--text); }
-.player-address-controls input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.player-address-controls input { min-width: 0; flex: 1; font: 12px/1.4 var(--mono); background: var(--bg-elev); padding: 9px 10px; border: 0; border-radius: var(--r-xs); color: var(--text); }
 .player-address-controls .btn { flex-shrink: 0; min-height: 36px; }
 .player-footnote { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 13px; font-size: 11px; color: var(--muted); }
 .copy-problem { color: var(--warn); }
