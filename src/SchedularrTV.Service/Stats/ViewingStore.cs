@@ -263,6 +263,83 @@ public sealed class ViewingStore
         }
     }
 
+    /// <summary>Every channel's airings that began from <paramref name="fromMinute"/> on, by channel then oldest first.</summary>
+    public IReadOnlyList<AiringRow> AllAirings(long fromMinute)
+    {
+        List<AiringRow> rows = [];
+        lock (_gate)
+        {
+            using SqliteConnection db = Open();
+            using SqliteCommand command = db.CreateCommand();
+            command.CommandText = """
+                SELECT channel, start, kind, show, title, item, aired, watched, viewer_minutes, peak
+                FROM airings WHERE start >= $from ORDER BY channel, start
+                """;
+            command.Parameters.AddWithValue("$from", fromMinute * 60);
+            using SqliteDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                rows.Add(new AiringRow(reader.GetString(0), reader.GetInt64(1), reader.GetString(2), reader.GetString(3),
+                    reader.IsDBNull(4) ? null : reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5),
+                    reader.GetInt32(6), reader.GetInt32(7), reader.GetInt32(8), reader.GetInt32(9)));
+            }
+        }
+
+        return rows;
+    }
+
+    /// <summary>Every channel's watched minutes from <paramref name="fromMinute"/> on, oldest first.</summary>
+    public IReadOnlyList<(string ChannelId, WatchedMinute Minute)> AllWatched(long fromMinute)
+    {
+        List<(string, WatchedMinute)> rows = [];
+        lock (_gate)
+        {
+            using SqliteConnection db = Open();
+            using SqliteCommand command = db.CreateCommand();
+            command.CommandText = "SELECT channel, minute, viewers FROM watched WHERE minute >= $from ORDER BY minute, channel";
+            command.Parameters.AddWithValue("$from", fromMinute);
+            using SqliteDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                rows.Add((reader.GetString(0), new WatchedMinute(reader.GetInt64(1), reader.GetInt32(2))));
+            }
+        }
+
+        return rows;
+    }
+
+    /// <summary>Who watched which channel, minute by minute, from <paramref name="fromMinute"/> on.</summary>
+    public IReadOnlyList<(string ChannelId, ViewerMinute Minute)> AllViewers(long fromMinute)
+    {
+        List<(string, ViewerMinute)> rows = [];
+        lock (_gate)
+        {
+            using SqliteConnection db = Open();
+            using SqliteCommand command = db.CreateCommand();
+            command.CommandText = "SELECT channel, minute, name, via FROM viewers WHERE minute >= $from ORDER BY minute";
+            command.Parameters.AddWithValue("$from", fromMinute);
+            using SqliteDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                rows.Add((reader.GetString(0), new ViewerMinute(reader.GetInt64(1), reader.GetString(2), reader.GetString(3))));
+            }
+        }
+
+        return rows;
+    }
+
+    /// <summary>When any channel's history begins (Unix minutes), or null when there's none.</summary>
+    public long? FirstMinute()
+    {
+        lock (_gate)
+        {
+            using SqliteConnection db = Open();
+            using SqliteCommand command = db.CreateCommand();
+            command.CommandText = "SELECT min(start) FROM airings";
+            return command.ExecuteScalar() is long start ? start / 60 : null;
+        }
+    }
+
     /// <summary>Forgets everything older than <paramref name="beforeMinute"/> (Unix minutes).</summary>
     public void Prune(long beforeMinute)
     {

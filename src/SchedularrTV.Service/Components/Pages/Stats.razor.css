@@ -1,0 +1,68 @@
+/* The same look as a channel's Stats tab (ChannelStatsTab.razor.css), scoped to this page. */
+.stats-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.stats-periods { display: flex; flex-wrap: wrap; gap: 6px; }
+.stats-now { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.live-dot { width: 9px; height: 9px; background: var(--error); }
+.pill-jellyfin { background: rgba(170, 92, 195, .14); color: #d6a3ea; border-color: rgba(170, 92, 195, .3); }
+.pill-plex { background: rgba(229, 160, 13, .13); color: #f3c25a; border-color: rgba(229, 160, 13, .3); }
+
+.stats-empty { text-align: center; padding: 36px 24px; color: var(--muted); }
+.stats-empty h2 { color: var(--text); margin: 10px 0 6px; }
+.stats-empty p { max-width: 560px; margin: 0 auto; }
+.stats-since { margin: -6px 0 12px; }
+
+.stats-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 0; border-radius: var(--r); background: var(--panel); min-width: 0; }
+.kpi-label { font-size: 12px; color: var(--muted); }
+.kpi-value { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.kpi-of { font-size: 15px; font-weight: 500; color: var(--muted); }
+.kpi-sub { font-size: 12px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.stats-split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.stats-split > .card { min-width: 0; }
+
+.chart { display: block; width: 100%; height: auto; overflow: visible; }
+.chart .grid-line { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart .bar { fill: var(--accent); opacity: .85; }
+.chart .bar:hover { opacity: 1; }
+
+.heat { display: grid; grid-template-columns: 34px repeat(24, minmax(0, 1fr)); gap: 3px; align-items: center; }
+.heat-hour { font-size: 10px; color: var(--faint); text-align: left; }
+.heat-day { font-size: 11px; color: var(--muted); }
+.heat-cell { aspect-ratio: 1; border-radius: 3px; background: rgba(255, 255, 255, .04); position: relative; overflow: hidden; }
+.heat-cell::after { content: ""; position: absolute; inset: 0; background: var(--accent); opacity: var(--a); }
+
+.rank { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.rank-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; }
+.rank-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+.rank-value { font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+.rank-sub { font-size: 12px; color: var(--faint); margin-top: 3px; }
+.meter { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .05); margin-top: 5px; overflow: hidden; }
+.meter > span { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+.meter-warn > span { background: var(--warn); }
+.meter-break > span { background: var(--commercial); }
+.versus { display: flex; flex-direction: column; gap: 16px; margin-bottom: 14px; }
+
+.stats-table-wrap { overflow-x: auto; }
+.stats-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.stats-table th { text-align: left; font-size: 12px; font-weight: 500; color: var(--muted); padding: 0 8px 8px 0; white-space: nowrap; }
+.stats-table td { padding: 8px 8px 8px 0; border-top: 1px solid var(--line); }
+.stats-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stats-table td .pill { margin-left: 6px; }
+.sort-button { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.sort-button:hover, th[aria-sort=ascending] .sort-button, th[aria-sort=descending] .sort-button { color: var(--text); }
+
+.via-split { display: flex; height: 26px; border-radius: var(--r-xs); overflow: hidden; margin-bottom: 4px; font-size: 12px; }
+.via-split > span { display: flex; align-items: center; padding: 0 10px; white-space: nowrap; overflow: hidden; min-width: 0; color: #0a0c11; font-weight: 600; }
+.via-jellyfin { background: #b07ad0; }
+.via-plex { background: #e5a00d; }
+.via-direct { background: #8d95aa; }
+
+@media (max-width: 1100px) {
+    .stats-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 800px) {
+    .stats-split { grid-template-columns: 1fr; }
+    .stats-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

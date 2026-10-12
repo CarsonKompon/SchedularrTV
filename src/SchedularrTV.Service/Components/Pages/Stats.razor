@@ -1,0 +1,599 @@
+@page "/stats"
+@* Viewing stats across every channel: totals, which channels do best and worst, and which shows and episodes. *@
+@using System.Globalization
+@using SchedularrTV.Service.Stats
+@inject ViewingStore Store
+@inject ViewingRecorder Recorder
+@inject AudienceReader Audience
+@inject ScheduleCoordinator Coordinator
+@inject ConfigEditor Editor
+@inject TimeProvider Clock
+@implements IDisposable
+
+<PageHeader Title="Stats" Eyebrow="System">
+    <ChildContent>Viewing across all channels. Each channel's own stats are on its Stats tab.</ChildContent>
+</PageHeader>
+
+<div class="stats-bar">
+    <div class="stats-periods" role="group" aria-label="Period">
+        @foreach (StatsPeriod period in StatsPeriod.All)
+        {
+            <button type="button" class="btn btn-sm @(_period == period ? "btn-primary" : "")" @onclick="() => Pick(period)">@period.Label</button>
+        }
+    </div>
+    <div class="stats-now">
+        @{
+            var watchingNow = Recorder.Now.Where(pair => pair.Value.Count > 0).ToList();
+            int nowCount = watchingNow.Sum(pair => pair.Value.Count);
+        }
+        @if (nowCount > 0)
+        {
+            <span class="live-dot" aria-hidden="true"></span>
+            <span><strong>@nowCount</strong> watching now on <strong>@watchingNow.Count</strong> @(watchingNow.Count == 1 ? "channel" : "channels")</span>
+            @foreach (var pair in watchingNow.OrderByDescending(pair => pair.Value.Count).Take(6))
+            {
+                <span class="pill pill-muted" title="@string.Join(", ", pair.Value.Select(viewer => viewer.Name))">@ChannelName(pair.Key) · @pair.Value.Count</span>
+            }
+        }
+        else
+        {
+            <span class="muted">Nobody watching right now</span>
+        }
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <div class="banner banner-error" role="alert">@_error <button class="btn btn-sm" @onclick="Refresh">Retry</button></div>
+}
+else if (_report is not { } report)
+{
+    <div class="card"><p class="muted">Loading…</p></div>
+}
+else if (report.HistoryStart is null)
+{
+    <div class="card stats-empty">
+        <Icon Name="activity" Size="28" />
+        <h2>No viewing recorded yet</h2>
+        <p class="muted">
+            Viewing is sampled every minute from @(Audience.Sources.Count == 0 ? "nowhere yet (set up a media server, Plex or ErsatzTV)" : string.Join(", ", Audience.Sources)).
+            Stats appear once channels start airing. Viewer sources are set up on any channel's Stats tab.
+        </p>
+    </div>
+}
+else
+{
+    @if (report.HistoryStart > report.From)
+    {
+        <p class="hint stats-since">History begins @report.HistoryStart.Value.ToString("d MMM yyyy, HH:mm", CultureInfo.CurrentCulture).</p>
+    }
+
+    <div class="stats-kpis">
+        <div class="kpi">
+            <span class="kpi-label">Viewer time</span>
+            <span class="kpi-value">@Duration(report.ViewerMinutes)</span>
+            <span class="kpi-sub">@Duration(report.WatchedMinutes) of channel time watched</span>
+        </div>
+        <div class="kpi">
+            <span class="kpi-label">Airtime watched</span>
+            <span class="kpi-value">@Percent(report.WatchedShare)</span>
+            <span class="kpi-sub">of @Duration(report.AiredMinutes) on air</span>
+        </div>
+        <div class="kpi">
+            <span class="kpi-label">Peak at once</span>
+            <span class="kpi-value">@report.PeakViewers</span>
+            <span class="kpi-sub">@(report.PeakAt is { } at ? at.ToString("ddd d MMM, HH:mm", CultureInfo.CurrentCulture) : "Nobody yet")</span>
+        </div>
+        <div class="kpi">
+            <span class="kpi-label">Viewers</span>
+            <span class="kpi-value">@report.UniqueViewers</span>
+            <span class="kpi-sub">@string.Join(" · ", report.MinutesByVia.OrderByDescending(pair => pair.Value).Select(pair => pair.Key))</span>
+        </div>
+        <div class="kpi">
+            <span class="kpi-label">Channels watched</span>
+            <span class="kpi-value">@report.ChannelsWatched<small class="kpi-of"> / @report.ChannelsTotal</small></span>
+            <span class="kpi-sub">@(report.ChannelsTotal - Math.Min(report.ChannelsTotal, report.ChannelsWatched)) with nobody watching</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head">
+            <h2>Viewer time by @(report.BarsAreWeeks ? "week" : "day")</h2>
+            <span class="muted">Hours watched, all channels together</span>
+        </div>
+        @{
+            double barMax = Math.Max(1, report.Bars.Count == 0 ? 0 : report.Bars.Max(bar => bar.ViewerMinutes) / 60.0);
+            double slot = (WideWidth - Gutter) / (double)Math.Max(1, report.Bars.Count);
+            int labelEvery = Math.Max(1, (int)Math.Ceiling(report.Bars.Count / 14.0));
+        }
+        <svg class="chart" viewBox="0 0 @WideWidth @(ChartHeight + 22)" role="img" aria-label="Viewer time chart">
+            @foreach (double tick in Ticks(barMax))
+            {
+                double y = ChartHeight - tick / barMax * ChartHeight;
+                <line class="grid-line" x1="@Gutter" x2="@WideWidth" y1="@F(y)" y2="@F(y)" />
+                @Axis(0, y + 3, $"{Number(tick)}h")
+            }
+            @for (int i = 0; i < report.Bars.Count; i++)
+            {
+                TimeBar bar = report.Bars[i];
+                double height = bar.ViewerMinutes / 60.0 / barMax * ChartHeight;
+                double x = Gutter + i * slot + slot * 0.15;
+                <rect class="bar" x="@F(x)" y="@F(ChartHeight - height)" width="@F(slot * 0.7)" height="@F(Math.Max(height, bar.ViewerMinutes > 0 ? 1.5 : 0))" rx="2">
+                    <title>@bar.Label: @Duration(bar.ViewerMinutes) viewer time · @Duration(bar.AiredMinutes) on air</title>
+                </rect>
+                @if (i % labelEvery == 0)
+                {
+                    @Axis(x + slot * 0.35, ChartHeight + 16, bar.Label, "middle")
+                }
+            }
+        </svg>
+    </div>
+
+    <div class="stats-split">
+        <div class="card">
+            <div class="card-head">
+                <h2>When people watch</h2>
+                <span class="muted">Average viewers by day and hour</span>
+            </div>
+            @{
+                double heatMax = Math.Max(0.01, report.Heat.Count == 0 ? 0 : report.Heat.Max(c => c.AverageViewers));
+            }
+            <div class="heat">
+                <span></span>
+                @for (int hour = 0; hour < 24; hour++)
+                {
+                    <span class="heat-hour">@(hour % 3 == 0 ? hour.ToString("00", CultureInfo.InvariantCulture) : "")</span>
+                }
+                @for (int day = 0; day < 7; day++)
+                {
+                    <span class="heat-day">@Days[day]</span>
+                    int row = day;
+                    @foreach (HeatCell cell in report.Heat.Where(c => c.Day == row))
+                    {
+                        <span class="heat-cell" style="--a:@F(cell.AverageViewers <= 0 ? 0 : 0.12 + 0.88 * cell.AverageViewers / heatMax)"
+                              title="@($"{Days[day]} {cell.Hour:00}:00 · {cell.AverageViewers:0.##} viewers on average")"></span>
+                    }
+                }
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-head"><h2>Programmes vs breaks</h2></div>
+            <div class="versus">
+                <div>
+                    <div class="rank-row"><span>Programmes</span><span class="rank-value">@Percent(report.ProgramShare)</span></div>
+                    <div class="meter"><span style="width:@F(report.ProgramShare * 100)%"></span></div>
+                </div>
+                <div>
+                    <div class="rank-row"><span>Ad breaks &amp; promos</span><span class="rank-value">@Percent(report.BreakShare)</span></div>
+                    <div class="meter meter-break"><span style="width:@F(report.BreakShare * 100)%"></span></div>
+                </div>
+            </div>
+            <p class="hint">The share of each that someone was watching, over every channel.</p>
+            @if (report.MinutesByVia.Count > 0)
+            {
+                int viaTotal = Math.Max(1, report.MinutesByVia.Values.Sum());
+                <h3>Watching through</h3>
+                <div class="via-split" role="img" aria-label="Watching by source">
+                    @foreach ((string via, int minutes) in report.MinutesByVia.OrderByDescending(pair => pair.Value))
+                    {
+                        <span class="via-@via.ToLowerInvariant()" style="flex:@minutes" title="@($"{via}: {Duration(minutes)}")">@via @Percent((double)minutes / viaTotal)</span>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    @* Channels *@
+    <div class="section-title"><Icon Name="radio" Size="16" /><h2>Channels</h2></div>
+    <div class="stats-split">
+        <div class="card">
+            <div class="card-head"><h2>Most watched channels</h2><span class="muted">By viewer time</span></div>
+            @{
+                List<ChannelRank> topChannels = [.. report.Channels.Where(c => c.ViewerMinutes > 0).OrderByDescending(c => c.ViewerMinutes).Take(OverallStats.ListSize)];
+            }
+            @if (topChannels.Count == 0)
+            {
+                <p class="muted">Nothing watched in this period.</p>
+            }
+            else
+            {
+                double most = topChannels.Max(c => c.ViewerMinutes);
+                <ol class="rank">
+                    @foreach (ChannelRank channel in topChannels)
+                    {
+                        <li>
+                            <div class="rank-row"><span class="rank-name">@ChannelLabel(channel)</span><span class="rank-value">@Duration(channel.ViewerMinutes)</span></div>
+                            <div class="meter"><span style="width:@F(channel.ViewerMinutes / most * 100)%"></span></div>
+                            <div class="rank-sub">@channel.Viewers @(channel.Viewers == 1 ? "viewer" : "viewers") · peak @channel.Peak · @Percent(channel.Share) of airtime watched</div>
+                        </li>
+                    }
+                </ol>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-head"><h2>Least watched channels</h2><span class="muted">By viewer time</span></div>
+            @{
+                List<ChannelRank> bottomChannels = [.. report.Channels.Where(c => c.AiredMinutes >= OverallStats.LeastWatchedChannelMinutes)
+                    .OrderBy(c => c.ViewerMinutes).ThenBy(c => c.Share).ThenByDescending(c => c.AiredMinutes).Take(OverallStats.ListSize)];
+                double bottomMax = Math.Max(1, report.Channels.Count == 0 ? 0 : report.Channels.Max(c => c.ViewerMinutes));
+            }
+            @if (bottomChannels.Count == 0)
+            {
+                <p class="muted">No channel has aired for @OverallStats.LeastWatchedChannelMinutes minutes yet in this period.</p>
+            }
+            else
+            {
+                <ol class="rank">
+                    @foreach (ChannelRank channel in bottomChannels)
+                    {
+                        <li>
+                            <div class="rank-row"><span class="rank-name">@ChannelLabel(channel)</span><span class="rank-value">@Duration(channel.ViewerMinutes)</span></div>
+                            <div class="meter meter-warn"><span style="width:@F(Math.Max(channel.ViewerMinutes / bottomMax * 100, channel.ViewerMinutes > 0 ? 1 : 0))%"></span></div>
+                            <div class="rank-sub">@channel.Viewers @(channel.Viewers == 1 ? "viewer" : "viewers") · @Percent(channel.Share) of @Duration(channel.AiredMinutes) watched</div>
+                        </li>
+                    }
+                </ol>
+            }
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head"><h2>All channels</h2><span class="muted">Select a column to sort</span></div>
+        <div class="stats-table-wrap">
+            <table class="stats-table">
+                <thead>
+                    <tr>
+                        @SortHeader(ChannelSort.Number, "#", true)
+                        @SortHeader(ChannelSort.Name, "Channel", false)
+                        @SortHeader(ChannelSort.ViewerTime, "Viewer time", true)
+                        @SortHeader(ChannelSort.Viewers, "Viewers", true)
+                        @SortHeader(ChannelSort.Peak, "Peak", true)
+                        @SortHeader(ChannelSort.Share, "Airtime watched", true)
+                        @SortHeader(ChannelSort.Aired, "On air", true)
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (ChannelRank channel in SortedChannels(report))
+                    {
+                        <tr>
+                            <td class="num muted">@channel.Number</td>
+                            <td>
+                                @if (Editor.FindChannel(channel.ChannelId) is not null)
+                                {
+                                    <a href="@($"channels/{channel.ChannelId}")">@channel.Name</a>
+                                }
+                                else
+                                {
+                                    @channel.Name
+                                }
+                                @if (channel.Removed)
+                                {
+                                    <span class="pill pill-muted">Removed</span>
+                                }
+                            </td>
+                            <td class="num">@Duration(channel.ViewerMinutes)</td>
+                            <td class="num">@channel.Viewers</td>
+                            <td class="num">@channel.Peak</td>
+                            <td class="num">@Percent(channel.Share)</td>
+                            <td class="num muted">@Duration(channel.AiredMinutes)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    @* Shows *@
+    <div class="section-title"><Icon Name="tv" Size="16" /><h2>Shows &amp; films</h2></div>
+    <div class="stats-split">
+        <div class="card">
+            <div class="card-head"><h2>Most watched</h2><span class="muted">By viewer time</span></div>
+            @if (report.MostWatchedShows.Count == 0)
+            {
+                <p class="muted">Nothing watched in this period.</p>
+            }
+            else
+            {
+                double most = report.MostWatchedShows.Max(show => show.ViewerMinutes);
+                <ol class="rank">
+                    @foreach (OverallShowStat show in report.MostWatchedShows)
+                    {
+                        <li>
+                            <div class="rank-row"><span class="rank-name" title="@show.Show">@show.Show</span><span class="rank-value">@Duration(show.ViewerMinutes)</span></div>
+                            <div class="meter"><span style="width:@F(show.ViewerMinutes / most * 100)%"></span></div>
+                            <div class="rank-sub">@show.Viewers @(show.Viewers == 1 ? "viewer" : "viewers") · @Percent(show.Share) of @Duration(show.AiredMinutes) watched · @Plural(show.Airings, "airing") on @Plural(show.Channels, "channel")</div>
+                        </li>
+                    }
+                </ol>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-head"><h2>Least watched</h2><span class="muted">Share of airtime watched</span></div>
+            @if (report.LeastWatchedShows.Count == 0)
+            {
+                <p class="muted">No show has aired for @ChannelStats.LeastWatchedMinimumMinutes minutes yet in this period.</p>
+            }
+            else
+            {
+                <ol class="rank">
+                    @foreach (OverallShowStat show in report.LeastWatchedShows)
+                    {
+                        <li>
+                            <div class="rank-row"><span class="rank-name" title="@show.Show">@show.Show</span><span class="rank-value">@Percent(show.Share)</span></div>
+                            <div class="meter meter-warn"><span style="width:@F(Math.Max(show.Share * 100, show.Share > 0 ? 1 : 0))%"></span></div>
+                            <div class="rank-sub">@Duration(show.WatchedMinutes) of @Duration(show.AiredMinutes) watched · @Plural(show.Airings, "airing") on @Plural(show.Channels, "channel")</div>
+                        </li>
+                    }
+                </ol>
+                @if (report.NeverWatchedShows > 0)
+                {
+                    <p class="hint">@report.NeverWatchedShows @(report.NeverWatchedShows == 1 ? "show has" : "shows have") aired for @ChannelStats.LeastWatchedMinimumMinutes+ minutes with nobody watching.</p>
+                }
+            }
+        </div>
+    </div>
+
+    @* Episodes *@
+    <div class="section-title"><Icon Name="film" Size="16" /><h2>Episodes &amp; films</h2></div>
+    <div class="stats-split">
+        <div class="card">
+            <div class="card-head"><h2>Most watched</h2><span class="muted">By viewer time</span></div>
+            @if (report.MostWatchedTitles.Count == 0)
+            {
+                <p class="muted">Nothing watched in this period.</p>
+            }
+            else
+            {
+                <table class="stats-table">
+                    <thead><tr><th>Title</th><th class="num">Viewers</th><th class="num">Viewer time</th></tr></thead>
+                    <tbody>
+                        @foreach (OverallTitleStat title in report.MostWatchedTitles)
+                        {
+                            <tr>
+                                <td>@TitleCell(title)</td>
+                                <td class="num">@title.Viewers</td>
+                                <td class="num">@Duration(title.ViewerMinutes)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-head"><h2>Least watched</h2><span class="muted">Share of airtime watched</span></div>
+            @if (report.LeastWatchedTitles.Count == 0)
+            {
+                <p class="muted">Nothing has aired for @OverallStats.LeastWatchedTitleMinutes minutes yet in this period.</p>
+            }
+            else
+            {
+                <table class="stats-table">
+                    <thead><tr><th>Title</th><th class="num">Watched</th><th class="num">On air</th></tr></thead>
+                    <tbody>
+                        @foreach (OverallTitleStat title in report.LeastWatchedTitles)
+                        {
+                            <tr>
+                                <td>@TitleCell(title)</td>
+                                <td class="num">@Percent(title.Share)</td>
+                                <td class="num muted">@Duration(title.AiredMinutes)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+
+    @* Viewers *@
+    <div class="card">
+        <div class="card-head"><h2>Who watched</h2></div>
+        @if (report.Who.Count == 0)
+        {
+            <p class="muted">Nobody watched in this period.</p>
+        }
+        else
+        {
+            <div class="stats-table-wrap">
+                <table class="stats-table">
+                    <thead><tr><th>Viewer</th><th>Through</th><th class="num">Watched</th><th class="num">Channels</th><th>Favourite channel</th><th class="num">Last seen</th></tr></thead>
+                    <tbody>
+                        @foreach (OverallWhoStat who in report.Who)
+                        {
+                            <tr>
+                                <td>@who.Name</td>
+                                <td><span class="pill @ViaClass(who.Via)">@who.Via</span></td>
+                                <td class="num">@Duration(who.Minutes)</td>
+                                <td class="num">@who.Channels</td>
+                                <td>@who.Favourite</td>
+                                <td class="num muted">@who.LastSeen.ToString("d MMM, HH:mm", CultureInfo.CurrentCulture)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (report.MinutesByVia.ContainsKey("Direct"))
+            {
+                <p class="hint">"Direct viewer" is any player pulling a channel straight from ErsatzTV (VLC, an IPTV app). ErsatzTV can't say how many, so it counts as one.</p>
+            }
+        }
+    </div>
+}
+
+@code {
+    private enum ChannelSort { Number, Name, ViewerTime, Viewers, Peak, Share, Aired }
+
+    private const int WideWidth = 960;
+    private const int ChartHeight = 160;
+    private const int Gutter = 30;
+    private static readonly string[] Days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+    private StatsPeriod _period = StatsPeriod.Find("week");
+    private OverallStatsReport? _report;
+    private string? _error;
+    private int _version;
+    private bool _disposed;
+    private ChannelSort _sort = ChannelSort.ViewerTime;
+    private bool _descending = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Recorder.Sampled += OnSampled;
+        await Refresh();
+    }
+
+    private async Task Pick(StatsPeriod period)
+    {
+        _period = period;
+        _report = null;
+        await Refresh();
+    }
+
+    private async Task Refresh()
+    {
+        if (_disposed) return;
+        int version = ++_version;
+        StatsPeriod period = _period;
+        IReadOnlyList<StatsChannel> channels = Channels();
+        _error = null;
+        try
+        {
+            string? zoneId = Editor.Working.Settings.TimeZone;
+            TimeZoneInfo zone = string.IsNullOrWhiteSpace(zoneId) ? TimeZoneInfo.Local : SchedularrTV.Core.Scheduling.SchedulingEngine.ResolveTimeZone(zoneId);
+            OverallStatsReport report = await Task.Run(() => OverallStats.Build(Store, channels, period, Clock.GetUtcNow(), zone));
+            if (_disposed || version != _version) return;
+            _report = report;
+        }
+        catch (Exception ex)
+        {
+            if (!_disposed && version == _version) _error = $"Couldn't load stats: {ex.Message}";
+        }
+    }
+
+    private void OnSampled() => _ = InvokeAsync(async () =>
+    {
+        await Refresh();
+        if (!_disposed) StateHasChanged();
+    });
+
+    /// <summary>Every channel there is: the published schedules (plugin channels too), then any configured channel not yet built.</summary>
+    private IReadOnlyList<StatsChannel> Channels()
+    {
+        List<StatsChannel> channels = [.. Coordinator.Latest.Select(schedule => new StatsChannel(schedule.ChannelId, schedule.ChannelName, schedule.ChannelNumber))];
+        foreach (ChannelConfig channel in Editor.Working.Channels)
+        {
+            if (!channels.Any(known => string.Equals(known.Id, channel.Id, StringComparison.Ordinal)))
+            {
+                channels.Add(new StatsChannel(channel.Id, channel.Name, channel.Number));
+            }
+        }
+
+        return channels;
+    }
+
+    private string ChannelName(string id) =>
+        Coordinator.Latest.FirstOrDefault(schedule => schedule.ChannelId == id)?.ChannelName
+        ?? Editor.FindChannel(id)?.Name
+        ?? id;
+
+    private static string ChannelLabel(ChannelRank channel) =>
+        channel.Number is { } number ? $"{number} · {channel.Name}" : channel.Removed ? $"{channel.Name} (removed)" : channel.Name;
+
+    private IEnumerable<ChannelRank> SortedChannels(OverallStatsReport report)
+    {
+        Func<ChannelRank, object> key = _sort switch
+        {
+            ChannelSort.Number => c => c.Number ?? int.MaxValue,
+            ChannelSort.Name => c => c.Name,
+            ChannelSort.Viewers => c => c.Viewers,
+            ChannelSort.Peak => c => c.Peak,
+            ChannelSort.Share => c => c.Share,
+            ChannelSort.Aired => c => c.AiredMinutes,
+            _ => c => c.ViewerMinutes
+        };
+
+        IOrderedEnumerable<ChannelRank> sorted = _sort == ChannelSort.Name
+            ? (_descending ? report.Channels.OrderByDescending(c => c.Name, StringComparer.CurrentCultureIgnoreCase) : report.Channels.OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase))
+            : (_descending ? report.Channels.OrderByDescending(key) : report.Channels.OrderBy(key));
+        return sorted.ThenBy(c => c.Number ?? int.MaxValue);
+    }
+
+    private void SortBy(ChannelSort sort, bool numeric)
+    {
+        if (_sort == sort)
+        {
+            _descending = !_descending;
+        }
+        else
+        {
+            _sort = sort;
+            // Numbers read best biggest first; names and channel numbers in order.
+            _descending = numeric && sort != ChannelSort.Number;
+        }
+    }
+
+    private RenderFragment SortHeader(ChannelSort sort, string label, bool numeric) => __builder =>
+    {
+        string arrow = _sort == sort ? (_descending ? " ↓" : " ↑") : string.Empty;
+        <th class="@(numeric ? "num" : "")" aria-sort="@(_sort == sort ? (_descending ? "descending" : "ascending") : "none")">
+            <button type="button" class="sort-button" @onclick="() => SortBy(sort, numeric)">@(label + arrow)</button>
+        </th>
+    };
+
+    private static RenderFragment TitleCell(OverallTitleStat title) => __builder =>
+    {
+        <strong>@title.Show</strong>
+        @if (title.Title is not null)
+        {
+            <span class="muted"> · @title.Title</span>
+        }
+        <div class="rank-sub">@Plural(title.Airings, "airing")</div>
+    };
+
+    private static string Plural(int count, string noun) => $"{count} {(count == 1 ? noun : noun + "s")}";
+
+    /// <summary>An SVG axis label; Razor reserves the <c>&lt;text&gt;</c> tag, so it's written out here.</summary>
+    private static MarkupString Axis(double x, double y, string label, string anchor = "start") => new(
+        $"<text x=\"{F(x)}\" y=\"{F(y)}\" text-anchor=\"{anchor}\" style=\"fill:var(--faint);font-size:10px\">{System.Net.WebUtility.HtmlEncode(label)}</text>");
+
+    private static string ViaClass(string via) => via switch
+    {
+        "Jellyfin" => "pill-jellyfin",
+        "Plex" => "pill-plex",
+        _ => "pill-muted"
+    };
+
+    private static string F(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private static string Number(double value) => value.ToString(value < 10 && value != Math.Floor(value) ? "0.#" : "0", CultureInfo.CurrentCulture);
+
+    private static string Percent(double share) => share <= 0 ? "0%" : share < 0.01 ? "<1%" : share.ToString("0%", CultureInfo.CurrentCulture);
+
+    private static string Duration(int minutes) => minutes switch
+    {
+        <= 0 => "0m",
+        < 60 => $"{minutes}m",
+        < 60 * 100 => minutes % 60 == 0 ? $"{minutes / 60}h" : $"{minutes / 60}h {minutes % 60}m",
+        _ => $"{(minutes / 60):N0}h"
+    };
+
+    private static IEnumerable<double> Ticks(double max)
+    {
+        double raw = max / 3;
+        double magnitude = Math.Pow(10, Math.Floor(Math.Log10(raw)));
+        double step = (raw / magnitude) switch { < 1.5 => magnitude, < 3.5 => 2 * magnitude, < 7.5 => 5 * magnitude, _ => 10 * magnitude };
+        for (double tick = step; tick <= max + 1e-9; tick += step)
+        {
+            yield return tick;
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Recorder.Sampled -= OnSampled;
+    }
+}
