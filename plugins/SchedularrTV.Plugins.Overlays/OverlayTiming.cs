@@ -46,10 +46,56 @@ public readonly record struct LayerTiming(double InSeconds, double OutSeconds, b
 /// </summary>
 public static class OverlayTiming
 {
+    /// <summary>
+    /// Expands a schedule into single-rule overlays for the timing engine and publisher. Keeping each rule with its
+    /// design means layer in/out offsets are evaluated against that slot's own duration, including across breaks.
+    /// </summary>
+    public static IEnumerable<Overlay> Rules(Overlay overlay)
+    {
+        if (overlay.Schedule is not { } schedule)
+        {
+            yield return overlay;
+            yield break;
+        }
+
+        Overlay Rule(string when, double offset = 0, double duration = 8, double percent = 50, double every = 10)
+        {
+            Overlay rule = overlay.Copy();
+            rule.Schedule = null;
+            rule.When = when;
+            rule.OffsetSeconds = offset;
+            rule.DurationSeconds = duration;
+            rule.Percent = percent;
+            rule.EveryMinutes = every;
+            return rule;
+        }
+
+        if (schedule.Always)
+        {
+            yield return Rule(OverlayWhen.Always);
+            yield break;
+        }
+
+        foreach (OverlaySlot slot in schedule.Slots.DistinctBy(slot => (slot.When, slot.OffsetSeconds, slot.Percent, slot.DurationSeconds)))
+        {
+            if (slot.When is OverlayWhen.Start or OverlayWhen.End or OverlayWhen.Percent)
+            {
+                yield return Rule(slot.When, slot.OffsetSeconds, slot.DurationSeconds, slot.Percent);
+            }
+        }
+
+        if (schedule.Automatic is { Enabled: true } automatic)
+        {
+            yield return Rule(automatic.ByClock ? OverlayWhen.Clock : OverlayWhen.Every,
+                automatic.OffsetSeconds, automatic.DurationSeconds, every: automatic.EveryMinutes);
+        }
+    }
+
     /// <summary>Appearances shorter than this (cut down by a break) are left out.</summary>
     private const long ShortestMs = 750;
 
     /// <summary>
+    /// Evaluates one rule returned by <see cref="Rules"/>.
     /// Null when the overlay doesn't show on this entry at all (or, with <paramref name="part"/>, when that part of it
     /// doesn't: its window is too short once its in and out are taken off).
     /// </summary>

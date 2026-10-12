@@ -77,25 +77,28 @@
                 </div>
                 @if (ShowsAppearance)
                 {
-                    double length = Math.Max(1, Overlay.DurationSeconds);
-                    <div class="field ov-appearance">
-                        <span>Each time it shows (@Number(length)s), layer by layer, top first</span>
-                        @foreach (OverlayLayer layer in Enumerable.Reverse(Overlay.Layers).ToList())
-                        {
-                            (double comesIn, double goesOut) = OverlayDescriptions.Within(Overlay, layer);
-                            string stripClass = layer.Kind == OverlayLayerKinds.Video ? "ed-strip-on ov-video" : "ed-strip-on";
-                            <div class="ov-appearance-row @(ReferenceEquals(layer, _layer) ? "selected" : "")" @key="layer">
-                                <button type="button" class="ov-appearance-name" @onclick="() => _layer = layer">@Label(layer)</button>
-                                <div class="ed-strip">
-                                    @if (goesOut > comesIn)
-                                    {
-                                        <span class="@stripClass" style="left:@Fraction(comesIn, length);width:@Fraction(goesOut - comesIn, length);"
-                                              title="@($"{Number(comesIn)}s to {Number(goesOut)}s")"></span>
-                                    }
+                    @foreach (Overlay rule in OverlayTiming.Rules(Overlay))
+                    {
+                        double length = Math.Max(1, rule.DurationSeconds);
+                        <div class="field ov-appearance">
+                            <span>@OverlayDescriptions.When(rule) — layer by layer, top first</span>
+                            @foreach (OverlayLayer layer in Enumerable.Reverse(Overlay.Layers).ToList())
+                            {
+                                (double comesIn, double goesOut) = OverlayDescriptions.Within(rule, layer);
+                                string stripClass = layer.Kind == OverlayLayerKinds.Video ? "ed-strip-on ov-video" : "ed-strip-on";
+                                <div class="ov-appearance-row @(ReferenceEquals(layer, _layer) ? "selected" : "")" @key="layer">
+                                    <button type="button" class="ov-appearance-name" @onclick="() => _layer = layer">@Label(layer)</button>
+                                    <div class="ed-strip">
+                                        @if (goesOut > comesIn)
+                                        {
+                                            <span class="@stripClass" style="left:@Fraction(comesIn, length);width:@Fraction(goesOut - comesIn, length);"
+                                                  title="@($"{Number(comesIn)}s to {Number(goesOut)}s")"></span>
+                                        }
+                                    </div>
                                 </div>
-                            </div>
-                        }
-                    </div>
+                            }
+                        </div>
+                    }
                 }
             </div>
             <p class="hint">
@@ -110,36 +113,8 @@
             }
 
             <h3 class="ed-section">Timing</h3>
+            <OverlayScheduleEditor Schedule="TimingSchedule" Changed="CommitAsync" />
             <div class="grid grid-3">
-                <label class="field"><span>Shows</span>
-                    <select value="@Overlay.When" @onchange="e => Set(() => Overlay.When = Text(e, OverlayWhen.Always))">
-                        <option value="always">All the way through each programme</option>
-                        <option value="start">Once, near the start</option>
-                        <option value="end">Once, near the end</option>
-                        <option value="percent">Once, part-way through</option>
-                        <option value="every">Every few minutes through the programme</option>
-                        <option value="clock">Every few minutes by the clock</option>
-                    </select></label>
-                @if (Overlay.When is OverlayWhen.Start or OverlayWhen.End or OverlayWhen.Every or OverlayWhen.Clock)
-                {
-                    <label class="field"><span>@OffsetLabel (seconds)</span>
-                        <input type="number" min="0" step="1" value="@Number(Overlay.OffsetSeconds)" @onchange="e => Set(() => Overlay.OffsetSeconds = Number(e, 0))" /></label>
-                }
-                @if (Overlay.When == OverlayWhen.Percent)
-                {
-                    <label class="field"><span>How far through (%)</span>
-                        <input type="number" min="0" max="100" step="1" value="@Number(Overlay.Percent)" @onchange="e => Set(() => Overlay.Percent = Number(e, 50))" /></label>
-                }
-                @if (Overlay.When is OverlayWhen.Every or OverlayWhen.Clock)
-                {
-                    <label class="field"><span>Every (minutes)</span>
-                        <input type="number" min="1" step="1" value="@Number(Overlay.EveryMinutes)" @onchange="e => Set(() => Overlay.EveryMinutes = Math.Max(1, Number(e, 10)))" /></label>
-                }
-                @if (Overlay.When != OverlayWhen.Always)
-                {
-                    <label class="field"><span>Shows for (seconds)</span>
-                        <input type="number" min="1" step="1" value="@Number(Overlay.DurationSeconds)" @onchange="e => Set(() => Overlay.DurationSeconds = Math.Max(1, Number(e, 8)))" /></label>
-                }
                 <label class="field"><span>Fade in and out (seconds each)</span>
                     <input type="number" min="0" max="10" step="0.1" value="@Number(Overlay.FadeSeconds)" @onchange="e => Set(() => Overlay.FadeSeconds = Math.Clamp(Number(e, 1), 0, 10))" /></label>
                 <label class="field"><span>On</span>
@@ -282,11 +257,10 @@
                                         <button class="btn btn-sm" type="button" @onclick="() => FitVideo(selected, info, fill: false)">Fit box to its shape</button>
                                         <button class="btn btn-sm" type="button" @onclick="() => FitVideo(selected, info, fill: true)">Fill the canvas</button>
                                     }
-                                    @if (info.Duration is { } videoLength && Overlay.When != OverlayWhen.Always
-                                         && Math.Abs(videoLength.TotalSeconds - Overlay.DurationSeconds) >= 0.05)
+                                    @if (info.Duration is { } videoLength && !TimingSchedule.Always)
                                     {
-                                        <button class="btn btn-sm" type="button" @onclick="() => Set(() => Overlay.DurationSeconds = Math.Round(videoLength.TotalSeconds, 2))">
-                                            Show for @Number(Math.Round(videoLength.TotalSeconds, 2))s, its length</button>
+                                        <button class="btn btn-sm" type="button" @onclick="() => Set(() => SetDurations(videoLength.TotalSeconds))">
+                                            Set all slot lengths to @Number(Math.Round(videoLength.TotalSeconds, 2))s, its length</button>
                                     }
                                 </div>
                             }
@@ -333,7 +307,7 @@
                         <p class="hint">
                             @(selected.Kind == OverlayLayerKinds.Video
                                 ? "Usually 0 and 0: the video plays for the whole time the overlay shows."
-                                : Overlay.When == OverlayWhen.Always
+                                : TimingSchedule.Always
                                     ? "Measured from the start and end of each part of the programme (between its breaks)."
                                     : "E.g. text over a video that takes 1.5s to animate in and out: in after 1.5, out 1.5 before the end. It fades as the overlay does.")
                         </p>
@@ -457,9 +431,11 @@
 
     private bool IsDesign => Overlay.Kind != OverlayKinds.File;
 
+    private OverlaySchedule TimingSchedule => Overlay.Schedule ??= OverlaySchedule.FromLegacy(Overlay);
+
     /// <summary>The one-appearance chart: worth showing once some part of a timed design comes or goes on its own.</summary>
     private bool ShowsAppearance =>
-        IsDesign && Overlay.When != OverlayWhen.Always && Overlay.Layers.Count > 1
+        IsDesign && !TimingSchedule.Always && Overlay.Layers.Count > 1
         && Overlay.Layers.Any(layer => layer.Kind == OverlayLayerKinds.Video || layer.InSeconds > 0 || layer.OutSeconds > 0);
 
     private int CanvasWidth => IsDesign ? Math.Max(1, Overlay.Width) : FileCanvasWidth;
@@ -468,14 +444,6 @@
 
     /// <summary>Screen pixels per canvas pixel: the canvas fills the editor's width, so this follows the window.</summary>
     private double Scale => (_canvasPixels > 0 ? _canvasPixels : 640) / CanvasWidth;
-
-    private string OffsetLabel => Overlay.When switch
-    {
-        OverlayWhen.Start => "Starts this far in",
-        OverlayWhen.End => "Ends this long before the end",
-        OverlayWhen.Every => "First this far in",
-        _ => "This far past each period"
-    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -583,9 +551,9 @@
                 layer.Height = MathF.Round(layer.Width * (float)aspect);
             }
 
-            if (first && info?.Duration is { } length && Overlay.When != OverlayWhen.Always)
+            if (first && info?.Duration is { } length && !TimingSchedule.Always)
             {
-                Overlay.DurationSeconds = Math.Max(1, Math.Round(length.TotalSeconds, 2));
+                SetDurations(length.TotalSeconds);
             }
         }
 
@@ -609,6 +577,16 @@
 
         layer.Height = MathF.Round(layer.Width * (float)aspect);
         await CommitAsync();
+    }
+
+    private void SetDurations(double seconds)
+    {
+        double duration = Math.Max(1, Math.Round(seconds, 2));
+        foreach (OverlaySlot slot in TimingSchedule.Slots)
+        {
+            slot.DurationSeconds = duration;
+        }
+        TimingSchedule.Automatic.DurationSeconds = duration;
     }
 
     private async Task SetSize(ChangeEventArgs e)

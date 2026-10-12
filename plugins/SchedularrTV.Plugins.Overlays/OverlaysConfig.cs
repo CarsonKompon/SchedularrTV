@@ -78,6 +78,57 @@ public static class OverlayAnchors
         ["top_left", "top_center", "top_right", "center_left", "center", "center_right", "bottom_left", "bottom_center", "bottom_right"];
 }
 
+/// <summary>Independent appearances, plus an optional automatic cycle. Null on old overlays until edited.</summary>
+public sealed class OverlaySchedule
+{
+    public bool Always { get; set; }
+    public List<OverlaySlot> Slots { get; set; } = [];
+    public OverlayAutomatic Automatic { get; set; } = new();
+
+    public OverlaySchedule Copy() => new()
+    {
+        Always = Always,
+        Slots = [.. Slots.Select(slot => slot.Copy())],
+        Automatic = Automatic.Copy()
+    };
+
+    public static OverlaySchedule FromLegacy(Overlay overlay) => new()
+    {
+        Always = overlay.When == OverlayWhen.Always,
+        Slots = overlay.When is OverlayWhen.Start or OverlayWhen.End or OverlayWhen.Percent
+            ? [new OverlaySlot { When = overlay.When, OffsetSeconds = overlay.OffsetSeconds, Percent = overlay.Percent, DurationSeconds = overlay.DurationSeconds }]
+            : [],
+        Automatic = new OverlayAutomatic
+        {
+            Enabled = overlay.When is OverlayWhen.Every or OverlayWhen.Clock,
+            ByClock = overlay.When == OverlayWhen.Clock,
+            EveryMinutes = overlay.EveryMinutes,
+            OffsetSeconds = overlay.OffsetSeconds,
+            DurationSeconds = overlay.DurationSeconds
+        }
+    };
+}
+
+public sealed class OverlaySlot
+{
+    /// <summary>Start, end (the slot ends this far before the programme ends), or percent.</summary>
+    public string When { get; set; } = OverlayWhen.Start;
+    public double OffsetSeconds { get; set; }
+    public double Percent { get; set; } = 50;
+    public double DurationSeconds { get; set; } = 8;
+    public OverlaySlot Copy() => (OverlaySlot)MemberwiseClone();
+}
+
+public sealed class OverlayAutomatic
+{
+    public bool Enabled { get; set; }
+    public bool ByClock { get; set; }
+    public double EveryMinutes { get; set; } = 10;
+    public double OffsetSeconds { get; set; }
+    public double DurationSeconds { get; set; } = 8;
+    public OverlayAutomatic Copy() => (OverlayAutomatic)MemberwiseClone();
+}
+
 /// <summary>One screen bug, lower third or other graphic, and when it shows.</summary>
 public sealed class Overlay
 {
@@ -122,6 +173,9 @@ public sealed class Overlay
 
     // --- When ---
 
+    /// <summary>Multiple timing rules. When absent, the legacy single-rule fields below still apply.</summary>
+    public OverlaySchedule? Schedule { get; set; }
+
     /// <summary><see cref="OverlayWhen"/>.</summary>
     public string When { get; set; } = OverlayWhen.Always;
 
@@ -152,6 +206,7 @@ public sealed class Overlay
         var copy = (Overlay)MemberwiseClone();
         copy.Layers = [.. Layers.Select(layer => layer.Copy())];
         copy.Variants = [.. Variants.Select(variant => variant.Copy())];
+        copy.Schedule = Schedule?.Copy();
         return copy;
     }
 }

@@ -85,7 +85,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
             var layers = new JsonArray();
             Dictionary<string, string>? tokens = null;
             OverlayMoment? moment = null;
-            foreach (Overlay overlay in resolved.Overlays)
+            foreach (Overlay overlay in resolved.Overlays.SelectMany(OverlayTiming.Rules))
             {
                 if (OverlayTiming.For(overlay, entry) is not { } showing)
                 {

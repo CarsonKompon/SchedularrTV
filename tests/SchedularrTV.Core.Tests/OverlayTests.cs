@@ -124,6 +124,134 @@ public sealed class OverlayTests : IDisposable
 
     // --- Channels, blocks and links ---------------------------------------------------------------
 
+    [Fact]
+    public void Multiple_slots_keep_their_own_lengths_and_land_on_the_right_programme_part()
+    {
+        var overlay = new Overlay
+        {
+            Schedule = new OverlaySchedule
+            {
+                Slots =
+                [
+                    new OverlaySlot { OffsetSeconds = 10, DurationSeconds = 8 },
+                    new OverlaySlot { When = OverlayWhen.Percent, Percent = 50, DurationSeconds = 12 },
+                    new OverlaySlot { When = OverlayWhen.End, OffsetSeconds = 30, DurationSeconds = 20 }
+                ]
+            }
+        };
+        Overlay[] rules = OverlayTiming.Rules(overlay).ToArray();
+        ScheduleEntry first = Episode(TimeSpan.Zero, TimeSpan.FromMinutes(11));
+        ScheduleEntry second = Episode(TimeSpan.FromMinutes(11), TimeSpan.FromMinutes(11));
+        Assert.Equal(8_000, OverlayTiming.For(rules[0], first)!.Timing!.VisibleMs);
+        Assert.Null(OverlayTiming.For(rules[0], second));
+        Assert.Null(OverlayTiming.For(rules[1], first));
+        Assert.Equal((0L, 12_000L), (OverlayTiming.For(rules[1], second)!.Timing!.PhaseMs, OverlayTiming.For(rules[1], second)!.Timing!.VisibleMs));
+        Assert.Null(OverlayTiming.For(rules[2], first));
+        GraphicsTiming end = OverlayTiming.For(rules[2], second)!.Timing!;
+        Assert.Equal((610_000L, 20_000L), (end.PhaseMs, end.VisibleMs));
+        Assert.Equal(3, OverlayDescriptions.Sample(overlay, TimeSpan.FromMinutes(22)).Count);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Manual_and_automatic_slots_publish_together(bool byClock)
+    {
+        (SchedulerConfig config, ChannelConfig cartoons, _) = Channels();
+        cartoons.Plugins = Section(new OverlaysSection
+        {
+            Overlays = [new Overlay
+            {
+                Kind = OverlayKinds.File, File = "logo.png", FadeSeconds = 0,
+                Schedule = new OverlaySchedule
+                {
+                    Slots = [new OverlaySlot { OffsetSeconds = 10, DurationSeconds = 8 }, new OverlaySlot { OffsetSeconds = 60, DurationSeconds = 15 }],
+                    Automatic = new OverlayAutomatic { Enabled = true, ByClock = byClock, EveryMinutes = 5, DurationSeconds = 6 }
+                }
+            }]
+        });
+        var schedule = new ChannelSchedule
+        {
+            ChannelId = "cartoons", ChannelName = "Cartoons", ChannelNumber = 1, Start = Eight, End = Eight.AddMinutes(22), Entries = [Episode()]
+        };
+        ChannelSchedule processed = await Processor().ProcessAsync(new PlayoutContext(config, cartoons, schedule), CancellationToken.None);
+        JsonArray layers = (JsonArray)JsonNode.Parse(processed.Entries[0].Annotations![PlayoutPublisher.GraphicsAnnotation])!;
+        Assert.Equal(3, layers.Count);
+        Assert.Equal(10_000, (long)layers[0]!["timing"]!["phase_offset_ms"]!);
+        Assert.Equal(8_000, (long)layers[0]!["timing"]!["hold_ms"]!);
+        Assert.Equal(60_000, (long)layers[1]!["timing"]!["phase_offset_ms"]!);
+        Assert.Equal(15_000, (long)layers[1]!["timing"]!["hold_ms"]!);
+        Assert.Equal(byClock ? "wall" : "content", (string?)layers[2]!["timing"]!["clock"]);
+        Assert.Equal(300_000, (long)layers[2]!["timing"]!["frequency_ms"]!);
+        Assert.Equal(6_000, (long)layers[2]!["timing"]!["hold_ms"]!);
+    }
+
+    [Fact]
+    public void Migrating_each_legacy_timing_preserves_its_appearances()
+    {
+        foreach (string when in OverlayWhen.All)
+        {
+            var overlay = new Overlay { When = when, OffsetSeconds = 30, Percent = 70, DurationSeconds = 12, EveryMinutes = 5 };
+            var expected = OverlayDescriptions.Sample(overlay, TimeSpan.FromMinutes(22));
+            overlay.Schedule = OverlaySchedule.FromLegacy(overlay);
+            Assert.Equal(expected, OverlayDescriptions.Sample(overlay, TimeSpan.FromMinutes(22)));
+        }
+    }
+
+    [Fact]
+    public void Empty_schedules_show_nothing_and_always_visible_overrides_saved_slots()
+    {
+        var overlay = new Overlay { Schedule = new OverlaySchedule() };
+        Assert.Empty(OverlayTiming.Rules(overlay));
+        Assert.Empty(OverlayDescriptions.Sample(overlay, TimeSpan.FromMinutes(22)));
+        overlay.Schedule.Slots.Add(new OverlaySlot());
+        overlay.Schedule.Automatic.Enabled = true;
+        overlay.Schedule.Always = true;
+        Assert.Equal(OverlayWhen.Always, Assert.Single(OverlayTiming.Rules(overlay)).When);
+        Assert.Equal((TimeSpan.Zero, TimeSpan.FromMinutes(22)), Assert.Single(OverlayDescriptions.Sample(overlay, TimeSpan.FromMinutes(22))));
+    }
+
+    [Fact]
+    public void Slot_lengths_control_layer_windows_and_copies_are_independent()
+    {
+        var overlay = new Overlay
+        {
+            Schedule = new OverlaySchedule
+            {
+                Slots = [new OverlaySlot { DurationSeconds = 8 }, new OverlaySlot { OffsetSeconds = 60, DurationSeconds = 20 }]
+            }
+        };
+        var timings = OverlayTiming.Rules(overlay).Select(rule => OverlayTiming.For(rule, Episode(), new LayerTiming(2, 1))!.Timing!).ToArray();
+        Assert.Equal((2_000L, 5_000L), (timings[0].PhaseMs, timings[0].VisibleMs));
+        Assert.Equal((62_000L, 17_000L), (timings[1].PhaseMs, timings[1].VisibleMs));
+        Overlay copy = overlay.Copy();
+        copy.Schedule!.Slots[0].DurationSeconds = 40;
+        copy.Schedule.Automatic.Enabled = true;
+        Assert.Equal(8, overlay.Schedule.Slots[0].DurationSeconds);
+        Assert.False(overlay.Schedule.Automatic.Enabled);
+    }
+
+    [Fact]
+    public void Multiple_slot_settings_round_trip_through_yaml()
+    {
+        var overlay = new Overlay
+        {
+            Schedule = new OverlaySchedule
+            {
+                Slots = [new OverlaySlot { OffsetSeconds = 15, DurationSeconds = 10 }, new OverlaySlot { When = OverlayWhen.Percent, Percent = 75, DurationSeconds = 20 }],
+                Automatic = new OverlayAutomatic { Enabled = true, ByClock = true, EveryMinutes = 15, DurationSeconds = 5 }
+            }
+        };
+        var serializer = new YamlDotNet.Serialization.SerializerBuilder()
+            .WithNamingConvention(YamlDotNet.Serialization.NamingConventions.UnderscoredNamingConvention.Instance).Build();
+        var deserializer = new YamlDotNet.Serialization.DeserializerBuilder()
+            .WithNamingConvention(YamlDotNet.Serialization.NamingConventions.UnderscoredNamingConvention.Instance).Build();
+        Overlay restored = deserializer.Deserialize<Overlay>(serializer.Serialize(overlay));
+        Assert.Equal(OverlayDescriptions.Sample(overlay, TimeSpan.FromMinutes(22)), OverlayDescriptions.Sample(restored, TimeSpan.FromMinutes(22)));
+        Assert.Equal(2, restored.Schedule!.Slots.Count);
+        Assert.True(restored.Schedule.Automatic.ByClock);
+    }
+
     private static Dictionary<string, object?> Section(OverlaysSection section) => new(StringComparer.OrdinalIgnoreCase) { ["overlays"] = section };
 
     private static (SchedulerConfig Config, ChannelConfig Cartoons, ChannelConfig AdultSwim) Channels()

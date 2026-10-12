@@ -9,6 +9,12 @@ public static class OverlayDescriptions
 {
     public static string When(Overlay overlay)
     {
+        if (overlay.Schedule is not null)
+        {
+            string[] descriptions = OverlayTiming.Rules(overlay).Select(When).ToArray();
+            return descriptions.Length == 0 ? "No timing slots" : string.Join("; ", descriptions);
+        }
+
         string seconds = Seconds(overlay.DurationSeconds);
         string scope = overlay.AppliesTo == OverlayAppliesTo.Everything ? ", breaks too" : string.Empty;
         return overlay.When switch
@@ -25,6 +31,11 @@ public static class OverlayDescriptions
     /// <summary>When it would show on a programme of <paramref name="length"/>, as (start, end) pairs from its start.</summary>
     public static IReadOnlyList<(TimeSpan From, TimeSpan To)> Sample(Overlay overlay, TimeSpan length)
     {
+        if (overlay.Schedule is not null)
+        {
+            return [.. OverlayTiming.Rules(overlay).SelectMany(rule => Sample(rule, length)).OrderBy(window => window.From)];
+        }
+
         var entry = new ScheduleEntry
         {
             Start = DateTimeOffset.UnixEpoch,

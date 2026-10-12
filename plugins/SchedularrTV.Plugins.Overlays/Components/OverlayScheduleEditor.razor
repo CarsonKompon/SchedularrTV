@@ -1,0 +1,93 @@
+<label class="check">
+    <input type="checkbox" checked="@Schedule.Always" @onchange="e => Set(() => Schedule.Always = e.Value is true)" />
+    <span>Always visible throughout the programme</span>
+</label>
+@if (!Schedule.Always)
+{
+    <h4>Timing slots</h4>
+    <p class="hint">Add as many appearances as you need. Each slot has its own position and length, including fades.</p>
+    @foreach (OverlaySlot slot in Schedule.Slots)
+    {
+        int number = Schedule.Slots.IndexOf(slot) + 1;
+        <div class="ov-timing-slot" @key="slot">
+            <div class="ed-toolbar">
+                <strong>Slot @number</strong>
+                <div class="spacer"></div>
+                <button type="button" class="btn btn-sm btn-danger" aria-label="Remove slot @number"
+                        @onclick="() => Set(() => Schedule.Slots.Remove(slot))">Remove</button>
+            </div>
+            <div class="grid grid-3">
+                <label class="field"><span>Position</span>
+                    <select value="@slot.When" @onchange="e => Set(() => slot.When = e.Value?.ToString() ?? OverlayWhen.Start)">
+                        <option value="start">Time from start</option>
+                        <option value="end">Time from end</option>
+                        <option value="percent">Percentage from start</option>
+                    </select></label>
+                @if (slot.When == OverlayWhen.Percent)
+                {
+                    <label class="field"><span>Starts at (%)</span>
+                        <input type="number" min="0" max="100" step="0.1" value="@Number(slot.Percent)"
+                               @onchange="e => Set(() => slot.Percent = Math.Clamp(Number(e, slot.Percent), 0, 100))" /></label>
+                }
+                else
+                {
+                    <label class="field"><span>@(slot.When == OverlayWhen.End ? "Ends before the end (seconds)" : "Starts after (seconds)")</span>
+                        <input type="number" min="0" step="0.1" value="@Number(slot.OffsetSeconds)"
+                               @onchange="e => Set(() => slot.OffsetSeconds = Math.Max(0, Number(e, slot.OffsetSeconds)))" /></label>
+                }
+                <label class="field"><span>Shows for (seconds)</span>
+                    <input type="number" min="1" step="0.1" value="@Number(slot.DurationSeconds)"
+                           @onchange="e => Set(() => slot.DurationSeconds = Math.Max(1, Number(e, slot.DurationSeconds)))" /></label>
+            </div>
+        </div>
+    }
+    <button type="button" class="btn btn-sm" @onclick="() => Set(() => Schedule.Slots.Add(new OverlaySlot()))">+ Add slot</button>
+
+    <h4>Automatic slots</h4>
+    <label class="check">
+        <input type="checkbox" checked="@Schedule.Automatic.Enabled" @onchange="e => Set(() => Schedule.Automatic.Enabled = e.Value is true)" />
+        <span>Repeat every few minutes</span>
+    </label>
+    @if (Schedule.Automatic.Enabled)
+    {
+        <div class="ed-toolbar ov-clock-toggle" role="group" aria-label="Automatic slot timing">
+            <button type="button" class="btn btn-sm" aria-pressed="@(!Schedule.Automatic.ByClock ? "true" : "false")"
+                    @onclick="() => Set(() => Schedule.Automatic.ByClock = false)">Through the programme</button>
+            <button type="button" class="btn btn-sm" aria-pressed="@(Schedule.Automatic.ByClock ? "true" : "false")"
+                    @onclick="() => Set(() => Schedule.Automatic.ByClock = true)">By the clock</button>
+        </div>
+        <div class="grid grid-3">
+            <label class="field"><span>Every (minutes)</span>
+                <input type="number" min="1" step="1" value="@Number(Schedule.Automatic.EveryMinutes)"
+                       @onchange="e => Set(() => Schedule.Automatic.EveryMinutes = Math.Max(1, Number(e, 10)))" /></label>
+            <label class="field"><span>Shows for (seconds)</span>
+                <input type="number" min="1" step="0.1" value="@Number(Schedule.Automatic.DurationSeconds)"
+                       @onchange="e => Set(() => Schedule.Automatic.DurationSeconds = Math.Max(1, Number(e, 8)))" /></label>
+            <label class="field"><span>@(Schedule.Automatic.ByClock ? "Past each clock period (seconds)" : "Cycle offset (seconds)")</span>
+                <input type="number" min="0" step="0.1" value="@Number(Schedule.Automatic.OffsetSeconds)"
+                       @onchange="e => Set(() => Schedule.Automatic.OffsetSeconds = Math.Max(0, Number(e, 0)))" /></label>
+        </div>
+        <p class="hint">@(Schedule.Automatic.ByClock
+            ? "Follows the wall clock: every 15 minutes with zero offset shows on the hour, quarter past, half past and quarter to."
+            : "The cycle starts at the programme's beginning and stays in step across ad breaks.") Automatic slots are additional to the slots above.</p>
+    }
+    @if (Schedule.Slots.Count == 0 && !Schedule.Automatic.Enabled)
+    {
+        <p class="hint warn">No slots are enabled, so this overlay will not appear.</p>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public OverlaySchedule Schedule { get; set; } = new();
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private async Task Set(Action change)
+    {
+        change();
+        await Changed.InvokeAsync();
+    }
+
+    private static string Number(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+    private static double Number(ChangeEventArgs e, double fallback) =>
+        double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) && double.IsFinite(value) ? value : fallback;
+}
