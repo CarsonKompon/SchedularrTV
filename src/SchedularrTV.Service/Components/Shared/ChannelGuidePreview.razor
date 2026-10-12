@@ -1,0 +1,287 @@
+@* A popup listing what a channel will air: programmes and their times, how many parts mid-rolls split each into, and
+   (switched on) the commercials, promos and interstitials in between, colour-coded. *@
+@implements IDisposable
+@inject ScheduleCoordinator Coordinator
+@inject TimeProvider Clock
+
+<div class="modal-backdrop" @onclick="Close">
+    <div class="modal modal-wide guide-preview" role="dialog" aria-modal="true" aria-label="@($"Guide for {Name}")" @onclick:stopPropagation="true">
+        <div class="modal-head">
+            <div class="logo-tile">
+                @if (!string.IsNullOrWhiteSpace(Logo))
+                {
+                    <img src="@Logo" alt="" />
+                }
+                else
+                {
+                    <Icon Name="calendar-clock" Size="18" StrokeWidth="1.8" />
+                }
+            </div>
+            <div style="flex:1;min-width:0;">
+                <div class="eyebrow">Guide</div>
+                <h2><span class="channel-number">@Number</span> @Name</h2>
+            </div>
+            <button class="btn btn-sm btn-icon btn-ghost" type="button" aria-label="Close" @onclick="Close"><Icon Name="x" Size="15" /></button>
+        </div>
+
+        <div class="gp-toolbar">
+            <label class="gp-toggle">
+                <span class="switch">
+                    <input type="checkbox" role="switch" checked="@_showBreaks" aria-label="Show breaks"
+                           @onchange="e => { _showBreaks = e.Value is true; Rebuild(); }" />
+                    <span class="switch-track" aria-hidden="true"></span>
+                </span>
+                <span>Show commercials, promos &amp; interstitials</span>
+            </label>
+        </div>
+
+        @if (_schedule is not null)
+        {
+            <div class="gp-summary">
+                <span class="meta-chip"><Icon Name="tv" Size="13" /><strong>@_programmeCount</strong> programme(s)</span>
+                @if (_splitCount > 0)
+                {
+                    <span class="meta-chip"><Icon Name="layers" Size="13" /><strong>@_splitCount</strong> split by mid-rolls</span>
+                }
+                <span class="meta-chip">Breaks <strong>@_breakShare.ToString("0")%</strong> of airtime</span>
+                <span class="meta-chip"><Icon Name="clock" Size="13" />Planned to <strong>@_schedule.End.ToLocalTime().ToString("ddd HH:mm")</strong></span>
+            </div>
+
+            if (_showBreaks)
+            {
+                <div class="legend gp-legend" aria-label="Colour key">
+                    <span><span class="gp-swatch programme"></span>Programme</span>
+                    <span><span class="gp-swatch interstitial"></span>Interstitial</span>
+                    <span><span class="gp-swatch commercial"></span>Commercial</span>
+                    <span><span class="gp-swatch promo"></span>Promo</span>
+                    <span><span class="gp-swatch eventually"></span>Later-this-week promo</span>
+                    <span><span class="gp-swatch filler"></span>Filler</span>
+                    <span><span class="gp-swatch intro"></span>Intro / outro</span>
+                    <span><span class="gp-swatch padding"></span>Padding</span>
+                </div>
+            }
+        }
+
+        <div class="gp-scroll" tabindex="0" aria-label="Schedule">
+            @if (_schedule is null)
+            {
+                <div class="empty">
+                    <Icon Name="calendar-clock" Size="30" StrokeWidth="1.5" />
+                    <div class="empty-title">Nothing planned yet</div>
+                    <div>
+                        @(Coordinator.IsBuilding ? "The schedule is being built; it shows here when it's done." : "This channel hasn't been built yet (it may be new or unsaved).")
+                    </div>
+                </div>
+            }
+            else if (_rows.Count == 0)
+            {
+                <div class="empty"><div class="empty-title">Nothing left in this schedule</div><div>It has run out; the next rebuild extends it.</div></div>
+            }
+            else
+            {
+                DateTimeOffset now = Clock.GetUtcNow();
+                <ol class="gp-list">
+                    @foreach (PlayoutListingRow row in _rows)
+                    {
+                        switch (row)
+                        {
+                            case PlayoutListingDay day:
+                                <li class="gp-day" @key="day">@DayLabel(day.Date)</li>
+                                break;
+
+                            case PlayoutListingProgramme programme:
+                                var (title, subtitle) = PlayoutListing.Describe(programme.Entry);
+                                bool onNow = programme.Start <= now && programme.End > now;
+                                <li class="gp-row gp-prog @PlayoutListing.ColourKey(programme.Entry) @(onNow ? "now" : "")" @key="programme">
+                                    <span class="gp-time">
+                                        @programme.Start.ToLocalTime().ToString("HH:mm")
+                                        <small>@programme.End.ToLocalTime().ToString("HH:mm")</small>
+                                    </span>
+                                    <span class="gp-bar" aria-hidden="true"></span>
+                                    <span class="gp-text">
+                                        <span class="gp-title">@title</span>
+                                        @if (subtitle is not null)
+                                        {
+                                            <span class="gp-sub">@subtitle</span>
+                                        }
+                                    </span>
+                                    <span class="gp-tags">
+                                        @if (onNow)
+                                        {
+                                            <span class="pill pill-live">On now</span>
+                                        }
+                                        @if (programme.IsSplit)
+                                        {
+                                            if (_showBreaks)
+                                            {
+                                                <span class="pill pill-accent" title="Mid-rolls split this programme into @programme.Parts parts">Part @programme.Part of @programme.Parts</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="pill pill-accent" title="@SplitHint(programme)">@programme.Parts parts</span>
+                                            }
+                                        }
+                                        @if (programme.Entry.Kind == ScheduleEntryKind.Interstitial)
+                                        {
+                                            <span class="pill pill-muted">Interstitial</span>
+                                        }
+                                        @if (programme.Entry.ProgramOrigin == ProgramOrigin.Anchor)
+                                        {
+                                            <span class="pill pill-muted" title="@programme.Entry.Source">Anchor</span>
+                                        }
+                                        else if (!string.IsNullOrWhiteSpace(programme.Entry.BlockName))
+                                        {
+                                            <span class="pill pill-muted gp-block" title="Block">@programme.Entry.BlockName</span>
+                                        }
+                                    </span>
+                                    <span class="gp-len" title="@(programme.BreakTime > TimeSpan.Zero ? $"{PlayoutListing.Length(programme.End - programme.Start)} with breaks" : null)">
+                                        @PlayoutListing.Length(programme.Runtime)
+                                    </span>
+                                </li>
+                                break;
+
+                            case PlayoutListingBreak brk:
+                                <li class="gp-break" @key="brk">
+                                    <div class="gp-break-head">
+                                        <span class="gp-time">@brk.Start.ToLocalTime().ToString("HH:mm")</span>
+                                        <span class="gp-break-label">
+                                            @(brk.IsTitleSequence ? "Title sequence" : brk.MidRoll ? "Mid-roll break" : "Break")
+                                            <span class="muted">· @brk.Clips.Count clip(s) · @PlayoutListing.Length(brk.Duration)</span>
+                                        </span>
+                                        <span class="gp-strip" aria-hidden="true">
+                                            @foreach (ScheduleEntry clip in brk.Clips)
+                                            {
+                                                <span class="gp-strip-seg @PlayoutListing.ColourKey(clip)" style="flex:@clip.Duration.TotalSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture);"></span>
+                                            }
+                                        </span>
+                                    </div>
+                                    <ul class="gp-clips">
+                                        @foreach (ScheduleEntry clip in brk.Clips)
+                                        {
+                                            string clipTitle = PlayoutListing.Describe(clip).Title;
+                                            <li class="gp-clip @PlayoutListing.ColourKey(clip)">
+                                                <span class="gp-time">@clip.Start.ToLocalTime().ToString("HH:mm:ss")</span>
+                                                <span class="gp-dot" aria-hidden="true"></span>
+                                                <span class="gp-clip-kind">@PlayoutListing.KindLabel(clip)</span>
+                                                <span class="gp-clip-title" title="@clip.Item?.Path">@clipTitle</span>
+                                                <span class="gp-len">
+                                                    @PlayoutListing.Length(clip.Duration)@(clip.IsTrimmed ? " ✂" : "")
+                                                </span>
+                                            </li>
+                                        }
+                                    </ul>
+                                </li>
+                                break;
+                        }
+                    }
+                </ol>
+
+                if (_until < _schedule.End)
+                {
+                    <div class="load-more">
+                        <span>Showing until @_until.ToLocalTime().ToString("ddd HH:mm")</span>
+                        <button class="btn btn-sm" @onclick="ShowMore">Show @HoursPerPage more hours</button>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private const int HoursPerPage = 12;
+
+    [Parameter, EditorRequired] public string ChannelId { get; set; } = string.Empty;
+
+    [Parameter] public int Number { get; set; }
+
+    [Parameter] public string Name { get; set; } = string.Empty;
+
+    [Parameter] public string? Logo { get; set; }
+
+    /// <summary>A plugin's channel's schedule, which isn't among the coordinator's own.</summary>
+    [Parameter] public ChannelSchedule? Schedule { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private bool _showBreaks;
+    private ChannelSchedule? _schedule;
+    private IReadOnlyList<PlayoutListingRow> _rows = [];
+    private DateTimeOffset _until;
+    private int _programmeCount;
+    private int _splitCount;
+    private double _breakShare;
+
+    protected override void OnInitialized()
+    {
+        _until = Clock.GetUtcNow() + TimeSpan.FromHours(HoursPerPage);
+        Coordinator.StateChanged += OnCoordinatorChanged;
+        Load();
+    }
+
+    public void Dispose() => Coordinator.StateChanged -= OnCoordinatorChanged;
+
+    /// <summary>A rebuild landed: the listing follows it.</summary>
+    private void OnCoordinatorChanged() => _ = InvokeAsync(() =>
+    {
+        Load();
+        StateHasChanged();
+    });
+
+    private void Load()
+    {
+        _schedule = Schedule ?? Coordinator.Latest.FirstOrDefault(s => string.Equals(s.ChannelId, ChannelId, StringComparison.OrdinalIgnoreCase));
+        Rebuild();
+    }
+
+    private void Rebuild()
+    {
+        if (_schedule is null)
+        {
+            _rows = [];
+            return;
+        }
+
+        DateTimeOffset now = Clock.GetUtcNow();
+        _rows = PlayoutListing.Build(_schedule.Entries, now, _until, _showBreaks);
+
+        // Totals over what's listed, so they match the list.
+        IReadOnlyList<PlayoutListingProgramme> airings = [.. PlayoutListing.Build(_schedule.Entries, now, _until, showBreaks: false)
+            .OfType<PlayoutListingProgramme>()];
+        _programmeCount = airings.Count;
+        _splitCount = airings.Count(a => a.IsSplit);
+
+        TimeSpan total = TimeSpan.Zero, breaks = TimeSpan.Zero;
+        foreach (ScheduleEntry entry in _schedule.Entries.Where(e => e.End > now && e.Start < _until))
+        {
+            total += entry.Duration;
+            if (!PlayoutListing.IsProgramme(entry))
+            {
+                breaks += entry.Duration;
+            }
+        }
+
+        _breakShare = total > TimeSpan.Zero ? breaks / total * 100 : 0;
+    }
+
+    private void ShowMore()
+    {
+        _until += TimeSpan.FromHours(HoursPerPage);
+        Rebuild();
+    }
+
+    private Task Close() => OnClose.InvokeAsync();
+
+    private string DayLabel(DateOnly date)
+    {
+        DateOnly today = DateOnly.FromDateTime(Clock.GetUtcNow().ToLocalTime().DateTime);
+        return date == today ? $"Today · {date:dddd d MMMM}"
+            : date == today.AddDays(1) ? $"Tomorrow · {date:dddd d MMMM}"
+            : date.ToString("dddd d MMMM");
+    }
+
+    private static string SplitHint(PlayoutListingProgramme programme) =>
+        $"Mid-rolls split this into {programme.Parts} parts"
+        + (programme.Breaks > 0 ? $", with {programme.Breaks} break(s) totalling {PlayoutListing.Length(programme.BreakTime)}" : string.Empty)
+        + ". Switch on breaks to see them.";
+}

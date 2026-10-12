@@ -1,0 +1,71 @@
+.guide-preview { display: flex; flex-direction: column; max-width: 860px; overflow: hidden; }
+.guide-preview .modal-head { margin-bottom: 14px; }
+.guide-preview .modal-head h2 { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Colour groups, matching the schedule strip and guide elsewhere in the app. */
+.programme { --c: var(--program); }
+.interstitial { --c: var(--interstitial); }
+.commercial { --c: var(--commercial); }
+.filler { --c: var(--filler); }
+.promo { --c: var(--promo); }
+.eventually { --c: #9a63d6; }
+.intro { --c: #6fb7c9; }
+.padding { --c: #4a5162; }
+
+.gp-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.gp-toggle { display: inline-flex; align-items: center; gap: 10px; margin: 0; font-size: 13px; color: var(--muted); cursor: pointer; }
+.gp-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.gp-legend { margin: 8px 0 4px; }
+.gp-swatch { display: inline-block; width: 9px; height: 9px; border-radius: 3px; background: var(--c); }
+
+.gp-scroll {
+    flex: 1; min-height: 240px; max-height: 60vh; overflow-y: auto; margin: 10px -8px 0; padding: 0 8px 4px;
+    scrollbar-width: thin; border-top: 1px solid var(--line);
+}
+
+.gp-list, .gp-clips { list-style: none; margin: 0; padding: 0; }
+
+.gp-day {
+    position: sticky; top: 0; z-index: 2; padding: 10px 4px 6px; font-size: 11px; font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--faint); background: var(--panel); border-bottom: 1px solid var(--line);
+}
+
+.gp-row { display: flex; align-items: center; gap: 12px; padding: 9px 6px; border-radius: 8px; }
+.gp-row:hover { background: rgba(255, 255, 255, .03); }
+.gp-row.now { background: rgba(155, 199, 240, .08); box-shadow: inset 0 0 0 1px rgba(155, 199, 240, .25); }
+
+.gp-time { width: 54px; flex: none; display: flex; flex-direction: column; font: 500 12.5px/1.25 var(--mono); color: var(--text); font-variant-numeric: tabular-nums; }
+.gp-time small { font-size: 11px; color: var(--faint); }
+.gp-bar { align-self: stretch; width: 4px; flex: none; border-radius: 2px; background: var(--c); }
+
+.gp-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.gp-title { font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gp-sub { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.gp-tags { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; flex: none; max-width: 45%; }
+.gp-block { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gp-len { flex: none; min-width: 58px; text-align: right; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+/* Breaks: a compact header with a proportional strip of what's in it, then each clip. */
+.gp-break { margin: 2px 0 2px 66px; padding: 6px 8px; border-left: 2px dashed var(--line); }
+.gp-break-head { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+.gp-break-head .gp-time { width: auto; font-size: 11.5px; color: var(--faint); }
+.gp-break-label { flex: none; font-weight: 600; color: var(--text); font-size: 12px; }
+.gp-break-label .muted { font-weight: 400; }
+.gp-strip { flex: 1; min-width: 60px; display: flex; height: 6px; gap: 1px; border-radius: 999px; overflow: hidden; background: rgba(255, 255, 255, .05); }
+.gp-strip-seg { min-width: 2px; background: var(--c); }
+
+.gp-clips { margin-top: 4px; }
+.gp-clip { display: flex; align-items: center; gap: 10px; padding: 3px 4px; font-size: 12.5px; border-radius: 6px; }
+.gp-clip:hover { background: rgba(255, 255, 255, .03); }
+.gp-clip .gp-time { width: 62px; font-size: 11.5px; color: var(--faint); }
+.gp-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--c); }
+.gp-clip-kind { flex: none; width: 168px; color: var(--c); font-size: 11.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gp-clip-title { flex: 1; min-width: 0; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gp-clip .gp-len { min-width: 48px; font-size: 11.5px; }
+
+@media (max-width: 640px) {
+    .gp-break { margin-left: 12px; }
+    .gp-clip-kind { width: 96px; }
+    .gp-tags { max-width: 40%; }
+}

@@ -72,6 +72,10 @@
                                 @onclick="() => _previewing = (schedule.ChannelNumber, schedule.ChannelName)">
                             <Icon Name="play" Size="14" />
                         </button>
+                        <button class="btn btn-sm btn-icon" title="Guide: what airs and when" aria-label="@($"Guide for {schedule.ChannelName}")"
+                                @onclick="() => _guide = new GuideTarget(schedule.ChannelId, schedule.ChannelNumber, schedule.ChannelName, schedule.ChannelLogo, schedule)">
+                            <Icon Name="calendar-clock" Size="14" />
+                        </button>
                         @if (external.EditPath is not null)
                         {
                             <button class="btn btn-sm btn-icon" title="@($"Edit on the {external.Source} page")" aria-label="@($"Edit {schedule.ChannelName}")"
@@ -119,6 +123,10 @@
                 <div class="channel-tile-actions" @onclick:stopPropagation="true">
                     <button class="btn btn-sm btn-icon" title="Watch live" aria-label="@($"Watch {channel.Name} live")" @onclick="() => _previewing = (channel.Number, channel.Name)">
                         <Icon Name="play" Size="14" />
+                    </button>
+                    <button class="btn btn-sm btn-icon" title="Guide: what airs and when" aria-label="@($"Guide for {channel.Name}")"
+                            @onclick="() => _guide = new GuideTarget(channel.Id, channel.Number, channel.Name, channel.Logo, null)">
+                        <Icon Name="calendar-clock" Size="14" />
                     </button>
                     <button class="btn btn-sm btn-icon" title="Edit" aria-label="@($"Edit {channel.Name}")" @onclick="() => Open(channel)">
                         <Icon Name="pencil" Size="14" />
@@ -293,6 +301,12 @@
     <ChannelPreview @key="previewing" Number="previewing.Number" Name="@previewing.Name" OnClose="() => _previewing = null" />
 }
 
+@if (_guide is { } guide)
+{
+    <ChannelGuidePreview @key="guide" ChannelId="@guide.Id" Number="guide.Number" Name="@guide.Name" Logo="@guide.Logo"
+                         Schedule="guide.Schedule" OnClose="() => _guide = null" />
+}
+
 @code {
     /// <summary><c>?wizard=1</c> opens the channel wizard, e.g. straight after first-run setup.</summary>
     [SupplyParameterFromQuery(Name = "wizard")] public string? Wizard { get; set; }
@@ -302,6 +316,11 @@
     private bool _wizardOpen;
     private bool _numbersOpen;
     private (int Number, string Name)? _previewing;
+
+    /// <summary>The channel whose guide is open; a plugin's channel brings its own schedule.</summary>
+    private sealed record GuideTarget(string Id, int Number, string Name, string? Logo, ChannelSchedule? Schedule);
+
+    private GuideTarget? _guide;
 
     /// <summary>A network with enough shows in the library to make a channel of its own.</summary>
     private sealed record SuggestedChannel(string Network, IReadOnlyList<LibraryShow> Shows, bool Ignored)
