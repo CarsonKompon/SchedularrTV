@@ -60,7 +60,7 @@ The tray needs **StatusNotifier/AppIndicator** support. Use **`--no-tray`** with
 4. Add optional commercial folders.
 5. Complete the setup guide and create a channel.
 
-See [Use the Web UI](web-ui.md) for channel creation and scheduling. **App settings → Run setup guide** reopens setup.
+See [Create and tune channels](web-ui-channels.md) for your first channel, or [Use the Web UI](web-ui.md) for other tasks. **App settings → Run setup guide** reopens setup.
 
 | IPTV player setting | Default URL |
 | --- | --- |

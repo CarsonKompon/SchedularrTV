@@ -24,7 +24,12 @@ For another device, replace `localhost` with the ErsatzTV computer's address. Re
 | Task | Guide |
 | --- | --- |
 | Install, update, or move the app | [Installation](docs/installation.md) |
-| Create channels, collections, blocks, and breaks | [Use the Web UI](docs/web-ui.md) |
+| Find a Web UI task or advanced feature | [Use the Web UI](docs/web-ui.md) |
+| Create channels and tune playback | [Channels](docs/web-ui-channels.md) |
+| Select titles, order episodes, and add intros | [Collections and media selection](docs/web-ui-collections.md) |
+| Schedule windows, fixed starts, and marathons | [Blocks and anchors](docs/web-ui-scheduling.md) |
+| Configure commercials, mid-rolls, and announcements | [Breaks and promos](docs/web-ui-breaks.md) |
+| Change defaults, monitor playback, or restore backups | [Settings and maintenance](docs/web-ui-maintenance.md) |
 | Add shows, movies, music, and metadata | [Local media](docs/local-library.md) |
 | Import an existing lineup | [Import channels](docs/import.md) |
 | Inspect viewers and adjust scheduling weights | [Channel stats](docs/stats.md) |
