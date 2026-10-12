@@ -23,7 +23,8 @@ namespace SchedularrTV.Providers.FileSystem;
 public sealed class FileSystemMediaLibrary(
     IOptions<FileSystemLibraryOptions> options,
     ILogger<FileSystemMediaLibrary> logger,
-    TimeProvider? timeProvider = null) : IMediaLibrary, IMediaSourceInfo, IExtrasSource
+    TimeProvider? timeProvider = null,
+    SchedularrTV.Plugins.IMediaLibraryNotifier? notifier = null) : IMediaLibrary, IMediaSourceInfo, IExtrasSource
 {
     public string Name => "Local folders";
 
@@ -60,10 +61,24 @@ public sealed class FileSystemMediaLibrary(
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
     private readonly SemaphoreSlim _scanLock = new(1, 1);
 
-    private IReadOnlyList<MediaItem> _snapshot = [];
-    private IReadOnlyDictionary<string, LocalImages> _images = new Dictionary<string, LocalImages>();
-    private IReadOnlyDictionary<string, string> _showFolders = new Dictionary<string, string>();
-    private DateTimeOffset _scannedAt = DateTimeOffset.MinValue;
+    /// <summary>One scan's results, swapped in whole so a reader never sees half of one scan and half of another.</summary>
+    private sealed record Snapshot(
+        IReadOnlyList<MediaItem> Items,
+        IReadOnlyDictionary<string, LocalImages> Images,
+        IReadOnlyDictionary<string, string> ShowFolders);
+
+    private static readonly Snapshot Empty = new([], new Dictionary<string, LocalImages>(), new Dictionary<string, string>());
+
+    // Kept and served while the next scan runs, so a periodic rescan never leaves the library empty.
+    private RefreshingSnapshot<Snapshot>? _cache;
+
+    private RefreshingSnapshot<Snapshot> Cache => LazyInitializer.EnsureInitialized(ref _cache, () =>
+    {
+        var cache = new RefreshingSnapshot<Snapshot>((_, ct) => ScanAsync(ct), Name, _time, logger);
+        // The library pages are built from this, so they're told when a newer scan lands.
+        cache.RefreshedInBackground += () => notifier?.LibraryChanged();
+        return cache;
+    });
 
     /// <summary>
     /// A local TV show's extras (by the show's id): the videos in its <c>Extras</c>, <c>Trailers</c>, <c>Featurettes</c>…
@@ -72,8 +87,8 @@ public sealed class FileSystemMediaLibrary(
     /// </summary>
     public async ValueTask<IReadOnlyList<MediaExtra>> ExtrasAsync(string seriesId, CancellationToken cancellationToken = default)
     {
-        await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
-        if (!_showFolders.TryGetValue(seriesId, out string? folder) || !Directory.Exists(folder))
+        Snapshot snapshot = await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        if (!snapshot.ShowFolders.TryGetValue(seriesId, out string? folder) || !Directory.Exists(folder))
         {
             return [];
         }
@@ -121,54 +136,45 @@ public sealed class FileSystemMediaLibrary(
     /// <summary>The pictures found beside a TV show, episode or movie in a local library (by its id), or null.</summary>
     public async ValueTask<LocalImages?> ImagesAsync(string id, CancellationToken cancellationToken = default)
     {
-        await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
-        return _images.GetValueOrDefault(id);
+        Snapshot snapshot = await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        return snapshot.Images.GetValueOrDefault(id);
     }
 
     public async ValueTask<IReadOnlyList<MediaItem>> SearchAsync(QueryExpression expression, CancellationToken cancellationToken = default)
     {
-        IReadOnlyList<MediaItem> snapshot = await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
-        return QueryEvaluator.Filter(snapshot, expression);
+        Snapshot snapshot = await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        return QueryEvaluator.Filter(snapshot.Items, expression);
     }
 
     public async ValueTask RefreshAsync(CancellationToken cancellationToken = default)
     {
-        _scannedAt = DateTimeOffset.MinValue;
-        await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        if (_options.Folders.Count > 0)
+        {
+            await Cache.RefreshAsync(Fingerprint(), cancellationToken).ConfigureAwait(false);
+        }
     }
 
-    // What the snapshot was scanned with; when the folders are changed in the app it's rescanned straight away.
-    private string _scannedWith = string.Empty;
-
+    // What a snapshot was scanned with: when the folders are changed in the app it's rescanned straight away.
     private string Fingerprint() =>
         System.Text.Json.JsonSerializer.Serialize(new { _options.Folders, _options.Extensions, _options.MinDuration });
 
-    private async ValueTask<IReadOnlyList<MediaItem>> EnsureSnapshotAsync(CancellationToken cancellationToken)
+    private async ValueTask<Snapshot> EnsureSnapshotAsync(CancellationToken cancellationToken)
     {
         if (_options.Folders.Count == 0)
         {
-            return [];
+            return Empty;
         }
 
-        if (_scannedWith != Fingerprint())
-        {
-            _scannedAt = DateTimeOffset.MinValue;
-        }
+        // Once scanned, the snapshot is served straight away; when it's old it's rescanned in the background.
+        return await Cache.GetAsync(Fingerprint(), _options.CacheDuration, cancellationToken).ConfigureAwait(false);
+    }
 
-        if (_time.GetUtcNow() - _scannedAt < _options.CacheDuration)
-        {
-            return _snapshot;
-        }
-
+    private async Task<Snapshot> ScanAsync(CancellationToken cancellationToken)
+    {
+        // One at a time with extras probing, so the two never write the probe cache together.
         await _scanLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_time.GetUtcNow() - _scannedAt < _options.CacheDuration)
-            {
-                return _snapshot;
-            }
-
-            string scanningWith = Fingerprint();
             var probe = new MediaProbe(_options, logger);
             List<MediaItem> items = [];
             Dictionary<string, LocalImages> images = new(StringComparer.Ordinal);
@@ -207,14 +213,8 @@ public sealed class FileSystemMediaLibrary(
                 }
             }
 
-            _snapshot = items;
-            _images = images;
-            _showFolders = showFolders;
-            _scannedAt = _time.GetUtcNow();
-            _scannedWith = scanningWith;
-
             logger.LogInformation("File system library scanned: {Count} items across {Folders} folder(s).", items.Count, _options.Folders.Count);
-            return _snapshot;
+            return new Snapshot(items, images, showFolders);
         }
         finally
         {

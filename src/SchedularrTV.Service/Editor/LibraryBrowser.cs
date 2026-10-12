@@ -61,70 +61,64 @@ public sealed record CommercialFolders(
 /// <remarks>
 /// Cached because the browse pages re-query on every keystroke, and grouping 17k items per
 /// keystroke would make the UI crawl.
+/// <para>
+/// Only the very first read waits. After that the view in hand is always served, and is rebuilt in the background when
+/// it's old, when a source was reconfigured, or when a source finished re-reading its library; open pages are told
+/// (<see cref="Changed"/>) once the new view is in. A periodic re-read of a big library takes minutes, and pages, tag
+/// pickers and autocompletes used to come up empty for all of it.
+/// </para>
 /// </remarks>
 public sealed class LibraryBrowser(IMediaLibrary library, TimeProvider timeProvider, ILogger<LibraryBrowser>? logger = null)
     : SchedularrTV.Plugins.IMediaLibraryNotifier
 {
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(5);
 
+    /// <summary>How long to wait before trying again after a background rebuild failed.</summary>
+    private static readonly TimeSpan RetryAfterFailure = TimeSpan.FromSeconds(30);
+
+    /// <summary>Everything the pages read, built together and swapped in whole.</summary>
+    private sealed record View(
+        long Generation,
+        DateTimeOffset BuiltAt,
+        IReadOnlyList<LibraryShow> Shows,
+        IReadOnlyList<LibraryMovie> Movies,
+        IReadOnlyList<MediaItem> Programmes,
+        IReadOnlyList<string> Collections,
+        IReadOnlyList<string> VersionLabels,
+        CommercialFolders Folders,
+        IReadOnlyDictionary<string, List<LibraryEpisode>> EpisodesByShow);
+
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    private IReadOnlyList<LibraryShow> _shows = [];
-    private IReadOnlyList<LibraryMovie> _movies = [];
-    private IReadOnlyList<MediaItem> _programmes = [];
-    private IReadOnlyList<string> _collections = [];
-    private IReadOnlyList<string> _versionLabels = [];
-    private CommercialFolders _folders = new([], [], [], []);
-    private Dictionary<string, List<LibraryEpisode>> _episodesByShow = new(StringComparer.Ordinal);
-    private DateTimeOffset _builtAt = DateTimeOffset.MinValue;
+    private volatile View? _view;
 
-    public async Task<IReadOnlyList<LibraryShow>> GetShowsAsync(CancellationToken cancellationToken = default)
-    {
-        await EnsureAsync(cancellationToken).ConfigureAwait(false);
-        return _shows;
-    }
+    public async Task<IReadOnlyList<LibraryShow>> GetShowsAsync(CancellationToken cancellationToken = default) =>
+        (await ViewAsync(cancellationToken).ConfigureAwait(false)).Shows;
 
-    public async Task<IReadOnlyList<LibraryMovie>> GetMoviesAsync(CancellationToken cancellationToken = default)
-    {
-        await EnsureAsync(cancellationToken).ConfigureAwait(false);
-        return _movies;
-    }
+    public async Task<IReadOnlyList<LibraryMovie>> GetMoviesAsync(CancellationToken cancellationToken = default) =>
+        (await ViewAsync(cancellationToken).ConfigureAwait(false)).Movies;
 
-    public async Task<IReadOnlyList<MediaItem>> GetProgrammesAsync(CancellationToken cancellationToken = default)
-    {
-        await EnsureAsync(cancellationToken).ConfigureAwait(false);
-        return _programmes;
-    }
+    public async Task<IReadOnlyList<MediaItem>> GetProgrammesAsync(CancellationToken cancellationToken = default) =>
+        (await ViewAsync(cancellationToken).ConfigureAwait(false)).Programmes;
 
     /// <summary>The collections items belong to, from any source (Jellyfin's BoxSets, the <c>set</c> in a local movie's .nfo…).</summary>
-    public async Task<IReadOnlyList<string>> GetLibraryCollectionsAsync(CancellationToken cancellationToken = default)
-    {
-        await EnsureAsync(cancellationToken).ConfigureAwait(false);
-        return _collections;
-    }
+    public async Task<IReadOnlyList<string>> GetLibraryCollectionsAsync(CancellationToken cancellationToken = default) =>
+        (await ViewAsync(cancellationToken).ConfigureAwait(false)).Collections;
 
-    public async Task<CommercialFolders> GetCommercialFoldersAsync(CancellationToken cancellationToken = default)
-    {
-        await EnsureAsync(cancellationToken).ConfigureAwait(false);
-        return _folders;
-    }
+    public async Task<CommercialFolders> GetCommercialFoldersAsync(CancellationToken cancellationToken = default) =>
+        (await ViewAsync(cancellationToken).ConfigureAwait(false)).Folders;
 
     /// <summary>
     /// The part of each alternate version's name that actually distinguishes it, e.g. <c>Web Release</c>.
     /// Offered as ready-made choices so a version rule does not have to be typed from memory.
     /// </summary>
-    public async Task<IReadOnlyList<string>> GetVersionLabelsAsync(CancellationToken cancellationToken = default)
-    {
-        await EnsureAsync(cancellationToken).ConfigureAwait(false);
-        return _versionLabels;
-    }
+    public async Task<IReadOnlyList<string>> GetVersionLabelsAsync(CancellationToken cancellationToken = default) =>
+        (await ViewAsync(cancellationToken).ConfigureAwait(false)).VersionLabels;
 
     /// <summary>Episodes of one series, keyed by series id rather than name.</summary>
-    public async Task<IReadOnlyList<LibraryEpisode>> GetEpisodesAsync(string seriesId, CancellationToken cancellationToken = default)
-    {
-        await EnsureAsync(cancellationToken).ConfigureAwait(false);
-        return _episodesByShow.TryGetValue(seriesId, out List<LibraryEpisode>? episodes) ? episodes : [];
-    }
+    public async Task<IReadOnlyList<LibraryEpisode>> GetEpisodesAsync(string seriesId, CancellationToken cancellationToken = default) =>
+        (await ViewAsync(cancellationToken).ConfigureAwait(false)).EpisodesByShow.TryGetValue(seriesId, out List<LibraryEpisode>? episodes)
+            ? episodes : [];
 
     /// <summary>
     /// Raised when what the browse pages show may have changed (the library was re-read, or is stale), so open pages
@@ -132,55 +126,124 @@ public sealed class LibraryBrowser(IMediaLibrary library, TimeProvider timeProvi
     /// </summary>
     public event Action? Changed;
 
-    /// <summary>True while the library is being re-read after a plugin said it changed, for a "updating" hint.</summary>
+    /// <summary>
+    /// True while the library is being re-read because a source changed, for an "updating" hint. What the pages show
+    /// stays in place meanwhile.
+    /// </summary>
     public bool Updating => Volatile.Read(ref _updating) == 1;
 
     private int _updating;
-    private int _changePending;
+    private int _rebuildRunning;
     private long _generation;
+    private long _retryAtTicks;
 
-    /// <summary>Re-reads the library on next use: a media source was switched on or off, or its settings changed.</summary>
+    /// <summary>
+    /// A media source was switched on or off, or its settings changed: re-read in the background, keeping what the
+    /// pages show until the new view is in.
+    /// </summary>
     public void Invalidate()
     {
         Interlocked.Increment(ref _generation);
-        _builtAt = DateTimeOffset.MinValue;
-        Changed?.Invoke();
+        if (_view is null)
+        {
+            // Nothing read yet: the first read (or WarmUp) picks it up.
+            Changed?.Invoke();
+            return;
+        }
+
+        RebuildInBackground(TimeSpan.Zero, announce: true);
     }
 
     /// <summary>
-    /// A plugin's media source changed (a web channel, guide or station saved): re-read straight away, in the
-    /// background, then tell the open pages. Saves close together become one re-read.
+    /// A media source's library changed (a plugin's web channel, guide or station saved, or Jellyfin or the local
+    /// folders finished re-reading): re-read straight away, in the background, then tell the open pages. Changes close
+    /// together become one re-read.
     /// </summary>
     public void LibraryChanged()
     {
         Interlocked.Increment(ref _generation);
-        _builtAt = DateTimeOffset.MinValue;
-        if (Interlocked.Exchange(ref _changePending, 1) == 1)
+        // A moment for the saves of one edit to land together.
+        RebuildInBackground(TimeSpan.FromMilliseconds(300), announce: true);
+    }
+
+    /// <summary>
+    /// Rebuilds the view behind the pages. One runs at a time; it keeps going until the view is up to date, so a change
+    /// arriving mid-rebuild isn't lost. <paramref name="announce"/> shows the "updating" hint while it runs (a source
+    /// changed); a rebuild because the view is merely old runs quietly. Open pages are told when it's done.
+    /// </summary>
+    private void RebuildInBackground(TimeSpan delay, bool announce)
+    {
+        if (announce)
+        {
+            Interlocked.Exchange(ref _updating, 1);
+            Changed?.Invoke();
+        }
+
+        if (Interlocked.Exchange(ref _rebuildRunning, 1) == 1)
         {
             return;
         }
 
-        Interlocked.Exchange(ref _updating, 1);
-        Changed?.Invoke();
         _ = Task.Run(async () =>
         {
-            // A moment for the saves of one edit to land together.
-            await Task.Delay(TimeSpan.FromMilliseconds(300)).ConfigureAwait(false);
-            Interlocked.Exchange(ref _changePending, 0);
+            bool failed = false;
             try
             {
-                await EnsureAsync(CancellationToken.None).ConfigureAwait(false);
+                if (delay > TimeSpan.Zero)
+                {
+                    await Task.Delay(delay).ConfigureAwait(false);
+                }
+
+                while (_view is not { } view || IsStale(view))
+                {
+                    await BuildAsync(CancellationToken.None).ConfigureAwait(false);
+                }
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "Couldn't re-read the library after a plugin changed it.");
+                // What the pages show stays: an unreachable server shouldn't empty them.
+                failed = true;
+                Interlocked.Exchange(ref _retryAtTicks, (timeProvider.GetUtcNow() + RetryAfterFailure).UtcTicks);
+                logger?.LogWarning("Couldn't re-read the library; the pages keep showing what was read before. {Message}",
+                    ex.GetBaseException().Message);
             }
             finally
             {
                 Interlocked.Exchange(ref _updating, 0);
-                Changed?.Invoke();
+                Volatile.Write(ref _rebuildRunning, 0);
             }
+
+            // A change that came in just as this finished, while it still counted as running.
+            if (!failed && _view is { } latest && latest.Generation != Interlocked.Read(ref _generation))
+            {
+                RebuildInBackground(TimeSpan.Zero, announce: true);
+                return;
+            }
+
+            Changed?.Invoke();
         });
+    }
+
+    /// <summary>Whether a view was built before the latest change, or long enough ago to read again.</summary>
+    private bool IsStale(View view) =>
+        view.Generation != Interlocked.Read(ref _generation) || timeProvider.GetUtcNow() - view.BuiltAt >= CacheDuration;
+
+    /// <summary>
+    /// The view in hand, straight away, starting a background rebuild when it's stale. Only the very first read waits.
+    /// </summary>
+    private async ValueTask<View> ViewAsync(CancellationToken cancellationToken)
+    {
+        if (_view is not { } view)
+        {
+            return await BuildAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (IsStale(view) && timeProvider.GetUtcNow().UtcTicks >= Interlocked.Read(ref _retryAtTicks))
+        {
+            RebuildInBackground(TimeSpan.Zero, announce: false);
+        }
+
+        return view;
     }
 
     /// <summary>True from <see cref="WarmUp"/> until the library has been read (or failed to be).</summary>
@@ -203,7 +266,7 @@ public sealed class LibraryBrowser(IMediaLibrary library, TimeProvider timeProvi
         {
             try
             {
-                await EnsureAsync(CancellationToken.None).ConfigureAwait(false);
+                await ViewAsync(CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -218,29 +281,29 @@ public sealed class LibraryBrowser(IMediaLibrary library, TimeProvider timeProvi
         });
     }
 
+    /// <summary>
+    /// Re-reads every source now and waits for it (the Rescan button). The pages keep what they show until it's done.
+    /// </summary>
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         await library.RefreshAsync(cancellationToken).ConfigureAwait(false);
-        _builtAt = DateTimeOffset.MinValue;
-        await EnsureAsync(cancellationToken).ConfigureAwait(false);
+        Interlocked.Increment(ref _generation);
+        await BuildAsync(cancellationToken).ConfigureAwait(false);
         Changed?.Invoke();
     }
 
-    private async Task EnsureAsync(CancellationToken cancellationToken)
+    /// <summary>Builds the view from the library (unless another caller just did) and swaps it in.</summary>
+    private async Task<View> BuildAsync(CancellationToken cancellationToken)
     {
-        if (timeProvider.GetUtcNow() - _builtAt < CacheDuration)
-        {
-            return;
-        }
-
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (timeProvider.GetUtcNow() - _builtAt < CacheDuration)
+            if (_view is { } current && !IsStale(current))
             {
-                return;
+                return current;
             }
 
+            // A change while this reads leaves the view a generation behind, so it's read again (see IsStale).
             long generation = Interlocked.Read(ref _generation);
             IReadOnlyList<MediaItem> all = await library
                 .SearchAsync(QueryExpression.All, cancellationToken)
@@ -250,17 +313,17 @@ public sealed class LibraryBrowser(IMediaLibrary library, TimeProvider timeProvi
             // episode twice. The browser shows what a collection would actually schedule, but the
             // per-show tally is taken first so the UI can still point out where versions exist.
             Dictionary<string, ShowVersions> versionsByShow = VersionsByShow(all);
-            _versionLabels = [.. versionsByShow.Values
+            IReadOnlyList<string> versionLabels = [.. versionsByShow.Values
                 .SelectMany(v => v.Labels)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(l => l, StringComparer.OrdinalIgnoreCase)];
 
             all = VersionCollapser.Collapse(all, null);
-            _programmes = all.Where(item => item.Kind is MediaKind.Episode or MediaKind.Movie).ToArray();
+            IReadOnlyList<MediaItem> programmes = all.Where(item => item.Kind is MediaKind.Episode or MediaKind.Movie).ToArray();
 
             // Grouped by series id, not name: a library can hold two distinct series with identical
             // names, and merging them would hide one of them entirely.
-            _shows = all
+            IReadOnlyList<LibraryShow> shows = all
                 .Where(i => i.Kind == MediaKind.Episode && !string.IsNullOrWhiteSpace(i.SeriesName))
                 .GroupBy(i => i.SeriesId ?? i.SeriesName!, StringComparer.Ordinal)
                 .Select(g => new LibraryShow(
@@ -282,27 +345,27 @@ public sealed class LibraryBrowser(IMediaLibrary library, TimeProvider timeProvi
                 .ThenByDescending(s => s.EpisodeCount)
                 .ToList();
 
-            _movies = all
+            IReadOnlyList<LibraryMovie> movies = all
                 .Where(i => i.Kind == MediaKind.Movie)
                 .Select(i => new LibraryMovie(i.Title, i.PremiereDate?.Year, i.Duration) { Id = i.Id })
                 .DistinctBy(m => m.Title, StringComparer.OrdinalIgnoreCase)
                 .OrderBy(m => TitleSortKey(m.Title), StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            _collections = all
+            IReadOnlyList<string> collections = all
                 .SelectMany(i => i.Collections)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             List<MediaItem> clips = all.Where(i => i.Kind == MediaKind.Filler && i.Tags.Count > 0).ToList();
-            _folders = new CommercialFolders(
+            CommercialFolders folders = new(
                 Level(clips, 0),
                 Level(clips, 1),
                 Level(clips, 2),
                 Level(clips, 3));
 
-            _episodesByShow = all
+            Dictionary<string, List<LibraryEpisode>> episodesByShow = all
                 .Where(i => i.Kind == MediaKind.Episode && !string.IsNullOrWhiteSpace(i.SeriesName))
                 .GroupBy(i => i.SeriesId ?? i.SeriesName!, StringComparer.Ordinal)
                 .ToDictionary(
@@ -314,8 +377,10 @@ public sealed class LibraryBrowser(IMediaLibrary library, TimeProvider timeProvi
                         .ToList(),
                     StringComparer.Ordinal);
 
-            // Changed while it was being read: what was read may already be out of date, so the next use reads again.
-            _builtAt = Interlocked.Read(ref _generation) == generation ? timeProvider.GetUtcNow() : DateTimeOffset.MinValue;
+            View built = new(generation, timeProvider.GetUtcNow(), shows, movies, programmes, collections, versionLabels, folders, episodesByShow);
+            _view = built;
+            Interlocked.Exchange(ref _retryAtTicks, 0);
+            return built;
         }
         finally
         {

@@ -20,7 +20,8 @@ public sealed class JellyfinMediaLibrary(
     IOptions<JellyfinOptions> options,
     ILogger<JellyfinMediaLibrary> logger,
     ILibraryScope? scope = null,
-    TimeProvider? timeProvider = null) : IMediaLibrary, IMediaSourceInfo
+    TimeProvider? timeProvider = null,
+    SchedularrTV.Plugins.IMediaLibraryNotifier? notifier = null) : IMediaLibrary, IMediaSourceInfo
 {
     public string Name => "Jellyfin";
 
@@ -40,11 +41,20 @@ public sealed class JellyfinMediaLibrary(
     // Read on each use: settings saved in the app apply straight away.
     private JellyfinOptions _options => options.Value;
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
-    private readonly SemaphoreSlim _refreshLock = new(1, 1);
 
-    private IReadOnlyList<MediaItem> _snapshot = [];
-    private DateTimeOffset _snapshotTakenAt = DateTimeOffset.MinValue;
-    private string _snapshotScope = string.Empty;
+    // Kept and served while the next one is read, so a periodic re-read never leaves the library empty.
+    private RefreshingSnapshot<IReadOnlyList<MediaItem>>? _cache;
+
+    private RefreshingSnapshot<IReadOnlyList<MediaItem>> Cache => LazyInitializer.EnsureInitialized(ref _cache, () =>
+    {
+        var cache = new RefreshingSnapshot<IReadOnlyList<MediaItem>>(ReadAsync, Name, _time, logger);
+        // The library pages are built from this, so they're told when a newer read lands.
+        cache.RefreshedInBackground += () => notifier?.LibraryChanged();
+        return cache;
+    });
+
+    private const char KeySeparator = '\u001f';
+
     private volatile MediaSourceProgress? _loading;
 
     /// <summary>Set while the library is being read from Jellyfin; null otherwise.</summary>
@@ -67,12 +77,21 @@ public sealed class JellyfinMediaLibrary(
 
     public async ValueTask RefreshAsync(CancellationToken cancellationToken = default)
     {
-        _snapshotTakenAt = DateTimeOffset.MinValue;
-        await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        if (IsConfigured)
+        {
+            await Cache.RefreshAsync(ScopeKey(), cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>Whether a server address and key are set. Without them this source is simply empty: shows and movies can come from local folders instead.</summary>
     public bool IsConfigured => !string.IsNullOrWhiteSpace(_options.BaseUrl) && !string.IsNullOrWhiteSpace(_options.ApiKey);
+
+    /// <summary>
+    /// What the snapshot is read from. The server and user are part of it, so pointing App settings at another server
+    /// reloads at once; so are the excluded libraries, or excluded content would keep airing until the cache expired.
+    /// </summary>
+    private string ScopeKey() =>
+        string.Join(KeySeparator, new[] { _options.BaseUrl,_options.UserId ?? string.Empty }.Concat(_options.LibraryExclusions(scope)));
 
     private async ValueTask<IReadOnlyList<MediaItem>> EnsureSnapshotAsync(CancellationToken cancellationToken)
     {
@@ -81,25 +100,16 @@ public sealed class JellyfinMediaLibrary(
             return [];
         }
 
-        string[] excluded = [.. _options.LibraryExclusions(scope)];
-        // The server and user are part of it too, so pointing App settings at another server reloads at once.
-        string scopeKey = string.Join('\u001f', new[] { _options.BaseUrl, _options.UserId ?? string.Empty }.Concat(excluded));
+        // Once read, the snapshot is served straight away; when it's old it's re-read in the background.
+        return await Cache.GetAsync(ScopeKey(), _options.CacheDuration, cancellationToken).ConfigureAwait(false);
+    }
 
-        // Changing which libraries are in scope has to invalidate the snapshot, or the excluded
-        // content would keep airing until the cache happened to expire.
-        if (scopeKey == _snapshotScope && _time.GetUtcNow() - _snapshotTakenAt < _options.CacheDuration)
-        {
-            return _snapshot;
-        }
+    private async Task<IReadOnlyList<MediaItem>> ReadAsync(string scopeKey, CancellationToken cancellationToken)
+    {
+        string[] excluded = scopeKey.Split(KeySeparator).Skip(2).ToArray();
 
-        await _refreshLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (scopeKey == _snapshotScope && _time.GetUtcNow() - _snapshotTakenAt < _options.CacheDuration)
-            {
-                return _snapshot;
-            }
-
             Report("Connecting to Jellyfin");
             List<JellyfinItem> raw = await client.GetAllItemsAsync(cancellationToken, (items, total) => Report("Reading items", items, total))
                 .ConfigureAwait(false);
@@ -164,18 +174,14 @@ public sealed class JellyfinMediaLibrary(
                 projected.Add(Project(item, collectionsByItem, collectionsBySeries, series, seasons, versions));
             }
 
-            _snapshot = projected;
-            _snapshotTakenAt = _time.GetUtcNow();
-            _snapshotScope = scopeKey;
             logger.LogInformation("Jellyfin snapshot refreshed: {Count} items, {Collections} collections.", projected.Count, collections.Count);
 
-            return _snapshot;
+            return projected;
         }
         finally
         {
             _loading = null;
             LoadingChanged?.Invoke();
-            _refreshLock.Release();
         }
     }
 
