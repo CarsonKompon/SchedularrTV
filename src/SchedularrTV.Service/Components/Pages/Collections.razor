@@ -1,24 +1,37 @@
 @page "/collections"
 @inherits EditorPage
 @inject LibraryBrowser Library
+@inject IJSRuntime JS
 
 <PageHeader Title="Collections" Eyebrow="Programming">
     <ChildContent>Shared programming for channels.</ChildContent>
     <Actions>
-        <div class="search-field" style="min-width:220px;">
-            <Icon Name="plus" Size="15" />
-            <input type="text" placeholder="New collection name" aria-label="New collection name" value="@_newName"
-                   @oninput="e => _newName = e.Value?.ToString() ?? string.Empty"
-                   @onkeydown="@(e => { if (e.Key == "Enter") Add(); })" />
-        </div>
-        <button class="btn btn-primary" disabled="@(_newName.Trim().Length == 0)" @onclick="Add">Create</button>
+        <button class="btn btn-primary" @onclick="OpenCreate"><Icon Name="plus" Size="15" />Create</button>
     </Actions>
 </PageHeader>
 
-@if (_error is not null)
-{
-    <div class="banner banner-error">@_error</div>
-}
+<dialog class="modal" @ref="_createDialog" aria-labelledby="create-collection-title">
+    <form @onsubmit="Add" @onsubmit:preventDefault="true">
+        <div class="modal-head">
+            <h2 id="create-collection-title">Create collection</h2>
+        </div>
+        <label class="field">
+            <span>Collection name</span>
+            <input type="text" @bind="_newName" @bind:event="oninput" required autofocus
+                   aria-invalid="@(_error is not null ? "true" : "false")"
+                   aria-describedby="@(_error is not null ? "create-collection-error" : null)" />
+        </label>
+        @if (_error is not null)
+        {
+            <p class="field-error" id="create-collection-error" role="alert">@_error</p>
+        }
+        <div class="wizard-foot">
+            <div class="spacer"></div>
+            <button class="btn" type="button" @onclick="CloseCreate">Cancel</button>
+            <button class="btn btn-primary" type="submit" disabled="@(_newName.Trim().Length == 0)">Create</button>
+        </div>
+    </form>
+</dialog>
 
 @if (Editor.Working.GlobalCollections.Count == 0)
 {
@@ -71,6 +84,7 @@
 
 @code {
     private string _newName = "";
+    private ElementReference _createDialog;
     private string? _error;
     private string? _confirmDelete;
     private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
@@ -102,7 +116,21 @@
         }
     }
 
-    private void Add()
+    private async Task OpenCreate()
+    {
+        _newName = "";
+        _error = null;
+        await using var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/dialog.js");
+        await module.InvokeVoidAsync("show", _createDialog);
+    }
+
+    private async Task CloseCreate()
+    {
+        await using var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/dialog.js");
+        await module.InvokeVoidAsync("close", _createDialog);
+    }
+
+    private async Task Add()
     {
         string key = _newName.Trim();
         _error = null;
@@ -128,6 +156,7 @@
         _expanded.Add(key);
         _newName = "";
         Editor.MarkDirty();
+        await CloseCreate();
     }
 
     private void Remove(string key)

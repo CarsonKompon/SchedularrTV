@@ -1,4 +1,4 @@
-.mapping-section { padding: 20px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.mapping-section { min-width: 0; }
 .mapping-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .mapping-heading h2 { margin: 0 0 12px; }
 .mapping-heading span { color: var(--muted); font-size: 12px; font-weight: normal; }

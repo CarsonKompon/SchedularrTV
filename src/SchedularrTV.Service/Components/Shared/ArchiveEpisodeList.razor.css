@@ -1,4 +1,4 @@
-.episode-section { padding: 20px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.episode-section { min-width: 0; }
 .episode-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .episode-heading h2 { margin: 0 0 12px; }
 .episode-heading > span { color: var(--muted); font-size: 12px; }

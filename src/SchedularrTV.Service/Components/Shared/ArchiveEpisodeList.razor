@@ -1,7 +1,7 @@
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @implements IDisposable
 
-<section class="episode-section">
+<section class="card episode-section">
     <div class="episode-heading"><h2>Episodes</h2><span>@_filtered.Count.ToString("N0") entries</span></div>
     <div class="episode-toolbar">
         <label class="field"><span>Search episodes or shows</span><input type="text" @bind="_search" @bind:event="oninput" @bind:after="Filter" /></label>

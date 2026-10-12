@@ -754,8 +754,8 @@ a.stat-link:hover { text-decoration: none; border-color: var(--accent); backgrou
 .new-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 200px; color: var(--muted); background: var(--bg-elev); box-shadow: none; font: 500 14px var(--font); }
 .new-tile .icon { color: var(--accent); }
 .new-tile:hover { color: var(--text); }
-.suggestion-tile { cursor: default; border-style: dashed; }
-.suggestion-tile:hover { transform: none; }
+.suggestion-tile { cursor: default; background: var(--bg-elev); border: 1px dashed var(--line-strong); }
+.suggestion-tile:hover { transform: none; background: var(--bg-elev); }
 .suggestion-tile .channel-tile-actions { opacity: 1; flex-shrink: 0; }
 .suggestion-tile.ignored { opacity: .55; }
 .suggestion-tile.ignored:hover { opacity: .85; }
@@ -808,8 +808,9 @@ a.stat-link:hover { text-decoration: none; border-color: var(--accent); backgrou
 .media-card-meta { color: var(--muted); font-size: 12px; margin-top: 2px; display: flex; gap: 6px; align-items: center; }
 .media-card-in { position: absolute; bottom: 8px; left: 8px; right: 8px; z-index: 2; display: flex; flex-wrap: wrap; gap: 4px; }
 .media-card-in .pill { background: var(--bg); height: 19px; font-size: 10.5px; }
+.media-card-poster { position: relative; }
 .media-card-actions {
-    position: absolute; top: 40px; left: 8px; right: 8px; z-index: 3;
+    position: absolute; bottom: 8px; left: 8px; right: 8px; z-index: 3;
     display: flex; flex-direction: column; gap: 6px;
     opacity: 0; pointer-events: none; transition: opacity .15s;
 }
@@ -874,6 +875,8 @@ details.card[open] > summary { margin-bottom: 14px; }
 .modal-wide { max-width: 980px; width: 92vw; }
 .modal-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
 .modal-head h2 { margin: 0; font-size: 17px; }
+dialog.modal { color: var(--text); }
+dialog.modal::backdrop { background: rgba(4, 5, 9, .75); }
 
 /* Edit channel numbers */
 .logo-tile.sm { width: 34px; height: 34px; border-radius: 9px; }

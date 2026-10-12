@@ -1,4 +1,4 @@
-.follow-source { padding: 4px 0 20px; border-bottom: 1px solid var(--line); }
+.follow-source { min-width: 0; }
 .follow-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .follow-heading h2 { margin: 0 0 16px; }
 fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
