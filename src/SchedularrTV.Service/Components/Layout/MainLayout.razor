@@ -7,9 +7,10 @@
 @inject SchedularrTV.Service.Plugins.PluginRegistry Plugins
 @inject SchedularrTV.Service.Hosting.UpdateChecker Updates
 
+<a class="skip-link" href="#main-content">Skip to content</a>
 <div class="shell">
     <nav class="sidebar" aria-label="Main">
-        <a class="brand" href="">
+        <a class="brand" href="" aria-label="SchedularrTV dashboard">
             <span class="brand-mark">
                 <Icon Name="tv" Size="18" />
             </span>
@@ -94,7 +95,7 @@
         </div>
     </nav>
 
-    <main class="content">
+    <main class="content" id="main-content" tabindex="-1">
         <div class="content-inner">
             @if (Editor.SaveError is not null)
             {

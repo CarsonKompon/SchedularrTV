@@ -1,0 +1,208 @@
+@* Every channel's number in one list, so a lineup can be renumbered without opening each channel. *@
+@inject ConfigEditor Editor
+@inject ScheduleCoordinator Coordinator
+
+@* No click-outside-to-close: a stray click shouldn't throw away a half-done renumber. *@
+<div class="modal-backdrop">
+    <div class="modal channel-numbers" role="dialog" aria-modal="true" aria-labelledby="channel-numbers-title">
+        <div class="modal-head">
+            <h2 id="channel-numbers-title">Edit channel numbers</h2>
+            <div class="spacer"></div>
+            <button class="btn btn-sm btn-icon btn-ghost" type="button" aria-label="Close" @onclick="Cancel"><Icon Name="x" Size="15" /></button>
+        </div>
+
+        <div class="channel-numbers-tools">
+            <span>Number in list order from</span>
+            <input type="number" min="1" aria-label="First number" @bind="_start" />
+            <span>counting by</span>
+            <input type="number" min="1" aria-label="Step" @bind="_step" />
+            <button class="btn btn-sm" type="button" @onclick="Renumber" disabled="@(_start < 1 || _step < 1)">Apply</button>
+        </div>
+
+        @if (_rows.Count == 0)
+        {
+            <p class="hint">No channels yet.</p>
+        }
+        else
+        {
+            <ol class="channel-numbers-list">
+                @foreach (Row row in _rows)
+                {
+                    string? error = Error(row);
+                    <li @key="row" class="@(row.External is not null ? "external" : "") @(row.Changed ? "changed" : "")">
+                        <div class="logo-tile sm">
+                            @if (!string.IsNullOrWhiteSpace(row.Logo))
+                            {
+                                <img src="@row.Logo" alt="" />
+                            }
+                            else
+                            {
+                                <Icon Name="@(row.External is null ? "tv" : "plug")" Size="16" StrokeWidth="1.6" />
+                            }
+                        </div>
+                        <div class="channel-numbers-name">
+                            <strong title="@row.Name">@row.Name</strong>
+                            @if (row.External is { } external)
+                            {
+                                <small>Set by @external.Source</small>
+                            }
+                            else if (row.Changed)
+                            {
+                                <small>Was @row.Original</small>
+                            }
+                            @if (error is not null)
+                            {
+                                <span class="field-error" role="alert">@error</span>
+                            }
+                        </div>
+                        @if (row.External is null)
+                        {
+                            <input type="number" min="1" aria-label="@($"Number for {row.Name}")" aria-invalid="@(error is not null ? "true" : "false")"
+                                   @bind="row.Text" @bind:event="oninput" />
+                        }
+                        else
+                        {
+                            <span class="channel-number" title="Change this on the plugin's page">@row.Original</span>
+                        }
+                    </li>
+                }
+            </ol>
+        }
+
+        <div class="row" style="gap:8px;margin-top:16px;">
+            <span class="hint" style="margin:0;">
+                @if (ChangedCount > 0)
+                {
+                    @($"{ChangedCount} channel(s) changed")
+                }
+            </span>
+            <div class="spacer"></div>
+            <button class="btn btn-sm btn-ghost" type="button" @onclick="Reset" disabled="@(ChangedCount == 0)">Reset</button>
+            <button class="btn btn-sm" type="button" @onclick="Cancel">Cancel</button>
+            <button class="btn btn-sm btn-primary" type="button" @onclick="Apply" disabled="@(ChangedCount == 0 || HasErrors)">
+                <Icon Name="check" Size="14" />Apply
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private sealed class Row
+    {
+        public ChannelConfig? Channel { get; init; }
+        public ExternalChannel? External { get; init; }
+        public required string Name { get; init; }
+        public string? Logo { get; init; }
+        public int Original { get; init; }
+        public string Text { get; set; } = string.Empty;
+
+        public int? Number => int.TryParse(Text, out int n) ? n : null;
+        public bool Changed => External is null && Number != Original;
+    }
+
+    private List<Row> _rows = [];
+    private int _start = 1;
+    private int _step = 1;
+
+    protected override void OnInitialized()
+    {
+        _rows = Editor.Working.Channels
+            .Select(channel => new Row
+            {
+                Channel = channel,
+                Name = channel.Name,
+                Logo = channel.Logo,
+                Original = channel.Number,
+                Text = channel.Number.ToString(),
+            })
+            .Concat(Coordinator.External.Select(external => new Row
+            {
+                External = external,
+                Name = external.Schedule.ChannelName,
+                Logo = external.Schedule.ChannelLogo,
+                Original = external.Schedule.ChannelNumber,
+                Text = external.Schedule.ChannelNumber.ToString(),
+            }))
+            .OrderBy(row => row.Original)
+            .ThenBy(row => row.External is null ? 0 : 1)
+            .ToList();
+
+        _start = _rows.FirstOrDefault(row => row.External is null)?.Original is { } first and > 0 ? first : 1;
+    }
+
+    private int ChangedCount => _rows.Count(row => row.Changed);
+
+    private bool HasErrors => _rows.Any(row => Error(row) is not null);
+
+    private string? Error(Row row)
+    {
+        if (row.External is not null)
+        {
+            // A plugin channel is only flagged when one of ours has moved onto its number.
+            return null;
+        }
+
+        if (row.Number is not { } number)
+        {
+            return "Enter a number.";
+        }
+
+        if (number < 1)
+        {
+            return "Use 1 or higher.";
+        }
+
+        Row? clash = _rows.FirstOrDefault(other => !ReferenceEquals(other, row) && other.Number == number);
+        return clash is null ? null : $"Also used by {clash.Name}.";
+    }
+
+    /// <summary>Numbers this app's channels in the order shown, stepping over numbers plugin channels hold.</summary>
+    private void Renumber()
+    {
+        if (_start < 1 || _step < 1)
+        {
+            return;
+        }
+
+        HashSet<int> taken = [.. _rows.Where(row => row.External is not null).Select(row => row.Original)];
+        int next = _start;
+        foreach (Row row in _rows.Where(row => row.External is null))
+        {
+            while (taken.Contains(next))
+            {
+                next += _step;
+            }
+
+            row.Text = next.ToString();
+            next += _step;
+        }
+    }
+
+    private void Reset()
+    {
+        foreach (Row row in _rows)
+        {
+            row.Text = row.Original.ToString();
+        }
+    }
+
+    private async Task Apply()
+    {
+        if (HasErrors || ChangedCount == 0)
+        {
+            return;
+        }
+
+        foreach (Row row in _rows.Where(row => row.Changed))
+        {
+            row.Channel!.Number = row.Number!.Value;
+        }
+
+        Editor.MarkDirty();
+        await OnClose.InvokeAsync();
+    }
+
+    private Task Cancel() => OnClose.InvokeAsync();
+}

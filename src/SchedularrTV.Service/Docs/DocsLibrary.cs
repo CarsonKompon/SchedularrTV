@@ -43,7 +43,10 @@ public sealed class DocsLibrary
     /// <summary>The order guides are shown in. A guide not named here lands in "More" at the end.</summary>
     private static readonly (string Name, string Icon, string[] Slugs)[] Layout =
     [
-        ("Web UI", "play", ["installation", "web-ui", "local-library", "import", "stats", "troubleshooting"]),
+        ("Web UI", "play", [
+            "installation", "web-ui", "web-ui-channels", "web-ui-collections", "web-ui-scheduling",
+            "web-ui-breaks", "web-ui-maintenance", "local-library", "import", "stats", "troubleshooting"
+        ]),
         ("Plugins", "puzzle", [
             "plugins", "generated-promos", "overlays", "local-ai", "radio", "background-music", "news", "iptv",
             "streamers", "web-channels", "tv-guide", "credit-squeeze", "auto-chapters", "archive-follow"

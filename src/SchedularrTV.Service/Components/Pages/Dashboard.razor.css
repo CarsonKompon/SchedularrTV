@@ -4,7 +4,7 @@
 .dashboard-date { color: var(--muted); font-size: 12px; }
 .dashboard-heading > .pill { flex-shrink: 0; }
 
-.dashboard-overview { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); border: 1px solid var(--line-strong); border-radius: var(--r-lg); background: var(--panel); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 20px; }
+.dashboard-overview { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); border: 0; border-radius: var(--r-lg); background: var(--panel); box-shadow: none; overflow: hidden; margin-bottom: 20px; }
 .dashboard-panel { min-width: 0; padding: 18px 20px; }
 .player-panel { background: linear-gradient(135deg, rgba(123, 139, 255, .08), transparent 75%); }
 .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; }

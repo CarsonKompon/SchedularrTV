@@ -9,6 +9,12 @@
 <PageHeader Title="Channels" Eyebrow="Programming">
     <ChildContent>@Editor.Working.Channels.Count configured channels</ChildContent>
     <Actions>
+        @if (Editor.Working.Channels.Count > 0)
+        {
+            <button class="btn" @onclick="() => { _menuOpen = false; _numbersOpen = true; }">
+                <Icon Name="hash" Size="15" />Edit channel numbers
+            </button>
+        }
         <div class="dropdown">
             <button class="btn btn-primary" aria-haspopup="menu" aria-expanded="@(_menuOpen ? "true" : "false")" @onclick="() => _menuOpen = !_menuOpen">
                 <Icon Name="plus" Size="15" />New channel<Icon Name="chevron-down" Size="14" />
@@ -277,6 +283,11 @@
                    OnCreated="Created" OnCancel="CloseWizard" />
 }
 
+@if (_numbersOpen)
+{
+    <ChannelNumbersEditor OnClose="() => _numbersOpen = false" />
+}
+
 @if (_previewing is { } previewing)
 {
     <ChannelPreview @key="previewing" Number="previewing.Number" Name="@previewing.Name" OnClose="() => _previewing = null" />
@@ -289,6 +300,7 @@
     private string? _confirmDelete;
     private bool _menuOpen;
     private bool _wizardOpen;
+    private bool _numbersOpen;
     private (int Number, string Name)? _previewing;
 
     /// <summary>A network with enough shows in the library to make a channel of its own.</summary>
