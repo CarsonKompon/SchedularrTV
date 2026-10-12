@@ -1,5 +1,7 @@
-# WeatherStar weather
+# WeatherStar migration
 
-WeatherStar is now a preset of the web page channels plugin, and your weather stations are taken over automatically.
+**Web page shows** replaces the old **WeatherStar 4000+** plugin and imports its stations.
 
-See [Coming from the WeatherStar plugin](web-channels.md#coming-from-the-weatherstar-plugin) in [Web page shows](web-channels.md), where WeatherStar sits alongside the Weatherscan, WeatherStar and IntelliStar simulators, a clock and custom pages.
+## Migrate stations
+
+Follow [Web page shows](web-channels.md#coming-from-the-weatherstar-plugin) for migration and current weather presets.

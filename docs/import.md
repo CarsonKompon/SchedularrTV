@@ -1,86 +1,50 @@
-# Importing from ErsatzTV or Tunarr
+# Import channels
 
-Bring your channels over from ErsatzTV or Tunarr as SchedularrTV channels. The other app's database is read from a copy, so it can keep running and nothing in it is changed.
+Import ErsatzTV or Tunarr schedules from a database copy. The source application can remain running.
 
-## Running the import
+## Run the import
 
-1. Go to **Channels → New channel → Import from ErsatzTV or Tunarr**. It's also offered at the end of the setup guide.
-2. Point it at the other app's database (see [Where to find the database](#where-to-find-the-database)).
+1. Open the Web UI on the scheduler's computer.
+2. Select **Channels → New channel → Import from ErsatzTV or Tunarr**.
+3. Choose the source database or its data folder.
+4. Review the detected channels and unmatched programmes.
+5. Select the channels to import and complete the import.
+6. Review imported programming and save any remaining unsaved changes.
 
-> [!NOTE]
-> The import is only offered in a browser on the computer running the scheduler.
+The importer backs up the schedule before saving. If the editor already has unsaved changes, imported channels remain staged with those changes.
 
-The channels are added and saved, and the schedule is backed up first (under **Backups**). If you already had unsaved changes, the channels are added as unsaved changes instead.
+## Locate the database
 
-### Where to find the database
+| Source | File | Common locations |
+| --- | --- | --- |
+| **ErsatzTV legacy** | `ersatztv.sqlite3` | `%LOCALAPPDATA%\ersatztv`, `~/.local/share/ersatztv`, Docker mount for `/root/.local/share/ersatztv` |
+| **Tunarr** | `db.db`, with `channel-lineups` beside it | `%APPDATA%\tunarr`, `~/.local/share/tunarr`, Docker mount for `/config/tunarr` |
 
-**ErsatzTV**: point it at `ersatztv.sqlite3`, or its folder. Usually in:
+The import reads legacy ErsatzTV databases; [ErsatzTV Next](ersatztv.md) is the playback engine for the resulting channels.
 
-- `%LOCALAPPDATA%\ersatztv`
-- `~/.local/share/ersatztv`
-- Docker: the folder mapped to `/root/.local/share/ersatztv`
+## Review the translation
 
-**Tunarr**: point it at `db.db`, or its data folder (with `channel-lineups` beside it). Usually in:
-
-- `%APPDATA%\tunarr`
-- `~/.local/share/tunarr`
-- Docker: the folder mapped to `/config/tunarr`
-
-## Finding the programmes
-
-Every programme is looked up in your Jellyfin library, in this order:
-
-1. By Jellyfin's id (when the other app used the same Jellyfin).
-2. By its file, also when it's under another folder (as with Docker mounts).
-3. By show, season and episode, or a film's title and year.
-
-So a library the other app read from Plex works too, as long as Jellyfin has the same media.
-
-What can't be found is counted on each channel and listed under **More**.
-
-## What becomes what
-
-### From ErsatzTV
-
-| ErsatzTV | SchedularrTV |
+| Source configuration | Imported result |
 | --- | --- |
-| A classic schedule's items at a fixed start time | A block from that time to the next one, playing that item and the ones after it without a time |
-| Items without a start time (flood, one, multiple, duration) | The base rotation (a "multiple" of 3 comes up three times as often) |
-| Alternate schedules for some days of the week | Blocks on those days |
-| A block schedule's templates | Each block at its start time, for its length, on the template's days |
-| Shows, seasons, single episodes and films | Shows (or some seasons), episodes by number, films by id |
-| Collections and multi-collections | Shared collections (under Collections) |
-| A channel's fallback filler preset | The channel's filler |
-| Channel logos | Copied in with the scheduler's logos |
+| ErsatzTV fixed-start items | Blocks ending at the next fixed start |
+| ErsatzTV untimed items | Base rotation |
+| ErsatzTV alternate schedules and block templates | Blocks with matching days and times |
+| ErsatzTV collections and multi-collections | Shared collections |
+| ErsatzTV fallback filler | Channel filler |
+| Tunarr time slots | Timed blocks |
+| Tunarr random slots | Weighted base rotation |
+| Tunarr plain programme list | Show and movie rotation |
+| Tunarr custom shows | Shared collections |
+| Tunarr filler lists | Channel filler |
+| Channel icons | Channel logos |
 
-### From Tunarr
+Matching uses media IDs, file paths, then show/season/episode or movie title/year. A channel number already in use moves to the next free number.
 
-| Tunarr | SchedularrTV |
-| --- | --- |
-| A time-slot schedule | Blocks from each slot's time to the next (weekly ones on their day) |
-| A random-slot schedule | The base rotation, weighted like the slots |
-| A plain list of programmes | The base rotation: each show (season and episode order) and the films, as often as they came up |
-| Custom shows | Shared collections |
-| Filler lists | The channel's filler |
-| Channel icons | The channel's logo |
+## Resolve unsupported items
 
-## What isn't brought over
-
-Anything not brought over is noted on the channel.
-
-From ErsatzTV:
-
-- sequential and scripted (YAML) schedules
-- smart collections and searches (they're in ErsatzTV's own search syntax: make them again as collection queries)
-- playlists
-- music and other videos
-
-From Tunarr:
-
-- redirects to other channels
-- smart collections
-
-Also:
-
-- Commercials and promos follow your usual settings.
-- A channel number already in use here moves to the next free one.
+- Recreate **ErsatzTV sequential or scripted schedules** manually
+- Rebuild **smart collections and searches** with scheduler queries
+- Recreate **ErsatzTV playlists, music, and other-video programming** with supported sources
+- Replace **Tunarr redirects** with explicit programming
+- Review **More** for unmatched media and import notes
+- Configure **commercials and promos** in the imported channel

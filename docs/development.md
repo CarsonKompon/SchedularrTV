@@ -1,105 +1,96 @@
 # Development
 
-How to build, run, test and package SchedularrTV from source, and how the solution is laid out.
+SchedularrTV targets **.NET 10** with an ASP.NET Core/Blazor service and an Avalonia tray launcher. The service owns scheduling, the Web UI, plugins, and the REST API.
 
-## Overview
+## Run from source
 
-SchedularrTV is a .NET 10 solution. The engine is timezone-, recurrence- and state-heavy, which is where a strong type system and `TimeZoneInfo`/`DateTimeOffset` pay off.
-
-## Running from source
-
-You need the [.NET 10 SDK](https://dotnet.microsoft.com/download) and ffmpeg on the PATH.
+Install the **.NET 10 SDK**, **ffmpeg**, and **ffprobe**, then run from the repository root:
 
 ```sh
-dotnet run --project src/SchedularrTV.Service     # server only, http://localhost:5252
-dotnet run --project src/SchedularrTV.Tray        # tray; a Debug build copies the server in beside it
+dotnet run --project src/SchedularrTV.Service
 ```
 
-When `config/schedule.yaml` sits beside the program (as it does when running the server from its project folder), that folder is used as the data folder, so a checkout works on its own files. `settings.json` written by App settings is ignored by git.
+For the tray launcher, use **`dotnet run --project src/SchedularrTV.Tray`**. Debug builds copy the service beside the tray; the default UI address is **http://localhost:5252**.
 
-### Plugins in a source checkout
+A folder containing **`config/schedule.yaml`** can serve as a checkout-local data folder. Use **`--data-dir`** for an explicit location.
 
-Run from a source checkout, the scheduler loads every plugin under `plugins/` from the checkout's `.plugins/` folder (ignored by git), one folder per project.
+## Plugins in a source checkout
 
-- A Debug build of a plugin (building the solution, say) copies it there itself.
-- At startup, any plugin that's missing or older than its sources (or the scheduler it's built against) is built first with `dotnet build --no-dependencies`, with progress in the console.
-- Anything built but not yet in `.plugins/` is copied over; up-to-date ones start at once.
-- Set `SCHEDULARRTV_BUILD_PLUGINS=false` to skip building and load whatever was built last.
-- Nothing is loaded from (or moved out of) the per-user data folder's `plugins`. A plugin installed from the Plugins page goes in `.plugins/` too.
+Debug plugin builds copy output into the ignored **`.plugins/`** directory. Startup builds missing or stale plugins with **`dotnet build --no-dependencies`** and loads their output.
 
-## Tests
+Set **`SCHEDULARRTV_BUILD_PLUGINS=false`** to skip automatic builds. Plugins installed through the UI also use the checkout's **`.plugins/`** directory.
+
+See [Plugin development](plugin-development.md) for extension contracts and packaging.
+
+## Test
+
+Run **`dotnet test`**:
 
 ```sh
 dotnet test
 ```
 
-Some tests render promos and probe clips with the real ffmpeg and ffprobe, so both must be on the PATH.
+Rendering and probing tests need real **ffmpeg** and **ffprobe** executables on **PATH**.
 
 ### Snapshot tests
 
-`EngineSnapshotTests` compare the engine's complete output for a set of scenarios with recorded snapshots in `tests/SchedularrTV.Core.Tests/Snapshots/`.
+**EngineSnapshotTests** compares full schedule output with **`tests/SchedularrTV.Core.Tests/Snapshots/`**.
 
-- A missing snapshot is recorded on the first local run (CI fails instead).
-- A difference writes `<name>.received.txt` beside the snapshot.
-- When a change to the output is intended, run with `UPDATE_SNAPSHOTS=1` and commit the updated snapshots.
+- Inspect **`*.received.txt`** when output differs
+- Set **`UPDATE_SNAPSHOTS=1`** only for intentional output changes
+- Review updated snapshots before committing
 
-## Projects
+Missing snapshots are recorded locally; CI treats them as failures.
 
-| Project | Purpose |
+## Project map
+
+| Project or directory | Responsibility |
 | --- | --- |
-| `SchedularrTV.Core` | Domain model, query language, temporal tags, ordering, archive reader, timeline and gap-packing engine. |
-| `SchedularrTV.Plugins.Abstractions` | The plugin API: `IPlugin`, manifests and the extension points. See [Plugins](plugins.md). |
-| `SchedularrTV.Providers.Jellyfin` | Built-in plugin: Jellyfin library snapshot. |
-| `SchedularrTV.Providers.FileSystem` | Built-in plugin: folder-backed library for commercials and bumpers, tagged by folder path. |
-| `SchedularrTV.Providers.ErsatzTv` | Built-in plugin: playout JSON, XMLTV fragments, lineup generation and process supervision. |
-| `plugins/SchedularrTV.Plugins.GeneratedPromos` | Optional plugin: generated promos (renderer, editor, render queue). Builds against `SchedularrTV.Service`. |
-| `plugins/SchedularrTV.Plugins.TikTok`, `.MiniMax`, `.Piper` | Optional plugins: voices for generated promos. |
-| `samples/SchedularrTV.Plugins.Sample` | Example external plugin with settings, a page and a playout processor. |
-| `SchedularrTV.Service` | ASP.NET Core server: background rebuilds, the Blazor web UI and the REST API. Runs on its own or under the tray. |
-| `SchedularrTV.Tray` | Cross-platform tray / menu-bar app (Avalonia). Runs the server as a child process from a `server` folder beside it. |
-| `src/Shared` | Source files compiled into both the server and the tray (data folder, settings file, autostart). |
-| `SchedularrTV.Core.Tests` | xUnit suite covering recurrence, ordering determinism, gap packing and end-to-end builds. |
+| **`src/SchedularrTV.Core`** | Configuration, queries, ordering, temporal rules, archive reading, schedule engine |
+| **`src/SchedularrTV.Plugins.Abstractions`** | Manifests and extension contracts |
+| **`src/SchedularrTV.Providers.Jellyfin`** | Jellyfin media source |
+| **`src/SchedularrTV.Providers.FileSystem`** | Local video, music, metadata, artwork, and clips |
+| **`src/SchedularrTV.Providers.ErsatzTv`** | Playout, XMLTV, lineup, process supervision |
+| **`src/SchedularrTV.Service`** | Background work, Blazor UI, REST endpoints, plugin loading |
+| **`src/SchedularrTV.Tray`** | Launcher and tray lifecycle |
+| **`src/Shared`** | Shared hosting and path code |
+| **`plugins/`** | Optional feature and voice plugins |
+| **`samples/SchedularrTV.Plugins.Sample`** | External plugin example |
+| **`tests/`** | Automated tests and engine snapshots |
+| **`tools/`** | Profiling, break diagnostics, promo previews |
 
-The tray and server are separate processes so that:
+## Edit documentation
 
-- their SkiaSharp versions never clash;
-- a tray crash can't take the scheduler down;
-- the server can run headless.
+Guides live in **`docs/*.md`** and are embedded in the service. **`Docs/DocsLibrary.cs`** assigns sidebar sections and rewrites relative Markdown links for the in-app browser.
 
-## Diagnostics
+- Start each guide with one **H1** and an introduction of at most three sentences
+- Organize tasks with **action headings** and ordered steps
+- Start every bullet with an **action verb** and keep it to one fragment
+- Bold **UI labels**, **key terms**, and inline **commands**
+- Use relative **`.md` links** between guides
+- Register new guide slugs in **`DocsLibrary.Layout`**
 
-- [Schedule build profiling](schedule-performance.md): `tools/profile-schedule.cs`.
-- [Diagnosing ad breaks](schedule-performance.md#diagnosing-ad-breaks): `tools/diagnose-breaks.cs`.
-- `tools/generate-promo.cs` previews generated promos from the command line.
+## Package releases
 
-## Releases
-
-`.github/workflows/build.yml` runs the tests on Windows, then publishes self-contained builds for `win-x64`, `linux-x64`, `linux-arm64`, `osx-arm64` and `osx-x64`. `linux-arm64` (for the Raspberry Pi) is cross-published from x64 with ReadyToRun, so it starts quickly on slow CPUs.
-
-- Every push to `main` replaces the **nightly** pre-release.
-- Pushing a tag such as `v1.2.0` creates a release with that version.
-
-### What each build contains
-
-- The tray is published to the top of the folder and the server into `server/`.
-- The projects under `plugins/` are published once (framework-dependent) into a `SchedularrTV-<version>-plugin-<id>.zip` each, plus `SchedularrTV-<version>-all-plugins.zip` with all of them, stamped with the release's version.
-- `<version>` is the tag (`v1.2.0`) for a release and `nightly` otherwise. Every download starts with `SchedularrTV-<version>-`.
-- macOS builds are wrapped in a menu-bar-only `SchedularrTV.app` with ad-hoc signatures. Nothing is notarised or code-signed.
-
-### Building the downloads locally
-
-`scripts/package.ps1` builds the same files as CI, named the same way, into `publish/dist`. It needs PowerShell 7.4+ and the .NET 10 SDK, and every system can be built from Windows, macOS or Linux.
-
-Started from Windows PowerShell 5.1, it runs itself again in PowerShell 7 (`pwsh`), or says how to install it (`winget install --id Microsoft.PowerShell`).
+**`scripts/package.ps1`** requires PowerShell **7.4+** and the .NET 10 SDK. Output goes to **`publish/dist`**.
 
 ```powershell
-./scripts/package.ps1                                  # everything, as the nightly
-./scripts/package.ps1 -Targets win-x64 -NoPlugins      # just the Windows download
-./scripts/package.ps1 -PluginsOnly                     # just the plugin zips
-./scripts/package.ps1 -Test                            # run the tests first, as CI does
-./scripts/package.ps1 -Version 1.2.0 -Release          # stamped and named as release v1.2.0
+./scripts/package.ps1
+./scripts/package.ps1 -Targets win-x64 -NoPlugins
+./scripts/package.ps1 -PluginsOnly
+./scripts/package.ps1 -Test
+./scripts/package.ps1 -Version 1.2.0 -Release
 ```
 
-- A local nightly is numbered like CI's (just past the latest `v*` tag) with run number 0 (use `-RunNumber` to change it), so the app never takes it for a newer nightly.
-- The Linux tarballs and the macOS and plugin zips carry Unix permissions, so the programs are executable when unpacked, even when built on Windows.
-- Built on a Mac, the `.app` is signed with `codesign` and zipped with `ditto` exactly as CI does. Elsewhere it relies on the ad-hoc signature the .NET SDK gives the programs it publishes.
+| Artifact | Contents |
+| --- | --- |
+| **Platform archive** | Self-contained tray at root and service under `server/` |
+| **`plugin-<id>.zip`** | One framework-dependent plugin |
+| **`all-plugins.zip`** | All optional plugins |
+| **macOS archive** | App bundle with ad-hoc signing |
+
+Supported targets are **win-x64**, **linux-x64**, **linux-arm64**, **osx-arm64**, and **osx-x64**. ARM64 Linux uses ReadyToRun.
+
+The [build workflow](../.github/workflows/build.yml) tests on Windows and publishes artifacts. Pushes to **`main`** replace the nightly release; **`v*`** tags produce numbered releases.
+
+See [Build profiling](schedule-performance.md) for schedule benchmarks and [Generated promos](generated-promos.md#command-line-preview) for render previews.

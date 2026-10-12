@@ -1,88 +1,70 @@
 # SchedularrTV
 
-**Local TV like it used to be**
+**SchedularrTV** builds continuous TV schedules from Jellyfin and local media, with programming blocks, commercials, promos, and an electronic programme guide. **ErsatzTV Next** streams the resulting channels to IPTV players.
 
-SchedularrTV builds round-the-clock linear TV schedules from your Jellyfin library (or plain folders of shows and movies), complete with time slots, programming blocks, ad breaks, bumpers and promos. It hands them to [ErsatzTV Next](https://github.com/ErsatzTV/next) to stream to any IPTV player with a full programme guide.
+## Start here
 
-## Features
+1. Download and extract the build for your system from [Releases](https://github.com/CarsonKompon/SchedularrTV/releases).
+2. Install [**ErsatzTV Next**](https://github.com/ErsatzTV/next) and [**ffmpeg**](https://ffmpeg.org/download.html).
+3. Run **SchedularrTV** and open <http://localhost:5252>.
+4. Connect **Jellyfin** or add local media folders in the setup guide.
+5. Select the **ErsatzTV Next** executable and verify **ffmpeg** and **ffprobe**.
+6. Create a channel through **Channels → New channel → Channel Creation Wizard**.
+7. Add the playlist and guide below to your IPTV player.
 
-- **Schedules like a real network.** Anchored time slots, recurring and holiday blocks, marathons and a fallback rotation that keeps every channel full 24/7.
-- **Ad breaks that fit.** Breaks are packed with commercials from folders on disk, tagged by folder name, and finished with bumpers and station IDs so programmes start on time. Mid-roll breaks can use chapter markers.
-- **Seasonal commercials.** Holiday and seasonal ads (Christmas, Halloween, winter) air at the right time of year automatically.
-- **Promos.** Use your own Up Next and Coming Up clips, or generate them: a visual template editor with text-to-speech voice-overs and background music.
-- **Archive Follow.** Replay what a real network aired on a matching date in history, using your copies of the shows.
-- **Repeatable.** Shuffles and rotations are deterministic and remembered, so schedules don't repeat themselves and rebuilding doesn't reshuffle what's already planned.
-- **Plugins** for new media sources, outputs, voices and playout tweaks, installed from a zip.
-- **Web UI** for everything, plus a tray app for Windows, macOS and Linux that can start with your computer and run ErsatzTV Next for you.
-
-## Getting started
-
-1. **Download** the build for your system from [Releases](https://github.com/CarsonKompon/tv_scheduler/releases) and unzip it. No other install is needed.
-
-   | Windows | macOS | Linux |
-   | --- | --- | --- |
-   | `SchedularrTV-<version>-win-x64.zip` | `SchedularrTV-<version>-osx-arm64.zip` (Apple silicon)<br>`SchedularrTV-<version>-osx-x64.zip` (Intel) | `SchedularrTV-<version>-linux-x64.tar.gz`<br>`SchedularrTV-<version>-linux-arm64.tar.gz` (Raspberry Pi 4/5) |
-
-   `<version>` is the release's tag (`v1.0.0`), or `nightly` for the nightly build.
-
-2. **Run** `SchedularrTV`. It appears in the notification area or menu bar and opens at <http://localhost:5252>. The builds aren't code-signed, so Windows and macOS warn the first time; see [Installation](docs/installation.md) for how to open them.
-3. **Follow the setup guide** that opens the first time: connect Jellyfin or add your TV and movie folders, choose the ErsatzTV Next program, and check ffmpeg was found.
-4. **Create a channel** with the Channel Creation Wizard at the end of the guide (or later from **Channels → New channel**).
-5. **Add ErsatzTV's playlist and guide to your IPTV player:**
-   - Playlist: `http://localhost:8409/channels.m3u`
-   - Guide: `http://localhost:8409/xmltv.xml`
-
-### Requirements
-
-- Your shows and movies: in [Jellyfin](https://jellyfin.org), or in [folders on disk](docs/local-library.md) laid out as Sonarr, Radarr or Kodi do (or both).
-- [ErsatzTV Next](https://github.com/ErsatzTV/next) for streaming.
-- [ffmpeg](https://ffmpeg.org/download.html) (`winget install ffmpeg`, `brew install ffmpeg`, or your package manager).
-
-## Documentation
-
-The same guides can be read in the app under **Help → Documentation** (the **Documentation** link in the sidebar).
-
-| Guide | Covers |
+| Player setting | Default URL |
 | --- | --- |
-| [Installation](docs/installation.md) | Downloads, first run, the data folder, updating, running headless or under systemd |
-| [Configuration](docs/configuration.md) | App settings, the schedule file, commercials on disk, Jellyfin tags |
-| [Local TV and movies](docs/local-library.md) | Shows and movies from folders without Jellyfin: naming, .nfo files and pictures |
-| [Importing from ErsatzTV or Tunarr](docs/import.md) | Bringing another app's channels over as SchedularrTV channels |
-| [How scheduling works](docs/scheduling.md) | Blocks and anchors, ad break packing, mid-rolls, the query language, seasonal tags |
-| [Channel stats](docs/stats.md) | Each channel's Stats tab: who watches it, when, and what |
-| [ErsatzTV Next](docs/ersatztv.md) | What is published and how ErsatzTV is managed |
-| [Plugins](docs/plugins.md) | Installing plugins and writing your own |
-| [REST API](docs/rest-api.md) | Endpoints for scripting |
-| [Schedule build profiling](docs/schedule-performance.md) | Measuring schedule build times and diagnosing ad breaks |
-| [Development](docs/development.md) | Building from source, tests, releases |
+| **M3U playlist** | `http://localhost:8409/channels.m3u` |
+| **XMLTV guide** | `http://localhost:8409/xmltv.xml` |
+
+For another device, replace `localhost` with the ErsatzTV computer's address. Release builds include the .NET runtime; Jellyfin is optional when using local folders.
+
+## Web UI
+
+| Task | Guide |
+| --- | --- |
+| Install, update, or move the app | [Installation](docs/installation.md) |
+| Create channels, collections, blocks, and breaks | [Use the Web UI](docs/web-ui.md) |
+| Add shows, movies, music, and metadata | [Local media](docs/local-library.md) |
+| Import an existing lineup | [Import channels](docs/import.md) |
+| Inspect viewers and adjust scheduling weights | [Channel stats](docs/stats.md) |
+| Diagnose playback, missing content, or high CPU | [Troubleshooting](docs/troubleshooting.md) |
 
 ## Plugins
 
-Optional extras, installed from the **Plugins** page. Each release has a `SchedularrTV-<version>-all-plugins.zip` with all of them.
-
-| Plugin | What it does |
+| Task | Guide |
 | --- | --- |
-| [Generated promos](docs/generated-promos.md) | Promo templates, voices, music, external generators |
-| [Overlays](docs/overlays.md) | Screen bugs, lower thirds and "up next" graphics, designed visually and timed per programme |
-| [Local AI writer](docs/local-ai.md) | A free model on your own computer that words promo voice-overs and captions naturally, fit for more long-form promos |
-| [Radio shows](docs/radio.md) | Music from any music library (Jellyfin, local music folders) or an internet station, with cover art, lyrics and a visualizer |
-| [Background music](docs/background-music.md) | Music under web pages, the guide, news, streamer channels and generated promos, from a folder or any music library |
-| [News shows](docs/news.md) | Local news breaks from your RSS feeds, with weather, markets, scores, a map and lottery results, in teletext, news desk, cable news or retro looks, optionally read out |
-| [IPTV passthrough](docs/iptv.md) | Channels from an IPTV playlist (M3U) and its XMLTV guide, or free channels from iptv-org with guides from iptv-org/epg |
-| [Streamer channels](docs/streamers.md) | Twitch and YouTube streamers in priority order, with chat, "also live" pop-ups, replays and a countdown to the next stream |
-| [Web page shows](docs/web-channels.md) | Live web pages as channels: WeatherStar, Weatherscan and IntelliStar retro weather with their music, a clock, or any page |
-| [TV Guide channel](docs/tv-guide.md) | A scrolling Prevue / TV Guide Channel-style listings channel from your own schedule |
-| [Credit squeeze](docs/credit-squeeze.md) | As the end credits roll they shrink into a box beside what's on next, like network TV |
-| [Auto Chapters](docs/auto-chapters.md) | Mid-roll breaks at the fades to black in files without chapter markers |
-| [Archive Follow](docs/archive-follow.md) | Replaying historical schedules (built in, off until you switch it on) |
+| Install, configure, update, or remove plugins | [Manage plugins](docs/plugins.md) |
+| Generate promos and voice-overs | [Generated promos](docs/generated-promos.md) |
+| Add logos, lower thirds, and captions | [Overlays](docs/overlays.md) |
+| Write captions and voice-over scripts with a local model | [Local AI writer](docs/local-ai.md) |
+| Add music or internet radio | [Radio shows](docs/radio.md) · [Background music](docs/background-music.md) |
+| Schedule news, weather, clocks, or listings | [News](docs/news.md) · [Web shows](docs/web-channels.md) · [TV Guide](docs/tv-guide.md) |
+| Carry external channels | [IPTV](docs/iptv.md) · [Streamers](docs/streamers.md) |
+| Add credit panels or detect break points | [Credit squeeze](docs/credit-squeeze.md) · [Auto Chapters](docs/auto-chapters.md) |
+| Recreate historical programming | [Archive Follow](docs/archive-follow.md) |
 
-## Building from source
+## Advanced
 
-Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
+| Task | Guide |
+| --- | --- |
+| Edit the schedule format | [YAML reference](docs/yaml.md) |
+| Configure paths, ports, and credentials | [App configuration](docs/configuration.md) |
+| Understand selection, precedence, and break packing | [Scheduling and queries](docs/scheduling.md) |
+| Configure output, encoding, and remote playout | [ErsatzTV integration](docs/ersatztv.md) |
+| Automate validation, previews, and rebuilds | [REST API](docs/rest-api.md) |
+| Measure build times and inspect padding | [Build profiling](docs/schedule-performance.md) |
+| Extend the application | [Plugin development](docs/plugin-development.md) |
+| Build, test, or package the project | [Development](docs/development.md) |
+
+The same guides are available under **Help → Documentation** in the app.
+
+## Run from source
+
+Install the **.NET 10 SDK**, then run **`dotnet run`** from the repository root:
 
 ```sh
-dotnet run --project src/SchedularrTV.Tray     # or src/SchedularrTV.Service for the server alone
-dotnet test
+dotnet run --project src/SchedularrTV.Tray
 ```
 
-See [Development](docs/development.md) for more.
+Use **`src/SchedularrTV.Service`** for the server alone. See [Development](docs/development.md) for tests and packaging.

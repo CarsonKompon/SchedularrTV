@@ -1,123 +1,75 @@
 # Local AI writer
 
-Let a small language model running on your own computer word your promos' voice-overs and on-screen text, instead of the fill-in-the-blanks wording. It's free, needs no account or API key, and sends nothing anywhere.
+**Local AI writer** generates promo scripts and captions through a local model or a configured AI server. Standard template text remains the fallback when generation fails or validation rejects the result.
 
-## What it does
+## Set up the built-in writer
 
-Rather than *"Coming up next... SpongeBob. Then SpongeBob at 1:30, and then SpongeBob at 2!"*, it can say *"Coming up next, SpongeBob, followed by even more SpongeBob!"*. Given the episode's description from your library, it can also crack a joke about it before it starts.
+1. Install **Local AI writer** and restart.
+2. Open **Plugins → Local AI writer → Settings**.
+3. Download the engine under **Built-in AI**.
+4. Download a model and select **Use this**.
+5. Save and test with **Try it**.
 
-The model runs on your own computer, or on an Ollama or LM Studio server you already have.
+| Model | Approximate download | Use |
+| --- | --- | --- |
+| **Qwen3.5 0.8B** | 0.5 GB | Lower-memory systems |
+| **Qwen3.5 2B** | 1.3 GB | General-purpose starting point |
+| **Qwen3.5 4B** | 2.7 GB | Higher quality with more memory and compute |
 
-## Setting it up
+The model loads on demand and unloads after **Free memory after** minutes. **Your own model file** accepts instruction-tuned GGUF models.
 
-1. Install **Local AI writer** from the **Plugins** page (it's in the all-plugins zip).
-2. Open its settings (the gear). Under **Built-in AI**, **Download** the AI engine (llama.cpp built for your computer, a few tens of MB).
-3. **Download** a model:
-   - **Qwen3.5 2B** (1.3 GB) is the one to start with: a few seconds per promo on an ordinary processor.
-   - **0.8B** (0.5 GB) is quicker but plainer.
-   - **4B** (2.7 GB) is funnier and more reliable, but about twice as slow and wants 8 GB of memory or more.
-4. Choose the model you want with **Use this**, and save. Downloads carry on if you close the dialog.
-5. Try it in the **Try it** box at the bottom of the settings.
+## Use Ollama or LM Studio
 
-The model is loaded when it's first needed and let go of after **Free memory after** minutes without use, so it isn't holding a gigabyte or more all day.
+1. Set **Server type** and **Server address** in plugin settings.
+2. Select **Find models on the server**.
+3. Choose a model and save.
+4. Select **Local AI server** in the template's writer options.
 
-### Using Ollama or LM Studio instead
+Other OpenAI-compatible chat servers can use the same integration. Prompts go to the configured server; built-in inference stays on the scheduler computer.
 
-If you already run [Ollama](https://ollama.com) or [LM Studio](https://lmstudio.ai):
-
-1. Set **Server type** and **Server address** (leave the address empty for the usual one).
-2. Press **Find models on the server** and pick one.
-
-It shows up as a second writer, **Local AI server**, which you can choose per template.
-
-Anything with an OpenAI-style chat API works (llama.cpp's own server, LocalAI, and so on). A paid service would too, with its key, though nothing needs one.
-
-With Ollama, this gets the same model the built-in writer uses:
+For Ollama, download the model with **`ollama pull`**:
 
 ```sh
 ollama pull qwen3.5:2b
 ```
 
-> [!TIP]
-> A server with a graphics card is much quicker than the built-in writer, which runs on the processor (on Apple silicon it uses the GPU).
+## Generate voice-over scripts
 
-### Your own model
+1. Open a generated promo template's **Voice-over** section.
+2. Enable **Have AI word it naturally**.
+3. Choose **Written by** and describe **How it should sound**.
+4. Set optional directions, word limit, generation percentage, and episode-description access.
+5. Select **Try it**, then save the schedule.
 
-Any instruction-tuned GGUF model works: set **Your own model file** and choose it with **Use this**.
+The writer produces text; a separate [voice plugin](generated-promos.md#voices) produces speech.
 
-Keep to small models (1 to 4 billion parameters). A promo has to be written in seconds, not minutes.
+## Generate captions
 
-## Using it
+1. Select a **Text** layer in a promo or overlay.
+2. Enter fallback text.
+3. Enable the AI-writing option and describe **What to write**.
+4. Save the schedule.
 
-### Voice-overs (Generated promos)
-
-In a [promo template](generated-promos.md)'s **Voice-over** section, tick **Have AI word it naturally**. Then set:
-
-- **Written by**: which writer to use (the first one that's ready, unless you pick one).
-- **How it should sound**: a style, such as *an excitable late-90s cartoon channel announcer*.
-- **Anything else it should do**: extra direction, such as *mention it's the Saturday morning marathon*.
-- **At most (words)**: worked out from the promo's length when left empty.
-- **Written by AI _n_% of the time**: below 100%, the usual wording is used the rest of the time.
-- **Tell it what the episode is about**: hands it the episode's description from your library, so it can say something about the plot.
-- **Try it**: writes one with the channel's next shows. Each try is different.
-
-The model is given the shows (marking a show that's on again), when they're on, the channel, the description, and the usual read-out for reference. Your openers and closers still shape that usual wording.
-
-### Captions (Generated promos and Overlays)
-
-A **Text** layer in a promo template, or in an [overlay](overlays.md)'s design, has **Have AI write it**.
-
-- The text you typed is the fallback.
-- Say what you want in **What to write**, such as *a five-word tagline teasing the episode*.
-- An overlay caption is written once per episode and shared by its repeats.
-
-## When it isn't used
-
-Small models make things up now and then, so everything they write is checked first. The writing is set aside, and the usual wording used instead, when:
-
-- it leaves out one of the shows the promo is for,
-- it mentions a number (a time, say) or a day ("tomorrow") it wasn't given, or
-- it runs well past the word limit, or adds formatting.
-
-It gets a second try before giving up. The usual wording is also used when no writer is set up yet, or the model or server fails.
-
-> [!NOTE]
-> Nothing ever goes out silent or blank because of the AI writer.
-
-## How it fits together
-
-- **Promos** are written when they're rendered, ahead of airing, so the time it takes never shows. What's written is kept (in the data folder's `ai-text` folder, for two months after its last use), so a re-render or a repeat airing doesn't write it again.
-- **Overlay captions** are written in the background for programmes coming up in the next day and a half, sooner ones first. Until a caption is written, the overlay shows its usual text. Once it is, the schedule is published again with it.
-- Only one piece is written at a time.
+Overlay captions are prepared ahead of airing and shared by repeat episodes. Promos are written during rendering; successful text is cached under **`ai-text/`**.
 
 ## In the schedule file
 
+Add **`writer`** to a generated promo's voice or a supported text layer:
+
 ```yaml
-generated-promos:
-  templates:
-    - name: Up Next
-      voice:
-        provider: tiktok
-        voice: en_us_006
-        writer:
-          style: An excitable late-90s cartoon channel announcer
-          prompt: Mention it's the weekend
-          use_descriptions: true
-          max_words: 0        # 0 works it out from the promo's length
-          chance: 1           # 0 to 1
-          generator: local-ai # or local-ai-server; leave out for the first one that's ready
-      layers:
-        - name: Tagline
-          kind: text
-          text: "{channel}"   # the fallback
-          writer:
-            prompt: A five-word tagline teasing the episode
+writer:
+  generator: local-ai
+  style: An energetic cartoon channel announcer
+  prompt: Mention the weekend marathon
+  use_descriptions: true
+  max_words: 0
+  chance: 1
 ```
 
-Overlay text layers take the same `writer:` section.
+**`max_words: 0`** derives the limit from promo duration; **`chance`** ranges from `0` to `1`. Use **`generator: local-ai-server`** for the configured server.
 
-## For plugin authors
+## Rejected or missing output
 
-Writers are a plugin extension point (API 1.5): implement `ITextGenerator` and register it with `services.AddTextGenerator<T>()`.
+Generated text is checked for missing shows, unsupported times or days, excessive length, and formatting. A failed retry uses standard wording; unavailable writers also fall back.
 
-The scheduler's `AiTextWriter` does the prompting, checking, fallback and keeping. A writer only has to turn a `TextGenerationRequest` (instructions, prompt, token limit, temperature and seed) into text.
+Plugin authors can implement **`ITextGenerator`**; prompting, checks, fallback, and caching belong to the host. See [Plugin development](plugin-development.md).

@@ -43,13 +43,12 @@ public sealed class DocsLibrary
     /// <summary>The order guides are shown in. A guide not named here lands in "More" at the end.</summary>
     private static readonly (string Name, string Icon, string[] Slugs)[] Layout =
     [
-        ("Getting started", "play", ["installation", "configuration", "local-library", "import"]),
-        ("Scheduling", "calendar", ["scheduling", "archive-follow", "stats", "ersatztv"]),
+        ("Web UI", "play", ["installation", "web-ui", "local-library", "import", "stats", "troubleshooting"]),
         ("Plugins", "puzzle", [
             "plugins", "generated-promos", "overlays", "local-ai", "radio", "background-music", "news", "iptv",
-            "streamers", "web-channels", "tv-guide", "credit-squeeze", "auto-chapters"
+            "streamers", "web-channels", "tv-guide", "credit-squeeze", "auto-chapters", "archive-follow"
         ]),
-        ("Advanced", "code", ["rest-api", "schedule-performance", "development"])
+        ("Advanced", "code", ["yaml", "configuration", "scheduling", "ersatztv", "rest-api", "schedule-performance", "plugin-development", "development"])
     ];
 
     /// <summary>Guides that only point somewhere else now. Still reachable, never listed.</summary>
