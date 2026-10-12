@@ -155,7 +155,7 @@
     }
 </div>
 
-<InterstitialsEditor Interstitials="Global.Interstitials" Changed="Editor.MarkDirty" />
+<InterstitialsEditor Interstitials="Global.Interstitials" ShowShows="false" Changed="Editor.MarkDirty" />
 
 @* Promos, Generated promos and any installed plugin's schedule-wide settings. *@
 @foreach (PluginEditorSection section in EditorSections.Where(section => section.Surface == EditorSurface.ScheduleSettings).OrderBy(section => section.Order))

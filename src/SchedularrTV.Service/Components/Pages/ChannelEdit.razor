@@ -170,7 +170,7 @@ else
             </div>
         </div>
 
-        <div class="card">
+        RenderFragment playback = @<div class="card">
             <div class="card-head"><h2>Playback</h2></div>
             <label class="check">
                 <input type="checkbox" checked="@(_channel.AlwaysOn ?? false)"
@@ -204,9 +204,9 @@ else
                     }
                 }
             }
-        </div>
+        </div>;
 
-        <div class="card">
+        RenderFragment encoding = @<div class="card">
             <div class="card-head"><h2>Encoding</h2></div>
             <div class="grid grid-3">
                 <label class="field">
@@ -238,9 +238,9 @@ else
             <p class="hint">
                 Overrides <a href="settings/app">app encoding defaults</a>. Saving encoding changes restarts ErsatzTV and briefly interrupts viewers.
             </p>
-        </div>
+        </div>;
 
-        <div class="card">
+        RenderFragment grid = @<div class="card">
             <div class="card-head"><h2>Scheduling grid</h2></div>
             <div class="grid grid-2">
                 <DurationInput Label="Start programmes on a boundary of" Value="_channel.PadToNearest"
@@ -274,10 +274,6 @@ else
                        @onchange="e => { _channel.AutoTemporalTags = (bool)(e.Value ?? false); Editor.MarkDirty(); }" />
                 <span>Match seasonal commercial tags (January, Winter, 12-25, Christmas&hellip;)</span>
             </label>
-        </div>
-
-        <div class="card">
-            <div class="card-head"><h2>Rotation position</h2></div>
             <p class="hint">
                 Reset to start each collection from its first episode.
             </p>
@@ -290,9 +286,9 @@ else
                     <span class="hint inline">@_resetMessage</span>
                 }
             </div>
-        </div>
+        </div>;
 
-        <div class="card">
+        RenderFragment rotation = @<div class="card">
             <div class="card-head"><h2>Base rotation</h2></div>
             <p class="hint">Plays whenever no block or anchor claims the time.</p>
             @if (_channel.BaseRotation is null)
@@ -307,7 +303,11 @@ else
                                 Changed="Editor.MarkDirty"
                                 OnRemove="() => { _channel.BaseRotation = null; Editor.MarkDirty(); }" />
             }
-        </div>
+        </div>;
+        @rotation
+        @grid
+        @encoding
+        @playback
     }
     else if (_tab == "schedule")
     {
@@ -322,26 +322,16 @@ else
     }
     else if (_tab == "breaks")
     {
-        @if (_channel.Interstitials is null)
-        {
-            <div class="card">
-                <p>Using global break settings.</p>
-                <button class="btn btn-primary" @onclick="() => { _channel.Interstitials = new InterstitialsConfig(); Editor.MarkDirty(); }">
-                    Configure for this channel
-                </button>
-            </div>
-        }
-        else
-        {
-            <InterstitialsEditor Interstitials="_channel.Interstitials" Changed="Editor.MarkDirty" />
-        }
+        <InterstitialsEditor Interstitials="ChannelBreaks" ShowShows="false" Changed="CommitBreaks"
+                             InheritAds="@(_channel.Interstitials?.Commercials is null && _channel.Interstitials?.Filler is null)" ConfigureAds="ConfigureAds">
+            <BrandContent>
+                <BrandTagsEditor Values="@(_channel.CommercialBaseTags ?? _channel.Interstitials?.Commercials?.BaseTags)" ValuesChanged="SetBrands" />
+                <p class="hint">Brand folders for commercials and filler. Leave empty to inherit global brands.</p>
+            </BrandContent>
+        </InterstitialsEditor>
 
-        <div class="card">
-            <div class="card-head"><h2>Commercial brand tags</h2></div>
-            <p class="hint">Shorthand for the tier&nbsp;2 brand tags, matching the folder names under your commercials root.</p>
-            <TagListEditor Label="Tags (any of)" Placeholder="Any Channel"
-                           Values="_commercialTags" Changed="OnTagsChanged" />
-        </div>
+        <InterstitialsEditor Interstitials="ChannelBreaks" ShowAds="false" Changed="CommitBreaks"
+                             ShowsOverride="_channel.InterstitialShows" ClearShowsOverride="() => _channel.InterstitialShows = null" />
 
         @if (_channel.MidRoll is null)
         {
@@ -407,8 +397,32 @@ else
     };
 
     private ChannelConfig? _channel;
+    private InterstitialsConfig _emptyBreaks = new();
+    private InterstitialsConfig ChannelBreaks => _channel!.Interstitials ?? _emptyBreaks;
+
+    private void CommitBreaks()
+    {
+        _channel!.Interstitials = ChannelBreaks;
+        Editor.MarkDirty();
+    }
+
+    private void ConfigureAds()
+    {
+        ChannelBreaks.Commercials ??= new CommercialsConfig();
+        ChannelBreaks.Filler ??= new FillerTierConfig();
+        CommitBreaks();
+    }
+
+    private void SetBrands(List<string>? tags)
+    {
+        _channel!.CommercialBaseTags = tags;
+        ChannelBreaks.Commercials ??= new CommercialsConfig();
+        ChannelBreaks.Filler ??= new FillerTierConfig();
+        ChannelBreaks.Commercials.BaseTags = tags;
+        ChannelBreaks.Filler.BaseTags = tags;
+        CommitBreaks();
+    }
     private string _tab = "general";
-    private List<string> _commercialTags = [];
     private bool _resetting;
     private string? _resetMessage;
     private string? _idError;
@@ -433,7 +447,6 @@ else
         {
             string sourceName = Editor.FindChannel(_copySourceId)?.Name ?? _copySourceId;
             _channel = Editor.CopyChannelSettings(ChannelId, _copySourceId);
-            _commercialTags = _channel.CommercialBaseTags ?? [];
             _copyOpen = false;
             _copyMessage = $"Copied settings from {sourceName}. Save to apply.";
             _idError = null;
@@ -564,7 +577,6 @@ else
     protected override void OnParametersSet()
     {
         _channel = Editor.FindChannel(ChannelId);
-        _commercialTags = _channel?.CommercialBaseTags ?? [];
         _tab = Tab is { Length: > 0 } wanted && AllTabs.Any(tab => tab.Key == wanted) ? wanted : "general";
     }
 
@@ -572,15 +584,14 @@ else
     {
         base.OnInitialized();
         _channel = Editor.FindChannel(ChannelId);
-        _commercialTags = _channel?.CommercialBaseTags ?? [];
     }
 
     // A discard or an external reload replaces the whole working copy, so the cached channel has to
     // be looked up again or the page keeps editing an object nothing else references.
     protected override void OnEditorChanged()
     {
+        _emptyBreaks = new();
         _channel = Editor.FindChannel(ChannelId);
-        _commercialTags = _channel?.CommercialBaseTags ?? [];
         _copyMessage = null;
         base.OnEditorChanged();
     }
@@ -610,12 +621,6 @@ else
         _channel.Id = id;
         Editor.MarkDirty();
         Nav.NavigateTo($"channels/{id}");
-    }
-
-    private void OnTagsChanged()
-    {
-        _channel!.CommercialBaseTags = _commercialTags.Count > 0 ? _commercialTags : null;
-        Editor.MarkDirty();
     }
 
     private static string? Text(ChangeEventArgs e) =>

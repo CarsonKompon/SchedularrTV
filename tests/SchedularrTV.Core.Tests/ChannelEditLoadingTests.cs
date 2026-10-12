@@ -171,6 +171,11 @@ public sealed class ChannelEditLoadingTests
                 if (exists)
                 {
                     Assert.Contains("Configured Channel", html);
+                    Assert.True(html.IndexOf("Base rotation", StringComparison.Ordinal) < html.IndexOf("Scheduling grid", StringComparison.Ordinal));
+                    Assert.True(html.IndexOf("Scheduling grid", StringComparison.Ordinal) < html.IndexOf("Start this channel over", StringComparison.Ordinal));
+                    Assert.True(html.IndexOf("Start this channel over", StringComparison.Ordinal) < html.IndexOf("<h2>Encoding", StringComparison.Ordinal));
+                    Assert.True(html.IndexOf("<h2>Encoding", StringComparison.Ordinal) < html.IndexOf("<h2>Playback", StringComparison.Ordinal));
+                    Assert.DoesNotContain("Rotation position", html);
                     Assert.Contains("Follow", html);
                     Assert.Contains("?tab=schedule", html);
                     Assert.Contains("aria-current=\"page\"", html);

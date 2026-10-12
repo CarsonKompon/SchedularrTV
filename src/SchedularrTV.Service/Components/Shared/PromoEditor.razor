@@ -20,13 +20,9 @@
 
     @if (Config.Enabled)
     {
-        <h3>Brands</h3>
-        <TagChipPicker Label="Brand folders (any of)"
-                       Hint="Promos are only taken from these folders. Leave all off to follow the channel's advert brands, so a channel using Any Channel, Any Childrens and its own brand pulls promos from all three."
-                       EmptyHint="No commercials library configured."
-                       Available="_brands"
-                       Selected="Config.BaseTags"
-                       SelectedChanged="OnBrandsChanged" />
+        @if (BrandContent is not null) { @BrandContent }
+        else { <BrandTagsEditor Values="Config.BaseTags" ValuesChanged="OnBrandsChanged" /> }
+        <p class="hint">Leave empty to use the channel's ad brands.</p>
 
         <h3>Break before a new show</h3>
         <p class="hint">Runs in this order, around whatever ads and filler close the gap.</p>
@@ -196,6 +192,7 @@
 </div>
 
 @code {
+    [Parameter] public RenderFragment? BrandContent { get; set; }
     [Parameter, EditorRequired] public PromoConfig Config { get; set; } = new();
     [Parameter] public EventCallback Changed { get; set; }
 

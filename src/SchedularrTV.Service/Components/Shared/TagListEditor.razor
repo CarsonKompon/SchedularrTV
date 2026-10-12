@@ -17,11 +17,17 @@
         }
     </div>
     <div class="row">
-        <input type="text" placeholder="@Placeholder" value="@_pending"
+        <input type="text" placeholder="@Placeholder" value="@_pending" aria-label="@Label" list="@_suggestionId"
                @oninput="e => _pending = e.Value?.ToString() ?? string.Empty"
                @onkeydown="OnKeyDown" />
-        <button class="btn btn-sm" @onclick="Add">Add</button>
+        <button type="button" class="btn btn-sm" @onclick="Add">Add</button>
     </div>
+    <datalist id="@_suggestionId">
+        @foreach (string suggestion in Suggestions.Where(value => !Values.Contains(value, StringComparer.OrdinalIgnoreCase)))
+        {
+            <option value="@suggestion"></option>
+        }
+    </datalist>
 </div>
 
 @code {
@@ -29,6 +35,8 @@
     [Parameter] public string Placeholder { get; set; } = "add a value";
     [Parameter, EditorRequired] public List<string> Values { get; set; } = [];
     [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public IReadOnlyList<string> Suggestions { get; set; } = [];
+    private readonly string _suggestionId = $"tags-{Guid.NewGuid():N}";
 
     private string _pending = "";
 

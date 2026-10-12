@@ -1,0 +1,20 @@
+@inject LibraryBrowser Library
+
+<TagListEditor Label="Tags (any of)" Placeholder="Add a brand folder" Values="_tags" Suggestions="_brands" Changed="OnChanged" />
+
+@code {
+    [Parameter] public List<string>? Values { get; set; }
+    [Parameter] public EventCallback<List<string>?> ValuesChanged { get; set; }
+    private List<string> _tags = [];
+    private IReadOnlyList<string> _brands = [];
+
+    protected override void OnParametersSet() => _tags = Values is null ? [] : [.. Values];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _brands = (await Library.GetCommercialFoldersAsync()).Brands; }
+        catch (Exception) { /* Free-text tags remain usable when the library is unavailable. */ }
+    }
+
+    private Task OnChanged() => ValuesChanged.InvokeAsync(_tags.Count == 0 ? null : _tags);
+}

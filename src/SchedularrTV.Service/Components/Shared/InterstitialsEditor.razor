@@ -2,12 +2,15 @@
 @inject LibraryBrowser Library
 
 <div class="card">
-    <div class="card-head"><h2>Interstitials &amp; ad breaks</h2></div>
-    <p class="hint">
-        Gaps are filled in order: short programmes, then commercials that fit exactly, then filler
-        that can be trimmed to land on the boundary.
-    </p>
+    <div class="card-head"><h2>@(ShowAds ? "Ad break settings" : "Interstitials")</h2></div>
+    @if (ShowAds)
+    {
+        @if (BrandContent is not null) { @BrandContent }
+        else { <BrandTagsEditor Values="Commercials.BaseTags" ValuesChanged="OnBrandsChanged" /> }
+    }
 
+    @if (ShowShows)
+    {
     <h3>Tier 1 &mdash; interstitial shows</h3>
     <div class="grid grid-2">
         <label class="field">
@@ -24,25 +27,26 @@
         </label>
     </div>
     <p class="hint">Checked for each short, so breaks aren't always opened with one; a miss leaves the rest of the break to the adverts. 100 always uses one.</p>
-    @if (Interstitials.Shows is null)
+    @if (Shows is null)
     {
         <button class="btn btn-sm" @onclick="AddShows">Add a shorts pool</button>
         <p class="hint">Without this, a long gap is filled entirely with adverts.</p>
     }
     else
     {
-        <SelectorEditor Selector="Interstitials.Shows" Label="Short programmes"
+        <SelectorEditor Selector="Shows" Label="Short programmes"
                         Changed="Changed" OnRemove="RemoveShows" />
     }
 
-    <h3>Brands</h3>
-    <TagChipPicker Label="Brand folders (any of)"
-                   Hint="Tier 2 draws its adverts from these folders. Leave all off to use every brand."
-                   EmptyHint="No commercials library configured."
-                   Available="_folders.Brands"
-                   Selected="Commercials.BaseTags"
-                   SelectedChanged="OnBrandsChanged" />
+    }
 
+    @if (ShowAds && InheritAds)
+    {
+        <p class="hint">This channel has no ad breaks configuration; it inherits the global one.</p>
+        <button type="button" class="btn btn-primary" @onclick="ConfigureAds">Configure for this channel</button>
+    }
+    else if (ShowAds)
+    {
     <h3>Tier 2 &mdash; commercials</h3>
     <TagChipPicker Label="Clip folders to use"
                    Hint="Only whole clips that fit the remaining gap are used, so nothing is cut off."
@@ -65,11 +69,6 @@
                        Selected="Filler.Types"
                        SelectedChanged="OnFillerTypesChanged" />
 
-        <TagChipPicker Label="Brand folders (any of)"
-                       Hint="Leave all off to use every brand. Bumpers are often filed under one brand only, so narrowing this can empty the tier."
-                       Available="_folders.Brands"
-                       Selected="Filler.BaseTags"
-                       SelectedChanged="OnFillerBrandsChanged" />
     }
 
     <details>
@@ -136,11 +135,20 @@
             <span>Stop before the end rather than hard-cutting</span>
         </label>
     </details>
+    }
 </div>
 
 @code {
     [Parameter, EditorRequired] public InterstitialsConfig Interstitials { get; set; } = new();
     [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public bool ShowShows { get; set; } = true;
+    [Parameter] public bool ShowAds { get; set; } = true;
+    [Parameter] public bool InheritAds { get; set; }
+    [Parameter] public EventCallback ConfigureAds { get; set; }
+    [Parameter] public RenderFragment? BrandContent { get; set; }
+    [Parameter] public ContentSelector? ShowsOverride { get; set; }
+    [Parameter] public EventCallback ClearShowsOverride { get; set; }
+    private ContentSelector? Shows => ShowsOverride ?? Interstitials.Shows;
 
     private CommercialsConfig Commercials => Interstitials.Commercials ??= new CommercialsConfig();
     private FillerTierConfig Filler => Interstitials.Filler ??= new FillerTierConfig();
@@ -152,6 +160,7 @@
     private async Task OnBrandsChanged(List<string>? tags)
     {
         Commercials.BaseTags = tags;
+        Filler.BaseTags = tags;
         await Changed.InvokeAsync();
     }
 
@@ -167,20 +176,16 @@
         await Changed.InvokeAsync();
     }
 
-    private async Task OnFillerBrandsChanged(List<string>? tags)
-    {
-        Filler.BaseTags = tags;
-        await Changed.InvokeAsync();
-    }
-
     private async Task AddShows()
     {
+        await ClearShowsOverride.InvokeAsync();
         Interstitials.Shows = new ContentSelector();
         await Changed.InvokeAsync();
     }
 
     private async Task RemoveShows()
     {
+        await ClearShowsOverride.InvokeAsync();
         Interstitials.Shows = null;
         await Changed.InvokeAsync();
     }

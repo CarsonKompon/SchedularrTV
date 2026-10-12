@@ -905,6 +905,10 @@ details.card[open] > summary { margin-bottom: 14px; }
     background: color-mix(in srgb, var(--c) 30%, transparent); border-left: 3px solid var(--c);
 }
 .guide-swatch.interstitial { --c: var(--interstitial); }
+.guide-swatch.commercial { --c: var(--commercial); }
+.guide-ad-break { position: absolute; top: 64px; height: 12px; z-index: 3; border-radius: 2px; background: var(--commercial); color: #17120a; overflow: hidden; font-size: 9px; line-height: 12px; white-space: nowrap; text-align: center; opacity: .9; }
+.guide-follow .guide-ad-break { top: 88px; }
+.guide-ad-break:hover { opacity: 1; outline: 1px solid var(--text); }
 .guide-swatch.anchor { --c: #ec8fb8; }
 .guide-swatch.archive { --c: #e8c75e; }
 .guide-swatch.archive-random { --c: #ef9c55; }

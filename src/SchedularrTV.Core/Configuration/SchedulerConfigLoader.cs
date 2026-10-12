@@ -637,6 +637,17 @@ public static class SchedulerConfigLoader
         foreach (ChannelConfig channel in config.Channels)
         {
             channel.Plugins = NormalizePluginSections(channel.Plugins);
+            // Shorts now belong to channels. Materialize old defaults without sharing mutable pools.
+            InterstitialsConfig globalShorts = config.Settings.Interstitials;
+            if (globalShorts.Shows is not null || globalShorts.MaxShowsPerSlot is not null
+                || globalShorts.ShowChance is not null)
+            {
+                channel.Interstitials ??= new InterstitialsConfig();
+                if (channel.InterstitialShows is null)
+                    channel.Interstitials.Shows ??= globalShorts.Shows is null ? null : ConvertSection<ContentSelector>(globalShorts.Shows);
+                channel.Interstitials.MaxShowsPerSlot ??= globalShorts.MaxShowsPerSlot;
+                channel.Interstitials.ShowChance ??= globalShorts.ShowChance;
+            }
             FeatureSections.Extract(channel);
 
             if (channel.Follow is { } follow)
@@ -685,6 +696,9 @@ public static class SchedulerConfigLoader
                 }
             }
         }
+        config.Settings.Interstitials.Shows = null;
+        config.Settings.Interstitials.MaxShowsPerSlot = null;
+        config.Settings.Interstitials.ShowChance = null;
     }
 
     /// <summary>

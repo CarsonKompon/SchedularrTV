@@ -1,5 +1,4 @@
 @* The Promos plugin's channel tab. *@
-@inject LibraryBrowser Browser
 
 @if (Context.Channel is { } channel)
 {
@@ -12,12 +11,7 @@
                 folders without restating the rest.
             </p>
 
-            <TagChipPicker Label="Brand folders (any of)"
-                           Hint="Leave all off to use this channel's advert brands."
-                           EmptyHint="No commercials library configured."
-                           Available="_folders.Brands"
-                           Selected="channel.PromoBaseTags"
-                           SelectedChanged="OnBrandsChanged" />
+            <BrandTagsEditor Values="channel.PromoBaseTags" ValuesChanged="OnBrandsChanged" />
 
             <button class="btn btn-primary" @onclick="() => { channel.Promos = new PromoConfig(); Context.NotifyChanged(); }">
                 Configure everything for this channel
@@ -26,7 +20,11 @@
     }
     else
     {
-        <PromoEditor Config="channel.Promos" ChannelName="channel.Name" Changed="Context.NotifyChanged" />
+        <PromoEditor Config="channel.Promos" ChannelName="channel.Name" Changed="Context.NotifyChanged">
+            <BrandContent>
+                <BrandTagsEditor Values="@(channel.PromoBaseTags ?? channel.Promos.BaseTags)" ValuesChanged="OnBrandsChanged" />
+            </BrandContent>
+        </PromoEditor>
         <button class="btn btn-sm btn-danger" @onclick="() => { channel.Promos = null; Context.NotifyChanged(); }">
             Inherit global promos
         </button>
@@ -38,13 +36,10 @@
 @code {
     [Parameter, EditorRequired] public PluginEditorContext Context { get; set; } = default!;
 
-    private CommercialFolders _folders = new([], [], [], []);
-
-    protected override async Task OnInitializedAsync() => _folders = await Browser.GetCommercialFoldersAsync();
-
     private Task OnBrandsChanged(List<string>? brands)
     {
         Context.Channel!.PromoBaseTags = brands;
+        if (Context.Channel.Promos is { } promos) promos.BaseTags = brands;
         Context.NotifyChanged();
         return Task.CompletedTask;
     }

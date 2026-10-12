@@ -85,7 +85,8 @@ public sealed class GuideArchiveComparisonTests
         string follow = await RenderAsync(new() { [nameof(GuideGrid.Schedules)] = new[] { Schedule() } });
         Assert.Contains("guide-legend", follow);
         Assert.Contains("Archived episode", follow);
-        Assert.Contains("Archived schedule (compare)", follow);
+        Assert.DoesNotContain("Archived schedule (compare)", follow);
+        Assert.Contains("Ad break", follow);
 
         string normal = await RenderAsync(new()
         {

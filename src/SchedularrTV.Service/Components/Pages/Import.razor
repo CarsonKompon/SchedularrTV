@@ -6,7 +6,7 @@
 
 <PageHeader Title="Import channels" Eyebrow="Programming">
     <ChildContent>
-        Import ErsatzTV or Tunarr channels using your Jellyfin library. Source files are unchanged.
+        Import ErsatzTV or Tunarr channels using your media library. Source files are unchanged.
     </ChildContent>
 </PageHeader>
 
@@ -62,7 +62,7 @@ else
                     : "It isn't in the usual place on this computer. In Docker it's in the folder mapped to /config/tunarr; copy db.db and the channel-lineups folder beside it.")
             </p>
         }
-        <p class="hint">Media is matched by ID, file, then title and episode. Jellyfin must contain the imported media.</p>
+        <p class="hint">Media is matched by ID, file, then title and episode across your configured media sources.</p>
 
         <div class="row" style="gap:8px;">
             <button class="btn btn-primary" type="button" disabled="@(_reading || string.IsNullOrWhiteSpace(_path))" @onclick="ReadAsync">
@@ -124,7 +124,7 @@ else
                         }
                         @if (channel.MissingNames.Count > 0)
                         {
-                            <p class="hint warn" style="margin:0 0 4px;">Not found in Jellyfin: @string.Join(", ", channel.MissingNames.Take(30))@(channel.MissingNames.Count > 30 ? "…" : "")</p>
+                            <p class="hint warn" style="margin:0 0 4px;">Not found in your library: @string.Join(", ", channel.MissingNames.Take(30))@(channel.MissingNames.Count > 30 ? "…" : "")</p>
                         }
                         @if (channel.Channel is { } config)
                         {
@@ -345,7 +345,7 @@ else
             parts.Add($"was {channel.Source.Number}");
         }
 
-        parts.Add($"{channel.Found} found in Jellyfin");
+        parts.Add($"{channel.Found} found in your library");
         return string.Join(" · ", parts);
     }
 

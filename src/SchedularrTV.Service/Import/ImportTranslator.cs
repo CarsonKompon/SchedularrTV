@@ -226,7 +226,7 @@ public sealed class ImportTranslator
 
         if (blocks.Count == 0 && rotation.Count == 0)
         {
-            notes.Add("Nothing it played could be found in the Jellyfin library, so it isn't added.");
+            notes.Add("Nothing it played could be found in your media library, so it isn't added.");
             return new ImportedChannelPlan { Source = source, Found = tally.Found, Missing = tally.Missing, MissingNames = tally.Names }.With(notes);
         }
 
