@@ -10,7 +10,9 @@
 <div class="shell">
     <nav class="sidebar" aria-label="Main">
         <a class="brand" href="">
-            <span class="brand-mark"><Icon Name="tv" Size="18" /></span>
+            <span class="brand-mark">
+                <Icon Name="tv" Size="18" />
+            </span>
             <span class="brand-text">
                 <span class="brand-name">SchedularrTV</span>
                 <span class="brand-version" title="Version @SchedularrTV.Service.Hosting.AppRuntime.Version">@VersionBadge</span>
@@ -19,44 +21,66 @@
 
         @* Only the links scroll; the brand above and the status below stay put. *@
         <div class="sidebar-nav">
-        <div class="nav-section">Overview</div>
-        <NavLink class="nav-item" href="" Match="NavLinkMatch.All"><Icon Name="dashboard" /><span>Dashboard</span></NavLink>
+            <div class="nav-section">Overview</div>
+            <NavLink class="nav-item" href="" Match="NavLinkMatch.All">
+                <Icon Name="dashboard" /><span>Dashboard</span>
+            </NavLink>
 
-        <div class="nav-section">Programming</div>
-        <NavLink class="nav-item" href="channels"><Icon Name="radio" /><span>Channels</span></NavLink>
-        <NavLink class="nav-item" href="collections"><Icon Name="layers" /><span>Collections</span></NavLink>
+            <div class="nav-section">Programming</div>
+            <NavLink class="nav-item" href="channels">
+                <Icon Name="radio" /><span>Channels</span>
+            </NavLink>
+            <NavLink class="nav-item" href="collections">
+                <Icon Name="layers" /><span>Collections</span>
+            </NavLink>
 
-        <div class="nav-section">Library</div>
-        <NavLink class="nav-item" href="library/shows"><Icon Name="tv" /><span>TV Shows</span></NavLink>
-        <NavLink class="nav-item" href="library/movies"><Icon Name="film" /><span>Movies</span></NavLink>
+            <div class="nav-section">Library</div>
+            <NavLink class="nav-item" href="library/shows">
+                <Icon Name="tv" /><span>TV Shows</span>
+            </NavLink>
+            <NavLink class="nav-item" href="library/movies">
+                <Icon Name="film" /><span>Movies</span>
+            </NavLink>
 
-        <div class="nav-section">System</div>
-        <NavLink class="nav-item" href="settings" Match="NavLinkMatch.All">
-            <Icon Name="sliders" /><span>Channel settings</span>
-            @if (Updates.Available is { } update)
+            <div class="nav-section">System</div>
+            <NavLink class="nav-item" href="settings" Match="NavLinkMatch.All">
+                <Icon Name="sliders" /><span>Channel settings</span>
+                @if (Updates.Available is { } update)
+                {
+                    <span class="nav-update-dot" title="@($"SchedularrTV {update.Tag} is available")" aria-label="Update available"></span>
+                }
+            </NavLink>
+            <NavLink class="nav-item" href="settings/app">
+                <Icon Name="plug" /><span>App settings</span>
+            </NavLink>
+            <NavLink class="nav-item" href="settings/plugins">
+                <Icon Name="puzzle" /><span>Plugins</span>
+            </NavLink>
+            <NavLink class="nav-item" href="performance">
+                <Icon Name="activity" /><span>Performance</span>
+            </NavLink>
+            <NavLink class="nav-item" href="backups">
+                <Icon Name="history" /><span>Backups</span>
+            </NavLink>
+            <NavLink class="nav-item" href="yaml">
+                <Icon Name="code" /><span>YAML</span>
+            </NavLink>
+
+            @if (PluginPages.Any())
             {
-                <span class="nav-update-dot" title="@($"SchedularrTV {update.Tag} is available")" aria-label="Update available"></span>
+                <div class="nav-section">Plugins</div>
+                @foreach ((SchedularrTV.Service.Plugins.PluginDescriptor plugin, PluginPage link) in PluginPages)
+                {
+                    <NavLink class="nav-item" href="@(link.Path.TrimStart('/'))" title="@($"{link.Title} ({plugin.Manifest.Name})")">
+                        <Icon Name="@(Icon.Exists(link.Icon) ? link.Icon! : "puzzle")" /><span>@(link.Title)</span>
+                    </NavLink>
+                }
             }
-        </NavLink>
-        <NavLink class="nav-item" href="settings/app"><Icon Name="plug" /><span>App settings</span></NavLink>
-        <NavLink class="nav-item" href="settings/plugins"><Icon Name="puzzle" /><span>Plugins</span></NavLink>
-        <NavLink class="nav-item" href="performance"><Icon Name="activity" /><span>Performance</span></NavLink>
 
-        @if (PluginPages.Any())
-        {
-            <div class="nav-section">Plugins</div>
-            @foreach ((SchedularrTV.Service.Plugins.PluginDescriptor plugin, PluginPage link) in PluginPages)
-            {
-                <NavLink class="nav-item" href="@(link.Path.TrimStart('/'))" title="@($"{link.Title} ({plugin.Manifest.Name})")">
-                    <Icon Name="@(Icon.Exists(link.Icon) ? link.Icon! : "puzzle")" /><span>@(link.Title)</span>
-                </NavLink>
-            }
-        }
-        <NavLink class="nav-item" href="yaml"><Icon Name="code" /><span>YAML</span></NavLink>
-
-        <div class="nav-section">Help</div>
-        <NavLink class="nav-item" href="backups"><Icon Name="history" /><span>Backups</span></NavLink>
-        <NavLink class="nav-item" href="docs"><Icon Name="book" /><span>Documentation</span></NavLink>
+            <div class="nav-section">Help</div>
+            <NavLink class="nav-item" href="docs">
+                <Icon Name="book" /><span>Documentation</span>
+            </NavLink>
         </div>
 
         <div class="sidebar-foot">
@@ -80,13 +104,16 @@
             {
                 <div class="banner banner-error">
                     <strong>Configuration problems</strong>
-                    <ul>@foreach (string error in Editor.Errors) { <li>@error</li> }</ul>
-                </div>
-            }
+                    <ul>@foreach (string error in Editor.Errors) {
+                        <li>@error</li>
+                    }
+                </ul>
+            </div>
+        }
 
-            @Body
-        </div>
-    </main>
+        @Body
+    </div>
+</main>
 </div>
 
 @if (Editor.IsDirty)
@@ -96,8 +123,12 @@
             <span class="status-dot warn"></span>
             <span role="status">@(Editor.IsBusy ? "Applying changes…" : "Unsaved changes")</span>
         </div>
-        <button class="btn btn-sm btn-ghost" type="button" disabled="@Editor.IsBusy" @onclick="Editor.ReloadAsync"><Icon Name="undo" Size="14" />Discard</button>
-        <button class="btn btn-sm btn-primary" type="button" disabled="@Editor.IsBusy" @onclick="Save"><Icon Name="save" Size="14" />Save changes</button>
+        <button class="btn btn-sm btn-ghost" type="button" disabled="@Editor.IsBusy" @onclick="Editor.ReloadAsync">
+            <Icon Name="undo" Size="14" />Discard
+        </button>
+        <button class="btn btn-sm btn-primary" type="button" disabled="@Editor.IsBusy" @onclick="Save">
+            <Icon Name="save" Size="14" />Save changes
+        </button>
         @if (Editor.SaveError is not null || Editor.Errors.Count > 0)
         {
             <span class="field-error" role="alert">Not saved. Review the errors above.</span>
@@ -107,7 +138,9 @@
 
 @if (_saveMessage is not null)
 {
-    <div class="toast" role="status"><Icon Name="check-circle" />@_saveMessage</div>
+    <div class="toast" role="status">
+        <Icon Name="check-circle" />@_saveMessage
+    </div>
 }
 
 @if (_showSetup)
