@@ -741,6 +741,13 @@ a.stat-link:hover { text-decoration: none; border-color: rgba(123, 139, 255, .4)
 .new-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 200px; border-style: dashed; color: var(--muted); background: transparent; box-shadow: none; font: 500 14px var(--font); }
 .new-tile .icon { color: var(--accent); }
 .new-tile:hover { color: var(--text); }
+.suggestion-tile { cursor: default; border-style: dashed; }
+.suggestion-tile:hover { transform: none; }
+.suggestion-tile .channel-tile-actions { opacity: 1; flex-shrink: 0; }
+.suggestion-tile.ignored { opacity: .55; }
+.suggestion-tile.ignored:hover { opacity: .85; }
+.suggested-shows { display: flex; flex-wrap: wrap; gap: 6px; max-height: 132px; overflow-y: auto; padding-right: 4px; }
+.suggested-shows .pill { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ==========================================================================
    Library

@@ -3,6 +3,8 @@
 @inject NavigationManager Nav
 @inject ScheduleCoordinator Coordinator
 @inject TimeProvider Clock
+@inject LibraryBrowser Library
+@inject SuggestionStore IgnoredSuggestions
 
 <PageHeader Title="Channels" Eyebrow="Programming">
     <ChildContent>@Editor.Working.Channels.Count configured channels</ChildContent>
@@ -153,19 +155,131 @@
     </div>
 </div>
 
+@if (Coordinator.External.Count > 0)
+{
+    <p class="hint" style="margin-top:12px;">Plugin channels are edited on their plugin's page.</p>
+}
+
+@{
+    List<SuggestedChannel> allSuggestions = _suggestionsLoading ? [] : Suggestions;
+    List<SuggestedChannel> suggestions = [.. allSuggestions.Where(s => !s.Ignored)];
+    List<SuggestedChannel> ignored = [.. allSuggestions.Where(s => s.Ignored)];
+    bool paged = suggestions.Count > SuggestionPageSize;
+    // Hidden suggestions go after the whole visible list, so they're only offered once it's all on screen.
+    bool canShowHidden = ignored.Count > 0 && (!paged || _showAllSuggestions);
+    IEnumerable<SuggestedChannel> shown = suggestions.Take(paged && !_showAllSuggestions ? SuggestionPageSize : int.MaxValue)
+        .Concat(canShowHidden && _showHiddenSuggestions ? ignored : []);
+}
+@if (_suggestionsLoading || allSuggestions.Count > 0)
+{
+    <div class="section-title">
+        <Icon Name="sparkles" Size="16" />
+        <h2>Suggested Channels</h2>
+        @if (!_suggestionsLoading)
+        {
+            <span class="count">@suggestions.Count</span>
+        }
+    </div>
+    <p class="hint" style="margin-top:-6px;">Networks your shows originally aired on. Each starts with every show from that network.</p>
+
+    @if (_suggestionsLoading)
+    {
+        <p class="hint">Reading your library…</p>
+    }
+    else
+    {
+        <div class="tile-grid">
+            @foreach (SuggestedChannel suggestion in shown)
+            {
+                <article class="card channel-tile suggestion-tile @(suggestion.Ignored ? "ignored" : "")" @key="suggestion.Network">
+                    <div class="channel-tile-head">
+                        <div class="logo-tile lg">
+                            <Icon Name="radio" Size="24" StrokeWidth="1.6" />
+                        </div>
+                        <div style="flex:1;min-width:0;">
+                            <h2 title="@suggestion.Network">@suggestion.Network</h2>
+                            <div class="row">
+                                <span class="pill pill-network">Network</span>
+                                @if (suggestion.Ignored)
+                                {
+                                    <span class="pill pill-muted">Ignored</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="channel-tile-actions">
+                            @if (suggestion.Ignored)
+                            {
+                                <button class="btn btn-sm btn-icon" title="Restore suggestion" aria-label="@($"Restore the {suggestion.Network} suggestion")"
+                                        @onclick="() => IgnoredSuggestions.Restore(suggestion.Network)">
+                                    <Icon Name="undo" Size="14" />
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-icon" title="Ignore suggestion" aria-label="@($"Ignore the {suggestion.Network} suggestion")"
+                                        @onclick="() => IgnoredSuggestions.Ignore(suggestion.Network)">
+                                    <Icon Name="x" Size="14" />
+                                </button>
+                            }
+                            <button class="btn btn-sm btn-primary" @onclick="() => OpenSuggestion(suggestion)">
+                                <Icon Name="plus" Size="14" />Create Channel
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="meta-row">
+                        <span class="meta-chip"><Icon Name="tv" Size="13" /><strong>@suggestion.Shows.Count</strong> show(s)</span>
+                        <span class="meta-chip"><strong>@suggestion.Episodes.ToString("N0")</strong> episode(s)</span>
+                        <span class="meta-chip"><Icon Name="clock" Size="13" /><strong>@suggestion.Runtime</strong></span>
+                    </div>
+
+                    <div class="suggested-shows">
+                        @foreach (LibraryShow show in suggestion.Shows)
+                        {
+                            <span class="pill pill-muted" @key="show.Id" title="@show.Name">@show.Name</span>
+                        }
+                    </div>
+                </article>
+            }
+        </div>
+
+        @if (paged || ignored.Count > 0)
+        {
+            <div class="load-more">
+                <span>
+                    Showing @(paged && !_showAllSuggestions ? SuggestionPageSize : suggestions.Count) of @suggestions.Count
+                    @if (ignored.Count > 0)
+                    {
+                        <text> · @ignored.Count ignored</text>
+                    }
+                </span>
+                @if (paged)
+                {
+                    <button class="btn btn-sm" @onclick="() => _showAllSuggestions = !_showAllSuggestions">
+                        @(_showAllSuggestions ? "Show fewer" : "Show all")
+                    </button>
+                }
+                @if (canShowHidden)
+                {
+                    <button class="btn btn-sm" aria-pressed="@(_showHiddenSuggestions ? "true" : "false")"
+                            @onclick="() => _showHiddenSuggestions = !_showHiddenSuggestions">
+                        @(_showHiddenSuggestions ? "Hide ignored" : $"Show ignored ({ignored.Count})")
+                    </button>
+                }
+            </div>
+        }
+    }
+}
+
 @if (_wizardOpen)
 {
-    <ChannelWizard OnCreated="Created" OnCancel="() => _wizardOpen = false" />
+    <ChannelWizard @key="_wizardSuggestion" SuggestedName="@_wizardSuggestion?.Network" SuggestedShows="_wizardSuggestion?.Shows"
+                   OnCreated="Created" OnCancel="CloseWizard" />
 }
 
 @if (_previewing is { } previewing)
 {
     <ChannelPreview @key="previewing" Number="previewing.Number" Name="@previewing.Name" OnClose="() => _previewing = null" />
-}
-
-@if (Coordinator.External.Count > 0)
-{
-    <p class="hint" style="margin-top:12px;">Plugin channels are edited on their plugin's page.</p>
 }
 
 @code {
@@ -177,16 +291,119 @@
     private bool _wizardOpen;
     private (int Number, string Name)? _previewing;
 
+    /// <summary>A network with enough shows in the library to make a channel of its own.</summary>
+    private sealed record SuggestedChannel(string Network, IReadOnlyList<LibraryShow> Shows, bool Ignored)
+    {
+        public int Episodes => Shows.Sum(show => show.EpisodeCount);
+
+        public string Runtime
+        {
+            get
+            {
+                TimeSpan total = Shows.Aggregate(TimeSpan.Zero, (sum, show) => sum + show.TotalRuntime);
+                return total.TotalHours >= 1 ? $"{(int)total.TotalHours:N0}h" : $"{total.Minutes}m";
+            }
+        }
+    }
+
+    // One show isn't much of a channel; two or more from the same network is.
+    private const int MinimumShows = 4;
+    private const int SuggestionPageSize = 9;
+
+    private IReadOnlyList<LibraryShow> _shows = [];
+    private bool _suggestionsLoading = true;
+    private bool _showAllSuggestions;
+    private bool _showHiddenSuggestions;
+    private SuggestedChannel? _wizardSuggestion;
+
     protected override void OnInitialized()
     {
         base.OnInitialized();
         Coordinator.StateChanged += OnCoordinatorChanged;
+        Library.Changed += OnLibraryChanged;
+        IgnoredSuggestions.Changed += OnCoordinatorChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _shows = await Library.GetShowsAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Suggestions are a nicety; a library that can't be read just means there are none.
+            _shows = [];
+        }
+        finally
+        {
+            _suggestionsLoading = false;
+        }
     }
 
     public override void Dispose()
     {
         Coordinator.StateChanged -= OnCoordinatorChanged;
+        Library.Changed -= OnLibraryChanged;
+        IgnoredSuggestions.Changed -= OnCoordinatorChanged;
         base.Dispose();
+    }
+
+    private void OnLibraryChanged() => _ = InvokeAsync(async () =>
+    {
+        if (!Library.Updating)
+        {
+            try { _shows = await Library.GetShowsAsync(); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { }
+        }
+
+        StateHasChanged();
+    });
+
+    /// <summary>
+    /// Networks from the shows' metadata, biggest first, skipping any that already have a channel
+    /// of the same name.
+    /// </summary>
+    private List<SuggestedChannel> Suggestions
+    {
+        get
+        {
+            HashSet<string> existing = new(
+                Editor.Working.Channels.Select(channel => channel.Name.Trim())
+                    .Concat(Coordinator.External.Select(external => external.Schedule.ChannelName.Trim())),
+                StringComparer.OrdinalIgnoreCase);
+
+            return _shows
+                .SelectMany(show => show.Networks
+                    .Where(network => !string.IsNullOrWhiteSpace(network))
+                    .Select(network => network.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Select(network => (Network: network, Show: show)))
+                .GroupBy(pair => pair.Network, StringComparer.OrdinalIgnoreCase)
+                .Where(group => !existing.Contains(group.Key))
+                .Select(group => new SuggestedChannel(
+                    // The spelling most shows use, so "Cartoon Network" wins over a stray "cartoon network".
+                    group.GroupBy(pair => pair.Network).OrderByDescending(g => g.Count()).First().Key,
+                    [.. group.Select(pair => pair.Show).DistinctBy(show => show.Id).OrderBy(show => show.Name, StringComparer.OrdinalIgnoreCase)],
+                    IgnoredSuggestions.IsIgnored(group.Key)))
+                .Where(suggestion => suggestion.Shows.Count >= MinimumShows)
+                .OrderByDescending(suggestion => suggestion.Shows.Count)
+                .ThenBy(suggestion => suggestion.Network, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+    }
+
+    private void OpenSuggestion(SuggestedChannel suggestion)
+    {
+        _menuOpen = false;
+        _wizardSuggestion = suggestion;
+        _wizardOpen = true;
+    }
+
+    private void CloseWizard()
+    {
+        _wizardOpen = false;
+        _wizardSuggestion = null;
     }
 
     private void OnCoordinatorChanged() => _ = InvokeAsync(StateHasChanged);
@@ -227,12 +444,14 @@
     private void OpenWizard()
     {
         _menuOpen = false;
+        _wizardSuggestion = null;
         _wizardOpen = true;
     }
 
     private void Created(string id)
     {
         _wizardOpen = false;
+        _wizardSuggestion = null;
         Nav.NavigateTo($"channels/{id}");
     }
 

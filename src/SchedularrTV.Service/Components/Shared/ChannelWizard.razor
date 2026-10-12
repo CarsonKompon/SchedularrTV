@@ -371,6 +371,12 @@
     [Parameter] public EventCallback<string> OnCreated { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
 
+    /// <summary>A starting name, e.g. the network of a suggested channel.</summary>
+    [Parameter] public string? SuggestedName { get; set; }
+
+    /// <summary>Shows to start the "Pick shows and movies" list with, e.g. every show from a suggested channel's network.</summary>
+    [Parameter] public IReadOnlyList<LibraryShow>? SuggestedShows { get; set; }
+
     private enum Source { Titles, LibraryCollection, SavedCollection, Everything }
 
     private static readonly string[] Steps = ["Name", "Branding", "Programming", "Timing", "Ad breaks", "Block", "Playback", "Encoding", "Review"];
@@ -460,8 +466,15 @@
     {
         // A first channel starts at 1; after that, past the highest in use.
         _number = Editor.Working.Channels.Count == 0 ? 1 : Editor.NextChannelNumber();
-        _name = $"Channel {_number}";
+        _name = string.IsNullOrWhiteSpace(SuggestedName) ? $"Channel {_number}" : SuggestedName.Trim();
         _wasDirty = Editor.IsDirty;
+
+        // A suggested channel arrives with its line-up already picked, pinned by id like the Shows page does.
+        if (SuggestedShows is { Count: > 0 } shows)
+        {
+            _source = Source.Titles;
+            _includes.AddRange(shows.Select(show => new ContentInclude { Show = show.Name, ShowId = show.Id }));
+        }
 
         // Name and branding can be edited immediately; programming waits for the library.
         _loading = true;
