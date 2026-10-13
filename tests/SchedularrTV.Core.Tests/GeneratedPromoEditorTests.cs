@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.JSInterop;
 using SkiaSharp;
 using SchedularrTV.Core.Configuration;
+using SchedularrTV.GeneratedPromos;
 using SchedularrTV.Service;
 using SchedularrTV.Service.Components.Shared;
 using SchedularrTV.Service.Editor;
@@ -178,6 +179,8 @@ public sealed class GeneratedPromoEditorTests : IDisposable
         services.AddSingleton<IOptions<GeneratedPromoOptions>>(Options.Create(new GeneratedPromoOptions { OutputPath = Path.Combine(_directory, "renders") }));
         services.AddSingleton<SchedulerConfigProvider>();
         services.AddSingleton<ConfigEditor>();
+        services.AddSingleton(new TemplateAssets(_directory));
+        services.AddSingleton(new TemplatePackages(_directory));
         // The canvas measures itself through JavaScript, but only after rendering in a browser, which never happens here.
         services.AddSingleton<IJSRuntime, NoJavaScript>();
         services.AddHttpClient();
@@ -185,6 +188,7 @@ public sealed class GeneratedPromoEditorTests : IDisposable
         services.AddSingleton<TextToSpeechCatalog>();
         services.AddSingleton<GeneratedPromoService>();
         services.AddSingleton<GeneratedPromoPreview>();
+        services.AddSingleton(new GeneratorSetup(_directory, NullLogger<GeneratorSetup>.Instance));
         return services.BuildServiceProvider();
     }
 
