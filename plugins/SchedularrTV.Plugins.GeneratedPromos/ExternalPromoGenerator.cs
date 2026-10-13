@@ -69,6 +69,47 @@ public static class ExternalPromoGenerator
                 "The generator finished but no video was found. Pass {output} as the file to write, or print the finished file's full path last.");
     }
 
+    /// <summary>
+    /// Runs a generator's one-off setup command (e.g. <c>npm install</c>) in <paramref name="folder"/>, through the
+    /// system shell (cmd on Windows, sh elsewhere) so commands like npm resolve as they would in a terminal.
+    /// </summary>
+    public static async Task RunSetupAsync(string command, string folder, TimeSpan limit, CancellationToken cancellationToken)
+    {
+        ProcessStartInfo info = OperatingSystem.IsWindows()
+            ? new ProcessStartInfo("cmd.exe") { Arguments = $"/d /s /c \"{command}\"" }
+            : new ProcessStartInfo("/bin/sh") { ArgumentList = { "-c", command } };
+        info.RedirectStandardOutput = true;
+        info.RedirectStandardError = true;
+        info.UseShellExecute = false;
+        info.CreateNoWindow = true;
+        info.WorkingDirectory = folder;
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(limit);
+        using Process process = Start(info);
+        var stdout = new Tail();
+        var stderr = new Tail();
+        Task reading = Task.WhenAll(stdout.ReadAsync(process.StandardOutput), stderr.ReadAsync(process.StandardError));
+
+        try
+        {
+            await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+            await reading.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            if (cancellationToken.IsCancellationRequested) throw;
+            throw new TimeoutException($"The setup command didn't finish within {limit.TotalMinutes:0} minutes.");
+        }
+
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"The setup command ({command}) exited with code {process.ExitCode}: {(stderr.Text.Length > 0 ? stderr.Text : stdout.Text).Trim()}");
+        }
+    }
+
     /// <summary>The command line as it would run, for the editor.</summary>
     public static string Describe(GeneratedScriptConfig generator, IReadOnlyList<string> arguments) =>
         string.Join(' ', new[] { generator.Command }.Concat(arguments.Select(argument => argument

@@ -7,6 +7,7 @@
 @inject ConfigEditor Editor
 @inject IJSRuntime JS
 @inject IEnumerable<IMusicLibrary> MusicLibraries
+@inject GeneratorSetup Setup
 
 <div class="card promo-template visual-editor">
     <div class="card-head">
@@ -97,11 +98,37 @@
                     <span>Program</span>
                     <input type="text" value="@generator.Command" placeholder="node" @onchange="e => Set(() => generator.Command = Text(e).Trim())" />
                 </label>
-                <label class="field">
+                <div class="field">
                     <span>Run in folder</span>
-                    <input type="text" value="@generator.WorkingDirectory" placeholder="D:\Media\Promo Generators\My Generator"
-                           @onchange="e => Set(() => generator.WorkingDirectory = Folder(e))" />
+                    <FilePathPicker Value="@generator.WorkingDirectory" ValueChanged="value => Set(() => generator.WorkingDirectory = value)"
+                                    PickFolder="true" Extensions="NoExtensions" Label="the generator's folder" StartIn="Environment.SpecialFolder.MyDocuments"
+                                    Placeholder="D:\Media\Promo Generators\My Generator" />
+                </div>
+            </div>
+            <div class="grid grid-2">
+                <label class="field">
+                    <span>First-time setup (optional; runs once in that folder before it's first used, e.g. npm install)</span>
+                    <input type="text" value="@generator.SetupCommand" placeholder="npm install" spellcheck="false"
+                           @onchange="e => Set(() => generator.SetupCommand = Optional(e)?.Trim())" />
                 </label>
+                @if (GeneratorSetup.Needs(generator))
+                {
+                    <div class="field">
+                        <span>Setup</span>
+                        <div class="row row-wrap" style="gap:8px;align-items:center;">
+                            <span class="hint" style="margin:0;">
+                                @(_settingUp ? "Running…" : Setup.DoneAt(generator) is { } setUpAt ? $"Done {setUpAt.ToLocalTime():g}" : "Not run yet")
+                            </span>
+                            <button class="btn btn-sm" type="button" disabled="@_settingUp" @onclick="() => RunSetup(generator)">
+                                @(Setup.DoneAt(generator) is null ? "Run it now" : "Run it again")
+                            </button>
+                        </div>
+                        @if (_setupProblem is not null)
+                        {
+                            <p class="hint warn" role="alert">@_setupProblem</p>
+                        }
+                    </div>
+                }
             </div>
             <label class="field">
                 <span>Arguments (one per line; {shows} and {clip_arguments} expand to the lists below)</span>
@@ -353,7 +380,7 @@
                     {
                         <div class="field">
                             <span>Image file</span>
-                            <FilePathPicker Value="@selected.Path" ValueChanged="value => Set(() => selected.Path = value)"
+                            <FilePathPicker Value="@selected.Path" ValueChanged="value => Set(() => selected.Path = value)" KeepCopyIn="@GeneratedPromoPackages.AssetCategory"
                                             Extensions="FileBrowsing.Images" Label="image" StartIn="Environment.SpecialFolder.MyPictures"
                                             Placeholder="D:\Media\Promos\Logos\channel.png" />
                         </div>
@@ -631,7 +658,7 @@
                     bool cutting = string.Equals(_songCutting, song, StringComparison.OrdinalIgnoreCase);
                     <li @key="position">
                         <div class="song-row">
-                            <FilePathPicker Value="@song" ValueChanged="value => SetSong(music, position, value)"
+                            <FilePathPicker Value="@song" ValueChanged="value => SetSong(music, position, value)" KeepCopyIn="@GeneratedPromoPackages.AssetCategory"
                                             Extensions="FileBrowsing.Audio" Label="song" StartIn="Environment.SpecialFolder.MyMusic" />
                             <label class="song-start" title="Where in this song the promo starts">
                                 <span>Start (s)</span>
@@ -690,7 +717,7 @@
                 <p class="hint warn" role="status">@_songError</p>
             }
             <div class="row row-wrap">
-                <FilePathPicker Multiple="true" ButtonText="Add songs…" Extensions="FileBrowsing.Audio" Label="songs"
+                <FilePathPicker Multiple="true" ButtonText="Add songs…" Extensions="FileBrowsing.Audio" Label="songs" KeepCopyIn="@GeneratedPromoPackages.AssetCategory"
                                 StartIn="Environment.SpecialFolder.MyMusic" OnPicked="picked => AddSongs(music, picked)" />
                 @if (songs.Count == 0)
                 {
@@ -1269,7 +1296,29 @@
     private static List<string> Lines(ChangeEventArgs e) =>
         [.. Text(e).Replace("\r", "").Split('\n').Where(line => line.Trim().Length > 0)];
 
-    private static string? Folder(ChangeEventArgs e) => Optional(e)?.Trim('"');
+    private static readonly string[] NoExtensions = [];
+
+    private bool _settingUp;
+    private string? _setupProblem;
+
+    /// <summary>Runs the generator's setup command now (again, if it has run before).</summary>
+    private async Task RunSetup(GeneratedScriptConfig generator)
+    {
+        _settingUp = true;
+        _setupProblem = null;
+        try
+        {
+            await Setup.RunAgainAsync(generator, _life.Token);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _setupProblem = ex.Message;
+        }
+        finally
+        {
+            _settingUp = false;
+        }
+    }
 
     private string CommandPreview()
     {
@@ -1677,7 +1726,7 @@
         <LowPowerNotice Inline="true" Advice="LowPowerTemplateWarnings" />
         <div class="field">
             <span>@(Template.BackgroundClip is null || GeneratedPromoResolver.UsesClip(Template.Generator) ? "Background image or video (optional; videos loop)" : "Fallback background image or video (when the episode file can't be read)")</span>
-            <FilePathPicker Value="@Template.Background" ValueChanged="value => Set(() => Template.Background = value)"
+            <FilePathPicker Value="@Template.Background" ValueChanged="value => Set(() => Template.Background = value)" KeepCopyIn="@GeneratedPromoPackages.AssetCategory"
                             Extensions="BackgroundExtensions" Label="background image or video" Placeholder="D:\Media\Promos\Backgrounds\loop.mp4" />
         </div>
         @if (Missing(Template.Background))

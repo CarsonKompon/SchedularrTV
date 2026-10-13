@@ -37,7 +37,8 @@ public sealed partial class GeneratedPromoService(
     SchedulerConfigProvider? config = null,
     IChannelViewers? viewers = null,
     SchedularrTV.Service.Writing.AiTextWriter? writer = null,
-    IEnumerable<IMusicLibrary>? musicLibraries = null) : BackgroundService, IScheduleFinisher
+    IEnumerable<IMusicLibrary>? musicLibraries = null,
+    GeneratorSetup? generatorSetup = null) : BackgroundService, IScheduleFinisher
 {
     private const double MaxTempo = 1.35;
 
@@ -312,6 +313,12 @@ public sealed partial class GeneratedPromoService(
                 if (promo.ClipPath is null && GeneratedPromoResolver.RequiresClip(generator))
                 {
                     throw new InvalidOperationException("The generator needs {clip}, but the promoted show has no episode file that can be read from this PC.");
+                }
+
+                // The first time a generator's folder is used, its setup command (npm install and the like) runs there.
+                if (generatorSetup is not null)
+                {
+                    await generatorSetup.EnsureAsync(generator, cancellationToken).ConfigureAwait(false);
                 }
 
                 source = Path.Combine(Path.GetDirectoryName(target)!, $"{promo.Key}.{Guid.NewGuid():N}.source{generator.OutputExtension}");

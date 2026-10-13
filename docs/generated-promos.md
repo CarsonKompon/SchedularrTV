@@ -153,6 +153,27 @@ generator:
 
 Transparent output can reveal the template background. Short output holds its final frame; long output is cut to duration. Voice and music mix over the result.
 
+**`setup_command`** (the editor's **First-time setup**) runs once in **`working_directory`** before the generator is first used there, through the system shell (`cmd` on Windows, `sh` elsewhere), for steps such as `npm install`. It runs again if the folder or command changes, or from **Run it again** in the editor. A failed setup fails the render and is retried on the next one.
+
+```yaml
+generator:
+  command: node
+  working_directory: /media/promo-generator
+  setup_command: npm install
+```
+
+## Files kept in the data folder
+
+Pictures, videos and songs chosen for a template (and for overlays and Credit Squeeze looks) are copied into the data folder under **`assets/`**, and the template uses the copy, so it keeps working if the original is moved or deleted. Choosing the same file again reuses the copy.
+
+## Sharing templates
+
+**Export** saves the selected template as a `.zip` with every file it uses. For an external generator, the whole **`working_directory`** goes in too, leaving out whatever its `.gitignore` files exclude (and the `.git` folder), so `node_modules` and build output stay behind and **`setup_command`** restores them. Paths to that folder in the command and arguments are rewritten to follow it.
+
+A template made with the canvas editor also carries the font files of every family its text layers use (each weight and style found among the computer's installed fonts). On import they're kept under **`assets/fonts/`**, and the renderer uses them for any family that isn't installed there, so text looks the same without installing anything. Check a font's licence allows sharing before passing a package on.
+
+**Import…** adds a template from such a `.zip`. Its files are kept under **`assets/`** and a generator's folder is unpacked to **`assets/programs/`**; a package that runs a program shows the command and asks before importing. Overlays and Credit Squeeze looks export and import the same way.
+
 ## Command-line preview
 
 Run **`dotnet run`** from a source checkout:

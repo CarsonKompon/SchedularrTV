@@ -3,6 +3,7 @@
 @inject CreditsMarkers Credits
 @inject ScheduleCoordinator Coordinator
 @inject CreditSqueezeSettings Settings
+@inject SchedularrTV.Service.Editor.TemplateAssets Assets
 @implements IDisposable
 
 @if (Context.Channel is { } channel)
@@ -75,6 +76,10 @@
                 }
                 <button type="button" class="btn btn-sm" @onclick="() => AddTemplate(section)">+ New from this one</button>
             </div>
+            <TemplatePackageButtons Kind="@SqueezePackages.Kind" What="look" ExportText="@($"Export “{LookName(section)}”")"
+                                    ExportTitle="Save the selected look, with its background, as a .zip to share"
+                                    OnExport="@(writer => SqueezePackages.ExportAsync(look, LookName(section), writer))"
+                                    OnImport="@(reader => ImportLook(section, reader))" />
             <div class="grid grid-3" style="align-items:end;">
                 @if (look is SqueezeTemplate editing)
                 {
@@ -314,7 +319,7 @@
                     <input type="text" value="@look.CreditsLine" @onchange="e => Set(() => look.CreditsLine = Blank(e.Value?.ToString()))" /></label>
             </div>
             <div class="field"><span>Background picture or video (optional; a video loops). Behind the panel side by side, behind both boxes framed.</span>
-                <FilePathPicker Value="@look.BackgroundPath" ValueChanged="value => Set(() => look.BackgroundPath = Blank(value))"
+                <FilePathPicker Value="@look.BackgroundPath" ValueChanged="value => Set(() => look.BackgroundPath = Blank(value))" KeepCopyIn="@SqueezePackages.AssetCategory"
                                 Extensions="BackgroundExtensions" Label="background picture or video" Placeholder="D:\Media\Backgrounds\loop.mp4" /></div>
             <div class="grid grid-2">
                 <label class="field"><span>Credits' sound: @Percent(look.CreditsVolume)</span>
@@ -1037,6 +1042,25 @@
         section.Templates.Add(SqueezeTemplate.Of(Look(section), name));
         _template = section.Templates.Count - 1;
         Commit();
+    }
+
+    /// <summary>Adds a look from a template package as a new template, and selects it.</summary>
+    private async Task<string> ImportLook(CreditSqueezeSection section, SchedularrTV.Service.Editor.TemplatePackageReader reader)
+    {
+        SqueezeTemplate template = await SqueezePackages.ImportAsync(reader, Assets);
+        string name = string.IsNullOrWhiteSpace(template.Name) || template.Name == CreditSqueezeSection.MainLook ? reader.Manifest.Name : template.Name;
+        name = string.IsNullOrWhiteSpace(name) || name == CreditSqueezeSection.MainLook ? "Imported look" : name;
+        template.Name = name;
+        for (int number = 2; section.Templates.Any(other => string.Equals(other.Name, template.Name, StringComparison.OrdinalIgnoreCase)); number++)
+        {
+            template.Name = $"{name} {number}";
+        }
+
+        section.Templates.Add(template);
+        SelectTemplate(section.Templates.Count - 1);
+        Commit();
+        StateHasChanged();
+        return $"Imported “{template.Name}”. Save to keep it.";
     }
 
     private void DeleteTemplate(CreditSqueezeSection section)

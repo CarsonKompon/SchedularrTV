@@ -32,6 +32,8 @@ public sealed class GeneratedPromosPlugin : IPlugin, IPluginEndpoints
         });
 
         services.AddSingleton<TextToSpeechCatalog>();
+        // External generators' one-off setup commands (npm install and the like), remembered in the plugin's data folder.
+        services.AddSingleton(sp => new GeneratorSetup(context.DataDirectory, sp.GetRequiredService<ILogger<GeneratorSetup>>()));
         services.AddSingleton<GeneratedPromoService>();
         services.AddSingleton<IScheduleFinisher>(sp => sp.GetRequiredService<GeneratedPromoService>());
         services.AddSingleton<GeneratedPromoPreview>();

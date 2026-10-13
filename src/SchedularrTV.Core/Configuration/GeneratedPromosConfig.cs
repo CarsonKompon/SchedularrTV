@@ -296,6 +296,14 @@ public sealed class GeneratedScriptConfig
 
     public string? WorkingDirectory { get; set; }
 
+    /// <summary>
+    /// A command line run once in <see cref="WorkingDirectory"/> before the program is first used there (and again if
+    /// it changes), e.g. <c>npm install</c>. It goes through the system shell. Null (rather than empty) keeps render
+    /// keys of templates without it unchanged.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? SetupCommand { get; set; }
+
     public List<string> Arguments { get; set; } = [];
 
     public List<string> PerShow { get; set; } = [];

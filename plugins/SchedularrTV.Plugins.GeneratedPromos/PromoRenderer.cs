@@ -9,10 +9,14 @@ public sealed record PromoRenderResult(string OutputPath, int Frames, TimeSpan E
 
 public static class PromoFonts
 {
-    /// <summary>Font families the renderer can draw with, including fonts installed for the current user only.</summary>
+    /// <summary>
+    /// Font families the renderer can draw with, including fonts installed for the current user only and fonts kept in
+    /// the data folder from imported templates.
+    /// </summary>
     public static IReadOnlyList<string> Installed() =>
     [
         .. SKFontManager.Default.GetFontFamilies()
+            .Concat(FontFiles.KeptFamilies())
             .Where(family => !string.IsNullOrWhiteSpace(family) && family[0] != '@')
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Order(StringComparer.OrdinalIgnoreCase)
@@ -447,6 +451,13 @@ public sealed class PromoImageCache : IDisposable
         if (!_typefaces.TryGetValue((family, bold), out SKTypeface? typeface))
         {
             typeface = SKTypeface.FromFamilyName(family, bold ? SKFontStyle.Bold : SKFontStyle.Normal);
+            // A family that isn't installed may have come with an imported template, kept in the data folder.
+            if (!FontFiles.IsFamily(typeface, family) && FontFiles.KeptTypeface(family, bold) is { } kept)
+            {
+                typeface?.Dispose();
+                typeface = kept;
+            }
+
             _typefaces[(family, bold)] = typeface;
         }
 

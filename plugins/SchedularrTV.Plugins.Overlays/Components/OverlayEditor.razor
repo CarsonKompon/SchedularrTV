@@ -230,7 +230,7 @@
                         else if (selected.Kind == OverlayLayerKinds.Image)
                         {
                             <div class="field"><span>Picture</span>
-                                <FilePathPicker Value="@selected.Path" ValueChanged="value => Set(() => selected.Path = value)" Extensions="FileBrowsing.Images"
+                                <FilePathPicker Value="@selected.Path" ValueChanged="value => Set(() => selected.Path = value)" Extensions="FileBrowsing.Images" KeepCopyIn="@OverlayPackages.AssetCategory"
                                                 Label="picture" StartIn="Environment.SpecialFolder.MyPictures" Placeholder="D:\Media\Logos\channel.png" /></div>
                             @if (Missing(selected.Path))
                             {
@@ -240,7 +240,7 @@
                         else if (selected.Kind == OverlayLayerKinds.Video)
                         {
                             <div class="field"><span>Video</span>
-                                <FilePathPicker Value="@selected.Path" ValueChanged="value => SetVideo(selected, value)" Extensions="VideoExtensions"
+                                <FilePathPicker Value="@selected.Path" ValueChanged="value => SetVideo(selected, value)" Extensions="VideoExtensions" KeepCopyIn="@OverlayPackages.AssetCategory"
                                                 Label="video" StartIn="Environment.SpecialFolder.MyVideos" Placeholder="D:\Media\Overlays\lower-third.mov" /></div>
                             @if (Missing(selected.Path))
                             {
@@ -318,7 +318,7 @@
             {
                 <h3 class="ed-section">File</h3>
                 <div class="field"><span>@(Overlay.Variants.Count > 0 ? "Default picture or video" : "Picture or video")</span>
-                    <FilePathPicker Value="@Overlay.File" ValueChanged="value => Set(() => Overlay.File = value)" Extensions="MediaExtensions"
+                    <FilePathPicker Value="@Overlay.File" ValueChanged="value => Set(() => Overlay.File = value)" Extensions="MediaExtensions" KeepCopyIn="@OverlayPackages.AssetCategory"
                                     Label="picture or video" StartIn="Environment.SpecialFolder.MyPictures" Placeholder="D:\Media\Logos\bug.png" /></div>
                 @if (Missing(Overlay.File))
                 {

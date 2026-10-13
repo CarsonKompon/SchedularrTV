@@ -1,4 +1,5 @@
 @* Channel tab: the overlays the channel and each of its blocks show (their own, another channel's, or none), and their editor. *@
+@inject TemplateAssets Assets
 
 @if (Context.Channel is { } channel)
 {
@@ -114,6 +115,11 @@
                             }
                         </div>
                     }
+                    <TemplatePackageButtons Kind="@OverlayPackages.Kind" What="overlay"
+                                            ExportText="@(_selected is null ? "Export" : $"Export “{_selected.Name}”")"
+                                            ExportTitle="Save the selected overlay, with its pictures and videos, as a .zip to share"
+                                            CanExport="@(_selected is not null && own.Overlays.Contains(_selected))"
+                                            OnExport="ExportSelected" OnImport="ImportPackage" />
                 </div>
                 <p class="hint">
                     Copying in makes this @(Block is null ? "channel's" : "block's") own copies, changed separately from then on. To keep it the same
@@ -327,6 +333,33 @@
             _selected = copies.FirstOrDefault() ?? _selected;
             Commit();
         }
+    }
+
+    private Task<string> ExportSelected(TemplatePackageWriter writer) =>
+        _selected is { } overlay
+            ? OverlayPackages.ExportAsync(overlay, writer)
+            : throw new InvalidOperationException("Choose an overlay to export.");
+
+    private async Task<string> ImportPackage(TemplatePackageReader reader)
+    {
+        if (_section is not { } section)
+        {
+            throw new InvalidOperationException("Choose this channel's own overlays first.");
+        }
+
+        Overlay overlay = await OverlayPackages.ImportAsync(reader, Assets);
+        string name = string.IsNullOrWhiteSpace(overlay.Name) ? "Overlay" : overlay.Name;
+        overlay.Name = name;
+        for (int number = 2; section.Overlays.Any(other => string.Equals(other.Name, overlay.Name, StringComparison.OrdinalIgnoreCase)); number++)
+        {
+            overlay.Name = $"{name} {number}";
+        }
+
+        section.Overlays.Add(overlay);
+        _selected = overlay;
+        Commit();
+        StateHasChanged();
+        return $"Imported “{overlay.Name}”. Save to keep it.";
     }
 
     private void Duplicate(Overlay overlay)

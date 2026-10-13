@@ -123,6 +123,12 @@ public static partial class ApiEndpoints
             warnings = config.Validation.Warnings
         }));
 
+        // A template package just exported in the editor (only files it made, by their random id).
+        api.MapGet("/template-packages/{id}", (string id, string? name, TemplatePackages packages) =>
+            packages.Exported(id) is { } file
+                ? Results.File(file, "application/zip", TemplatePackages.FileName(Path.GetFileNameWithoutExtension(name ?? "template")))
+                : Results.NotFound());
+
         // What SchedularrTV, ErsatzTV and their helpers are using of the computer now, what to change, and the 24/7 channels.
         api.MapGet("/performance", (Performance.ResourceMonitor monitor, AlwaysOnKeeper alwaysOn) => Results.Ok(new
         {

@@ -1,4 +1,5 @@
 @* Generated promo templates for a channel or block, with one template open for editing. *@
+@inject TemplateAssets Assets
 
 @if (Config is not { } generated)
 {
@@ -21,6 +22,8 @@
                 </select>
             </label>
             <button class="btn btn-primary" type="button" @onclick="Enable">Create a template</button>
+            <TemplatePackageButtons Kind="@GeneratedPromoPackages.Kind" What="generated promo template" ImportText="Import a template…"
+                                    OnImport="ImportPackage" />
         </div>
     </div>
 }
@@ -48,6 +51,10 @@ else
             <button class="btn btn-sm" type="button" disabled="@(_selected is null)" @onclick="Duplicate">Duplicate</button>
             <button class="btn btn-sm btn-danger" type="button" @onclick="Disable">Remove all</button>
         </div>
+        <TemplatePackageButtons Kind="@GeneratedPromoPackages.Kind" What="generated promo template"
+                                ExportText="@(_selected is null ? "Export" : $"Export “{(string.IsNullOrWhiteSpace(_selected.Name) ? "Untitled" : _selected.Name)}”")"
+                                ExportTitle="Save the selected template with its pictures, songs and generator folder as a .zip to share"
+                                CanExport="@(_selected is not null)" OnExport="ExportSelected" OnImport="ImportPackage" />
 
         <nav class="template-list" aria-label="Templates">
             @foreach (GeneratedPromoTemplate template in generated.Templates)
@@ -132,6 +139,32 @@ else
         templates.Insert(templates.IndexOf(_selected) + 1, copy);
         _selected = copy;
         await Changed.InvokeAsync();
+    }
+
+    private Task<string> ExportSelected(TemplatePackageWriter writer) =>
+        _selected is { } template
+            ? GeneratedPromoPackages.ExportAsync(template, writer)
+            : throw new InvalidOperationException("Choose a template to export.");
+
+    private async Task<string> ImportPackage(TemplatePackageReader reader)
+    {
+        GeneratedPromoTemplate template = await GeneratedPromoPackages.ImportAsync(reader, Assets,
+            Config?.Templates.Select(existing => existing.Name) ?? []);
+        if (Config is { } config)
+        {
+            config.Templates.Add(template);
+        }
+        else
+        {
+            await ConfigChanged.InvokeAsync(new GeneratedPromosConfig { Templates = [template] });
+        }
+
+        _selected = template;
+        await Changed.InvokeAsync();
+        StateHasChanged();
+        return template.Generator is { } generator && GeneratorSetup.Needs(generator)
+            ? $"Imported “{template.Name}”. Its setup command runs the first time it's used. Save to keep it."
+            : $"Imported “{template.Name}”. Save to keep it.";
     }
 
     private async Task Remove(GeneratedPromoTemplate template)

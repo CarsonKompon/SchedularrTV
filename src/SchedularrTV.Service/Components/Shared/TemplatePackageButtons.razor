@@ -1,0 +1,200 @@
+@* Export and Import buttons for template packages: zips of a template with every file it uses, for sharing. *@
+@using System.Text.Json
+@implements IDisposable
+@inject TemplatePackages Packages
+@inject IJSRuntime JS
+
+<div class="row row-wrap template-package" style="gap:8px;align-items:center;">
+    @if (OnExport is not null)
+    {
+        <button class="btn btn-sm" type="button" disabled="@(!CanExport || _busy)" title="@ExportTitle" @onclick="Export">
+            @(_exporting ? "Packing…" : ExportText)
+        </button>
+    }
+    @if (OnImport is not null)
+    {
+        <label class="btn btn-sm @(_busy ? "disabled" : "")" title="@($"Add {What} from a package (.zip) exported from SchedularrTV")" style="cursor:pointer;margin:0;">
+            @(_importing ? "Importing…" : ImportText)
+            <InputFile OnChange="Picked" accept=".zip" disabled="@_busy" style="display:none;" />
+        </label>
+    }
+</div>
+@if (_pending is { } pending)
+{
+    <div class="banner banner-warn" role="alert" style="margin-top:8px;">
+        <p style="margin:0 0 8px;">
+            <strong>@pending.Manifest.Name</strong> runs a program on the scheduler's computer:
+            <code>@pending.Manifest.Runs</code>. Import it only if you trust where it came from.
+        </p>
+        <div class="row" style="gap:8px;">
+            <button class="btn btn-sm btn-primary" type="button" @onclick="Confirm">Import it</button>
+            <button class="btn btn-sm" type="button" @onclick="Cancel">Cancel</button>
+        </div>
+    </div>
+}
+@if (_message is not null)
+{
+    <p class="hint @(_ok ? "" : "warn")" role="status" style="margin:6px 0 0;">@_message</p>
+}
+
+@code {
+    /// <summary>The kind of package handled, e.g. <c>generated-promo</c>; others are turned away on import.</summary>
+    [Parameter, EditorRequired] public string Kind { get; set; } = string.Empty;
+
+    /// <summary>What's exported, for messages: "template", "overlay", "look".</summary>
+    [Parameter] public string What { get; set; } = "template";
+
+    [Parameter] public string ExportText { get; set; } = "Export";
+    [Parameter] public string ImportText { get; set; } = "Import…";
+    [Parameter] public string? ExportTitle { get; set; }
+    [Parameter] public bool CanExport { get; set; } = true;
+
+    /// <summary>Fills the package (and finishes it); returns the template's name, for the download.</summary>
+    [Parameter] public Func<TemplatePackageWriter, Task<string>>? OnExport { get; set; }
+
+    /// <summary>Adds the package's template; returns what to tell the user.</summary>
+    [Parameter] public Func<TemplatePackageReader, Task<string>>? OnImport { get; set; }
+
+    private bool _exporting;
+    private bool _importing;
+    private bool _busy => _exporting || _importing;
+    private string? _message;
+    private bool _ok;
+    private TemplatePackageReader? _pending;
+
+    private async Task Export()
+    {
+        if (OnExport is not { } export || _busy)
+        {
+            return;
+        }
+
+        _exporting = true;
+        _message = null;
+        try
+        {
+            string name;
+            string id;
+            using (TemplatePackageWriter writer = Packages.Create())
+            {
+                // Packing videos can take a while; it shouldn't hold up the page.
+                name = await Task.Run(() => export(writer));
+                if (!writer.Finished)
+                {
+                    throw new InvalidOperationException("Nothing was written to the package.");
+                }
+
+                id = writer.Id;
+            }
+
+            string fileName = TemplatePackages.FileName(name);
+            string url = TemplatePackages.DownloadUrl(id, fileName);
+            await JS.InvokeVoidAsync("eval",
+                $"(() => {{ const a = document.createElement('a'); a.href = {JsonSerializer.Serialize(url)}; a.download = {JsonSerializer.Serialize(fileName)}; document.body.appendChild(a); a.click(); a.remove(); }})()");
+            _message = $"Exported {fileName}.";
+            _ok = true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not JSDisconnectedException)
+        {
+            _message = $"Couldn't export it: {ex.GetBaseException().Message}";
+            _ok = false;
+        }
+        finally
+        {
+            _exporting = false;
+        }
+    }
+
+    private async Task Picked(InputFileChangeEventArgs e)
+    {
+        Cancel();
+        _importing = true;
+        _message = null;
+        TemplatePackageReader? reader = null;
+        try
+        {
+            await using (Stream upload = e.File.OpenReadStream(TemplatePackages.MaxImportBytes))
+            {
+                reader = await Packages.OpenAsync(upload);
+            }
+
+            if (!string.Equals(reader.Manifest.Kind, Kind, StringComparison.OrdinalIgnoreCase))
+            {
+                _message = $"That package holds a {Describe(reader.Manifest.Kind)}, not a {What}.";
+                _ok = false;
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(reader.Manifest.Runs))
+            {
+                // A program from somewhere else runs here once imported, so it's shown first.
+                _pending = reader;
+                reader = null;
+                return;
+            }
+
+            await Import(reader);
+        }
+        catch (IOException ex) when (ex.Message.Contains("exceeds", StringComparison.OrdinalIgnoreCase))
+        {
+            _message = $"That file is larger than {TemplatePackages.MaxImportBytes / 1024 / 1024 / 1024} GB.";
+            _ok = false;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _message = $"Couldn't import it: {ex.GetBaseException().Message}";
+            _ok = false;
+        }
+        finally
+        {
+            reader?.Dispose();
+            _importing = false;
+        }
+    }
+
+    private async Task Confirm()
+    {
+        if (_pending is not { } reader)
+        {
+            return;
+        }
+
+        _pending = null;
+        _importing = true;
+        try
+        {
+            await Import(reader);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _message = $"Couldn't import it: {ex.GetBaseException().Message}";
+            _ok = false;
+        }
+        finally
+        {
+            reader.Dispose();
+            _importing = false;
+        }
+    }
+
+    private async Task Import(TemplatePackageReader reader)
+    {
+        if (OnImport is null)
+        {
+            return;
+        }
+
+        _message = await OnImport(reader);
+        _ok = true;
+    }
+
+    private void Cancel()
+    {
+        _pending?.Dispose();
+        _pending = null;
+    }
+
+    private static string Describe(string kind) => kind.Replace('-', ' ');
+
+    public void Dispose() => Cancel();
+}

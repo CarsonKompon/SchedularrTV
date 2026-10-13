@@ -29,7 +29,7 @@
                 <label class="field"><span>Name</span>
                     <input type="text" value="@variant.Name" @onchange="e => Set(() => variant.Name = Text(e) ?? variant.Name)" /></label>
                 <div class="field"><span>Picture or video</span>
-                    <FilePathPicker Value="@variant.File" ValueChanged="value => Set(() => variant.File = value)" Extensions="Extensions"
+                    <FilePathPicker Value="@variant.File" ValueChanged="value => Set(() => variant.File = value)" Extensions="Extensions" KeepCopyIn="@OverlayPackages.AssetCategory"
                                     Label="picture or video" StartIn="Environment.SpecialFolder.MyPictures" Placeholder="D:\Media\Logos\halloween.png" /></div>
                 @if (!string.IsNullOrWhiteSpace(variant.File) && !File.Exists(variant.File))
                 {

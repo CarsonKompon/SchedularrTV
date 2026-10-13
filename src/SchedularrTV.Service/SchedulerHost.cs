@@ -212,6 +212,12 @@ public static class SchedulerHost
         // Plugins say when their media sources change, so the library pages show it at once.
         builder.Services.AddSingleton<SchedularrTV.Plugins.IMediaLibraryNotifier>(sp => sp.GetRequiredService<LibraryBrowser>());
         builder.Services.AddSingleton<LogoStore>();
+        // Copies of the files templates use, and template packages (zips) for sharing them.
+        var templateAssets = new TemplateAssets(dataDirectory);
+        builder.Services.AddSingleton(templateAssets);
+        // Fonts that came with imported templates; renderers fall back to them for families that aren't installed.
+        FontFiles.KeptFolder = Path.Combine(templateAssets.Root, FontFiles.Category);
+        builder.Services.AddSingleton(new TemplatePackages(dataDirectory));
         builder.Services.AddSingleton<SuggestionStore>();
         // Installed fonts, for the font pickers of the live page channels (news, radio, guide).
         builder.Services.AddSingleton<SchedularrTV.Plugins.Editor.IFontCatalog, SystemFontCatalog>();

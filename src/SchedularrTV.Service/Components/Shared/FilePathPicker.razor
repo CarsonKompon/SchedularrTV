@@ -1,10 +1,11 @@
 @* A path box with a Browse button that opens the system's own file dialog, on the computer running SchedularrTV. *@
+@inject IServiceProvider Services
 
 @if (Multiple)
 {
     @if (CanBrowse)
     {
-        <button class="btn btn-sm" type="button" disabled="@_browsing" @onclick="Browse">@(_browsing ? "Choosing…" : ButtonText)</button>
+        <button class="btn btn-sm" type="button" disabled="@(_browsing || _copying)" @onclick="Browse">@(_copying ? "Copying…" : _browsing ? "Choosing…" : ButtonText)</button>
     }
     else
     {
@@ -22,7 +23,7 @@ else
         <input type="text" value="@Value" placeholder="@Placeholder" aria-label="@Label" @onchange="Typed" />
         @if (CanBrowse)
         {
-            <button class="btn btn-sm" type="button" disabled="@_browsing" @onclick="Browse">@(_browsing ? "Choosing…" : "Browse…")</button>
+            <button class="btn btn-sm" type="button" disabled="@(_browsing || _copying)" @onclick="Browse">@(_copying ? "Copying…" : _browsing ? "Choosing…" : "Browse…")</button>
         }
     </div>
 }
@@ -44,6 +45,11 @@ else
     [Parameter] public EventCallback<IReadOnlyList<string>> OnPicked { get; set; }
     /// <summary>Choose a folder instead of a file.</summary>
     [Parameter] public bool PickFolder { get; set; }
+    /// <summary>
+    /// Keeps a copy of each chosen file in the data folder (under <c>assets/&lt;this&gt;</c>) and hands back the copy's
+    /// path, so what uses it keeps working if the original is moved or deleted. Null uses the file where it is.
+    /// </summary>
+    [Parameter] public string? KeepCopyIn { get; set; }
 
     /// <summary>Whether the browser is on the computer running SchedularrTV, where the dialog opens.</summary>
     [CascadingParameter] public LocalAccess? Local { get; set; }
@@ -52,6 +58,7 @@ else
     private static readonly Dictionary<string, string> LastFolders = new(StringComparer.Ordinal);
 
     private bool _browsing;
+    private bool _copying;
     private string? _problem;
     private string? _typed;
 
@@ -88,13 +95,15 @@ else
                 LastFolders[KindKey] = folder;
             }
 
+            _browsing = false;
+            IReadOnlyList<string> picked = await KeepAsync(result.Paths);
             if (Multiple)
             {
-                await OnPicked.InvokeAsync(result.Paths);
+                await OnPicked.InvokeAsync(picked);
             }
             else
             {
-                await ValueChanged.InvokeAsync(first);
+                await ValueChanged.InvokeAsync(picked[0]);
             }
         }
         finally
@@ -103,11 +112,47 @@ else
         }
     }
 
-    private Task Typed(ChangeEventArgs e)
+    private async Task Typed(ChangeEventArgs e)
     {
         string typed = Clean(e.Value?.ToString());
         _problem = null;
-        return ValueChanged.InvokeAsync(typed.Length == 0 ? null : typed);
+        if (typed.Length > 0)
+        {
+            typed = (await KeepAsync([typed]))[0];
+        }
+
+        await ValueChanged.InvokeAsync(typed.Length == 0 ? null : typed);
+    }
+
+    /// <summary>With <see cref="KeepCopyIn"/>, the paths of copies kept in the data folder; otherwise the paths as given.</summary>
+    private async Task<IReadOnlyList<string>> KeepAsync(IReadOnlyList<string> paths)
+    {
+        if (PickFolder || KeepCopyIn is not { Length: > 0 } category || Services.GetService(typeof(TemplateAssets)) is not TemplateAssets assets)
+        {
+            return paths;
+        }
+
+        _copying = true;
+        StateHasChanged();
+        try
+        {
+            List<string> kept = [];
+            foreach (string path in paths)
+            {
+                kept.Add(await Task.Run(() => assets.KeepAsync(category, path)));
+            }
+
+            return kept;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _problem = $"Couldn't keep a copy in the data folder, so the file is used where it is: {ex.Message}";
+            return paths;
+        }
+        finally
+        {
+            _copying = false;
+        }
     }
 
     private async Task AddTyped()
@@ -119,7 +164,7 @@ else
         }
 
         _typed = null;
-        await OnPicked.InvokeAsync([typed]);
+        await OnPicked.InvokeAsync(await KeepAsync([typed]));
     }
 
     private static string Clean(string? text) => (text ?? string.Empty).Trim().Trim('"');
