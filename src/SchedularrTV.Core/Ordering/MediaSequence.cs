@@ -265,6 +265,17 @@ public sealed class MediaSequence
     public IReadOnlyList<MediaItem> PreviewForGap(int max, Func<MediaItem, bool> predicate)
     {
         if (max <= 0) return [];
+        if (_titles is null && Order != PlaybackOrder.Shuffle)
+        {
+            // Walk only as far as the requested window needs, without copying the entire library.
+            List<MediaItem> preview = new(Math.Min(max, _pool.Count));
+            for (int i = 0; i < _pool.Count && preview.Count < max; i++)
+            {
+                MediaItem candidate = _pool[Order == PlaybackOrder.Random ? i : (_cursor + i) % _pool.Count];
+                if (predicate(candidate)) preview.Add(candidate);
+            }
+            return preview;
+        }
         if (Order != PlaybackOrder.Shuffle || IsPreordered)
             return PreviewOrder(_pool.Count).Where(predicate).Take(max).ToArray();
 

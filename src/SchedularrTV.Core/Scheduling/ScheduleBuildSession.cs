@@ -22,6 +22,9 @@ internal sealed class ScheduleBuildSession(
     private const int MaxCollectionDepth = 8;
 
     private readonly Dictionary<string, MediaSequence> _sequences = new(StringComparer.Ordinal);
+    // Configuration is stable within a build. Keep the identity cache too: even a sequence-cache
+    // hit otherwise parses collection queries and fingerprints their full text on every programme.
+    private readonly Dictionary<ContentSelector, Dictionary<string, MediaSequence>> _selectorSequences = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<string, IReadOnlySet<string>> _titles = new(StringComparer.Ordinal);
     private readonly Dictionary<TimeSpan, ChannelOutlook> _outlooks = [];
     private readonly Dictionary<string, IReadOnlyList<MediaItem>> _queryResults = new(StringComparer.Ordinal);
@@ -61,6 +64,13 @@ internal sealed class ScheduleBuildSession(
             return null;
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_selectorSequences.TryGetValue(selector, out var scopes)
+            && scopes.TryGetValue(scope, out MediaSequence? resolved))
+        {
+            return resolved;
+        }
+
         QueryExpression expression = ResolveExpression(selector, 0);
         PlaybackOrder order = ResolveOrder(selector, 0);
         TitleOrder? titleOrder = ResolveTitleOrder(selector, 0);
@@ -68,6 +78,7 @@ internal sealed class ScheduleBuildSession(
 
         if (_sequences.TryGetValue(key, out MediaSequence? cached))
         {
+            CacheSelector(cached);
             return cached;
         }
 
@@ -81,7 +92,18 @@ internal sealed class ScheduleBuildSession(
             : MediaSequence.Create(key, order, items, state);
 
         _sequences[key] = sequence;
+        CacheSelector(sequence);
         return sequence;
+
+        void CacheSelector(MediaSequence value)
+        {
+            if (scopes is null)
+            {
+                scopes = new Dictionary<string, MediaSequence>(StringComparer.Ordinal);
+                _selectorSequences[selector] = scopes;
+            }
+            scopes[scope] = value;
+        }
     }
 
     private MediaSequence BuildRotation(

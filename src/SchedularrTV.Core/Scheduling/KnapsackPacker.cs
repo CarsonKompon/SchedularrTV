@@ -118,10 +118,23 @@ public static class KnapsackPacker
         }
 
         int[] weights = new int[instances.Count];
+        int divisor = 0;
         for (int i = 0; i < instances.Count; i++)
         {
             weights[i] = (int)Math.Max(1, (instances[i].Duration.Ticks + bucketTicks - 1) / bucketTicks);
+            divisor = GreatestCommonDivisor(divisor, weights[i]);
         }
+
+        // Only multiples of this divisor are reachable. Compress after rounding the weights
+        // so fractional runtimes retain exactly the same fit and candidate tie-breaking.
+        capacity /= divisor;
+        int totalWeight = 0;
+        for (int i = 0; i < weights.Length; i++)
+        {
+            weights[i] /= divisor;
+            totalWeight += weights[i];
+        }
+        capacity = Math.Min(capacity, totalWeight);
 
         bool[] reachable = new bool[capacity + 1];
         int[] choice = new int[capacity + 1];
@@ -129,6 +142,7 @@ public static class KnapsackPacker
         reachable[0] = true;
         Array.Fill(choice, -1);
 
+        int reachableLimit = 0;
         for (int i = 0; i < instances.Count; i++)
         {
             int w = weights[i];
@@ -137,7 +151,8 @@ public static class KnapsackPacker
                 continue;
             }
 
-            for (int b = capacity; b >= w; b--)
+            reachableLimit = Math.Min(capacity, reachableLimit + w);
+            for (int b = reachableLimit; b >= w; b--)
             {
                 if (!reachable[b] && reachable[b - w])
                 {
@@ -146,6 +161,9 @@ public static class KnapsackPacker
                     previous[b] = b - w;
                 }
             }
+
+            // First-discovered choices never change, so later candidates cannot improve this fit.
+            if (reachable[capacity]) break;
         }
 
         int best = capacity;
@@ -172,6 +190,15 @@ public static class KnapsackPacker
         packed.Reverse();
         chosen.AddRange(packed);
         return filled;
+    }
+
+    private static int GreatestCommonDivisor(int left, int right)
+    {
+        while (right != 0)
+        {
+            (left, right) = (right, left % right);
+        }
+        return left;
     }
 
     private static TimeSpan PackFiller(
