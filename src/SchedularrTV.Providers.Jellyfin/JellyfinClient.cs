@@ -25,19 +25,22 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
     {
         List<JellyfinItem> all = [];
         int startIndex = 0;
+        int total = 0;
 
         // PremiereDate and ProductionYear are returned on every item, so they are not named here:
         // Jellyfin 12 dropped them from the fields enum.
-        const string fields = "Overview,Tags,Genres,Path,ParentId,Chapters,MediaSourceCount";
+        const string fields = "Overview,Tags,Genres,Path,Chapters,MediaSourceCount";
 
         while (true)
         {
-            string url = BuildUrl("/Items", new Dictionary<string, string?>
+            string url = BuildScanUrl(new Dictionary<string, string?>
             {
                 ["recursive"] = "true",
                 ["includeItemTypes"] = string.Join(',', _options.IncludeItemTypes),
                 ["fields"] = fields,
                 ["enableImages"] = "false",
+                // Counting the same library on every page is unnecessary server-side work.
+                ["enableTotalRecordCount"] = total > 0 ? "false" : "true",
 
                 // Episodes a series is known to have but no file exists for. They carry no path or
                 // runtime, so they can never air, and on a large library they are a third of the crawl.
@@ -56,9 +59,12 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
 
             all.AddRange(page.Items);
             startIndex += page.Items.Count;
-            progress?.Invoke(all.Count, page.TotalRecordCount);
+            // With counting disabled some servers return the page size instead of zero.
+            // Only accept the count from a request that actually asked for one.
+            if (total <= 0 && page.TotalRecordCount > 0) total = page.TotalRecordCount;
+            progress?.Invoke(all.Count, total);
 
-            if (page.TotalRecordCount > 0 && startIndex >= page.TotalRecordCount)
+            if (total > 0 && startIndex >= total)
             {
                 break;
             }
@@ -76,7 +82,7 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
     {
         Dictionary<string, JellyfinSeriesInfo> info = new(StringComparer.Ordinal);
 
-        string url = BuildUrl("/Items", new Dictionary<string, string?>
+        string url = BuildScanUrl(new Dictionary<string, string?>
         {
             ["recursive"] = "true",
             ["includeItemTypes"] = "Series",
@@ -113,7 +119,7 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
     {
         Dictionary<string, int> seasons = new(StringComparer.Ordinal);
 
-        string url = BuildUrl("/Items", new Dictionary<string, string?>
+        string url = BuildScanUrl(new Dictionary<string, string?>
         {
             ["recursive"] = "true",
             ["includeItemTypes"] = "Season",
@@ -157,7 +163,7 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
         {
             string[] batch = [.. itemIds.Skip(offset).Take(batchSize)];
 
-            string url = BuildUrl("/Items", new Dictionary<string, string?>
+            string url = BuildScanUrl(new Dictionary<string, string?>
             {
                 ["recursive"] = "true",
                 ["ids"] = string.Join(',', batch),
@@ -202,7 +208,7 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
     /// </remarks>
     internal async Task<List<JellyfinItem>> GetExtrasAsync(CancellationToken cancellationToken)
     {
-        string url = BuildUrl("/Items", new Dictionary<string, string?>
+        string url = BuildScanUrl(new Dictionary<string, string?>
         {
             ["recursive"] = "true",
             ["includeItemTypes"] = "Video",
@@ -340,7 +346,7 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
     {
         Dictionary<string, List<string>> membership = new(StringComparer.Ordinal);
 
-        string boxSetsUrl = BuildUrl("/Items", new Dictionary<string, string?>
+        string boxSetsUrl = BuildScanUrl(new Dictionary<string, string?>
         {
             ["recursive"] = "true",
             ["includeItemTypes"] = "BoxSet",
@@ -348,7 +354,7 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
             ["userId"] = _options.UserId
         });
 
-        JellyfinItemsResponse? boxSets = await GetAsync<JellyfinItemsResponse>(boxSetsUrl, cancellationToken).ConfigureAwait(false);
+        JellyfinCollectionItemsResponse? boxSets = await GetAsync<JellyfinCollectionItemsResponse>(boxSetsUrl, cancellationToken).ConfigureAwait(false);
         if (boxSets is null)
         {
             return membership;
@@ -356,20 +362,20 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
 
         // One request per collection, so a server with hundreds of them is reported as it goes.
         int read = 0;
-        foreach (JellyfinItem boxSet in boxSets.Items)
+        foreach (JellyfinCollectionItem boxSet in boxSets.Items)
         {
             progress?.Invoke(read++, boxSets.Items.Count);
-            string membersUrl = BuildUrl("/Items", new Dictionary<string, string?>
+            if (string.IsNullOrWhiteSpace(boxSet.Name)) continue;
+            string membersUrl = BuildScanUrl(new Dictionary<string, string?>
             {
                 ["parentId"] = boxSet.Id,
                 ["recursive"] = "true",
                 ["limit"] = "10000",
-                ["fields"] = "ParentId",
                 ["userId"] = _options.UserId
             });
 
-            JellyfinItemsResponse? members = await GetAsync<JellyfinItemsResponse>(membersUrl, cancellationToken).ConfigureAwait(false);
-            if (members is null || string.IsNullOrWhiteSpace(boxSet.Name))
+            JellyfinCollectionItemsResponse? members = await GetAsync<JellyfinCollectionItemsResponse>(membersUrl, cancellationToken).ConfigureAwait(false);
+            if (members is null)
             {
                 continue;
             }
@@ -391,7 +397,11 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
         using HttpRequestMessage request = CreateRequest(url);
 
         HttpClient httpClient = httpClientFactory.CreateClient(HttpClientName);
-        using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        // HeadersRead avoids buffering each JSON page before deserializing it. HttpClient's timeout
+        // then ends at the headers, so explicitly keep that deadline over the body read as well.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(httpClient.Timeout);
+        using HttpResponseMessage response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             string path = new Uri(url, UriKind.RelativeOrAbsolute).AbsolutePath;
@@ -406,7 +416,7 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
             response.EnsureSuccessStatusCode();
         }
 
-        return await response.Content.ReadFromJsonAsync<T>(JsonOptions, cancellationToken).ConfigureAwait(false);
+        return await response.Content.ReadFromJsonAsync<T>(JsonOptions, deadline.Token).ConfigureAwait(false);
     }
 
     /// <summary>One of an item's images, scaled down by the server. Null when it has none or Jellyfin is not configured.</summary>
@@ -465,6 +475,16 @@ public sealed partial class JellyfinClient(IHttpClientFactory httpClientFactory,
         return response.IsSuccessStatusCode
             ? await response.Content.ReadFromJsonAsync<T>(JsonOptions, cancellationToken).ConfigureAwait(false)
             : null;
+    }
+
+    // Snapshot queries never use artwork or user playback flags. Most also never use a total;
+    // the main paged crawl opts back in for its first page to establish progress and its boundary.
+    private string BuildScanUrl(Dictionary<string, string?> query)
+    {
+        query["enableImages"] = "false";
+        query["enableUserData"] = "false";
+        query.TryAdd("enableTotalRecordCount", "false");
+        return BuildUrl("/Items", query);
     }
 
     private string BuildUrl(string path, Dictionary<string, string?> query)

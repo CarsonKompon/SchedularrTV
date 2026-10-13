@@ -194,7 +194,7 @@ public sealed class JellyfinMediaLibrary(
         IReadOnlyDictionary<string, JellyfinVersion> versions)
     {
         List<string> tags = [];
-        Dictionary<string, string> attributes = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, string>? attributes = null;
 
         foreach (string tag in item.Tags ?? [])
         {
@@ -204,7 +204,7 @@ public sealed class JellyfinMediaLibrary(
                 string prefix = tag[..separator].Trim();
                 if (_options.AttributeTagPrefixes.Contains(prefix, StringComparer.OrdinalIgnoreCase))
                 {
-                    attributes[prefix] = tag[(separator + 1)..].Trim();
+                    (attributes ??= new(StringComparer.OrdinalIgnoreCase))[prefix] = tag[(separator + 1)..].Trim();
                     continue;
                 }
             }
@@ -234,7 +234,7 @@ public sealed class JellyfinMediaLibrary(
         // A chapter named for the credits marks where they start (in the second half, so "Opening Credits" doesn't count).
         if (CreditsChapter(item) is { } credits)
         {
-            attributes[MediaItem.CreditsStartAttribute] = credits.TotalSeconds.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+            (attributes ??= new(StringComparer.OrdinalIgnoreCase))[MediaItem.CreditsStartAttribute] = credits.TotalSeconds.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
         }
 
         return new MediaItem
@@ -266,7 +266,7 @@ public sealed class JellyfinMediaLibrary(
                 .Distinct()
                 .OrderBy(t => t)
                 .ToList() ?? [],
-            Attributes = attributes.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase),
+            Attributes = attributes?.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase) ?? FrozenDictionary<string, string>.Empty,
             Path = item.Path,
             VersionGroupId = version?.GroupId,
             VersionName = version?.Name
@@ -284,9 +284,12 @@ public sealed class JellyfinMediaLibrary(
 
     internal static int? ResolveSeasonNumber(JellyfinItem item, IReadOnlyDictionary<string, int> seasons)
     {
-        string[] path = item.Path?.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries) ?? [];
-        if (item.Type == "Episode" && path.Length >= 2
-            && string.Equals(path[^2], "Specials", StringComparison.OrdinalIgnoreCase))
+        // Inspect only the parent directory, without splitting/allocating every path component.
+        // Both slash styles matter even when the server and this process run on different OSes.
+        ReadOnlySpan<char> path = item.Type == "Episode" ? item.Path.AsSpan().TrimEnd("/\\") : [];
+        int separator = path.LastIndexOfAny('/', '\\');
+        ReadOnlySpan<char> parent = separator >= 0 ? path[..separator].TrimEnd("/\\") : [];
+        if (parent[(parent.LastIndexOfAny('/', '\\') + 1)..].Equals("Specials", StringComparison.OrdinalIgnoreCase))
         {
             return 0;
         }

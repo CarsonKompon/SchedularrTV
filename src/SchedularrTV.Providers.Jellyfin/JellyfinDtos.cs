@@ -11,6 +11,23 @@ internal sealed class JellyfinItemsResponse
     public int TotalRecordCount { get; set; }
 }
 
+// Collections only need names and membership ids. Avoid allocating the full media DTO for
+// every member again (an episode can appear in many collections).
+internal sealed class JellyfinCollectionItemsResponse
+{
+    [JsonPropertyName("Items")]
+    public List<JellyfinCollectionItem> Items { get; set; } = [];
+}
+
+internal sealed class JellyfinCollectionItem
+{
+    [JsonPropertyName("Id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("Name")]
+    public string? Name { get; set; }
+}
+
 internal sealed class JellyfinItem
 {
     [JsonPropertyName("Id")]
