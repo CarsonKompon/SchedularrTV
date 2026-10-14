@@ -13,7 +13,13 @@ public enum AdFolderRole
     Filler,
 
     /// <summary>Leaves a folder out, inside a folder that is used.</summary>
-    Skip
+    Skip,
+
+    /// <summary>One clip opens a block using this collection, before its first programme.</summary>
+    BlockStart,
+
+    /// <summary>One clip closes a block using this collection, reserved at its end.</summary>
+    BlockEnd
 }
 
 /// <summary>Where an ad break's bumpers go.</summary>

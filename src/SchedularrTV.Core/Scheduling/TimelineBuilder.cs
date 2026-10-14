@@ -4,7 +4,14 @@ using SchedularrTV.Core.Configuration;
 namespace SchedularrTV.Core.Scheduling;
 
 /// <summary>One concrete occurrence of a block window on the timeline.</summary>
-public sealed record BlockOccurrence(BlockConfig Block, DateTimeOffset Start, DateTimeOffset End, int Priority);
+public sealed record BlockOccurrence(BlockConfig Block, DateTimeOffset Start, DateTimeOffset End, int Priority)
+{
+    /// <summary>False when the build window cuts into an already-running block.</summary>
+    public bool StartsBlock { get; init; } = true;
+
+    /// <summary>False when the build window stops before the block finishes.</summary>
+    public bool EndsBlock { get; init; } = true;
+}
 
 /// <summary>One concrete firing of a time-locked anchor.</summary>
 public sealed record AnchorOccurrence(AnchorConfig Anchor, DateTimeOffset Start, BlockConfig? Block, string Name);
@@ -232,7 +239,12 @@ public static class TimelineBuilder
             {
                 if (e > s)
                 {
-                    accepted.Add(candidate with { Start = s, End = e });
+                    accepted.Add(candidate with
+                    {
+                        Start = s, End = e,
+                        StartsBlock = s == candidate.Start ? candidate.StartsBlock : s > windowStart,
+                        EndsBlock = e == candidate.End ? candidate.EndsBlock : e < windowEnd
+                    });
                 }
             }
         }

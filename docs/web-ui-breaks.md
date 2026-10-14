@@ -14,6 +14,8 @@ An **ad break** is a reusable set of folders from your commercials libraries: wh
 | --- | --- |
 | **Ads** | Whole clips packed to fit the break, never cut off |
 | **Bumpers** | Station idents; mixed in with the ads, or at the start and/or end of each break (**Settings → Bumpers go**) |
+| **Block start** | One full clip opens a block using this collection, before its first programme |
+| **Block end** | One full clip caps the block, after its programming and final break |
 | **Filler** | Closes whatever the ads can't, cut short (or looped, under **Advanced**) instead of leaving a black screen |
 | **Skip** | Leaves a folder out, inside a folder that is used |
 | **Promos: all types** | Promos sorted by show and type in either order (`Promos/Looney Tunes/Back To The Show/`, `Promos/Up Next/Top Cat/`); each type is found by its folder's name |
@@ -23,9 +25,21 @@ Folders inside a chosen folder follow along unless you pick otherwise. Folders n
 
 6. Select **Save changes**.
 
+## Open and close a block
+
+Assign folders the **Block start** and **Block end** jobs, then select the ad break collection on the block under **Blocks & anchors → Ad breaks**. Blocks with no collection selected inherit the channel's collections.
+
+One clip is chosen from each role's pooled folders per block occurrence. For a timed block, the opening clip starts at the block boundary and the closing clip ends at the block's end; its time is reserved before scheduling programmes and ads. A start-only (anchor-slot) block plays the opener before its programme and the closer immediately afterwards. Ordinary base rotation and individual mid-roll breaks don't trigger these clips.
+
+These folders are excluded from ordinary ads, even when nested under an Ads folder. Seasonal folder rules and nested **Skip** folders still apply. Folders named `Block Start`, `Block Intro`, `Block End`, or `Block Outro` are offered as suggestions.
+
+Clips play whole; if no eligible clip fits, that boundary clip is omitted. Fixed anchors can overrun reserved closing time, in which case the closer is skipped rather than cutting programming. A build starting or ending partway through a block doesn't treat that cut as a new block boundary.
+
 ## Preview an ad break
 
 The top of each ad break shows an example half-hour slot: a 22-minute show split by two mid-rolls, then the break before the next show. Each break is filled from the ad break's real clips in the order a playout plays them: the opening promo (You're Watching or This Has Been), an opening bumper, Coming Up and Later Today, the ads with Up Next and Eventually mixed in, filler, a closing bumper, then Back To The Show or Up Next and Now Playing. **Shuffle** picks other clips.
+
+Block start/end clips are outside this per-show preview; inspect a built block in the schedule to see them.
 
 ## Match seasonal commercials
 
@@ -116,6 +130,8 @@ ad_breaks:
       - { path: 'D:\Media\Commercials\Any Channel\Ads', role: Ads }
       - { path: 'D:\Media\Commercials\Any Channel\Ads\Old', role: Skip }
       - { path: 'D:\Media\Commercials\Any Channel\Bumpers', role: Bumpers }
+      - { path: 'D:\Media\Commercials\Any Channel\Block Start', role: BlockStart }
+      - { path: 'D:\Media\Commercials\Any Channel\Block End', role: BlockEnd }
       - { path: 'D:\Media\Commercials\Any Channel\Filler', role: Filler }
     promos:
       - { type: UpNext, path: 'D:\Media\Commercials\Any Channel\Up Next', per_show: true, times: true }

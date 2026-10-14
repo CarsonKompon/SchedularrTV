@@ -87,6 +87,15 @@ internal sealed class ArchiveFollowTimeline : ITimelineContributor
             List<ArchiveGuideBlock> archiveBlocks = [];
             archiveDays.Add(new ArchiveGuideDay(TimelineBuilder.ToOffset(day, timeZone),
                 TimelineBuilder.ToOffset(day.AddDays(1), timeZone), archive.Date, archiveBlocks));
+            BlockConfig? SourceFor(ArchiveSlot archived)
+            {
+                DateTimeOffset at = TimelineBuilder.ToOffset(day + archived.Start, timeZone);
+                return archived.Blocks
+                    .Select(label => follow.Blocks.TryGetValue(label, out string? name)
+                        ? channel.Blocks.FirstOrDefault(block => string.Equals(block.Name, name, StringComparison.OrdinalIgnoreCase)) : null)
+                    .Where(block => block is not null).OrderByDescending(block => block!.EffectivePriority).FirstOrDefault()
+                    ?? regular.FirstOrDefault(block => at >= block.Start && at < block.End)?.Block;
+            }
             foreach (ArchiveSlot slot in archive.Slots)
             {
                 DateTimeOffset slotStart = TimelineBuilder.ToOffset(day + slot.Start, timeZone);
@@ -104,11 +113,7 @@ internal sealed class ArchiveFollowTimeline : ITimelineContributor
                     OriginalEnd = slot.End
                 });
 
-                BlockConfig? source = slot.Blocks
-                    .Select(label => follow.Blocks.TryGetValue(label, out string? name)
-                        ? channel.Blocks.FirstOrDefault(block => string.Equals(block.Name, name, StringComparison.OrdinalIgnoreCase)) : null)
-                    .Where(block => block is not null).OrderByDescending(block => block!.EffectivePriority).FirstOrDefault()
-                    ?? regular.FirstOrDefault(block => slotStart >= block.Start && slotStart < block.End)?.Block;
+                BlockConfig? source = SourceFor(slot);
                 List<ContentSelector> fallback = source is { Shows.Count: > 0 }
                     ? source.Shows : channel.BaseRotation is { } rotation ? [rotation] : [];
                 string? title = showMatcher.Resolve(follow, slot.Show);
@@ -146,7 +151,12 @@ internal sealed class ArchiveFollowTimeline : ITimelineContributor
                     GeneratedPromos = source?.GeneratedPromos
                 };
                 slots[block] = new FollowedSlot(slot, selector, fallback);
-                followed.Add(new BlockOccurrence(block, slotStart, slotEnd, int.MaxValue));
+                followed.Add(new BlockOccurrence(block, slotStart, slotEnd, int.MaxValue)
+                {
+                    // Consecutive archived shows in one mapped block share its bookends, not one pair per show.
+                    StartsBlock = source is not null && !archive.Slots.Any(other => other.End == slot.Start && ReferenceEquals(SourceFor(other), source)),
+                    EndsBlock = source is not null && !archive.Slots.Any(other => other.Start == slot.End && ReferenceEquals(SourceFor(other), source))
+                });
             }
         }
 

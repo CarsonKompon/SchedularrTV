@@ -6,7 +6,7 @@
     IReadOnlyList<PhantomFolder> phantoms = own is null ? [] : AdBreakFolderJobs.Phantoms(AdBreak, Folder, Temporal, Now, Shows);
     bool open = Open.Contains(Folder.Path);
     bool expandable = Folder.Children.Count > 0 || phantoms.Count > 0;
-    string? seasonal = (own ?? inherited) is { Choice: "ads" or "bumpers" or "filler" } && AdBreak.Seasonal && Depth > 0
+    string? seasonal = (own ?? inherited) is { Choice: "ads" or "bumpers" or "filler" or "blockstart" or "blockend" } && AdBreak.Seasonal && Depth > 0
         ? AdBreakFolderJobs.SeasonalNote(Folder.Name, Temporal, Now)
         : null;
     string rowClass = own?.CssClass ?? (inherited is null ? string.Empty : inherited.CssClass + " inherited");

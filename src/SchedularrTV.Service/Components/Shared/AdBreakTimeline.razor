@@ -11,6 +11,12 @@
         <button class="btn btn-sm" type="button" disabled="@(_clips is null)" @onclick="Shuffle"><Icon Name="refresh" Size="14" />Shuffle</button>
     </div>
 
+    @if (AdBreak.Folders.Any(folder => folder.Role is AdFolderRole.BlockStart or AdFolderRole.BlockEnd))
+    {
+        <p class="hint">Block start/end clips play once at the block's boundaries, outside this per-show break preview.
+            One full clip is chosen from each role's pooled folders. The block uses its own ad break collections, or inherits the channel's.</p>
+    }
+
     @if (_clips is null)
     {
         <p class="muted">Reading your commercials…</p>

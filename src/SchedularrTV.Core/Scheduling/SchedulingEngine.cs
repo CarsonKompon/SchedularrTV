@@ -86,6 +86,7 @@ public sealed class SchedulingEngine(
         int anchorIndex = 0;
         int iterations = 0;
         int reportedPercent = -1;
+        Dictionary<BlockOccurrence, MediaItem?> blockClosers = [];
 
         while (cursor < end && iterations++ < MaxIterations)
         {
@@ -109,6 +110,46 @@ public sealed class SchedulingEngine(
 
             BlockOccurrence? activeBlock = blocks.FirstOrDefault(b => cursor >= b.Start && cursor < b.End);
 
+            // Reserve the block's closer before picking programmes or filling their breaks.
+            DateTimeOffset? blockContentEnd = null;
+            if (activeBlock is not null)
+            {
+                if (!blockClosers.TryGetValue(activeBlock, out MediaItem? closer))
+                {
+                    closer = activeBlock.EndsBlock
+                        ? await BlockBoundaryClips.TakeAsync(session, activeBlock.Block, AdFolderRole.BlockEnd,
+                            activeBlock.End.AddTicks(-1), activeBlock.End - cursor, cancellationToken).ConfigureAwait(false)
+                        : null;
+                    blockClosers[activeBlock] = closer;
+                    DateTimeOffset openingLimit = NextBoundary(cursor, end, activeBlock, blocks, anchors, anchorIndex);
+                    if (closer is not null && activeBlock.End - closer.Duration < openingLimit) openingLimit = activeBlock.End - closer.Duration;
+                    if (activeBlock.StartsBlock && cursor == activeBlock.Start
+                        && await BlockBoundaryClips.TakeAsync(session, activeBlock.Block, AdFolderRole.BlockStart,
+                            cursor, openingLimit - cursor, cancellationToken).ConfigureAwait(false) is { } opener)
+                    {
+                        entries.Add(BlockBoundaryClips.Entry(activeBlock.Block, opener, cursor, AdFolderRole.BlockStart));
+                        cursor += opener.Duration;
+                    }
+                }
+                blockContentEnd = activeBlock.End - (closer?.Duration ?? TimeSpan.Zero);
+                if (cursor >= blockContentEnd)
+                {
+                    if (closer is not null && cursor == blockContentEnd)
+                    {
+                        entries.Add(BlockBoundaryClips.Entry(activeBlock.Block, closer, cursor, AdFolderRole.BlockEnd));
+                        cursor = activeBlock.End;
+                        continue;
+                    }
+                    // Fixed anchors may overrun the reservation. Neither programme nor boundary clip is cut.
+                    if (closer is not null)
+                        diagnostics.Add(new ScheduleDiagnostic(DiagnosticLevel.Warning, cursor,
+                            $"Block '{activeBlock.Block.Name}' closing clip was skipped: programming overran its reserved time."));
+                    blockClosers[activeBlock] = null;
+                    blockContentEnd = activeBlock.End;
+                    if (cursor >= activeBlock.End) continue;
+                }
+            }
+
             // 1. A time-locked anchor fires now.
             if (anchorIndex < anchors.Count && anchors[anchorIndex].Start <= cursor + Epsilon)
             {
@@ -116,7 +157,7 @@ public sealed class SchedulingEngine(
                 anchorIndex++;
 
                 DateTimeOffset before = cursor;
-                cursor = await ScheduleAnchorAsync(session, anchor, cursor, entries, diagnostics, cancellationToken)
+                cursor = await ScheduleAnchorAsync(session, anchor, cursor, end, entries, diagnostics, cancellationToken)
                     .ConfigureAwait(false);
 
                 if (cursor > before)
@@ -132,6 +173,7 @@ public sealed class SchedulingEngine(
 
             // 2. Work out how far we may schedule before the next fixed point.
             DateTimeOffset boundary = NextBoundary(cursor, end, activeBlock, blocks, anchors, anchorIndex);
+            if (blockContentEnd is { } contentEnd && contentEnd < boundary) boundary = contentEnd;
             TimeSpan gap = boundary - cursor;
 
             // 3. Main programming from the active block pool or the base rotation.
@@ -319,6 +361,7 @@ public sealed class SchedulingEngine(
         ScheduleBuildSession session,
         AnchorOccurrence anchor,
         DateTimeOffset cursor,
+        DateTimeOffset end,
         List<ScheduleEntry> entries,
         List<ScheduleDiagnostic> diagnostics,
         CancellationToken cancellationToken)
@@ -330,6 +373,8 @@ public sealed class SchedulingEngine(
         }
 
         int count = Math.Max(1, anchor.Anchor.Count);
+        bool anchorBlock = anchor.Block is { IsAnchorSlot: true };
+        bool opened = false;
         for (int i = 0; i < count; i++)
         {
             ContentSelector selector = selectors[i % selectors.Count];
@@ -344,6 +389,17 @@ public sealed class SchedulingEngine(
                 continue;
             }
 
+            if (anchorBlock && !opened)
+            {
+                opened = true;
+                if (await BlockBoundaryClips.TakeAsync(session, anchor.Block!, AdFolderRole.BlockStart, cursor,
+                        end - cursor - item.Duration, cancellationToken).ConfigureAwait(false) is { } opener)
+                {
+                    entries.Add(BlockBoundaryClips.Entry(anchor.Block!, opener, cursor, AdFolderRole.BlockStart));
+                    cursor += opener.Duration;
+                }
+            }
+
             entries.Add(new ScheduleEntry
             {
                 Start = cursor,
@@ -356,6 +412,14 @@ public sealed class SchedulingEngine(
             });
 
             cursor += item.Duration;
+        }
+
+        if (anchorBlock && opened
+            && await BlockBoundaryClips.TakeAsync(session, anchor.Block!, AdFolderRole.BlockEnd, cursor,
+                end - cursor, cancellationToken).ConfigureAwait(false) is { } closer)
+        {
+            entries.Add(BlockBoundaryClips.Entry(anchor.Block!, closer, cursor, AdFolderRole.BlockEnd));
+            cursor += closer.Duration;
         }
 
         return cursor;

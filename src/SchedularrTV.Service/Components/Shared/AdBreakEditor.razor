@@ -7,6 +7,8 @@
 <div class="ab-summary row row-wrap">
     <span class="pill job-ads">@Count(AdFolderRole.Ads) ads folder(s)</span>
     <span class="pill job-bumpers">@Count(AdFolderRole.Bumpers) bumper folder(s)</span>
+    <span class="pill job-bumpers">@Count(AdFolderRole.BlockStart) block start folder(s)</span>
+    <span class="pill job-bumpers">@Count(AdFolderRole.BlockEnd) block end folder(s)</span>
     <span class="pill job-filler">@Count(AdFolderRole.Filler) filler folder(s)</span>
     <span class="pill job-promo">@(AdBreak.Promos.Count + AdBreak.PromoRoots.Count) promo folder(s)</span>
     @if (AdBreak.Seasonal)

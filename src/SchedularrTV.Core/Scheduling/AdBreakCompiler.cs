@@ -28,6 +28,12 @@ public static class AdBreakCompiler
         return [.. names.Select(name => config.AdBreaks.GetValueOrDefault(name)).OfType<AdBreakConfig>()];
     }
 
+    /// <summary>The block-boundary folders, pooled across the block's own or inherited ad break collections.</summary>
+    internal static IReadOnlyList<AdPoolSource> BlockSources(SchedulerConfig config, ChannelConfig channel, BlockConfig block, AdFolderRole role) =>
+        [.. (InUse(config, channel, block) ?? []).SelectMany(adBreak => adBreak.Folders
+            .Where(folder => folder.Role == role)
+            .Select(folder => new AdPoolSource(folder.Path, Excluded(adBreak, folder.Path, role), adBreak.Seasonal)))];
+
     /// <summary>
     /// The breaks' settings with the ad breaks applied: the pools come from their folders, and their fine tuning sits
     /// between the channel's (and block's) and the global settings.

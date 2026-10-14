@@ -215,6 +215,28 @@ public class AdBreakTests
     }
 
     [Fact]
+    public void The_any_show_folder_works_in_a_promos_folder_sorted_by_show_and_type()
+    {
+        const string promos = @"D:\Media\Commercials\Any Channel\Promos";
+        PromoFolderSource nowPlaying = new(promos, [], PerShow: true, AnyShow: true, Times: true, Days: true, AnyShowFolder: "Any Show",
+            Type: AdPromoType.NowPlaying);
+
+        // Either order, and with a time folder inside.
+        Assert.Equal("Any Show", AdBreakCompiler.Describe(Clip($@"{promos}\Any Show\Now Playing\clip.mp4"), [nowPlaying])!.Attributes["show_id"]);
+        Assert.Equal("Any Show", AdBreakCompiler.Describe(Clip($@"{promos}\Now Playing\Any Show\clip.mp4"), [nowPlaying])!.Attributes["show_id"]);
+        MediaItem? timed = AdBreakCompiler.Describe(Clip($@"{promos}\Any Show\Now Playing\8pm\clip.mp4"), [nowPlaying]);
+        Assert.Equal("Any Show", timed!.Attributes["show_id"]);
+        Assert.Equal("8pm", timed.Attributes["promo_clock"]);
+
+        // Another type's clips in Any Show aren't this spot's.
+        Assert.Null(AdBreakCompiler.Describe(Clip($@"{promos}\Any Show\Up Next\clip.mp4"), [nowPlaying]));
+
+        // A renamed "any show" folder works the same way.
+        PromoFolderSource renamed = nowPlaying with { AnyShowFolder = "All Shows" };
+        Assert.Equal("All Shows", AdBreakCompiler.Describe(Clip($@"{promos}\All Shows\Now Playing\clip.mp4"), [renamed])!.Attributes["show_id"]);
+    }
+
+    [Fact]
     public void Seasonal_promo_folders_only_count_in_season_and_are_not_shows()
     {
         const string promos = @"D:\Media\Commercials\Any Channel\Promos";

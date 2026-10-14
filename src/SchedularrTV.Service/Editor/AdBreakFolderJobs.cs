@@ -31,6 +31,8 @@ public static class AdBreakFolderJobs
     [
         ("ads", "Ads"),
         ("bumpers", "Bumpers"),
+        ("blockstart", "Block start"),
+        ("blockend", "Block end"),
         ("filler", "Filler"),
         ("skip", "Skip (leave out)")
     ];
@@ -92,6 +94,8 @@ public static class AdBreakFolderJobs
             PromoRootChoice => new FolderJob(choice, "Promos", "job-promo"),
             "ads" => new FolderJob(choice, "Ads", "job-ads"),
             "bumpers" => new FolderJob(choice, "Bumpers", "job-bumpers"),
+            "blockstart" => new FolderJob(choice, "Block start", "job-bumpers"),
+            "blockend" => new FolderJob(choice, "Block end", "job-bumpers"),
             "filler" => new FolderJob(choice, "Filler", "job-filler"),
             "skip" => new FolderJob(choice, "Skipped", "job-skip"),
             _ => new FolderJob(None, "Not used", "job-none")
@@ -114,7 +118,7 @@ public static class AdBreakFolderJobs
         {
             adBreak.Promos.Add(NewPromo(type, path, previous));
         }
-        else if (choice is "ads" or "bumpers" or "filler" or "skip")
+        else if (choice is "ads" or "bumpers" or "blockstart" or "blockend" or "filler" or "skip")
         {
             adBreak.Folders.Add(new AdBreakFolder { Path = path, Role = Enum.Parse<AdFolderRole>(choice, ignoreCase: true) });
         }
@@ -145,6 +149,12 @@ public static class AdBreakFolderJobs
         ["ids"] = AdFolderRole.Bumpers,
         ["stationids"] = AdFolderRole.Bumpers,
         ["stingers"] = AdFolderRole.Bumpers,
+        ["blockstart"] = AdFolderRole.BlockStart,
+        ["blockintro"] = AdFolderRole.BlockStart,
+        ["blockopening"] = AdFolderRole.BlockStart,
+        ["blockend"] = AdFolderRole.BlockEnd,
+        ["blockoutro"] = AdFolderRole.BlockEnd,
+        ["blockclosing"] = AdFolderRole.BlockEnd,
         ["filler"] = AdFolderRole.Filler,
         ["fillers"] = AdFolderRole.Filler,
         ["loops"] = AdFolderRole.Filler
@@ -197,7 +207,7 @@ public static class AdBreakFolderJobs
             }
 
             FolderJob? inherited = Inherited(adBreak, folder);
-            if (Explicit(adBreak, folder.Path) is not null || inherited is { Choice: "skip" or "filler" or "bumpers" } || inherited?.CssClass == "job-promo")
+            if (Explicit(adBreak, folder.Path) is not null || inherited is { Choice: "skip" or "filler" or "bumpers" or "blockstart" or "blockend" } || inherited?.CssClass == "job-promo")
             {
                 continue;
             }
@@ -209,7 +219,7 @@ public static class AdBreakFolderJobs
             else if (RoleNames.TryGetValue(new string([.. folder.Name.Where(char.IsLetterOrDigit)]), out AdFolderRole role)
                      && (inherited is null || (inherited.Choice == "ads" && role != AdFolderRole.Ads)))
             {
-                suggestions.Add(new FolderSuggestion(folder.Path, folder.Name, RoleChoice(role), role.ToString()));
+                suggestions.Add(new FolderSuggestion(folder.Path, folder.Name, RoleChoice(role), Job(RoleChoice(role)).Label));
             }
 
             if (suggestions.Count >= max)
@@ -360,7 +370,7 @@ public static class AdBreakFolderJobs
         }
 
         FolderJob? job = Explicit(adBreak, folder.Path);
-        if (job is { Choice: "ads" or "bumpers" or "filler" } && adBreak.Seasonal)
+        if (job is { Choice: "ads" or "bumpers" or "filler" or "blockstart" or "blockend" } && adBreak.Seasonal)
         {
             string month = CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(now.Month);
             string nextMonth = CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(now.AddMonths(1).Month);
