@@ -153,6 +153,12 @@ public sealed class Overlay
 
     public string? File { get; set; }
 
+    /// <summary>Named variable image used instead of File for a screenbug.</summary>
+    public string? VariableImage { get; set; }
+
+    /// <summary>Show-dependent images shared by the file screenbug and design image layers.</summary>
+    public List<GeneratedVariableImage> VariableImages { get; set; } = [];
+
     /// <summary><see cref="OverlayAnchors"/>.</summary>
     public string Anchor { get; set; } = "bottom_right";
 
@@ -207,6 +213,11 @@ public sealed class Overlay
         copy.Layers = [.. Layers.Select(layer => layer.Copy())];
         copy.Variants = [.. Variants.Select(variant => variant.Copy())];
         copy.Schedule = Schedule?.Copy();
+        copy.VariableImages = [.. VariableImages.Select(image => new GeneratedVariableImage
+        {
+            Name = image.Name, Context = image.Context, Offset = image.Offset, DefaultPath = image.DefaultPath,
+            Shows = [.. image.Shows.Select(show => new GeneratedShowImage { Show = show.Show, Path = show.Path })]
+        })];
         return copy;
     }
 }
@@ -307,6 +318,9 @@ public sealed class OverlayLayer
 
     /// <summary>For an image or a video.</summary>
     public string? Path { get; set; }
+
+    /// <summary>For an image: a named variable image instead of Path.</summary>
+    public string? VariableImage { get; set; }
 
     /// <summary>
     /// Comes in this long after the overlay does (fading in then), so text can wait for a video's design to animate in.

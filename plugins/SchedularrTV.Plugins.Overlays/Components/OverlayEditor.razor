@@ -20,6 +20,23 @@
             </select></label>
     </div>
 
+    <OverlayImagesEditor Overlay="Overlay" Changed="CommitAsync" />
+    @if (Overlay.VariableImages.Count > 0)
+    {
+        <details class="ed-plain">
+            <summary>Preview show contexts</summary>
+            <div class="grid grid-2">
+                <label class="field"><span>Currently watching</span>
+                    <input type="text" @bind="_previewCurrent" @bind:after="RefreshPreviewAsync" />
+                </label>
+                <label class="field"><span>Upcoming show titles (one per line, next first)</span>
+                    <textarea rows="3" @bind="_previewUpcoming" @bind:after="RefreshPreviewAsync"></textarea>
+                </label>
+            </div>
+            <p class="hint">Try the show titles assigned below. These are preview-only; on air, the schedule supplies the shows.</p>
+        </details>
+    }
+
     <div class="ed-workspace">
         <div class="ed-stage">
             @if (IsDesign)
@@ -229,12 +246,24 @@
                         }
                         else if (selected.Kind == OverlayLayerKinds.Image)
                         {
+                            <label class="field"><span>Image source</span>
+                                <select value="@selected.VariableImage" @onchange="e => Set(() => selected.VariableImage = Text(e, string.Empty))">
+                                    <option value="">Static picture file</option>
+                                    @foreach (GeneratedVariableImage image in Overlay.VariableImages)
+                                    {
+                                        <option value="@image.Name">@image.Name</option>
+                                    }
+                                </select>
+                            </label>
+                            @if (string.IsNullOrWhiteSpace(selected.VariableImage))
+                            {
                             <div class="field"><span>Picture</span>
                                 <FilePathPicker Value="@selected.Path" ValueChanged="value => Set(() => selected.Path = value)" Extensions="FileBrowsing.Images" KeepCopyIn="@OverlayPackages.AssetCategory"
                                                 Label="picture" StartIn="Environment.SpecialFolder.MyPictures" Placeholder="D:\Media\Logos\channel.png" /></div>
                             @if (Missing(selected.Path))
                             {
                                 <p class="hint warn">The scheduler can't find this file.</p>
+                            }
                             }
                         }
                         else if (selected.Kind == OverlayLayerKinds.Video)
@@ -317,6 +346,17 @@
             else
             {
                 <h3 class="ed-section">File</h3>
+                <label class="field"><span>File source</span>
+                    <select value="@Overlay.VariableImage" @onchange="e => Set(() => Overlay.VariableImage = Text(e, string.Empty))">
+                        <option value="">Static picture or video file</option>
+                        @foreach (GeneratedVariableImage image in Overlay.VariableImages)
+                        {
+                            <option value="@image.Name">@image.Name</option>
+                        }
+                    </select>
+                </label>
+                @if (string.IsNullOrWhiteSpace(Overlay.VariableImage))
+                {
                 <div class="field"><span>@(Overlay.Variants.Count > 0 ? "Default picture or video" : "Picture or video")</span>
                     <FilePathPicker Value="@Overlay.File" ValueChanged="value => Set(() => Overlay.File = value)" Extensions="MediaExtensions" KeepCopyIn="@OverlayPackages.AssetCategory"
                                     Label="picture or video" StartIn="Environment.SpecialFolder.MyPictures" Placeholder="D:\Media\Logos\bug.png" /></div>
@@ -326,6 +366,11 @@
                 }
                 <p class="hint">A PNG with transparency, or a video (with an alpha channel, such as a .mov) for an animated bug.
                     @(Overlay.Variants.Count > 0 ? "Leave it empty to show only the pictures below (a rating badge with nothing for unrated shows)." : "")</p>
+                }
+                else
+                {
+                    <p class="hint">Uses the variable's default or per-show image. Matching variants below take priority on air.</p>
+                }
 
                 <OverlayVariantsEditor Overlay="Overlay" HolidayNames="HolidayNames" Changed="CommitAsync" />
 
@@ -422,6 +467,8 @@
     private bool _snapX;
     private bool _snapY;
     private string? _preview;
+    private string _previewCurrent = "The Show";
+    private string _previewUpcoming = "Another Show\nA Later Show";
     private string? _previewError;
     private int _previewVersion;
     private OverlayVideos? _videos;
@@ -496,7 +543,12 @@
     {
         int version = ++_previewVersion;
         Overlay snapshot = Overlay.Copy();
-        Dictionary<string, string> tokens = new(OverlayProcessor.SampleTokens) { ["channel"] = ChannelName };
+        string[] upcoming = _previewUpcoming.Replace("\r", "").Split('\n').Select(title => title.Trim()).ToArray();
+        snapshot = OverlayImages.Resolve(snapshot, _previewCurrent, upcoming);
+        Dictionary<string, string> tokens = new(OverlayProcessor.SampleTokens)
+        {
+            ["channel"] = ChannelName, ["title"] = _previewCurrent, ["next"] = upcoming.FirstOrDefault() ?? string.Empty
+        };
         float scale = Math.Min(1f, PreviewPixels / CanvasWidth);
         try
         {

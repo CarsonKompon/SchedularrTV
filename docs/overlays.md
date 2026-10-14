@@ -44,6 +44,35 @@ Use **Comes in after** and **Goes before the end** to keep text clear of a video
 
 A **file overlay** places an existing image or video at a preset position with percentage sizing and margins. **Keep inside the picture** avoids letterbox bars.
 
+## Variable images for overlays and screenbugs
+
+Use **Variable images → + Variable image** to create an image slot with a **default image** and **per-show overrides**, just like Generated Promos. Show titles match without regard to case.
+
+- **Currently watching / before the break** uses the programme being shown. During an ad break it uses the preceding programme, when the overlay is set to appear during breaks.
+- **Up next** selects the next show, two shows ahead, or up to ten shows ahead. Continuation segments, intros/outros, and stacked episodes are skipped; consecutive listings of the same show count once.
+
+For a canvas design, add/select a **Picture** layer and choose the variable under **Image source**. The image keeps the layer's position, size, opacity, and timing. For a file-based screenbug, choose the variable under **File source**; placement, sizing, margins, and fades work as usual.
+
+Unassigned shows and unavailable schedule contexts use the default image. With no default, that image is hidden. Matching **Other pictures** variants (such as holiday or rating badges) take priority over a screenbug's variable image.
+
+Use **Preview show contexts** to enter a current show and upcoming titles and see their images on the canvas. These fields only affect the preview; the live overlay uses the actual schedule. Variables and all their default/per-show files are included in exported overlay packages and deep-copied when copying overlays.
+
+Example inside an overlay's YAML:
+
+```yaml
+kind: file
+variable_image: variable_image_01
+variable_images:
+  - name: variable_image_01
+    context: currently_watching
+    default_path: 'D:\Media\Logos\default.png'
+    shows:
+      - show: SpongeBob SquarePants
+        path: 'D:\Media\Logos\spongebob.png'
+```
+
+For an upcoming show, use `context: up_next` and `offset: 0` for next or `offset: 1` for two shows ahead. Canvas image layers reference the same slot with `variable_image: variable_image_01` instead of `path`.
+
 ## Set timing
 
 | Timing | Controls |

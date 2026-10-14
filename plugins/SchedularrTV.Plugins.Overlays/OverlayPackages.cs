@@ -14,6 +14,11 @@ public static class OverlayPackages
     public static async Task MapPathsAsync(Overlay overlay, Func<string?, Task<string?>> map)
     {
         overlay.File = await map(overlay.File).ConfigureAwait(false);
+        foreach (var image in overlay.VariableImages)
+        {
+            image.DefaultPath = await map(image.DefaultPath).ConfigureAwait(false);
+            foreach (var show in image.Shows) show.Path = await map(show.Path).ConfigureAwait(false);
+        }
         foreach (OverlayLayer layer in overlay.Layers)
         {
             layer.Path = await map(layer.Path).ConfigureAwait(false);

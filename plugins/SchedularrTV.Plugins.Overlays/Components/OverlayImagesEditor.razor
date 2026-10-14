@@ -1,0 +1,94 @@
+<details class="ed-plain">
+    <summary>Variable images (@Overlay.VariableImages.Count)</summary>
+    <p class="hint">Choose a default image and per-show overrides, then select the variable as a picture layer's image source or the screenbug's file source.</p>
+    @foreach (GeneratedVariableImage image in Overlay.VariableImages)
+    {
+        <div class="card" @key="image">
+            <div class="card-head">
+                <code>@image.Name</code>
+                <div class="spacer"></div>
+                <button class="btn btn-sm btn-danger" type="button" @onclick="() => Remove(image)">Remove variable</button>
+            </div>
+            <div class="grid grid-2">
+                <label class="field"><span>Show context</span>
+                    <select @bind="image.Context" @bind:after="Notify">
+                        <option value="@GeneratedImageContext.CurrentlyWatching">Currently watching / before the break</option>
+                        @if (image.Context == GeneratedImageContext.PromotedShow)
+                        {
+                            <option value="@GeneratedImageContext.PromotedShow">Current show</option>
+                        }
+                        <option value="@GeneratedImageContext.UpNext">Up next</option>
+                    </select>
+                </label>
+                @if (image.Context == GeneratedImageContext.UpNext)
+                {
+                    <label class="field"><span>Upcoming show</span>
+                        <select @bind="image.Offset" @bind:after="Notify">
+                            @for (int offset = 0; offset < 10; offset++)
+                            {
+                                <option value="@offset">@(offset == 0 ? "Next show" : $"{offset + 1} shows ahead")</option>
+                            }
+                        </select>
+                    </label>
+                }
+                <div class="field"><span>Default image</span>
+                    <FilePathPicker Value="@image.DefaultPath" ValueChanged="value => Set(() => image.DefaultPath = value)"
+                                    Extensions="FileBrowsing.Images" KeepCopyIn="@OverlayPackages.AssetCategory"
+                                    Label="default image" StartIn="Environment.SpecialFolder.MyPictures" />
+                </div>
+            </div>
+            @foreach (GeneratedShowImage show in image.Shows)
+            {
+                <div class="grid grid-3" @key="show">
+                    <label class="field"><span>Show title</span>
+                        <input type="text" @bind="show.Show" @bind:after="Notify" placeholder="Exact series / show title" />
+                    </label>
+                    <div class="field"><span>Image for this show</span>
+                        <FilePathPicker Value="@show.Path" ValueChanged="value => Set(() => show.Path = value)"
+                                        Extensions="FileBrowsing.Images" KeepCopyIn="@OverlayPackages.AssetCategory"
+                                        Label="show image" StartIn="Environment.SpecialFolder.MyPictures" />
+                    </div>
+                    <div><button class="btn btn-sm btn-danger" type="button" @onclick="() => Set(() => image.Shows.Remove(show))">Remove show</button></div>
+                </div>
+            }
+            @if (image.Shows.Any(show => string.IsNullOrWhiteSpace(show.Show))
+                || image.Shows.Select(show => show.Show.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() != image.Shows.Count)
+            {
+                <p class="hint warn">Give each override a unique show title. If a title appears twice, the first match is used.</p>
+            }
+            <button class="btn btn-sm" type="button" @onclick="() => Set(() => image.Shows.Add(new()))">+ Show override</button>
+        </div>
+    }
+    <button class="btn btn-sm" type="button" @onclick="Add">+ Variable image</button>
+    <p class="hint">Titles are case-insensitive. Unassigned shows and unavailable contexts use the default image.
+        With no default, the image is hidden. Up next skips continuations of the current programme.</p>
+</details>
+
+@code {
+    [Parameter, EditorRequired] public Overlay Overlay { get; set; } = new();
+    [Parameter] public EventCallback Changed { get; set; }
+    private Task Notify() => Changed.InvokeAsync();
+    private Task Set(Action change) { change(); return Notify(); }
+
+    private Task Add() => Set(() =>
+    {
+        int number = 1;
+        while (Overlay.VariableImages.Any(image => string.Equals(image.Name, $"variable_image_{number:00}", StringComparison.OrdinalIgnoreCase))) number++;
+        Overlay.VariableImages.Add(new() { Name = $"variable_image_{number:00}", Context = GeneratedImageContext.CurrentlyWatching });
+    });
+
+    private Task Remove(GeneratedVariableImage image) => Set(() =>
+    {
+        Overlay.VariableImages.Remove(image);
+        if (string.Equals(Overlay.VariableImage, image.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            Overlay.VariableImage = null;
+            Overlay.File = image.DefaultPath;
+        }
+        foreach (OverlayLayer layer in Overlay.Layers.Where(layer => string.Equals(layer.VariableImage, image.Name, StringComparison.OrdinalIgnoreCase)))
+        {
+            layer.VariableImage = null;
+            layer.Path = image.DefaultPath;
+        }
+    });
+}

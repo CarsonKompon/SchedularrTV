@@ -85,6 +85,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
             var layers = new JsonArray();
             Dictionary<string, string>? tokens = null;
             OverlayMoment? moment = null;
+            (string? Current, IReadOnlyList<string> Upcoming)? imageSubjects = null;
             foreach (Overlay overlay in resolved.Overlays.SelectMany(OverlayTiming.Rules))
             {
                 if (OverlayTiming.For(overlay, entry) is not { } showing)
@@ -96,18 +97,24 @@ public sealed class OverlayProcessor : IPlayoutProcessor
                 {
                     // A file with variants shows whichever picture this entry calls for (or nothing, when none does and it has no default).
                     Overlay shown = overlay;
+                    if (overlay.VariableImages.Count > 0 || !string.IsNullOrWhiteSpace(overlay.VariableImage)
+                        || overlay.Layers.Any(layer => !string.IsNullOrWhiteSpace(layer.VariableImage)))
+                    {
+                        imageSubjects ??= OverlayImages.Subjects(ordered, index);
+                        shown = OverlayImages.Resolve(overlay, imageSubjects.Value.Current, imageSubjects.Value.Upcoming);
+                    }
                     if (overlay.Kind == OverlayKinds.File && overlay.Variants.Count > 0)
                     {
                         moment ??= OverlayMoment.At(entry.Start, context.Config, channel);
-                        string? file = OverlayVariants.FileFor(overlay, entry.Item, moment);
+                        string? file = OverlayVariants.FileFor(shown, entry.Item, moment);
                         if (file is null)
                         {
                             continue;
                         }
 
-                        if (!string.Equals(file, overlay.File, StringComparison.Ordinal))
+                        if (!string.Equals(file, shown.File, StringComparison.Ordinal))
                         {
-                            shown = overlay.Copy();
+                            shown = shown.Copy();
                             shown.File = file;
                         }
                     }
