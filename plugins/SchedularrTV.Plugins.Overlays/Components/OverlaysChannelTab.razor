@@ -3,7 +3,7 @@
 
 @if (Context.Channel is { } channel)
 {
-    <link rel="stylesheet" href="plugins/overlays/overlays.css" />
+    <link rel="stylesheet" href="plugins/overlays/overlays.css?v=@StyleVersion" />
     <div class="ov-scope">
         <div class="card">
             <div class="card-head"><h2>Overlays</h2></div>
@@ -167,6 +167,11 @@
 
 @code {
     [Parameter, EditorRequired] public PluginEditorContext Context { get; set; } = default!;
+
+    // Static files go out without a version, so a browser can keep an older stylesheet after an update; each build of
+    // the plugin gets a new module id, which makes it fetch the stylesheet again.
+    private static readonly string StyleVersion =
+        typeof(OverlaysChannelTab).Assembly.ManifestModule.ModuleVersionId.ToString("N")[..12];
 
     private const string OwnMode = "own";
     private const string FromMode = "from";
