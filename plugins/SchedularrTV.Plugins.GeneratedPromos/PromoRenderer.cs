@@ -197,7 +197,7 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
                 continue;
             }
 
-            SKRect bounds = layer.Bounds;
+            SKRect bounds = state.Bounds;
             canvas.Save();
             canvas.Translate(state.OffsetX, state.OffsetY);
             canvas.Scale(state.Scale, state.Scale, bounds.MidX, bounds.MidY);
@@ -218,7 +218,7 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
                         canvas.DrawRoundRect(bounds, rect.CornerRadius, rect.CornerRadius, paint);
                     break;
                 case PromoTextLayer text:
-                    DrawText(canvas, text, images);
+                    DrawText(canvas, text, bounds, images);
                     break;
                 case PromoImageLayer picture when images.Get(picture.Path) is { } bitmap:
                     DrawImage(canvas, bitmap, bounds, cover: false, paint: null);
@@ -230,7 +230,7 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         }
     }
 
-    private static void DrawText(SKCanvas canvas, PromoTextLayer layer, PromoImageCache cache)
+    private static void DrawText(SKCanvas canvas, PromoTextLayer layer, SKRect bounds, PromoImageCache cache)
     {
         if (layer.Lines.Count == 0)
         {
@@ -245,7 +245,6 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             : null;
         paint.ImageFilter = shadow;
 
-        SKRect bounds = layer.Bounds;
         while (font.Size > 8
                && (layer.Lines.Max(line => font.MeasureText(line, paint)) > bounds.Width
                    || font.Spacing * layer.Lines.Count > bounds.Height))
@@ -259,7 +258,13 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             SKTextAlign.Right => bounds.Right,
             _ => bounds.Left
         };
-        float y = bounds.Top - font.Metrics.Ascent;
+        float block = font.Spacing * layer.Lines.Count;
+        float y = layer.VerticalAlign switch
+        {
+            PromoVerticalAlign.Middle => bounds.Top + (bounds.Height - block) / 2,
+            PromoVerticalAlign.Bottom => bounds.Bottom - block,
+            _ => bounds.Top
+        } - font.Metrics.Ascent;
 
         foreach (string line in layer.Lines)
         {

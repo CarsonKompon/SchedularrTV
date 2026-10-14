@@ -101,6 +101,22 @@ public enum GeneratedTextAlign
     Right
 }
 
+/// <summary>Where a text layer's lines sit up and down its box.</summary>
+public enum GeneratedVerticalAlign
+{
+    Top,
+    Middle,
+    Bottom
+}
+
+/// <summary>How a text layer's letters are cased.</summary>
+public enum GeneratedTextCase
+{
+    AsWritten,
+    Upper,
+    Lower
+}
+
 public sealed class GeneratedPromosConfig
 {
     public bool Enabled { get; set; } = true;
@@ -137,7 +153,28 @@ public sealed class GeneratedPromoTemplate
     public string BackgroundColor { get; set; } = "#101828";
 
     /// <summary>Image or video filling the frame. Videos loop.</summary>
+    /// <remarks>The single-background form; <see cref="Backgrounds"/> adds more to pick from.</remarks>
     public string? Background { get; set; }
+
+    /// <summary>
+    /// Images or videos to pick from, one per promo (fixed by what the promo is, so a re-render looks the same), along
+    /// with <see cref="Background"/>. Null (rather than empty) keeps render keys of templates without them unchanged.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Backgrounds { get; set; }
+
+    /// <summary>Every background to pick from: <see cref="Background"/> first, then <see cref="Backgrounds"/>, without blanks or repeats.</summary>
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<string> BackgroundChoices =>
+        [.. (Background is { Length: > 0 } single ? (Backgrounds ?? []).Prepend(single) : Backgrounds ?? [])
+            .Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>
+    /// The sound of a background video (not an image, nor the episode clip, which has its own). Null plays it with the
+    /// usual settings; turning it off keeps the settings with <see cref="GeneratedBackgroundSoundConfig.Enabled"/> false.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedBackgroundSoundConfig? BackgroundSound { get; set; }
 
     /// <summary>Plays a clip of the promoted episode behind everything; <see cref="Background"/> stands in when its file can't be read.</summary>
     public GeneratedClipConfig? BackgroundClip { get; set; }
@@ -294,6 +331,18 @@ public sealed class GeneratedMusicConfig
     public bool? DuckUnderClip { get; set; }
 }
 
+/// <summary>How a background video's own sound plays under the promo.</summary>
+public sealed class GeneratedBackgroundSoundConfig
+{
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>0 to 1, relative to the video's own level.</summary>
+    public double Volume { get; set; } = 1;
+
+    /// <summary>Lowers it while the voice-over is speaking.</summary>
+    public bool DuckUnderVoice { get; set; } = true;
+}
+
 public sealed class GeneratedClipConfig
 {
     /// <summary>Offset into the episode; null picks a point in its middle, different for each airing.</summary>
@@ -399,6 +448,14 @@ public sealed class GeneratedLayer
 
     public GeneratedTextAlign Align { get; set; } = GeneratedTextAlign.Left;
 
+    /// <summary>Where the lines sit up and down the box; null is the top. Null rather than top keeps render keys of older templates.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedVerticalAlign? VerticalAlign { get; set; }
+
+    /// <summary>Upper or lower cases every letter (show titles and AI-written text too); null keeps the text as written.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedTextCase? TextCase { get; set; }
+
     public bool Shadow { get; set; } = true;
 
     public GeneratedUpNextOptions? UpNext { get; set; }
@@ -416,6 +473,46 @@ public sealed class GeneratedLayer
     /// <summary>For <see cref="GeneratedLayerKind.Text"/>: has a language model write it, with <see cref="Text"/> as the fallback.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public AiTextConfig? Writer { get; set; }
+
+    /// <summary>
+    /// Animates position, size and opacity: while there are any, they replace <see cref="X"/>, <see cref="Y"/>,
+    /// <see cref="Width"/>, <see cref="Height"/> and <see cref="Opacity"/>, which are kept for when keyframes are turned
+    /// off. Enter and exit transitions still play on top. Null when off, so templates without them keep their render keys.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedKeyframe>? Keyframes { get; set; }
+}
+
+/// <summary>How a keyframe moves on to the next one.</summary>
+public enum GeneratedEasing
+{
+    Linear,
+    EaseIn,
+    EaseOut,
+    EaseInOut,
+
+    /// <summary>Stays put, then jumps to the next keyframe when it's reached.</summary>
+    Hold
+}
+
+/// <summary>A layer's pose at one moment; between keyframes it moves from one to the next.</summary>
+public sealed class GeneratedKeyframe
+{
+    /// <summary>From the start of the promo (not of the layer).</summary>
+    public TimeSpan At { get; set; }
+
+    public float X { get; set; }
+
+    public float Y { get; set; }
+
+    public float Width { get; set; } = 400;
+
+    public float Height { get; set; } = 100;
+
+    public float Opacity { get; set; } = 1;
+
+    /// <summary>How it moves from here to the next keyframe.</summary>
+    public GeneratedEasing Easing { get; set; } = GeneratedEasing.Linear;
 }
 
 /// <summary>Each enabled part is drawn on its own line, in this order.</summary>
@@ -441,4 +538,15 @@ public sealed class GeneratedUpNextOptions
 
     /// <summary>Prefixes each line with its local start time.</summary>
     public bool IncludeTime { get; set; }
+
+    /// <summary>
+    /// Text before the first show, e.g. <c>Up next: </c>; a new line in it puts it on its own line. <c>{channel}</c> is
+    /// the channel name. Null when unused, so templates without it keep their render keys.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Prefix { get; set; }
+
+    /// <summary>Text after the last show, e.g. <c> on {channel}</c>; works like <see cref="Prefix"/>.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Suffix { get; set; }
 }

@@ -232,10 +232,11 @@
                 @foreach (GeneratedLayer layer in Template.Layers)
                 {
                     bool isSelected = ReferenceEquals(layer, _layer);
-                    <div class="layer-box @(isSelected ? "selected" : "") @(VisibleAt(layer) ? "" : "hidden-now")" @key="layer"
-                         style="left:@Pct(layer.X, Template.Width);top:@Pct(layer.Y, Template.Height);width:@Pct(layer.Width, Template.Width);height:@Pct(layer.Height, Template.Height);"
+                    LayerPose pose = GeneratedPromoEditing.PoseAt(layer, Time);
+                    <div class="layer-box @(isSelected ? "selected" : "") @(VisibleAt(layer) ? "" : "hidden-now") @(GeneratedPromoEditing.HasKeyframes(layer) ? "keyed" : "")" @key="layer"
+                         style="left:@Pct(pose.X, Template.Width);top:@Pct(pose.Y, Template.Height);width:@Pct(pose.Width, Template.Width);height:@Pct(pose.Height, Template.Height);"
                          title="@layer.Name" @onpointerdown="e => StartDrag(e, layer, Move)" @onpointerdown:preventDefault="true">
-                        <span class="layer-tag">@Label(layer)</span>
+                        <span class="layer-tag">@(GeneratedPromoEditing.HasKeyframes(layer) ? "◆ " : "")@Label(layer)</span>
                         @if (isSelected)
                         {
                             @foreach (string handle in Handles)
@@ -256,15 +257,86 @@
                 }
             </div>
             <div class="ed-timeline">
-                <label class="field">
-                    <span>Preview time: @($"{_time:0.00}")s of @($"{Template.Duration.TotalSeconds:0.#}")s</span>
-                    <input type="range" min="0" max="@Number(Math.Max(0, Template.Duration.TotalSeconds - 0.01))" step="0.05"
-                           value="@Number(_time)" aria-label="Preview time" @oninput="SetTime" />
-                </label>
+                <div class="ed-timeline-head">
+                    <span>Preview time: <strong>@($"{_time:0.00}")s</strong> of @($"{DurationSeconds:0.#}")s</span>
+                    <div class="spacer"></div>
+                    @if (_layer is { } timedLayer)
+                    {
+                        <span class="ed-meta">@Label(timedLayer)@(GeneratedPromoEditing.HasKeyframes(timedLayer) ? $" · {timedLayer.Keyframes!.Count} keyframe{(timedLayer.Keyframes!.Count == 1 ? "" : "s")}" : "")</span>
+                    }
+                </div>
+                <div class="ed-ruler" id="@_rulerId" role="slider" tabindex="0" aria-label="Preview time" aria-valuemin="0"
+                     aria-valuemax="@Number(DurationSeconds)" aria-valuenow="@Number(_time)" aria-valuetext="@($"{_time:0.00} seconds")"
+                     @onpointerdown="StartScrub" @onpointerdown:preventDefault="true" @onkeydown="RulerKey">
+                    @foreach (double tick in Ticks())
+                    {
+                        <span class="ed-tick @(tick > DurationSeconds * 0.92 ? "ed-tick-end" : "")" style="left:@Pct(tick, DurationSeconds)"><span>@Number(tick)s</span></span>
+                    }
+                    @if (_layer is { } spanLayer)
+                    {
+                        double spanStart = spanLayer.Start.TotalSeconds;
+                        double spanEnd = Math.Min(DurationSeconds, (spanLayer.End ?? Template.Duration).TotalSeconds);
+                        <span class="ed-span" style="left:@Pct(spanStart, DurationSeconds);width:@Pct(Math.Max(0, spanEnd - spanStart), DurationSeconds)"></span>
+                        GeneratedKeyframe? currentFrame = CurrentKeyframe;
+                        @foreach (GeneratedKeyframe frame in spanLayer.Keyframes ?? [])
+                        {
+                            <span class="ed-key @(ReferenceEquals(frame, currentFrame) ? "current" : "") @($"ease-{frame.Easing.ToString().ToLowerInvariant()}")" @key="frame"
+                                  style="left:@Pct(frame.At.TotalSeconds, DurationSeconds)"
+                                  title="@($"Keyframe at {frame.At.TotalSeconds:0.00}s, then {EasingName(frame.Easing).ToLowerInvariant()}. Drag to move it.")"
+                                  @onpointerdown="e => StartKeyDrag(e, spanLayer, frame)" @onpointerdown:stopPropagation="true" @onpointerdown:preventDefault="true"></span>
+                        }
+                    }
+                    <span class="ed-playhead" style="left:@Pct(_time, DurationSeconds)"></span>
+                </div>
+                @if (_layer is { } keyLayer)
+                {
+                    <div class="ed-keybar" aria-label="Keyframes">
+                        @if (!GeneratedPromoEditing.HasKeyframes(keyLayer))
+                        {
+                            <button class="btn btn-sm" type="button" @onclick="() => StartKeyframes(keyLayer)"
+                                    title="Animate this layer's position, size and opacity by setting them at different times">◆ Animate with keyframes</button>
+                            <span class="hint">Starts with a keyframe here; move the time and drag the box to add more.</span>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm" type="button" title="Previous keyframe" aria-label="Previous keyframe"
+                                    disabled="@(NextKeyframe(keyLayer, -1) is null)" @onclick="() => GoToKeyframe(keyLayer, -1)">◀</button>
+                            @if (CurrentKeyframe is { } key)
+                            {
+                                <label class="ed-keyfield">
+                                    <span>At (s)</span>
+                                    <input type="number" min="0" max="@Number(DurationSeconds)" step="0.05" value="@Number(key.At.TotalSeconds)"
+                                           @onchange="e => SetKeyframeTime(e, keyLayer, key)" />
+                                </label>
+                                <label class="ed-keyfield">
+                                    <span>Then</span>
+                                    <select value="@key.Easing" title="How it moves on to the next keyframe"
+                                            @onchange="e => Set(() => key.Easing = Enum.Parse<GeneratedEasing>(Text(e)))">
+                                        @foreach (GeneratedEasing easing in Enum.GetValues<GeneratedEasing>())
+                                        {
+                                            <option value="@easing">@EasingName(easing)</option>
+                                        }
+                                    </select>
+                                </label>
+                                <button class="btn btn-sm btn-danger" type="button" @onclick="() => RemoveKeyframe(keyLayer, key)">Delete keyframe</button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm" type="button" @onclick="() => AddKeyframe(keyLayer)">◆ Add keyframe at @($"{_time:0.00}")s</button>
+                            }
+                            <button class="btn btn-sm" type="button" title="Next keyframe" aria-label="Next keyframe"
+                                    disabled="@(NextKeyframe(keyLayer, 1) is null)" @onclick="() => GoToKeyframe(keyLayer, 1)">▶</button>
+                            <div class="spacer"></div>
+                            <button class="btn btn-sm" type="button" title="Remove every keyframe, leaving the layer where it is now"
+                                    @onclick="() => StopKeyframes(keyLayer)">Stop animating</button>
+                        }
+                    </div>
+                }
             </div>
             <p class="hint">
                 @(_sample ? "Showing sample shows; once the channel's schedule is built, its real shows are used." : "Showing this channel's real shows.")
-                Drag a box to move it, or a handle to resize it; it snaps to the centre lines unless you hold Alt. Dashed boxes are hidden at this time.
+                Drag along the timeline to scrub the preview. Drag a box to move it, or a handle to resize it; it snaps to the centre lines unless you hold Alt.
+                Dashed boxes are hidden at this time. On an animated layer (◆), moving or resizing it sets a keyframe at the current time.
             </p>
             @if (_stillError is not null)
             {
@@ -337,6 +409,19 @@
                                    @onchange="e => Set(() => UpNext(selected).IncludeTime = e.Value is true)" />
                             <span>Show start times</span>
                         </label>
+                        <div class="grid grid-2">
+                            <label class="field">
+                                <span>Before the shows (optional)</span>
+                                <textarea rows="2" placeholder="Up next: " spellcheck="false"
+                                          @onchange="e => Set(() => UpNext(selected).Prefix = Affix(e))">@(selected.UpNext?.Prefix)</textarea>
+                            </label>
+                            <label class="field">
+                                <span>After the shows (optional)</span>
+                                <textarea rows="2" placeholder=" on {channel}" spellcheck="false"
+                                          @onchange="e => Set(() => UpNext(selected).Suffix = Affix(e))">@(selected.UpNext?.Suffix)</textarea>
+                            </label>
+                        </div>
+                        <p class="hint">Joined onto the first and last show, spaces included, so the whole line is one layer; a new line puts it on a line of its own. {channel} is the channel name.</p>
                     }
                     else if (GeneratedPromoKinds.IsShowLayer(selected.Kind))
                     {
@@ -428,13 +513,32 @@
                                 <input type="number" min="4" max="600" value="@Number(selected.FontSize)"
                                        @onchange="e => SetNumber(e, value => selected.FontSize = (float)Math.Clamp(value, 4, 600))" />
                             </label>
-                            <label class="field">
-                                <span>Align</span>
-                                <select value="@selected.Align" @onchange="e => Set(() => selected.Align = Enum.Parse<GeneratedTextAlign>(Text(e)))">
-                                    @foreach (GeneratedTextAlign align in Enum.GetValues<GeneratedTextAlign>())
+                            <div class="field">
+                                <span>Align in its box</span>
+                                <div class="align-grid" role="group" aria-label="Text alignment">
+                                    @foreach (GeneratedVerticalAlign vertical in Enum.GetValues<GeneratedVerticalAlign>())
                                     {
-                                        <option value="@align">@align</option>
+                                        @foreach (GeneratedTextAlign horizontal in Enum.GetValues<GeneratedTextAlign>())
+                                        {
+                                            bool chosen = selected.Align == horizontal && (selected.VerticalAlign ?? GeneratedVerticalAlign.Top) == vertical;
+                                            string name = AlignName(vertical, horizontal);
+                                            <button type="button" class="align-cell @(chosen ? "selected" : "")" title="@name" aria-label="@name"
+                                                    aria-pressed="@(chosen ? "true" : "false")" @onclick="() => SetAlign(selected, vertical, horizontal)">
+                                                <span class="align-lines @($"h-{horizontal.ToString().ToLowerInvariant()} v-{vertical.ToString().ToLowerInvariant()}")" aria-hidden="true">
+                                                    <i></i><i></i><i></i>
+                                                </span>
+                                            </button>
+                                        }
                                     }
+                                </div>
+                            </div>
+                            <label class="field">
+                                <span>Letters</span>
+                                <select value="@(selected.TextCase ?? GeneratedTextCase.AsWritten)"
+                                        @onchange="e => SetTextCase(selected, Enum.Parse<GeneratedTextCase>(Text(e)))">
+                                    <option value="@GeneratedTextCase.AsWritten">As written</option>
+                                    <option value="@GeneratedTextCase.Upper">ALL UPPERCASE</option>
+                                    <option value="@GeneratedTextCase.Lower">all lowercase</option>
                                 </select>
                             </label>
                             <div class="check-stack">
@@ -476,17 +580,24 @@
                         </label>
                     }
 
-                    <h4>Position (pixels)</h4>
+                    @{ LayerPose selectedPose = GeneratedPromoEditing.PoseAt(selected, Time); }
+                    <h4>
+                        Position (pixels)
+                        @if (GeneratedPromoEditing.HasKeyframes(selected))
+                        {
+                            <span class="ed-meta">· at @($"{_time:0.00}")s; @(CurrentKeyframe is null ? "changing these adds a keyframe" : "this keyframe")</span>
+                        }
+                    </h4>
                     <div class="grid grid-4">
-                        <label class="field"><span>X</span><input type="number" value="@Number(selected.X)" @onchange="e => SetNumber(e, value => selected.X = (float)value)" /></label>
-                        <label class="field"><span>Y</span><input type="number" value="@Number(selected.Y)" @onchange="e => SetNumber(e, value => selected.Y = (float)value)" /></label>
-                        <label class="field"><span>Width</span><input type="number" min="1" value="@Number(selected.Width)" @onchange="e => SetNumber(e, value => selected.Width = (float)Math.Max(1, value))" /></label>
-                        <label class="field"><span>Height</span><input type="number" min="1" value="@Number(selected.Height)" @onchange="e => SetNumber(e, value => selected.Height = (float)Math.Max(1, value))" /></label>
+                        <label class="field"><span>X</span><input type="number" value="@Number(Math.Round(selectedPose.X, 1))" @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { X = value })" /></label>
+                        <label class="field"><span>Y</span><input type="number" value="@Number(Math.Round(selectedPose.Y, 1))" @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Y = value })" /></label>
+                        <label class="field"><span>Width</span><input type="number" min="1" value="@Number(Math.Round(selectedPose.Width, 1))" @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Width = value })" /></label>
+                        <label class="field"><span>Height</span><input type="number" min="1" value="@Number(Math.Round(selectedPose.Height, 1))" @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Height = value })" /></label>
                     </div>
                     <label class="field">
-                        <span>Opacity: @($"{selected.Opacity:P0}")</span>
-                        <input type="range" min="0" max="100" value="@Number(selected.Opacity * 100)"
-                               @onchange="e => SetNumber(e, value => selected.Opacity = (float)Math.Clamp(value / 100, 0, 1))" />
+                        <span>Opacity: @($"{selectedPose.Opacity:P0}")</span>
+                        <input type="range" min="0" max="100" value="@Number(Math.Round(selectedPose.Opacity * 100))"
+                               @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Opacity = value / 100 })" />
                     </label>
                     <label class="check">
                         <input type="checkbox" checked="@(selected.MutesClip == true)"
@@ -763,9 +874,10 @@
         <label class="check">
             <input type="checkbox" checked="@(music.DuckUnderClip == true)"
                    @onchange="e => Set(() => music.DuckUnderClip = e.Value is true ? true : null)" />
-            <span>Lower the music while the episode clip's sound plays</span>
+            <span>Lower the music while the episode clip's (or background video's) sound plays</span>
         </label>
-        @if (music.DuckUnderClip == true && Template.BackgroundClip is not { IncludeAudio: true })
+        @if (music.DuckUnderClip == true && Template.BackgroundClip is not { IncludeAudio: true }
+             && !(GeneratedPromoResolver.BackgroundSound(Template).Enabled && BackgroundList.Any(background => !PromoRenderer.IsImage(background))))
         {
             <p class="hint warn">@ClipSoundOff</p>
         }
@@ -788,9 +900,9 @@
     }
 </div>
 
-@if (_drag is not null)
+@if (_drag is not null || _scrubbing || _keyDrag is not null)
 {
-    <div class="drag-overlay" @onpointermove="Drag" @onpointerup="EndDrag" @onpointercancel="EndDrag" @onpointerleave="EndDrag"></div>
+    <div class="drag-overlay @(_drag is null ? "drag-time" : "")" @onpointermove="OverlayMove" @onpointerup="OverlayEnd" @onpointercancel="OverlayEnd" @onpointerleave="OverlayEnd"></div>
 }
 
 @code {
@@ -809,7 +921,7 @@
     private const string MutesClipHint =
         "The episode's sound follows this layer: it fades out as the layer fades in, cuts out if it cuts in, and is turned down by its opacity.";
     private const string ClipSoundOff =
-        "The episode clip's sound isn't on (under Canvas, tick Include the episode's sound), so the music has nothing to dip under.";
+        "Neither the episode clip's sound nor a background video's sound is on (both are under Canvas), so the music has nothing to dip under.";
     private const string MutesNothingHint =
         "The episode clip's sound isn't on (under Canvas), so there's nothing for this to mute yet.";
     private int _tries;
@@ -821,7 +933,7 @@
             ? $"{Template.Width} × {Template.Height} takes about twice as long to render here as 1280 × 720; 720p looks the same on most channels."
             : null,
         Template.Fps > 30 ? $"{Template.Fps} fps is twice the frames of 30 to draw and encode." : null,
-        Template.Background is { Length: > 0 } background && !PromoRenderer.IsImage(background)
+        Template.BackgroundChoices.Any(background => !PromoRenderer.IsImage(background))
             ? "A looping video background is decoded and scaled for every frame; a picture is much lighter here."
             : null
     ];
@@ -856,7 +968,11 @@
     private double _time;
     private string? _still;
     private string? _stillError;
-    private CancellationTokenSource? _stillCancellation;
+    private bool _stillWanted;
+    private bool _stillFast;
+    private bool _stillRunning;
+    // A background picked to look at in the preview, instead of the one this promo would pick.
+    private string? _previewBackground;
     private bool _sample = true;
     private bool _customSize;
     private bool _rendering;
@@ -987,53 +1103,324 @@
     private Task SetOptionalSeconds(ChangeEventArgs e, Action<TimeSpan?> apply) =>
         string.IsNullOrWhiteSpace(Text(e)) ? Set(() => apply(null)) : SetSeconds(e, value => apply(value));
 
-    private async Task RefreshStill()
+    private Task RefreshStill()
+    {
+        RequestStill();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Asks for the preview to be redrawn. At most one still is drawn at a time and the newest request wins, so
+    /// scrubbing or dragging shows frames as fast as they can be drawn rather than waiting for the pointer to stop.
+    /// </summary>
+    /// <param name="fast">Draws it smaller, for while the pointer is moving; a full-size one follows when it stops.</param>
+    private void RequestStill(bool fast = false)
     {
         if (Template.Generator is not null)
         {
             return;
         }
 
-        _stillCancellation?.Cancel();
-        CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(_life.Token);
-        _stillCancellation = cancellation;
+        _stillWanted = true;
+        _stillFast = fast;
+        if (!_stillRunning)
+        {
+            _ = DrawStills();
+        }
+    }
+
+    private async Task DrawStills()
+    {
+        _stillRunning = true;
         try
         {
-            await Task.Delay(120, cancellation.Token);
-            IReadOnlyList<UpNextListing> listings = PreviewListings(out _sample);
-            // The canvas fills the editor's width, so the still is drawn about as wide as a large screen shows it.
-            int width = Math.Min(1600, Template.Width);
-            byte[] jpeg = await Preview.RenderStillAsync(Template, Channel.Name, listings, Zone, TimeSpan.FromSeconds(_time), width, cancellation.Token,
-                imageSubjects: Preview.ImageSubjects(Channel));
-            if (cancellation.IsCancellationRequested)
+            // Let a burst of changes (typing, a pointer event) settle into one drawing.
+            await Task.Yield();
+            while (_stillWanted && !_life.IsCancellationRequested && Template.Generator is null)
             {
-                return;
-            }
+                _stillWanted = false;
+                bool fast = _stillFast;
+                try
+                {
+                    IReadOnlyList<UpNextListing> listings = PreviewListings(out _sample);
+                    // The canvas fills the editor's width, so the still is drawn about as wide as a large screen shows it.
+                    int width = Math.Min(fast ? ScrubWidth : 1600, Template.Width);
+                    byte[] jpeg = await Preview.RenderStillAsync(StillTemplate(), Channel.Name, listings, Zone, TimeSpan.FromSeconds(_time), width, _life.Token,
+                        imageSubjects: Preview.ImageSubjects(Channel));
+                    _still = $"data:image/jpeg;base64,{Convert.ToBase64String(jpeg)}";
+                    _stillError = null;
+                }
+                catch (OperationCanceledException) when (_life.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    _stillError = ex.GetBaseException().Message;
+                }
 
-            _still = $"data:image/jpeg;base64,{Convert.ToBase64String(jpeg)}";
-            _stillError = null;
+                await InvokeAsync(StateHasChanged);
+            }
         }
-        catch (OperationCanceledException)
+        finally
+        {
+            _stillRunning = false;
+        }
+    }
+
+    /// <summary>The template as the preview draws it: with only the background chosen to preview, when one is.</summary>
+    private GeneratedPromoTemplate StillTemplate()
+    {
+        if (_previewBackground is not { } background
+            || !GeneratedPromoEditing.Backgrounds(Template).Contains(background, StringComparer.OrdinalIgnoreCase))
+        {
+            _previewBackground = null;
+            return Template;
+        }
+
+        GeneratedPromoTemplate copy = GeneratedPromoEditing.Copy(Template);
+        GeneratedPromoEditing.SetBackgrounds(copy, [background]);
+        return copy;
+    }
+
+    private const int ScrubWidth = 800;
+
+    private TimeSpan Time => TimeSpan.FromSeconds(_time);
+
+    private double DurationSeconds => Math.Max(0.01, Template.Duration.TotalSeconds);
+
+    /// <summary>The latest time the preview can show (the promo's last moment).</summary>
+    private double LastTime => Math.Max(0, Template.Duration.TotalSeconds - 0.01);
+
+    private void SetTimeTo(double seconds, bool fast = false)
+    {
+        double time = Math.Round(Math.Clamp(seconds, 0, LastTime), 2);
+        if (fast && Math.Abs(time - _time) < 0.0001)
+        {
+            // The pointer moved within the same moment; nothing new to draw.
+            return;
+        }
+
+        _time = time;
+        RequestStill(fast);
+    }
+
+    /// <summary>Second marks along the timeline, spaced so their labels don't crowd.</summary>
+    private IEnumerable<double> Ticks()
+    {
+        double step = DurationSeconds <= 12 ? 1 : DurationSeconds <= 30 ? 2 : DurationSeconds <= 60 ? 5 : 10;
+        for (double tick = 0; tick <= DurationSeconds + 0.0001; tick += step)
+        {
+            yield return tick;
+        }
+    }
+
+    // ---- Timeline: scrubbing and keyframes ----
+
+    private sealed record KeyDragState(GeneratedLayer Layer, GeneratedKeyframe Key, double StartX, TimeSpan StartAt)
+    {
+        public bool Moved { get; set; }
+    }
+
+    private readonly string _rulerId = $"promo-ruler-{Guid.NewGuid():N}";
+    private double _rulerLeft;
+    private double _rulerWidth;
+    private bool _scrubbing;
+    private KeyDragState? _keyDrag;
+
+    /// <summary>The selected layer's keyframe under the playhead, which the keyframe bar edits.</summary>
+    private GeneratedKeyframe? CurrentKeyframe => _layer is { } layer ? GeneratedPromoEditing.KeyframeAt(layer, Time) : null;
+
+    /// <summary>Where the timeline is on screen, for turning the pointer into a time.</summary>
+    private async Task MeasureRuler()
+    {
+        try
+        {
+            double[] box = await JS.InvokeAsync<double[]>("eval",
+                $"(r => r ? [r.left, r.width] : [0, 0])(document.getElementById('{_rulerId}')?.getBoundingClientRect())");
+            if (box is [var left, var width] && width > 0)
+            {
+                (_rulerLeft, _rulerWidth) = (left, width);
+            }
+        }
+        catch (Exception)
+        {
+            // Disconnected or still prerendering: the last measurement stands in.
+        }
+    }
+
+    private double TimeAtPointer(double clientX) =>
+        _rulerWidth <= 0 ? _time : (clientX - _rulerLeft) / _rulerWidth * DurationSeconds;
+
+    private async Task StartScrub(PointerEventArgs e)
+    {
+        _scrubbing = true;
+        await MeasureRuler();
+        if (_scrubbing)
+        {
+            SetTimeTo(TimeAtPointer(e.ClientX), fast: true);
+        }
+    }
+
+    private async Task StartKeyDrag(PointerEventArgs e, GeneratedLayer layer, GeneratedKeyframe key)
+    {
+        _keyDrag = new KeyDragState(layer, key, e.ClientX, key.At);
+        // Jump to the keyframe, so its pose is what the canvas shows and the keyframe bar edits.
+        SetTimeTo(key.At.TotalSeconds);
+        await MeasureRuler();
+    }
+
+    private void OverlayMove(PointerEventArgs e)
+    {
+        if (_drag is not null)
+        {
+            Drag(e);
+        }
+        else if (_keyDrag is { } keyDrag)
+        {
+            MoveKeyDrag(keyDrag, e);
+        }
+        else if (_scrubbing)
+        {
+            SetTimeTo(TimeAtPointer(e.ClientX), fast: true);
+        }
+    }
+
+    private async Task OverlayEnd(PointerEventArgs e)
+    {
+        if (_drag is not null)
+        {
+            await EndDrag(e);
+        }
+        else if (_keyDrag is { } keyDrag)
+        {
+            MoveKeyDrag(keyDrag, e);
+            _keyDrag = null;
+            if (keyDrag.Moved)
+            {
+                await Commit();
+            }
+        }
+        else if (_scrubbing)
+        {
+            _scrubbing = false;
+            // A full-size still of where the scrub stopped.
+            SetTimeTo(TimeAtPointer(e.ClientX));
+        }
+    }
+
+    private void MoveKeyDrag(KeyDragState drag, PointerEventArgs e)
+    {
+        if (_rulerWidth <= 0)
         {
             return;
         }
-        catch (Exception ex)
+
+        double seconds = (e.ClientX - drag.StartX) / _rulerWidth * DurationSeconds;
+        drag.Moved |= Math.Abs(e.ClientX - drag.StartX) >= 2;
+        if (!drag.Moved)
         {
-            if (cancellation.IsCancellationRequested) return;
-            _stillError = ex.GetBaseException().Message;
+            return;
         }
 
-        await InvokeAsync(StateHasChanged);
+        GeneratedPromoEditing.MoveKeyframe(drag.Layer, drag.Key, drag.StartAt + TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(LastTime));
+        // The playhead follows the keyframe, so it stays the one being edited.
+        SetTimeTo(drag.Key.At.TotalSeconds, fast: true);
     }
 
-    private void SetTime(ChangeEventArgs e)
+    private Task RulerKey(KeyboardEventArgs e)
     {
-        if (double.TryParse(Text(e), NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
+        double step = e.ShiftKey ? 1 : 1.0 / Math.Max(1, Template.Fps);
+        switch (e.Key)
         {
-            _time = value;
-            _ = RefreshStill();
+            case "ArrowLeft":
+                SetTimeTo(_time - step);
+                break;
+            case "ArrowRight":
+                SetTimeTo(_time + step);
+                break;
+            case "Home":
+                SetTimeTo(0);
+                break;
+            case "End":
+                SetTimeTo(LastTime);
+                break;
+            case "Delete" or "Backspace" when _layer is { } layer && CurrentKeyframe is { } key:
+                return RemoveKeyframe(layer, key);
+            case "k" or "K" when _layer is { } layer:
+                return AddKeyframe(layer);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task StartKeyframes(GeneratedLayer layer) => Set(() => GeneratedPromoEditing.StartKeyframes(layer, Time));
+
+    private Task StopKeyframes(GeneratedLayer layer) => Set(() => GeneratedPromoEditing.StopKeyframes(layer, Time));
+
+    private Task AddKeyframe(GeneratedLayer layer) => Set(() =>
+    {
+        if (!GeneratedPromoEditing.HasKeyframes(layer))
+        {
+            GeneratedPromoEditing.StartKeyframes(layer, Time);
+        }
+        else
+        {
+            GeneratedPromoEditing.AddKeyframe(layer, Time);
+        }
+    });
+
+    private Task RemoveKeyframe(GeneratedLayer layer, GeneratedKeyframe key) => Set(() => GeneratedPromoEditing.RemoveKeyframe(layer, key));
+
+    private Task SetKeyframeTime(ChangeEventArgs e, GeneratedLayer layer, GeneratedKeyframe key) => SetNumber(e, value =>
+    {
+        GeneratedPromoEditing.MoveKeyframe(layer, key, TimeSpan.FromSeconds(value), TimeSpan.FromSeconds(LastTime));
+        _time = Math.Min(key.At.TotalSeconds, LastTime);
+    });
+
+    /// <summary>The selected layer's keyframe before (-1) or after (1) the playhead.</summary>
+    private GeneratedKeyframe? NextKeyframe(GeneratedLayer layer, int direction) =>
+        direction < 0
+            ? layer.Keyframes?.Where(key => key.At.TotalSeconds < _time - GeneratedPromoEditing.KeyframeTolerance).OrderBy(key => key.At).LastOrDefault()
+            : layer.Keyframes?.Where(key => key.At.TotalSeconds > _time + GeneratedPromoEditing.KeyframeTolerance).OrderBy(key => key.At).FirstOrDefault();
+
+    private void GoToKeyframe(GeneratedLayer layer, int direction)
+    {
+        if (NextKeyframe(layer, direction) is { } key)
+        {
+            SetTimeTo(key.At.TotalSeconds);
         }
     }
+
+    private Task SetPoseValue(ChangeEventArgs e, GeneratedLayer layer, Func<LayerPose, float, LayerPose> change) =>
+        SetNumber(e, value => GeneratedPromoEditing.SetPose(layer, Time, change(GeneratedPromoEditing.PoseAt(layer, Time), (float)value)));
+
+    /// <summary>Sets both alignments; top (the old, only, way) is stored as nothing, so older templates keep their render keys.</summary>
+    private Task SetAlign(GeneratedLayer layer, GeneratedVerticalAlign vertical, GeneratedTextAlign horizontal) => Set(() =>
+    {
+        layer.Align = horizontal;
+        layer.VerticalAlign = vertical == GeneratedVerticalAlign.Top ? null : vertical;
+    });
+
+    // As written is stored as nothing, for the same reason.
+    private Task SetTextCase(GeneratedLayer layer, GeneratedTextCase textCase) =>
+        Set(() => layer.TextCase = textCase == GeneratedTextCase.AsWritten ? null : textCase);
+
+    private static string AlignName(GeneratedVerticalAlign vertical, GeneratedTextAlign horizontal) =>
+        (vertical, horizontal) switch
+        {
+            (GeneratedVerticalAlign.Middle, GeneratedTextAlign.Center) => "Centre",
+            _ => $"{vertical} {(horizontal == GeneratedTextAlign.Center ? "centre" : horizontal.ToString().ToLowerInvariant())}"
+        };
+
+    private static string EasingName(GeneratedEasing easing) => easing switch
+    {
+        GeneratedEasing.EaseIn => "Ease in",
+        GeneratedEasing.EaseOut => "Ease out",
+        GeneratedEasing.EaseInOut => "Ease in and out",
+        GeneratedEasing.Hold => "Hold, then jump",
+        _ => "Linear"
+    };
 
     /// <summary>Screen pixels per template pixel: the canvas fills the editor's width, so this follows the window.</summary>
     private double Scale => (_canvasPixels > 0 ? _canvasPixels : 640) / Math.Max(1, Template.Width);
@@ -1101,8 +1488,7 @@
     {
         GeneratedLayer copy = GeneratedPromoEditing.Copy(layer);
         copy.Name = GeneratedPromoEditing.UniqueName(Template.Layers.Select(existing => existing.Name), layer.Name);
-        copy.X += 20;
-        copy.Y += 20;
+        GeneratedPromoEditing.Offset(copy, 20, 20);
         Template.Layers.Insert(Template.Layers.IndexOf(layer) + 1, copy);
         _layer = copy;
         return Commit();
@@ -1120,8 +1506,10 @@
 
     private void StartDrag(PointerEventArgs e, GeneratedLayer layer, string handle)
     {
-        _layer = layer;
-        _drag = new DragState(layer, handle, e.ClientX, e.ClientY, layer.X, layer.Y, layer.Width, layer.Height);
+        Select(layer);
+        // From where the layer is at the preview time, so an animated layer is dragged from what's on screen.
+        LayerPose pose = GeneratedPromoEditing.PoseAt(layer, Time);
+        _drag = new DragState(layer, handle, e.ClientX, e.ClientY, pose.X, pose.Y, pose.Width, pose.Height);
         // Usually already measured when the pointer came onto the canvas; this catches a resized window.
         _ = MeasureCanvas();
     }
@@ -1138,40 +1526,50 @@
         GeneratedLayer layer = drag.Layer;
         const float minimum = 8;
         drag.Moved |= Math.Abs(dx) >= 1 || Math.Abs(dy) >= 1;
-
-        if (drag.Handle == Move)
+        // A click that doesn't move the box changes nothing (and adds no keyframe).
+        if (!drag.Moved)
         {
-            float x = MathF.Round(drag.X + dx);
-            float y = MathF.Round(drag.Y + dy);
-            (layer.X, layer.Y, _snapX, _snapY) = e.AltKey
-                ? (x, y, false, false)
-                : GeneratedPromoEditing.SnapToCenter(x, y, layer.Width, layer.Height, Template.Width, Template.Height, (float)(SnapDistance / Scale));
             return;
         }
 
-        if (drag.Handle.Contains('e'))
+        (float x, float y, float width, float height) = (drag.X, drag.Y, drag.Width, drag.Height);
+        if (drag.Handle == Move)
         {
-            layer.Width = MathF.Round(Math.Max(minimum, drag.Width + dx));
+            (x, y, _snapX, _snapY) = e.AltKey
+                ? (MathF.Round(drag.X + dx), MathF.Round(drag.Y + dy), false, false)
+                : GeneratedPromoEditing.SnapToCenter(MathF.Round(drag.X + dx), MathF.Round(drag.Y + dy), width, height,
+                    Template.Width, Template.Height, (float)(SnapDistance / Scale));
+        }
+        else
+        {
+            if (drag.Handle.Contains('e'))
+            {
+                width = MathF.Round(Math.Max(minimum, drag.Width + dx));
+            }
+
+            if (drag.Handle.Contains('w'))
+            {
+                float shift = Math.Min(dx, drag.Width - minimum);
+                x = MathF.Round(drag.X + shift);
+                width = MathF.Round(drag.Width - shift);
+            }
+
+            if (drag.Handle.Contains('s'))
+            {
+                height = MathF.Round(Math.Max(minimum, drag.Height + dy));
+            }
+
+            if (drag.Handle.Contains('n'))
+            {
+                float shift = Math.Min(dy, drag.Height - minimum);
+                y = MathF.Round(drag.Y + shift);
+                height = MathF.Round(drag.Height - shift);
+            }
         }
 
-        if (drag.Handle.Contains('w'))
-        {
-            float shift = Math.Min(dx, drag.Width - minimum);
-            layer.X = MathF.Round(drag.X + shift);
-            layer.Width = MathF.Round(drag.Width - shift);
-        }
-
-        if (drag.Handle.Contains('s'))
-        {
-            layer.Height = MathF.Round(Math.Max(minimum, drag.Height + dy));
-        }
-
-        if (drag.Handle.Contains('n'))
-        {
-            float shift = Math.Min(dy, drag.Height - minimum);
-            layer.Y = MathF.Round(drag.Y + shift);
-            layer.Height = MathF.Round(drag.Height - shift);
-        }
+        // On an animated layer this sets (or adds) the keyframe at the preview time.
+        GeneratedPromoEditing.SetPose(layer, Time, new LayerPose(x, y, width, height, GeneratedPromoEditing.PoseAt(layer, Time).Opacity));
+        RequestStill(fast: true);
     }
 
     private async Task EndDrag(PointerEventArgs e)
@@ -1350,6 +1748,47 @@
     }
 
     private static readonly string[] BackgroundExtensions = [.. FileBrowsing.Images, .. FileBrowsing.Videos];
+
+    /// <summary>Every background the template picks from, the single one older templates have included.</summary>
+    private List<string> BackgroundList => GeneratedPromoEditing.Backgrounds(Template);
+
+    /// <summary>Swaps the background at <paramref name="index"/> for another file, or removes it when null.</summary>
+    private Task SetBackground(int index, string? value) => Set(() =>
+    {
+        List<string> backgrounds = BackgroundList;
+        if (index < 0 || index >= backgrounds.Count)
+        {
+            return;
+        }
+
+        if (string.Equals(_previewBackground, backgrounds[index], StringComparison.OrdinalIgnoreCase))
+        {
+            _previewBackground = string.IsNullOrWhiteSpace(value) ? null : value;
+        }
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            backgrounds.RemoveAt(index);
+        }
+        else
+        {
+            backgrounds[index] = value;
+        }
+
+        GeneratedPromoEditing.SetBackgrounds(Template, backgrounds);
+    });
+
+    /// <summary>The template's background video sound settings, kept on the template from the first change.</summary>
+    private GeneratedBackgroundSoundConfig EditBackgroundSound() => Template.BackgroundSound ??= new GeneratedBackgroundSoundConfig();
+
+    private Task AddBackgrounds(IReadOnlyList<string> picked) =>
+        Set(() => GeneratedPromoEditing.SetBackgrounds(Template, [.. BackgroundList, .. picked]));
+
+    private void PreviewBackground(string? background)
+    {
+        _previewBackground = background;
+        RequestStill();
+    }
 
     /// <summary>The editable opener list, folding in the single opener older templates may still carry.</summary>
     private static List<string> PreMessages(GeneratedVoiceConfig voice)
@@ -1691,6 +2130,9 @@
 
     private static string? Optional(ChangeEventArgs e) => string.IsNullOrWhiteSpace(Text(e)) ? null : Text(e).Trim();
 
+    /// <summary>Prefix or suffix text as typed, spaces kept (they separate it from the show); null when empty.</summary>
+    private static string? Affix(ChangeEventArgs e) => Text(e).Replace("\r", "") is { Length: > 0 } text ? text : null;
+
     private static string Number(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
 
     /// <summary>A template-pixel position or size as a percent of the canvas, so boxes follow the canvas at any width.</summary>
@@ -1742,13 +2184,70 @@
         }
         <LowPowerNotice Inline="true" Advice="LowPowerTemplateWarnings" />
         <div class="field">
-            <span>@(Template.BackgroundClip is null || GeneratedPromoResolver.UsesClip(Template.Generator) ? "Background image or video (optional; videos loop)" : "Fallback background image or video (when the episode file can't be read)")</span>
-            <FilePathPicker Value="@Template.Background" ValueChanged="value => Set(() => Template.Background = value)" KeepCopyIn="@GeneratedPromoPackages.AssetCategory"
-                            Extensions="BackgroundExtensions" Label="background image or video" Placeholder="D:\Media\Promos\Backgrounds\loop.mp4" />
+            <span>
+                @(Template.BackgroundClip is null || GeneratedPromoResolver.UsesClip(Template.Generator) ? "Background images or videos" : "Fallback background images or videos (when the episode file can't be read)")
+                (optional; videos loop; with several, one is picked at random for each promo)
+            </span>
+            <ol class="song-list background-list">
+                @foreach ((string background, int position) in BackgroundList.Select((path, index) => (path, index)))
+                {
+                    bool previewing = string.Equals(_previewBackground, background, StringComparison.OrdinalIgnoreCase);
+                    <li @key="position">
+                        <div class="song-row">
+                            <FilePathPicker Value="@background" ValueChanged="value => SetBackground(position, value)" KeepCopyIn="@GeneratedPromoPackages.AssetCategory"
+                                            Extensions="BackgroundExtensions" Label="background image or video" Placeholder="D:\Media\Promos\Backgrounds\loop.mp4" />
+                            @if (BackgroundList.Count > 1 && Template.Generator is null)
+                            {
+                                <button class="btn btn-sm" type="button" aria-pressed="@(previewing ? "true" : "false")"
+                                        title="@(previewing ? "Go back to the background this promo picks" : "Show this background in the canvas preview")"
+                                        @onclick="() => PreviewBackground(previewing ? null : background)">
+                                    @(previewing ? "Previewing" : "Preview")
+                                </button>
+                            }
+                            <button class="btn btn-sm btn-danger" type="button" aria-label="@($"Remove {Path.GetFileName(background)}")"
+                                    @onclick="() => SetBackground(position, null)">Remove</button>
+                        </div>
+                        @if (Missing(background))
+                        {
+                            <p class="hint warn">The scheduler can't find this file.</p>
+                        }
+                    </li>
+                }
+            </ol>
+            <div class="row row-wrap">
+                <FilePathPicker Multiple="true" ButtonText="@(BackgroundList.Count == 0 ? "Add a background…" : "Add more backgrounds…")" Extensions="BackgroundExtensions"
+                                Label="backgrounds" KeepCopyIn="@GeneratedPromoPackages.AssetCategory" OnPicked="AddBackgrounds" />
+                @if (BackgroundList.Count > 1 && Template.Generator is null)
+                {
+                    <span class="hint" style="margin:0;">@(_previewBackground is null ? "The canvas shows the one these shows would get." : "The canvas shows the one you're previewing.")</span>
+                }
+            </div>
         </div>
-        @if (Missing(Template.Background))
+        @if (BackgroundList.Any(background => !PromoRenderer.IsImage(background)))
         {
-            <p class="hint warn">The scheduler can't find this file.</p>
+            GeneratedBackgroundSoundConfig sound = GeneratedPromoResolver.BackgroundSound(Template);
+            <div class="grid grid-3">
+                <label class="check template-enabled">
+                    <input type="checkbox" checked="@sound.Enabled" @onchange="e => Set(() => EditBackgroundSound().Enabled = e.Value is true)" />
+                    <span>Play the background video's sound</span>
+                </label>
+                @if (sound.Enabled)
+                {
+                    <label class="field">
+                        <span>Background volume: @($"{sound.Volume:P0}")</span>
+                        <input type="range" min="0" max="100" value="@Number(sound.Volume * 100)"
+                               @onchange="e => SetNumber(e, value => EditBackgroundSound().Volume = Math.Clamp(value / 100, 0, 1))" />
+                    </label>
+                    <label class="check template-enabled">
+                        <input type="checkbox" checked="@sound.DuckUnderVoice" @onchange="e => Set(() => EditBackgroundSound().DuckUnderVoice = e.Value is true)" />
+                        <span>Lower it while the voice speaks</span>
+                    </label>
+                }
+            </div>
+            @if (sound.Enabled)
+            {
+                <p class="hint">Videos without a sound track play silently. @(BackgroundList.Any(PromoRenderer.IsImage) ? "Pictures have no sound, so promos that pick one are quiet here." : "")</p>
+            }
         }
         <label class="check">
             <input type="checkbox" checked="@(Template.BackgroundClip is not null)"

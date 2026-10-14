@@ -438,6 +438,11 @@ public static class SchedulerConfigLoader
                 }
             }
 
+            if (template.BackgroundSound is { Volume: < 0 or > 1 })
+            {
+                errors.Add($"{templateScope}.background_sound: volume must be between 0 and 1.");
+            }
+
             GeneratedLayerKind required = GeneratedPromoKinds.RequiredLayer(template.Type);
             if (template.Generator is null && !template.Layers.Any(layer => layer.Kind == required))
             {
@@ -470,6 +475,17 @@ public static class SchedulerConfigLoader
                 if (layer.Kind == GeneratedLayerKind.Image && string.IsNullOrWhiteSpace(layer.Path) && string.IsNullOrWhiteSpace(layer.VariableImage))
                 {
                     errors.Add($"{layerScope}: an image layer needs a path.");
+                }
+
+                if ((layer.VerticalAlign is { } vertical && !Enum.IsDefined(vertical)) || (layer.TextCase is { } textCase && !Enum.IsDefined(textCase)))
+                {
+                    errors.Add($"{layerScope}: vertical_align must be top, middle or bottom, and text_case as_written, upper or lower.");
+                }
+
+                if (layer.Keyframes is { } keyframes && keyframes.Any(key =>
+                        key.At < TimeSpan.Zero || key.Width <= 0 || key.Height <= 0 || key.Opacity is < 0 or > 1 || !Enum.IsDefined(key.Easing)))
+                {
+                    errors.Add($"{layerScope}: each keyframe needs a time of zero or more, a positive size and an opacity between 0 and 1.");
                 }
 
                 if (layer.UpNext is { } upNext && (upNext.Offset < 0 || upNext.ShowsAhead is < 1 or > 10))

@@ -30,7 +30,29 @@ public abstract record PromoLayer
     public TimeSpan TransitionDuration { get; init; } = TimeSpan.FromMilliseconds(400);
 
     public float Opacity { get; init; } = 1;
+
+    /// <summary>In time order; while there are any they set the bounds and opacity instead of <see cref="Bounds"/> and <see cref="Opacity"/>.</summary>
+    public IReadOnlyList<PromoKeyframe>? Keyframes { get; init; }
 }
+
+public enum PromoVerticalAlign
+{
+    Top,
+    Middle,
+    Bottom
+}
+
+public enum PromoEasing
+{
+    Linear,
+    EaseIn,
+    EaseOut,
+    EaseInOut,
+    Hold
+}
+
+/// <summary>A layer's bounds and opacity at <see cref="At"/>; <see cref="Easing"/> is how it moves on to the next one.</summary>
+public readonly record struct PromoKeyframe(TimeSpan At, SKRect Bounds, float Opacity, PromoEasing Easing = PromoEasing.Linear);
 
 public sealed record PromoRectLayer : PromoLayer
 {
@@ -53,6 +75,8 @@ public sealed record PromoTextLayer : PromoLayer
     public bool Bold { get; init; } = true;
 
     public SKTextAlign Align { get; init; } = SKTextAlign.Left;
+
+    public PromoVerticalAlign VerticalAlign { get; init; } = PromoVerticalAlign.Top;
 
     public SKColor? Shadow { get; init; } = new SKColor(0, 0, 0, 160);
 }
@@ -102,7 +126,8 @@ public sealed record PromoComposition
     public int FrameCount => (int)Math.Ceiling(Duration.TotalSeconds * Fps);
 }
 
-public readonly record struct PromoLayerFrame(float Opacity, float OffsetX, float OffsetY, float Scale);
+/// <param name="Bounds">Where the layer is at this moment: its keyframed bounds, or its own when it has none.</param>
+public readonly record struct PromoLayerFrame(float Opacity, float OffsetX, float OffsetY, float Scale, SKRect Bounds = default);
 
 public sealed record PromoMusic(string Path, double Volume, TimeSpan StartAt, TimeSpan FadeIn, TimeSpan FadeOut, bool DuckUnderVoice, bool Loop = true)
 {
@@ -224,10 +249,65 @@ public static class PromoAnimation
         float leaving = Ease(length <= 0 ? 1 : (end - time).TotalSeconds / length);
         float distance = canvasHeight * 0.12f;
 
-        var frame = new PromoLayerFrame(layer.Opacity, 0, 0, 1);
+        (SKRect bounds, float opacity) = Pose(layer.Bounds, layer.Opacity, layer.Keyframes, time);
+        var frame = new PromoLayerFrame(opacity, 0, 0, 1, bounds);
         frame = Apply(frame, layer.In, entering, distance, entering: true);
         return Apply(frame, layer.Out, leaving, distance, entering: false);
     }
+
+    /// <summary>
+    /// The bounds and opacity at <paramref name="time"/>: held at the first keyframe before it and the last after it,
+    /// and eased from each keyframe to the next in between. Without keyframes, the layer's own.
+    /// </summary>
+    public static (SKRect Bounds, float Opacity) Pose(SKRect bounds, float opacity, IReadOnlyList<PromoKeyframe>? keyframes, TimeSpan time)
+    {
+        if (keyframes is not { Count: > 0 })
+        {
+            return (bounds, opacity);
+        }
+
+        if (time <= keyframes[0].At)
+        {
+            return (keyframes[0].Bounds, keyframes[0].Opacity);
+        }
+
+        for (int index = 0; index < keyframes.Count - 1; index++)
+        {
+            PromoKeyframe from = keyframes[index];
+            PromoKeyframe to = keyframes[index + 1];
+            if (time >= to.At)
+            {
+                continue;
+            }
+
+            double span = (to.At - from.At).TotalSeconds;
+            float progress = span <= 0 ? 1 : Curve(from.Easing, (time - from.At).TotalSeconds / span);
+            return (SKRect.Create(
+                    Lerp(from.Bounds.Left, to.Bounds.Left, progress),
+                    Lerp(from.Bounds.Top, to.Bounds.Top, progress),
+                    Lerp(from.Bounds.Width, to.Bounds.Width, progress),
+                    Lerp(from.Bounds.Height, to.Bounds.Height, progress)),
+                Lerp(from.Opacity, to.Opacity, progress));
+        }
+
+        return (keyframes[^1].Bounds, keyframes[^1].Opacity);
+    }
+
+    /// <summary>How far along (0 to 1) a move with this easing is at <paramref name="progress"/> of its time.</summary>
+    public static float Curve(PromoEasing easing, double progress)
+    {
+        double t = Math.Clamp(progress, 0, 1);
+        return (float)(easing switch
+        {
+            PromoEasing.Hold => t >= 1 ? 1 : 0,
+            PromoEasing.EaseIn => t * t * t,
+            PromoEasing.EaseOut => 1 - Math.Pow(1 - t, 3),
+            PromoEasing.EaseInOut => t < 0.5 ? 4 * t * t * t : 1 - Math.Pow(-2 * t + 2, 3) / 2,
+            _ => t
+        });
+    }
+
+    private static float Lerp(float from, float to, float progress) => from + (to - from) * progress;
 
     private static PromoLayerFrame Apply(PromoLayerFrame frame, PromoTransition transition, float progress, float distance, bool entering)
     {

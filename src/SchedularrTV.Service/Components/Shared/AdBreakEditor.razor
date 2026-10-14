@@ -78,7 +78,7 @@
                         <code class="ab-path" title="@path">@path</code>
                         <span class="pill pill-muted">@(AdBreakFolderJobs.Explicit(AdBreak, path)?.Label)</span>
                         <div class="spacer"></div>
-                        <button class="btn btn-sm" type="button" @onclick="() => { AdBreakFolderJobs.Set(AdBreak, path, AdBreakFolderJobs.None); Notify(); }">Stop using</button>
+                        <button class="btn btn-sm" type="button" @onclick="() => { AdBreakFolderJobs.Set(AdBreak, path, AdBreakFolderJobs.None); return Notify(); }">Stop using</button>
                     </div>
                 }
             </div>
@@ -112,7 +112,7 @@
         <section class="card">
             <div class="card-head"><h2>Settings</h2></div>
             <label class="check">
-                <input type="checkbox" checked="@AdBreak.Seasonal" @onchange="e => { AdBreak.Seasonal = e.Value is true; Notify(); }" />
+                <input type="checkbox" checked="@AdBreak.Seasonal" @onchange="e => { AdBreak.Seasonal = e.Value is true; return Notify(); }" />
                 <span>Seasonal folders (dates, months, holidays)</span>
             </label>
             <p class="hint">
@@ -122,7 +122,7 @@
 
             <label class="field">
                 <span>Bumpers go</span>
-                <select value="@AdBreak.BumperPlacement" @onchange="e => { AdBreak.BumperPlacement = Enum.Parse<BumperPlacement>(e.Value?.ToString() ?? nameof(BumperPlacement.Mixed)); Notify(); }">
+                <select value="@AdBreak.BumperPlacement" @onchange="e => { AdBreak.BumperPlacement = Enum.Parse<BumperPlacement>(e.Value?.ToString() ?? nameof(BumperPlacement.Mixed)); return Notify(); }">
                     <option value="@BumperPlacement.Mixed">Mixed in with the ads</option>
                     <option value="@BumperPlacement.StartAndEnd">At the start and end of each break</option>
                     <option value="@BumperPlacement.Start">At the start of each break</option>
@@ -136,60 +136,60 @@
                     <label class="field">
                         <span>"Any show" folder name</span>
                         <input type="text" value="@AdBreak.AnyShowFolder" placeholder="@AdBreakConfig.DefaultAnyShowFolder"
-                               @onchange="e => { AdBreak.AnyShowFolder = Text(e); Notify(); }" />
+                               @onchange="e => { AdBreak.AnyShowFolder = Text(e); return Notify(); }" />
                     </label>
                     <label class="field">
                         <span>Most Coming Up promos per break</span>
                         <input type="number" min="0" value="@(AdBreak.MaxPromosPerBreak?.ToString() ?? "")" placeholder="2"
-                               @onchange="e => { AdBreak.MaxPromosPerBreak = Int(e); Notify(); }" />
+                               @onchange="e => { AdBreak.MaxPromosPerBreak = Int(e); return Notify(); }" />
                     </label>
                     <DurationInput Label="Look ahead for Coming Up" Value="AdBreak.Lookahead" Placeholder="12h"
-                                   ValueChanged="v => { AdBreak.Lookahead = v; Notify(); }" />
+                                   ValueChanged="v => { AdBreak.Lookahead = v; return Notify(); }" />
                 </div>
 
                 <h3>Ads</h3>
                 <div class="grid grid-2">
                     <DurationInput Label="Shortest ad" Value="Commercials.MinItemDuration"
-                                   ValueChanged="v => { Commercials.MinItemDuration = v; NotifyTuning(); }" />
+                                   ValueChanged="v => { Commercials.MinItemDuration = v; return NotifyTuning(); }" />
                     <DurationInput Label="Longest ad" Value="Commercials.MaxItemDuration"
-                                   ValueChanged="v => { Commercials.MaxItemDuration = v; NotifyTuning(); }" />
+                                   ValueChanged="v => { Commercials.MaxItemDuration = v; return NotifyTuning(); }" />
                     <DurationInput Label="Tolerance" Value="Commercials.Tolerance" Placeholder="500ms"
-                                   ValueChanged="v => { Commercials.Tolerance = v; NotifyTuning(); }" />
+                                   ValueChanged="v => { Commercials.Tolerance = v; return NotifyTuning(); }" />
                     <label class="field">
                         <span>Same ad per break, at most</span>
                         <input type="number" min="1" value="@(Commercials.MaxRepeatsPerBreak?.ToString() ?? "")" placeholder="1"
-                               @onchange="e => { Commercials.MaxRepeatsPerBreak = Int(e); NotifyTuning(); }" />
+                               @onchange="e => { Commercials.MaxRepeatsPerBreak = Int(e); return NotifyTuning(); }" />
                     </label>
                 </div>
                 <label class="field">
                     <span>Only ads matching <span class="opt">(query)</span></span>
                     <input type="text" value="@Commercials.Filter" placeholder="duration <= 60"
-                           @onchange="e => { Commercials.Filter = Text(e); NotifyTuning(); }" />
+                           @onchange="e => { Commercials.Filter = Text(e); return NotifyTuning(); }" />
                 </label>
                 <label class="check">
                     <input type="checkbox" checked="@Commercials.IsStrictFit"
-                           @onchange="e => { Commercials.StrictFit = e.Value is true ? null : false; NotifyTuning(); }" />
+                           @onchange="e => { Commercials.StrictFit = e.Value is true ? null : false; return NotifyTuning(); }" />
                     <span>Never cut an ad short (recommended)</span>
                 </label>
 
                 <h3>Filler</h3>
                 <label class="check">
                     <input type="checkbox" checked="@Filler.IsTrimmable"
-                           @onchange="e => { Filler.Trimmable = e.Value is true ? null : false; NotifyTuning(); }" />
+                           @onchange="e => { Filler.Trimmable = e.Value is true ? null : false; return NotifyTuning(); }" />
                     <span>Cut filler off to land exactly on the next show</span>
                 </label>
                 <label class="check">
                     <input type="checkbox" checked="@(Filler.Loop ?? false)"
-                           @onchange="e => { Filler.Loop = e.Value is true ? true : null; NotifyTuning(); }" />
+                           @onchange="e => { Filler.Loop = e.Value is true ? true : null; return NotifyTuning(); }" />
                     <span>Loop filler to fill a long gap</span>
                 </label>
                 <label class="check">
                     <input type="checkbox" checked="@(Filler.StopBeforeEnd ?? false)"
-                           @onchange="e => { Filler.StopBeforeEnd = e.Value is true ? true : null; NotifyTuning(); }" />
+                           @onchange="e => { Filler.StopBeforeEnd = e.Value is true ? true : null; return NotifyTuning(); }" />
                     <span>Stop at the boundary rather than hard-cutting</span>
                 </label>
                 <DurationInput Label="Don't bother with filler shorter than" Value="Filler.MinTrimmedDuration"
-                               ValueChanged="v => { Filler.MinTrimmedDuration = v; NotifyTuning(); }" />
+                               ValueChanged="v => { Filler.MinTrimmedDuration = v; return NotifyTuning(); }" />
             </details>
         </section>
 
@@ -200,13 +200,13 @@
                 <div class="ab-promo">
                     <div class="row">
                         <label class="check ab-promo-title">
-                            <input type="checkbox" checked="@promoRoot.Enabled" @onchange="e => { promoRoot.Enabled = e.Value is true; Notify(); }" />
+                            <input type="checkbox" checked="@promoRoot.Enabled" @onchange="e => { promoRoot.Enabled = e.Value is true; return Notify(); }" />
                             <strong>All promo types</strong>
                         </label>
                         <code class="ab-path" title="@promoRoot.Path">@ShortPath(promoRoot.Path)</code>
                         <div class="spacer"></div>
                         <button class="btn btn-sm btn-icon btn-danger" type="button" title="Remove" aria-label="Remove promo folder"
-                                @onclick="() => { AdBreak.PromoRoots.Remove(promoRoot); Notify(); }"><Icon Name="trash" Size="13" /></button>
+                                @onclick="() => { AdBreak.PromoRoots.Remove(promoRoot); return Notify(); }"><Icon Name="trash" Size="13" /></button>
                     </div>
                     <p class="hint">
                         Sorted by show and type in either order (<code>Looney Tunes/Back To The Show</code> or
@@ -218,15 +218,15 @@
                     </p>
                     <div class="check-row">
                         <label class="check">
-                            <input type="checkbox" checked="@promoRoot.AnyShow" @onchange="e => { promoRoot.AnyShow = e.Value is true; Notify(); }" />
+                            <input type="checkbox" checked="@promoRoot.AnyShow" @onchange="e => { promoRoot.AnyShow = e.Value is true; return Notify(); }" />
                             <span>Clips in no show's folder suit any show</span>
                         </label>
                         <label class="check">
-                            <input type="checkbox" checked="@promoRoot.Times" @onchange="e => { promoRoot.Times = e.Value is true; Notify(); }" />
+                            <input type="checkbox" checked="@promoRoot.Times" @onchange="e => { promoRoot.Times = e.Value is true; return Notify(); }" />
                             <span>Start time folders</span>
                         </label>
                         <label class="check">
-                            <input type="checkbox" checked="@promoRoot.Days" @onchange="e => { promoRoot.Days = e.Value is true; Notify(); }" />
+                            <input type="checkbox" checked="@promoRoot.Days" @onchange="e => { promoRoot.Days = e.Value is true; return Notify(); }" />
                             <span>Weekday folders</span>
                         </label>
                     </div>
@@ -246,30 +246,30 @@
                 <div class="ab-promo">
                     <div class="row">
                         <label class="check ab-promo-title">
-                            <input type="checkbox" checked="@promo.Enabled" @onchange="e => { promo.Enabled = e.Value is true; Notify(); }" />
+                            <input type="checkbox" checked="@promo.Enabled" @onchange="e => { promo.Enabled = e.Value is true; return Notify(); }" />
                             <strong>@AdBreakPromo.FolderName(promo.Type)</strong>
                         </label>
                         <code class="ab-path" title="@promo.Path">@ShortPath(promo.Path)</code>
                         <div class="spacer"></div>
                         <button class="btn btn-sm btn-icon btn-danger" type="button" title="Remove" aria-label="Remove promo"
-                                @onclick="() => { AdBreak.Promos.Remove(promo); Notify(); }"><Icon Name="trash" Size="13" /></button>
+                                @onclick="() => { AdBreak.Promos.Remove(promo); return Notify(); }"><Icon Name="trash" Size="13" /></button>
                     </div>
                     <p class="hint">@Describe(promo.Type)</p>
                     <div class="check-row">
                         <label class="check">
-                            <input type="checkbox" checked="@promo.PerShow" @onchange="e => { promo.PerShow = e.Value is true; Notify(); }" />
+                            <input type="checkbox" checked="@promo.PerShow" @onchange="e => { promo.PerShow = e.Value is true; return Notify(); }" />
                             <span>Show folders</span>
                         </label>
                         <label class="check">
-                            <input type="checkbox" checked="@promo.AnyShow" @onchange="e => { promo.AnyShow = e.Value is true; Notify(); }" />
+                            <input type="checkbox" checked="@promo.AnyShow" @onchange="e => { promo.AnyShow = e.Value is true; return Notify(); }" />
                             <span>Other clips suit any show</span>
                         </label>
                         <label class="check">
-                            <input type="checkbox" checked="@promo.Times" @onchange="e => { promo.Times = e.Value is true; Notify(); }" />
+                            <input type="checkbox" checked="@promo.Times" @onchange="e => { promo.Times = e.Value is true; return Notify(); }" />
                             <span>Start time folders</span>
                         </label>
                         <label class="check">
-                            <input type="checkbox" checked="@promo.Days" @onchange="e => { promo.Days = e.Value is true; Notify(); }" />
+                            <input type="checkbox" checked="@promo.Days" @onchange="e => { promo.Days = e.Value is true; return Notify(); }" />
                             <span>Weekday folders</span>
                         </label>
                     </div>
@@ -280,7 +280,7 @@
                             <label class="field">
                                 <span>Plays</span>
                                 <select value="@(promo.Placement ?? UpNextPlacement.AnyBreak)"
-                                        @onchange="e => { promo.Placement = Enum.Parse<UpNextPlacement>(e.Value?.ToString() ?? nameof(UpNextPlacement.AnyBreak)); Notify(); }">
+                                        @onchange="e => { promo.Placement = Enum.Parse<UpNextPlacement>(e.Value?.ToString() ?? nameof(UpNextPlacement.AnyBreak)); return Notify(); }">
                                     <option value="@UpNextPlacement.AnyBreak">In any break of the show before, among the ads</option>
                                     <option value="@UpNextPlacement.BeforeShow">Last thing before the next show</option>
                                 </select>
@@ -290,17 +290,17 @@
                         case AdPromoType.LaterToday:
                             <DurationInput Label="For a show starting within" Value="promo.Within"
                                            Placeholder="@DurationText.Format(AdBreakPromo.DefaultWithin(promo.Type))"
-                                           ValueChanged="v => { promo.Within = v; Notify(); }" />
+                                           ValueChanged="v => { promo.Within = v; return Notify(); }" />
                             break;
                         case AdPromoType.Eventually:
                             <div class="grid grid-2">
                                 <label class="field">
                                     <span>Chance a break has one (%)</span>
                                     <input type="number" min="0" max="100" step="5" value="@(promo.Chance is { } chance ? Math.Round(chance * 100).ToString() : "")" placeholder="25"
-                                           @onchange="e => { promo.Chance = Int(e) is { } percent ? Math.Clamp(percent, 0, 100) / 100.0 : null; Notify(); }" />
+                                           @onchange="e => { promo.Chance = Int(e) is { } percent ? Math.Clamp(percent, 0, 100) / 100.0 : null; return Notify(); }" />
                                 </label>
                                 <DurationInput Label="For a show airing within" Value="promo.Horizon" Placeholder="7d"
-                                               ValueChanged="v => { promo.Horizon = v; Notify(); }" />
+                                               ValueChanged="v => { promo.Horizon = v; return Notify(); }" />
                             </div>
                             break;
                     }
@@ -309,7 +309,7 @@
                     {
                         <label class="check">
                             <input type="checkbox" checked="@(promo.SkipWhenSameSeries ?? true)"
-                                   @onchange="e => { promo.SkipWhenSameSeries = e.Value is true ? null : false; Notify(); }" />
+                                   @onchange="e => { promo.SkipWhenSameSeries = e.Value is true ? null : false; return Notify(); }" />
                             <span>Skip it when the same show is on either side of the break</span>
                         </label>
                     }
@@ -332,7 +332,7 @@
                 {
                     <label class="check">
                         <input type="checkbox" checked="@(tagAds.AutoTemporalTags ?? false)"
-                               @onchange="e => { tagAds.AutoTemporalTags = e.Value is true ? true : null; Notify(); }" />
+                               @onchange="e => { tagAds.AutoTemporalTags = e.Value is true ? true : null; return Notify(); }" />
                         <span>Match seasonal tags for ads (January, Winter, 12-25, Christmas…)</span>
                     </label>
                 }
@@ -340,7 +340,7 @@
                 {
                     <label class="check">
                         <input type="checkbox" checked="@(tagFiller.AutoTemporalTags ?? false)"
-                               @onchange="e => { tagFiller.AutoTemporalTags = e.Value is true ? true : null; Notify(); }" />
+                               @onchange="e => { tagFiller.AutoTemporalTags = e.Value is true ? true : null; return Notify(); }" />
                         <span>Match seasonal tags for filler</span>
                     </label>
                 }

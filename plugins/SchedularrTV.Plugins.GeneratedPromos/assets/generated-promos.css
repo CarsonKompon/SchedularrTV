@@ -54,6 +54,56 @@
 .gp-scope .ed-timeline input[type=range], .gp-scope .ed-stage input[type=range], .gp-scope .inspector input[type=range] { width: 100%; }
 .gp-scope .ed-strip { position: relative; height: 22px; border-radius: 6px; background: rgba(255,255,255,.06); border: 1px solid var(--line); overflow: hidden; }
 .gp-scope .ed-strip-on { position: absolute; top: 0; bottom: 0; min-width: 2px; background: var(--accent); opacity: .85; }
+/* Timeline: a scrubbable ruler with the selected layer's span and keyframes. */
+.gp-scope .ed-timeline-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+.gp-scope .ed-timeline-head .spacer, .gp-scope .ed-keybar .spacer { flex: 1; }
+.gp-scope .ed-ruler {
+    position: relative; height: 46px; border-radius: 6px; border: 1px solid var(--line); background: rgba(255,255,255,.04);
+    cursor: ew-resize; touch-action: none; user-select: none; margin: 0 6px;
+}
+.gp-scope .ed-ruler:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gp-scope .ed-ruler > * { pointer-events: none; }
+.gp-scope .ed-tick { position: absolute; top: 0; height: 9px; border-left: 1px solid rgba(255,255,255,.3); }
+.gp-scope .ed-tick > span { position: absolute; top: 8px; left: 3px; font-size: 10px; line-height: 1; color: var(--muted); white-space: nowrap; }
+.gp-scope .ed-tick-end > span { left: auto; right: 3px; }
+.gp-scope .ed-span { position: absolute; bottom: 8px; height: 12px; border-radius: 4px; background: var(--accent); opacity: .3; }
+.gp-scope .ed-key {
+    position: absolute; bottom: 8px; width: 12px; height: 12px; margin-left: -6px; transform: rotate(45deg);
+    background: #fff; border: 2px solid var(--accent); border-radius: 2px; box-sizing: border-box; cursor: grab; z-index: 2;
+}
+.gp-scope .ed-ruler > .ed-key { pointer-events: auto; }
+.gp-scope .ed-key.ease-hold { border-radius: 0; background: var(--panel-2); }
+.gp-scope .ed-key.ease-easein, .gp-scope .ed-key.ease-easeout, .gp-scope .ed-key.ease-easeinout { border-radius: 50% 2px; }
+.gp-scope .ed-key.current { background: var(--accent); box-shadow: 0 0 0 2px rgba(255,255,255,.85); }
+.gp-scope .ed-playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #ff3da8; z-index: 3; }
+.gp-scope .ed-playhead::before {
+    content: ""; position: absolute; top: 0; left: -4px; border: 5px solid transparent; border-top-color: #ff3da8;
+}
+.gp-scope .ed-keybar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; min-height: 34px; }
+.gp-scope .ed-keybar .hint { margin: 0; }
+.gp-scope .ed-keyfield { display: flex; align-items: center; gap: 4px; font-size: 12.5px; white-space: nowrap; }
+.gp-scope .ed-keyfield input { width: 76px; }
+.gp-scope .drag-overlay.drag-time { cursor: ew-resize; }
+.gp-scope .layer-box.keyed .layer-tag { font-weight: 600; }
+/* Text alignment: a 3 × 3 pad, each cell drawing three lines where the text would sit. */
+.gp-scope .align-grid { display: grid; grid-template-columns: repeat(3, 34px); grid-auto-rows: 28px; gap: 3px; }
+.gp-scope .align-cell {
+    display: flex; padding: 4px 5px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); cursor: pointer;
+}
+.gp-scope .align-cell:hover { border-color: var(--muted); }
+.gp-scope .align-cell.selected { border-color: var(--accent); background: var(--accent); }
+.gp-scope .align-lines { display: flex; flex-direction: column; gap: 2px; width: 100%; height: 100%; }
+.gp-scope .align-lines i { display: block; height: 2px; border-radius: 1px; background: var(--muted); }
+.gp-scope .align-cell.selected .align-lines i { background: #fff; }
+.gp-scope .align-lines i:nth-child(1) { width: 75%; }
+.gp-scope .align-lines i:nth-child(2) { width: 45%; }
+.gp-scope .align-lines i:nth-child(3) { width: 60%; }
+.gp-scope .align-lines.h-left { align-items: flex-start; }
+.gp-scope .align-lines.h-center { align-items: center; }
+.gp-scope .align-lines.h-right { align-items: flex-end; }
+.gp-scope .align-lines.v-top { justify-content: flex-start; }
+.gp-scope .align-lines.v-middle { justify-content: center; }
+.gp-scope .align-lines.v-bottom { justify-content: flex-end; }
 .gp-scope .ed-colour { width: 56px; height: 34px; padding: 2px; }
 .gp-scope .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .gp-scope .check-stack { display: grid; gap: 6px; align-content: end; padding-bottom: 10px; }

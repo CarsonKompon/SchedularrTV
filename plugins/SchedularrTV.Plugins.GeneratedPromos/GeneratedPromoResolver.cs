@@ -136,6 +136,12 @@ public static partial class GeneratedPromoResolver
             identity += $"|clip|{source.Path}|{source.Start.Ticks}";
         }
 
+        // Background videos once played silently; promos that now play one's sound are rendered again.
+        if (BackgroundSound(template).Enabled && template.BackgroundChoices.Any(path => !PromoRenderer.IsImage(path)))
+        {
+            identity += "|background-sound";
+        }
+
         IReadOnlyList<string> arguments = template.Generator is { } generator
             ? GeneratorArguments(generator, template, channelName, used, zone, promoTime, clip, images)
             : [];
@@ -319,6 +325,7 @@ public static partial class GeneratedPromoResolver
         GeneratedPromoTemplate template = promo.Template;
         // A generator that is handed the clip plays it itself, so it isn't laid underneath as well.
         string? clipPath = template.BackgroundClip is null || UsesClip(template.Generator) ? null : promo.ClipPath;
+        string? background = clipPath ?? Background(template.BackgroundChoices, promo.Key);
         return new PromoComposition
         {
             Width = template.Width,
@@ -326,14 +333,19 @@ public static partial class GeneratedPromoResolver
             Fps = template.Fps,
             Duration = template.Duration,
             BackgroundColor = SKColor.Parse(template.BackgroundColor),
-            BackgroundPath = clipPath ?? (string.IsNullOrWhiteSpace(template.Background) ? null : template.Background),
+            BackgroundPath = background,
             BackgroundStart = clipPath is null ? TimeSpan.Zero : promo.ClipStart,
-            BackgroundAudio = clipPath is not null && template.BackgroundClip is { IncludeAudio: true } clip
-                ? new PromoMusic(clipPath, clip.Volume, promo.ClipStart, TimeSpan.FromMilliseconds(300), TimeSpan.FromMilliseconds(600), clip.DuckUnderVoice)
-                {
-                    Levels = ClipLevels(template)
-                }
-                : null,
+            BackgroundAudio = clipPath is not null
+                ? template.BackgroundClip is { IncludeAudio: true } clip
+                    ? new PromoMusic(clipPath, clip.Volume, promo.ClipStart, TimeSpan.FromMilliseconds(300), TimeSpan.FromMilliseconds(600), clip.DuckUnderVoice)
+                    {
+                        Levels = ClipLevels(template)
+                    }
+                    : null
+                // A background video loops with its own sound (the render drops it if the file has none).
+                : background is not null && !PromoRenderer.IsImage(background) && BackgroundSound(template) is { Enabled: true } sound
+                    ? new PromoMusic(background, sound.Volume, TimeSpan.Zero, TimeSpan.FromMilliseconds(300), TimeSpan.FromMilliseconds(600), sound.DuckUnderVoice)
+                    : null,
             OverlayPath = generated,
             OverlayAudio = generated is not null && template.Generator is { KeepAudio: true } generator
                 ? new PromoMusic(generated, generator.Volume, TimeSpan.Zero, TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(300), generator.DuckUnderVoice, Loop: false)
@@ -367,14 +379,38 @@ public static partial class GeneratedPromoResolver
                 In = Enum.Parse<PromoTransition>(layer.TransitionIn.ToString()),
                 Out = Enum.Parse<PromoTransition>(layer.TransitionOut.ToString()),
                 TransitionDuration = layer.TransitionDuration,
-                Opacity = layer.Opacity
+                Opacity = layer.Opacity,
+                Keyframes = Keyframes(layer)
             })];
         return blockers.Count == 0 ? null : PromoAudioEnvelope.ForBlockers(blockers, template.Duration);
     }
 
+    /// <summary>How a background video's sound plays: the template's settings, or the usual ones (on) when it has none.</summary>
+    public static GeneratedBackgroundSoundConfig BackgroundSound(GeneratedPromoTemplate template) =>
+        template.BackgroundSound ?? new GeneratedBackgroundSoundConfig();
+
+    /// <summary>The layer's keyframes in time order for drawing, or null when it has none.</summary>
+    public static IReadOnlyList<PromoKeyframe>? Keyframes(GeneratedLayer layer) =>
+        layer.Keyframes is { Count: > 0 } keyframes
+            ? keyframes
+                .OrderBy(key => key.At)
+                .Select(key => new PromoKeyframe(key.At, SKRect.Create(key.X, key.Y, key.Width, key.Height), key.Opacity,
+                    Enum.Parse<PromoEasing>(key.Easing.ToString())))
+                .ToList()
+            : null;
+
     /// <summary>One song per promo, fixed by its content so a re-render sounds the same.</summary>
     public static string Song(IReadOnlyList<string> songs, string key) =>
         songs[(int)(BitConverter.ToUInt32(SHA256.HashData(Encoding.UTF8.GetBytes($"{key}|song"))) % (uint)songs.Count)];
+
+    /// <summary>One background per promo, picked at random but fixed by its content so a re-render looks the same; null when there are none.</summary>
+    public static string? Background(IReadOnlyList<string> backgrounds, string key) =>
+        backgrounds.Count switch
+        {
+            0 => null,
+            1 => backgrounds[0],
+            _ => backgrounds[(int)(BitConverter.ToUInt32(SHA256.HashData(Encoding.UTF8.GetBytes($"{key}|background"))) % (uint)backgrounds.Count)]
+        };
 
     private static string Script(
         GeneratedPromoType type,
@@ -420,16 +456,31 @@ public static partial class GeneratedPromoResolver
         DateTimeOffset airsAt) =>
         layer.Kind switch
         {
-            GeneratedLayerKind.UpNext => [.. listings
+            GeneratedLayerKind.UpNext => Affix([.. listings
                 .Skip(layer.UpNext?.Offset ?? 0)
                 .Take(layer.UpNext?.ShowsAhead ?? 1)
                 .Select(listing => layer.UpNext?.IncludeTime == true
                     ? $"{UpNextPromo.Clock(listing.Start, zone)}  {listing.Title}"
-                    : listing.Title)],
+                    : listing.Title)], layer.UpNext?.Prefix, layer.UpNext?.Suffix, channelName),
             GeneratedLayerKind.Text => (Tokens(layer.Text, channelName) ?? string.Empty).Replace("\r\n", "\n").Split('\n'),
             _ when GeneratedPromoKinds.IsShowLayer(layer.Kind) => ShowLines(layer, listings[0], zone, airsAt),
             _ => []
         };
+
+    /// <summary>
+    /// <paramref name="prefix"/> joined onto the first line and <paramref name="suffix"/> onto the last; new lines in
+    /// either start lines of their own. Nothing is added when there are no shows to list.
+    /// </summary>
+    private static IReadOnlyList<string> Affix(List<string> lines, string? prefix, string? suffix, string channelName)
+    {
+        if (lines.Count == 0 || (string.IsNullOrEmpty(prefix) && string.IsNullOrEmpty(suffix)))
+        {
+            return lines;
+        }
+
+        string text = Tokens(prefix, channelName) + string.Join('\n', lines) + Tokens(suffix, channelName);
+        return text.Replace("\r\n", "\n").Split('\n');
+    }
 
     private static IReadOnlyList<string> ShowLines(GeneratedLayer layer, UpNextListing show, TimeZoneInfo zone, DateTimeOffset airsAt)
     {
@@ -464,7 +515,19 @@ public static partial class GeneratedPromoResolver
                 && lines.Any(line => line.Length > 0) => new PromoTextLayer
             {
                 Bounds = bounds,
-                Lines = lines,
+                // Cased here rather than when the lines are worked out, so AI-written text is cased too.
+                Lines = layer.TextCase switch
+                {
+                    GeneratedTextCase.Upper => lines.Select(line => line.ToUpperInvariant()).ToList(),
+                    GeneratedTextCase.Lower => lines.Select(line => line.ToLowerInvariant()).ToList(),
+                    _ => lines
+                },
+                VerticalAlign = layer.VerticalAlign switch
+                {
+                    GeneratedVerticalAlign.Middle => PromoVerticalAlign.Middle,
+                    GeneratedVerticalAlign.Bottom => PromoVerticalAlign.Bottom,
+                    _ => PromoVerticalAlign.Top
+                },
                 Color = color,
                 MaxFontSize = layer.FontSize,
                 FontFamily = layer.FontFamily,
@@ -487,7 +550,8 @@ public static partial class GeneratedPromoResolver
             In = Enum.Parse<PromoTransition>(layer.TransitionIn.ToString()),
             Out = Enum.Parse<PromoTransition>(layer.TransitionOut.ToString()),
             TransitionDuration = layer.TransitionDuration,
-            Opacity = layer.Opacity
+            Opacity = layer.Opacity,
+            Keyframes = Keyframes(layer)
         };
     }
 }

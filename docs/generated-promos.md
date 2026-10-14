@@ -16,11 +16,63 @@
 2. Add a template and set its type and duration.
 3. Add the matching show layer, text, images, and background.
 4. Set the voice and optional **Background music**.
-5. Drag or resize layers and inspect transitions on the timeline.
+5. Drag or resize layers, scrub the timeline to check transitions, and add keyframes to animate layers.
 6. Select **Render preview video**.
 7. Select **Save changes**.
 
 Hold **Alt** while dragging to bypass snapping. **Browse** opens a file dialog on the scheduler's computer; from another device, enter a server-readable path.
+
+Drag along the timeline under the canvas to scrub: the preview redraws as you drag. With the timeline focused, **←/→** step one frame (**Shift** for a second), **Home/End** jump to either end.
+
+### Text style
+
+Text, show and Up Next layers shrink their text to fit the box. The **Align in its box** pad sets both directions at once: left, centre or right, and top, middle or bottom. **Letters** can make every letter uppercase or lowercase, including show titles and AI-written text. In YAML these are `align`, `vertical_align` (`top`, `middle`, `bottom`; top when left out) and `text_case` (`upper` or `lower`; as written when left out).
+
+### Backgrounds
+
+Add one or more background images or videos. With several, each promo picks one at random; the pick is fixed by what the promo is, so re-rendering it looks the same. **Preview** on a background shows it on the canvas instead of the one the sample shows would get. In YAML, the first is `background` and the rest are `backgrounds`:
+
+A background video plays its own sound by default, looping with the picture. Under the background list, untick **Play the background video's sound** to mute it, or set its volume and whether it dips while the voice speaks. Videos without a sound track play silently. The episode clip has its own sound settings and isn't affected. **Lower the music while the episode clip's (or background video's) sound plays** also follows a background video's sound.
+
+```yaml
+background_sound: # Optional; left out, a video's sound plays at full volume and dips under the voice
+  enabled: true
+  volume: 0.6
+  duck_under_voice: true
+background: 'D:\Media\Promos\Backgrounds\blue.mp4'
+backgrounds:
+  - 'D:\Media\Promos\Backgrounds\red.mp4'
+  - 'D:\Media\Promos\Backgrounds\stars.png'
+```
+
+### Keyframes
+
+Select a layer and choose **◆ Animate with keyframes** under the timeline. Its position, size and opacity then come from keyframes, shown as diamonds on the timeline while the layer is selected:
+
+- Move the playhead and drag or resize the box (or change its numbers) to set a keyframe at that time; one is added if there isn't one there yet. **◆ Add keyframe** adds one without changing anything.
+- Drag a diamond to retime it. Clicking one jumps to it; **◀ / ▶** step between them, **K** adds one and **Delete** removes the one under the playhead.
+- **Then** sets how the layer moves on to the next keyframe: **Linear**, **Ease in**, **Ease out**, **Ease in and out**, or **Hold, then jump**.
+- **Stop animating** removes every keyframe and leaves the layer where it is at the playhead.
+
+The layer holds its first keyframe's pose before it and its last one's after it. Keyframe times are from the start of the promo, and the layer's own appear/leave times and enter/exit transitions still apply on top. In YAML:
+
+```yaml
+keyframes:
+  - at: 0.5s
+    x: -400
+    y: 420
+    width: 1060
+    height: 170
+    opacity: 1
+    easing: ease_out # linear, ease_in, ease_out, ease_in_out or hold
+  - at: 1.2s
+    x: 180
+    y: 420
+    width: 1060
+    height: 170
+    opacity: 1
+    easing: linear
+```
 
 ## Choose a promo type
 
@@ -34,7 +86,7 @@ Hold **Alt** while dragging to bypass snapping. **Browse** opens a file dialog o
 | **You're Watching** | Start of a mid-roll break | `youre_watching` |
 | **Back to the Show** | End of a mid-roll break | `back_to_the_show` |
 
-**Up Next** layers can show additional programmes through **offset**, **shows ahead**, and start-time settings. Coming Up and Eventually use the built schedule when available; unresolved targets retain stand-in commercials.
+**Up Next** layers can show additional programmes through **offset**, **shows ahead**, and start-time settings. **Before the shows** and **After the shows** add text inside the same layer, joined onto the first and last show with spaces kept: `prefix: 'Up next: '` and `suffix: ' on {channel}'` give "Up next: Rugrats on Nick". A new line in either puts it on a line of its own. Coming Up and Eventually use the built schedule when available; unresolved targets retain stand-in commercials.
 
 ## Variable images
 

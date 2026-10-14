@@ -30,6 +30,17 @@ public static class GeneratedPromoPackages
     public static async Task MapPathsAsync(GeneratedPromoTemplate template, Func<string?, Task<string?>> map)
     {
         template.Background = await map(template.Background).ConfigureAwait(false);
+        if (template.Backgrounds is { } backgrounds)
+        {
+            List<string> mapped = [];
+            foreach (string background in backgrounds)
+            {
+                if (await map(background).ConfigureAwait(false) is { Length: > 0 } path) mapped.Add(path);
+            }
+
+            template.Backgrounds = mapped.Count == 0 ? null : mapped;
+        }
+
         foreach (GeneratedLayer layer in template.Layers)
         {
             layer.Path = await map(layer.Path).ConfigureAwait(false);
