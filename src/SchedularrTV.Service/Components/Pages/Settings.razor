@@ -158,8 +158,14 @@
 
 <div class="card">
     <div class="card-head"><h2>Ads, bumpers, filler and promos</h2></div>
+    <div class="field">
+        <span>Default ad breaks</span>
+        <AdBreakPicker Values="Global.DefaultAdBreaks" ValuesChanged="v => { Global.DefaultAdBreaks = v; Editor.MarkDirty(); }"
+                       EmptyText="None: channels without their own have empty breaks" />
+    </div>
     <p class="hint">
-        Set up in <a href="ad-breaks">Ad Breaks</a>, then picked per channel on its <strong>Ad breaks</strong> tab.
+        Used by every channel that doesn't pick its own on its <strong>Ad breaks</strong> tab (and by their blocks that don't
+        either). Set them up in <a href="ad-breaks">Ad Breaks</a>.
     </p>
 </div>
 

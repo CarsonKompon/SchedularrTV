@@ -202,7 +202,7 @@
                 else
                 {
                     <p class="hint">Pick the ad breaks this channel uses; their ads, bumpers, filler and promos are pooled.</p>
-                    <AdBreakPicker Values="_adBreaks" ValuesChanged="v => _adBreaks = v" EmptyText="None: breaks stay empty (black)" />
+                    <AdBreakPicker Values="_adBreaks" ValuesChanged="v => _adBreaks = v" EmptyText="@(Editor.Working.Settings.DefaultAdBreaks is { Count: > 0 } defaults ? $"None: uses the defaults ({string.Join(", ", defaults)})" : "None: breaks stay empty (black)")" />
                     @if (_commercialRoots.Count > 0)
                     {
                         <button class="btn btn-sm" type="button" @onclick="() => _creatingAdBreak = true">
@@ -482,8 +482,8 @@
             _commercialRoots = [];
         }
 
-        // With a single ad break about, it's very likely the one this channel wants.
-        if (Editor.Working.AdBreaks.Count == 1)
+        // With a single ad break about (and no defaults to fall back on), it's very likely the one this channel wants.
+        if (Editor.Working.AdBreaks.Count == 1 && Editor.Working.Settings.DefaultAdBreaks is not { Count: > 0 })
         {
             _adBreaks = [Editor.Working.AdBreaks.Keys.First()];
         }
@@ -693,6 +693,7 @@
 
     private string BreakSummary() =>
         _adBreaks is { Count: > 0 } ? $"Ad breaks: {string.Join(", ", _adBreaks)}"
+        : Editor.Working.Settings.DefaultAdBreaks is { Count: > 0 } defaults ? $"The default ad breaks: {string.Join(", ", defaults)}"
         : "No ad breaks yet; breaks are short black gaps";
 
     private void AdBreakCreated(string name)

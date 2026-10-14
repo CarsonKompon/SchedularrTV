@@ -323,7 +323,7 @@ else
                 <span class="muted">Where this channel's ads, bumpers, filler and promos come from</span>
             </div>
             <AdBreakPicker Values="_channel.AdBreaks" ValuesChanged="SetAdBreaks"
-                           EmptyText="None chosen: breaks stay empty" />
+                           EmptyText="@(Editor.Working.Settings.DefaultAdBreaks is { Count: > 0 } defaults ? $"None chosen: uses the defaults ({string.Join(", ", defaults)})" : "None chosen: breaks stay empty")" />
             <p class="hint">
                 Pick one or more from <a href="ad-breaks">Ad Breaks</a>, e.g. an "Any channel" set and a "Kids channel" set;
                 their clips are pooled. Blocks can pick their own on the Blocks &amp; anchors tab.

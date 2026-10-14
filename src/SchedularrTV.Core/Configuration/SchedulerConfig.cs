@@ -78,6 +78,12 @@ public sealed class SchedulerSettings
     /// </summary>
     public bool? AdBreaksMigrated { get; set; }
 
+    /// <summary>
+    /// Ad breaks (<see cref="SchedulerConfig.AdBreaks"/>) for channels that don't pick their own. Empty leaves such
+    /// channels with empty breaks.
+    /// </summary>
+    public List<string>? DefaultAdBreaks { get; set; }
+
     /// <summary>Extra entropy folded into every deterministic seed; changing it reshuffles everything.</summary>
     public string Seed { get; set; } = "schedularrtv";
 

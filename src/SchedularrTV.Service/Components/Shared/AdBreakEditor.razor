@@ -695,9 +695,7 @@
         return [.. source.SelectMany(channel => FolderLayouts.ExampleShows(channel)).Distinct(StringComparer.OrdinalIgnoreCase).Take(3)];
     }
 
-    private bool Uses(ChannelConfig channel) =>
-        (channel.AdBreaks?.Contains(Name, StringComparer.OrdinalIgnoreCase) ?? false)
-        || channel.Blocks.Any(block => block.AdBreaks?.Contains(Name, StringComparer.OrdinalIgnoreCase) ?? false);
+    private bool Uses(ChannelConfig channel) => AdBreakNames.Uses(Editor.Working, channel, Name);
 
     private List<(string Label, string Href)> UsedBy =>
     [

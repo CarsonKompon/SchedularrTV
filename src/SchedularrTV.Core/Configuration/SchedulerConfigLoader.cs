@@ -140,6 +140,8 @@ public static class SchedulerConfigLoader
             ValidateSelector(selector, $"global_collections.{key}", config, errors);
         }
 
+        ValidateAdBreakNames(config.Settings.DefaultAdBreaks, "settings.default_ad_breaks", config, errors);
+
         foreach ((string key, AdBreakConfig adBreak) in config.AdBreaks)
         {
             string scope = $"ad_breaks.{key}";
@@ -704,6 +706,8 @@ public static class SchedulerConfigLoader
         {
             NormalizeAdBreak(adBreak);
         }
+
+        config.Settings.DefaultAdBreaks = UniqueNames(config.Settings.DefaultAdBreaks);
 
         config.Settings.ExcludedLibraries = Unique(config.Settings.ExcludedLibraries) ?? [];
         config.Settings.Plugins = NormalizePluginSections(config.Settings.Plugins);

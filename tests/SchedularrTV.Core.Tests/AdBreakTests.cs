@@ -130,6 +130,22 @@ public class AdBreakTests
     }
 
     [Fact]
+    public void Channels_without_their_own_ad_breaks_use_the_defaults()
+    {
+        AdBreakConfig kids = new() { Folders = [new AdBreakFolder { Path = @"D:\Media\Commercials\Kids\Ads", Role = AdFolderRole.Ads }] };
+        SchedulerConfig config = Config(AnyChannel(), kids);
+        config.Settings.AdBreaksMigrated = true;
+        config.Settings.DefaultAdBreaks = ["Break 1"];
+
+        QueryExpression Ads(ChannelConfig channel) => InterstitialQueryBuilder.BuildCommercials(
+            SchedulingEngine.ResolveInterstitials(config, channel, null).Commercials!, July, new TemporalTagOptions());
+
+        MediaItem toy = Clip(@"D:\Media\Commercials\Kids\Ads\toy.mp4");
+        Assert.True(QueryEvaluator.Matches(toy, Ads(Channel())));
+        Assert.False(QueryEvaluator.Matches(toy, Ads(Channel("Break 0"))));
+    }
+
+    [Fact]
     public void Seasonal_folders_only_play_in_season()
     {
         InterstitialsConfig breaks = SchedulingEngine.ResolveInterstitials(Config(AnyChannel(seasonal: true)), Channel("Break 0"), null);

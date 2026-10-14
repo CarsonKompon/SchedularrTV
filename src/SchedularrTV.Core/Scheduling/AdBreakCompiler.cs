@@ -14,19 +14,25 @@ namespace SchedularrTV.Core.Scheduling;
 public static class AdBreakCompiler
 {
     /// <summary>
-    /// The ad breaks in use for a block (its own, else the channel's). Once a schedule's settings have been moved into
-    /// ad breaks, none means empty breaks; before that, null: the tag-based settings apply.
+    /// The ad breaks in use for a block: its own, else the channel's, else the schedule's defaults. Once a schedule's
+    /// settings have been moved into ad breaks, none means empty breaks; before that, null: the tag-based settings apply.
     /// </summary>
     public static IReadOnlyList<AdBreakConfig>? InUse(SchedulerConfig config, ChannelConfig channel, BlockConfig? block)
     {
-        List<string>? names = block?.AdBreaks is { Count: > 0 } own ? own : channel.AdBreaks;
-        if (names is not { Count: > 0 })
+        IReadOnlyList<string> names = Names(config, channel, block);
+        if (names.Count == 0)
         {
             return config.Settings.AdBreaksMigrated == true ? [] : null;
         }
 
         return [.. names.Select(name => config.AdBreaks.GetValueOrDefault(name)).OfType<AdBreakConfig>()];
     }
+
+    /// <summary>The names of the ad breaks a block uses: its own, else its channel's, else the schedule's defaults.</summary>
+    public static IReadOnlyList<string> Names(SchedulerConfig config, ChannelConfig channel, BlockConfig? block = null) =>
+        block?.AdBreaks is { Count: > 0 } own ? own
+        : channel.AdBreaks is { Count: > 0 } channels ? channels
+        : config.Settings.DefaultAdBreaks ?? [];
 
     /// <summary>The block-boundary folders, pooled across the block's own or inherited ad break collections.</summary>
     internal static IReadOnlyList<AdPoolSource> BlockSources(SchedulerConfig config, ChannelConfig channel, BlockConfig block, AdFolderRole role) =>

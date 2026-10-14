@@ -65,7 +65,7 @@ With seasonal folders on, a promo under a month, season, holiday or date folder 
 3. Add interstitial shows and mid-rolls on the same tab if wanted.
 4. Select **Save changes**.
 
-A block can use its own ad breaks: open it under **Blocks & anchors** and pick them under **Ad breaks**; left empty, it uses the channel's. A channel with no ad breaks has empty (black) breaks.
+A block can use its own ad breaks: open it under **Blocks & anchors** and pick them under **Ad breaks**; left empty, it uses the channel's. A channel that picks none uses the **Default ad breaks** set under **Channel settings → Ads, bumpers, filler and promos**; with no defaults either, its breaks are empty (black).
 
 ## Fine tuning
 

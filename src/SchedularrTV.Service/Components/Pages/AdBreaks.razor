@@ -81,9 +81,7 @@ else
         Nav.NavigateTo(Href(name));
     }
 
-    private int UsedBy(string name) => Editor.Working.Channels.Count(channel =>
-        (channel.AdBreaks?.Contains(name, StringComparer.OrdinalIgnoreCase) ?? false)
-        || channel.Blocks.Any(block => block.AdBreaks?.Contains(name, StringComparer.OrdinalIgnoreCase) ?? false));
+    private int UsedBy(string name) => Editor.Working.Channels.Count(channel => AdBreakNames.Uses(Editor.Working, channel, name));
 
     private void Remove(string key)
     {

@@ -387,7 +387,8 @@ public sealed class ScheduleCoordinator(
     {
         // The ad breaks the channel and its blocks use: editing one rebuilds just the channels that use it.
         SortedDictionary<string, AdBreakConfig> adBreaks = new(StringComparer.OrdinalIgnoreCase);
-        foreach (string name in (channel.AdBreaks ?? []).Concat(channel.Blocks.SelectMany(block => block.AdBreaks ?? [])))
+        // A channel (or block) with none of its own uses the defaults.
+        foreach (string name in AdBreakCompiler.Names(config, channel).Concat(channel.Blocks.SelectMany(block => AdBreakCompiler.Names(config, channel, block))))
         {
             if (config.AdBreaks.TryGetValue(name, out AdBreakConfig? adBreak))
             {

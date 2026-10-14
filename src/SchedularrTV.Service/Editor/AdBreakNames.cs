@@ -1,4 +1,5 @@
 using SchedularrTV.Core.Configuration;
+using SchedularrTV.Core.Scheduling;
 
 namespace SchedularrTV.Service.Editor;
 
@@ -9,6 +10,7 @@ public static class AdBreakNames
     public static void Remove(SchedulerConfig config, string name)
     {
         config.AdBreaks.Remove(name);
+        config.Settings.DefaultAdBreaks = Without(config.Settings.DefaultAdBreaks, name);
         foreach (ChannelConfig channel in config.Channels)
         {
             channel.AdBreaks = Without(channel.AdBreaks, name);
@@ -40,6 +42,7 @@ public static class AdBreakNames
 
         config.AdBreaks.Remove(from);
         config.AdBreaks[renamed] = adBreak;
+        config.Settings.DefaultAdBreaks = Renamed(config.Settings.DefaultAdBreaks, from, renamed);
         foreach (ChannelConfig channel in config.Channels)
         {
             channel.AdBreaks = Renamed(channel.AdBreaks, from, renamed);
@@ -51,6 +54,11 @@ public static class AdBreakNames
 
         return null;
     }
+
+    /// <summary>Whether a channel uses an ad break: picked itself or by one of its blocks, or by default for picking none.</summary>
+    public static bool Uses(SchedulerConfig config, ChannelConfig channel, string name) =>
+        AdBreakCompiler.Names(config, channel).Contains(name, StringComparer.OrdinalIgnoreCase)
+        || channel.Blocks.Any(block => block.AdBreaks?.Contains(name, StringComparer.OrdinalIgnoreCase) ?? false);
 
     private static List<string>? Without(List<string>? names, string key) =>
         names?.Where(name => !string.Equals(name, key, StringComparison.OrdinalIgnoreCase)).ToList() is { Count: > 0 } left ? left : null;

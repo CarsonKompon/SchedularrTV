@@ -273,7 +273,8 @@
 
     private ChannelConfig? OwningChannel => Channel ?? Editor.Working.Channels.FirstOrDefault(channel => channel.Blocks.Contains(Block));
 
-    private List<string>? ChannelAdBreaks => OwningChannel?.AdBreaks;
+    // The channel's own, else the schedule's defaults: what the block uses when it picks none.
+    private IReadOnlyList<string>? ChannelAdBreaks => OwningChannel is { } channel ? AdBreakCompiler.Names(Editor.Working, channel) : null;
 
     private async Task OnAdBreaksChanged(List<string>? names)
     {
