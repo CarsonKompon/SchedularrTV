@@ -1,0 +1,42 @@
+@* One folder of a pick-a-folder tree, then (when open) the folders inside it. *@
+
+@{
+    bool open = Open.Contains(Folder.Path);
+    bool selected = Selected is not null && AdBreakPaths.Same(Selected, Folder.Path);
+}
+
+<div class="ftp-row @(selected ? "selected" : "")" style="--depth:@Depth" role="treeitem" aria-selected="@(selected ? "true" : "false")">
+    @if (Folder.Children.Count > 0)
+    {
+        <button class="ftp-toggle" type="button" aria-label="@(open ? "Collapse" : "Expand")" @onclick="() => OnToggle.InvokeAsync(Folder)">
+            <Icon Name="@(open ? "chevron-down" : "chevron-right")" Size="14" />
+        </button>
+    }
+    else
+    {
+        <span class="ftp-toggle"></span>
+    }
+    <button class="ftp-pick" type="button" title="@Folder.Path" @onclick="() => OnSelect.InvokeAsync(Folder)">
+        <Icon Name="@(Depth == 0 ? "library" : "folder")" Size="14" />
+        <span class="ftp-name">@Folder.Name</span>
+        <span class="ftp-count">@Folder.TotalClips</span>
+    </button>
+</div>
+
+@if (open)
+{
+    @foreach (CommercialFolder child in Folder.Children)
+    {
+        <FolderTreePickerNode @key="child.Path" Folder="child" Depth="Depth + 1" Open="Open" Selected="@Selected"
+                              OnToggle="OnToggle" OnSelect="OnSelect" />
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public CommercialFolder Folder { get; set; } = default!;
+    [Parameter] public int Depth { get; set; }
+    [Parameter, EditorRequired] public HashSet<string> Open { get; set; } = default!;
+    [Parameter] public string? Selected { get; set; }
+    [Parameter] public EventCallback<CommercialFolder> OnToggle { get; set; }
+    [Parameter] public EventCallback<CommercialFolder> OnSelect { get; set; }
+}

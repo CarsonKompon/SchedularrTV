@@ -1,0 +1,24 @@
+.abt { margin-bottom: 16px; }
+.abt-bar { display: flex; height: 38px; border: 1px solid var(--line); background: var(--bg-elev); overflow: hidden; }
+.abt-cell { flex-basis: 0; min-width: 2px; border-right: 1px solid var(--bg); display: flex; align-items: center; overflow: hidden; }
+.abt-cell span { padding: 0 8px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+
+.kind-show { background: color-mix(in srgb, var(--program) 35%, transparent); }
+.kind-ad { background: var(--commercial); }
+.kind-bumper { background: var(--interstitial); }
+.kind-filler { background: var(--filler); }
+.kind-promo { background: var(--promo); }
+.kind-padding { background: repeating-linear-gradient(45deg, #000, #000 4px, #222 4px, #222 8px); }
+
+.abt-breaks { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; }
+.abt-break { border: 1px solid var(--line); padding: 8px 10px; min-width: 0; }
+.abt-break-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.abt-break ol { margin: 0; padding-left: 18px; display: grid; gap: 3px; font-size: 12px; }
+.abt-break li { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.abt-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.abt-note { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.abt-dur { color: var(--faint); font-variant-numeric: tabular-nums; }
+.abt-dot { display: inline-block; width: 9px; height: 9px; flex: none; }
+
+.abt-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+.abt-legend > span { display: inline-flex; align-items: center; gap: 5px; }

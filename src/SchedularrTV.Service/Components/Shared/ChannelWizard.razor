@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject ConfigEditor Editor
 @inject LibraryBrowser Library
+@inject CommercialTree CommercialFolderTree
 @inject IEnumerable<IMediaSourceInfo> Sources
 @using SchedularrTV.Providers.ErsatzTv
 
@@ -194,49 +195,28 @@
 
             case 4:
                 <h2>Ad breaks</h2>
-                @if (Editor.Working.AdBreaks.Count > 0)
+                @if (_creatingAdBreak)
                 {
-                    <p class="hint">Pick the ad breaks this channel uses (their ads, bumpers, filler and promos are pooled).</p>
-                    <AdBreakPicker Values="_adBreaks" ValuesChanged="v => _adBreaks = v" EmptyText="None: use the folder picks below" />
-                }
-                @if (_adBreaks is { Count: > 0 })
-                {
-                    <p class="hint">Change them later on the channel's Ad breaks tab, or edit the ad breaks themselves under Ad Breaks.</p>
-                }
-                else if (_folders.Roots.Count == 0)
-                {
-                    <p>
-                        No commercials found. Add them in <strong>App settings → Commercials library</strong>.
-                        Unfilled breaks may show black gaps.
-                    </p>
+                    <AdBreakWizard Embedded="true" Roots="_commercialRoots" OnCreated="AdBreakCreated" OnCancel="() => _creatingAdBreak = false" />
                 }
                 else
                 {
-                    <label class="check">
-                        <input type="checkbox" checked="@_useCommercials" @onchange="e => _useCommercials = e.Value is true" />
-                        <span>Fill breaks from my commercials library</span>
-                    </label>
-                    @if (_useCommercials)
+                    <p class="hint">Pick the ad breaks this channel uses; their ads, bumpers, filler and promos are pooled.</p>
+                    <AdBreakPicker Values="_adBreaks" ValuesChanged="v => _adBreaks = v" EmptyText="None: breaks stay empty (black)" />
+                    @if (_commercialRoots.Count > 0)
                     {
-                        <TagChipPicker Label="Brands (any of)" Hint="Only adverts filed under these brand folders. Leave all off to use every brand."
-                                       Available="_folders.Brands" Selected="_brands" SelectedChanged="v => _brands = v" />
-                        <TagChipPicker Label="Clip folders for commercials" Hint="Played whole, only when they fit. Leave all off to use any kind."
-                                       Available="_folders.Types" Selected="_adTypes" SelectedChanged="v => _adTypes = v" />
-                        <TagChipPicker Label="Clip folders that may be trimmed to close the last few seconds"
-                                       Hint="Bumpers and station IDs, not adverts. Leave all off to leave tiny gaps instead."
-                                       Available="_folders.Types" Selected="_fillerTypes" SelectedChanged="v => _fillerTypes = v" />
-                        @if (_folders.Occasions.Count > 0)
-                        {
-                            <label class="check">
-                                <input type="checkbox" checked="@_seasonal" @onchange="e => _seasonal = e.Value is true" />
-                                <span>Seasonal adverts</span>
-                            </label>
-                            <p class="hint">
-                                Uses folders named after months, seasons and holidays (@string.Join(", ", _folders.Occasions.Take(4))…) at the right
-                                time of year, plus "Any Time" folders all year.
-                            </p>
-                        }
+                        <button class="btn btn-sm" type="button" @onclick="() => _creatingAdBreak = true">
+                            <Icon Name="plus" Size="13" />New ad break from a folder
+                        </button>
                     }
+                    else
+                    {
+                        <p class="hint">
+                            No commercials found. Add them in <strong>App settings → Commercials library</strong>, then set up ad
+                            breaks under <strong>Ad Breaks</strong>.
+                        </p>
+                    }
+                    <p class="hint">Change them later on the channel's Ad breaks tab.</p>
                 }
                 break;
 
@@ -397,13 +377,6 @@
         (null, "Back to back", "No slots and no breaks between programmes.")
     ];
 
-    // Whole words, so "Kids" or "Holiday" folders aren't taken for station IDs.
-    private static System.Text.RegularExpressions.Regex FillerNames() => FillerPattern;
-
-    private static readonly System.Text.RegularExpressions.Regex FillerPattern = new(
-        @"\b(bumps?|bumpers?|idents?|ids?|station\s*ids?|stingers?|filler|interstitials?|promos?)\b",
-        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
-
     private int _step;
     private bool _tried;
     private bool _creating;
@@ -433,13 +406,9 @@
     private TimeSpan? _maxBreak = TimeSpan.FromMinutes(8);
     private bool _midRoll;
 
-    private CommercialFolders _folders = new([], [], [], []);
-    private bool _useCommercials;
-    private List<string>? _brands;
-    private List<string>? _adTypes;
-    private List<string>? _fillerTypes;
-    private bool _seasonal;
     private List<string>? _adBreaks;
+    private IReadOnlyList<CommercialFolder> _commercialRoots = [];
+    private bool _creatingAdBreak;
 
     private bool _addBlock;
 
@@ -493,7 +462,6 @@
         {
             _showCount = (await Library.GetShowsAsync()).Count;
             _libraryCollections = await Library.GetLibraryCollectionsAsync();
-            _folders = await Library.GetCommercialFoldersAsync();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -505,15 +473,20 @@
             Watch(false);
         }
 
-        _useCommercials = _folders.Roots.Count > 0;
-        // Seasonal matching keeps only clips in a month, season, holiday or "Any Time" folder, so it's only
-        // offered as the default when the library is laid out that way.
-        _seasonal = _folders.Occasions.Contains(Editor.Working.Settings.TemporalTags.AnyTimeTag, StringComparer.OrdinalIgnoreCase);
-        List<string> filler = [.. _folders.Types.Where(type => FillerNames().IsMatch(type))];
-        _fillerTypes = filler.Count > 0 ? filler : null;
-        // Adverts are whatever isn't a bumper or ID, so filler clips aren't counted as commercials too.
-        List<string> adverts = [.. _folders.Types.Except(filler, StringComparer.OrdinalIgnoreCase)];
-        _adTypes = filler.Count > 0 && adverts.Count > 0 ? adverts : null;
+        try
+        {
+            _commercialRoots = await CommercialFolderTree.GetRootsAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _commercialRoots = [];
+        }
+
+        // With a single ad break about, it's very likely the one this channel wants.
+        if (Editor.Working.AdBreaks.Count == 1)
+        {
+            _adBreaks = [Editor.Working.AdBreaks.Keys.First()];
+        }
     }
 
     // Raised on the loading thread.
@@ -657,25 +630,6 @@
         {
             channel.AdBreaks = [.. _adBreaks];
         }
-        else if (_useCommercials && _folders.Roots.Count > 0)
-        {
-            channel.Interstitials = new InterstitialsConfig
-            {
-                Commercials = new CommercialsConfig
-                {
-                    BaseQuery = string.Join(" OR ", _folders.Roots.Select(root => $"tag:\"{root.Replace("\"", "\\\"")}\"")),
-                    BaseTags = _brands,
-                    Types = _adTypes,
-
-                    // Adverts only: bumpers rarely sit in month or holiday folders, so seasonal matching would empty the filler.
-                    AutoTemporalTags = _seasonal ? true : null
-                },
-                // Without trimmable clips, the last seconds of a break are left as a short gap rather than cutting an advert.
-                Filler = _fillerTypes is { Count: > 0 }
-                    ? new FillerTierConfig { Types = _fillerTypes, AutoTemporalTags = false }
-                    : new FillerTierConfig { Fallback = false }
-            };
-        }
 
         if (_addBlock)
         {
@@ -739,9 +693,13 @@
 
     private string BreakSummary() =>
         _adBreaks is { Count: > 0 } ? $"Ad breaks: {string.Join(", ", _adBreaks)}"
-        : !_useCommercials || _folders.Roots.Count == 0 ? "No commercials yet; breaks are short black gaps"
-        : $"Commercials from {(_brands is { Count: > 0 } ? string.Join(", ", _brands) : "every brand")}"
-          + (_seasonal ? ", seasonal adverts on" : "");
+        : "No ad breaks yet; breaks are short black gaps";
+
+    private void AdBreakCreated(string name)
+    {
+        _adBreaks = [.. _adBreaks ?? [], name];
+        _creatingAdBreak = false;
+    }
 
     private string DaysSummary() => _block.Recurrence switch
     {

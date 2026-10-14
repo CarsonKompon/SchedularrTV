@@ -1,0 +1,226 @@
+@* Creates an ad break: its name and the folder holding everything for it, then which folders inside get a job of their own. *@
+@inject ConfigEditor Editor
+
+@if (Embedded)
+{
+    <div class="abw-embedded">
+        @Body
+        @Foot
+    </div>
+}
+else
+{
+    <div class="modal-backdrop">
+        <div class="modal wizard" role="dialog" aria-modal="true" aria-label="Create an ad break">
+            <div class="wizard-steps" aria-hidden="true">
+                @for (int index = 0; index < Steps.Length; index++)
+                {
+                    <span class="wizard-step @(index < _step ? "done" : index == _step ? "current" : "")" title="@Steps[index]"></span>
+                }
+            </div>
+            <div class="wizard-eyebrow" role="status" aria-live="polite">New ad break · Step @(_step + 1) of @Steps.Length · @Steps[_step]</div>
+            <div class="wizard-body">@Body</div>
+            @Foot
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<CommercialFolder> Roots { get; set; } = [];
+
+    /// <summary>Called with the new ad break's name once it's added (unsaved).</summary>
+    [Parameter] public EventCallback<string> OnCreated { get; set; }
+
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    /// <summary>Shown inside another wizard (the new channel one) rather than as a dialog of its own.</summary>
+    [Parameter] public bool Embedded { get; set; }
+
+    private static readonly string[] Steps = ["Name and folder", "Folders inside it", "Ready"];
+
+    private int _step;
+    private string _name = "";
+    private string? _autoName;
+    private CommercialFolder? _root;
+    private bool _tried;
+    private IReadOnlyList<FolderSuggestion> _suggestions = [];
+    private readonly HashSet<FolderSuggestion> _accepted = [];
+    private bool _seasonal;
+    private bool _looksSeasonal;
+
+    private TemporalTagOptions Temporal => Editor.Working.Settings.TemporalTags;
+
+    private RenderFragment Body => __builder =>
+    {
+        switch (_step)
+        {
+            case 0:
+                <h2>Name it and pick its folder</h2>
+                <label class="field">
+                    <span>Ad break name</span>
+                    <input type="text" value="@_name" placeholder="Any channel, Kids channel…" @oninput="e => _name = e.Value?.ToString() ?? string.Empty" />
+                </label>
+                <div class="field">
+                    <span>Folder with all of its commercials (and its bumpers, filler and promos)</span>
+                    <FolderTreePicker Roots="Roots" Selected="@_root?.Path" SelectedChanged="PickRoot" />
+                </div>
+                @if (_root is not null)
+                {
+                    <p class="hint">
+                        <code>@_root.Path</code> · @_root.TotalClips clip(s). Everything in it plays as an ad unless a folder inside it
+                        is given another job.
+                    </p>
+                }
+                break;
+
+            case 1:
+                <h2>Folders inside @_root?.Name</h2>
+                @if (_suggestions.Count == 0)
+                {
+                    <p class="hint">Nothing inside it stands out, so all of it plays as ads. You can give folders jobs of their own afterwards.</p>
+                }
+                else
+                {
+                    <p class="hint">These look like they're for something other than ads. Untick any that aren't.</p>
+                    <div class="wizard-choices abw-suggestions">
+                        @foreach (FolderSuggestion suggestion in _suggestions)
+                        {
+                            bool on = _accepted.Contains(suggestion);
+                            <button type="button" class="wizard-choice @(on ? "on" : "")" aria-pressed="@(on ? "true" : "false")" @onclick="() => Toggle(suggestion)">
+                                <strong><Icon Name="@(on ? "check-circle" : "folder")" Size="15" />@suggestion.Label</strong>
+                                <span><code>@Relative(suggestion.Path)</code></span>
+                            </button>
+                        }
+                    </div>
+                }
+
+                <label class="check">
+                    <input type="checkbox" checked="@_seasonal" @onchange="e => _seasonal = e.Value is true" />
+                    <span>Seasonal folders: clips in a month, season, holiday or date folder only play then</span>
+                </label>
+                @if (_looksSeasonal)
+                {
+                    <p class="hint">On, because folders in here are named for months, seasons, holidays or dates.</p>
+                }
+                break;
+
+            default:
+                <h2>Ready to create @_name.Trim()</h2>
+                <ul class="checklist">
+                    <li><Icon Name="folder" Size="15" /><span>Everything in <strong>@_root?.Name</strong> plays as ads</span></li>
+                    @foreach (FolderSuggestion suggestion in _suggestions.Where(_accepted.Contains))
+                    {
+                        <li><Icon Name="megaphone" Size="15" /><span><code>@Relative(suggestion.Path)</code> as @suggestion.Label</span></li>
+                    }
+                    <li><Icon Name="calendar" Size="15" /><span>@(_seasonal ? "Seasonal folders play in season" : "Seasonal folders off")</span></li>
+                </ul>
+                <p class="hint">Fine-tune it afterwards in its folder tree, where the preview shows how its breaks play out.</p>
+                break;
+        }
+
+        if (_tried && Problem is { } problem)
+        {
+            <p class="hint warn" role="alert">@problem</p>
+        }
+    };
+
+    private RenderFragment Foot => __builder =>
+    {
+        <div class="wizard-foot">
+            @if (_step == 0)
+            {
+                <button class="btn btn-ghost" type="button" @onclick="() => OnCancel.InvokeAsync()">Cancel</button>
+            }
+            else
+            {
+                <button class="btn btn-ghost" type="button" @onclick="Back"><Icon Name="arrow-left" Size="14" />Back</button>
+            }
+            <div class="spacer"></div>
+            @if (_step == Steps.Length - 1)
+            {
+                <button class="btn btn-primary" type="button" @onclick="Create"><Icon Name="check" Size="14" />Create ad break</button>
+            }
+            else
+            {
+                <button class="btn btn-primary" type="button" @onclick="Next">Next<Icon Name="chevron-right" Size="14" /></button>
+            }
+        </div>
+    };
+
+    private string? NameProblem =>
+        string.IsNullOrWhiteSpace(_name) ? "Give the ad break a name."
+        : Editor.Working.AdBreaks.ContainsKey(_name.Trim()) ? $"An ad break called \"{_name.Trim()}\" already exists."
+        : null;
+
+    private string? Problem => _step == 0 ? NameProblem ?? (_root is null ? "Pick the folder its clips are in." : null) : null;
+
+    private void PickRoot(CommercialFolder folder)
+    {
+        // The folder's name is a good first guess at the ad break's, until one is typed.
+        if (string.IsNullOrWhiteSpace(_name) || _name == _autoName)
+        {
+            _name = folder.Name;
+            _autoName = folder.Name;
+        }
+
+        _root = folder;
+    }
+
+    private void Next()
+    {
+        _tried = true;
+        if (Problem is not null || _root is null)
+        {
+            return;
+        }
+
+        _tried = false;
+        if (_step == 0)
+        {
+            AdBreakConfig start = AdBreakFolderJobs.FromRoot(_root, [], seasonal: false);
+            _suggestions = AdBreakFolderJobs.Suggest(start, Roots, max: 60, within: _root.Path, temporal: Temporal);
+            _accepted.Clear();
+            _accepted.UnionWith(_suggestions);
+            _looksSeasonal = AdBreakFolderJobs.HasSeasonalFolders(_root, Temporal);
+            _seasonal = _looksSeasonal;
+        }
+
+        _step++;
+    }
+
+    private void Back()
+    {
+        _tried = false;
+        _step--;
+    }
+
+    private void Toggle(FolderSuggestion suggestion)
+    {
+        if (!_accepted.Remove(suggestion))
+        {
+            _accepted.Add(suggestion);
+        }
+    }
+
+    private async Task Create()
+    {
+        if (_root is null || NameProblem is not null)
+        {
+            _step = 0;
+            _tried = true;
+            return;
+        }
+
+        string name = _name.Trim();
+        Editor.Working.AdBreaks[name] = AdBreakFolderJobs.FromRoot(_root, _suggestions.Where(_accepted.Contains), _seasonal);
+        Editor.MarkDirty();
+        await OnCreated.InvokeAsync(name);
+    }
+
+    private string Relative(string path)
+    {
+        string root = AdBreakPaths.Key(_root?.Path ?? string.Empty);
+        string key = AdBreakPaths.Key(path);
+        return key.Length > root.Length + 1 && key.StartsWith(root, StringComparison.OrdinalIgnoreCase) ? key[(root.Length + 1)..] : key;
+    }
+}

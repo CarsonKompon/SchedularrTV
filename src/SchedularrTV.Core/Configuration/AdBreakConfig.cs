@@ -149,9 +149,19 @@ public sealed class AdBreakPromo
 /// </summary>
 public sealed class AdBreakConfig
 {
-    public string? Description { get; set; }
+    /// <summary>
+    /// The folder holding everything this ad break uses, picked when it was made; the editor shows just this folder's
+    /// tree. Null shows every commercials library (an ad break moved from the older settings has none).
+    /// </summary>
+    public string? Root { get; set; }
 
     public List<AdBreakFolder> Folders { get; set; } = [];
+
+    /// <summary>
+    /// Folders of promos sorted by show and promo type in any order (<c>Promos/Looney Tunes/Back To The Show/</c> or
+    /// <c>Promos/Up Next/Top Cat/</c>): each clip's promo type comes from the folder named for one, its show from the other.
+    /// </summary>
+    public List<AdBreakPromoRoot> PromoRoots { get; set; } = [];
 
     /// <summary>
     /// Clips inside a folder named for a month, season, holiday or date (<c>December</c>, <c>Winter</c>,
@@ -178,5 +188,52 @@ public sealed class AdBreakConfig
     /// <summary>Fine tuning of how filler is used (trimming, looping). Pools set here are ignored.</summary>
     public FillerTierConfig? Filler { get; set; }
 
+    /// <summary>
+    /// Clips chosen by tag and query rather than by folder, as the older break and promo settings chose them (they're
+    /// moved here when a schedule is upgraded). Pooled with the folders' clips.
+    /// </summary>
+    public AdBreakTagRules? TagRules { get; set; }
+
     public const string DefaultAnyShowFolder = "Any Show";
+}
+
+/// <summary>
+/// A folder of promos sorted by show and type: every promo type is found by its folder's name ("Up Next",
+/// "You're Watching", "Back to the Show"…), and the other folder on the way is the show it's for.
+/// </summary>
+public sealed class AdBreakPromoRoot
+{
+    /// <summary>Full path of the folder, e.g. <c>D:\Media\Commercials\Promos</c>.</summary>
+    public string Path { get; set; } = string.Empty;
+
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Clips in no show's folder (or in the "Any Show" folder) play for any show.</summary>
+    public bool AnyShow { get; set; } = true;
+
+    /// <summary>Folders named for a start time (<c>8pm</c>) only play for a show starting then.</summary>
+    public bool Times { get; set; } = true;
+
+    /// <summary>Folders named for a weekday (<c>Saturday</c>) only play for a show airing that day.</summary>
+    public bool Days { get; set; } = true;
+}
+
+/// <summary>An ad break's clips chosen by tag and query, as the older break and promo settings chose them.</summary>
+public sealed class AdBreakTagRules
+{
+    /// <summary>The ads pool: query, base query, brand tags, clip folder tags, seasonal tags and filter.</summary>
+    public CommercialsConfig? Commercials { get; set; }
+
+    /// <summary>The filler pool, likewise. Null when there's no tag-based filler.</summary>
+    public FillerTierConfig? Filler { get; set; }
+
+    /// <summary>Promos matched by <c>promo_type</c> or tag, and the settings that went with them.</summary>
+    public PromoConfig? Promos { get; set; }
+
+    /// <summary>Brand folders the tag-based promos come from.</summary>
+    public List<string>? PromoBaseTags { get; set; }
+
+    [YamlDotNet.Serialization.YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsEmpty => Commercials is null && Filler is null && Promos is null;
 }

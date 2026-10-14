@@ -80,6 +80,13 @@ public sealed class SchedulerConfigProvider : IDisposable
     public ConfigValidationResult Save(string yaml, string backupReason = ConfigBackups.BeforeSave)
     {
         SchedulerConfig parsed = SchedulerConfigLoader.Parse(yaml);
+
+        // Tag-based break settings (from an import, the API or pasted YAML) are moved into ad breaks as they're saved.
+        if (SchedularrTV.Core.Scheduling.AdBreakMigration.Migrate(parsed))
+        {
+            yaml = YamlCommentMerger.Merge(yaml, SchedulerConfigLoader.Serialize(parsed));
+        }
+
         ConfigValidationResult validation = SchedulerConfigLoader.Validate(parsed);
 
         if (!validation.IsValid)
@@ -142,11 +149,14 @@ public sealed class SchedulerConfigProvider : IDisposable
             }
 
             SchedulerConfig parsed = SchedulerConfigLoader.Parse(raw);
+
+            // A schedule from before ad breaks has its break and promo settings moved into them, once.
+            bool movedToAdBreaks = SchedularrTV.Core.Scheduling.AdBreakMigration.Migrate(parsed);
             ConfigValidationResult validation = SchedulerConfigLoader.Validate(parsed);
 
-            if (parsed.UsesOldLayout && validation.IsValid)
+            if ((parsed.UsesOldLayout || movedToAdBreaks) && validation.IsValid)
             {
-                MigrateLayout(raw, parsed);
+                MigrateLayout(raw, parsed, movedToAdBreaks);
             }
 
             foreach (string warning in validation.Warnings)
@@ -177,11 +187,11 @@ public sealed class SchedulerConfigProvider : IDisposable
     /// Rewrites a schedule that still has promos, generated promos or Archive Follow at their old keys so they
     /// sit under <c>plugins:</c>, keeping the original beside it. Nothing about the schedule changes.
     /// </summary>
-    private void MigrateLayout(string raw, SchedulerConfig parsed)
+    private void MigrateLayout(string raw, SchedulerConfig parsed, bool movedToAdBreaks = false)
     {
         try
         {
-            string backup = ConfigPath + ".before-plugins.bak";
+            string backup = ConfigPath + (movedToAdBreaks ? ".before-ad-breaks.bak" : ".before-plugins.bak");
             if (!File.Exists(backup))
             {
                 File.WriteAllText(backup, raw);
@@ -198,7 +208,9 @@ public sealed class SchedulerConfigProvider : IDisposable
             }
 
             _logger.LogInformation(
-                "Moved promos, generated promos and Archive Follow settings under 'plugins:' in {Path}; the original is kept as {Backup}.",
+                movedToAdBreaks
+                    ? "Moved the channels' break and promo settings into ad breaks in {Path}; the original is kept as {Backup}."
+                    : "Moved promos, generated promos and Archive Follow settings under 'plugins:' in {Path}; the original is kept as {Backup}.",
                 ConfigPath, backup);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

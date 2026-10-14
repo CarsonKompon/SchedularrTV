@@ -5,7 +5,6 @@
 @inject LogoStore Logos
 @inject IEnumerable<PluginEditorSection> EditorSections
 @inject AlwaysOnKeeper AlwaysOn
-@inject PluginRegistry Registry
 @inject Microsoft.Extensions.Options.IOptions<SchedularrTV.Providers.ErsatzTv.ErsatzTvOptions> ErsatzOptions
 @using SchedularrTV.Providers.ErsatzTv
 
@@ -318,14 +317,13 @@ else
     }
     else if (_tab == "breaks")
     {
-        bool usesAdBreaks = _channel.AdBreaks is { Count: > 0 };
         <div class="card">
             <div class="card-head">
                 <h2>Ad breaks</h2>
                 <span class="muted">Where this channel's ads, bumpers, filler and promos come from</span>
             </div>
             <AdBreakPicker Values="_channel.AdBreaks" ValuesChanged="SetAdBreaks"
-                           EmptyText="None chosen: the tag-based settings under Advanced are used" />
+                           EmptyText="None chosen: breaks stay empty" />
             <p class="hint">
                 Pick one or more from <a href="ad-breaks">Ad Breaks</a>, e.g. an "Any channel" set and a "Kids channel" set;
                 their clips are pooled. Blocks can pick their own on the Blocks &amp; anchors tab.
@@ -348,45 +346,6 @@ else
         {
             <MidRollEditor Config="_channel.MidRoll" Changed="Editor.MarkDirty" />
         }
-
-        <details class="card" open="@(!usesAdBreaks && HasLegacyBreaks)">
-            <summary class="card-head" style="cursor:pointer;">
-                <h2>Advanced: tag-based breaks and promos</h2>
-                <span class="muted">@(usesAdBreaks ? "Only the fine tuning applies while ad breaks are chosen" : "Used while no ad break is chosen")</span>
-            </summary>
-            @if (usesAdBreaks)
-            {
-                <p class="hint">
-                    With ad breaks chosen, their folders decide what plays. Lengths, repeats, tolerance and trimming set here
-                    still override the ad breaks' own; brands, clip folders, queries and promo settings are ignored.
-                </p>
-            }
-
-            <InterstitialsEditor Interstitials="ChannelBreaks" ShowShows="false" Changed="CommitBreaks"
-                                 InheritAds="@(_channel.Interstitials?.Commercials is null && _channel.Interstitials?.Filler is null)" ConfigureAds="ConfigureAds">
-                <BrandContent>
-                    <BrandTagsEditor Values="@(_channel.CommercialBaseTags ?? _channel.Interstitials?.Commercials?.BaseTags)" ValuesChanged="SetBrands" />
-                    <p class="hint">Brand folders for commercials and filler. Leave empty to inherit global brands.</p>
-                </BrandContent>
-            </InterstitialsEditor>
-
-            <label class="check">
-                <input type="checkbox" checked="@(_channel.AutoTemporalTags ?? false)"
-                       @onchange="e => { _channel.AutoTemporalTags = (bool)(e.Value ?? false); Editor.MarkDirty(); }" />
-                <span>Match seasonal commercial tags (January, Winter, 12-25, Christmas&hellip;)</span>
-            </label>
-
-            @if (!usesAdBreaks)
-            {
-                <FolderLayoutPreview Config="Editor.Working" Channel="_channel" Kind="FolderPreviewKind.Breaks" />
-
-                @if (Registry.IsActive(BuiltInPluginIds.Promos))
-                {
-                    @* The Promos plugin's tag-based settings, which used to be a tab of their own. *@
-                    <DynamicComponent Type="typeof(SchedularrTV.Service.Components.Features.PromosChannelTab)" Parameters="PromoParameters" />
-                }
-            }
-        </details>
     }
     else if (_tab == "stats")
     {
@@ -420,21 +379,6 @@ else
         Editor.MarkDirty();
     }
 
-    /// <summary>Whether the channel has tag-based break or promo settings of its own, worth showing open.</summary>
-    private bool HasLegacyBreaks =>
-        _channel is not null && (_channel.Interstitials?.Commercials is not null || _channel.Interstitials?.Filler is not null
-                                 || _channel.CommercialBaseTags is not null || _channel.Promos is not null || _channel.PromoBaseTags is not null);
-
-    private Dictionary<string, object> PromoParameters => new()
-    {
-        ["Context"] = new PluginEditorContext
-        {
-            PluginId = BuiltInPluginIds.Promos,
-            Config = Editor.Working,
-            Channel = _channel,
-            Changed = Editor.MarkDirty
-        }
-    };
 
     private IEnumerable<PluginEditorSection> ChannelSections =>
         EditorSections.Where(section => section.Surface == EditorSurface.Channel);
@@ -468,22 +412,6 @@ else
         Editor.MarkDirty();
     }
 
-    private void ConfigureAds()
-    {
-        ChannelBreaks.Commercials ??= new CommercialsConfig();
-        ChannelBreaks.Filler ??= new FillerTierConfig();
-        CommitBreaks();
-    }
-
-    private void SetBrands(List<string>? tags)
-    {
-        _channel!.CommercialBaseTags = tags;
-        ChannelBreaks.Commercials ??= new CommercialsConfig();
-        ChannelBreaks.Filler ??= new FillerTierConfig();
-        ChannelBreaks.Commercials.BaseTags = tags;
-        ChannelBreaks.Filler.BaseTags = tags;
-        CommitBreaks();
-    }
     private string _tab = "general";
     private bool _resetting;
     private string? _resetMessage;

@@ -8,6 +8,13 @@ namespace SchedularrTV.Core.Configuration;
 public sealed record AdPoolSource(string Folder, IReadOnlyList<string> Excluded, bool Seasonal);
 
 /// <summary>One folder of promos, as a build sees it. See <see cref="AdBreakPromo"/> for what the flags mean.</summary>
+/// <param name="Type">
+/// For a folder of promos sorted by type (<see cref="AdBreakPromoRoot"/>): only clips under a folder named for this
+/// promo type count, and that folder isn't read as the show. Null for a folder holding one type only.
+/// </param>
+/// <param name="Seasonal">
+/// When set, folders named for a month, season, holiday or date only count then (and aren't read as the show).
+/// </param>
 public sealed record PromoFolderSource(
     string Folder,
     IReadOnlyList<string> Excluded,
@@ -15,4 +22,6 @@ public sealed record PromoFolderSource(
     bool AnyShow,
     bool Times,
     bool Days,
-    string AnyShowFolder);
+    string AnyShowFolder,
+    AdPromoType? Type = null,
+    SchedularrTV.Core.Temporal.TemporalTagOptions? Seasonal = null);

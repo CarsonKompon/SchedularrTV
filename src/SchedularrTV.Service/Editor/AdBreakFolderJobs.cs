@@ -35,8 +35,14 @@ public static class AdBreakFolderJobs
         ("skip", "Skip (leave out)")
     ];
 
+    /// <summary>A folder of promos sorted by show and type, every type found by its folder's name.</summary>
+    public const string PromoRootChoice = "promos";
+
     public static IReadOnlyList<(string Choice, string Label)> PromoChoices { get; } =
-        [.. Enum.GetValues<AdPromoType>().Select(type => (PromoChoice(type), $"Promo: {AdBreakPromo.FolderName(type)}"))];
+    [
+        (PromoRootChoice, "Promos: all types, by folder name"),
+        .. Enum.GetValues<AdPromoType>().Select(type => (PromoChoice(type), $"Promo: {AdBreakPromo.FolderName(type)} only"))
+    ];
 
     public static string PromoChoice(AdPromoType type) => $"promo:{type}";
 
@@ -45,6 +51,11 @@ public static class AdBreakFolderJobs
     /// <summary>The job given to this exact folder, or null.</summary>
     public static FolderJob? Explicit(AdBreakConfig adBreak, string path)
     {
+        if (adBreak.PromoRoots.Any(root => AdBreakPaths.Same(root.Path, path)))
+        {
+            return Job(PromoRootChoice);
+        }
+
         if (adBreak.Promos.LastOrDefault(promo => AdBreakPaths.Same(promo.Path, path)) is { } promo)
         {
             return Job(PromoChoice(promo.Type));
@@ -78,6 +89,7 @@ public static class AdBreakFolderJobs
 
         return choice switch
         {
+            PromoRootChoice => new FolderJob(choice, "Promos", "job-promo"),
             "ads" => new FolderJob(choice, "Ads", "job-ads"),
             "bumpers" => new FolderJob(choice, "Bumpers", "job-bumpers"),
             "filler" => new FolderJob(choice, "Filler", "job-filler"),
@@ -92,8 +104,13 @@ public static class AdBreakFolderJobs
         AdBreakPromo? previous = adBreak.Promos.FirstOrDefault(promo => AdBreakPaths.Same(promo.Path, path));
         adBreak.Folders.RemoveAll(folder => AdBreakPaths.Same(folder.Path, path));
         adBreak.Promos.RemoveAll(promo => AdBreakPaths.Same(promo.Path, path));
+        adBreak.PromoRoots.RemoveAll(root => AdBreakPaths.Same(root.Path, path));
 
-        if (choice.StartsWith("promo:", StringComparison.Ordinal) && Enum.TryParse(choice[6..], out AdPromoType type))
+        if (choice == PromoRootChoice)
+        {
+            adBreak.PromoRoots.Add(new AdBreakPromoRoot { Path = path });
+        }
+        else if (choice.StartsWith("promo:", StringComparison.Ordinal) && Enum.TryParse(choice[6..], out AdPromoType type))
         {
             adBreak.Promos.Add(NewPromo(type, path, previous));
         }
@@ -134,36 +151,63 @@ public static class AdBreakFolderJobs
     };
 
     /// <summary>
-    /// Folders named like an ad break job ("Ads", "Bumpers", "Up Next"…) that don't have one yet. Looked for beside and
-    /// inside the folders the ad break already uses, or everywhere while it uses none.
+    /// Folders named like an ad break job ("Bumpers", "Filler", "Up Next"…) that don't have one yet: inside
+    /// <paramref name="within"/> when given, else inside the folders the ad break uses (everywhere while it uses none).
+    /// A folder that already plays as ads isn't suggested as ads again.
     /// </summary>
-    public static IReadOnlyList<FolderSuggestion> Suggest(AdBreakConfig adBreak, IReadOnlyList<CommercialFolder> roots, int max = 12)
+    public static IReadOnlyList<FolderSuggestion> Suggest(
+        AdBreakConfig adBreak, IReadOnlyList<CommercialFolder> roots, int max = 12, string? within = null, TemporalTagOptions? temporal = null)
     {
-        List<string> used = [.. adBreak.Folders.Select(folder => folder.Path), .. adBreak.Promos.Select(promo => promo.Path)];
+        temporal ??= new TemporalTagOptions();
+        List<string> used = within is not null
+            ? [within]
+            : [.. adBreak.Folders.Select(folder => folder.Path), .. adBreak.Promos.Select(promo => promo.Path), .. adBreak.PromoRoots.Select(root => root.Path)];
         List<CommercialFolder> all = [.. roots.SelectMany(root => root.Descendants())];
 
-        IEnumerable<CommercialFolder> scope = used.Count == 0
-            ? all
-            : all.Where(folder => used.Any(path =>
-                AdBreakPaths.IsUnder(folder.Path, path)
-                || (Parent(all, path) is { } parent && (AdBreakPaths.IsUnder(folder.Path, parent.Path) || AdBreakPaths.Same(folder.Path, parent.Path)))));
+        List<CommercialFolder> scope = used.Count == 0
+            ? [.. all.Where(folder => folder.Parent is not null)]
+            : [.. all.Where(folder => used.Any(path => AdBreakPaths.IsUnder(folder.Path, path)))];
 
+        // Promos sorted by show and type (Promos/Looney Tunes/Back To The Show) are offered as one folder, and nothing
+        // inside it is suggested on its own.
         List<FolderSuggestion> suggestions = [];
-        foreach (CommercialFolder folder in scope)
+        List<CommercialFolder> promoRoots = [];
+        foreach (CommercialFolder candidate in PromoRootCandidates(scope, within ?? (used.Count == 1 ? used[0] : null), temporal))
         {
-            if (Explicit(adBreak, folder.Path) is not null || Inherited(adBreak, folder) is { Choice: "skip" or "filler" or "bumpers" } || folder.Parent is null)
+            if (Explicit(adBreak, candidate.Path) is not null || Inherited(adBreak, candidate) is { CssClass: "job-promo" } or { Choice: "skip" })
             {
                 continue;
             }
 
-            if (AdBreakPromo.FromFolderName(folder.Name) is { } type
-                && !adBreak.Promos.Any(promo => promo.Type == type && AdBreakPaths.Same(promo.Path, folder.Path))
-                && Inherited(adBreak, folder) is null or { Choice: "ads" })
+            promoRoots.Add(candidate);
+            List<string> types = [.. candidate.Descendants()
+                .Select(folder => AdBreakPromo.FromFolderName(folder.Name))
+                .OfType<AdPromoType>()
+                .Distinct()
+                .Select(AdBreakPromo.FolderName)];
+            suggestions.Add(new FolderSuggestion(candidate.Path, candidate.Name, PromoRootChoice,
+                $"Promos by show ({string.Join(", ", types.Take(4))}{(types.Count > 4 ? "…" : "")})"));
+        }
+
+        foreach (CommercialFolder folder in scope)
+        {
+            if (promoRoots.Any(root => AdBreakPaths.IsUnder(folder.Path, root.Path)))
+            {
+                continue;
+            }
+
+            FolderJob? inherited = Inherited(adBreak, folder);
+            if (Explicit(adBreak, folder.Path) is not null || inherited is { Choice: "skip" or "filler" or "bumpers" } || inherited?.CssClass == "job-promo")
+            {
+                continue;
+            }
+
+            if (AdBreakPromo.FromFolderName(folder.Name) is { } type)
             {
                 suggestions.Add(new FolderSuggestion(folder.Path, folder.Name, PromoChoice(type), $"{AdBreakPromo.FolderName(type)} promos"));
             }
             else if (RoleNames.TryGetValue(new string([.. folder.Name.Where(char.IsLetterOrDigit)]), out AdFolderRole role)
-                     && Inherited(adBreak, folder) is null)
+                     && (inherited is null || (inherited.Choice == "ads" && role != AdFolderRole.Ads)))
             {
                 suggestions.Add(new FolderSuggestion(folder.Path, folder.Name, RoleChoice(role), role.ToString()));
             }
@@ -177,8 +221,122 @@ public static class AdBreakFolderJobs
         return suggestions;
     }
 
-    private static CommercialFolder? Parent(IReadOnlyList<CommercialFolder> all, string path) =>
-        all.FirstOrDefault(folder => AdBreakPaths.Same(folder.Path, path)) is { } found ? found.Parent ?? found : null;
+    private static readonly HashSet<string> PromoFolderNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "promos", "promo", "promotions", "promotional", "network promos", "channel promos"
+    };
+
+    private static bool IsTypeFolder(CommercialFolder folder) => AdBreakPromo.FromFolderName(folder.Name) is not null;
+
+    /// <summary>A folder named for a time of year, a weekday, a start time, or "any time"/"any show": a qualifier, not a show.</summary>
+    private static bool IsQualifier(CommercialFolder folder, TemporalTagOptions temporal) =>
+        SeasonalFolders.IsSeasonal(folder.Name, temporal)
+        || string.Equals(folder.Name, temporal.AnyTimeTag, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(folder.Name, AdBreakConfig.DefaultAnyShowFolder, StringComparison.OrdinalIgnoreCase)
+        || AdBreakCompiler.TryReadDay(folder.Name, out _)
+        || AdBreakCompiler.TryReadClock(folder.Name, out _);
+
+    /// <summary>Whether a folder has a folder named for a promo type in it, directly or under qualifiers (dates, days…).</summary>
+    private static bool HasTypeChild(CommercialFolder folder, TemporalTagOptions temporal) =>
+        folder.Children.Any(child => IsTypeFolder(child) || (IsQualifier(child, temporal) && HasTypeChild(child, temporal)));
+
+    /// <summary>
+    /// Folders that look like promos sorted by show and type, worked out from where the folders named for promo types
+    /// sit: under show folders (<c>Promos/Looney Tunes/Back To The Show</c>, the show folder having others like it or
+    /// a "Promos" folder above it), or side by side in one folder (<c>Promos/Up Next</c>, <c>Promos/Now Playing</c>).
+    /// Date, weekday and time folders in between are looked through. Never <paramref name="exclude"/> itself.
+    /// </summary>
+    public static IReadOnlyList<CommercialFolder> PromoRootCandidates(IEnumerable<CommercialFolder> scope, string? exclude, TemporalTagOptions temporal)
+    {
+        List<CommercialFolder> found = [];
+
+        bool Usable(CommercialFolder? folder) =>
+            folder is not null && (exclude is null || AdBreakPaths.IsUnder(folder.Path, exclude));
+
+        CommercialFolder? Above(CommercialFolder? folder)
+        {
+            // Past any date, weekday or time folders.
+            while (folder is not null && IsQualifier(folder, temporal))
+            {
+                folder = folder.Parent;
+            }
+
+            return folder;
+        }
+
+        foreach (CommercialFolder type in scope.Where(IsTypeFolder))
+        {
+            CommercialFolder? parent = Above(type.Parent);
+            if (parent is null || IsTypeFolder(parent))
+            {
+                continue;
+            }
+
+            CommercialFolder? container = null;
+            CommercialFolder? grandparent = Above(parent.Parent);
+
+            bool parentIsShow = grandparent is not null
+                && (PromoFolderNames.Contains(grandparent.Name)
+                    || grandparent.Children.Count(sibling => !ReferenceEquals(sibling, parent) && !IsTypeFolder(sibling) && HasTypeChild(sibling, temporal)) > 0);
+
+            if (parentIsShow && Usable(grandparent))
+            {
+                container = grandparent;
+            }
+            else if (Usable(parent) && (PromoFolderNames.Contains(parent.Name) || parent.Children.Count(IsTypeFolder) >= 2))
+            {
+                // Types side by side: Promos/Up Next/Top Cat.
+                container = parent;
+            }
+
+            if (container is not null && !found.Contains(container))
+            {
+                found.Add(container);
+            }
+        }
+
+        // Folders named "Promos" with promo type folders somewhere inside.
+        foreach (CommercialFolder folder in scope.Where(folder => PromoFolderNames.Contains(folder.Name) && Usable(folder)))
+        {
+            if (!found.Contains(folder) && folder.Descendants().Skip(1).Any(IsTypeFolder))
+            {
+                found.Add(folder);
+            }
+        }
+
+        // The outermost only: one inside another is covered by it.
+        return [.. found.Where(folder => !found.Any(other => !ReferenceEquals(other, folder) && AdBreakPaths.IsUnder(folder.Path, other.Path)))];
+    }
+
+    /// <summary>
+    /// A new ad break drawing on everything in <paramref name="root"/>: the root plays as ads, and each suggestion
+    /// in <paramref name="accepted"/> gives a folder inside it its own job (unless one above it already took a job
+    /// that covers it). Seasonal when asked.
+    /// </summary>
+    public static AdBreakConfig FromRoot(CommercialFolder root, IEnumerable<FolderSuggestion> accepted, bool seasonal)
+    {
+        AdBreakConfig adBreak = new() { Seasonal = seasonal, Root = root.Path };
+        Set(adBreak, root.Path, "ads");
+
+        // Outermost first, so a promo folder's own subfolders aren't given jobs inside it.
+        foreach (FolderSuggestion suggestion in accepted.OrderBy(suggestion => AdBreakPaths.Key(suggestion.Path).Length))
+        {
+            bool covered = adBreak.Promos.Any(promo => AdBreakPaths.IsUnder(suggestion.Path, promo.Path))
+                           || adBreak.PromoRoots.Any(promoRoot => AdBreakPaths.IsUnder(suggestion.Path, promoRoot.Path))
+                           || adBreak.Folders.Any(folder => folder.Role != AdFolderRole.Ads && AdBreakPaths.IsUnder(suggestion.Path, folder.Path));
+            if (!covered)
+            {
+                Set(adBreak, suggestion.Path, suggestion.Choice);
+            }
+        }
+
+        return adBreak;
+    }
+
+    /// <summary>Whether a folder has month, season, holiday, date or "Any Time" folders inside it.</summary>
+    public static bool HasSeasonalFolders(CommercialFolder root, TemporalTagOptions temporal) =>
+        root.Descendants().Any(folder => folder.Parent is not null
+            && (SeasonalFolders.IsSeasonal(folder.Name, temporal) || string.Equals(folder.Name, temporal.AnyTimeTag, StringComparison.OrdinalIgnoreCase)));
 
     // --- Example folders --------------------------------------------------------------------------------------
 
@@ -216,6 +374,33 @@ public static class AdBreakFolderJobs
             }
 
             Add(now.ToString("MM-dd", CultureInfo.InvariantCulture), "Plays on that date only");
+        }
+        else if (job is { Choice: PromoRootChoice } && adBreak.PromoRoots.LastOrDefault(root => AdBreakPaths.Same(root.Path, folder.Path)) is { } promoRoot)
+        {
+            // Sorted by show then type, or type then show: either reads the same.
+            string show = shows.FirstOrDefault() ?? "Show Name";
+            Add(show, "A show's folder, named as the library names it");
+            Add($"{show}/Up Next", "Its Up Next promos (any type's name works: Now Playing, Back To The Show…)");
+            Add($"{show}/You're Watching", "Its You're Watching promos");
+            if (promoRoot.Times)
+            {
+                Add($"{show}/Up Next/8pm", "Only for an 8pm start");
+            }
+
+            if (promoRoot.Days)
+            {
+                Add($"{show}/Eventually/Saturday", "Only for a Saturday airing");
+            }
+
+            if (promoRoot.AnyShow)
+            {
+                Add($"{adBreak.AnyShowFolder ?? AdBreakConfig.DefaultAnyShowFolder}/Now Playing", "Now Playing clips for any show");
+            }
+
+            if (adBreak.Seasonal)
+            {
+                Add($"Christmas/{show}/Up Next", "Seasonal: only in the run-up to Christmas");
+            }
         }
         else if (job is not null && adBreak.Promos.LastOrDefault(promo => AdBreakPaths.Same(promo.Path, folder.Path)) is { } promo)
         {

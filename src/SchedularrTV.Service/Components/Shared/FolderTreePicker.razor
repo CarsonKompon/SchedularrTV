@@ -1,0 +1,53 @@
+@* Picks one folder from the commercials libraries' folder trees. *@
+
+<div class="ftp-tree" role="tree">
+    @if (Roots.Count == 0)
+    {
+        <div class="empty">
+            <Icon Name="folder" Size="28" StrokeWidth="1.5" />
+            <div class="empty-title">No commercials libraries yet</div>
+            <div>Add a folder of commercials under <a href="settings/app">App settings</a> first.</div>
+        </div>
+    }
+    @foreach (CommercialFolder root in Roots)
+    {
+        <FolderTreePickerNode @key="root.Path" Folder="root" Depth="0" Open="_open" Selected="@Selected"
+                              OnToggle="Toggle" OnSelect="Pick" />
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<CommercialFolder> Roots { get; set; } = [];
+    [Parameter] public string? Selected { get; set; }
+    [Parameter] public EventCallback<CommercialFolder> SelectedChanged { get; set; }
+
+    private readonly HashSet<string> _open = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<CommercialFolder>? _openedFor;
+
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(_openedFor, Roots))
+        {
+            // The libraries start open, a level down, which is usually where the brand folders are.
+            _openedFor = Roots;
+            foreach (CommercialFolder root in Roots)
+            {
+                _open.Add(root.Path);
+            }
+        }
+    }
+
+    private void Toggle(CommercialFolder folder)
+    {
+        if (!_open.Remove(folder.Path))
+        {
+            _open.Add(folder.Path);
+        }
+    }
+
+    private async Task Pick(CommercialFolder folder)
+    {
+        _open.Add(folder.Path);
+        await SelectedChanged.InvokeAsync(folder);
+    }
+}

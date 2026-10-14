@@ -107,12 +107,18 @@ public sealed class CommercialsConfig
     [System.Text.Json.Serialization.JsonIgnore]
     public IReadOnlyList<AdPoolSource>? Sources { get; set; }
 
+    /// <summary>Set by a build: the ad breaks' tag-based ads pools, pooled with <see cref="Sources"/>. Never written.</summary>
+    [YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<CommercialsConfig>? TagPools { get; set; }
+
     [YamlIgnore]
     public bool IsStrictFit => StrictFit ?? true;
 
     public CommercialsConfig Merge(CommercialsConfig? parent) => new()
     {
         Sources = Sources ?? parent?.Sources,
+        TagPools = TagPools ?? parent?.TagPools,
         Query = Query ?? parent?.Query,
         BaseQuery = BaseQuery ?? parent?.BaseQuery,
         BaseTags = BaseTags ?? parent?.BaseTags,
@@ -185,6 +191,11 @@ public sealed class FillerTierConfig
     [System.Text.Json.Serialization.JsonIgnore]
     public IReadOnlyList<AdPoolSource>? Sources { get; set; }
 
+    /// <summary>Set by a build: the ad breaks' tag-based filler pools, pooled with <see cref="Sources"/>. Never written.</summary>
+    [YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<FillerTierConfig>? TagPools { get; set; }
+
     [YamlIgnore]
     public bool IsTrimmable => Trimmable ?? true;
 
@@ -194,6 +205,7 @@ public sealed class FillerTierConfig
     public FillerTierConfig Merge(FillerTierConfig? parent) => new()
     {
         Sources = Sources ?? parent?.Sources,
+        TagPools = TagPools ?? parent?.TagPools,
         Loop = Loop ?? parent?.Loop,
         Query = Query ?? parent?.Query,
         BaseQuery = BaseQuery ?? parent?.BaseQuery,

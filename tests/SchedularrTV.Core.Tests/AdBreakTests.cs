@@ -196,6 +196,57 @@ public class AdBreakTests
         Assert.Null(AdBreakCompiler.Describe(Clip($@"{Root}\Ads\clip.mp4"), [folder]));
     }
 
+    [Fact]
+    public void A_promos_folder_sorted_by_show_and_type_reads_both_orders()
+    {
+        const string promos = @"D:\Media\Commercials\Any Channel\Promos";
+        PromoFolderSource backToTheShow = new(promos, [], PerShow: true, AnyShow: true, Times: true, Days: true, AnyShowFolder: "Any Show",
+            Type: AdPromoType.BackToTheShow);
+
+        MediaItem? showFirst = AdBreakCompiler.Describe(Clip($@"{promos}\Looney Tunes\Back to the Show\clip.mp4"), [backToTheShow]);
+        Assert.Equal("Looney Tunes", showFirst!.Attributes["show_id"]);
+
+        MediaItem? typeFirst = AdBreakCompiler.Describe(Clip($@"{promos}\Back To The Show\Iron Man\clip.mp4"), [backToTheShow]);
+        Assert.Equal("Iron Man", typeFirst!.Attributes["show_id"]);
+
+        // Another type's folder, or none, isn't this spot's.
+        Assert.Null(AdBreakCompiler.Describe(Clip($@"{promos}\Looney Tunes\You're Watching\clip.mp4"), [backToTheShow]));
+        Assert.Null(AdBreakCompiler.Describe(Clip($@"{promos}\Looney Tunes\clip.mp4"), [backToTheShow]));
+    }
+
+    [Fact]
+    public void Seasonal_promo_folders_only_count_in_season_and_are_not_shows()
+    {
+        const string promos = @"D:\Media\Commercials\Any Channel\Promos";
+        PromoFolderSource upNext = new(promos, [], PerShow: true, AnyShow: true, Times: true, Days: true, AnyShowFolder: "Any Show",
+            Type: AdPromoType.UpNext, Seasonal: new TemporalTagOptions());
+        MediaItem clip = Clip($@"{promos}\Christmas\Top Cat\Up Next\clip.mp4");
+
+        Assert.Equal("Top Cat", AdBreakCompiler.Describe(clip, [upNext], December)!.Attributes["show_id"]);
+        Assert.Null(AdBreakCompiler.Describe(clip, [upNext], July));
+    }
+
+    [Fact]
+    public void A_promos_folder_feeds_every_spot_and_stays_out_of_the_ads()
+    {
+        AdBreakConfig adBreak = new()
+        {
+            Folders = [new AdBreakFolder { Path = Root, Role = AdFolderRole.Ads }],
+            PromoRoots = [new AdBreakPromoRoot { Path = $@"{Root}\Promos" }]
+        };
+        SchedulerConfig config = Config(adBreak);
+
+        PromoConfig promos = SchedulingEngine.ResolvePromoConfig(config, Channel("Break 0"), null);
+        Assert.Equal(AdPromoType.UpNext, promos.UpNext.Folders!.Single().Type);
+        Assert.Equal(AdPromoType.BackToTheShow, promos.BackToTheShow.Folders!.Single().Type);
+        Assert.Equal(2, promos.Windows.Count);
+
+        QueryExpression ads = InterstitialQueryBuilder.BuildCommercials(
+            SchedulingEngine.ResolveInterstitials(config, Channel("Break 0"), null).Commercials!, July, new TemporalTagOptions());
+        Assert.False(QueryEvaluator.Matches(Clip($@"{Root}\Promos\Top Cat\Up Next\clip.mp4"), ads));
+        Assert.True(QueryEvaluator.Matches(Clip($@"{Root}\Ads\cola.mp4"), ads));
+    }
+
     [Theory]
     [InlineData("4pm", "4pm")]
     [InlineData("4 PM", "4pm")]

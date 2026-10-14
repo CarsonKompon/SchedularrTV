@@ -33,7 +33,8 @@
 <div class="card">
     <div class="card-head"><h2>Seasonal tags</h2></div>
     <p class="hint">
-        Added automatically to commercial queries on channels with seasonal matching enabled.
+        What seasonal folders in <a href="ad-breaks">ad breaks</a> (and their tag rules) are matched against: the month,
+        season, date and holiday names below.
     </p>
     <label class="field field-narrow">
         <span>"Any time" tag</span>
@@ -155,12 +156,12 @@
     }
 </div>
 
-<p class="hint">
-    The tag-based break settings below apply to channels without <a href="ad-breaks">ad breaks</a>. Channels that use ad
-    breaks take their clips from the ad breaks' folders, but still use the lengths, repeats and trimming set here unless
-    the ad break or channel sets its own.
-</p>
-<InterstitialsEditor Interstitials="Global.Interstitials" ShowShows="false" Changed="Editor.MarkDirty" />
+<div class="card">
+    <div class="card-head"><h2>Ads, bumpers, filler and promos</h2></div>
+    <p class="hint">
+        Set up in <a href="ad-breaks">Ad Breaks</a>, then picked per channel on its <strong>Ad breaks</strong> tab.
+    </p>
+</div>
 
 @* Promos, Generated promos and any installed plugin's schedule-wide settings. *@
 @foreach (PluginEditorSection section in EditorSections.Where(section => section.Surface == EditorSurface.ScheduleSettings).OrderBy(section => section.Order))

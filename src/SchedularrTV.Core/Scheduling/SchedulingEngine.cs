@@ -1149,7 +1149,7 @@ public sealed class SchedulingEngine(
     public static (PromoConfig Promos, List<string>? BrandTags) ResolvedPromos(SchedulerConfig config, ChannelConfig channel, BlockConfig? block = null)
     {
         PromoConfig promos = ResolvePromoConfig(config, channel, block);
-        return (promos, promos.FromAdBreaks ? null : ResolvePromoBaseTags(block, channel, promos, ResolveInterstitials(config, channel, block).Commercials!));
+        return (promos, promos.FromAdBreaks ? promos.BaseTags : ResolvePromoBaseTags(block, channel, promos, ResolveInterstitials(config, channel, block).Commercials!));
     }
 
     /// <summary>
@@ -1158,7 +1158,7 @@ public sealed class SchedulingEngine(
     /// </summary>
     internal static PromoConfig ResolvePromoConfig(SchedulerConfig config, ChannelConfig channel, BlockConfig? block) =>
         AdBreakCompiler.InUse(config, channel, block) is { } adBreaks
-            ? AdBreakCompiler.Promos(adBreaks)
+            ? AdBreakCompiler.Promos(adBreaks, config.Settings.TemporalTags)
             : block?.Promos ?? channel.Promos ?? config.Settings.Promos;
 
     /// <summary>Which brand folders promos come from; see <see cref="PromoBreakContributor.ResolveBaseTags"/>.</summary>
@@ -1176,11 +1176,17 @@ public sealed class SchedulingEngine(
     /// </summary>
     internal static InterstitialsConfig ResolveInterstitials(SchedulerConfig config, ChannelConfig channel, BlockConfig? block)
     {
-        if (AdBreakCompiler.InUse(config, channel, block) is { } adBreaks)
-        {
-            return AdBreakCompiler.Interstitials(config, channel, block, adBreaks);
-        }
+        return AdBreakCompiler.InUse(config, channel, block) is { } adBreaks
+            ? AdBreakCompiler.Interstitials(config, channel, block, adBreaks)
+            : ResolveTagBasedInterstitials(config, channel, block);
+    }
 
+    /// <summary>
+    /// The older, tag-based break settings collapsed block → channel → settings, ignoring any ad breaks: what a
+    /// schedule from before ad breaks did, and what its settings are moved into ad breaks as.
+    /// </summary>
+    internal static InterstitialsConfig ResolveTagBasedInterstitials(SchedulerConfig config, ChannelConfig channel, BlockConfig? block)
+    {
         InterstitialsConfig resolved = (block?.Interstitials ?? new InterstitialsConfig())
             .Merge(channel.Interstitials)
             .Merge(config.Settings.Interstitials);

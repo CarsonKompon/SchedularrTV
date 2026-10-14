@@ -16,7 +16,8 @@ public static class InterstitialQueryBuilder
     /// </summary>
     public static QueryExpression BuildCommercials(CommercialsConfig commercials, DateTimeOffset moment, TemporalTagOptions temporalOptions) =>
         commercials.Sources is { } sources
-            ? AdBreakCompiler.Pool(sources, commercials.Filter, moment, temporalOptions)
+            ? AdBreakCompiler.Pool(sources, commercials.Filter, moment, temporalOptions,
+                (commercials.TagPools ?? []).Select(pool => BuildCommercials(pool, moment, temporalOptions)))
             : Build(
             commercials.Query,
             commercials.BaseQuery,
@@ -29,7 +30,8 @@ public static class InterstitialQueryBuilder
 
     public static QueryExpression BuildFiller(FillerTierConfig filler, DateTimeOffset moment, TemporalTagOptions temporalOptions) =>
         filler.Sources is { } sources
-            ? AdBreakCompiler.Pool(sources, filler.Filter, moment, temporalOptions)
+            ? AdBreakCompiler.Pool(sources, filler.Filter, moment, temporalOptions,
+                (filler.TagPools ?? []).Select(pool => BuildFiller(pool, moment, temporalOptions)))
             : Build(
             filler.Query,
             filler.BaseQuery,

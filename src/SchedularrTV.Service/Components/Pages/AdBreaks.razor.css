@@ -1,0 +1,4 @@
+.ab-list { padding: 0; }
+.ab-list .list-row { padding: 10px 14px; }
+.ab-list-main { display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; min-width: 0; }
+.ab-list-main:hover .title { text-decoration: underline; }

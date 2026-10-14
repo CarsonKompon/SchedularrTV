@@ -22,4 +22,12 @@
 .ab-promo .hint { margin: 0; }
 .ab-promo-title { margin: 0; }
 .ab-path { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.ab-glossary { margin-top: 16px; }
+.ab-glossary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.ab-glossary-item { border: 1px solid var(--line); border-left: 3px solid var(--promo); padding: 8px 10px; }
+.ab-glossary-item p { margin: 6px 0 0; font-size: 13px; }
+.ab-glossary-item .hint { font-size: 12px; }
+.ab-glossary-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ab-glossary-head .pill { font-size: 11px; }
+
 .check-row { display: flex; flex-wrap: wrap; gap: 4px 14px; }

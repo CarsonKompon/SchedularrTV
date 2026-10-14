@@ -2,11 +2,13 @@
 @inject ConfigEditor Editor
 @inject TimeProvider Clock
 
+<AdBreakTimeline Name="@Name" AdBreak="AdBreak" />
+
 <div class="ab-summary row row-wrap">
     <span class="pill job-ads">@Count(AdFolderRole.Ads) ads folder(s)</span>
     <span class="pill job-bumpers">@Count(AdFolderRole.Bumpers) bumper folder(s)</span>
     <span class="pill job-filler">@Count(AdFolderRole.Filler) filler folder(s)</span>
-    <span class="pill job-promo">@AdBreak.Promos.Count promo folder(s)</span>
+    <span class="pill job-promo">@(AdBreak.Promos.Count + AdBreak.PromoRoots.Count) promo folder(s)</span>
     @if (AdBreak.Seasonal)
     {
         <span class="pill pill-muted">Seasonal</span>
@@ -37,7 +39,48 @@
         <div class="card-head">
             <h2>Folders</h2>
             <span class="muted">Pick what each folder holds. Folders inside it follow along unless you pick otherwise.</span>
+            <div class="spacer"></div>
+            @if (Roots.Count > 0)
+            {
+                <button class="btn btn-sm" type="button" @onclick="() => _pickingRoot = !_pickingRoot">
+                    <Icon Name="folder" Size="14" />@(AdBreak.Root is null ? "Choose its folder" : "Change folder")
+                </button>
+            }
         </div>
+
+        @if (_pickingRoot)
+        {
+            <div class="banner">
+                <p class="hint">The folder holding everything this ad break uses. Only it is shown below.</p>
+                <FolderTreePicker Roots="Roots" Selected="@AdBreak.Root" SelectedChanged="SetRoot" />
+            </div>
+        }
+        else if (AdBreak.Root is null && Roots.Count > 0)
+        {
+            <p class="hint">
+                Showing every commercials library. Choose the folder that holds this ad break's clips to see just that one.
+            </p>
+        }
+        else if (_rootMissing)
+        {
+            <p class="hint warn">Its folder, <code>@AdBreak.Root</code>, isn't in your commercials libraries any more; showing them all.</p>
+        }
+
+        @if (Outside.Count > 0)
+        {
+            <div class="banner banner-warn">
+                <p>These folders are outside <code>@AdBreakPaths.Name(AdBreak.Root ?? "")</code> but still used:</p>
+                @foreach (string path in Outside)
+                {
+                    <div class="row">
+                        <code class="ab-path" title="@path">@path</code>
+                        <span class="pill pill-muted">@(AdBreakFolderJobs.Explicit(AdBreak, path)?.Label)</span>
+                        <div class="spacer"></div>
+                        <button class="btn btn-sm" type="button" @onclick="() => { AdBreakFolderJobs.Set(AdBreak, path, AdBreakFolderJobs.None); Notify(); }">Stop using</button>
+                    </div>
+                }
+            </div>
+        }
 
         @if (Roots.Count == 0)
         {
@@ -50,7 +93,7 @@
         else
         {
             <div class="ab-tree" role="tree">
-                @foreach (CommercialFolder root in Roots)
+                @foreach (CommercialFolder root in TreeRoots)
                 {
                     <AdBreakFolderNode @key="root.Path" Folder="root" Depth="0" AdBreak="AdBreak" Open="_open" Shows="_shows"
                                        Temporal="Temporal" Now="_now" OnToggle="Toggle" OnPick="SetJob" />
@@ -66,12 +109,6 @@
     <div class="ab-side">
         <section class="card">
             <div class="card-head"><h2>Settings</h2></div>
-            <label class="field">
-                <span>Description <span class="opt">(optional)</span></span>
-                <input type="text" value="@AdBreak.Description" placeholder="e.g. Ads that suit any channel"
-                       @onchange="e => { AdBreak.Description = Text(e); Notify(); }" />
-            </label>
-
             <label class="check">
                 <input type="checkbox" checked="@AdBreak.Seasonal" @onchange="e => { AdBreak.Seasonal = e.Value is true; Notify(); }" />
                 <span>Seasonal folders (dates, months, holidays)</span>
@@ -156,11 +193,50 @@
 
         <section class="card">
             <div class="card-head"><h2>Promos</h2></div>
-            @if (AdBreak.Promos.Count == 0)
+            @foreach (AdBreakPromoRoot promoRoot in AdBreak.PromoRoots.ToList())
+            {
+                <div class="ab-promo">
+                    <div class="row">
+                        <label class="check ab-promo-title">
+                            <input type="checkbox" checked="@promoRoot.Enabled" @onchange="e => { promoRoot.Enabled = e.Value is true; Notify(); }" />
+                            <strong>All promo types</strong>
+                        </label>
+                        <code class="ab-path" title="@promoRoot.Path">@ShortPath(promoRoot.Path)</code>
+                        <div class="spacer"></div>
+                        <button class="btn btn-sm btn-icon btn-danger" type="button" title="Remove" aria-label="Remove promo folder"
+                                @onclick="() => { AdBreak.PromoRoots.Remove(promoRoot); Notify(); }"><Icon Name="trash" Size="13" /></button>
+                    </div>
+                    <p class="hint">
+                        Sorted by show and type in either order (<code>Looney Tunes/Back To The Show</code> or
+                        <code>Up Next/Top Cat</code>); each type is found by its folder's name.
+                        @if (TypesIn(promoRoot.Path) is { Count: > 0 } found)
+                        {
+                            <text> Found: @string.Join(", ", found).</text>
+                        }
+                    </p>
+                    <div class="check-row">
+                        <label class="check">
+                            <input type="checkbox" checked="@promoRoot.AnyShow" @onchange="e => { promoRoot.AnyShow = e.Value is true; Notify(); }" />
+                            <span>Clips in no show's folder suit any show</span>
+                        </label>
+                        <label class="check">
+                            <input type="checkbox" checked="@promoRoot.Times" @onchange="e => { promoRoot.Times = e.Value is true; Notify(); }" />
+                            <span>Start time folders</span>
+                        </label>
+                        <label class="check">
+                            <input type="checkbox" checked="@promoRoot.Days" @onchange="e => { promoRoot.Days = e.Value is true; Notify(); }" />
+                            <span>Weekday folders</span>
+                        </label>
+                    </div>
+                </div>
+            }
+
+            @if (AdBreak.Promos.Count == 0 && AdBreak.PromoRoots.Count == 0)
             {
                 <p class="hint">
-                    Set a folder to one of the <strong>Promo</strong> choices in the tree (Up Next, Now Playing, This Has Been,
-                    You're Watching, Back To The Show, Coming Up, Later Today, Eventually) to add its promos here.
+                    Set a folder of promos sorted by show and type (<code>Promos/Looney Tunes/Up Next</code>) to
+                    <strong>Promos: all types</strong> in the tree, or a folder of one type to that type (Up Next, Now Playing,
+                    This Has Been, You're Watching, Back To The Show, Coming Up, Later Today, Eventually).
                 </p>
             }
             @foreach (AdBreakPromo promo in AdBreak.Promos.ToList())
@@ -239,6 +315,51 @@
             }
         </section>
 
+        @if (AdBreak.TagRules is { } rules)
+        {
+            <section class="card">
+                <div class="card-head">
+                    <h2>Tag rules</h2>
+                    <span class="muted">Moved from the older break and promo settings</span>
+                </div>
+                <p class="hint">
+                    Clips picked by folder tag and query, the way breaks were filled before ad breaks. They're pooled with
+                    the folders on the left. Once those folders cover the same clips, remove the rules.
+                </p>
+                @if (rules.Commercials is { } tagAds)
+                {
+                    <label class="check">
+                        <input type="checkbox" checked="@(tagAds.AutoTemporalTags ?? false)"
+                               @onchange="e => { tagAds.AutoTemporalTags = e.Value is true ? true : null; Notify(); }" />
+                        <span>Match seasonal tags for ads (January, Winter, 12-25, Christmas…)</span>
+                    </label>
+                }
+                @if (rules.Filler is { } tagFiller)
+                {
+                    <label class="check">
+                        <input type="checkbox" checked="@(tagFiller.AutoTemporalTags ?? false)"
+                               @onchange="e => { tagFiller.AutoTemporalTags = e.Value is true ? true : null; Notify(); }" />
+                        <span>Match seasonal tags for filler</span>
+                    </label>
+                }
+                <button class="btn btn-sm btn-danger" type="button" @onclick="RemoveTagRules">Remove tag rules</button>
+            </section>
+
+            @if (_tagBreaks is not null)
+            {
+                <InterstitialsEditor Interstitials="_tagBreaks" ShowShows="false" Changed="CommitTagBreaks" />
+            }
+
+            @if (rules.Promos is not null)
+            {
+                <PromoEditor Config="rules.Promos" Changed="Notify">
+                    <BrandContent>
+                        <BrandTagsEditor Values="rules.PromoBaseTags" ValuesChanged="SetPromoBrands" />
+                    </BrandContent>
+                </PromoEditor>
+            }
+        }
+
         @if (UsedBy.Count > 0)
         {
             <section class="card">
@@ -254,7 +375,61 @@
     </div>
 </div>
 
+<section class="card ab-glossary">
+    <div class="card-head">
+        <h2>Promo types</h2>
+        <span class="muted">What each one is for, and where in a break it plays</span>
+    </div>
+    <div class="ab-glossary-grid">
+        @foreach (PromoTypeInfo info in PromoTypeGuide)
+        {
+            <div class="ab-glossary-item">
+                <div class="ab-glossary-head">
+                    <strong>@AdBreakPromo.FolderName(info.Type)</strong>
+                    <span class="pill pill-muted">@info.Where</span>
+                </div>
+                <p>@info.What</p>
+                <p class="hint">@info.When</p>
+            </div>
+        }
+    </div>
+    <p class="hint">
+        Name a folder after a type (any of these spellings work: "Up Next", "UpNext", "up_next") to have it found
+        automatically inside a <strong>Promos: all types</strong> folder.
+    </p>
+</section>
+
 @code {
+    private sealed record PromoTypeInfo(AdPromoType Type, string Where, string What, string When);
+
+    private static readonly PromoTypeInfo[] PromoTypeGuide =
+    [
+        new(AdPromoType.ThisHasBeen, "Opens the break after a show",
+            "A sign-off for the show that just ended: \"This has been Looney Tunes.\"",
+            "Plays once a show's slot is over, so a run of back-to-back episodes signs off once, not after every episode. Left out when the same show is on again next."),
+        new(AdPromoType.YoureWatching, "Opens a mid-roll",
+            "A reminder of what's on: \"You're watching Looney Tunes.\"",
+            "Plays at the start of a break the same show comes back from: a mid-roll, or between two episodes in the same slot."),
+        new(AdPromoType.ComingUp, "After the openers",
+            "\"Coming up at 8:\" a show starting within a few hours (3 hours unless you change it).",
+            "Plays in the break before a new show, after any interstitial shows. Time folders (8pm) are preferred when the show starts then."),
+        new(AdPromoType.LaterToday, "After the openers",
+            "\"Later today:\" a show starting further off the same day (12 hours unless you change it).",
+            "Like Coming Up, for shows further away. Breaks carry a couple of these at most."),
+        new(AdPromoType.Eventually, "Mixed in with the ads",
+            "A trailer for a show airing later in the week.",
+            "Now and then (a 25% chance per break unless you change it), only for shows this channel really airs. Weekday and time folders (Saturday/8pm) must match the airing."),
+        new(AdPromoType.UpNext, "Among the ads, or last",
+            "\"Up next: Looney Tunes,\" for the show that follows.",
+            "In one of the breaks of the show before it (mid-rolls included), or as the last thing before the new show, whichever you pick. Left out when the same show continues."),
+        new(AdPromoType.BackToTheShow, "Closes a mid-roll",
+            "\"And now, back to Looney Tunes.\"",
+            "Plays last in a break the same show comes back from, straight before it resumes."),
+        new(AdPromoType.NowPlaying, "Closes the break before a show",
+            "An ident for the show about to start: \"Now playing: Looney Tunes.\"",
+            "The very last thing before a new show, after Up Next. Left out when the same show continues.")
+    ];
+
     [Parameter, EditorRequired] public string Name { get; set; } = "";
     [Parameter, EditorRequired] public AdBreakConfig AdBreak { get; set; } = new();
     [Parameter] public IReadOnlyList<CommercialFolder> Roots { get; set; } = [];
@@ -278,7 +453,7 @@
         {
             // Roots, and the way down to every folder already in use, start open.
             _openedFor = Roots;
-            foreach (CommercialFolder root in Roots)
+            foreach (CommercialFolder root in TreeRoots)
             {
                 _open.Add(root.Path);
                 foreach (CommercialFolder folder in root.Descendants())
@@ -296,12 +471,117 @@
 
         _now = Clock.GetLocalNow();
         _shows = ExampleShows();
+        SyncTagBreaks();
         Refresh();
     }
 
     private DateTimeOffset _now;
 
-    private void Refresh() => _suggestions = AdBreakFolderJobs.Suggest(AdBreak, Roots);
+    private void Refresh() =>
+        _suggestions = AdBreakFolderJobs.Suggest(AdBreak, Roots, within: TreeRoots.Count == 1 && AdBreak.Root is not null ? TreeRoots[0].Path : null, temporal: Temporal);
+
+    private bool _pickingRoot;
+    private bool _rootMissing;
+
+    /// <summary>The ad break's own folder when it has one (and it's still there), else every commercials library.</summary>
+    private IReadOnlyList<CommercialFolder> TreeRoots
+    {
+        get
+        {
+            _rootMissing = false;
+            if (AdBreak.Root is not { } path)
+            {
+                return Roots;
+            }
+
+            foreach (CommercialFolder library in Roots)
+            {
+                if (library.Descendants().FirstOrDefault(folder => AdBreakPaths.Same(folder.Path, path)) is { } found)
+                {
+                    return [found];
+                }
+            }
+
+            _rootMissing = Roots.Count > 0;
+            return Roots;
+        }
+    }
+
+    /// <summary>Folders given a job that lie outside the ad break's own folder.</summary>
+    private List<string> Outside => AdBreak.Root is not { } root
+        ? []
+        :
+        [
+            .. AdBreak.Folders.Select(folder => folder.Path)
+                .Concat(AdBreak.Promos.Select(promo => promo.Path))
+                .Concat(AdBreak.PromoRoots.Select(promoRoot => promoRoot.Path))
+                .Where(path => !AdBreakPaths.Same(path, root) && !AdBreakPaths.IsUnder(path, root))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+        ];
+
+    private async Task SetRoot(CommercialFolder folder)
+    {
+        AdBreak.Root = folder.Path;
+        _pickingRoot = false;
+
+        // A new folder with no job of its own (or from above) plays as ads, as one picked when the ad break was made does.
+        if (AdBreakFolderJobs.Explicit(AdBreak, folder.Path) is null && AdBreakFolderJobs.Inherited(AdBreak, folder) is null)
+        {
+            AdBreakFolderJobs.Set(AdBreak, folder.Path, "ads");
+        }
+
+        _open.Add(folder.Path);
+        await Notify();
+    }
+
+    // The tag rules' pools, in the shape the tag-based breaks editor edits. Rebuilt only when the rules themselves change.
+    private InterstitialsConfig? _tagBreaks;
+    private AdBreakTagRules? _tagBreaksFor;
+
+    private void SyncTagBreaks()
+    {
+        if (ReferenceEquals(_tagBreaksFor, AdBreak.TagRules))
+        {
+            return;
+        }
+
+        _tagBreaksFor = AdBreak.TagRules;
+        _tagBreaks = AdBreak.TagRules is { } rules
+            ? new InterstitialsConfig
+            {
+                Commercials = rules.Commercials ?? new CommercialsConfig(),
+                Filler = rules.Filler ?? new FillerTierConfig { Fallback = false }
+            }
+            : null;
+    }
+
+    private Task CommitTagBreaks()
+    {
+        if (AdBreak.TagRules is { } rules && _tagBreaks is not null)
+        {
+            rules.Commercials = _tagBreaks.Commercials;
+            rules.Filler = _tagBreaks.Filler is { IsEnabled: true } filler ? filler : null;
+        }
+
+        return Notify();
+    }
+
+    private Task SetPromoBrands(List<string>? brands)
+    {
+        if (AdBreak.TagRules is { } rules)
+        {
+            rules.PromoBaseTags = brands;
+        }
+
+        return Notify();
+    }
+
+    private Task RemoveTagRules()
+    {
+        AdBreak.TagRules = null;
+        SyncTagBreaks();
+        return Notify();
+    }
 
     private async Task Notify()
     {
@@ -318,6 +598,17 @@
     }
 
     private int Count(AdFolderRole role) => AdBreak.Folders.Count(folder => folder.Role == role);
+
+    /// <summary>The promo types named by folders inside a folder, for a promo folder's summary.</summary>
+    private List<string> TypesIn(string path) =>
+    [
+        .. Roots.SelectMany(library => library.Descendants())
+            .Where(folder => AdBreakPaths.IsUnder(folder.Path, path))
+            .Select(folder => AdBreakPromo.FromFolderName(folder.Name))
+            .OfType<AdPromoType>()
+            .Distinct()
+            .Select(AdBreakPromo.FolderName)
+    ];
 
     private void Toggle(CommercialFolder folder)
     {

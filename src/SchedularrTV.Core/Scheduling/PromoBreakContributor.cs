@@ -21,8 +21,8 @@ internal sealed class PromoBreakContributor(IPromoSpotSubstitute? generated) : I
             return null;
         }
 
-        // Promos from ad breaks are found by folder, so brand tags don't come into it.
-        List<string>? baseTags = promos.FromAdBreaks ? null : ResolveBaseTags(context.Block, context.Channel, promos, context.Commercials);
+        // Promos from ad breaks are found by folder; only their tag-based rules carry brand tags of their own.
+        List<string>? baseTags = promos.FromAdBreaks ? promos.BaseTags : ResolveBaseTags(context.Block, context.Channel, promos, context.Commercials);
         var plan = new PromoBreakPlan(context, promos, baseTags, generated);
         await plan.ReserveAsync(cancellationToken).ConfigureAwait(false);
         return plan;

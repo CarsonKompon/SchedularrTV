@@ -1,0 +1,129 @@
+@* What an ad break's breaks look like in a playout: an example slot, its show split by mid-rolls, each break filled from the real clips. *@
+@inject LibraryBrowser Library
+@inject ConfigEditor Editor
+@inject TimeProvider Clock
+
+<section class="card abt">
+    <div class="card-head">
+        <h2>Preview</h2>
+        <span class="muted">An example half-hour slot: a 22-minute show with two mid-rolls, then the break before the next show.</span>
+        <div class="spacer"></div>
+        <button class="btn btn-sm" type="button" disabled="@(_clips is null)" @onclick="Shuffle"><Icon Name="refresh" Size="14" />Shuffle</button>
+    </div>
+
+    @if (_clips is null)
+    {
+        <p class="muted">Reading your commercials…</p>
+    }
+    else
+    {
+        <div class="abt-bar" role="img" aria-label="Timeline of the example slot">
+            @foreach (PreviewSegment segment in _segments)
+            {
+                @foreach (PreviewItem item in segment.Items)
+                {
+                    <div class="abt-cell @KindClass(item.Kind)" style="flex-grow:@Weight(item)" title="@Title(item)">
+                        @if (item.Kind == PreviewKind.Show)
+                        {
+                            <span>@item.Label</span>
+                        }
+                    </div>
+                }
+            }
+        </div>
+
+        <div class="abt-breaks">
+            @foreach (PreviewSegment segment in _segments.Where(segment => segment.IsBreak))
+            {
+                <div class="abt-break">
+                    <div class="abt-break-head">
+                        <strong>@segment.Title</strong>
+                        <span class="muted">@Format(segment.Duration)</span>
+                    </div>
+                    <ol>
+                        @foreach (PreviewItem item in segment.Items)
+                        {
+                            <li>
+                                <span class="abt-dot @KindClass(item.Kind)"></span>
+                                <span class="abt-label" title="@item.Label">@item.Label</span>
+                                @if (item.Note is not null)
+                                {
+                                    <span class="abt-note">@item.Note</span>
+                                }
+                                <span class="abt-dur">@Format(item.Duration)</span>
+                            </li>
+                        }
+                    </ol>
+                </div>
+            }
+        </div>
+
+        <p class="hint abt-legend">
+            <span><span class="abt-dot kind-ad"></span>Ad</span>
+            <span><span class="abt-dot kind-bumper"></span>Bumper</span>
+            <span><span class="abt-dot kind-filler"></span>Filler</span>
+            <span><span class="abt-dot kind-promo"></span>Promo</span>
+            <span><span class="abt-dot kind-padding"></span>Black</span>
+            Clips are picked at random here; a channel's own breaks also follow its rotation, break lengths and interstitial shows.
+        </p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+    [Parameter, EditorRequired] public AdBreakConfig AdBreak { get; set; } = new();
+
+    private IReadOnlyList<MediaItem>? _clips;
+    private IReadOnlyList<PreviewSegment> _segments = [];
+    private int _seed = 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _clips = await Library.GetClipsAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _clips = [];
+        }
+
+        Rebuild();
+    }
+
+    // The ad break is edited in place, so the preview follows every change.
+    protected override void OnParametersSet() => Rebuild();
+
+    private void Shuffle()
+    {
+        _seed++;
+        Rebuild();
+    }
+
+    private void Rebuild()
+    {
+        if (_clips is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _segments = AdBreakPreview.Build(Name, AdBreak, Editor.Working.Settings, _clips, Clock.GetLocalNow(), _seed);
+        }
+        catch (Exception ex) when (ex is SchedularrTV.Core.Query.QueryParseException or SchedulerConfigException or FormatException or ArgumentException)
+        {
+            // A half-typed query in the tag rules; the preview catches up once it parses.
+        }
+    }
+
+    private static string KindClass(PreviewKind kind) => $"kind-{kind.ToString().ToLowerInvariant()}";
+
+    private static string Weight(PreviewItem item) =>
+        Math.Max(1, item.Duration.TotalSeconds).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string Title(PreviewItem item) => $"{item.Label} · {Format(item.Duration)}{(item.Note is null ? "" : $" · {item.Note}")}";
+
+    private static string Format(TimeSpan duration) =>
+        duration.TotalHours >= 1 ? duration.ToString(@"h\:mm\:ss") : $"{(int)duration.TotalMinutes}:{duration.Seconds:00}";
+}

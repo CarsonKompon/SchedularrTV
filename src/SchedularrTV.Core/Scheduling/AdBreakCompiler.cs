@@ -13,13 +13,16 @@ namespace SchedularrTV.Core.Scheduling;
 /// </summary>
 public static class AdBreakCompiler
 {
-    /// <summary>The ad breaks in use for a block (its own, else the channel's), or null when the tag-based settings apply.</summary>
+    /// <summary>
+    /// The ad breaks in use for a block (its own, else the channel's). Once a schedule's settings have been moved into
+    /// ad breaks, none means empty breaks; before that, null: the tag-based settings apply.
+    /// </summary>
     public static IReadOnlyList<AdBreakConfig>? InUse(SchedulerConfig config, ChannelConfig channel, BlockConfig? block)
     {
         List<string>? names = block?.AdBreaks is { Count: > 0 } own ? own : channel.AdBreaks;
         if (names is not { Count: > 0 })
         {
-            return null;
+            return config.Settings.AdBreaksMigrated == true ? [] : null;
         }
 
         return [.. names.Select(name => config.AdBreaks.GetValueOrDefault(name)).OfType<AdBreakConfig>()];
@@ -88,12 +91,17 @@ public static class AdBreakCompiler
             }
         }
 
+        List<CommercialsConfig> tagAds = [.. adBreaks.Select(adBreak => adBreak.TagRules?.Commercials).OfType<CommercialsConfig>()];
+        List<FillerTierConfig> tagFiller = [.. adBreaks.Select(adBreak => adBreak.TagRules?.Filler).OfType<FillerTierConfig>()];
+
         CommercialsConfig commercials = resolved.Commercials!.Merge(null);
         commercials.Sources = ads;
+        commercials.TagPools = tagAds;
 
         FillerTierConfig fillerTier = resolved.Filler!.Merge(null);
         fillerTier.Sources = filler;
-        fillerTier.Fallback = filler.Count > 0 && (fillerTier.Fallback ?? true);
+        fillerTier.TagPools = tagFiller;
+        fillerTier.Fallback = (filler.Count > 0 || tagFiller.Count > 0) && (fillerTier.Fallback ?? true);
 
         return new InterstitialsConfig
         {
@@ -111,79 +119,122 @@ public static class AdBreakCompiler
     /// The promo settings the ad breaks add up to. A spot no ad break has a folder for stays switched on but finds no
     /// clips, so a generated promo can still take it.
     /// </summary>
-    internal static PromoConfig Promos(IReadOnlyList<AdBreakConfig> adBreaks)
+    internal static PromoConfig Promos(IReadOnlyList<AdBreakConfig> adBreaks, TemporalTagOptions temporal)
     {
         PromoConfig defaults = new();
-        List<(AdBreakConfig AdBreak, AdBreakPromo Promo)> promos = [.. adBreaks
-            .SelectMany(adBreak => adBreak.Promos.Where(promo => promo.Enabled).Select(promo => (adBreak, promo)))];
 
-        PromoSpotConfig Spot(AdPromoType type, PromoSpotConfig fallback)
+        // Every folder each kind of promo comes from: the single-type promo folders, and every type of each folder
+        // sorted by show and type. Options (placement, how far ahead…) come from a single-type folder where there is one.
+        List<(AdPromoType Type, TimeSpan? Within, PromoFolderSource Source, AdBreakPromo? Options)> promos =
+        [
+            .. adBreaks.SelectMany(adBreak => adBreak.Promos
+                .Where(promo => promo.Enabled)
+                .Select(promo => (promo.Type, promo.Within, Folder(adBreak, promo, temporal), (AdBreakPromo?)promo))),
+            .. adBreaks.SelectMany(adBreak => adBreak.PromoRoots
+                .Where(root => root.Enabled)
+                .SelectMany(root => Enum.GetValues<AdPromoType>().Select(type =>
+                    (type, (TimeSpan?)null, RootFolder(adBreak, root, type, temporal), (AdBreakPromo?)null))))
+        ];
+
+        // Tag-based promos (moved from the older settings) keep matching as they did, alongside the folders. The first
+        // ad break that has them supplies them. Only read: their lists are copied where the build needs its own.
+        AdBreakTagRules? tagged = adBreaks.Select(adBreak => adBreak.TagRules).FirstOrDefault(rules => rules?.Promos is not null);
+        PromoConfig? tagPromos = tagged?.Promos;
+
+        PromoSpotConfig Spot(AdPromoType type, PromoSpotConfig fallback, PromoSpotConfig? byTag)
         {
-            List<(AdBreakConfig AdBreak, AdBreakPromo Promo)> matching = [.. promos.Where(entry => entry.Promo.Type == type)];
-            AdBreakPromo? first = matching.Count > 0 ? matching[0].Promo : null;
+            var matching = promos.Where(entry => entry.Type == type).ToList();
+            AdBreakPromo? first = matching.Select(entry => entry.Options).FirstOrDefault(options => options is not null);
             return new PromoSpotConfig
             {
-                Enabled = true,
-                PromoTypes = [],
-                Tag = string.Empty,
-                SkipWhenSameSeries = first?.SkipWhenSameSeries ?? fallback.SkipWhenSameSeries,
-                Placement = first?.Placement ?? fallback.Placement,
-                Folders = [.. matching.Select(entry => Folder(entry.AdBreak, entry.Promo))]
+                Enabled = byTag?.Enabled ?? true,
+                PromoTypes = byTag is null ? [] : [.. byTag.PromoTypes],
+                Tag = byTag?.Tag ?? string.Empty,
+                SkipWhenSameSeries = first?.SkipWhenSameSeries ?? byTag?.SkipWhenSameSeries ?? fallback.SkipWhenSameSeries,
+                Placement = first?.Placement ?? byTag?.Placement ?? fallback.Placement,
+                Folders = [.. matching.Select(entry => entry.Source)]
             };
         }
 
-        List<PromoWindow> windows = [.. promos
-            .Where(entry => entry.Promo.Type is AdPromoType.ComingUp or AdPromoType.LaterToday)
-            .GroupBy(entry => entry.Promo.Within ?? AdBreakPromo.DefaultWithin(entry.Promo.Type))
+        List<PromoWindow> windows = tagPromos is null
+            ? []
+            : [.. (tagPromos.Windows.Count > 0 ? tagPromos.Windows : PromoConfig.DefaultWindows).Select(window => new PromoWindow
+            {
+                Within = window.Within,
+                PromoTypes = [.. window.PromoTypes],
+                IncludeClockVariants = window.IncludeClockVariants
+            })];
+
+        int tagWindows = windows.Count;
+        windows.AddRange(promos
+            .Where(entry => entry.Type is AdPromoType.ComingUp or AdPromoType.LaterToday)
+            .GroupBy(entry => entry.Within ?? AdBreakPromo.DefaultWithin(entry.Type))
             .OrderBy(group => group.Key)
             .Select(group => new PromoWindow
             {
                 Within = group.Key,
                 PromoTypes = [],
                 IncludeClockVariants = true,
-                Folders = [.. group.Select(entry => Folder(entry.AdBreak, entry.Promo))]
-            })];
+                Folders = [.. group.Select(entry => entry.Source)]
+            }));
 
-        List<(AdBreakConfig AdBreak, AdBreakPromo Promo)> eventually = [.. promos.Where(entry => entry.Promo.Type == AdPromoType.Eventually)];
-        AdBreakPromo? firstEventually = eventually.Count > 0 ? eventually[0].Promo : null;
+        var eventually = promos.Where(entry => entry.Type == AdPromoType.Eventually).ToList();
+        AdBreakPromo? firstEventually = eventually.Select(entry => entry.Options).FirstOrDefault(options => options is not null);
+        EventuallyConfig eventuallyDefaults = tagPromos?.Eventually ?? defaults.Eventually;
+        PromoConfig fallbacks = tagPromos ?? defaults;
 
         return new PromoConfig
         {
-            Enabled = true,
+            Enabled = tagPromos?.Enabled ?? true,
             FromAdBreaks = true,
-            BaseQuery = null,
-            BaseTags = null,
+            BaseQuery = tagPromos?.BaseQuery,
+            BaseTags = tagged?.PromoBaseTags,
             AnyShowAlias = adBreaks.Select(adBreak => adBreak.AnyShowFolder).FirstOrDefault(name => !string.IsNullOrWhiteSpace(name))
+                           ?? tagPromos?.AnyShowAlias
                            ?? AdBreakConfig.DefaultAnyShowFolder,
+            // Far enough ahead for every folder window; tag-based ones keep the lookahead they had.
             Lookahead = adBreaks.Select(adBreak => adBreak.Lookahead).FirstOrDefault(value => value is not null)
-                        ?? (windows.Count > 0 ? TimeSpan.FromTicks(Math.Max(defaults.Lookahead.Ticks, windows.Max(window => window.Within.Ticks))) : defaults.Lookahead),
-            MaxPerBreak = adBreaks.Select(adBreak => adBreak.MaxPromosPerBreak).FirstOrDefault(value => value is not null) ?? defaults.MaxPerBreak,
+                        ?? TimeSpan.FromTicks(Math.Max(fallbacks.Lookahead.Ticks,
+                            windows.Count > tagWindows ? windows.Skip(tagWindows).Max(window => window.Within.Ticks) : 0)),
+            MaxPerBreak = adBreaks.Select(adBreak => adBreak.MaxPromosPerBreak).FirstOrDefault(value => value is not null) ?? fallbacks.MaxPerBreak,
             Windows = windows,
-            UpNext = Spot(AdPromoType.UpNext, defaults.UpNext),
-            NowPlaying = Spot(AdPromoType.NowPlaying, defaults.NowPlaying),
-            ThisHasBeen = Spot(AdPromoType.ThisHasBeen, defaults.ThisHasBeen),
-            YoureWatching = Spot(AdPromoType.YoureWatching, defaults.YoureWatching),
-            BackToTheShow = Spot(AdPromoType.BackToTheShow, defaults.BackToTheShow),
+            UpNext = Spot(AdPromoType.UpNext, defaults.UpNext, tagPromos?.UpNext),
+            NowPlaying = Spot(AdPromoType.NowPlaying, defaults.NowPlaying, tagPromos?.NowPlaying),
+            ThisHasBeen = Spot(AdPromoType.ThisHasBeen, defaults.ThisHasBeen, tagPromos?.ThisHasBeen),
+            YoureWatching = Spot(AdPromoType.YoureWatching, defaults.YoureWatching, tagPromos?.YoureWatching),
+            BackToTheShow = Spot(AdPromoType.BackToTheShow, defaults.BackToTheShow, tagPromos?.BackToTheShow),
             Eventually = new EventuallyConfig
             {
-                Enabled = true,
-                PromoTypes = [],
-                Tag = string.Empty,
-                Chance = Math.Clamp(firstEventually?.Chance ?? defaults.Eventually.Chance, 0, 1),
-                Horizon = firstEventually?.Horizon ?? defaults.Eventually.Horizon,
-                Folders = [.. eventually.Select(entry => Folder(entry.AdBreak, entry.Promo))]
+                Enabled = eventuallyDefaults.Enabled,
+                PromoTypes = tagPromos is null ? [] : [.. eventuallyDefaults.PromoTypes],
+                Tag = tagPromos is null ? string.Empty : eventuallyDefaults.Tag,
+                Chance = Math.Clamp(firstEventually?.Chance ?? eventuallyDefaults.Chance, 0, 1),
+                Horizon = firstEventually?.Horizon ?? eventuallyDefaults.Horizon,
+                Folders = [.. eventually.Select(entry => entry.Source)]
             }
         };
     }
 
-    private static PromoFolderSource Folder(AdBreakConfig adBreak, AdBreakPromo promo) => new(
+    private static PromoFolderSource Folder(AdBreakConfig adBreak, AdBreakPromo promo, TemporalTagOptions temporal) => new(
         promo.Path,
         Excluded(adBreak, promo.Path, null),
         promo.PerShow,
         promo.AnyShow,
         promo.Times,
         promo.Days,
-        adBreak.AnyShowFolder ?? AdBreakConfig.DefaultAnyShowFolder);
+        adBreak.AnyShowFolder ?? AdBreakConfig.DefaultAnyShowFolder,
+        Seasonal: adBreak.Seasonal ? temporal : null);
+
+    private static PromoFolderSource RootFolder(AdBreakConfig adBreak, AdBreakPromoRoot root, AdPromoType type, TemporalTagOptions temporal) => new(
+        root.Path,
+        Excluded(adBreak, root.Path, null),
+        PerShow: true,
+        root.AnyShow,
+        root.Times,
+        root.Days,
+        adBreak.AnyShowFolder ?? AdBreakConfig.DefaultAnyShowFolder,
+        type,
+        adBreak.Seasonal ? temporal : null);
 
     /// <summary>Folders inside <paramref name="folder"/> that the ad break gives a different job, and so are left out of it.</summary>
     private static List<string> Excluded(AdBreakConfig adBreak, string folder, AdFolderRole? role)
@@ -195,6 +246,10 @@ public static class AdBreakCompiler
         excluded.AddRange(adBreak.Promos
             .Where(promo => (role is not null || !AdBreakPaths.Same(promo.Path, folder)) && AdBreakPaths.IsUnder(promo.Path, folder))
             .Select(promo => promo.Path));
+
+        excluded.AddRange(adBreak.PromoRoots
+            .Where(root => root.Enabled && AdBreakPaths.IsUnder(root.Path, folder))
+            .Select(root => root.Path));
 
         return [.. excluded.Distinct(StringComparer.OrdinalIgnoreCase)];
     }
@@ -231,9 +286,10 @@ public static class AdBreakCompiler
     /// Every clip in the sources' folders that may play at <paramref name="moment"/>; nothing when there are none.
     /// <paramref name="filter"/> is AND-ed on.
     /// </summary>
-    public static QueryExpression Pool(IReadOnlyList<AdPoolSource> sources, string? filter, DateTimeOffset moment, TemporalTagOptions options)
+    public static QueryExpression Pool(
+        IReadOnlyList<AdPoolSource> sources, string? filter, DateTimeOffset moment, TemporalTagOptions options, IEnumerable<QueryExpression>? tagPools = null)
     {
-        QueryExpression pool = QueryExpression.Or(sources.Select(source => Source(source, moment, options)));
+        QueryExpression pool = QueryExpression.Or(sources.Select(source => Source(source, moment, options)).Concat(tagPools ?? []));
         if (pool is NoneExpression || string.IsNullOrWhiteSpace(filter))
         {
             return pool;
@@ -289,9 +345,11 @@ public static class AdBreakCompiler
     /// <summary>
     /// Reads what a promo clip's folders say about it (the show it's for, and the day and start time when the promo
     /// folder uses them) into the attributes promo matching already reads: <c>show_id</c>, <c>promo_day</c>,
-    /// <c>promo_clock</c>. Null when it isn't in any of the folders, or has no show and no "any show" fallback.
+    /// <c>promo_clock</c>. Null when it isn't in any of the folders, or has no show and no "any show" fallback. For a
+    /// folder sorted by type, also null unless the clip is under a folder named for that type; for a seasonal one,
+    /// null when it's under a month, season, holiday or date folder that isn't <paramref name="seasonAt"/>'s.
     /// </summary>
-    public static MediaItem? Describe(MediaItem item, IReadOnlyList<PromoFolderSource> folders)
+    public static MediaItem? Describe(MediaItem item, IReadOnlyList<PromoFolderSource> folders, DateTimeOffset? seasonAt = null)
     {
         if (item.Path is not { } path)
         {
@@ -311,8 +369,39 @@ public static class AdBreakCompiler
         string? show = null;
         string? day = null;
         string? clock = null;
+        bool typed = source.Type is null;
         foreach (string segment in AdBreakPaths.FoldersBetween(source.Folder, path))
         {
+            // In a folder sorted by type, the type's folder is the one named for it; another type's means another spot.
+            if (source.Type is { } wanted && AdBreakPromo.FromFolderName(segment) is { } found)
+            {
+                if (found != wanted)
+                {
+                    return null;
+                }
+
+                typed = true;
+                continue;
+            }
+
+            if (source.Seasonal is { } temporal)
+            {
+                if (string.Equals(segment, temporal.AnyTimeTag, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (SeasonalFolders.IsSeasonal(segment, temporal))
+                {
+                    if (seasonAt is { } moment && !SeasonalFolders.IsActive(segment, moment, temporal))
+                    {
+                        return null;
+                    }
+
+                    continue;
+                }
+            }
+
             if (source.Days && day is null && TryReadDay(segment, out DayOfWeek weekday))
             {
                 day = weekday.ToString().ToLowerInvariant();
@@ -325,6 +414,11 @@ public static class AdBreakCompiler
             {
                 show = segment;
             }
+        }
+
+        if (!typed)
+        {
+            return null;
         }
 
         if (show is null || string.Equals(show, source.AnyShowFolder, StringComparison.OrdinalIgnoreCase))

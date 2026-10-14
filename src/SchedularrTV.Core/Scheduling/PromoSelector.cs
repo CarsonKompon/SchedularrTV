@@ -107,20 +107,17 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
             return null;
         }
 
-        IReadOnlyList<MediaItem> matches;
+        // Clips from an ad break's folders, plus any matched by type or tag (the older way, which ad breaks keep too).
+        List<MediaItem> matches = [];
         if (spot.Folders is { } folders)
         {
-            matches = await FolderMatchesAsync(folders, showIds, at, cancellationToken).ConfigureAwait(false);
+            matches.AddRange(await FolderMatchesAsync(folders, showIds, at, cancellationToken).ConfigureAwait(false));
         }
-        else
-        {
-            QueryExpression expression = InterstitialQueryBuilder.BuildSpot(config, spot, showIds, baseTags);
-            if (expression is NoneExpression)
-            {
-                return null;
-            }
 
-            matches = await session.SearchAsync(expression, cancellationToken).ConfigureAwait(false);
+        QueryExpression expression = InterstitialQueryBuilder.BuildSpot(config, spot, showIds, baseTags);
+        if (expression is not NoneExpression)
+        {
+            matches.AddRange(Unseen(matches, await session.SearchAsync(expression, cancellationToken).ConfigureAwait(false)));
         }
 
         return ClockMatches(matches, at, honourClock: true)
@@ -151,20 +148,16 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
         DeterministicRandom random = DeterministicRandom.FromSeedText(seed, "eventually");
         random.Next(1_000);
 
-        IReadOnlyList<MediaItem> found;
+        List<MediaItem> found = [];
         if (eventually.Folders is { } folders)
         {
-            found = await FolderMatchesAsync(folders, null, null, cancellationToken).ConfigureAwait(false);
+            found.AddRange(await FolderMatchesAsync(folders, null, null, cancellationToken, seasonAt: at).ConfigureAwait(false));
         }
-        else
-        {
-            QueryExpression expression = InterstitialQueryBuilder.BuildEventually(config, eventually, baseTags);
-            if (expression is NoneExpression)
-            {
-                return null;
-            }
 
-            found = await session.SearchAsync(expression, cancellationToken).ConfigureAwait(false);
+        QueryExpression expression = InterstitialQueryBuilder.BuildEventually(config, eventually, baseTags);
+        if (expression is not NoneExpression)
+        {
+            found.AddRange(Unseen(found, await session.SearchAsync(expression, cancellationToken).ConfigureAwait(false)));
         }
 
         List<MediaItem> matches = [.. found.Where(m => m.Duration > TimeSpan.Zero && m.Duration <= available)];
@@ -252,12 +245,16 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
         IReadOnlyList<PromoFolderSource> folders,
         IReadOnlyList<string>? showIds,
         DateTimeOffset? at,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTimeOffset? seasonAt = null)
     {
         if (folders.Count == 0)
         {
             return [];
         }
+
+        // Seasonal promo folders count by the airing's date (or the break's, for trailers).
+        seasonAt ??= at;
 
         IReadOnlyList<MediaItem> clips = await session.SearchAsync(AdBreakCompiler.PromoPool(folders), cancellationToken).ConfigureAwait(false);
         HashSet<string>? wanted = showIds is null ? null : new(showIds, StringComparer.OrdinalIgnoreCase);
@@ -268,7 +265,7 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
         List<MediaItem> generic = [];
         foreach (MediaItem clip in clips)
         {
-            if (AdBreakCompiler.Describe(clip, folders) is not { } described
+            if (AdBreakCompiler.Describe(clip, folders, seasonAt) is not { } described
                 || Attribute(described, "show_id") is not { } show)
             {
                 continue;
@@ -289,6 +286,13 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
         }
 
         return matches.Count > 0 ? matches : generic;
+    }
+
+    /// <summary>The items of <paramref name="more"/> not already in <paramref name="have"/>.</summary>
+    private static IEnumerable<MediaItem> Unseen(List<MediaItem> have, IReadOnlyList<MediaItem> more)
+    {
+        HashSet<string> ids = new(have.Select(item => item.Id), StringComparer.Ordinal);
+        return [.. more.Where(item => ids.Add(item.Id))];
     }
 
     private static string? Attribute(MediaItem item, string key) =>

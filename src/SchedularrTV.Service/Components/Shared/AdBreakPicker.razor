@@ -9,8 +9,8 @@
     @foreach (string name in Selected)
     {
         bool missing = !Editor.Working.AdBreaks.ContainsKey(name);
-        <span class="pill @(missing ? "pill-error" : "pill-accent") ab-chip" title="@(missing ? "No ad break by this name" : Editor.Working.AdBreaks[name].Description)">
-            <a href="ad-breaks">@name</a>
+        <span class="pill @(missing ? "pill-error" : "pill-accent") ab-chip" title="@(missing ? "No ad break by this name" : "Open this ad break")">
+            <a href="@($"ad-breaks/{Uri.EscapeDataString(name)}")">@name</a>
             <button type="button" class="ab-chip-remove" aria-label="@($"Remove {name}")" @onclick="() => Remove(name)"><Icon Name="x" Size="12" /></button>
         </span>
     }

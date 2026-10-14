@@ -6,7 +6,9 @@ An **ad break** is a reusable set of folders from your commercials libraries: wh
 
 1. Add clip folders under **App settings → Commercials library** and select **Save**.
 2. Open **Programming → Ad Breaks** and select **Create**.
-3. In the folder tree, pick what each folder holds:
+3. Name it and pick the folder holding all of its commercials, bumpers, filler and promos. Everything in that folder plays as an ad unless a folder inside it is given another job.
+4. On the next page, untick any of the suggested folders that aren't what they look like (`Bumpers` as bumpers, `Up Next` as Up Next promos, a `Promos` folder sorted by show as all promo types, and so on). Seasonal folders are switched on when the folder has month, season, holiday or date folders.
+5. Select **Create ad break**. It opens on its own page, showing just its folder, where each folder can be given a job (**Change folder** picks another):
 
 | Choice | Behavior |
 | --- | --- |
@@ -14,11 +16,16 @@ An **ad break** is a reusable set of folders from your commercials libraries: wh
 | **Bumpers** | Station idents; mixed in with the ads, or at the start and/or end of each break (**Settings → Bumpers go**) |
 | **Filler** | Closes whatever the ads can't, cut short (or looped, under **Advanced**) instead of leaving a black screen |
 | **Skip** | Leaves a folder out, inside a folder that is used |
-| **Promo: …** | Up Next, Now Playing, This Has Been, You're Watching, Back To The Show, Coming Up, Later Today or Eventually |
+| **Promos: all types** | Promos sorted by show and type in either order (`Promos/Looney Tunes/Back To The Show/`, `Promos/Up Next/Top Cat/`); each type is found by its folder's name |
+| **Promo: … only** | A folder of one type: Up Next, Now Playing, This Has Been, You're Watching, Back To The Show, Coming Up, Later Today or Eventually |
 
-Folders inside a chosen folder follow along unless you pick otherwise. Folders named like a job (`Ads`, `Bumpers`, `Filler`, `Up Next`, `Now Playing`…) are offered as one-click suggestions; **Add all** takes them all.
+Folders inside a chosen folder follow along unless you pick otherwise. Folders named like a job (`Bumpers`, `Filler`, `Up Next`, `Now Playing`…) keep being offered as one-click suggestions; **Add all** takes them all.
 
-4. Select **Save changes**.
+6. Select **Save changes**.
+
+## Preview an ad break
+
+The top of each ad break shows an example half-hour slot: a 22-minute show split by two mid-rolls, then the break before the next show. Each break is filled from the ad break's real clips in the order a playout plays them: the opening promo (You're Watching or This Has Been), an opening bumper, Coming Up and Later Today, the ads with Up Next and Eventually mixed in, filler, a closing bumper, then Back To The Show or Up Next and Now Playing. **Shuffle** picks other clips.
 
 ## Match seasonal commercials
 
@@ -35,7 +42,7 @@ Pick a promo choice for a folder in the tree, then adjust it under **Promos**:
 | **Start time folders** | `Up Next/Top Cat/8pm/` plays only for an 8pm start (also `8:30pm`, `830pm`, `20:30`) |
 | **Weekday folders** | `Eventually/Top Cat/Saturday/` plays only for a Saturday airing |
 
-The tree shows greyed-out examples of the show, time and day folders each promo looks for. Clips made for the show win over clips for any show. Generated promos can still fill a spot no ad break has a folder for.
+With seasonal folders on, a promo under a month, season, holiday or date folder (`Promos/Christmas/Top Cat/Up Next/`) only plays then, and that folder isn't taken for a show. The tree shows greyed-out examples of the show, time and day folders each promo looks for. Clips made for the show win over clips for any show. Generated promos can still fill a spot no ad break has a folder for.
 
 ## Use ad breaks on a channel
 
@@ -44,15 +51,21 @@ The tree shows greyed-out examples of the show, time and day folders each promo 
 3. Add interstitial shows and mid-rolls on the same tab if wanted.
 4. Select **Save changes**.
 
-A block can use its own ad breaks: open it under **Blocks & anchors** and pick them under **Ad breaks**; left empty, it uses the channel's.
+A block can use its own ad breaks: open it under **Blocks & anchors** and pick them under **Ad breaks**; left empty, it uses the channel's. A channel with no ad breaks has empty (black) breaks.
 
 ## Fine tuning
 
-Ad lengths, repeats per break, tolerance, strict fit, trimming and looping are under the ad break's **Settings → Advanced**. A channel's or block's own values (under **Advanced: tag-based breaks and promos**) override the ad break's; the global ones in **Channel settings** apply where neither sets them.
+Ad lengths, repeats per break, tolerance, strict fit, trimming and looping are under the ad break's **Settings → Advanced**.
 
-## Tag-based breaks (without ad breaks)
+## Upgrading from tag-based breaks
 
-A channel with no ad breaks uses the tag-based settings under **Ad breaks → Advanced: tag-based breaks and promos**: brands, clip folders and filler chosen by folder tag, seasonal tag matching, and the tag-based promo settings. Folder names supply tags; see [Commercials on disk](configuration.md#commercials-on-disk).
+Before ad breaks, each channel picked commercials by folder tag (brands, clip folders, filler, seasonal tags) and had its own promo settings. The first time an older schedule loads, those settings are moved into ad breaks and the channels are pointed at them, so breaks fill exactly as before:
+
+- Channels that used the global defaults share an ad break called **Default**.
+- A channel with settings of its own gets an ad break named after it; a block with its own gets one named "Channel – Block".
+- The original file is kept beside the schedule as `.before-ad-breaks.bak`, and a copy is under **Backups**.
+
+Each moved ad break keeps the old settings as **Tag rules**, which you can still edit on its page. Its clips are pooled with any folders you add. Once your folders cover the same clips, select **Remove tag rules**. Folder names supply tags; see [Commercials on disk](configuration.md#commercials-on-disk).
 
 ## Add short shows between programmes
 

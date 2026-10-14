@@ -22,10 +22,7 @@ public sealed class PromosPlugin : IBuiltInPlugin
     public void ConfigureServices(IServiceCollection services, IPluginContext context)
     {
         services.AddSingleton(PlannerFeature.Promos);
-        // No channel tab: a channel's promos are on its Ad breaks tab (from its ad breaks, or the tag-based settings
-        // under Advanced there), and a block's in its editor's advanced section.
-        services.AddBlockEditorSection<PromosBlockSection>(context, "Promos", order: 40);
-        services.AddScheduleSettingsSection<PromosSettingsSection>(context, "Promos", order: 40);
+        // No editor sections: promos are set up in ad breaks (Programming → Ad Breaks), which channels and blocks pick.
     }
 }
 

@@ -36,6 +36,9 @@ public sealed class ConfigEditor(SchedulerConfigProvider provider)
     {
         _revision++;
         IsDirty = true;
+
+        // A channel made with tag-based break settings (an import, pasted YAML) gets ad breaks straight away.
+        SchedularrTV.Core.Scheduling.AdBreakMigration.Migrate(_working);
         Validate();
         Changed?.Invoke();
     }

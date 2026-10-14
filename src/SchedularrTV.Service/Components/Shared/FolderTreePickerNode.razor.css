@@ -1,0 +1,7 @@
+.ftp-row { display: flex; align-items: center; gap: 4px; min-height: 30px; padding: 0 8px 0 calc(6px + var(--depth, 0) * 18px); border-bottom: 1px solid var(--line); }
+.ftp-row:hover { background: var(--panel-2); }
+.ftp-row.selected { background: var(--accent-dim); box-shadow: inset 3px 0 0 var(--accent); }
+.ftp-toggle { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex: none; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; }
+.ftp-pick { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; padding: 4px 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.ftp-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ftp-count { margin-left: auto; font-size: 11px; color: var(--faint); padding: 0 6px; border: 1px solid var(--line); }

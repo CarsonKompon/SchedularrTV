@@ -144,8 +144,8 @@
                        EmptyText="@(ChannelAdBreaks is { Count: > 0 } inherited ? $"Same as the channel ({string.Join(", ", inherited)})" : "Same as the channel")" />
     </div>
 
-    @* Any installed plugin's block settings (the Promos one is with the tag-based settings below). *@
-    @foreach (PluginEditorSection section in BlockSections.Where(section => !IsPromos(section)))
+    @* Any installed plugin's block settings. *@
+    @foreach (PluginEditorSection section in BlockSections)
     {
         <h3>@section.Title</h3>
         <DynamicComponent @key="section.Id" Type="section.Component" Parameters="SectionParameters(section)" />
@@ -153,40 +153,18 @@
 
     <details>
         <summary style="cursor:pointer;color:var(--muted);font-size:12px;margin:8px 0;">
-            Block-specific interstitials, mid-rolls and tag-based breaks
+            Block-specific interstitial shows and mid-rolls
         </summary>
 
-        <h3>Tag-based breaks and promos</h3>
-        <p class="hint">
-            @(Block.AdBreaks is { Count: > 0 } || ChannelAdBreaks is { Count: > 0 }
-                ? "Ignored while ad breaks are in use here, apart from the fine tuning of an interstitials override."
-                : "Used while neither the block nor its channel has ad breaks.")
-        </p>
-        <TagListEditor Label="Commercial brand tags" Placeholder="Adult Swim"
-                       Values="_commercialTags" Changed="OnTagsChanged" />
-
-        <label class="check">
-            <input type="checkbox" checked="@(Block.AutoTemporalTags ?? false)"
-                   @onchange="e => { Block.AutoTemporalTags = (bool)(e.Value ?? false); Changed.InvokeAsync(); }" />
-            <span>Match seasonal / holiday commercial tags</span>
-        </label>
-
-        @foreach (PluginEditorSection section in BlockSections.Where(IsPromos))
-        {
-            <h3>@section.Title</h3>
-            <DynamicComponent @key="section.Id" Type="section.Component" Parameters="SectionParameters(section)" />
-        }
-
-        <h3>Interstitials and mid-rolls</h3>
         @if (Block.Interstitials is null)
         {
             <button class="btn btn-sm" @onclick="() => { Block.Interstitials = new InterstitialsConfig(); Changed.InvokeAsync(); }">
-                Override interstitials
+                Override interstitial shows
             </button>
         }
         else
         {
-            <InterstitialsEditor Interstitials="Block.Interstitials" Changed="Changed" />
+            <InterstitialsEditor Interstitials="Block.Interstitials" ShowAds="false" Changed="Changed" />
             <button class="btn btn-sm btn-danger" @onclick="() => { Block.Interstitials = null; Changed.InvokeAsync(); }">
                 Inherit from channel
             </button>
@@ -219,8 +197,6 @@
     /// <summary>The block's channel, for one not added to a channel yet; otherwise it's found in the schedule.</summary>
     [Parameter] public ChannelConfig? Channel { get; set; }
 
-    private List<string> _commercialTags = [];
-
     private BlockSchedule Schedule => Block.Schedule ??= new BlockSchedule { Repeat = RepeatModifier.Yearly };
 
     private IEnumerable<PluginEditorSection> BlockSections =>
@@ -237,11 +213,6 @@
             Changed = () => Changed.InvokeAsync()
         }
     };
-
-    protected override void OnParametersSet()
-    {
-        _commercialTags = Block.CommercialBaseTags ?? [];
-    }
 
     private static string Format(TimeSpan? value) => value?.ToString(@"hh\:mm") ?? "";
 
@@ -300,9 +271,6 @@
         await Changed.InvokeAsync();
     }
 
-    private static bool IsPromos(PluginEditorSection section) =>
-        string.Equals(section.PluginId, BuiltInPluginIds.Promos, StringComparison.OrdinalIgnoreCase);
-
     private ChannelConfig? OwningChannel => Channel ?? Editor.Working.Channels.FirstOrDefault(channel => channel.Blocks.Contains(Block));
 
     private List<string>? ChannelAdBreaks => OwningChannel?.AdBreaks;
@@ -313,9 +281,4 @@
         await Changed.InvokeAsync();
     }
 
-    private async Task OnTagsChanged()
-    {
-        Block.CommercialBaseTags = _commercialTags.Count > 0 ? _commercialTags : null;
-        await Changed.InvokeAsync();
-    }
 }

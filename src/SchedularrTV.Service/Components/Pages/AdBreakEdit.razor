@@ -1,0 +1,104 @@
+@page "/ad-breaks/{Name}"
+@inherits EditorPage
+@inject CommercialTree Tree
+@inject NavigationManager Nav
+
+<a class="back-link" href="ad-breaks"><Icon Name="arrow-left" Size="14" />All ad breaks</a>
+
+@if (_adBreak is null)
+{
+    <PageHeader Title="Ad break not found" Eyebrow="Ad Breaks" />
+    <div class="empty">There's no ad break called “@Name”. It may have been renamed or deleted.</div>
+}
+else
+{
+    <PageHeader Title="@Name" Eyebrow="Ad break">
+        <ChildContent>@AdBreaks.Summarise(_adBreak)</ChildContent>
+        <Actions>
+            @if (_confirmDelete)
+            {
+                <button class="btn btn-danger confirm" type="button" @onclick="Delete">Delete?</button>
+                <button class="btn" type="button" @onclick="() => _confirmDelete = false">Cancel</button>
+            }
+            else
+            {
+                <button class="btn" type="button" @onclick="() => { _renaming = !_renaming; _renameError = null; }"><Icon Name="pencil" Size="15" />Rename</button>
+                <button class="btn btn-danger" type="button" @onclick="() => _confirmDelete = true"><Icon Name="trash" Size="15" />Delete</button>
+            }
+        </Actions>
+    </PageHeader>
+
+    @if (_renaming)
+    {
+        <div class="banner">
+            <label class="field">
+                <span>New name</span>
+                <input type="text" value="@Name" @onchange="e => Rename(e.Value?.ToString())" />
+            </label>
+            <p class="hint">Channels and blocks using it follow the new name.</p>
+            @if (_renameError is not null)
+            {
+                <span class="field-error" role="alert">@_renameError</span>
+            }
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <p class="muted">Reading your commercials folders…</p>
+    }
+    else
+    {
+        <AdBreakEditor @key="Name" Name="@Name" AdBreak="_adBreak" Roots="_roots" Changed="Editor.MarkDirty" />
+    }
+}
+
+@code {
+    [Parameter] public string Name { get; set; } = "";
+
+    private AdBreakConfig? _adBreak;
+    private IReadOnlyList<CommercialFolder> _roots = [];
+    private bool _loading = true;
+    private bool _renaming;
+    private string? _renameError;
+    private bool _confirmDelete;
+
+    protected override void OnParametersSet() => _adBreak = Editor.Working.AdBreaks.GetValueOrDefault(Name);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _roots = await Tree.GetRootsAsync();
+        _loading = false;
+    }
+
+    // A discard or reload replaces the working copy, so the ad break is looked up again.
+    protected override void OnEditorChanged()
+    {
+        _adBreak = Editor.Working.AdBreaks.GetValueOrDefault(Name);
+        base.OnEditorChanged();
+    }
+
+    private void Rename(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Trim() == Name)
+        {
+            _renaming = false;
+            return;
+        }
+
+        _renameError = AdBreakNames.Rename(Editor.Working, Name, name);
+        if (_renameError is null)
+        {
+            _renaming = false;
+            Editor.MarkDirty();
+            Nav.NavigateTo(AdBreaks.Href(name.Trim()));
+        }
+    }
+
+    private void Delete()
+    {
+        AdBreakNames.Remove(Editor.Working, Name);
+        Editor.MarkDirty();
+        Nav.NavigateTo("ad-breaks");
+    }
+}

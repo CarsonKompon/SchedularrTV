@@ -148,7 +148,7 @@ public static class SchedulerConfigLoader
                 errors.Add("ad_breaks: every ad break needs a name.");
             }
 
-            if (adBreak.Folders.Count == 0 && adBreak.Promos.Count == 0)
+            if (adBreak.Folders.Count == 0 && adBreak.Promos.Count == 0 && adBreak.PromoRoots.Count == 0 && adBreak.TagRules is null or { IsEmpty: true })
             {
                 warnings.Add($"{scope}: no folders are chosen, so its breaks stay empty.");
             }
@@ -160,6 +160,17 @@ public static class SchedulerConfigLoader
 
             ValidateQuery(adBreak.Commercials?.Filter, $"{scope}.commercials.filter", errors);
             ValidateQuery(adBreak.Filler?.Filter, $"{scope}.filler.filter", errors);
+
+            if (adBreak.TagRules is { } rules)
+            {
+                ValidateQuery(rules.Commercials?.Query, $"{scope}.tag_rules.commercials.query", errors);
+                ValidateQuery(rules.Commercials?.BaseQuery, $"{scope}.tag_rules.commercials.base_query", errors);
+                ValidateQuery(rules.Commercials?.Filter, $"{scope}.tag_rules.commercials.filter", errors);
+                ValidateQuery(rules.Filler?.Query, $"{scope}.tag_rules.filler.query", errors);
+                ValidateQuery(rules.Filler?.BaseQuery, $"{scope}.tag_rules.filler.base_query", errors);
+                ValidateQuery(rules.Filler?.Filter, $"{scope}.tag_rules.filler.filter", errors);
+                ValidateQuery(rules.Promos?.BaseQuery, $"{scope}.tag_rules.promos.base_query", errors);
+            }
         }
 
         if (config.Channels.Count == 0)
@@ -783,6 +794,13 @@ public static class SchedulerConfigLoader
     {
         adBreak.Folders ??= [];
         adBreak.Promos ??= [];
+        adBreak.PromoRoots ??= [];
+        adBreak.Root = string.IsNullOrWhiteSpace(adBreak.Root) ? null : adBreak.Root.Trim();
+        adBreak.PromoRoots = [.. adBreak.PromoRoots
+            .Where(root => !string.IsNullOrWhiteSpace(root.Path))
+            .Select(root => { root.Path = root.Path.Trim(); return root; })
+            .GroupBy(root => AdBreakPaths.Key(root.Path), StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.Last())];
 
         // One job per folder: the last one given wins, as it does when edited in the app.
         adBreak.Folders = [.. adBreak.Folders
@@ -796,6 +814,19 @@ public static class SchedulerConfigLoader
             .Select(promo => { promo.Path = promo.Path.Trim(); promo.Chance = promo.Chance is { } chance ? Math.Clamp(chance, 0, 1) : null; return promo; })];
 
         adBreak.AnyShowFolder = string.IsNullOrWhiteSpace(adBreak.AnyShowFolder) ? null : adBreak.AnyShowFolder.Trim();
+
+        if (adBreak.TagRules is { } rules)
+        {
+            if (rules.IsEmpty)
+            {
+                adBreak.TagRules = null;
+            }
+            else
+            {
+                NormalizePromos(rules.Promos);
+                rules.PromoBaseTags = Unique(rules.PromoBaseTags);
+            }
+        }
     }
 
     private static void NormalizeSelector(ContentSelector? selector)

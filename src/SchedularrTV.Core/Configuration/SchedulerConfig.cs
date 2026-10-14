@@ -71,6 +71,13 @@ public sealed class SchedulerSettings
 
     public PromoConfig Promos { get; set; } = new();
 
+    /// <summary>
+    /// Set once the tag-based break and promo settings have been moved into ad breaks. From then on a channel's
+    /// breaks come only from its ad breaks: one with none has empty breaks rather than falling back to the
+    /// tag-based defaults above.
+    /// </summary>
+    public bool? AdBreaksMigrated { get; set; }
+
     /// <summary>Extra entropy folded into every deterministic seed; changing it reshuffles everything.</summary>
     public string Seed { get; set; } = "schedularrtv";
 
