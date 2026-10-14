@@ -15,6 +15,12 @@ public sealed class SchedulerConfig
     /// </summary>
     public Dictionary<string, TitleDefaults> Titles { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Ad break collections by name: the folders their ads, bumpers, filler and promos come from. Channels and blocks
+    /// pick them by name (<see cref="ChannelConfig.AdBreaks"/>).
+    /// </summary>
+    public Dictionary<string, AdBreakConfig> AdBreaks { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
     public List<ChannelConfig> Channels { get; set; } = [];
 
     /// <summary>
@@ -184,6 +190,12 @@ public sealed class ChannelConfig
 
     /// <summary>Tier 1 shorthand for <c>interstitials.shows</c>.</summary>
     public ContentSelector? InterstitialShows { get; set; }
+
+    /// <summary>
+    /// Names of the ad break collections (<see cref="SchedulerConfig.AdBreaks"/>) this channel's breaks are filled from;
+    /// their clips are pooled. Empty uses the tag-based settings (<see cref="Interstitials"/>, <see cref="Promos"/>).
+    /// </summary>
+    public List<string>? AdBreaks { get; set; }
 
     public InterstitialsConfig? Interstitials { get; set; }
 

@@ -18,6 +18,9 @@ public sealed record FillerPackOptions
 
     /// <summary>Residuals shorter than this are left as padding instead of a barely visible filler.</summary>
     public TimeSpan MinTrimmedDuration { get; init; } = TimeSpan.Zero;
+
+    /// <summary>Clips may be used again once each has had a turn, so a long gap is filled by going round them.</summary>
+    public bool Loop { get; init; }
 }
 
 /// <summary>
@@ -37,6 +40,7 @@ public static class KnapsackPacker
     private const int MaxBuckets = 40_000;
     private const int MaxCandidates = 256;
     private const int MaxFillerIterations = 32;
+    private const int MaxLoopIterations = 1_000;
 
     public static PackResult Pack(
         IReadOnlyList<MediaItem> commercials,
@@ -210,8 +214,10 @@ public static class KnapsackPacker
         List<MediaItem> pool = candidates.Where(c => c.Duration > TimeSpan.Zero).ToList();
         TimeSpan remaining = residual;
         TimeSpan filled = TimeSpan.Zero;
+        Dictionary<string, int> uses = new(StringComparer.Ordinal);
+        int iterations = options.Loop ? MaxLoopIterations : MaxFillerIterations;
 
-        for (int iteration = 0; iteration < MaxFillerIterations && remaining > TimeSpan.Zero && pool.Count > 0; iteration++)
+        for (int iteration = 0; iteration < iterations && remaining > TimeSpan.Zero && pool.Count > 0; iteration++)
         {
             MediaItem? exact = pool.FirstOrDefault(c => c.Duration == remaining);
             if (exact is not null)
@@ -240,7 +246,11 @@ public static class KnapsackPacker
             }
 
             // Nothing can close the gap outright; take the longest item that fits and try again.
-            MediaItem? fit = pool.Where(c => c.Duration <= remaining).OrderByDescending(c => c.Duration).FirstOrDefault();
+            // Looping goes round the clips in turn (least used first) rather than repeating the longest.
+            MediaItem? fit = pool.Where(c => c.Duration <= remaining)
+                .OrderBy(c => options.Loop ? uses.GetValueOrDefault(c.Id) : 0)
+                .ThenByDescending(c => c.Duration)
+                .FirstOrDefault();
             if (fit is null)
             {
                 break;
@@ -249,7 +259,14 @@ public static class KnapsackPacker
             chosen.Add(new PackedItem(fit, fit.Duration, Trimmed: false, StopBeforeEnd: false, IsFiller: true));
             filled += fit.Duration;
             remaining -= fit.Duration;
-            pool.Remove(fit);
+            if (options.Loop)
+            {
+                uses[fit.Id] = uses.GetValueOrDefault(fit.Id) + 1;
+            }
+            else
+            {
+                pool.Remove(fit);
+            }
         }
 
         return filled;

@@ -1,0 +1,25 @@
+.ab-summary { gap: 6px; margin: 4px 0 12px; }
+.ab-summary .job-ads { color: var(--commercial); }
+.ab-summary .job-bumpers { color: var(--interstitial); }
+.ab-summary .job-filler { color: var(--filler); }
+.ab-summary .job-promo { color: var(--promo); }
+
+.ab-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .ab-layout { grid-template-columns: minmax(0, 1fr); } }
+.ab-side { display: grid; gap: 16px; min-width: 0; }
+.ab-side .card, .ab-tree-card { margin: 0; }
+
+.ab-suggest { display: grid; gap: 8px; margin-bottom: 16px; }
+.ab-suggest-list { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.ab-tree { display: grid; font-size: 13px; max-height: 70vh; overflow: auto; border: 1px solid var(--line); background: var(--bg-elev); }
+.ab-phantom-sample { font-style: italic; opacity: .6; }
+
+.ab-advanced { cursor: pointer; color: var(--muted); font-size: 12px; margin: 12px 0 8px; }
+
+.ab-promo { border-top: 1px solid var(--line); padding: 10px 0; display: grid; gap: 6px; }
+.ab-promo:first-of-type { border-top: 0; }
+.ab-promo .hint { margin: 0; }
+.ab-promo-title { margin: 0; }
+.ab-path { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.check-row { display: flex; flex-wrap: wrap; gap: 4px 14px; }

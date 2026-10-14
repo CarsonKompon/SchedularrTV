@@ -29,7 +29,7 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
             return [];
         }
 
-        IReadOnlyList<PromoWindow> windows = config.Windows.Count > 0 ? config.Windows : PromoConfig.DefaultWindows;
+        IReadOnlyList<PromoWindow> windows = config.Windows.Count > 0 || config.FromAdBreaks ? config.Windows : PromoConfig.DefaultWindows;
 
         List<MediaItem> selected = [];
         TimeSpan remaining = available;
@@ -56,17 +56,25 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
 
             List<string> promoTypes = [.. window.PromoTypes];
 
-            if (promoTypes.Count == 0 || target.ShowIds.Count == 0)
+            if ((promoTypes.Count == 0 && window.Folders is null) || target.ShowIds.Count == 0)
             {
                 continue;
             }
 
-            List<QueryExpression> clauses = InterstitialQueryBuilder.PromoClauses(config, target.ShowIds, baseTags);
-            clauses.Add(new FieldExpression("promo_type", ComparisonOperator.In, promoTypes));
+            IReadOnlyList<MediaItem> matches;
+            if (window.Folders is { } folders)
+            {
+                matches = await FolderMatchesAsync(folders, target.ShowIds, target.At, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                List<QueryExpression> clauses = InterstitialQueryBuilder.PromoClauses(config, target.ShowIds, baseTags);
+                clauses.Add(new FieldExpression("promo_type", ComparisonOperator.In, promoTypes));
 
-            IReadOnlyList<MediaItem> matches = await session
-                .SearchAsync(QueryExpression.And(clauses), cancellationToken)
-                .ConfigureAwait(false);
+                matches = await session
+                    .SearchAsync(QueryExpression.And(clauses), cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             MediaItem? pick = ClockMatches(matches, target.At, window.IncludeClockVariants)
                 .Where(m => m.Duration > TimeSpan.Zero && m.Duration <= remaining && used.Add(m.Id))
@@ -99,13 +107,21 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
             return null;
         }
 
-        QueryExpression expression = InterstitialQueryBuilder.BuildSpot(config, spot, showIds, baseTags);
-        if (expression is NoneExpression)
+        IReadOnlyList<MediaItem> matches;
+        if (spot.Folders is { } folders)
         {
-            return null;
+            matches = await FolderMatchesAsync(folders, showIds, at, cancellationToken).ConfigureAwait(false);
         }
+        else
+        {
+            QueryExpression expression = InterstitialQueryBuilder.BuildSpot(config, spot, showIds, baseTags);
+            if (expression is NoneExpression)
+            {
+                return null;
+            }
 
-        IReadOnlyList<MediaItem> matches = await session.SearchAsync(expression, cancellationToken).ConfigureAwait(false);
+            matches = await session.SearchAsync(expression, cancellationToken).ConfigureAwait(false);
+        }
 
         return ClockMatches(matches, at, honourClock: true)
             .Where(m => m.Duration > TimeSpan.Zero && m.Duration <= available)
@@ -135,17 +151,23 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
         DeterministicRandom random = DeterministicRandom.FromSeedText(seed, "eventually");
         random.Next(1_000);
 
-        QueryExpression expression = InterstitialQueryBuilder.BuildEventually(config, eventually, baseTags);
-        if (expression is NoneExpression)
+        IReadOnlyList<MediaItem> found;
+        if (eventually.Folders is { } folders)
         {
-            return null;
+            found = await FolderMatchesAsync(folders, null, null, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            QueryExpression expression = InterstitialQueryBuilder.BuildEventually(config, eventually, baseTags);
+            if (expression is NoneExpression)
+            {
+                return null;
+            }
+
+            found = await session.SearchAsync(expression, cancellationToken).ConfigureAwait(false);
         }
 
-        List<MediaItem> matches =
-        [
-            .. (await session.SearchAsync(expression, cancellationToken).ConfigureAwait(false))
-                .Where(m => m.Duration > TimeSpan.Zero && m.Duration <= available)
-        ];
+        List<MediaItem> matches = [.. found.Where(m => m.Duration > TimeSpan.Zero && m.Duration <= available)];
 
         if (matches.Count == 0)
         {
@@ -220,6 +242,53 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// The clips in an ad break's promo folders for one of <paramref name="showIds"/> (or any show, when null), read
+    /// for their show, day and start time. A clip filed under a weekday only counts for an airing that day.
+    /// </summary>
+    private async ValueTask<IReadOnlyList<MediaItem>> FolderMatchesAsync(
+        IReadOnlyList<PromoFolderSource> folders,
+        IReadOnlyList<string>? showIds,
+        DateTimeOffset? at,
+        CancellationToken cancellationToken)
+    {
+        if (folders.Count == 0)
+        {
+            return [];
+        }
+
+        IReadOnlyList<MediaItem> clips = await session.SearchAsync(AdBreakCompiler.PromoPool(folders), cancellationToken).ConfigureAwait(false);
+        HashSet<string>? wanted = showIds is null ? null : new(showIds, StringComparer.OrdinalIgnoreCase);
+        string? day = at?.DayOfWeek.ToString().ToLowerInvariant();
+
+        // A clip made for the show beats one for any show; the generic ones are only the fallback.
+        List<MediaItem> matches = [];
+        List<MediaItem> generic = [];
+        foreach (MediaItem clip in clips)
+        {
+            if (AdBreakCompiler.Describe(clip, folders) is not { } described
+                || Attribute(described, "show_id") is not { } show)
+            {
+                continue;
+            }
+
+            bool anyShow = folders.Any(folder => string.Equals(folder.AnyShowFolder, show, StringComparison.OrdinalIgnoreCase));
+            if (wanted is not null && !anyShow && !wanted.Contains(show))
+            {
+                continue;
+            }
+
+            if (day is not null && Attribute(described, "promo_day") is { } filedDay && !string.Equals(filedDay, day, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            (anyShow && wanted is not null ? generic : matches).Add(described);
+        }
+
+        return matches.Count > 0 ? matches : generic;
     }
 
     private static string? Attribute(MediaItem item, string key) =>

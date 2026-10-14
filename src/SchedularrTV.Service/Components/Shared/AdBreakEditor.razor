@@ -1,0 +1,422 @@
+@* One ad break collection: its folders (picked in the commercials libraries' folder trees), its promos and settings. *@
+@inject ConfigEditor Editor
+@inject TimeProvider Clock
+
+<div class="ab-summary row row-wrap">
+    <span class="pill job-ads">@Count(AdFolderRole.Ads) ads folder(s)</span>
+    <span class="pill job-bumpers">@Count(AdFolderRole.Bumpers) bumper folder(s)</span>
+    <span class="pill job-filler">@Count(AdFolderRole.Filler) filler folder(s)</span>
+    <span class="pill job-promo">@AdBreak.Promos.Count promo folder(s)</span>
+    @if (AdBreak.Seasonal)
+    {
+        <span class="pill pill-muted">Seasonal</span>
+    }
+</div>
+
+@if (_suggestions.Count > 0)
+{
+    <div class="banner ab-suggest">
+        <div class="row row-wrap">
+            <strong>Folders that look ready to use</strong>
+            <div class="spacer"></div>
+            <button class="btn btn-sm btn-primary" type="button" @onclick="AddAllSuggestions"><Icon Name="sparkles" Size="14" />Add all</button>
+        </div>
+        <div class="ab-suggest-list">
+            @foreach (FolderSuggestion suggestion in _suggestions)
+            {
+                <button class="btn btn-sm" type="button" title="@suggestion.Path" @onclick="() => Apply(suggestion)">
+                    <Icon Name="plus" Size="12" /><code>@suggestion.FolderName</code>&nbsp;as @suggestion.Label
+                </button>
+            }
+        </div>
+    </div>
+}
+
+<div class="ab-layout">
+    <section class="card ab-tree-card">
+        <div class="card-head">
+            <h2>Folders</h2>
+            <span class="muted">Pick what each folder holds. Folders inside it follow along unless you pick otherwise.</span>
+        </div>
+
+        @if (Roots.Count == 0)
+        {
+            <div class="empty">
+                <Icon Name="folder" Size="28" StrokeWidth="1.5" />
+                <div class="empty-title">No commercials libraries yet</div>
+                <div>Add a folder of commercials under <a href="settings/app">App settings</a>, then come back to pick its folders.</div>
+            </div>
+        }
+        else
+        {
+            <div class="ab-tree" role="tree">
+                @foreach (CommercialFolder root in Roots)
+                {
+                    <AdBreakFolderNode @key="root.Path" Folder="root" Depth="0" AdBreak="AdBreak" Open="_open" Shows="_shows"
+                                       Temporal="Temporal" Now="_now" OnToggle="Toggle" OnPick="SetJob" />
+                }
+            </div>
+            <p class="hint ab-legend">
+                <span class="ab-phantom-sample">Greyed-out folders</span> are ones this ad break would look for if you made them.
+                Counts are clips in the folder and everything inside it.
+            </p>
+        }
+    </section>
+
+    <div class="ab-side">
+        <section class="card">
+            <div class="card-head"><h2>Settings</h2></div>
+            <label class="field">
+                <span>Description <span class="opt">(optional)</span></span>
+                <input type="text" value="@AdBreak.Description" placeholder="e.g. Ads that suit any channel"
+                       @onchange="e => { AdBreak.Description = Text(e); Notify(); }" />
+            </label>
+
+            <label class="check">
+                <input type="checkbox" checked="@AdBreak.Seasonal" @onchange="e => { AdBreak.Seasonal = e.Value is true; Notify(); }" />
+                <span>Seasonal folders (dates, months, holidays)</span>
+            </label>
+            <p class="hint">
+                Clips in a folder named for a month, season, holiday or date (<code>December</code>, <code>Winter</code>,
+                <code>Christmas</code>, <code>12-25</code>) only play then. Everything else plays all year.
+            </p>
+
+            <label class="field">
+                <span>Bumpers go</span>
+                <select value="@AdBreak.BumperPlacement" @onchange="e => { AdBreak.BumperPlacement = Enum.Parse<BumperPlacement>(e.Value?.ToString() ?? nameof(BumperPlacement.Mixed)); Notify(); }">
+                    <option value="@BumperPlacement.Mixed">Mixed in with the ads</option>
+                    <option value="@BumperPlacement.StartAndEnd">At the start and end of each break</option>
+                    <option value="@BumperPlacement.Start">At the start of each break</option>
+                    <option value="@BumperPlacement.End">At the end of each break</option>
+                </select>
+            </label>
+
+            <details>
+                <summary class="ab-advanced">Advanced</summary>
+                <div class="grid grid-2">
+                    <label class="field">
+                        <span>"Any show" folder name</span>
+                        <input type="text" value="@AdBreak.AnyShowFolder" placeholder="@AdBreakConfig.DefaultAnyShowFolder"
+                               @onchange="e => { AdBreak.AnyShowFolder = Text(e); Notify(); }" />
+                    </label>
+                    <label class="field">
+                        <span>Most Coming Up promos per break</span>
+                        <input type="number" min="0" value="@(AdBreak.MaxPromosPerBreak?.ToString() ?? "")" placeholder="2"
+                               @onchange="e => { AdBreak.MaxPromosPerBreak = Int(e); Notify(); }" />
+                    </label>
+                    <DurationInput Label="Look ahead for Coming Up" Value="AdBreak.Lookahead" Placeholder="12h"
+                                   ValueChanged="v => { AdBreak.Lookahead = v; Notify(); }" />
+                </div>
+
+                <h3>Ads</h3>
+                <div class="grid grid-2">
+                    <DurationInput Label="Shortest ad" Value="Commercials.MinItemDuration"
+                                   ValueChanged="v => { Commercials.MinItemDuration = v; NotifyTuning(); }" />
+                    <DurationInput Label="Longest ad" Value="Commercials.MaxItemDuration"
+                                   ValueChanged="v => { Commercials.MaxItemDuration = v; NotifyTuning(); }" />
+                    <DurationInput Label="Tolerance" Value="Commercials.Tolerance" Placeholder="500ms"
+                                   ValueChanged="v => { Commercials.Tolerance = v; NotifyTuning(); }" />
+                    <label class="field">
+                        <span>Same ad per break, at most</span>
+                        <input type="number" min="1" value="@(Commercials.MaxRepeatsPerBreak?.ToString() ?? "")" placeholder="1"
+                               @onchange="e => { Commercials.MaxRepeatsPerBreak = Int(e); NotifyTuning(); }" />
+                    </label>
+                </div>
+                <label class="field">
+                    <span>Only ads matching <span class="opt">(query)</span></span>
+                    <input type="text" value="@Commercials.Filter" placeholder="duration <= 60"
+                           @onchange="e => { Commercials.Filter = Text(e); NotifyTuning(); }" />
+                </label>
+                <label class="check">
+                    <input type="checkbox" checked="@Commercials.IsStrictFit"
+                           @onchange="e => { Commercials.StrictFit = e.Value is true ? null : false; NotifyTuning(); }" />
+                    <span>Never cut an ad short (recommended)</span>
+                </label>
+
+                <h3>Filler</h3>
+                <label class="check">
+                    <input type="checkbox" checked="@Filler.IsTrimmable"
+                           @onchange="e => { Filler.Trimmable = e.Value is true ? null : false; NotifyTuning(); }" />
+                    <span>Cut filler off to land exactly on the next show</span>
+                </label>
+                <label class="check">
+                    <input type="checkbox" checked="@(Filler.Loop ?? false)"
+                           @onchange="e => { Filler.Loop = e.Value is true ? true : null; NotifyTuning(); }" />
+                    <span>Loop filler to fill a long gap</span>
+                </label>
+                <label class="check">
+                    <input type="checkbox" checked="@(Filler.StopBeforeEnd ?? false)"
+                           @onchange="e => { Filler.StopBeforeEnd = e.Value is true ? true : null; NotifyTuning(); }" />
+                    <span>Stop at the boundary rather than hard-cutting</span>
+                </label>
+                <DurationInput Label="Don't bother with filler shorter than" Value="Filler.MinTrimmedDuration"
+                               ValueChanged="v => { Filler.MinTrimmedDuration = v; NotifyTuning(); }" />
+            </details>
+        </section>
+
+        <section class="card">
+            <div class="card-head"><h2>Promos</h2></div>
+            @if (AdBreak.Promos.Count == 0)
+            {
+                <p class="hint">
+                    Set a folder to one of the <strong>Promo</strong> choices in the tree (Up Next, Now Playing, This Has Been,
+                    You're Watching, Back To The Show, Coming Up, Later Today, Eventually) to add its promos here.
+                </p>
+            }
+            @foreach (AdBreakPromo promo in AdBreak.Promos.ToList())
+            {
+                <div class="ab-promo">
+                    <div class="row">
+                        <label class="check ab-promo-title">
+                            <input type="checkbox" checked="@promo.Enabled" @onchange="e => { promo.Enabled = e.Value is true; Notify(); }" />
+                            <strong>@AdBreakPromo.FolderName(promo.Type)</strong>
+                        </label>
+                        <code class="ab-path" title="@promo.Path">@ShortPath(promo.Path)</code>
+                        <div class="spacer"></div>
+                        <button class="btn btn-sm btn-icon btn-danger" type="button" title="Remove" aria-label="Remove promo"
+                                @onclick="() => { AdBreak.Promos.Remove(promo); Notify(); }"><Icon Name="trash" Size="13" /></button>
+                    </div>
+                    <p class="hint">@Describe(promo.Type)</p>
+                    <div class="check-row">
+                        <label class="check">
+                            <input type="checkbox" checked="@promo.PerShow" @onchange="e => { promo.PerShow = e.Value is true; Notify(); }" />
+                            <span>Show folders</span>
+                        </label>
+                        <label class="check">
+                            <input type="checkbox" checked="@promo.AnyShow" @onchange="e => { promo.AnyShow = e.Value is true; Notify(); }" />
+                            <span>Other clips suit any show</span>
+                        </label>
+                        <label class="check">
+                            <input type="checkbox" checked="@promo.Times" @onchange="e => { promo.Times = e.Value is true; Notify(); }" />
+                            <span>Start time folders</span>
+                        </label>
+                        <label class="check">
+                            <input type="checkbox" checked="@promo.Days" @onchange="e => { promo.Days = e.Value is true; Notify(); }" />
+                            <span>Weekday folders</span>
+                        </label>
+                    </div>
+
+                    @switch (promo.Type)
+                    {
+                        case AdPromoType.UpNext:
+                            <label class="field">
+                                <span>Plays</span>
+                                <select value="@(promo.Placement ?? UpNextPlacement.AnyBreak)"
+                                        @onchange="e => { promo.Placement = Enum.Parse<UpNextPlacement>(e.Value?.ToString() ?? nameof(UpNextPlacement.AnyBreak)); Notify(); }">
+                                    <option value="@UpNextPlacement.AnyBreak">In any break of the show before, among the ads</option>
+                                    <option value="@UpNextPlacement.BeforeShow">Last thing before the next show</option>
+                                </select>
+                            </label>
+                            break;
+                        case AdPromoType.ComingUp:
+                        case AdPromoType.LaterToday:
+                            <DurationInput Label="For a show starting within" Value="promo.Within"
+                                           Placeholder="@DurationText.Format(AdBreakPromo.DefaultWithin(promo.Type))"
+                                           ValueChanged="v => { promo.Within = v; Notify(); }" />
+                            break;
+                        case AdPromoType.Eventually:
+                            <div class="grid grid-2">
+                                <label class="field">
+                                    <span>Chance a break has one (%)</span>
+                                    <input type="number" min="0" max="100" step="5" value="@(promo.Chance is { } chance ? Math.Round(chance * 100).ToString() : "")" placeholder="25"
+                                           @onchange="e => { promo.Chance = Int(e) is { } percent ? Math.Clamp(percent, 0, 100) / 100.0 : null; Notify(); }" />
+                                </label>
+                                <DurationInput Label="For a show airing within" Value="promo.Horizon" Placeholder="7d"
+                                               ValueChanged="v => { promo.Horizon = v; Notify(); }" />
+                            </div>
+                            break;
+                    }
+
+                    @if (promo.Type is AdPromoType.UpNext or AdPromoType.NowPlaying or AdPromoType.ThisHasBeen)
+                    {
+                        <label class="check">
+                            <input type="checkbox" checked="@(promo.SkipWhenSameSeries ?? true)"
+                                   @onchange="e => { promo.SkipWhenSameSeries = e.Value is true ? null : false; Notify(); }" />
+                            <span>Skip it when the same show is on either side of the break</span>
+                        </label>
+                    }
+                </div>
+            }
+        </section>
+
+        @if (UsedBy.Count > 0)
+        {
+            <section class="card">
+                <div class="card-head"><h2>Used by</h2></div>
+                <div class="row row-wrap">
+                    @foreach ((string label, string href) in UsedBy)
+                    {
+                        <a class="pill pill-muted" href="@href">@label</a>
+                    }
+                </div>
+            </section>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+    [Parameter, EditorRequired] public AdBreakConfig AdBreak { get; set; } = new();
+    [Parameter] public IReadOnlyList<CommercialFolder> Roots { get; set; } = [];
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private readonly HashSet<string> _open = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<FolderSuggestion> _suggestions = [];
+    private IReadOnlyList<string> _shows = [];
+    private IReadOnlyList<CommercialFolder>? _openedFor;
+
+    private TemporalTagOptions Temporal => Editor.Working.Settings.TemporalTags;
+
+    private CommercialsConfig Commercials => AdBreak.Commercials ?? _commercials;
+    private readonly CommercialsConfig _commercials = new();
+    private FillerTierConfig Filler => AdBreak.Filler ?? _filler;
+    private readonly FillerTierConfig _filler = new();
+
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(_openedFor, Roots))
+        {
+            // Roots, and the way down to every folder already in use, start open.
+            _openedFor = Roots;
+            foreach (CommercialFolder root in Roots)
+            {
+                _open.Add(root.Path);
+                foreach (CommercialFolder folder in root.Descendants())
+                {
+                    if (AdBreakFolderJobs.Explicit(AdBreak, folder.Path) is not null)
+                    {
+                        foreach (CommercialFolder ancestor in folder.Ancestors())
+                        {
+                            _open.Add(ancestor.Path);
+                        }
+                    }
+                }
+            }
+        }
+
+        _now = Clock.GetLocalNow();
+        _shows = ExampleShows();
+        Refresh();
+    }
+
+    private DateTimeOffset _now;
+
+    private void Refresh() => _suggestions = AdBreakFolderJobs.Suggest(AdBreak, Roots);
+
+    private async Task Notify()
+    {
+        Refresh();
+        await Changed.InvokeAsync();
+    }
+
+    // The tuning sections are only kept once something in them is set, so an untouched ad break stays short in the YAML.
+    private Task NotifyTuning()
+    {
+        AdBreak.Commercials ??= _commercials;
+        AdBreak.Filler ??= _filler;
+        return Notify();
+    }
+
+    private int Count(AdFolderRole role) => AdBreak.Folders.Count(folder => folder.Role == role);
+
+    private void Toggle(CommercialFolder folder)
+    {
+        if (!_open.Remove(folder.Path))
+        {
+            _open.Add(folder.Path);
+        }
+    }
+
+    private async Task SetJob(FolderPick pick)
+    {
+        AdBreakFolderJobs.Set(AdBreak, pick.Folder.Path, pick.Choice);
+        if (pick.Choice.Length > 0)
+        {
+            _open.Add(pick.Folder.Path);
+        }
+
+        await Notify();
+    }
+
+    private async Task Apply(FolderSuggestion suggestion)
+    {
+        AdBreakFolderJobs.Set(AdBreak, suggestion.Path, suggestion.Choice);
+        OpenTo(suggestion.Path);
+        await Notify();
+    }
+
+    private async Task AddAllSuggestions()
+    {
+        // Applied one at a time: a folder made a promo folder stops a folder inside it being suggested too.
+        for (int guard = 0; guard < 50 && _suggestions.Count > 0; guard++)
+        {
+            FolderSuggestion next = _suggestions[0];
+            AdBreakFolderJobs.Set(AdBreak, next.Path, next.Choice);
+            OpenTo(next.Path);
+            Refresh();
+        }
+
+        await Notify();
+    }
+
+    private void OpenTo(string path)
+    {
+        foreach (CommercialFolder root in Roots)
+        {
+            if (root.Descendants().FirstOrDefault(folder => AdBreakPaths.Same(folder.Path, path)) is { } found)
+            {
+                _open.Add(found.Path);
+                foreach (CommercialFolder ancestor in found.Ancestors())
+                {
+                    _open.Add(ancestor.Path);
+                }
+            }
+        }
+    }
+
+    private static string Describe(AdPromoType type) => type switch
+    {
+        AdPromoType.UpNext => "\"Up next…\" for the show that follows.",
+        AdPromoType.NowPlaying => "Ident for the show about to start, the last thing before it.",
+        AdPromoType.ThisHasBeen => "Sign-off for the show that just finished, first in the break after it.",
+        AdPromoType.YoureWatching => "Opens a break the same show comes back from.",
+        AdPromoType.BackToTheShow => "Closes a break the same show comes back from.",
+        AdPromoType.ComingUp => "For a show starting soon, after any interstitial shows.",
+        AdPromoType.LaterToday => "For a show starting later today, after any interstitial shows.",
+        AdPromoType.Eventually => "Trailers for a show airing later in the week, now and then among the ads.",
+        _ => string.Empty
+    };
+
+    /// <summary>The last two folders of a path, which is usually enough to tell them apart.</summary>
+    private static string ShortPath(string path)
+    {
+        string[] parts = AdBreakPaths.Key(path).Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length <= 2 ? string.Join('/', parts) : $"…/{parts[^2]}/{parts[^1]}";
+    }
+
+    /// <summary>Shows on the channels using this ad break (or any channel), for the example show folders.</summary>
+    private IReadOnlyList<string> ExampleShows()
+    {
+        List<ChannelConfig> users = [.. Editor.Working.Channels.Where(channel => Uses(channel))];
+        IEnumerable<ChannelConfig> source = users.Count > 0 ? users : Editor.Working.Channels;
+        return [.. source.SelectMany(channel => FolderLayouts.ExampleShows(channel)).Distinct(StringComparer.OrdinalIgnoreCase).Take(3)];
+    }
+
+    private bool Uses(ChannelConfig channel) =>
+        (channel.AdBreaks?.Contains(Name, StringComparer.OrdinalIgnoreCase) ?? false)
+        || channel.Blocks.Any(block => block.AdBreaks?.Contains(Name, StringComparer.OrdinalIgnoreCase) ?? false);
+
+    private List<(string Label, string Href)> UsedBy =>
+    [
+        .. Editor.Working.Channels
+            .Where(Uses)
+            .OrderBy(channel => channel.Number)
+            .Select(channel => ($"{channel.Number} · {channel.Name}", $"channels/{Uri.EscapeDataString(channel.Id)}?tab=breaks"))
+    ];
+
+    private static string? Text(ChangeEventArgs e) =>
+        string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString()!.Trim();
+
+    private static int? Int(ChangeEventArgs e) =>
+        int.TryParse(e.Value?.ToString(), out int value) ? value : null;
+}

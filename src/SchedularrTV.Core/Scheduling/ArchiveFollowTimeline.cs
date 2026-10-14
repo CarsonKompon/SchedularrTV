@@ -133,6 +133,7 @@ internal sealed class ArchiveFollowTimeline : ITimelineContributor
                     InterstitialShows = source?.InterstitialShows,
                     Interstitials = source?.Interstitials,
                     CommercialBaseTags = source?.CommercialBaseTags,
+                    AdBreaks = source?.AdBreaks,
                     PromoBaseTags = source?.PromoBaseTags,
                     AutoTemporalTags = source?.AutoTemporalTags,
                     PadToNearest = source?.PadToNearest,

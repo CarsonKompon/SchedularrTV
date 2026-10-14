@@ -194,7 +194,16 @@
 
             case 4:
                 <h2>Ad breaks</h2>
-                @if (_folders.Roots.Count == 0)
+                @if (Editor.Working.AdBreaks.Count > 0)
+                {
+                    <p class="hint">Pick the ad breaks this channel uses (their ads, bumpers, filler and promos are pooled).</p>
+                    <AdBreakPicker Values="_adBreaks" ValuesChanged="v => _adBreaks = v" EmptyText="None: use the folder picks below" />
+                }
+                @if (_adBreaks is { Count: > 0 })
+                {
+                    <p class="hint">Change them later on the channel's Ad breaks tab, or edit the ad breaks themselves under Ad Breaks.</p>
+                }
+                else if (_folders.Roots.Count == 0)
                 {
                     <p>
                         No commercials found. Add them in <strong>App settings → Commercials library</strong>.
@@ -430,6 +439,7 @@
     private List<string>? _adTypes;
     private List<string>? _fillerTypes;
     private bool _seasonal;
+    private List<string>? _adBreaks;
 
     private bool _addBlock;
 
@@ -643,7 +653,11 @@
             MidRoll = _midRoll ? new MidRollConfig { Mode = MidRollMode.Auto } : null
         };
 
-        if (_useCommercials && _folders.Roots.Count > 0)
+        if (_adBreaks is { Count: > 0 })
+        {
+            channel.AdBreaks = [.. _adBreaks];
+        }
+        else if (_useCommercials && _folders.Roots.Count > 0)
         {
             channel.Interstitials = new InterstitialsConfig
             {
@@ -724,7 +738,8 @@
         + (_midRoll ? ", with breaks inside programmes" : "");
 
     private string BreakSummary() =>
-        !_useCommercials || _folders.Roots.Count == 0 ? "No commercials yet; breaks are short black gaps"
+        _adBreaks is { Count: > 0 } ? $"Ad breaks: {string.Join(", ", _adBreaks)}"
+        : !_useCommercials || _folders.Roots.Count == 0 ? "No commercials yet; breaks are short black gaps"
         : $"Commercials from {(_brands is { Count: > 0 } ? string.Join(", ", _brands) : "every brand")}"
           + (_seasonal ? ", seasonal adverts on" : "");
 

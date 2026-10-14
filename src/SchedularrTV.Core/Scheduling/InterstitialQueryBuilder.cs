@@ -15,7 +15,9 @@ public static class InterstitialQueryBuilder
     /// <c>tag:"Commercials" AND (tag:"Adult Swim" OR tag:"Any Channel") AND (tag:"Any Time" OR tag:"January" OR tag:"Winter" OR tag:"01-10")</c>.
     /// </summary>
     public static QueryExpression BuildCommercials(CommercialsConfig commercials, DateTimeOffset moment, TemporalTagOptions temporalOptions) =>
-        Build(
+        commercials.Sources is { } sources
+            ? AdBreakCompiler.Pool(sources, commercials.Filter, moment, temporalOptions)
+            : Build(
             commercials.Query,
             commercials.BaseQuery,
             commercials.BaseTags,
@@ -26,7 +28,9 @@ public static class InterstitialQueryBuilder
             temporalOptions);
 
     public static QueryExpression BuildFiller(FillerTierConfig filler, DateTimeOffset moment, TemporalTagOptions temporalOptions) =>
-        Build(
+        filler.Sources is { } sources
+            ? AdBreakCompiler.Pool(sources, filler.Filter, moment, temporalOptions)
+            : Build(
             filler.Query,
             filler.BaseQuery,
             filler.BaseTags,

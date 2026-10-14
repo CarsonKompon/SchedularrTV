@@ -15,13 +15,15 @@ internal sealed class PromoBreakContributor(IPromoSpotSubstitute? generated) : I
 
     public async ValueTask<IBreakPlan?> PlanAsync(BreakContext context, CancellationToken cancellationToken)
     {
-        PromoConfig promos = context.Block?.Promos ?? context.Channel.Promos ?? context.Config.Settings.Promos;
+        PromoConfig promos = SchedulingEngine.ResolvePromoConfig(context.Config, context.Channel, context.Block);
         if (!promos.Enabled)
         {
             return null;
         }
 
-        var plan = new PromoBreakPlan(context, promos, ResolveBaseTags(context.Block, context.Channel, promos, context.Commercials), generated);
+        // Promos from ad breaks are found by folder, so brand tags don't come into it.
+        List<string>? baseTags = promos.FromAdBreaks ? null : ResolveBaseTags(context.Block, context.Channel, promos, context.Commercials);
+        var plan = new PromoBreakPlan(context, promos, baseTags, generated);
         await plan.ReserveAsync(cancellationToken).ConfigureAwait(false);
         return plan;
     }

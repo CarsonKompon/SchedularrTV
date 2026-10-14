@@ -140,6 +140,28 @@ public static class SchedulerConfigLoader
             ValidateSelector(selector, $"global_collections.{key}", config, errors);
         }
 
+        foreach ((string key, AdBreakConfig adBreak) in config.AdBreaks)
+        {
+            string scope = $"ad_breaks.{key}";
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                errors.Add("ad_breaks: every ad break needs a name.");
+            }
+
+            if (adBreak.Folders.Count == 0 && adBreak.Promos.Count == 0)
+            {
+                warnings.Add($"{scope}: no folders are chosen, so its breaks stay empty.");
+            }
+
+            if (adBreak.MaxPromosPerBreak < 0)
+            {
+                errors.Add($"{scope}.max_promos_per_break: must be zero or greater.");
+            }
+
+            ValidateQuery(adBreak.Commercials?.Filter, $"{scope}.commercials.filter", errors);
+            ValidateQuery(adBreak.Filler?.Filter, $"{scope}.filler.filter", errors);
+        }
+
         if (config.Channels.Count == 0)
         {
             warnings.Add("No channels are defined.");
@@ -200,6 +222,8 @@ public static class SchedulerConfigLoader
             {
                 ValidateSelector(channel.InterstitialShows, $"{scope}.interstitial_shows", config, errors);
             }
+
+            ValidateAdBreakNames(channel.AdBreaks, $"{scope}.ad_breaks", config, errors);
 
             ValidateInterstitials(channel.Interstitials, $"{scope}.interstitials", config, errors);
             ValidateGeneratedPromos(channel.GeneratedPromos, $"{scope}.plugins.{BuiltInPluginIds.GeneratedPromos}", config, errors, warnings);
@@ -263,6 +287,8 @@ public static class SchedulerConfigLoader
                 {
                     ValidateSelector(block.InterstitialShows, $"{blockScope}.interstitial_shows", config, errors);
                 }
+
+                ValidateAdBreakNames(block.AdBreaks, $"{blockScope}.ad_breaks", config, errors);
 
                 ValidateInterstitials(block.Interstitials, $"{blockScope}.interstitials", config, errors);
                 ValidateGeneratedPromos(block.GeneratedPromos, $"{blockScope}.plugins.{BuiltInPluginIds.GeneratedPromos}", config, errors, warnings);
@@ -513,6 +539,17 @@ public static class SchedulerConfigLoader
         }
     }
 
+    private static void ValidateAdBreakNames(List<string>? names, string scope, SchedulerConfig config, List<string> errors)
+    {
+        foreach (string name in names ?? [])
+        {
+            if (!config.AdBreaks.ContainsKey(name))
+            {
+                errors.Add($"{scope}: there is no ad break called '{name}'.");
+            }
+        }
+    }
+
     private static void ValidateInterstitials(InterstitialsConfig? interstitials, string scope, SchedulerConfig config, List<string> errors)
     {
         if (interstitials is null)
@@ -634,6 +671,12 @@ public static class SchedulerConfigLoader
         // Rebuild with a case-insensitive comparer; YamlDotNet constructs an ordinal dictionary.
         config.GlobalCollections = new Dictionary<string, ContentSelector>(config.GlobalCollections, StringComparer.OrdinalIgnoreCase);
         config.Titles = new Dictionary<string, TitleDefaults>(config.Titles, StringComparer.OrdinalIgnoreCase);
+        config.AdBreaks = new Dictionary<string, AdBreakConfig>(config.AdBreaks ?? new Dictionary<string, AdBreakConfig>(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (AdBreakConfig adBreak in config.AdBreaks.Values)
+        {
+            NormalizeAdBreak(adBreak);
+        }
 
         config.Settings.ExcludedLibraries = Unique(config.Settings.ExcludedLibraries) ?? [];
         config.Settings.Plugins = NormalizePluginSections(config.Settings.Plugins);
@@ -679,6 +722,7 @@ public static class SchedulerConfigLoader
 
             channel.CommercialBaseTags = Unique(channel.CommercialBaseTags);
             channel.PromoBaseTags = Unique(channel.PromoBaseTags);
+            channel.AdBreaks = UniqueNames(channel.AdBreaks);
             NormalizeInterstitials(channel.Interstitials);
             NormalizePromos(channel.Promos);
             NormalizeGeneratedPromos(channel.GeneratedPromos);
@@ -702,6 +746,7 @@ public static class SchedulerConfigLoader
                 FeatureSections.Extract(block);
                 block.CommercialBaseTags = Unique(block.CommercialBaseTags);
                 block.PromoBaseTags = Unique(block.PromoBaseTags);
+                block.AdBreaks = UniqueNames(block.AdBreaks);
                 NormalizeInterstitials(block.Interstitials);
                 NormalizeGeneratedPromos(block.GeneratedPromos);
                 NormalizeSelector(block.InterstitialShows);
@@ -728,6 +773,30 @@ public static class SchedulerConfigLoader
     /// </summary>
     private static List<string>? Unique(List<string>? values) =>
         values is null ? null : [.. values.Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>A list of ad break names: blanks dropped, repeats collapsed, and null when nothing is left.</summary>
+    private static List<string>? UniqueNames(List<string>? values) =>
+        values?.Where(value => !string.IsNullOrWhiteSpace(value)).Select(value => value.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+            is { Count: > 0 } names ? names : null;
+
+    private static void NormalizeAdBreak(AdBreakConfig adBreak)
+    {
+        adBreak.Folders ??= [];
+        adBreak.Promos ??= [];
+
+        // One job per folder: the last one given wins, as it does when edited in the app.
+        adBreak.Folders = [.. adBreak.Folders
+            .Where(folder => !string.IsNullOrWhiteSpace(folder.Path))
+            .Select(folder => { folder.Path = folder.Path.Trim(); return folder; })
+            .GroupBy(folder => AdBreakPaths.Key(folder.Path), StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.Last())];
+
+        adBreak.Promos = [.. adBreak.Promos
+            .Where(promo => !string.IsNullOrWhiteSpace(promo.Path))
+            .Select(promo => { promo.Path = promo.Path.Trim(); promo.Chance = promo.Chance is { } chance ? Math.Clamp(chance, 0, 1) : null; return promo; })];
+
+        adBreak.AnyShowFolder = string.IsNullOrWhiteSpace(adBreak.AnyShowFolder) ? null : adBreak.AnyShowFolder.Trim();
+    }
 
     private static void NormalizeSelector(ContentSelector? selector)
     {

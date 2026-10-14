@@ -30,6 +30,16 @@ public sealed class InterstitialsConfig
     /// <summary>Tier 3: trimmable filler used to zero out whatever the commercial pass could not.</summary>
     public FillerTierConfig? Filler { get; set; }
 
+    /// <summary>Set by a build from the ad breaks in use: bumpers that open each break. Never written.</summary>
+    [YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<AdPoolSource>? OpeningBumpers { get; set; }
+
+    /// <summary>Set by a build from the ad breaks in use: bumpers that close each break. Never written.</summary>
+    [YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<AdPoolSource>? ClosingBumpers { get; set; }
+
     public InterstitialsConfig Merge(InterstitialsConfig? parent) => new()
     {
         Shows = Shows ?? parent?.Shows,
@@ -89,11 +99,20 @@ public sealed class CommercialsConfig
     /// <summary>Max copies of the same commercial inside a single break.</summary>
     public int? MaxRepeatsPerBreak { get; set; }
 
+    /// <summary>
+    /// Set by a build from the ad breaks in use: the folders the pool is drawn from, replacing the queries, tags and
+    /// types above (<see cref="Filter"/> still applies). Never written.
+    /// </summary>
+    [YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<AdPoolSource>? Sources { get; set; }
+
     [YamlIgnore]
     public bool IsStrictFit => StrictFit ?? true;
 
     public CommercialsConfig Merge(CommercialsConfig? parent) => new()
     {
+        Sources = Sources ?? parent?.Sources,
         Query = Query ?? parent?.Query,
         BaseQuery = BaseQuery ?? parent?.BaseQuery,
         BaseTags = BaseTags ?? parent?.BaseTags,
@@ -155,6 +174,17 @@ public sealed class FillerTierConfig
     /// </summary>
     public TimeSpan? MinTrimmedDuration { get; set; }
 
+    /// <summary>
+    /// Lets filler clips play more than once in a break, so a long gap is filled by going round the clips again
+    /// rather than ending in black. Default false.
+    /// </summary>
+    public bool? Loop { get; set; }
+
+    /// <summary>Set by a build from the ad breaks in use: the folders filler comes from. Never written.</summary>
+    [YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<AdPoolSource>? Sources { get; set; }
+
     [YamlIgnore]
     public bool IsTrimmable => Trimmable ?? true;
 
@@ -163,6 +193,8 @@ public sealed class FillerTierConfig
 
     public FillerTierConfig Merge(FillerTierConfig? parent) => new()
     {
+        Sources = Sources ?? parent?.Sources,
+        Loop = Loop ?? parent?.Loop,
         Query = Query ?? parent?.Query,
         BaseQuery = BaseQuery ?? parent?.BaseQuery,
         BaseTags = BaseTags ?? parent?.BaseTags,

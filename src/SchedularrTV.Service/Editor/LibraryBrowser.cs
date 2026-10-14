@@ -86,7 +86,8 @@ public sealed class LibraryBrowser(IMediaLibrary library, TimeProvider timeProvi
         IReadOnlyList<string> Collections,
         IReadOnlyList<string> VersionLabels,
         CommercialFolders Folders,
-        IReadOnlyDictionary<string, List<LibraryEpisode>> EpisodesByShow);
+        IReadOnlyDictionary<string, List<LibraryEpisode>> EpisodesByShow,
+        IReadOnlyList<MediaItem> Clips);
 
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -107,6 +108,10 @@ public sealed class LibraryBrowser(IMediaLibrary library, TimeProvider timeProvi
 
     public async Task<CommercialFolders> GetCommercialFoldersAsync(CancellationToken cancellationToken = default) =>
         (await ViewAsync(cancellationToken).ConfigureAwait(false)).Folders;
+
+    /// <summary>Every commercial, bumper and promo clip that has a file path (the commercials libraries' clips).</summary>
+    public async Task<IReadOnlyList<MediaItem>> GetClipsAsync(CancellationToken cancellationToken = default) =>
+        (await ViewAsync(cancellationToken).ConfigureAwait(false)).Clips;
 
     /// <summary>
     /// The part of each alternate version's name that actually distinguishes it, e.g. <c>Web Release</c>.
@@ -377,7 +382,10 @@ public sealed class LibraryBrowser(IMediaLibrary library, TimeProvider timeProvi
                         .ToList(),
                     StringComparer.Ordinal);
 
-            View built = new(generation, timeProvider.GetUtcNow(), shows, movies, programmes, collections, versionLabels, folders, episodesByShow);
+            // Every commercial, bumper and promo clip with a path, for the ad break folder trees.
+            IReadOnlyList<MediaItem> clipFiles = [.. all.Where(i => i.Kind == MediaKind.Filler && !string.IsNullOrWhiteSpace(i.Path))];
+
+            View built = new(generation, timeProvider.GetUtcNow(), shows, movies, programmes, collections, versionLabels, folders, episodesByShow, clipFiles);
             _view = built;
             Interlocked.Exchange(ref _retryAtTicks, 0);
             return built;

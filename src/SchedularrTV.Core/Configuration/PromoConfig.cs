@@ -85,6 +85,14 @@ public sealed class PromoConfig
     /// </summary>
     public EventuallyConfig Eventually { get; set; } = new();
 
+    /// <summary>
+    /// Built from the ad breaks in use rather than read from the file: the spots and windows match clips by folder,
+    /// and an empty <see cref="Windows"/> means none rather than the defaults. Never written.
+    /// </summary>
+    [YamlDotNet.Serialization.YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool FromAdBreaks { get; set; }
+
     public static IReadOnlyList<PromoWindow> DefaultWindows { get; } =
     [
         new() { Within = TimeSpan.FromMinutes(30), PromoTypes = ["up_next", "next"] },
@@ -104,6 +112,11 @@ public sealed class PromoWindow
     /// the generic one, whenever the show it promotes starts at that time.
     /// </summary>
     public bool IncludeClockVariants { get; set; } = true;
+
+    /// <summary>Set from an ad break: the folders this window's promos come from, instead of matching by type. Never written.</summary>
+    [YamlDotNet.Serialization.YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<PromoFolderSource>? Folders { get; set; }
 }
 
 /// <summary>
@@ -129,6 +142,11 @@ public sealed class EventuallyConfig
     /// Zero never plays one; one plays whenever something fits.
     /// </summary>
     public double Chance { get; set; } = 0.25;
+
+    /// <summary>Set from an ad break: the folders these trailers come from, instead of matching by type. Never written.</summary>
+    [YamlDotNet.Serialization.YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<PromoFolderSource>? Folders { get; set; }
 }
 
 /// <summary>One promo slot pinned to a fixed position in a break.</summary>
@@ -150,6 +168,11 @@ public sealed class PromoSpotConfig
 
     /// <summary>Up Next only; the other spots keep their fixed positions.</summary>
     public UpNextPlacement Placement { get; set; } = UpNextPlacement.AnyBreak;
+
+    /// <summary>Set from an ad break: the folders this spot's promos come from, instead of matching by type. Never written.</summary>
+    [YamlDotNet.Serialization.YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<PromoFolderSource>? Folders { get; set; }
 }
 
 public enum UpNextPlacement

@@ -385,7 +385,17 @@ public sealed class ScheduleCoordinator(
 
     private static string BuildInputs(SchedulerConfig config, ChannelConfig channel)
     {
-        JsonElement root = JsonSerializer.SerializeToElement(new { config.Settings, config.Titles, Channel = channel }, InputsJson);
+        // The ad breaks the channel and its blocks use: editing one rebuilds just the channels that use it.
+        SortedDictionary<string, AdBreakConfig> adBreaks = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string name in (channel.AdBreaks ?? []).Concat(channel.Blocks.SelectMany(block => block.AdBreaks ?? [])))
+        {
+            if (config.AdBreaks.TryGetValue(name, out AdBreakConfig? adBreak))
+            {
+                adBreaks[name] = adBreak;
+            }
+        }
+
+        JsonElement root = JsonSerializer.SerializeToElement(new { config.Settings, config.Titles, AdBreaks = adBreaks, Channel = channel }, InputsJson);
         var collections = new SortedDictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         Collect(root);

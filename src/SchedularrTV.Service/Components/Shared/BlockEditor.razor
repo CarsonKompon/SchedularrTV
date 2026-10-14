@@ -138,17 +138,14 @@
         </select>
     </label>
 
-    <TagListEditor Label="Commercial brand tags" Placeholder="Adult Swim"
-                   Values="_commercialTags" Changed="OnTagsChanged" />
+    <div class="field">
+        <span>Ad breaks</span>
+        <AdBreakPicker Values="Block.AdBreaks" ValuesChanged="OnAdBreaksChanged"
+                       EmptyText="@(ChannelAdBreaks is { Count: > 0 } inherited ? $"Same as the channel ({string.Join(", ", inherited)})" : "Same as the channel")" />
+    </div>
 
-    <label class="check">
-        <input type="checkbox" checked="@(Block.AutoTemporalTags ?? false)"
-               @onchange="e => { Block.AutoTemporalTags = (bool)(e.Value ?? false); Changed.InvokeAsync(); }" />
-        <span>Match seasonal / holiday commercial tags</span>
-    </label>
-
-    @* Promos and any installed plugin's block settings. *@
-    @foreach (PluginEditorSection section in BlockSections)
+    @* Any installed plugin's block settings (the Promos one is with the tag-based settings below). *@
+    @foreach (PluginEditorSection section in BlockSections.Where(section => !IsPromos(section)))
     {
         <h3>@section.Title</h3>
         <DynamicComponent @key="section.Id" Type="section.Component" Parameters="SectionParameters(section)" />
@@ -156,8 +153,31 @@
 
     <details>
         <summary style="cursor:pointer;color:var(--muted);font-size:12px;margin:8px 0;">
-            Block-specific interstitials and mid-rolls
+            Block-specific interstitials, mid-rolls and tag-based breaks
         </summary>
+
+        <h3>Tag-based breaks and promos</h3>
+        <p class="hint">
+            @(Block.AdBreaks is { Count: > 0 } || ChannelAdBreaks is { Count: > 0 }
+                ? "Ignored while ad breaks are in use here, apart from the fine tuning of an interstitials override."
+                : "Used while neither the block nor its channel has ad breaks.")
+        </p>
+        <TagListEditor Label="Commercial brand tags" Placeholder="Adult Swim"
+                       Values="_commercialTags" Changed="OnTagsChanged" />
+
+        <label class="check">
+            <input type="checkbox" checked="@(Block.AutoTemporalTags ?? false)"
+                   @onchange="e => { Block.AutoTemporalTags = (bool)(e.Value ?? false); Changed.InvokeAsync(); }" />
+            <span>Match seasonal / holiday commercial tags</span>
+        </label>
+
+        @foreach (PluginEditorSection section in BlockSections.Where(IsPromos))
+        {
+            <h3>@section.Title</h3>
+            <DynamicComponent @key="section.Id" Type="section.Component" Parameters="SectionParameters(section)" />
+        }
+
+        <h3>Interstitials and mid-rolls</h3>
         @if (Block.Interstitials is null)
         {
             <button class="btn btn-sm" @onclick="() => { Block.Interstitials = new InterstitialsConfig(); Changed.InvokeAsync(); }">
@@ -277,6 +297,19 @@
     private async Task RemoveShow(ContentSelector selector)
     {
         Block.Shows.Remove(selector);
+        await Changed.InvokeAsync();
+    }
+
+    private static bool IsPromos(PluginEditorSection section) =>
+        string.Equals(section.PluginId, BuiltInPluginIds.Promos, StringComparison.OrdinalIgnoreCase);
+
+    private ChannelConfig? OwningChannel => Channel ?? Editor.Working.Channels.FirstOrDefault(channel => channel.Blocks.Contains(Block));
+
+    private List<string>? ChannelAdBreaks => OwningChannel?.AdBreaks;
+
+    private async Task OnAdBreaksChanged(List<string>? names)
+    {
+        Block.AdBreaks = names;
         await Changed.InvokeAsync();
     }
 

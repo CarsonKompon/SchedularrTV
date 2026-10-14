@@ -1,0 +1,58 @@
+@* Picks the ad break collections a channel or block uses, in order. Their clips are pooled. *@
+@inject ConfigEditor Editor
+
+<div class="ab-picker-list">
+    @if (Selected.Count == 0)
+    {
+        <span class="muted">@EmptyText</span>
+    }
+    @foreach (string name in Selected)
+    {
+        bool missing = !Editor.Working.AdBreaks.ContainsKey(name);
+        <span class="pill @(missing ? "pill-error" : "pill-accent") ab-chip" title="@(missing ? "No ad break by this name" : Editor.Working.AdBreaks[name].Description)">
+            <a href="ad-breaks">@name</a>
+            <button type="button" class="ab-chip-remove" aria-label="@($"Remove {name}")" @onclick="() => Remove(name)"><Icon Name="x" Size="12" /></button>
+        </span>
+    }
+
+    @if (Available.Count > 0)
+    {
+        <select class="ab-add" aria-label="Add an ad break" value="" @onchange="AddFromSelect">
+            <option value="">+ Add an ad break…</option>
+            @foreach (string name in Available)
+            {
+                <option value="@name">@name</option>
+            }
+        </select>
+    }
+    else if (Editor.Working.AdBreaks.Count == 0)
+    {
+        <a class="btn btn-sm" href="ad-breaks"><Icon Name="plus" Size="13" />Create an ad break</a>
+    }
+</div>
+
+@code {
+    [Parameter] public List<string>? Values { get; set; }
+    [Parameter] public EventCallback<List<string>?> ValuesChanged { get; set; }
+    [Parameter] public string EmptyText { get; set; } = "None chosen";
+
+    private IReadOnlyList<string> Selected => Values ?? [];
+
+    private List<string> Available => [.. Editor.Working.AdBreaks.Keys
+        .Where(name => !Selected.Contains(name, StringComparer.OrdinalIgnoreCase))
+        .Order(StringComparer.OrdinalIgnoreCase)];
+
+    private async Task AddFromSelect(ChangeEventArgs e)
+    {
+        if (e.Value?.ToString() is { Length: > 0 } name)
+        {
+            await ValuesChanged.InvokeAsync([.. Selected, name]);
+        }
+    }
+
+    private async Task Remove(string name)
+    {
+        List<string> left = [.. Selected.Where(value => !string.Equals(value, name, StringComparison.OrdinalIgnoreCase))];
+        await ValuesChanged.InvokeAsync(left.Count > 0 ? left : null);
+    }
+}

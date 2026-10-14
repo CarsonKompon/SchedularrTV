@@ -68,7 +68,11 @@ internal sealed class EngineModules
         return new EngineModules
         {
             Overlays = follow ? [new ArchiveFollowTimeline()] : [],
-            Breaks = promos ? [new PromoBreakContributor(generated ? new GeneratedPromoSubstitute() : null)] : [],
+            // Bumpers first: their closing clip goes before the closing promos (Up Next, Now Playing), and their
+            // opening one after the opening promo, as it's added after the interstitial shows.
+            Breaks = promos
+                ? [new BumperBreakContributor(), new PromoBreakContributor(generated ? new GeneratedPromoSubstitute() : null)]
+                : [new BumperBreakContributor()],
             Finalizers = generated ? [new GeneratedPromoStandIns()] : [],
             HasPromos = promos,
             HasGeneratedPromos = generated,

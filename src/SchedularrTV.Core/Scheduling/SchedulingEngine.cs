@@ -969,7 +969,8 @@ public sealed class SchedulingEngine(
             {
                 Trimmable = fillerTier.IsTrimmable,
                 StopBeforeEnd = fillerTier.StopBeforeEnd ?? false,
-                MinTrimmedDuration = fillerTier.MinTrimmedDuration ?? TimeSpan.Zero
+                MinTrimmedDuration = fillerTier.MinTrimmedDuration ?? TimeSpan.Zero,
+                Loop = fillerTier.Loop ?? false
             });
 
         packedItems.AddRange(packed.Items);
@@ -1147,9 +1148,18 @@ public sealed class SchedulingEngine(
     /// <summary>The promo settings a channel (or block) uses, and the brand folders they're drawn from, as a build sees them.</summary>
     public static (PromoConfig Promos, List<string>? BrandTags) ResolvedPromos(SchedulerConfig config, ChannelConfig channel, BlockConfig? block = null)
     {
-        PromoConfig promos = block?.Promos ?? channel.Promos ?? config.Settings.Promos;
-        return (promos, ResolvePromoBaseTags(block, channel, promos, ResolveInterstitials(config, channel, block).Commercials!));
+        PromoConfig promos = ResolvePromoConfig(config, channel, block);
+        return (promos, promos.FromAdBreaks ? null : ResolvePromoBaseTags(block, channel, promos, ResolveInterstitials(config, channel, block).Commercials!));
     }
+
+    /// <summary>
+    /// The promo settings of a block: built from the ad breaks in use when there are any, else the block's, the
+    /// channel's or the global tag-based ones.
+    /// </summary>
+    internal static PromoConfig ResolvePromoConfig(SchedulerConfig config, ChannelConfig channel, BlockConfig? block) =>
+        AdBreakCompiler.InUse(config, channel, block) is { } adBreaks
+            ? AdBreakCompiler.Promos(adBreaks)
+            : block?.Promos ?? channel.Promos ?? config.Settings.Promos;
 
     /// <summary>Which brand folders promos come from; see <see cref="PromoBreakContributor.ResolveBaseTags"/>.</summary>
     internal static List<string>? ResolvePromoBaseTags(
@@ -1166,6 +1176,11 @@ public sealed class SchedulingEngine(
     /// </summary>
     internal static InterstitialsConfig ResolveInterstitials(SchedulerConfig config, ChannelConfig channel, BlockConfig? block)
     {
+        if (AdBreakCompiler.InUse(config, channel, block) is { } adBreaks)
+        {
+            return AdBreakCompiler.Interstitials(config, channel, block, adBreaks);
+        }
+
         InterstitialsConfig resolved = (block?.Interstitials ?? new InterstitialsConfig())
             .Merge(channel.Interstitials)
             .Merge(config.Settings.Interstitials);

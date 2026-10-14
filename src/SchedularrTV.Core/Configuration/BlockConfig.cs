@@ -35,6 +35,9 @@ public sealed class BlockConfig
     /// <summary>Tier 1 shorthand for <c>interstitials.shows</c>.</summary>
     public ContentSelector? InterstitialShows { get; set; }
 
+    /// <summary>Ad break collections used inside this block instead of the channel's. Empty uses the channel's.</summary>
+    public List<string>? AdBreaks { get; set; }
+
     public InterstitialsConfig? Interstitials { get; set; }
 
     /// <summary>Shorthand for <c>interstitials.commercials.base_tags</c>, matching the spec's YAML example.</summary>

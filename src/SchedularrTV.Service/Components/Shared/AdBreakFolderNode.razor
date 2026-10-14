@@ -1,0 +1,93 @@
+@* One folder of the ad break editor's tree, with what it holds, then (when open) the folders inside it. *@
+
+@{
+    FolderJob? own = AdBreakFolderJobs.Explicit(AdBreak, Folder.Path);
+    FolderJob? inherited = own is null ? AdBreakFolderJobs.Inherited(AdBreak, Folder) : null;
+    IReadOnlyList<PhantomFolder> phantoms = own is null ? [] : AdBreakFolderJobs.Phantoms(AdBreak, Folder, Temporal, Now, Shows);
+    bool open = Open.Contains(Folder.Path);
+    bool expandable = Folder.Children.Count > 0 || phantoms.Count > 0;
+    string? seasonal = (own ?? inherited) is { Choice: "ads" or "bumpers" or "filler" } && AdBreak.Seasonal && Depth > 0
+        ? AdBreakFolderJobs.SeasonalNote(Folder.Name, Temporal, Now)
+        : null;
+    string rowClass = own?.CssClass ?? (inherited is null ? string.Empty : inherited.CssClass + " inherited");
+}
+
+<div class="ab-row @rowClass" style="--depth:@Depth" role="treeitem" aria-expanded="@(expandable ? (open ? "true" : "false") : null)">
+    @if (expandable)
+    {
+        <button class="ab-toggle" type="button" aria-label="@(open ? "Collapse" : "Expand")" @onclick="() => OnToggle.InvokeAsync(Folder)">
+            <Icon Name="@(open ? "chevron-down" : "chevron-right")" Size="14" />
+        </button>
+    }
+    else
+    {
+        <span class="ab-toggle"></span>
+    }
+    <Icon Name="@(Depth == 0 ? "library" : "folder")" Size="14" />
+    <span class="ab-name" title="@Folder.Path">@Folder.Name</span>
+    @if (seasonal is not null)
+    {
+        <span class="ab-season">@seasonal</span>
+    }
+    <span class="ab-count" title="Clips in this folder and the folders inside it">@Folder.TotalClips</span>
+    <span class="ab-spacer"></span>
+    @if (own is not null)
+    {
+        <span class="ab-job @own.CssClass">@own.Label</span>
+    }
+    else if (inherited is not null)
+    {
+        <span class="ab-job @inherited.CssClass inherited" title="From the folder it's in">@inherited.Label</span>
+    }
+    <select class="ab-picker" aria-label="@AriaLabel" value="@(own?.Choice ?? AdBreakFolderJobs.None)" @onchange="Pick">
+        <option value="">@(inherited is null ? "Not used" : AsAbove(inherited))</option>
+        <optgroup label="Breaks">
+            @foreach ((string choice, string label) in AdBreakFolderJobs.RoleChoices)
+            {
+                <option value="@choice">@label</option>
+            }
+        </optgroup>
+        <optgroup label="Promos">
+            @foreach ((string choice, string label) in AdBreakFolderJobs.PromoChoices)
+            {
+                <option value="@choice">@label</option>
+            }
+        </optgroup>
+    </select>
+</div>
+
+@if (open)
+{
+    @foreach (CommercialFolder child in Folder.Children)
+    {
+        <AdBreakFolderNode @key="child.Path" Folder="child" Depth="Depth + 1" AdBreak="AdBreak" Open="Open" Shows="Shows"
+                           Temporal="Temporal" Now="Now" OnToggle="OnToggle" OnPick="OnPick" />
+    }
+    @foreach (PhantomFolder phantom in phantoms)
+    {
+        <div class="ab-row ab-phantom" style="--depth:@(Depth + 1)" title="@phantom.Hint">
+            <span class="ab-toggle"></span>
+            <Icon Name="folder" Size="14" />
+            <span class="ab-name">@(phantom.Name + "/")</span>
+            <span class="ab-phantom-hint">@phantom.Hint</span>
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public CommercialFolder Folder { get; set; } = default!;
+    [Parameter] public int Depth { get; set; }
+    [Parameter, EditorRequired] public AdBreakConfig AdBreak { get; set; } = default!;
+    [Parameter, EditorRequired] public HashSet<string> Open { get; set; } = default!;
+    [Parameter] public IReadOnlyList<string> Shows { get; set; } = [];
+    [Parameter, EditorRequired] public TemporalTagOptions Temporal { get; set; } = default!;
+    [Parameter] public DateTimeOffset Now { get; set; }
+    [Parameter] public EventCallback<CommercialFolder> OnToggle { get; set; }
+    [Parameter] public EventCallback<FolderPick> OnPick { get; set; }
+
+    private string AriaLabel => $"What {Folder.Name} holds";
+
+    private static string AsAbove(FolderJob inherited) => $"As above ({inherited.Label})";
+
+    private Task Pick(ChangeEventArgs e) => OnPick.InvokeAsync(new FolderPick(Folder, e.Value?.ToString() ?? AdBreakFolderJobs.None));
+}

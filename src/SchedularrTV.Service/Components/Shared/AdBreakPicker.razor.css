@@ -1,0 +1,7 @@
+.ab-picker-list { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; }
+.ab-chip { display: inline-flex; align-items: center; gap: 4px; }
+.ab-chip a { color: inherit; text-decoration: none; }
+.ab-chip a:hover { text-decoration: underline; }
+.ab-chip-remove { display: inline-flex; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; opacity: .7; }
+.ab-chip-remove:hover { opacity: 1; }
+.ab-add { width: auto; min-width: 200px; font-size: 12px; padding: 3px 6px; }

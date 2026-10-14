@@ -1,0 +1,28 @@
+.ab-row { display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 2px 8px 2px calc(8px + var(--depth, 0) * 18px); border-bottom: 1px solid var(--line); border-left: 3px solid transparent; }
+.ab-row:hover { background: var(--panel-2); }
+.ab-row.job-ads { border-left-color: var(--commercial); }
+.ab-row.job-bumpers { border-left-color: var(--interstitial); }
+.ab-row.job-filler { border-left-color: var(--filler); }
+.ab-row.job-promo { border-left-color: var(--promo); }
+.ab-row.job-skip { border-left-color: var(--line-strong); }
+.ab-row.inherited { border-left-style: dotted; }
+.ab-row.job-skip .ab-name { text-decoration: line-through; color: var(--muted); }
+
+.ab-toggle { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex: none; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; }
+.ab-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ab-count { font-size: 11px; color: var(--faint); padding: 0 6px; border: 1px solid var(--line); }
+.ab-season { font-size: 11px; color: var(--warn); white-space: nowrap; }
+.ab-spacer { flex: 1; }
+.ab-job { font-size: 11px; padding: 1px 6px; border: 1px solid currentColor; white-space: nowrap; }
+.ab-job.inherited { opacity: .6; border-style: dashed; }
+.ab-picker { width: 170px; flex: none; font-size: 12px; padding: 3px 6px; }
+
+.ab-job.job-ads { color: var(--commercial); }
+.ab-job.job-bumpers { color: var(--interstitial); }
+.ab-job.job-filler { color: var(--filler); }
+.ab-job.job-promo { color: var(--promo); }
+.ab-job.job-skip { color: var(--muted); }
+
+.ab-phantom { color: var(--faint); opacity: .55; font-style: italic; border-left: 3px dashed var(--line); }
+.ab-phantom:hover { background: none; }
+.ab-phantom-hint { font-size: 11px; margin-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

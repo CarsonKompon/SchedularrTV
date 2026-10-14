@@ -1,0 +1,254 @@
+@page "/ad-breaks"
+@inherits EditorPage
+@inject CommercialTree Tree
+@inject IJSRuntime JS
+
+<PageHeader Title="Ad Breaks" Eyebrow="Programming">
+    <ChildContent>Sets of ads, bumpers, filler and promos from your commercials libraries, for channels to pick from.</ChildContent>
+    <Actions>
+        <button class="btn" type="button" disabled="@_loading" @onclick="ReloadTree"><Icon Name="refresh" Size="15" />@(_loading ? "Reading…" : "Re-read folders")</button>
+        <button class="btn btn-primary" type="button" @onclick="OpenCreate"><Icon Name="plus" Size="15" />Create</button>
+    </Actions>
+</PageHeader>
+
+<dialog class="modal" @ref="_createDialog" aria-labelledby="create-ad-break-title">
+    <form @onsubmit="Add" @onsubmit:preventDefault="true">
+        <div class="modal-head">
+            <h2 id="create-ad-break-title">Create ad break</h2>
+        </div>
+        <label class="field">
+            <span>Name</span>
+            <input type="text" @bind="_newName" @bind:event="oninput" required autofocus placeholder="e.g. Any channel, Kids channel"
+                   aria-invalid="@(_error is not null ? "true" : "false")"
+                   aria-describedby="@(_error is not null ? "create-ad-break-error" : null)" />
+        </label>
+        @if (_error is not null)
+        {
+            <p class="field-error" id="create-ad-break-error" role="alert">@_error</p>
+        }
+        <div class="wizard-foot">
+            <div class="spacer"></div>
+            <button class="btn" type="button" @onclick="CloseCreate">Cancel</button>
+            <button class="btn btn-primary" type="submit" disabled="@(_newName.Trim().Length == 0)">Create</button>
+        </div>
+    </form>
+</dialog>
+
+@if (Editor.Working.AdBreaks.Count == 0)
+{
+    <div class="empty">
+        <Icon Name="megaphone" Size="32" StrokeWidth="1.5" />
+        <div class="empty-title">No ad breaks yet</div>
+        <div>
+            Create one, then pick which folders of your commercials hold the ads, bumpers, filler and promos.
+            Channels then choose one or more ad breaks on their <strong>Ad breaks</strong> tab.
+        </div>
+    </div>
+}
+
+@foreach ((string key, AdBreakConfig adBreak) in Editor.Working.AdBreaks.OrderBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase))
+{
+    bool open = _expanded.Contains(key);
+    <div class="card" @key="key">
+        <div class="card-head collapsible @(open ? "" : "collapsed")" @onclick="() => Toggle(key)"
+             role="button" aria-expanded="@(open ? "true" : "false")">
+            <Icon Name="@(open ? "chevron-down" : "chevron-right")" Size="16" Class="muted" />
+            @if (_renaming == key)
+            {
+                <span @onclick:stopPropagation="true">
+                    <input type="text" value="@key" aria-label="Ad break name" @onchange="e => Rename(key, e.Value?.ToString())" />
+                </span>
+            }
+            else
+            {
+                <h2>@key</h2>
+            }
+            <span class="pill pill-muted">@Summarise(adBreak)</span>
+            @if (!string.IsNullOrWhiteSpace(adBreak.Description))
+            {
+                <span class="muted">@adBreak.Description</span>
+            }
+            <div class="spacer"></div>
+            <div class="row" @onclick:stopPropagation="true">
+                <button class="btn btn-sm btn-icon" title="Rename" aria-label="@($"Rename {key}")" @onclick="() => _renaming = _renaming == key ? null : key"><Icon Name="pencil" Size="14" /></button>
+                @if (_confirmDelete == key)
+                {
+                    <button class="btn btn-sm btn-danger confirm" @onclick="() => Remove(key)">Delete?</button>
+                    <button class="btn btn-sm btn-icon" title="Cancel" aria-label="Cancel delete" @onclick="() => _confirmDelete = null"><Icon Name="x" Size="14" /></button>
+                }
+                else
+                {
+                    <button class="btn btn-sm btn-icon btn-danger" title="Delete" aria-label="@($"Delete {key}")" @onclick="() => _confirmDelete = key"><Icon Name="trash" Size="14" /></button>
+                }
+            </div>
+        </div>
+
+        @if (_renameError is not null && _renaming == key)
+        {
+            <p class="field-error" role="alert">@_renameError</p>
+        }
+
+        @if (open)
+        {
+            <AdBreakEditor Name="@key" AdBreak="adBreak" Roots="_roots" Changed="Editor.MarkDirty" />
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<CommercialFolder> _roots = [];
+    private bool _loading = true;
+    private string _newName = "";
+    private ElementReference _createDialog;
+    private string? _error;
+    private string? _confirmDelete;
+    private string? _renaming;
+    private string? _renameError;
+    private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        // With just one, it's the one you came to edit.
+        if (Editor.Working.AdBreaks.Count == 1)
+        {
+            _expanded.Add(Editor.Working.AdBreaks.Keys.First());
+        }
+
+        _roots = await Tree.GetRootsAsync();
+        _loading = false;
+    }
+
+    private async Task ReloadTree()
+    {
+        _loading = true;
+        try
+        {
+            // The folders are read from disk again; clip counts follow the library's next scan (Channel settings → Rescan).
+            _roots = await Tree.GetRootsAsync();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void Toggle(string key)
+    {
+        if (!_expanded.Add(key))
+        {
+            _expanded.Remove(key);
+        }
+    }
+
+    private async Task OpenCreate()
+    {
+        _newName = "";
+        _error = null;
+        await using var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/dialog.js");
+        await module.InvokeVoidAsync("show", _createDialog);
+    }
+
+    private async Task CloseCreate()
+    {
+        await using var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/dialog.js");
+        await module.InvokeVoidAsync("close", _createDialog);
+    }
+
+    private async Task Add()
+    {
+        string key = _newName.Trim();
+        _error = null;
+
+        if (key.Length == 0)
+        {
+            return;
+        }
+
+        if (Editor.Working.AdBreaks.ContainsKey(key))
+        {
+            _error = $"An ad break called \"{key}\" already exists.";
+            return;
+        }
+
+        Editor.Working.AdBreaks[key] = new AdBreakConfig();
+        _expanded.Add(key);
+        _newName = "";
+        Editor.MarkDirty();
+        await CloseCreate();
+    }
+
+    private void Remove(string key)
+    {
+        _confirmDelete = null;
+        Editor.Working.AdBreaks.Remove(key);
+        _expanded.Remove(key);
+
+        // Channels and blocks naming it would no longer validate.
+        foreach (ChannelConfig channel in Editor.Working.Channels)
+        {
+            channel.AdBreaks = Without(channel.AdBreaks, key);
+            foreach (BlockConfig block in channel.Blocks)
+            {
+                block.AdBreaks = Without(block.AdBreaks, key);
+            }
+        }
+
+        Editor.MarkDirty();
+    }
+
+    private void Rename(string key, string? name)
+    {
+        _renameError = null;
+        string renamed = name?.Trim() ?? string.Empty;
+        if (renamed.Length == 0 || renamed == key)
+        {
+            _renaming = null;
+            return;
+        }
+
+        if (!string.Equals(renamed, key, StringComparison.OrdinalIgnoreCase) && Editor.Working.AdBreaks.ContainsKey(renamed))
+        {
+            _renameError = $"An ad break called \"{renamed}\" already exists.";
+            return;
+        }
+
+        AdBreakConfig adBreak = Editor.Working.AdBreaks[key];
+        Editor.Working.AdBreaks.Remove(key);
+        Editor.Working.AdBreaks[renamed] = adBreak;
+
+        // Channels and blocks follow the new name.
+        foreach (ChannelConfig channel in Editor.Working.Channels)
+        {
+            channel.AdBreaks = Renamed(channel.AdBreaks, key, renamed);
+            foreach (BlockConfig block in channel.Blocks)
+            {
+                block.AdBreaks = Renamed(block.AdBreaks, key, renamed);
+            }
+        }
+
+        if (_expanded.Remove(key))
+        {
+            _expanded.Add(renamed);
+        }
+
+        _renaming = null;
+        Editor.MarkDirty();
+    }
+
+    private static List<string>? Without(List<string>? names, string key) =>
+        names?.Where(name => !string.Equals(name, key, StringComparison.OrdinalIgnoreCase)).ToList() is { Count: > 0 } left ? left : null;
+
+    private static List<string>? Renamed(List<string>? names, string from, string to) =>
+        names?.Select(name => string.Equals(name, from, StringComparison.OrdinalIgnoreCase) ? to : name).ToList();
+
+    private static string Summarise(AdBreakConfig adBreak)
+    {
+        int folders = adBreak.Folders.Count(folder => folder.Role != AdFolderRole.Skip);
+        if (folders == 0 && adBreak.Promos.Count == 0)
+        {
+            return "empty";
+        }
+
+        return $"{folders} folder(s) · {adBreak.Promos.Count} promo(s)";
+    }
+}
