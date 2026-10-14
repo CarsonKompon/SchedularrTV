@@ -42,7 +42,8 @@ public sealed class GeneratedPromoMaker(GeneratedPromoService promos) : IPromoMa
         }
 
         TimeZoneInfo zone = SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(channel.TimeZone) ? config.Settings.TimeZone : channel.TimeZone);
-        if (GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, airsAt) is not { } promo)
+        if (GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, airsAt,
+                GeneratedImageSubjects.FromSchedule(schedule, airsAt)) is not { } promo)
         {
             return null;
         }

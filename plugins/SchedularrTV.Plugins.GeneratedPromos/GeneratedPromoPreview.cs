@@ -93,12 +93,22 @@ public sealed class GeneratedPromoPreview(
 
     public DateTimeOffset Now => clock.GetUtcNow();
 
+    public GeneratedImageSubjects ImageSubjects(ChannelConfig channel)
+    {
+        DateTimeOffset now = clock.GetUtcNow();
+        ChannelSchedule? schedule = services.GetService<ScheduleCoordinator>()?.Latest
+            .FirstOrDefault(candidate => string.Equals(candidate.ChannelId, channel.Id, StringComparison.OrdinalIgnoreCase));
+        return schedule is not null ? GeneratedImageSubjects.FromSchedule(schedule, now)
+            : new(new UpNextListing(SampleTitles[0], now.AddMinutes(-15)),
+                [.. Enumerable.Range(0, 10).Select(index => new UpNextListing(SampleTitles[(index + 1) % SampleTitles.Length], now.AddMinutes(30 * (index + 1))))]);
+    }
+
     /// <summary>The AI writer, when the scheduler provides one (it always does; tools and tests may not).</summary>
     public SchedularrTV.Service.Writing.AiTextWriter? Writer => services.GetService<SchedularrTV.Service.Writing.AiTextWriter>();
 
     /// <summary>The template's AI jobs for the editor's "Try it", with what it would air with right now.</summary>
     public ResolvedGeneratedPromo? Resolve(GeneratedPromoTemplate template, ChannelConfig channel, TimeZoneInfo zone) =>
-        GeneratedPromoResolver.Resolve(template, channel.Name, Listings(channel, template, out _), zone, clock.GetUtcNow());
+        GeneratedPromoResolver.Resolve(template, channel.Name, Listings(channel, template, out _), zone, clock.GetUtcNow(), ImageSubjects(channel));
 
     public static TimeZoneInfo Zone(SchedulerConfig config, ChannelConfig channel) =>
         SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(channel.TimeZone) ? config.Settings.TimeZone : channel.TimeZone);
@@ -112,9 +122,10 @@ public sealed class GeneratedPromoPreview(
         TimeSpan time,
         int width,
         CancellationToken cancellationToken = default,
-        DateTimeOffset? airsAt = null)
+        DateTimeOffset? airsAt = null,
+        GeneratedImageSubjects? imageSubjects = null)
     {
-        ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(template, channelName, listings, zone, airsAt ?? clock.GetUtcNow())
+        ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(template, channelName, listings, zone, airsAt ?? clock.GetUtcNow(), imageSubjects)
             ?? throw new InvalidOperationException("The preview needs at least one upcoming programme.");
 
         // AI-written captions show once they're written (the usual text until then; the editor redraws when they are).
@@ -147,9 +158,10 @@ public sealed class GeneratedPromoPreview(
         IReadOnlyList<UpNextListing> listings,
         TimeZoneInfo zone,
         CancellationToken cancellationToken = default,
-        string? song = null) =>
+        string? song = null,
+        GeneratedImageSubjects? imageSubjects = null) =>
         promos.RenderAsync(
-            (GeneratedPromoResolver.Resolve(WithSong(template, song), channelName, listings, zone, clock.GetUtcNow())
+            (GeneratedPromoResolver.Resolve(WithSong(template, song), channelName, listings, zone, clock.GetUtcNow(), imageSubjects)
                 ?? throw new InvalidOperationException("The preview needs at least one upcoming programme."))
             with { Folder = GeneratedPromoService.PreviewFolder },
             cancellationToken);

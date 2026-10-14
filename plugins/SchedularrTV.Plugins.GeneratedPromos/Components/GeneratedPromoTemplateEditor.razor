@@ -79,6 +79,8 @@
         </label>
     </div>
 
+    <VariableImagesEditor Template="Template" Changed="Commit" />
+
     @if (Template.Generator is { } generator)
     {
         <div class="ed-plain">
@@ -378,6 +380,18 @@
                     }
                     else if (selected.Kind == GeneratedLayerKind.Image)
                     {
+                        <label class="field">
+                            <span>Image source</span>
+                            <select value="@selected.VariableImage" @onchange="e => Set(() => selected.VariableImage = Optional(e))">
+                                <option value="">Static image file</option>
+                                @foreach (GeneratedVariableImage image in Template.VariableImages ?? [])
+                                {
+                                    <option value="@image.Name">@image.Name</option>
+                                }
+                            </select>
+                        </label>
+                        @if (string.IsNullOrWhiteSpace(selected.VariableImage))
+                        {
                         <div class="field">
                             <span>Image file</span>
                             <FilePathPicker Value="@selected.Path" ValueChanged="value => Set(() => selected.Path = value)" KeepCopyIn="@GeneratedPromoPackages.AssetCategory"
@@ -387,6 +401,7 @@
                         @if (Missing(selected.Path))
                         {
                             <p class="hint warn">The scheduler can't find this file.</p>
+                        }
                         }
                     }
 
@@ -988,7 +1003,8 @@
             IReadOnlyList<UpNextListing> listings = PreviewListings(out _sample);
             // The canvas fills the editor's width, so the still is drawn about as wide as a large screen shows it.
             int width = Math.Min(1600, Template.Width);
-            byte[] jpeg = await Preview.RenderStillAsync(Template, Channel.Name, listings, Zone, TimeSpan.FromSeconds(_time), width, cancellation.Token);
+            byte[] jpeg = await Preview.RenderStillAsync(Template, Channel.Name, listings, Zone, TimeSpan.FromSeconds(_time), width, cancellation.Token,
+                imageSubjects: Preview.ImageSubjects(Channel));
             if (cancellation.IsCancellationRequested)
             {
                 return;
@@ -1328,7 +1344,7 @@
         }
 
         IReadOnlyList<UpNextListing> listings = PreviewListings(out _);
-        return GeneratedPromoResolver.Resolve(Template, Channel.Name, listings, Zone, Preview.Now) is { } promo
+        return GeneratedPromoResolver.Resolve(Template, Channel.Name, listings, Zone, Preview.Now, Preview.ImageSubjects(Channel)) is { } promo
             ? ExternalPromoGenerator.Describe(generator, promo.GeneratorArguments)
             : string.Empty;
     }
@@ -1579,7 +1595,8 @@
             }
 
             IReadOnlyList<UpNextListing> listings = PreviewListings(out _sample);
-            GeneratedPromoRender render = await Preview.RenderVideoAsync(GeneratedPromoEditing.Copy(Template), Channel.Name, listings, Zone, _life.Token, song);
+            GeneratedPromoRender render = await Preview.RenderVideoAsync(GeneratedPromoEditing.Copy(Template), Channel.Name, listings, Zone, _life.Token, song,
+                Preview.ImageSubjects(Channel));
             _videoUrl = $"{Preview.FileUrl(render.Path)}?v={DateTime.UtcNow.Ticks}";
             _videoMessage = render.VoiceError is { } error
                 ? $"The voice-over failed, so this preview is silent: {error.GetBaseException().Message}"

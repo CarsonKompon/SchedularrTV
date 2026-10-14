@@ -35,6 +35,15 @@ public static class GeneratedPromoPackages
             layer.Path = await map(layer.Path).ConfigureAwait(false);
         }
 
+        foreach (GeneratedVariableImage image in template.VariableImages ?? [])
+        {
+            image.DefaultPath = await map(image.DefaultPath).ConfigureAwait(false);
+            foreach (GeneratedShowImage show in image.Shows)
+            {
+                show.Path = await map(show.Path).ConfigureAwait(false);
+            }
+        }
+
         if (template.Music is not { } music)
         {
             return;

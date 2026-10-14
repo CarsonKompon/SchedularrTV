@@ -385,6 +385,22 @@ public static class SchedulerConfigLoader
                 }
             }
 
+            HashSet<string> imageNames = new(StringComparer.OrdinalIgnoreCase);
+            foreach (GeneratedVariableImage image in template.VariableImages ?? [])
+            {
+                string imageScope = $"{templateScope}.variable_images.{image.Name}";
+                if (!System.Text.RegularExpressions.Regex.IsMatch(image.Name, @"^variable_image_[a-zA-Z0-9_]+$") || !imageNames.Add(image.Name))
+                    errors.Add($"{imageScope}: use a unique name such as variable_image_01.");
+                if (!Enum.IsDefined(image.Context) || image.Offset is < 0 or > 9)
+                    errors.Add($"{imageScope}: choose a valid context and an offset between 0 and 9.");
+                HashSet<string> shows = new(StringComparer.OrdinalIgnoreCase);
+                foreach (GeneratedShowImage show in image.Shows)
+                {
+                    if (string.IsNullOrWhiteSpace(show.Show) || !shows.Add(show.Show.Trim()))
+                        errors.Add($"{imageScope}: each show override needs a unique show title.");
+                }
+            }
+
             GeneratedLayerKind required = GeneratedPromoKinds.RequiredLayer(template.Type);
             if (template.Generator is null && !template.Layers.Any(layer => layer.Kind == required))
             {
@@ -409,7 +425,12 @@ public static class SchedulerConfigLoader
                     errors.Add($"{layerScope}: color must be a hex colour such as #FFFFFF.");
                 }
 
-                if (layer.Kind == GeneratedLayerKind.Image && string.IsNullOrWhiteSpace(layer.Path))
+                if (layer.Kind == GeneratedLayerKind.Image && !string.IsNullOrWhiteSpace(layer.VariableImage)
+                    && !imageNames.Contains(layer.VariableImage))
+                {
+                    errors.Add($"{layerScope}: variable_image must name a configured variable image.");
+                }
+                if (layer.Kind == GeneratedLayerKind.Image && string.IsNullOrWhiteSpace(layer.Path) && string.IsNullOrWhiteSpace(layer.VariableImage))
                 {
                     errors.Add($"{layerScope}: an image layer needs a path.");
                 }

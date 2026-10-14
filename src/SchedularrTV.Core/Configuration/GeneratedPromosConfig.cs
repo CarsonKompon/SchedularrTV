@@ -151,6 +151,29 @@ public sealed class GeneratedPromoTemplate
 
     /// <summary>Drawn in list order, so later layers sit on top.</summary>
     public List<GeneratedLayer> Layers { get; set; } = [];
+
+    /// <summary>Named image slots shared by canvas layers and external generator arguments.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedVariableImage>? VariableImages { get; set; }
+}
+
+public enum GeneratedImageContext { PromotedShow, CurrentlyWatching, UpNext }
+
+public sealed class GeneratedVariableImage
+{
+    public string Name { get; set; } = "variable_image_01";
+    public GeneratedImageContext Context { get; set; }
+    /// <summary>Up Next only: zero is next, one is the show after that.</summary>
+    public int Offset { get; set; }
+    public string? DefaultPath { get; set; }
+    public List<GeneratedShowImage> Shows { get; set; } = [];
+}
+
+public sealed class GeneratedShowImage
+{
+    /// <summary>Series/show title, matched without regard to case.</summary>
+    public string Show { get; set; } = string.Empty;
+    public string? Path { get; set; }
 }
 
 public sealed class GeneratedVoiceConfig
@@ -363,6 +386,10 @@ public sealed class GeneratedLayer
 
     /// <summary>Image file for <see cref="GeneratedLayerKind.Image"/>.</summary>
     public string? Path { get; set; }
+
+    /// <summary>A named variable image instead of the static image path.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? VariableImage { get; set; }
 
     public string FontFamily { get; set; } = "Segoe UI";
 

@@ -28,6 +28,8 @@ public sealed record ResolvedGeneratedPromo(
     /// <summary>External generator arguments with <see cref="GeneratedPromoResolver.OutputToken"/> left for the render to fill in.</summary>
     public IReadOnlyList<string> GeneratorArguments { get; init; } = [];
 
+    public IReadOnlyDictionary<string, string> VariableImages { get; init; } = new Dictionary<string, string>();
+
     /// <summary>When an AI writes the voice-over: what it's asked. <see cref="Script"/> is the usual read-out it falls back on.</summary>
     public AiTextJob? ScriptJob { get; init; }
 
@@ -73,7 +75,8 @@ public static partial class GeneratedPromoResolver
         string channelName,
         IReadOnlyList<UpNextListing> listings,
         TimeZoneInfo zone,
-        DateTimeOffset? airsAt = null)
+        DateTimeOffset? airsAt = null,
+        GeneratedImageSubjects? imageSubjects = null)
     {
         if (listings.Count == 0)
         {
@@ -81,6 +84,7 @@ public static partial class GeneratedPromoResolver
         }
 
         List<UpNextListing> used = [.. listings.Take(ListingsNeeded(template))];
+        IReadOnlyDictionary<string, string> images = GeneratedPromoImages.Resolve(template, listings, imageSubjects);
         DateTimeOffset promoTime = airsAt ?? used[0].Start;
 
         List<IReadOnlyList<string>> lines = [.. template.Layers.Select(layer => Lines(layer, used, zone, channelName, promoTime))];
@@ -93,6 +97,14 @@ public static partial class GeneratedPromoResolver
             : null;
 
         string identity = JsonSerializer.Serialize(new { Version = 1, Template = template, Lines = lines, Script = script }, KeyJson);
+        if (images.Count > 0)
+        {
+            identity += $"|images|{JsonSerializer.Serialize(images, KeyJson)}";
+            foreach (string path in images.Values.Distinct(StringComparer.Ordinal))
+            {
+                if (File.Exists(path)) identity += $"|{path}|{File.GetLastWriteTimeUtc(path).Ticks}|{new FileInfo(path).Length}";
+            }
+        }
 
         // AI-written words aren't known yet, so the promo is keyed by what the writer is asked (which takes in what it
         // may say about the shows); templates without AI writing keep the keys they had.
@@ -125,7 +137,7 @@ public static partial class GeneratedPromoResolver
         }
 
         IReadOnlyList<string> arguments = template.Generator is { } generator
-            ? GeneratorArguments(generator, template, channelName, used, zone, promoTime, clip)
+            ? GeneratorArguments(generator, template, channelName, used, zone, promoTime, clip, images)
             : [];
         if (arguments.Count > 0)
         {
@@ -138,6 +150,7 @@ public static partial class GeneratedPromoResolver
             ClipPath = clip?.Path,
             ClipStart = clip?.Start ?? TimeSpan.Zero,
             GeneratorArguments = arguments,
+            VariableImages = images,
             ScriptJob = scriptJob,
             LayerJobs = layerJobs
         };
@@ -154,7 +167,8 @@ public static partial class GeneratedPromoResolver
         IReadOnlyList<UpNextListing> listings,
         TimeZoneInfo zone,
         DateTimeOffset airsAt,
-        (string Path, TimeSpan Start)? clip)
+        (string Path, TimeSpan Start)? clip,
+        IReadOnlyDictionary<string, string>? images = null)
     {
         int divisor = (int)BigInteger.GreatestCommonDivisor(template.Width, template.Height);
         Dictionary<string, string> shared = new(StringComparer.OrdinalIgnoreCase)
@@ -175,6 +189,10 @@ public static partial class GeneratedPromoResolver
         foreach ((string name, string value) in ShowTokens(listings[0], 0, zone, airsAt))
         {
             shared[name] = value;
+        }
+        foreach ((string name, string path) in images ?? GeneratedPromoImages.Resolve(template, listings))
+        {
+            shared[name] = path;
         }
 
         List<string> arguments = [];
@@ -224,6 +242,7 @@ public static partial class GeneratedPromoResolver
         ("{duration}", "promo length in seconds"),
         ("{width}", "width"), ("{height}", "height"), ("{aspect}", "e.g. 16:9"), ("{fps}", "frame rate"),
         ("{clip}", "episode file"), ("{clip_start}", "seconds into it"),
+        ("{variable_image_01}", "resolved image path for the named variable image (also works in show and clip argument groups)"),
         ("{output}", "file to write"), ("{output_dir}", "its folder")
     ];
 
@@ -247,7 +266,7 @@ public static partial class GeneratedPromoResolver
     private static string UnderscoredName(string name) =>
         string.Concat(name.Select((character, index) => index > 0 && char.IsUpper(character) ? $"_{char.ToLowerInvariant(character)}" : $"{char.ToLowerInvariant(character)}"));
 
-    [GeneratedRegex(@"\{([a-z_]+)\}", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"\{([a-z_][a-z_0-9]*)\}", RegexOptions.IgnoreCase)]
     private static partial Regex TokenPattern();
 
     /// <summary>Whether the generator's arguments hand it the episode clip, so it plays the clip itself.</summary>
@@ -331,7 +350,7 @@ public static partial class GeneratedPromoResolver
                 }
                 : null,
             Layers = template.Generator is not null ? []
-                : [.. template.Layers.Select((layer, index) => Layer(layer, promo.LayerLines[index])).OfType<PromoLayer>()]
+                : [.. template.Layers.Select((layer, index) => Layer(layer, promo.LayerLines[index], promo.VariableImages)).OfType<PromoLayer>()]
         };
     }
 
@@ -432,14 +451,15 @@ public static partial class GeneratedPromoResolver
     private static string? Tokens(string? text, string channelName) =>
         text?.Replace("{channel}", channelName, StringComparison.OrdinalIgnoreCase);
 
-    private static PromoLayer? Layer(GeneratedLayer layer, IReadOnlyList<string> lines)
+    private static PromoLayer? Layer(GeneratedLayer layer, IReadOnlyList<string> lines, IReadOnlyDictionary<string, string> images)
     {
         SKRect bounds = SKRect.Create(layer.X, layer.Y, layer.Width, layer.Height);
         SKColor color = SKColor.Parse(layer.Color);
+        string? imagePath = layer.VariableImage is { Length: > 0 } variable ? images.GetValueOrDefault(variable) : layer.Path;
         PromoLayer? drawn = layer.Kind switch
         {
             GeneratedLayerKind.Rect => new PromoRectLayer { Bounds = bounds, Color = color, CornerRadius = layer.CornerRadius },
-            GeneratedLayerKind.Image when !string.IsNullOrWhiteSpace(layer.Path) => new PromoImageLayer { Bounds = bounds, Path = layer.Path },
+            GeneratedLayerKind.Image when !string.IsNullOrWhiteSpace(imagePath) => new PromoImageLayer { Bounds = bounds, Path = imagePath },
             var kind when (kind is GeneratedLayerKind.Text or GeneratedLayerKind.UpNext || GeneratedPromoKinds.IsShowLayer(kind))
                 && lines.Any(line => line.Length > 0) => new PromoTextLayer
             {

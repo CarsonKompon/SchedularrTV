@@ -74,7 +74,8 @@ foreach (ScheduleEntry entry in generated.Take(limit))
     GeneratedPromoSource source = GeneratedPromoPlanner.Source(config, channel, entry.BlockName)!;
     GeneratedPromoTemplate template = source.Promos.Templates.First(candidate => candidate.Name == entry.GeneratedTemplate);
     IReadOnlyList<UpNextListing> listings = GeneratedPromoService.Subject(template.Type, schedule, entry, GeneratedPromoResolver.ListingsNeeded(template));
-    if (GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, entry.Start) is not { } promo)
+    if (GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, entry.Start,
+            GeneratedImageSubjects.FromSchedule(schedule, entry.Start, entry.End)) is not { } promo)
     {
         Console.WriteLine($"  {entry.Start.ToLocalTime():HH:mm:ss}: skipped, no following programme in the preview window");
         continue;

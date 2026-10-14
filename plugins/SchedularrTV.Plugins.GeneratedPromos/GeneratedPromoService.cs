@@ -192,7 +192,8 @@ public sealed partial class GeneratedPromoService(
                     IReadOnlyList<UpNextListing> listings = Subject(template.Type, schedule, entry, needed);
                     if (listings.Count >= needed || (listings.Count > 0 && entry.Start - now < PartialListingWindow))
                     {
-                        ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, entry.Start)!
+                        ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, entry.Start,
+                            GeneratedImageSubjects.FromSchedule(schedule, entry.Start, entry.End))!
                             with { Folder = Folder(source, template) };
                         path = Existing(promo);
                         if (path is not null)

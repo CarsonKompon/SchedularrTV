@@ -36,6 +36,45 @@ Hold **Alt** while dragging to bypass snapping. **Browse** opens a file dialog o
 
 **Up Next** layers can show additional programmes through **offset**, **shows ahead**, and start-time settings. Coming Up and Eventually use the built schedule when available; unresolved targets retain stand-in commercials.
 
+## Variable images
+
+Both canvas templates and external generators support show-dependent images:
+
+1. Open **Variable images** in the template and select **+ Variable image**.
+2. Choose the context: **the show this promo promotes**, **currently watching / before the break**, or **up next**.
+3. For **up next**, choose the next show, two shows ahead, or up to ten shows ahead. Mid-roll continuations don't count as a new upcoming show.
+4. Pick a **Default image**, then add **Show overrides** with the series/show title and its image. Titles match without regard to case.
+5. On the canvas, add an **Image** layer and select the variable under **Image source**. Position, resize, and animate it as usual.
+
+The default is used when the show has no assigned image or the schedule doesn't reach the requested show. Without a default, the canvas layer is hidden and the placeholder resolves to an empty string. Configured files must be readable on the scheduler's computer. Previews use the channel's current schedule, or sample contexts before a schedule exists.
+
+For an external script/tool, use the displayed placeholder in an argument, for example:
+
+```text
+render-promo.js
+--image
+{variable_image_01}
+--output
+{output}
+```
+
+The scheduler passes the resolved **image file path** as that argument; the script loads the image from it. This also works in **For each show** and **When there's an episode clip** arguments. Image variables retain their configured context in these groups. Placeholders are substituted in arguments, not by rewriting the script's source file.
+
+Variables belong to the template, and their default and per-show image files travel with template exports. YAML example inside a template:
+
+```yaml
+variable_images:
+  - name: variable_image_01
+    context: up_next
+    offset: 1 # Two shows ahead; 0 means next
+    default_path: 'D:\Media\Promos\default.png'
+    shows:
+      - show: SpongeBob SquarePants
+        path: 'D:\Media\Promos\spongebob.png'
+```
+
+An image layer references it with `variable_image: variable_image_01` instead of `path`. Other contexts are `promoted_show` and `currently_watching`.
+
 ## Voices
 
 | Provider | Setup |

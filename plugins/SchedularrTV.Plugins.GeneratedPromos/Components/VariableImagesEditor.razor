@@ -1,0 +1,90 @@
+<details class="ed-plain">
+    <summary>Variable images (@(Template.VariableImages?.Count ?? 0))</summary>
+    <p class="hint">Choose a default image and optional images for individual shows. Use a variable as an image layer's source,
+        or pass its placeholder (for example, {variable_image_01}) in external program arguments. The placeholder becomes an image file path.</p>
+    @foreach (GeneratedVariableImage image in Template.VariableImages ?? [])
+    {
+        <div class="card" @key="image">
+            <div class="card-head">
+                <code>@($"{{{image.Name}}}")</code>
+                <div class="spacer"></div>
+                <button class="btn btn-sm btn-danger" type="button" @onclick="() => Remove(image)">Remove variable</button>
+            </div>
+            <div class="grid grid-2">
+                <label class="field">
+                    <span>Show context</span>
+                    <select @bind="image.Context" @bind:after="Notify">
+                        <option value="@GeneratedImageContext.PromotedShow">The show this promo promotes</option>
+                        <option value="@GeneratedImageContext.CurrentlyWatching">Currently watching / before the break</option>
+                        <option value="@GeneratedImageContext.UpNext">Up next</option>
+                    </select>
+                </label>
+                @if (image.Context == GeneratedImageContext.UpNext)
+                {
+                    <label class="field">
+                        <span>Upcoming show</span>
+                        <select @bind="image.Offset" @bind:after="Notify">
+                            @for (int offset = 0; offset < 10; offset++)
+                            {
+                                <option value="@offset">@(offset == 0 ? "Next show" : $"{offset + 1} shows ahead")</option>
+                            }
+                        </select>
+                    </label>
+                }
+                <div class="field">
+                    <span>Default image</span>
+                    <FilePathPicker Value="@image.DefaultPath" ValueChanged="value => Set(() => image.DefaultPath = value)"
+                                    KeepCopyIn="@GeneratedPromoPackages.AssetCategory" Extensions="FileBrowsing.Images"
+                                    Label="default image" StartIn="Environment.SpecialFolder.MyPictures" />
+                </div>
+            </div>
+            @foreach (GeneratedShowImage show in image.Shows)
+            {
+                <div class="grid grid-3" @key="show">
+                    <label class="field">
+                        <span>Show title</span>
+                        <input type="text" @bind="show.Show" @bind:after="Notify" placeholder="Exact series / show title" />
+                    </label>
+                    <div class="field">
+                        <span>Image for this show</span>
+                        <FilePathPicker Value="@show.Path" ValueChanged="value => Set(() => show.Path = value)"
+                                        KeepCopyIn="@GeneratedPromoPackages.AssetCategory" Extensions="FileBrowsing.Images"
+                                        Label="show image" StartIn="Environment.SpecialFolder.MyPictures" />
+                    </div>
+                    <div><button class="btn btn-sm btn-danger" type="button" @onclick="() => Set(() => image.Shows.Remove(show))">Remove show</button></div>
+                </div>
+            }
+            <button class="btn btn-sm" type="button" @onclick="() => Set(() => image.Shows.Add(new()))">+ Show override</button>
+        </div>
+    }
+    <button class="btn btn-sm" type="button" @onclick="Add">+ Variable image</button>
+    <p class="hint">Show titles are case-insensitive. An unassigned show or unavailable show context uses the default.
+        With no default, the image is hidden and the external placeholder is empty. Up next skips the current show's continuation during a mid-show break.</p>
+</details>
+
+@code {
+    [Parameter, EditorRequired] public GeneratedPromoTemplate Template { get; set; } = new();
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private Task Notify() => Changed.InvokeAsync();
+    private Task Set(Action change) { change(); return Notify(); }
+
+    private Task Add() => Set(() =>
+    {
+        Template.VariableImages ??= [];
+        int number = 1;
+        while (Template.VariableImages.Any(image => string.Equals(image.Name, $"variable_image_{number:00}", StringComparison.OrdinalIgnoreCase))) number++;
+        Template.VariableImages.Add(new() { Name = $"variable_image_{number:00}" });
+    });
+
+    private Task Remove(GeneratedVariableImage image) => Set(() =>
+    {
+        Template.VariableImages?.Remove(image);
+        if (Template.VariableImages?.Count == 0) Template.VariableImages = null;
+        foreach (GeneratedLayer layer in Template.Layers.Where(layer => string.Equals(layer.VariableImage, image.Name, StringComparison.OrdinalIgnoreCase)))
+        {
+            layer.VariableImage = null;
+            layer.Path = image.DefaultPath;
+        }
+    });
+}
