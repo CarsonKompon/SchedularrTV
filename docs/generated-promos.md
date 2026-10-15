@@ -22,7 +22,18 @@
 
 Hold **Alt** while dragging to bypass snapping. **Browse** opens a file dialog on the scheduler's computer; from another device, enter a server-readable path.
 
-Drag along the timeline under the canvas to scrub: the preview redraws as you drag. With the timeline focused, **←/→** step one frame (**Shift** for a second), **Home/End** jump to either end.
+Drag along the timeline under the canvas to scrub: the preview redraws as you drag, a whole frame at a time, showing the background video's exact frame for that moment, the same one the render uses. The first time a background video is previewed, the frames the promo uses are extracted once in the background; until then each frame is fetched as you land on it, so scrubbing is quicker after a few seconds.
+
+The **« ‹ › »** buttons step a frame or a second. After clicking the timeline or dragging a box, these keys work:
+
+| Key | Does |
+| --- | --- |
+| **←** / **→** (or **,** / **.**) | Previous / next frame |
+| **Shift+←** / **Shift+→** | Back / forward a second |
+| **Home** / **End** | First / last frame |
+| **[** / **]** | Selected layer's previous / next keyframe |
+| **K** | Add a keyframe at the playhead |
+| **Delete** | Remove the keyframe at the playhead |
 
 ### Text style
 
@@ -50,7 +61,7 @@ backgrounds:
 Select a layer and choose **◆ Animate with keyframes** under the timeline. Its position, size and opacity then come from keyframes, shown as diamonds on the timeline while the layer is selected:
 
 - Move the playhead and drag or resize the box (or change its numbers) to set a keyframe at that time; one is added if there isn't one there yet. **◆ Add keyframe** adds one without changing anything.
-- Drag a diamond to retime it. Clicking one jumps to it; **◀ / ▶** step between them, **K** adds one and **Delete** removes the one under the playhead.
+- Drag a diamond to retime it; keyframes snap to whole frames. Clicking one jumps to it; **◀ / ▶** (or **[ / ]**) step between them, **K** adds one and **Delete** removes the one under the playhead.
 - **Then** sets how the layer moves on to the next keyframe: **Linear**, **Ease in**, **Ease out**, **Ease in and out**, or **Hold, then jump**.
 - **Stop animating** removes every keyframe and leaves the layer where it is at the playhead.
 
@@ -93,7 +104,7 @@ keyframes:
 Both canvas templates and external generators support show-dependent images:
 
 1. Open **Variable images** in the template and select **+ Variable image**.
-2. Choose the context: **the show this promo promotes**, **currently watching / before the break**, or **up next**.
+2. Choose its usual show: **the show this promo promotes**, **currently watching / before the break**, or **up next**. Each use can pick a different one (see below).
 3. For **up next**, choose the next show, two shows ahead, or up to ten shows ahead. Mid-roll continuations don't count as a new upcoming show.
 4. Pick a **Default image**, then add **Show overrides** with the series/show title and its image. Titles match without regard to case.
 5. On the canvas, add an **Image** layer and select the variable under **Image source**. Position, resize, and animate it as usual.
@@ -126,6 +137,22 @@ variable_images:
 ```
 
 An image layer references it with `variable_image: variable_image_01` instead of `path`. Other contexts are `promoted_show` and `currently_watching`.
+
+### Choosing the show where it's used
+
+A variable's context is only its **usual show**. Each use can pick its own, so one variable with all your show images can fill several slots at once, for example what's on now, what's next and what comes after that:
+
+- On an image layer, pick the variable under **Image source**, then choose **For which show**. In YAML, add `variable_image_show: next2`.
+- In program arguments, add the show after a colon: `{variable_image_01:watching}`, `{variable_image_01:next}`, `{variable_image_01:next2}`.
+
+| Selector | Show |
+| --- | --- |
+| `promoted` | The show the promo is for |
+| `watching` | What's on now, or the show before the break |
+| `next` | The next show |
+| `next2` … `next10` | That many shows ahead |
+
+Without a selector, `{variable_image_01}` uses the variable's usual show, so existing templates work as before. An unknown selector is reported when the schedule is checked.
 
 ## Voices
 

@@ -17,26 +17,78 @@ public sealed record GeneratedImageSubjects(UpNextListing? Current, IReadOnlyLis
 
 public static class GeneratedPromoImages
 {
+    /// <summary>
+    /// Each variable image's file, keyed by its name (resolved for the variable's own show context) and by every
+    /// <c>name:selector</c> the template uses (resolved for that show instead), from image layers and generator arguments.
+    /// Only the uses there are get entries, so templates that don't choose a show per use keep their render keys.
+    /// </summary>
     public static IReadOnlyDictionary<string, string> Resolve(GeneratedPromoTemplate template,
         IReadOnlyList<UpNextListing> promoted, GeneratedImageSubjects? subjects = null)
     {
         Dictionary<string, string> images = new(StringComparer.OrdinalIgnoreCase);
-        foreach (GeneratedVariableImage image in template.VariableImages ?? [])
+        List<GeneratedVariableImage> variables = template.VariableImages ?? [];
+        foreach (GeneratedVariableImage image in variables)
         {
-            UpNextListing? show = image.Context switch
-            {
-                GeneratedImageContext.CurrentlyWatching => subjects is not null ? subjects.Current
-                    : template.Type is GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow or GeneratedPromoType.ThisHasBeen
-                        ? promoted.FirstOrDefault() : null,
-                GeneratedImageContext.UpNext => (subjects?.Upcoming
-                    ?? (template.Type is GeneratedPromoType.UpNext or GeneratedPromoType.NowPlaying ? promoted : []))
-                    .ElementAtOrDefault(Math.Max(0, image.Offset)),
-                _ => promoted.FirstOrDefault()
-            };
-            string? path = show is null ? null : image.Shows.FirstOrDefault(candidate =>
-                string.Equals(candidate.Show.Trim(), show.Title.Trim(), StringComparison.OrdinalIgnoreCase))?.Path;
-            images[image.Name] = string.IsNullOrWhiteSpace(path) ? image.DefaultPath ?? string.Empty : path;
+            images[image.Name] = PathFor(image, Show(template, promoted, subjects, image.Context, image.Offset));
         }
+
+        foreach ((string name, string selector) in Uses(template))
+        {
+            if (variables.FirstOrDefault(image => string.Equals(image.Name, name, StringComparison.OrdinalIgnoreCase)) is { } image
+                && GeneratedImageSelectors.TryParse(selector, out GeneratedImageContext context, out int offset))
+            {
+                images[GeneratedImageSelectors.Reference(image.Name, selector)] = PathFor(image, Show(template, promoted, subjects, context, offset));
+            }
+        }
+
         return images;
+    }
+
+    /// <summary>Every variable image use that picks its own show: from image layers, and from generator arguments.</summary>
+    public static IEnumerable<(string Name, string Selector)> Uses(GeneratedPromoTemplate template)
+    {
+        foreach (GeneratedLayer layer in template.Layers)
+        {
+            if (layer.VariableImage is { Length: > 0 } name && layer.VariableImageShow is { Length: > 0 } selector)
+            {
+                yield return (name, selector);
+            }
+        }
+
+        if (template.Generator is not { } generator)
+        {
+            yield break;
+        }
+
+        foreach (string argument in generator.Arguments.Concat(generator.PerShow).Concat(generator.ClipArguments))
+        {
+            foreach (System.Text.RegularExpressions.Match use in GeneratedImageSelectors.Placeholder.Matches(argument))
+            {
+                if (use.Groups[2].Success)
+                {
+                    yield return (use.Groups[1].Value, use.Groups[2].Value);
+                }
+            }
+        }
+    }
+
+    /// <summary>The show a variable image is resolved for in this context, or null when the promo has none there.</summary>
+    private static UpNextListing? Show(GeneratedPromoTemplate template, IReadOnlyList<UpNextListing> promoted, GeneratedImageSubjects? subjects,
+        GeneratedImageContext context, int offset) => context switch
+    {
+        GeneratedImageContext.CurrentlyWatching => subjects is not null ? subjects.Current
+            : template.Type is GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow or GeneratedPromoType.ThisHasBeen
+                ? promoted.FirstOrDefault() : null,
+        GeneratedImageContext.UpNext => (subjects?.Upcoming
+            ?? (template.Type is GeneratedPromoType.UpNext or GeneratedPromoType.NowPlaying ? promoted : []))
+            .ElementAtOrDefault(Math.Max(0, offset)),
+        _ => promoted.FirstOrDefault()
+    };
+
+    private static string PathFor(GeneratedVariableImage image, UpNextListing? show)
+    {
+        string? path = show is null ? null : image.Shows.FirstOrDefault(candidate =>
+            string.Equals(candidate.Show.Trim(), show.Title.Trim(), StringComparison.OrdinalIgnoreCase))?.Path;
+        return string.IsNullOrWhiteSpace(path) ? image.DefaultPath ?? string.Empty : path;
     }
 }

@@ -196,9 +196,64 @@ public sealed class GeneratedPromoTemplate
 
 public enum GeneratedImageContext { PromotedShow, CurrentlyWatching, UpNext }
 
+/// <summary>
+/// Which show a use of a variable image is resolved for, written after its name: <c>promoted</c> (the show the promo is
+/// for), <c>watching</c> (the one on now, or before the break), <c>next</c> (the next show) or <c>next2</c> to
+/// <c>next10</c> (that many shows ahead), as in <c>{variable_image_01:next2}</c>.
+/// </summary>
+public static class GeneratedImageSelectors
+{
+    public const int MaxAhead = 10;
+
+    public static bool TryParse(string? selector, out GeneratedImageContext context, out int offset)
+    {
+        string value = selector?.Trim().ToLowerInvariant() ?? string.Empty;
+        (context, offset) = (GeneratedImageContext.PromotedShow, 0);
+        switch (value)
+        {
+            case "promoted" or "show":
+                return true;
+            case "watching" or "current":
+                context = GeneratedImageContext.CurrentlyWatching;
+                return true;
+            case "next":
+                context = GeneratedImageContext.UpNext;
+                return true;
+        }
+
+        if (value.StartsWith("next", StringComparison.Ordinal)
+            && int.TryParse(value.AsSpan(4), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int ahead)
+            && ahead is >= 1 and <= MaxAhead)
+        {
+            (context, offset) = (GeneratedImageContext.UpNext, ahead - 1);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>The selector for a show context: <c>promoted</c>, <c>watching</c>, <c>next</c> or <c>next2</c> and on.</summary>
+    public static string Format(GeneratedImageContext context, int offset) => context switch
+    {
+        GeneratedImageContext.CurrentlyWatching => "watching",
+        GeneratedImageContext.UpNext => offset <= 0 ? "next" : $"next{offset + 1}",
+        _ => "promoted"
+    };
+
+    /// <summary>A use of <paramref name="name"/>: the name alone (its own show context) or <c>name:selector</c>.</summary>
+    public static string Reference(string name, string? selector) =>
+        string.IsNullOrWhiteSpace(selector) ? name : $"{name}:{selector.Trim().ToLowerInvariant()}";
+
+    /// <summary><c>{variable_image_01}</c> or <c>{variable_image_01:next2}</c> in an argument: the name, and the selector if there is one.</summary>
+    public static readonly System.Text.RegularExpressions.Regex Placeholder =
+        new(@"\{(variable_image_[a-z0-9_]+)(?::([a-z0-9_]+))?\}", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+}
+
 public sealed class GeneratedVariableImage
 {
     public string Name { get; set; } = "variable_image_01";
+
+    /// <summary>The show a use without its own selector is resolved for (see <see cref="GeneratedImageSelectors"/>).</summary>
     public GeneratedImageContext Context { get; set; }
     /// <summary>Up Next only: zero is next, one is the show after that.</summary>
     public int Offset { get; set; }
@@ -439,6 +494,13 @@ public sealed class GeneratedLayer
     /// <summary>A named variable image instead of the static image path.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? VariableImage { get; set; }
+
+    /// <summary>
+    /// Which show <see cref="VariableImage"/> is resolved for here (<c>promoted</c>, <c>watching</c>, <c>next</c>,
+    /// <c>next2</c>…); null uses the variable's own show context. See <see cref="GeneratedImageSelectors"/>.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? VariableImageShow { get; set; }
 
     public string FontFamily { get; set; } = "Segoe UI";
 

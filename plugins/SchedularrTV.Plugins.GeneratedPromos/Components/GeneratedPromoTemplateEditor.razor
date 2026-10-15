@@ -228,7 +228,10 @@
                 </div>
             }
             <div class="ed-canvas" id="@_canvasId" role="group" aria-label="Promo canvas" @onpointerenter="MeasureCanvas"
-                 style="aspect-ratio:@(Template.Width) / @(Template.Height);@(_still is null ? "" : $"background-image:url('{_still}');")">
+                 style="aspect-ratio:@(Template.Width) / @(Template.Height);">
+                @* The preview frame. Script swaps it in only once the next frame has decoded, so it never blanks between frames;
+                   the renderer leaves this element alone (nothing about it changes between renders). *@
+                <div class="ed-still" id="@_stillId" aria-hidden="true"></div>
                 @foreach (GeneratedLayer layer in Template.Layers)
                 {
                     bool isSelected = ReferenceEquals(layer, _layer);
@@ -258,7 +261,16 @@
             </div>
             <div class="ed-timeline">
                 <div class="ed-timeline-head">
-                    <span>Preview time: <strong>@($"{_time:0.00}")s</strong> of @($"{DurationSeconds:0.#}")s</span>
+                    <div class="ed-frame-step" role="group" aria-label="Step through frames">
+                        <button class="btn btn-sm" type="button" title="Back a second (Shift+←)" aria-label="Back a second" @onclick="() => StepFrames(-Fps)">«</button>
+                        <button class="btn btn-sm" type="button" title="Previous frame (← or ,)" aria-label="Previous frame" @onclick="() => StepFrames(-1)">‹</button>
+                        <button class="btn btn-sm" type="button" title="Next frame (→ or .)" aria-label="Next frame" @onclick="() => StepFrames(1)">›</button>
+                        <button class="btn btn-sm" type="button" title="Forward a second (Shift+→)" aria-label="Forward a second" @onclick="() => StepFrames(Fps)">»</button>
+                    </div>
+                    <span>
+                        <strong>@($"{_time:0.000}")s</strong> of @($"{DurationSeconds:0.#}")s
+                        <span class="ed-meta">· frame @(CurrentFrame + 1) of @FrameCount</span>
+                    </span>
                     <div class="spacer"></div>
                     @if (_layer is { } timedLayer)
                     {
@@ -467,7 +479,7 @@
                     {
                         <label class="field">
                             <span>Image source</span>
-                            <select value="@selected.VariableImage" @onchange="e => Set(() => selected.VariableImage = Optional(e))">
+                            <select value="@selected.VariableImage" @onchange="e => SetVariableImage(selected, Optional(e))">
                                 <option value="">Static image file</option>
                                 @foreach (GeneratedVariableImage image in Template.VariableImages ?? [])
                                 {
@@ -475,6 +487,23 @@
                                 }
                             </select>
                         </label>
+                        @if (Template.VariableImages?.FirstOrDefault(image => string.Equals(image.Name, selected.VariableImage, StringComparison.OrdinalIgnoreCase)) is { } variable)
+                        {
+                            <label class="field">
+                                <span>For which show</span>
+                                <select value="@(selected.VariableImageShow ?? "")" @onchange="e => Set(() => selected.VariableImageShow = ShowSelector(Text(e)))">
+                                    <option value="">@($"Its usual one ({ImageShowName(GeneratedImageSelectors.Format(variable.Context, variable.Offset))})")</option>
+                                    @foreach (string selector in ImageShowSelectors)
+                                    {
+                                        <option value="@selector">@ImageShowName(selector)</option>
+                                    }
+                                </select>
+                            </label>
+                            <p class="hint">
+                                The same variable can be used by several layers, each for a different show. In program arguments this is
+                                <code>@($"{{{GeneratedImageSelectors.Reference(variable.Name, selected.VariableImageShow)}}}")</code>.
+                            </p>
+                        }
                         @if (string.IsNullOrWhiteSpace(selected.VariableImage))
                         {
                         <div class="field">
@@ -1008,7 +1037,7 @@
         }
 
         _layer =Template.Layers.FirstOrDefault(layer => layer.Kind == GeneratedPromoKinds.RequiredLayer(Template.Type)) ?? Template.Layers.FirstOrDefault();
-        _time = Math.Min(2, Math.Max(0, Template.Duration.TotalSeconds - 0.05));
+        _time = SnapToFrame(Math.Min(2, Template.Duration.TotalSeconds));
         _ = RefreshStill();
         _ = PrepareStandIn();
     }
@@ -1025,10 +1054,23 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (Template.Generator is not null)
+        {
+            // The canvas is gone; its frame is put back when it returns.
+            _shownStill = null;
+            return;
+        }
+
         // Once, as soon as the canvas is on the page (it isn't while an external program makes the video).
-        if (_canvasPixels <= 0 && Template.Generator is null)
+        if (_canvasPixels <= 0)
         {
             await MeasureCanvas();
+        }
+
+        // A frame drawn before the canvas was on the page (or before it came back).
+        if (_still is not null && !ReferenceEquals(_still, _shownStill) && !_stillRunning)
+        {
+            await ShowStill();
         }
     }
 
@@ -1149,6 +1191,8 @@
                         imageSubjects: Preview.ImageSubjects(Channel));
                     _still = $"data:image/jpeg;base64,{Convert.ToBase64String(jpeg)}";
                     _stillError = null;
+                    // Waits until the browser has the frame on screen, which also keeps frames from piling up.
+                    await ShowStill();
                 }
                 catch (OperationCanceledException) when (_life.IsCancellationRequested)
                 {
@@ -1165,6 +1209,53 @@
         finally
         {
             _stillRunning = false;
+        }
+    }
+
+    private readonly string _stillId = $"promo-still-{Guid.NewGuid():N}";
+    // The frame the page is showing, so it's only sent again when it changes or the canvas comes back.
+    private string? _shownStill;
+    private bool _stillScriptReady;
+
+    // Decodes the new frame off screen and only then swaps it in. Setting a new background image directly blanks the
+    // canvas until it's decoded, which flickers badly while scrubbing or dragging. Returns false without the element.
+    private const string StillScript = """
+        window.schedularrPromoStill ??= async (id, url) => {
+            const element = document.getElementById(id);
+            if (!element) return false;
+            const image = new Image();
+            image.src = url;
+            try { await image.decode(); } catch { }
+            if (!element.isConnected) return false;
+            element.style.backgroundImage = `url("${url}")`;
+            return true;
+        };
+        """;
+
+    /// <summary>Puts <see cref="_still"/> on the canvas, without a blank frame in between.</summary>
+    private async Task ShowStill()
+    {
+        if (_still is not { } still || ReferenceEquals(still, _shownStill) || Template.Generator is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!_stillScriptReady)
+            {
+                await JS.InvokeVoidAsync("eval", StillScript);
+                _stillScriptReady = true;
+            }
+
+            if (await JS.InvokeAsync<bool>("schedularrPromoStill", _stillId, still))
+            {
+                _shownStill = still;
+            }
+        }
+        catch (Exception)
+        {
+            // Disconnected, still prerendering or without script: tried again after the next render.
         }
     }
 
@@ -1189,12 +1280,27 @@
 
     private double DurationSeconds => Math.Max(0.01, Template.Duration.TotalSeconds);
 
-    /// <summary>The latest time the preview can show (the promo's last moment).</summary>
-    private double LastTime => Math.Max(0, Template.Duration.TotalSeconds - 0.01);
+    private int Fps => Math.Max(1, Template.Fps);
+
+    /// <summary>Frames in the promo, as the render draws them.</summary>
+    private int FrameCount => Math.Max(1, (int)Math.Ceiling(Template.Duration.TotalSeconds * Fps));
+
+    /// <summary>The frame shown at <paramref name="seconds"/>.</summary>
+    private int FrameAt(double seconds) => Math.Clamp((int)Math.Round(Math.Clamp(seconds, 0, 86_400) * Fps), 0, FrameCount - 1);
+
+    /// <summary>The start of the frame nearest <paramref name="seconds"/>, so the preview always shows a whole frame.</summary>
+    private double SnapToFrame(double seconds) => Math.Round(FrameAt(seconds) / (double)Fps, 4);
+
+    /// <summary>The latest time the preview can show: the promo's last frame.</summary>
+    private double LastTime => Math.Round((FrameCount - 1) / (double)Fps, 4);
+
+    private int CurrentFrame => FrameAt(_time);
+
+    private void StepFrames(int frames) => SetTimeTo((CurrentFrame + frames) / (double)Fps);
 
     private void SetTimeTo(double seconds, bool fast = false)
     {
-        double time = Math.Round(Math.Clamp(seconds, 0, LastTime), 2);
+        double time = SnapToFrame(Math.Clamp(seconds, 0, Template.Duration.TotalSeconds));
         if (fast && Math.Abs(time - _time) < 0.0001)
         {
             // The pointer moved within the same moment; nothing new to draw.
@@ -1252,9 +1358,26 @@
     private double TimeAtPointer(double clientX) =>
         _rulerWidth <= 0 ? _time : (clientX - _rulerLeft) / _rulerWidth * DurationSeconds;
 
+    /// <summary>
+    /// Gives the timeline the keyboard, so frame stepping works straight after scrubbing or dragging a box (pressing
+    /// the pointer doesn't focus it, as that's cancelled to stop text being selected).
+    /// </summary>
+    private async Task FocusRuler()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("eval", $"document.getElementById('{_rulerId}')?.focus({{ preventScroll: true }})");
+        }
+        catch (Exception)
+        {
+            // Disconnected or still prerendering: the keys work once the timeline is clicked again.
+        }
+    }
+
     private async Task StartScrub(PointerEventArgs e)
     {
         _scrubbing = true;
+        _ = FocusRuler();
         await MeasureRuler();
         if (_scrubbing)
         {
@@ -1267,6 +1390,7 @@
         _keyDrag = new KeyDragState(layer, key, e.ClientX, key.At);
         // Jump to the keyframe, so its pose is what the canvas shows and the keyframe bar edits.
         SetTimeTo(key.At.TotalSeconds);
+        _ = FocusRuler();
         await MeasureRuler();
     }
 
@@ -1323,27 +1447,38 @@
             return;
         }
 
-        GeneratedPromoEditing.MoveKeyframe(drag.Layer, drag.Key, drag.StartAt + TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(LastTime));
+        // Keyframes land on whole frames, like the playhead.
+        GeneratedPromoEditing.MoveKeyframe(drag.Layer, drag.Key, TimeSpan.FromSeconds(SnapToFrame(drag.StartAt.TotalSeconds + seconds)), TimeSpan.FromSeconds(LastTime));
         // The playhead follows the keyframe, so it stays the one being edited.
         SetTimeTo(drag.Key.At.TotalSeconds, fast: true);
     }
 
+    /// <summary>
+    /// Timeline shortcuts: ←/→ or ,/. step one frame (Shift: a second), Home/End jump to either end, [/] to the
+    /// selected layer's previous or next keyframe, K adds a keyframe and Delete removes the one under the playhead.
+    /// </summary>
     private Task RulerKey(KeyboardEventArgs e)
     {
-        double step = e.ShiftKey ? 1 : 1.0 / Math.Max(1, Template.Fps);
+        int step = e.ShiftKey ? Fps : 1;
         switch (e.Key)
         {
-            case "ArrowLeft":
-                SetTimeTo(_time - step);
+            case "ArrowLeft" or "," or "<":
+                StepFrames(-step);
                 break;
-            case "ArrowRight":
-                SetTimeTo(_time + step);
+            case "ArrowRight" or "." or ">":
+                StepFrames(step);
                 break;
             case "Home":
                 SetTimeTo(0);
                 break;
             case "End":
                 SetTimeTo(LastTime);
+                break;
+            case "[" when _layer is { } layer:
+                GoToKeyframe(layer, -1);
+                break;
+            case "]" when _layer is { } layer:
+                GoToKeyframe(layer, 1);
                 break;
             case "Delete" or "Backspace" when _layer is { } layer && CurrentKeyframe is { } key:
                 return RemoveKeyframe(layer, key);
@@ -1374,8 +1509,8 @@
 
     private Task SetKeyframeTime(ChangeEventArgs e, GeneratedLayer layer, GeneratedKeyframe key) => SetNumber(e, value =>
     {
-        GeneratedPromoEditing.MoveKeyframe(layer, key, TimeSpan.FromSeconds(value), TimeSpan.FromSeconds(LastTime));
-        _time = Math.Min(key.At.TotalSeconds, LastTime);
+        GeneratedPromoEditing.MoveKeyframe(layer, key, TimeSpan.FromSeconds(SnapToFrame(value)), TimeSpan.FromSeconds(LastTime));
+        _time = SnapToFrame(key.At.TotalSeconds);
     });
 
     /// <summary>The selected layer's keyframe before (-1) or after (1) the playhead.</summary>
@@ -1394,6 +1529,37 @@
 
     private Task SetPoseValue(ChangeEventArgs e, GeneratedLayer layer, Func<LayerPose, float, LayerPose> change) =>
         SetNumber(e, value => GeneratedPromoEditing.SetPose(layer, Time, change(GeneratedPromoEditing.PoseAt(layer, Time), (float)value)));
+
+    // ---- Variable image uses ----
+
+    /// <summary>The shows a use of a variable image can be resolved for, as selectors.</summary>
+    private static readonly string[] ImageShowSelectors =
+    [
+        "promoted", "watching",
+        .. Enumerable.Range(0, GeneratedImageSelectors.MaxAhead).Select(offset => GeneratedImageSelectors.Format(GeneratedImageContext.UpNext, offset))
+    ];
+
+    private static string ImageShowName(string selector) =>
+        GeneratedImageSelectors.TryParse(selector, out GeneratedImageContext context, out int offset)
+            ? context switch
+            {
+                GeneratedImageContext.CurrentlyWatching => "What's on now / before the break",
+                GeneratedImageContext.UpNext => offset == 0 ? "The next show" : $"{offset + 1} shows ahead",
+                _ => "The show this promo is for"
+            }
+            : selector;
+
+    private static string? ShowSelector(string value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    /// <summary>Picks the variable image a layer shows. Its show choice stays when swapping variables, and goes with a static file.</summary>
+    private Task SetVariableImage(GeneratedLayer layer, string? name) => Set(() =>
+    {
+        layer.VariableImage = name;
+        if (name is null)
+        {
+            layer.VariableImageShow = null;
+        }
+    });
 
     /// <summary>Sets both alignments; top (the old, only, way) is stored as nothing, so older templates keep their render keys.</summary>
     private Task SetAlign(GeneratedLayer layer, GeneratedVerticalAlign vertical, GeneratedTextAlign horizontal) => Set(() =>
@@ -1512,6 +1678,8 @@
         _drag = new DragState(layer, handle, e.ClientX, e.ClientY, pose.X, pose.Y, pose.Width, pose.Height);
         // Usually already measured when the pointer came onto the canvas; this catches a resized window.
         _ = MeasureCanvas();
+        // So ←/→ step through frames right after placing the box, to line it up with the background.
+        _ = FocusRuler();
     }
 
     private void Drag(PointerEventArgs e)

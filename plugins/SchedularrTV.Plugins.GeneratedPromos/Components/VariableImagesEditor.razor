@@ -2,6 +2,10 @@
     <summary>Variable images (@(Template.VariableImages?.Count ?? 0))</summary>
     <p class="hint">Choose a default image and optional images for individual shows. Use a variable as an image layer's source,
         or pass its placeholder (for example, {variable_image_01}) in external program arguments. The placeholder becomes an image file path.</p>
+    <p class="hint">Each use can pick its own show, so one variable can show what's on now, what's next and what's after it at once:
+        on an image layer choose <em>For which show</em>; in arguments add it after a colon, as in
+        <code>{variable_image_01:watching}</code>, <code>{variable_image_01:next}</code> or <code>{variable_image_01:next2}</code>
+        (<code>:promoted</code> is the show the promo is for; <code>:next2</code> to <code>:next10</code> are that many shows ahead).</p>
     @foreach (GeneratedVariableImage image in Template.VariableImages ?? [])
     {
         <div class="card" @key="image">
@@ -12,7 +16,7 @@
             </div>
             <div class="grid grid-2">
                 <label class="field">
-                    <span>Show context</span>
+                    <span>Usual show (for uses that don't choose one)</span>
                     <select @bind="image.Context" @bind:after="Notify">
                         <option value="@GeneratedImageContext.PromotedShow">The show this promo promotes</option>
                         <option value="@GeneratedImageContext.CurrentlyWatching">Currently watching / before the break</option>
@@ -84,6 +88,7 @@
         foreach (GeneratedLayer layer in Template.Layers.Where(layer => string.Equals(layer.VariableImage, image.Name, StringComparison.OrdinalIgnoreCase)))
         {
             layer.VariableImage = null;
+            layer.VariableImageShow = null;
             layer.Path = image.DefaultPath;
         }
     });

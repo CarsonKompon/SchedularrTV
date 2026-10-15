@@ -146,8 +146,11 @@ public static class GeneratedPromoEditing
 
     // ---- Keyframes ----
 
-    /// <summary>Two keyframes closer than this (in seconds) are the same one.</summary>
-    public const double KeyframeTolerance = 0.025;
+    /// <summary>
+    /// Two keyframes closer than this (in seconds) are the same one: under half a frame even at 120 fps, so keyframes on
+    /// neighbouring frames stay apart, but more than the rounding of a frame's time.
+    /// </summary>
+    public const double KeyframeTolerance = 0.002;
 
     public static bool HasKeyframes(GeneratedLayer layer) => layer.Keyframes is { Count: > 0 };
 
@@ -256,7 +259,8 @@ public static class GeneratedPromoEditing
         }
     }
 
-    private static TimeSpan RoundTime(TimeSpan time) => TimeSpan.FromSeconds(Math.Round(Math.Max(0, time.TotalSeconds), 2));
+    // Fine enough to keep a frame's time (the editor puts keyframes on whole frames) without long decimals in the YAML.
+    private static TimeSpan RoundTime(TimeSpan time) => TimeSpan.FromSeconds(Math.Round(Math.Max(0, time.TotalSeconds), 4));
 
     // ---- Backgrounds ----
 

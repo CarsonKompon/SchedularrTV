@@ -119,6 +119,65 @@ public sealed class GeneratedPromoImageTests
         Assert.Contains(errors, error => error.Contains("must name a configured"));
     }
 
+    [Theory]
+    [InlineData("promoted", GeneratedImageContext.PromotedShow, 0)]
+    [InlineData("watching", GeneratedImageContext.CurrentlyWatching, 0)]
+    [InlineData("next", GeneratedImageContext.UpNext, 0)]
+    [InlineData("Next1", GeneratedImageContext.UpNext, 0)]
+    [InlineData("next2", GeneratedImageContext.UpNext, 1)]
+    [InlineData("next10", GeneratedImageContext.UpNext, 9)]
+    public void Image_selectors_name_the_show(string selector, GeneratedImageContext context, int offset)
+    {
+        Assert.True(GeneratedImageSelectors.TryParse(selector, out GeneratedImageContext parsedContext, out int parsedOffset));
+        Assert.Equal((context, offset), (parsedContext, parsedOffset));
+        Assert.True(GeneratedImageSelectors.TryParse(GeneratedImageSelectors.Format(context, offset), out GeneratedImageContext again, out int againOffset));
+        Assert.Equal((context, offset), (again, againOffset));
+    }
+
+    [Theory]
+    [InlineData("next0")]
+    [InlineData("next11")]
+    [InlineData("later")]
+    [InlineData("")]
+    public void Unknown_image_selectors_are_refused(string selector) =>
+        Assert.False(GeneratedImageSelectors.TryParse(selector, out _, out _));
+
+    [Fact]
+    public void One_variable_image_can_be_used_for_several_shows()
+    {
+        GeneratedPromoTemplate template = Template();
+        GeneratedVariableImage art = template.VariableImages![0];
+        art.Shows = [new() { Show = "Current", Path = "current.png" }, new() { Show = "Next", Path = "next.png" }, new() { Show = "Later", Path = "later.png" }];
+        string plainKey = GeneratedPromoResolver.Resolve(template, "Channel", [new("Target", At)], TimeZoneInfo.Utc, At)!.Key;
+
+        template.Layers =
+        [
+            new() { Kind = GeneratedLayerKind.UpNext },
+            new() { Kind = GeneratedLayerKind.Image, VariableImage = "variable_image_01", VariableImageShow = "watching", Width = 10, Height = 10 },
+            new() { Kind = GeneratedLayerKind.Image, VariableImage = "variable_image_01", VariableImageShow = "next", Width = 10, Height = 10 },
+            new() { Kind = GeneratedLayerKind.Image, VariableImage = "variable_image_01", VariableImageShow = "next2", Width = 10, Height = 10 },
+            new() { Kind = GeneratedLayerKind.Image, VariableImage = "variable_image_01", Width = 10, Height = 10 }
+        ];
+        var subjects = new GeneratedImageSubjects(new("Current", At), [new("Next", At), new("Later", At.AddHours(1))]);
+        ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(template, "Channel", [new("Target", At)], TimeZoneInfo.Utc, At, subjects)!;
+
+        Assert.Equal(new[] { "current.png", "next.png", "later.png", "default.png" },
+            GeneratedPromoResolver.Compose(promo).Layers.OfType<PromoImageLayer>().Select(layer => layer.Path));
+        Assert.NotEqual(plainKey, promo.Key);
+
+        template.Generator = new() { Arguments = ["--now", "{variable_image_01:watching}", "--then", "{Variable_Image_01:NEXT2}", "--usual", "{variable_image_01}"] };
+        IReadOnlyList<string> args = GeneratedPromoResolver.GeneratorArguments(template.Generator, template, "Channel", [new("Target", At)], TimeZoneInfo.Utc, At, null,
+            GeneratedPromoImages.Resolve(template, [new("Target", At)], subjects));
+        Assert.Equal(new[] { "--now", "current.png", "--then", "later.png", "--usual", "default.png" }, args);
+
+        template.Generator.Arguments = ["{variable_image_01:later}"];
+        Assert.Contains(SchedulerConfigLoader.Validate(new SchedulerConfig
+        {
+            Channels = [new() { Id = "channel", Name = "Channel", Number = 1, BaseRotation = new() { Query = "*" },
+                GeneratedPromos = new() { Templates = [template] } }]
+        }).Errors, error => error.Contains("{variable_image_01:later}"));
+    }
+
     [Fact]
     public void Changing_image_file_invalidates_cached_render()
     {

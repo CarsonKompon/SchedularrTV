@@ -248,7 +248,8 @@ public static partial class GeneratedPromoResolver
         ("{duration}", "promo length in seconds"),
         ("{width}", "width"), ("{height}", "height"), ("{aspect}", "e.g. 16:9"), ("{fps}", "frame rate"),
         ("{clip}", "episode file"), ("{clip_start}", "seconds into it"),
-        ("{variable_image_01}", "resolved image path for the named variable image (also works in show and clip argument groups)"),
+        ("{variable_image_01}", "resolved image path for the named variable image, for its own show context (also works in show and clip argument groups)"),
+        ("{variable_image_01:next2}", "the same variable image for a chosen show: :promoted, :watching, :next, or :next2 to :next10 for that many shows ahead"),
         ("{output}", "file to write"), ("{output_dir}", "its folder")
     ];
 
@@ -272,7 +273,8 @@ public static partial class GeneratedPromoResolver
     private static string UnderscoredName(string name) =>
         string.Concat(name.Select((character, index) => index > 0 && char.IsUpper(character) ? $"_{char.ToLowerInvariant(character)}" : $"{char.ToLowerInvariant(character)}"));
 
-    [GeneratedRegex(@"\{([a-z_][a-z_0-9]*)\}", RegexOptions.IgnoreCase)]
+    // A name, optionally with a selector after a colon, as in {variable_image_01:next2}; looked up as written.
+    [GeneratedRegex(@"\{([a-z_][a-z_0-9]*(?::[a-z0-9_]+)?)\}", RegexOptions.IgnoreCase)]
     private static partial Regex TokenPattern();
 
     /// <summary>Whether the generator's arguments hand it the episode clip, so it plays the clip itself.</summary>
@@ -506,7 +508,9 @@ public static partial class GeneratedPromoResolver
     {
         SKRect bounds = SKRect.Create(layer.X, layer.Y, layer.Width, layer.Height);
         SKColor color = SKColor.Parse(layer.Color);
-        string? imagePath = layer.VariableImage is { Length: > 0 } variable ? images.GetValueOrDefault(variable) : layer.Path;
+        string? imagePath = layer.VariableImage is { Length: > 0 } variable
+            ? images.GetValueOrDefault(GeneratedImageSelectors.Reference(variable, layer.VariableImageShow))
+            : layer.Path;
         PromoLayer? drawn = layer.Kind switch
         {
             GeneratedLayerKind.Rect => new PromoRectLayer { Bounds = bounds, Color = color, CornerRadius = layer.CornerRadius },

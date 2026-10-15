@@ -49,13 +49,17 @@
     position: relative; width: 100%; overflow: hidden; border: 1px solid var(--line); border-radius: 8px;
     background-color: #000; background-size: 100% 100%; background-repeat: no-repeat; touch-action: none; user-select: none;
 }
+.gp-scope .ed-still { position: absolute; inset: 0; background-size: 100% 100%; background-repeat: no-repeat; pointer-events: none; }
 .gp-scope .ed-timeline { margin-top: 10px; }
 .gp-scope .ed-timeline .field { margin-bottom: 0; }
 .gp-scope .ed-timeline input[type=range], .gp-scope .ed-stage input[type=range], .gp-scope .inspector input[type=range] { width: 100%; }
 .gp-scope .ed-strip { position: relative; height: 22px; border-radius: 6px; background: rgba(255,255,255,.06); border: 1px solid var(--line); overflow: hidden; }
 .gp-scope .ed-strip-on { position: absolute; top: 0; bottom: 0; min-width: 2px; background: var(--accent); opacity: .85; }
 /* Timeline: a scrubbable ruler with the selected layer's span and keyframes. */
-.gp-scope .ed-timeline-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+.gp-scope .ed-timeline-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+.gp-scope .ed-frame-step { display: inline-flex; gap: 2px; }
+.gp-scope .ed-frame-step .btn { min-width: 30px; padding-left: 6px; padding-right: 6px; font-variant-numeric: tabular-nums; }
+.gp-scope .ed-timeline-head strong { font-variant-numeric: tabular-nums; }
 .gp-scope .ed-timeline-head .spacer, .gp-scope .ed-keybar .spacer { flex: 1; }
 .gp-scope .ed-ruler {
     position: relative; height: 46px; border-radius: 6px; border: 1px solid var(--line); background: rgba(255,255,255,.04);

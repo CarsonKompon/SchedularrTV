@@ -440,6 +440,18 @@ public static class SchedulerConfigLoader
                 }
             }
 
+            if (template.Generator is { } imageUser)
+            {
+                foreach (System.Text.RegularExpressions.Match use in imageUser.Arguments.Concat(imageUser.PerShow).Concat(imageUser.ClipArguments)
+                             .SelectMany(argument => GeneratedImageSelectors.Placeholder.Matches(argument)))
+                {
+                    if (use.Groups[2].Success && !GeneratedImageSelectors.TryParse(use.Groups[2].Value, out _, out _))
+                    {
+                        errors.Add($"{templateScope}.generator: in {use.Value}, use :promoted, :watching, :next or :next2 to :next{GeneratedImageSelectors.MaxAhead}.");
+                    }
+                }
+            }
+
             if (template.BackgroundSound is { Volume: < 0 or > 1 })
             {
                 errors.Add($"{templateScope}.background_sound: volume must be between 0 and 1.");
@@ -473,6 +485,10 @@ public static class SchedulerConfigLoader
                     && !imageNames.Contains(layer.VariableImage))
                 {
                     errors.Add($"{layerScope}: variable_image must name a configured variable image.");
+                }
+                if (layer.VariableImageShow is { } selector && !GeneratedImageSelectors.TryParse(selector, out _, out _))
+                {
+                    errors.Add($"{layerScope}: variable_image_show must be promoted, watching, next or next2 to next{GeneratedImageSelectors.MaxAhead}.");
                 }
                 if (layer.Kind == GeneratedLayerKind.Image && string.IsNullOrWhiteSpace(layer.Path) && string.IsNullOrWhiteSpace(layer.VariableImage))
                 {

@@ -88,15 +88,18 @@ public sealed class GeneratedPromoKeyframeTests
         Assert.Equal(50, layer.X);
 
         GeneratedPromoEditing.StartKeyframes(layer, TimeSpan.FromSeconds(1));
-        GeneratedPromoEditing.SetPose(layer, TimeSpan.FromSeconds(3.004), new LayerPose(250, 60, 300, 100, 0.5f));
+        GeneratedPromoEditing.SetPose(layer, TimeSpan.FromSeconds(3.00004), new LayerPose(250, 60, 300, 100, 0.5f));
         Assert.Equal(2, layer.Keyframes!.Count);
         Assert.Equal(TimeSpan.FromSeconds(3), layer.Keyframes[1].At);
         Assert.Equal(150, GeneratedPromoEditing.PoseAt(layer, TimeSpan.FromSeconds(2)).X, 3);
 
         // Changing it again at (nearly) the same time edits that keyframe rather than adding one.
-        GeneratedPromoEditing.SetPose(layer, TimeSpan.FromSeconds(2.99), new LayerPose(260, 60, 300, 100, 0.5f));
+        GeneratedPromoEditing.SetPose(layer, TimeSpan.FromSeconds(2.9999), new LayerPose(260, 60, 300, 100, 0.5f));
         Assert.Equal(2, layer.Keyframes.Count);
         Assert.Equal(260, layer.Keyframes[1].X);
+
+        // ... but the next frame along, even at 60 fps, is a keyframe of its own.
+        Assert.Null(GeneratedPromoEditing.KeyframeAt(layer, TimeSpan.FromSeconds(3 + 1 / 60.0)));
 
         // A new keyframe between two changes nothing until it's moved, and eases on like the one before it.
         layer.Keyframes[0].Easing = GeneratedEasing.EaseOut;

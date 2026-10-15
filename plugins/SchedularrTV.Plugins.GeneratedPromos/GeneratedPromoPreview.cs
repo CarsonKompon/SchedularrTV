@@ -133,7 +133,7 @@ public sealed class GeneratedPromoPreview(
         PromoComposition composition = GeneratedPromoResolver.Compose(promo);
         if (composition.BackgroundPath is { } background && !PromoRenderer.IsImage(background))
         {
-            composition = composition with { BackgroundPath = await FrameAsync(background, composition.BackgroundStart + time, cancellationToken).ConfigureAwait(false) };
+            composition = composition with { BackgroundPath = await FrameAsync(background, composition, time, cancellationToken).ConfigureAwait(false) };
         }
 
         return await Task.Run(() =>
@@ -255,16 +255,42 @@ public sealed class GeneratedPromoPreview(
         "api/generated-promos/files/" + string.Join('/', promos.RelativePath(path)
             .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Select(Uri.EscapeDataString));
 
-    /// <summary>A background video's frame at the preview time; the render loops the video the same way.</summary>
-    private async Task<string?> FrameAsync(string video, TimeSpan time, CancellationToken cancellationToken)
+    // Frames are kept this wide at most: plenty for the editor's canvas, and quick to decode while scrubbing.
+    private const int FrameWidth = 1280;
+
+    private readonly ConcurrentDictionary<string, Lazy<Task<string?>>> _strips = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// A background video's frame at the preview time, the exact frame the render uses there. The first time a video
+    /// is previewed, every frame the promo shows of it is extracted in one pass (the same way the render reads it: from
+    /// its start point, looped, at the promo's frame rate), so scrubbing is frame by frame and instant afterwards; until
+    /// that's done, the one frame asked for is extracted on its own.
+    /// </summary>
+    private async Task<string?> FrameAsync(string video, PromoComposition composition, TimeSpan time, CancellationToken cancellationToken)
     {
         if (!File.Exists(video))
         {
             return null;
         }
 
-        double second = Math.Round(time.TotalSeconds * 2) / 2;
-        string key = $"{Path.GetFullPath(video)}|{File.GetLastWriteTimeUtc(video).Ticks}|{second.ToString(CultureInfo.InvariantCulture)}";
+        int fps = Math.Max(1, composition.Fps);
+        int count = Math.Max(1, composition.FrameCount);
+        int index = Math.Clamp((int)Math.Round(time.TotalSeconds * fps), 0, count - 1);
+        string source = $"{Path.GetFullPath(video)}|{File.GetLastWriteTimeUtc(video).Ticks}|{composition.BackgroundStart.Ticks}";
+        string stripKey = $"{source}|{fps}|{count}|{FrameWidth}|strip";
+        string strip = Path.Combine(promos.Root, "preview-frames", Hash(stripKey));
+
+        Task<string?> extracting = _strips.GetOrAdd(stripKey, _ => new Lazy<Task<string?>>(() =>
+            Task.Run(() => ExtractStripAsync(video, composition.BackgroundStart, fps, count, strip)))).Value;
+        if (extracting.IsCompletedSuccessfully && extracting.Result is { } frames
+            && Path.Combine(frames, FrameName(index)) is var stripFrame && File.Exists(stripFrame))
+        {
+            return stripFrame;
+        }
+
+        // Not extracted yet (or it failed): this one frame on its own, seeking straight to it.
+        double second = (composition.BackgroundStart + TimeSpan.FromSeconds(index / (double)fps)).TotalSeconds;
+        string key = $"{source}|{index}|{fps}|{FrameWidth}";
         if (_frames.TryGetValue(key, out string? cached) && (cached is null || File.Exists(cached)))
         {
             return cached;
@@ -272,11 +298,82 @@ public sealed class GeneratedPromoPreview(
 
         string directory = Path.Combine(promos.Root, "preview-frames");
         Directory.CreateDirectory(directory);
-        string frame = Path.Combine(directory, Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..32] + ".jpg");
+        string frame = Path.Combine(directory, Hash(key) + ".jpg");
         string? result = await ExtractAsync(video, second, frame, cancellationToken).ConfigureAwait(false)
             ?? await ExtractAsync(video, 0, frame, cancellationToken).ConfigureAwait(false);
         _frames[key] = result;
         return result;
+    }
+
+    private static string FrameName(int index) => $"{index + 1:00000}.jpg";
+
+    private static string Hash(string key) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..32];
+
+    /// <summary>
+    /// Every frame the promo shows of <paramref name="video"/> into <paramref name="directory"/> (1-based, like ffmpeg
+    /// numbers them), or null if ffmpeg can't. Written aside and moved into place whole, so a frame is never read half-written.
+    /// </summary>
+    private async Task<string?> ExtractStripAsync(string video, TimeSpan start, int fps, int count, string directory)
+    {
+        if (Directory.Exists(directory))
+        {
+            return directory;
+        }
+
+        string partial = $"{directory}.{Guid.NewGuid():N}.partial";
+        try
+        {
+            Directory.CreateDirectory(partial);
+            var info = new ProcessStartInfo(options.Value.FfmpegPath)
+            {
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            string Seconds(double value) => value.ToString("0.######", CultureInfo.InvariantCulture);
+            foreach (string argument in (string[])["-hide_banner", "-loglevel", "error", "-y", "-stream_loop", "-1",
+                         "-ss", Seconds(start.TotalSeconds), "-i", video, "-t", Seconds(count / (double)fps), "-an",
+                         "-vf", $"fps={fps},scale='min({FrameWidth},iw)':-2", "-q:v", "3", "-frames:v", count.ToString(CultureInfo.InvariantCulture),
+                         Path.Combine(partial, "%05d.jpg")])
+            {
+                info.ArgumentList.Add(argument);
+            }
+
+            using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffmpeg could not be started.");
+            await process.StandardError.ReadToEndAsync().ConfigureAwait(false);
+            await process.WaitForExitAsync().ConfigureAwait(false);
+            if (process.ExitCode != 0 || !File.Exists(Path.Combine(partial, FrameName(0))))
+            {
+                return null;
+            }
+
+            try
+            {
+                Directory.Move(partial, directory);
+            }
+            catch (IOException) when (Directory.Exists(directory))
+            {
+                // Another preview extracted the same frames at the same time; theirs stands.
+            }
+
+            return directory;
+        }
+        catch (Exception)
+        {
+            // Frames are then extracted one at a time.
+            return null;
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(partial)) Directory.Delete(partial, recursive: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Left behind; harmless.
+            }
+        }
     }
 
     private async Task<string?> ExtractAsync(string video, double second, string frame, CancellationToken cancellationToken)
