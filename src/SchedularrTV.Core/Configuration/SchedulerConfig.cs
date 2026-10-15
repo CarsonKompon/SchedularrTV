@@ -103,6 +103,12 @@ public sealed class SchedulerSettings
     public bool GeneratedPromosWatchedOnly { get; set; } = true;
 
     /// <summary>
+    /// Variable images kept once for every generated promo template (<c>plugins.generated-promos.shared_images</c>);
+    /// a template's variable uses one by its id.
+    /// </summary>
+    public List<GeneratedSharedImage> GeneratedPromosSharedImages { get; set; } = [];
+
+    /// <summary>
     /// Global settings of installed plugins, keyed by plugin id; channels and blocks can override them. The
     /// bundled features (promos, generated promos) are kept in their typed properties instead, and only share
     /// this section in the YAML (<see cref="PluginSections"/>).

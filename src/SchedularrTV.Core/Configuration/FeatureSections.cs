@@ -37,6 +37,9 @@ public sealed class GeneratedPromoGlobalSection
     public TimeSpan? LeadTime { get; set; }
 
     public bool? WatchedOnly { get; set; }
+
+    /// <summary>Variable images shared by every template; see <see cref="SchedulerSettings.GeneratedPromosSharedImages"/>.</summary>
+    public List<GeneratedSharedImage>? SharedImages { get; set; }
 }
 
 /// <summary><c>plugins.archive-follow</c> on a block.</summary>
@@ -64,10 +67,11 @@ internal static class FeatureSections
             KeepVideos = settings.GeneratedPromosKeepVideos == Defaults.GeneratedPromosKeepVideos ? null : settings.GeneratedPromosKeepVideos,
             KeepAudio = settings.GeneratedPromosKeepAudio == Defaults.GeneratedPromosKeepAudio ? null : settings.GeneratedPromosKeepAudio,
             LeadTime = settings.GeneratedPromosLeadTime == Defaults.GeneratedPromosLeadTime ? null : settings.GeneratedPromosLeadTime,
-            WatchedOnly = settings.GeneratedPromosWatchedOnly == Defaults.GeneratedPromosWatchedOnly ? null : settings.GeneratedPromosWatchedOnly
+            WatchedOnly = settings.GeneratedPromosWatchedOnly == Defaults.GeneratedPromosWatchedOnly ? null : settings.GeneratedPromosWatchedOnly,
+            SharedImages = settings.GeneratedPromosSharedImages is { Count: > 0 } shared ? shared : null
         };
         bool anyGenerated = generated.Path is not null || generated.KeepVideos is not null || generated.KeepAudio is not null
-                            || generated.LeadTime is not null || generated.WatchedOnly is not null;
+                            || generated.LeadTime is not null || generated.WatchedOnly is not null || generated.SharedImages is not null;
 
         return Merge(settings.Plugins,
             (BuiltInPluginIds.Promos, settings.Promos),
@@ -131,6 +135,7 @@ internal static class FeatureSections
             settings.GeneratedPromosKeepAudio = generated.KeepAudio ?? settings.GeneratedPromosKeepAudio;
             settings.GeneratedPromosLeadTime = generated.LeadTime ?? settings.GeneratedPromosLeadTime;
             settings.GeneratedPromosWatchedOnly = generated.WatchedOnly ?? settings.GeneratedPromosWatchedOnly;
+            settings.GeneratedPromosSharedImages = generated.SharedImages ?? settings.GeneratedPromosSharedImages;
         }
 
         settings.Plugins = Empty(settings.Plugins);

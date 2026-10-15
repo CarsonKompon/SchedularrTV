@@ -1,0 +1,46 @@
+@* A default image and its show and block overrides: a template variable's own, or a shared image's. *@
+<div class="field">
+    <span>Default image</span>
+    <FilePathPicker Value="@Images.DefaultPath" ValueChanged="value => Set(() => Images.DefaultPath = value)"
+                    KeepCopyIn="@GeneratedPromoPackages.AssetCategory" Extensions="FileBrowsing.Images"
+                    Label="default image" StartIn="Environment.SpecialFolder.MyPictures" />
+</div>
+@foreach (GeneratedShowImage show in Images.Shows)
+{
+    <div class="grid grid-3" @key="show">
+        <div class="field">
+            <span>@(show.Block ? "Block name" : "Show title")</span>
+            <div class="row">
+                <select style="flex: none; width: auto;" aria-label="Match a show or a block" title="Match a show, or the block a show airs in"
+                        value="@(show.Block ? "block" : "show")" @onchange="@(e => Set(() => show.Block = e.Value as string == "block"))">
+                    <option value="show">Show</option>
+                    <option value="block">Block</option>
+                </select>
+                <input type="text" style="flex: 1; min-width: 0;" @bind="show.Show" @bind:after="Notify"
+                       placeholder="@(show.Block ? "Exact block name" : "Exact series / show title")" />
+            </div>
+        </div>
+        <div class="field">
+            <span>@(show.Block ? "Image for this block" : "Image for this show")</span>
+            <div class="row">
+                <div style="flex: 1; min-width: 0;">
+                    <FilePathPicker Value="@show.Path" ValueChanged="value => Set(() => show.Path = value)"
+                                    KeepCopyIn="@GeneratedPromoPackages.AssetCategory" Extensions="FileBrowsing.Images"
+                                    Label="show image" StartIn="Environment.SpecialFolder.MyPictures" />
+                </div>
+                <ImageThumbnail Path="@show.Path" />
+            </div>
+        </div>
+        <div style="align-self: end;"><button class="btn btn-sm btn-danger" type="button" @onclick="() => Set(() => Images.Shows.Remove(show))">Remove show</button></div>
+    </div>
+}
+<button class="btn btn-sm" type="button" @onclick="() => Set(() => Images.Shows.Add(new()))">+ Show override</button>
+<button class="btn btn-sm" type="button" @onclick="() => Set(() => Images.Shows.Add(new() { Block = true }))">+ Block override</button>
+
+@code {
+    [Parameter, EditorRequired] public IGeneratedImageChoices Images { get; set; } = default!;
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private Task Notify() => Changed.InvokeAsync();
+    private Task Set(Action change) { change(); return Notify(); }
+}

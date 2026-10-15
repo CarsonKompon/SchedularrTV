@@ -37,6 +37,7 @@ public static class SchedulerConfigLoader
             .WithAttributeOverride<SchedulerSettings>(settings => settings.GeneratedPromosKeepAudio, new YamlIgnoreAttribute())
             .WithAttributeOverride<SchedulerSettings>(settings => settings.GeneratedPromosLeadTime, new YamlIgnoreAttribute())
             .WithAttributeOverride<SchedulerSettings>(settings => settings.GeneratedPromosWatchedOnly, new YamlIgnoreAttribute())
+            .WithAttributeOverride<SchedulerSettings>(settings => settings.GeneratedPromosSharedImages, new YamlIgnoreAttribute())
             .WithAttributeOverride<ChannelConfig>(channel => channel.Plugins!, new YamlIgnoreAttribute())
             .WithAttributeOverride<ChannelConfig>(channel => channel.PromoBaseTags!, new YamlIgnoreAttribute())
             .WithAttributeOverride<ChannelConfig>(channel => channel.Promos!, new YamlIgnoreAttribute())
@@ -199,6 +200,20 @@ public static class SchedulerConfigLoader
         if (config.Settings.GeneratedPromosPath is { Length: > 0 } promoPath && !Path.IsPathFullyQualified(promoPath))
         {
             errors.Add($"settings.plugins.{BuiltInPluginIds.GeneratedPromos}.path: use a full path, e.g. D:\\SchedularrTV\\generated-promos.");
+        }
+
+        HashSet<string> sharedIds = new(StringComparer.OrdinalIgnoreCase);
+        foreach (GeneratedSharedImage shared in config.Settings.GeneratedPromosSharedImages ?? [])
+        {
+            string sharedScope = $"settings.plugins.{BuiltInPluginIds.GeneratedPromos}.shared_images.{shared.Name}";
+            if (string.IsNullOrWhiteSpace(shared.Id) || !sharedIds.Add(shared.Id.Trim()))
+                errors.Add($"{sharedScope}: every shared image needs its own id.");
+            HashSet<string> sharedShows = new(StringComparer.OrdinalIgnoreCase);
+            foreach (GeneratedShowImage show in shared.Shows ?? [])
+            {
+                if (string.IsNullOrWhiteSpace(show.Show) || !sharedShows.Add(GeneratedImageChoices.Key(show)))
+                    errors.Add($"{sharedScope}: each override needs a unique show title or block name.");
+            }
         }
 
         if (config.Settings.GeneratedPromosKeepVideos < TimeSpan.Zero || config.Settings.GeneratedPromosKeepAudio < TimeSpan.Zero)
@@ -446,6 +461,8 @@ public static class SchedulerConfigLoader
                     errors.Add($"{imageScope}: use a unique name such as variable_image_01.");
                 if (!Enum.IsDefined(image.Context) || image.Offset is < 0 or > 9)
                     errors.Add($"{imageScope}: choose a valid context and an offset between 0 and 9.");
+                if (image.IsShared && GeneratedSharedImages.Find(config.Settings.GeneratedPromosSharedImages, image.Shared) is null)
+                    warnings.Add($"{imageScope}: there is no shared image '{image.Shared}', so it shows nothing.");
                 HashSet<string> shows = new(StringComparer.OrdinalIgnoreCase);
                 foreach (GeneratedShowImage show in image.Shows)
                 {
@@ -874,6 +891,15 @@ public static class SchedulerConfigLoader
         config.Settings.Interstitials.Shows = null;
         config.Settings.Interstitials.MaxShowsPerSlot = null;
         config.Settings.Interstitials.ShowChance = null;
+
+        config.Settings.GeneratedPromosSharedImages ??= [];
+        foreach (GeneratedSharedImage shared in config.Settings.GeneratedPromosSharedImages)
+        {
+            shared.Id = shared.Id?.Trim() ?? string.Empty;
+            shared.Shows ??= [];
+        }
+
+        GeneratedSharedImages.Link(config);
     }
 
     /// <summary>

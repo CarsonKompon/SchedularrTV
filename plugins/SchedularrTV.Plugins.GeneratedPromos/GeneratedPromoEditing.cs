@@ -43,6 +43,21 @@ public static class GeneratedPromoEditing
     public static T Copy<T>(T value) =>
         JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value))!;
 
+    /// <summary>A deep copy of the template whose variables keep pointing at the same shared images.</summary>
+    public static GeneratedPromoTemplate Copy(GeneratedPromoTemplate template)
+    {
+        GeneratedPromoTemplate copy = Copy<GeneratedPromoTemplate>(template);
+        if (template.VariableImages is { } originals && copy.VariableImages is { } copies)
+        {
+            for (int index = 0; index < Math.Min(originals.Count, copies.Count); index++)
+            {
+                copies[index].Linked = originals[index].Linked;
+            }
+        }
+
+        return copy;
+    }
+
     public static string UniqueName(IEnumerable<string> existing, string name)
     {
         HashSet<string> taken = new(existing, StringComparer.OrdinalIgnoreCase);

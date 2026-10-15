@@ -1,0 +1,109 @@
+@* Every shared variable image, each opened out to edit its default and show/block overrides. Shared by all templates. *@
+@inject ConfigEditor Editor
+
+<div class="modal-backdrop" @onclick="Close">
+    <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="shared-images-title" @onclick:stopPropagation="true">
+        <div class="modal-head">
+            <h2 id="shared-images-title">Shared images</h2>
+            <div class="spacer"></div>
+            <button class="btn btn-sm" type="button" @onclick="ExpandAll">Expand all</button>
+            <button class="btn btn-sm" type="button" @onclick="() => _open.Clear()">Collapse all</button>
+            <button class="btn btn-ghost btn-icon btn-sm" type="button" title="Close" aria-label="Close" @onclick="Close"><Icon Name="x" Size="16" /></button>
+        </div>
+        <p class="hint">
+            Kept once for every template on every channel and block: a change here shows up in every template that uses the image.
+            Templates pick one of these for each variable image. One can be removed once no template uses it.
+        </p>
+
+        @if (Library.Count == 0)
+        {
+            <p class="hint">No shared images yet.</p>
+        }
+        @foreach (GeneratedSharedImage image in Library)
+        {
+            bool open = _open.Contains(image.Id);
+            int uses = GeneratedSharedImages.Uses(Editor.Working, image.Id);
+            <div class="card" @key="image">
+                <div class="card-head">
+                    <button class="btn btn-ghost btn-icon btn-sm" type="button" aria-expanded="@(open ? "true" : "false")"
+                            title="@(open ? "Collapse" : "Expand")" aria-label="@(open ? $"Collapse {image.Name}" : $"Expand {image.Name}")"
+                            @onclick="() => Toggle(image)">
+                        <Icon Name="@(open ? "chevron-down" : "chevron-right")" Size="16" />
+                    </button>
+                    <ImageThumbnail Path="@image.DefaultPath" />
+                    <strong style="cursor: pointer;" @onclick="() => Toggle(image)">@(string.IsNullOrWhiteSpace(image.Name) ? "Untitled" : image.Name)</strong>
+                    <span class="hint">
+                        @(image.Shows.Count == 1 ? "1 override" : $"{image.Shows.Count} overrides") ·
+                        @(uses == 0 ? "unused" : uses == 1 ? "used by 1 variable" : $"used by {uses} variables")
+                    </span>
+                    <div class="spacer"></div>
+                    <button class="btn btn-sm btn-danger" type="button" disabled="@(uses > 0)"
+                            title="@(uses > 0 ? "Still used by a template" : "Remove this shared image")"
+                            @onclick="() => Remove(image)">Remove</button>
+                </div>
+                @if (open)
+                {
+                    <label class="field">
+                        <span>Name</span>
+                        <input type="text" @bind="image.Name" @bind:after="Notify" />
+                    </label>
+                    <ImageChoicesFields Images="image" Changed="Notify" />
+                }
+            </div>
+        }
+
+        <div class="row">
+            <button class="btn btn-sm" type="button" @onclick="Add"><Icon Name="plus" Size="15" />New shared image</button>
+            <div class="spacer"></div>
+            <button class="btn btn-primary" type="button" @onclick="Close">Done</button>
+        </div>
+        <p class="hint">Show titles and block names are matched loosely: case, punctuation, accents, "&amp;" for "and", a missing "The" and small typos
+            are all forgiven. A show override wins; otherwise a block override for the block the show airs in is used; otherwise the default.
+            With no default, the image is hidden and an external program's placeholder is empty.</p>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>The shared image to open out when the dialog opens, if any.</summary>
+    [Parameter] public string? Focus { get; set; }
+
+    private readonly HashSet<string> _open = new(StringComparer.OrdinalIgnoreCase);
+
+    private List<GeneratedSharedImage> Library => Editor.Working.Settings.GeneratedPromosSharedImages;
+
+    protected override void OnInitialized()
+    {
+        if (!string.IsNullOrWhiteSpace(Focus)) _open.Add(Focus);
+        else if (Library.Count == 1) _open.Add(Library[0].Id);
+    }
+
+    private Task Notify() => Changed.InvokeAsync();
+
+    private Task Close() => OnClose.InvokeAsync();
+
+    private void Toggle(GeneratedSharedImage image)
+    {
+        if (!_open.Remove(image.Id)) _open.Add(image.Id);
+    }
+
+    private void ExpandAll() => _open.UnionWith(Library.Select(image => image.Id));
+
+    private Task Add()
+    {
+        GeneratedSharedImage created = new() { Name = GeneratedPromoEditing.UniqueName(Library.Select(image => image.Name), "Shared image") };
+        Library.Add(created);
+        _open.Add(created.Id);
+        return Notify();
+    }
+
+    private Task Remove(GeneratedSharedImage image)
+    {
+        if (GeneratedSharedImages.Uses(Editor.Working, image.Id) > 0) return Task.CompletedTask;
+        Library.Remove(image);
+        _open.Remove(image.Id);
+        return Notify();
+    }
+}

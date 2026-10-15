@@ -233,4 +233,97 @@ public sealed class GeneratedPromoImageTests
         }
         finally { File.Delete(file); }
     }
+
+    [Fact]
+    public void Shared_images_are_kept_once_in_settings_and_used_by_every_template_linking_them()
+    {
+        const string id = "0123456789abcdef0123456789abcdef";
+        const string yaml = """
+            settings:
+              plugins:
+                generated-promos:
+                  shared_images:
+                    - id: 0123456789abcdef0123456789abcdef
+                      name: Title cards
+                      default_path: default.png
+                      shows:
+                        - show: Target
+                          path: target.png
+            channels:
+              - id: ch1
+                name: One
+                number: 1
+                plugins:
+                  generated-promos:
+                    templates:
+                      - name: First
+                        variable_images:
+                          - name: variable_image_01
+                            shared: 0123456789abcdef0123456789abcdef
+                        layers:
+                          - kind: image
+                            variable_image: variable_image_01
+                      - name: Second
+                        type: now_playing
+                        variable_images:
+                          - name: variable_image_07
+                            shared: 0123456789abcdef0123456789abcdef
+            """;
+
+        SchedulerConfig config = SchedulerConfigLoader.Parse(yaml);
+        GeneratedSharedImage shared = Assert.Single(config.Settings.GeneratedPromosSharedImages);
+        Assert.Equal(id, shared.Id);
+        List<GeneratedPromoTemplate> templates = config.Channels[0].GeneratedPromos!.Templates;
+        Assert.All(templates, template => Assert.Same(shared, template.VariableImages![0].Linked));
+        Assert.Equal(2, GeneratedSharedImages.Uses(config, id));
+
+        ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(templates[0], "Channel", [new("target", At)], TimeZoneInfo.Utc, At)!;
+        Assert.Equal("target.png", promo.VariableImages["variable_image_01"]);
+
+        // One change shows up in both templates.
+        shared.Shows[0].Path = "changed.png";
+        Assert.Equal("changed.png", templates[1].VariableImages![0].PathFor("Target", null));
+
+        // Written back under the plugin's settings, and each template only names it.
+        string saved = SchedulerConfigLoader.Serialize(config);
+        Assert.Contains("shared_images:", saved);
+        Assert.Contains("shared: ", saved);
+        Assert.Contains(id, saved);
+        Assert.DoesNotContain("generated_promos_shared_images", saved);
+        SchedulerConfig again = SchedulerConfigLoader.Parse(saved);
+        Assert.Equal("changed.png", again.Channels[0].GeneratedPromos!.Templates[0].VariableImages![0].PathFor("Target", null));
+        Assert.Empty(SchedulerConfigLoader.Validate(again).Warnings.Where(warning => warning.Contains("shared image")));
+    }
+
+    [Fact]
+    public void A_link_to_a_missing_shared_image_shows_nothing_and_is_warned_about()
+    {
+        SchedulerConfig config = SchedulerConfigLoader.Parse("""
+            channels:
+              - id: ch1
+                name: One
+                number: 1
+                plugins:
+                  generated-promos:
+                    templates:
+                      - name: First
+                        variable_images:
+                          - name: variable_image_01
+                            shared: ffffffffffffffffffffffffffffffff
+                            default_path: stale.png
+            """);
+        GeneratedVariableImage image = config.Channels[0].GeneratedPromos!.Templates[0].VariableImages![0];
+        Assert.Equal(string.Empty, image.PathFor("Anything", null));
+        Assert.Contains(SchedulerConfigLoader.Validate(config).Warnings, warning => warning.Contains("no shared image"));
+    }
+
+    [Fact]
+    public void Templates_without_shared_images_keep_their_render_keys()
+    {
+        // A variable that doesn't use a shared image serialises exactly as before (no "Shared" or link fields).
+        string json = System.Text.Json.JsonSerializer.Serialize(Template());
+        Assert.DoesNotContain("Shared", json);
+        Assert.DoesNotContain("Linked", json);
+        Assert.DoesNotContain("Choices", json);
+    }
 }

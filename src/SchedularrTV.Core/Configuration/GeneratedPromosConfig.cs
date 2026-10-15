@@ -217,6 +217,14 @@ public sealed class GeneratedPromoTemplate
     /// <summary>Named image slots shared by canvas layers and external generator arguments.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public List<GeneratedVariableImage>? VariableImages { get; set; }
+
+    /// <summary>
+    /// Only in template packages: the shared images the template's variables use, so the package works on its own.
+    /// Never in the schedule file, where they're kept once under the plugin's settings.
+    /// </summary>
+    [YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedSharedImage>? SharedImages { get; set; }
 }
 
 public sealed class GeneratedBackgroundRule
@@ -302,7 +310,31 @@ public static class GeneratedImageSelectors
         new(@"\{(variable_image_[a-z0-9_]+)(?::([a-z0-9_]+))?\}", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 }
 
-public sealed class GeneratedVariableImage
+/// <summary>A default image and per-show/per-block overrides: a variable image's own, or a shared one's.</summary>
+public interface IGeneratedImageChoices
+{
+    string? DefaultPath { get; set; }
+    List<GeneratedShowImage> Shows { get; set; }
+}
+
+public static class GeneratedImageChoices
+{
+    /// <summary>
+    /// The file for a programme: an override naming its show first, then one naming the block it airs in, then the
+    /// default. Empty when none applies.
+    /// </summary>
+    public static string PathFor(IGeneratedImageChoices choices, string? show, string? block) =>
+        Match(choices, show, block: false) ?? Match(choices, block, block: true) ?? choices.DefaultPath ?? string.Empty;
+
+    /// <summary>What an override is matched by: whether it names a block, and the trimmed name.</summary>
+    public static string Key(GeneratedShowImage show) => (show.Block ? "block:" : "show:") + show.Show.Trim().ToLowerInvariant();
+
+    // Loosely matched (see ShowTitleMatcher), so "Powerpuff Girls" finds "The Powerpuff Girls" and "Squibillies" finds "Squidbillies".
+    private static string? Match(IGeneratedImageChoices choices, string? name, bool block) => Scheduling.ShowTitleMatcher.Find(name,
+        choices.Shows.Where(candidate => candidate.Block == block && !string.IsNullOrWhiteSpace(candidate.Path)), candidate => candidate.Show)?.Path;
+}
+
+public sealed class GeneratedVariableImage : IGeneratedImageChoices
 {
     public string Name { get; set; } = "variable_image_01";
 
@@ -310,19 +342,92 @@ public sealed class GeneratedVariableImage
     public GeneratedImageContext Context { get; set; }
     /// <summary>Up Next only: zero is next, one is the show after that.</summary>
     public int Offset { get; set; }
+
+    /// <summary>
+    /// Id of a shared image (<c>settings.plugins.generated-promos.shared_images</c>) whose default and overrides this
+    /// variable uses instead of its own, so several templates can be kept in step from one place.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Shared { get; set; }
+
+    /// <summary>The shared image <see cref="Shared"/> names, found when the configuration is loaded or edited.</summary>
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public GeneratedSharedImage? Linked { get; set; }
+
     public string? DefaultPath { get; set; }
     public List<GeneratedShowImage> Shows { get; set; } = [];
 
+    /// <summary>Whether this variable takes its images from a shared image.</summary>
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public bool IsShared => !string.IsNullOrWhiteSpace(Shared);
+
+    /// <summary>
+    /// Where the images come from: the linked shared image, or this variable's own. A link whose shared image is
+    /// missing has no images (rather than quietly falling back to stale ones).
+    /// </summary>
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public IGeneratedImageChoices Choices => IsShared ? (IGeneratedImageChoices?)Linked ?? GeneratedSharedImage.Missing : this;
+
     /// <summary>
     /// The file for a programme: an override naming its show first, then one naming the block it airs in, then
-    /// <see cref="DefaultPath"/>. Empty when none applies.
+    /// the default. Empty when none applies.
     /// </summary>
-    public string PathFor(string? show, string? block) =>
-        Match(show, block: false) ?? Match(block, block: true) ?? DefaultPath ?? string.Empty;
+    public string PathFor(string? show, string? block) => GeneratedImageChoices.PathFor(Choices, show, block);
+}
 
-    // Loosely matched (see ShowTitleMatcher), so "Powerpuff Girls" finds "The Powerpuff Girls" and "Squibillies" finds "Squidbillies".
-    private string? Match(string? name, bool block) => Scheduling.ShowTitleMatcher.Find(name,
-        Shows.Where(candidate => candidate.Block == block && !string.IsNullOrWhiteSpace(candidate.Path)), candidate => candidate.Show)?.Path;
+/// <summary>
+/// A variable image's pictures kept once for every template (<c>settings.plugins.generated-promos.shared_images</c>).
+/// Identified by <see cref="Id"/>, so two with the same name never mix, including across imports.
+/// </summary>
+public sealed class GeneratedSharedImage : IGeneratedImageChoices
+{
+    public string Id { get; set; } = NewId();
+
+    public string Name { get; set; } = "Shared image";
+
+    public string? DefaultPath { get; set; }
+
+    public List<GeneratedShowImage> Shows { get; set; } = [];
+
+    public static string NewId() => Guid.NewGuid().ToString("N");
+
+    /// <summary>Stands in for a link to a shared image that doesn't exist: no images.</summary>
+    internal static readonly GeneratedSharedImage Missing = new() { Id = string.Empty, Name = string.Empty };
+}
+
+/// <summary>Finding and linking shared images.</summary>
+public static class GeneratedSharedImages
+{
+    public static GeneratedSharedImage? Find(IEnumerable<GeneratedSharedImage>? library, string? id) =>
+        string.IsNullOrWhiteSpace(id) ? null
+            : library?.FirstOrDefault(image => string.Equals(image.Id, id.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Points every template variable that names a shared image at it (or at nothing, when it's gone).</summary>
+    public static void Link(SchedulerConfig config)
+    {
+        foreach (GeneratedPromoTemplate template in Templates(config))
+        {
+            Link(template, config.Settings.GeneratedPromosSharedImages);
+        }
+    }
+
+    public static void Link(GeneratedPromoTemplate template, IEnumerable<GeneratedSharedImage>? library)
+    {
+        foreach (GeneratedVariableImage image in template.VariableImages ?? [])
+        {
+            image.Linked = image.IsShared ? Find(library, image.Shared) : null;
+        }
+    }
+
+    /// <summary>Every generated promo template in the schedule, on channels and blocks.</summary>
+    public static IEnumerable<GeneratedPromoTemplate> Templates(SchedulerConfig config) =>
+        config.Channels.SelectMany(channel => (channel.GeneratedPromos?.Templates ?? [])
+            .Concat(channel.Blocks.SelectMany(block => block.GeneratedPromos?.Templates ?? [])));
+
+    /// <summary>How many template variables use the shared image.</summary>
+    public static int Uses(SchedulerConfig config, string id) =>
+        Templates(config).SelectMany(template => template.VariableImages ?? [])
+            .Count(image => string.Equals(image.Shared, id, StringComparison.OrdinalIgnoreCase));
 }
 
 public sealed class GeneratedShowImage

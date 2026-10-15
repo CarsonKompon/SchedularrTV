@@ -3,6 +3,23 @@ using SchedularrTV.Core.Configuration;
 
 namespace SchedularrTV.GeneratedPromos;
 
+/// <summary>What importing a package did to the shared images.</summary>
+public sealed class GeneratedSharedImport
+{
+    /// <summary>Shared images that weren't there, by name.</summary>
+    public List<string> Added { get; } = [];
+
+    /// <summary>Shared images already there that gained overrides, with how many.</summary>
+    public List<string> Extended { get; } = [];
+
+    public string Summary =>
+        string.Join(" ", new[]
+        {
+            Added.Count == 0 ? null : $"Added shared images: {string.Join(", ", Added)}.",
+            Extended.Count == 0 ? null : $"Added missing shows to: {string.Join(", ", Extended)}."
+        }.Where(part => part is not null));
+}
+
 /// <summary>
 /// Generated promo templates as template packages: a zip with the template, its background, images and songs, and an
 /// external generator's whole folder (less what its .gitignore leaves out), so it works as-is on another computer.
@@ -122,11 +139,38 @@ public static class GeneratedPromoPackages
         }
     }
 
-    /// <summary>Writes a copy of the template, its files and its generator's folder into the package; returns its name.</summary>
-    public static async Task<string> ExportAsync(GeneratedPromoTemplate template, TemplatePackageWriter writer)
+    /// <summary>
+    /// Writes a copy of the template, its files and its generator's folder into the package; returns its name. The
+    /// shared images its variables use (from <paramref name="sharedLibrary"/>) go in with it, so every package works on
+    /// its own; each such variable also carries a copy of its images, for versions that don't know shared images.
+    /// </summary>
+    public static async Task<string> ExportAsync(GeneratedPromoTemplate template, TemplatePackageWriter writer,
+        IEnumerable<GeneratedSharedImage>? sharedLibrary = null)
     {
         GeneratedPromoTemplate copy = GeneratedPromoEditing.Copy(template);
+        List<GeneratedSharedImage> shared = [];
+        foreach (GeneratedVariableImage image in copy.VariableImages ?? [])
+        {
+            if (image.IsShared && (GeneratedSharedImages.Find(sharedLibrary, image.Shared) ?? image.Linked) is { } source)
+            {
+                if (!shared.Any(packed => string.Equals(packed.Id, source.Id, StringComparison.OrdinalIgnoreCase)))
+                {
+                    shared.Add(GeneratedPromoEditing.Copy(source));
+                }
+
+                image.DefaultPath = source.DefaultPath;
+                image.Shows = GeneratedPromoEditing.Copy(source.Shows);
+            }
+
+            image.Linked = null;
+        }
+
+        copy.SharedImages = shared.Count == 0 ? null : shared;
         await MapPathsAsync(copy, path => Task.FromResult(writer.Asset(path))).ConfigureAwait(false);
+        foreach (GeneratedSharedImage image in shared)
+        {
+            await MapPathsAsync(image, path => Task.FromResult(writer.Asset(path))).ConfigureAwait(false);
+        }
 
         // The canvas editor's text is drawn with installed fonts, which the importing computer may not have.
         if (copy.Generator is null)
@@ -154,15 +198,61 @@ public static class GeneratedPromoPackages
         return template.Name;
     }
 
+    /// <summary>A default image's and overrides' files swapped through <paramref name="map"/>.</summary>
+    private static async Task MapPathsAsync(IGeneratedImageChoices images, Func<string?, Task<string?>> map)
+    {
+        images.DefaultPath = await map(images.DefaultPath).ConfigureAwait(false);
+        foreach (GeneratedShowImage show in images.Shows)
+        {
+            show.Path = await map(show.Path).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>
     /// The package's template, its files kept in the data folder and its generator's folder unpacked there, named so it
     /// doesn't clash with <paramref name="existingNames"/>.
     /// </summary>
+    /// <param name="sharedLibrary">
+    /// The shared images to merge the package's into, matched by id (never by name): one not there is added whole; one
+    /// that is keeps everything it has and only gains the show and block overrides (and a default) it lacks. Only the
+    /// files of what's added are taken from the package. Null turns the template's shared variables into its own.
+    /// </param>
     public static async Task<GeneratedPromoTemplate> ImportAsync(TemplatePackageReader reader, TemplateAssets assets, IEnumerable<string> existingNames,
-        CancellationToken cancellationToken = default)
+        List<GeneratedSharedImage>? sharedLibrary = null, GeneratedSharedImport? report = null, CancellationToken cancellationToken = default)
     {
         GeneratedPromoTemplate template = reader.Item<GeneratedPromoTemplate>();
-        await MapPathsAsync(template, path => reader.AssetAsync(path, assets, AssetCategory, cancellationToken)).ConfigureAwait(false);
+        Func<string?, Task<string?>> keep = path => reader.AssetAsync(path, assets, AssetCategory, cancellationToken);
+        List<GeneratedSharedImage> packaged = template.SharedImages ?? [];
+        template.SharedImages = null;
+
+        // A variable whose shared image will be there afterwards drops the copy of its images it carries (whose files
+        // then aren't kept); any other keeps that copy as its own.
+        foreach (GeneratedVariableImage image in template.VariableImages ?? [])
+        {
+            image.Linked = null;
+            if (!image.IsShared)
+            {
+                continue;
+            }
+
+            if (sharedLibrary is not null
+                && (GeneratedSharedImages.Find(packaged, image.Shared) is not null || GeneratedSharedImages.Find(sharedLibrary, image.Shared) is not null))
+            {
+                image.DefaultPath = null;
+                image.Shows = [];
+            }
+            else
+            {
+                image.Shared = null;
+            }
+        }
+
+        await MapPathsAsync(template, keep).ConfigureAwait(false);
+        if (sharedLibrary is not null)
+        {
+            await MergeSharedAsync(sharedLibrary, packaged, keep, report).ConfigureAwait(false);
+            GeneratedSharedImages.Link(template, sharedLibrary);
+        }
         await reader.KeepFontsAsync(assets, cancellationToken).ConfigureAwait(false);
         template.Name = GeneratedPromoEditing.UniqueName(existingNames, string.IsNullOrWhiteSpace(template.Name) ? reader.Manifest.Name : template.Name);
 
@@ -192,6 +282,62 @@ public static class GeneratedPromoPackages
         }
 
         return template;
+    }
+
+    /// <summary>
+    /// Adds the shared images <paramref name="library"/> doesn't have (by id), and the overrides (and default) it lacks
+    /// to those it does; what's already there is never changed. Files come through <paramref name="keep"/> only for
+    /// what's added.
+    /// </summary>
+    public static async Task MergeSharedAsync(List<GeneratedSharedImage> library, IEnumerable<GeneratedSharedImage> incoming,
+        Func<string?, Task<string?>> keep, GeneratedSharedImport? report = null)
+    {
+        foreach (GeneratedSharedImage image in incoming)
+        {
+            if (string.IsNullOrWhiteSpace(image.Id))
+            {
+                continue;
+            }
+
+            image.Id = image.Id.Trim();
+            image.Shows ??= [];
+            if (GeneratedSharedImages.Find(library, image.Id) is not { } mine)
+            {
+                // Names are only labels; one already taken gets a number so the two can be told apart.
+                image.Name = GeneratedPromoEditing.UniqueName(library.Select(existing => existing.Name),
+                    string.IsNullOrWhiteSpace(image.Name) ? "Shared image" : image.Name.Trim());
+                image.Shows = [.. image.Shows.Where(show => !string.IsNullOrWhiteSpace(show.Show))];
+                await MapPathsAsync(image, keep).ConfigureAwait(false);
+                library.Add(image);
+                report?.Added.Add(image.Name);
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(mine.DefaultPath) && !string.IsNullOrWhiteSpace(image.DefaultPath))
+            {
+                mine.DefaultPath = await keep(image.DefaultPath).ConfigureAwait(false);
+            }
+
+            HashSet<string> have = new(mine.Shows.Where(show => !string.IsNullOrWhiteSpace(show.Show)).Select(GeneratedImageChoices.Key),
+                StringComparer.OrdinalIgnoreCase);
+            int added = 0;
+            foreach (GeneratedShowImage show in image.Shows)
+            {
+                if (string.IsNullOrWhiteSpace(show.Show) || !have.Add(GeneratedImageChoices.Key(show)))
+                {
+                    continue;
+                }
+
+                show.Path = await keep(show.Path).ConfigureAwait(false);
+                mine.Shows.Add(show);
+                added++;
+            }
+
+            if (added > 0)
+            {
+                report?.Extended.Add($"{mine.Name} (+{added})");
+            }
+        }
     }
 
     /// <summary>The font families the template's text layers are drawn with.</summary>

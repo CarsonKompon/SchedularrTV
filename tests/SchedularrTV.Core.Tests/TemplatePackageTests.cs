@@ -150,6 +150,125 @@ public sealed class TemplatePackageTests : IDisposable
     }
 
     [Fact]
+    public async Task Shared_images_travel_with_a_template_and_only_what_is_missing_is_imported()
+    {
+        string defaultCard = Write("cards/default.png", "default");
+        string rugrats = Write("cards/rugrats.png", "rugrats");
+        string spongebob = Write("cards/spongebob.png", "spongebob");
+        var cards = new GeneratedSharedImage
+        {
+            Name = "Title cards",
+            DefaultPath = defaultCard,
+            Shows = [new GeneratedShowImage { Show = "Rugrats", Path = rugrats }, new GeneratedShowImage { Show = "SpongeBob", Path = spongebob }]
+        };
+        var template = new GeneratedPromoTemplate
+        {
+            Name = "Up Next",
+            VariableImages = [new GeneratedVariableImage { Name = "variable_image_01", Shared = cards.Id }]
+        };
+
+        string zip = await ExportAsync(_data, writer => GeneratedPromoPackages.ExportAsync(template, writer, [cards]));
+
+        // The importing side already has this shared image (with its own default and a SpongeBob card), and another
+        // one that happens to have the same name.
+        string mineDefault = Write("mine/default.png", "mine");
+        string mineSponge = Write("mine/sponge.png", "my sponge");
+        var mine = new GeneratedSharedImage
+        {
+            Id = cards.Id,
+            Name = "My cards",
+            DefaultPath = mineDefault,
+            Shows = [new GeneratedShowImage { Show = "spongebob", Path = mineSponge }]
+        };
+        var namesake = new GeneratedSharedImage { Name = "Title cards" };
+        List<GeneratedSharedImage> library = [mine, namesake];
+
+        var otherAssets = new TemplateAssets(_otherData);
+        var report = new GeneratedSharedImport();
+        GeneratedPromoTemplate imported;
+        await using (FileStream stream = File.OpenRead(zip))
+        using (TemplatePackageReader reader = await new TemplatePackages(_otherData).OpenAsync(stream))
+        {
+            imported = await GeneratedPromoPackages.ImportAsync(reader, otherAssets, [], library, report);
+        }
+
+        Assert.Equal(2, library.Count);
+        Assert.Equal("My cards", mine.Name);
+        Assert.Equal(mineDefault, mine.DefaultPath);
+        Assert.Equal(2, mine.Shows.Count);
+        Assert.Equal(mineSponge, mine.Shows.Single(show => show.Show == "spongebob").Path);
+        GeneratedShowImage added = mine.Shows.Single(show => show.Show == "Rugrats");
+        Assert.True(otherAssets.IsKept(added.Path));
+        Assert.Equal("rugrats", File.ReadAllText(added.Path!));
+        Assert.Equal(new[] { "My cards (+1)" }, report.Extended);
+        Assert.Empty(report.Added);
+
+        GeneratedVariableImage variable = Assert.Single(imported.VariableImages!);
+        Assert.Equal(cards.Id, variable.Shared);
+        Assert.Same(mine, variable.Linked);
+        Assert.Null(variable.DefaultPath);
+        Assert.Empty(variable.Shows);
+        Assert.Null(imported.SharedImages);
+        Assert.Equal(mineSponge, variable.PathFor("SpongeBob", null));
+    }
+
+    [Fact]
+    public async Task A_shared_image_new_to_the_importer_is_added_whole_and_kept_apart_from_namesakes()
+    {
+        string card = Write("cards/default.png", "default");
+        var cards = new GeneratedSharedImage { Name = "Title cards", DefaultPath = card };
+        var template = new GeneratedPromoTemplate
+        {
+            Name = "Now Playing",
+            VariableImages = [new GeneratedVariableImage { Name = "variable_image_01", Shared = cards.Id }]
+        };
+        string zip = await ExportAsync(_data, writer => GeneratedPromoPackages.ExportAsync(template, writer, [cards]));
+
+        var namesake = new GeneratedSharedImage { Name = "Title cards" };
+        List<GeneratedSharedImage> library = [namesake];
+        var otherAssets = new TemplateAssets(_otherData);
+        GeneratedPromoTemplate imported;
+        await using (FileStream stream = File.OpenRead(zip))
+        using (TemplatePackageReader reader = await new TemplatePackages(_otherData).OpenAsync(stream))
+        {
+            imported = await GeneratedPromoPackages.ImportAsync(reader, otherAssets, [], library);
+        }
+
+        Assert.Equal(2, library.Count);
+        GeneratedSharedImage added = library[1];
+        Assert.Equal(cards.Id, added.Id);
+        Assert.NotEqual(namesake.Name, added.Name);
+        Assert.True(otherAssets.IsKept(added.DefaultPath));
+        Assert.Same(added, imported.VariableImages![0].Linked);
+    }
+
+    [Fact]
+    public async Task Without_a_shared_library_an_import_keeps_the_pictures_as_the_templates_own()
+    {
+        string card = Write("cards/default.png", "default");
+        var cards = new GeneratedSharedImage { Name = "Title cards", DefaultPath = card };
+        var template = new GeneratedPromoTemplate
+        {
+            Name = "Up Next",
+            VariableImages = [new GeneratedVariableImage { Name = "variable_image_01", Shared = cards.Id }]
+        };
+        string zip = await ExportAsync(_data, writer => GeneratedPromoPackages.ExportAsync(template, writer, [cards]));
+
+        var otherAssets = new TemplateAssets(_otherData);
+        GeneratedPromoTemplate imported;
+        await using (FileStream stream = File.OpenRead(zip))
+        using (TemplatePackageReader reader = await new TemplatePackages(_otherData).OpenAsync(stream))
+        {
+            imported = await GeneratedPromoPackages.ImportAsync(reader, otherAssets, []);
+        }
+
+        GeneratedVariableImage variable = Assert.Single(imported.VariableImages!);
+        Assert.False(variable.IsShared);
+        Assert.True(otherAssets.IsKept(variable.DefaultPath));
+        Assert.Equal("default", File.ReadAllText(variable.PathFor("Anything", null)));
+    }
+
+    [Fact]
     public async Task Canvas_template_carries_its_fonts_and_the_renderer_can_use_them()
     {
         // Any installed family with files on disk will do; a machine without fonts has nothing to test.

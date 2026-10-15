@@ -199,7 +199,7 @@ Both canvas templates and external generators support show-dependent images:
 1. Open **Variable images** in the template and select **+ Variable image**.
 2. Choose its usual show: **the show this promo promotes**, **currently watching / before the break**, or **up next**. Each use can pick a different one (see below).
 3. For **up next**, choose the next show, two shows ahead, or up to ten shows ahead. Mid-roll continuations don't count as a new upcoming show.
-4. Pick a **Default image**, then add **Show overrides** with the series/show title and its image. Titles match without regard to case.
+4. Choose its **Shared image**, or **New shared image…**. In **Edit shared images…**, pick a **Default image**, then add **Show overrides** with the series/show title and its image. Titles match without regard to case. See [Shared images](#shared-images).
 5. On the canvas, add an **Image** layer and select the variable under **Image source**. Position, resize, and animate it as usual.
 
 The default is used when the show has no assigned image or the schedule doesn't reach the requested show. Without a default, the canvas layer is hidden and the placeholder resolves to an empty string. Configured files must be readable on the scheduler's computer. Previews use the channel's current schedule, or sample contexts before a schedule exists.
@@ -230,6 +230,38 @@ variable_images:
 ```
 
 An image layer references it with `variable_image: variable_image_01` instead of `path`. Other contexts are `promoted_show` and `currently_watching`.
+
+### Shared images
+
+A variable image's pictures (its default and show/block overrides) live in a **shared image**, kept once for every template, so title cards for every show, say, are edited in one place:
+
+- In a template, each variable only chooses which **Shared image** it shows; **New shared image…** makes one.
+- **Edit shared images…** (or **Edit…** beside a variable) opens a window listing every shared image. Expand one to rename it, set its default and add or remove overrides; **Expand all** / **Collapse all** open or close the whole list. Changes apply to every template using it, each entry says how many variables use it, and one no template uses can be removed.
+- Each template keeps its own variable name, usual show and per-layer show choice, so `{variable_image_01:next2}` and image layers work as before.
+- A variable made before shared images keeps working with its own pictures; **Move to a shared image** turns them into a shared image so they can be edited.
+
+Shared images are kept for the whole schedule, under the plugin's global settings. Each has an id, so two with the same name never mix. A variable names its shared image by that id:
+
+```yaml
+settings:
+  plugins:
+    generated-promos:
+      shared_images:
+        - id: 6f1c2b0e9a8d4c7fb3e2a1d0c9b8a7f6
+          name: Show title cards
+          default_path: 'D:\Media\Promos\default.png'
+          shows:
+            - show: SpongeBob SquarePants
+              path: 'D:\Media\Promos\spongebob.png'
+
+# ...and in a template:
+variable_images:
+  - name: variable_image_01
+    context: up_next
+    shared: 6f1c2b0e9a8d4c7fb3e2a1d0c9b8a7f6
+```
+
+A variable naming a shared image that doesn't exist shows nothing, and the schedule check warns about it.
 
 ### Choosing the show where it's used
 
@@ -437,6 +469,13 @@ Pictures, videos and songs chosen for a template (and for overlays and Credit Sq
 **Export** saves the selected template as a `.zip` with every file it uses. For an external generator, the whole **`working_directory`** goes in too, leaving out whatever its `.gitignore` files exclude (and the `.git` folder), so `node_modules` and build output stay behind and **`setup_command`** restores them. Paths to that folder in the command and arguments are rewritten to follow it.
 
 A template made with the canvas editor also carries the font files of every family its text layers use (each weight and style found among the computer's installed fonts). On import they're kept under **`assets/fonts/`**, and the renderer uses them for any family that isn't installed there, so text looks the same without installing anything. Check a font's licence allows sharing before passing a package on.
+
+Each exported template also carries the [shared images](#shared-images) it uses, so every package works on its own. On import, shared images are matched by id, never by name:
+
+- One you don't have is added whole (renamed with a number if its name is already taken, but kept separate).
+- One you already have keeps everything it has, including its default and every override. Only the show and block overrides it lacks are added (and a default, if it has none). Only the files for what's added are copied in.
+
+So importing several templates that share images gives one shared image, not one per template. Older versions that don't know shared images import the template with its own copy of the pictures.
 
 **Import…** adds a template from such a `.zip`. Its files are kept under **`assets/`** and a generator's folder is unpacked to **`assets/programs/`**; a package that runs a program shows the command and asks before importing. Overlays and Credit Squeeze looks export and import the same way.
 

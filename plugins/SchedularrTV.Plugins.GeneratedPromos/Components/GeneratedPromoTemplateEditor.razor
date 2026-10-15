@@ -511,7 +511,7 @@
                                 <option value="">Static image file</option>
                                 @foreach (GeneratedVariableImage image in Template.VariableImages ?? [])
                                 {
-                                    <option value="@image.Name">@image.Name</option>
+                                    <option value="@image.Name">@(image.Linked is { } linked ? $"{image.Name} (shared: {linked.Name})" : image.Name)</option>
                                 }
                             </select>
                         </label>

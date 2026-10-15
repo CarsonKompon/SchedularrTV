@@ -1,5 +1,6 @@
 @* Generated promo templates for a channel or block, with one template open for editing. *@
 @inject TemplateAssets Assets
+@inject ConfigEditor Editor
 
 @if (Config is not { } generated)
 {
@@ -143,13 +144,15 @@ else
 
     private Task<string> ExportSelected(TemplatePackageWriter writer) =>
         _selected is { } template
-            ? GeneratedPromoPackages.ExportAsync(template, writer)
+            ? GeneratedPromoPackages.ExportAsync(template, writer, Editor.Working.Settings.GeneratedPromosSharedImages)
             : throw new InvalidOperationException("Choose a template to export.");
 
     private async Task<string> ImportPackage(TemplatePackageReader reader)
     {
+        GeneratedSharedImport shared = new();
         GeneratedPromoTemplate template = await GeneratedPromoPackages.ImportAsync(reader, Assets,
-            Config?.Templates.Select(existing => existing.Name) ?? []);
+            Config?.Templates.Select(existing => existing.Name) ?? [], Editor.Working.Settings.GeneratedPromosSharedImages, shared);
+        string sharedNote = shared.Summary.Length == 0 ? "" : " " + shared.Summary;
         if (Config is { } config)
         {
             config.Templates.Add(template);
@@ -163,8 +166,8 @@ else
         await Changed.InvokeAsync();
         StateHasChanged();
         return template.Generator is { } generator && GeneratorSetup.Needs(generator)
-            ? $"Imported “{template.Name}”. Its setup command runs the first time it's used. Save to keep it."
-            : $"Imported “{template.Name}”. Save to keep it.";
+            ? $"Imported “{template.Name}”. Its setup command runs the first time it's used.{sharedNote} Save to keep it."
+            : $"Imported “{template.Name}”.{sharedNote} Save to keep it.";
     }
 
     private async Task Remove(GeneratedPromoTemplate template)
