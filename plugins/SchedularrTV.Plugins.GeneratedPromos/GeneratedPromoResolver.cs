@@ -392,10 +392,60 @@ public static partial class GeneratedPromoResolver
                 : null,
             Layers = template.Generator is not null ? []
                 // Over an episode clip there's no chosen background, so layers sit where the template puts them.
-                : [.. template.Layers.Select((layer, index) => Layer(layer, Pose(template, clipPath is null ? background : null, layer),
-                    TimingFor(template, clipPath is null ? background : null, layer), ColorFor(template, clipPath is null ? background : null, layer),
-                    promo.LayerLines[index], promo.VariableImages)).OfType<PromoLayer>()]
+                : DrawnLayers(promo, clipPath is null ? background : null)
         };
+    }
+
+    /// <summary>
+    /// The template's layers for drawing, in list order, each linked to the group it's inside. A layer inside a group
+    /// that isn't in the template (or a group inside itself) is drawn at the top level instead.
+    /// </summary>
+    private static List<PromoLayer> DrawnLayers(ResolvedGeneratedPromo promo, string? background)
+    {
+        GeneratedPromoTemplate template = promo.Template;
+        Dictionary<string, int> groups = new(StringComparer.Ordinal);
+        for (int index = 0; index < template.Layers.Count; index++)
+        {
+            if (template.Layers[index] is { Kind: GeneratedLayerKind.Group, Id: { Length: > 0 } id })
+            {
+                groups.TryAdd(id, index);
+            }
+        }
+
+        var built = new Dictionary<int, PromoLayer?>();
+        var building = new HashSet<int>();
+        PromoLayer? Build(int index)
+        {
+            if (built.TryGetValue(index, out PromoLayer? done))
+            {
+                return done;
+            }
+
+            GeneratedLayer layer = template.Layers[index];
+            PromoLayer? drawn = Layer(layer, Pose(template, background, layer), TimingFor(template, background, layer),
+                ColorFor(template, background, layer), promo.LayerLines[index], promo.VariableImages);
+            building.Add(index);
+            if (drawn is not null && layer.Parent is { } parentId && groups.TryGetValue(parentId, out int parentIndex)
+                && !building.Contains(parentIndex) && Build(parentIndex) is PromoGroupLayer parent)
+            {
+                drawn = drawn with { Parent = parent };
+            }
+
+            building.Remove(index);
+            built[index] = drawn;
+            return drawn;
+        }
+
+        List<PromoLayer> layers = [];
+        for (int index = 0; index < template.Layers.Count; index++)
+        {
+            if (Build(index) is { } drawn)
+            {
+                layers.Add(drawn);
+            }
+        }
+
+        return layers;
     }
 
     /// <summary>The episode clip's volume curve from the layers that mute it, or null when none do.</summary>
@@ -463,7 +513,7 @@ public static partial class GeneratedPromoResolver
             ? keyframes
                 .OrderBy(key => key.At)
                 .Select(key => new PromoKeyframe(key.At, SKRect.Create(key.X, key.Y, key.Width, key.Height), key.Opacity,
-                    Enum.Parse<PromoEasing>(key.Easing.ToString())))
+                    Enum.Parse<PromoEasing>(key.Easing.ToString()), float.IsFinite(key.Rotation) ? key.Rotation : 0))
                 .ToList()
             : null;
 
@@ -594,9 +644,10 @@ public static partial class GeneratedPromoResolver
             {
                 Bounds = bounds, Color = color, CornerRadius = layer.CornerRadius,
                 Shape = layer.Shape ?? GeneratedShape.Rectangle,
-                Rotation = float.IsFinite(layer.Rotation ?? 0) ? (layer.Rotation ?? 0) % 360 : 0,
                 SoftEdges = float.IsFinite(layer.SoftEdges ?? 0) ? Math.Clamp(layer.SoftEdges ?? 0, 0, 200) : 0
             },
+            // Always drawn (as nothing), so the layers inside it have it to be placed in.
+            GeneratedLayerKind.Group => new PromoGroupLayer { Bounds = bounds },
             GeneratedLayerKind.Image when !string.IsNullOrWhiteSpace(imagePath) => new PromoImageLayer { Bounds = bounds, Path = imagePath },
             var kind when (kind is GeneratedLayerKind.Text or GeneratedLayerKind.UpNext || GeneratedPromoKinds.IsShowLayer(kind))
                 && lines.Any(line => line.Length > 0) => new PromoTextLayer
@@ -638,9 +689,13 @@ public static partial class GeneratedPromoResolver
             Out = Enum.Parse<PromoTransition>(timing.TransitionOut.ToString()),
             TransitionDuration = timing.TransitionDuration,
             Opacity = pose.Opacity,
+            Rotation = Degrees(pose.Rotation),
             Keyframes = Keyframes(pose)
         };
     }
+
+    /// <summary>A rotation fit to draw: within a turn, and 0 for nothing or nonsense.</summary>
+    public static float Degrees(float? rotation) => rotation is { } value && float.IsFinite(value) ? value % 360 : 0;
 }
 
 /// <summary>Ready-made templates, also the starting point for new ones in the editor.</summary>

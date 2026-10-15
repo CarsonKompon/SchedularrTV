@@ -465,6 +465,31 @@ public sealed class GeneratedPromoPipelineTests : IDisposable
     }
 
     [Fact]
+    public void Prepare_uses_scheduled_availability_and_clears_ineligible_cached_paths_and_pending_renders()
+    {
+        using GeneratedPromoService service = Service(new FakeVoice(TimeSpan.FromSeconds(1)));
+        var config = new SchedulerConfig { Channels = [Channel(GeneratedPromoUsage.Fallback)] };
+        config.Settings.GeneratedPromosLeadTime = TimeSpan.Zero;
+        var template = config.Channels[0].GeneratedPromos!.Templates[0];
+        template.Availability = new()
+        {
+            DateRange = new() { Start = "09-30", End = "09-30" },
+            TimeRange = new() { Start = TimeSpan.FromHours(12), End = TimeSpan.FromHours(13) }
+        };
+        var schedule = TwoPromoSchedule(config);
+        // Rendering early in September still uses the September 30 airing date and its own time of day.
+        service.Prepare(config, [schedule], Day.AddDays(-10));
+        Assert.Equal(1, service.Pending);
+        schedule = schedule with { Entries = [.. schedule.Entries.Select(entry => entry.GeneratedTemplate is not null
+            ? entry with { Item = GeneratedPromoPlanner.Placeholder(template, "old-cached-promo.mp4") } : entry)] };
+        template.Availability.DateRange.Start = "12-01";
+        template.Availability.DateRange.End = "12-31";
+        var prepared = service.Prepare(config, [schedule], Day);
+        Assert.Equal(0, service.Pending);
+        Assert.All(prepared[0].Entries.Where(entry => entry.GeneratedTemplate is not null), entry => Assert.Null(entry.Item!.Path));
+    }
+
+    [Fact]
     public void Prepare_leaves_aired_and_unreachable_slots_alone()
     {
         using GeneratedPromoService service = Service(new FakeVoice(TimeSpan.FromSeconds(1)));

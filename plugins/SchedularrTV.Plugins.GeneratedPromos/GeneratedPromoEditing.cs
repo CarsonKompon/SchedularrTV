@@ -40,6 +40,25 @@ public static class GeneratedPromoEditing
         items.Insert(to, item);
     }
 
+    private static readonly string[] TimeOfDayFormats = [@"hh\:mm", @"h\:mm", @"hh\:mm\:ss", @"h\:mm\:ss", @"hh\:mm\:ss\.FFFFFFF"];
+
+    /// <summary>
+    /// A time of day from a time input: <c>HH:mm</c> as browsers write it, or <c>HH:mm:ss</c> as Blazor passes it on
+    /// (it adds the seconds). Kept to whole minutes, as the inputs step by a minute; false outside 00:00–23:59.
+    /// </summary>
+    public static bool TryParseTimeOfDay(string? text, out TimeSpan time)
+    {
+        time = TimeSpan.Zero;
+        if (!TimeSpan.TryParseExact(text?.Trim(), TimeOfDayFormats, CultureInfo.InvariantCulture, out TimeSpan parsed)
+            || parsed < TimeSpan.Zero || parsed >= TimeSpan.FromDays(1))
+        {
+            return false;
+        }
+
+        time = TimeSpan.FromMinutes(Math.Floor(parsed.TotalMinutes));
+        return true;
+    }
+
     public static T Copy<T>(T value) =>
         JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value))!;
 
@@ -185,6 +204,7 @@ public static class GeneratedPromoEditing
             Width = layer.Width,
             Height = layer.Height,
             Opacity = layer.Opacity,
+            Rotation = layer.Rotation,
             Keyframes = layer.Keyframes is { Count: > 0 } keys ? keys.Select(key => CopyKeyframe(key)).ToList() : null
         };
         tracked.Layers.Add(placed);
@@ -368,7 +388,8 @@ public static class GeneratedPromoEditing
 
     private static GeneratedKeyframe CopyKeyframe(GeneratedKeyframe key) => new()
     {
-        At = key.At, X = key.X, Y = key.Y, Width = key.Width, Height = key.Height, Opacity = key.Opacity, Easing = key.Easing
+        At = key.At, X = key.X, Y = key.Y, Width = key.Width, Height = key.Height, Opacity = key.Opacity, Easing = key.Easing,
+        Rotation = key.Rotation
     };
 
     /// <summary>Moves a layer, and every keyframe it has, by the same amount.</summary>
@@ -398,9 +419,10 @@ public static class GeneratedPromoEditing
     /// <summary>Where the layer is, how big and how opaque, at <paramref name="time"/>, following its keyframes.</summary>
     public static LayerPose PoseAt(IGeneratedPose layer, TimeSpan time)
     {
-        (SKRect bounds, float opacity) = PromoAnimation.Pose(SKRect.Create(layer.X, layer.Y, layer.Width, layer.Height), layer.Opacity,
-            GeneratedPromoResolver.Keyframes(layer), time);
-        return new LayerPose(bounds.Left, bounds.Top, bounds.Width, bounds.Height, opacity);
+        IReadOnlyList<PromoKeyframe>? keyframes = GeneratedPromoResolver.Keyframes(layer);
+        (SKRect bounds, float opacity) = PromoAnimation.Pose(SKRect.Create(layer.X, layer.Y, layer.Width, layer.Height), layer.Opacity, keyframes, time);
+        return new LayerPose(bounds.Left, bounds.Top, bounds.Width, bounds.Height, opacity,
+            PromoAnimation.RotationAt(GeneratedPromoResolver.Degrees(layer.Rotation), keyframes, time));
     }
 
     /// <summary>The keyframe at <paramref name="time"/>, if there is one.</summary>
@@ -419,11 +441,21 @@ public static class GeneratedPromoEditing
         if (!HasKeyframes(layer))
         {
             (layer.X, layer.Y, layer.Width, layer.Height, layer.Opacity) = (pose.X, pose.Y, pose.Width, pose.Height, pose.Opacity);
+            if (pose.Rotation is { } turned)
+            {
+                // Nothing rather than 0, so unrotated layers keep their render keys.
+                layer.Rotation = Math.Abs(turned) < 0.0005f ? null : turned;
+            }
+
             return;
         }
 
         GeneratedKeyframe key = KeyframeAt(layer, time) ?? AddKeyframe(layer, time);
         (key.X, key.Y, key.Width, key.Height, key.Opacity) = (pose.X, pose.Y, pose.Width, pose.Height, pose.Opacity);
+        if (pose.Rotation is { } rotation)
+        {
+            key.Rotation = rotation;
+        }
     }
 
     /// <summary>
@@ -447,6 +479,7 @@ public static class GeneratedPromoEditing
             Width = MathF.Round(pose.Width),
             Height = MathF.Round(pose.Height),
             Opacity = pose.Opacity,
+            Rotation = pose.Rotation ?? 0,
             Easing = keys.Where(other => other.At <= time).OrderBy(other => other.At).LastOrDefault()?.Easing ?? GeneratedEasing.Linear
         };
         keys.Add(key);
@@ -481,6 +514,7 @@ public static class GeneratedPromoEditing
         {
             layer.Keyframes = null;
             (layer.X, layer.Y, layer.Width, layer.Height, layer.Opacity) = (key.X, key.Y, key.Width, key.Height, key.Opacity);
+            layer.Rotation = Math.Abs(key.Rotation) < 0.0005f ? null : key.Rotation;
         }
     }
 
@@ -525,4 +559,5 @@ public static class GeneratedPromoEditing
 }
 
 /// <summary>A layer's position, size and opacity at one moment.</summary>
-public readonly record struct LayerPose(float X, float Y, float Width, float Height, float Opacity);
+/// <param name="Rotation">Degrees clockwise; when setting a pose, null leaves the rotation as it is.</param>
+public readonly record struct LayerPose(float X, float Y, float Width, float Height, float Opacity, float? Rotation = null);

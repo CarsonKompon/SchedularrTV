@@ -61,7 +61,13 @@ public enum GeneratedLayerKind
     YoureWatching,
 
     /// <summary>The show being watched, as a mid-show break ends.</summary>
-    BackToTheShow
+    BackToTheShow,
+
+    /// <summary>
+    /// Draws nothing itself: layers whose <see cref="GeneratedLayer.Parent"/> is this group are placed, rotated, faded and
+    /// timed inside it, so moving or animating the group carries them along while they keep their own animation.
+    /// </summary>
+    Group
 }
 
 public static class GeneratedPromoKinds
@@ -151,6 +157,10 @@ public sealed class GeneratedPromoTemplate
     /// <summary>Fixed so breaks can be packed before anything is rendered.</summary>
     public TimeSpan Duration { get; set; } = TimeSpan.FromSeconds(10);
 
+    /// <summary>Optional channel-local daily and annually recurring restrictions on when this entire promo may air.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedPromoAvailability? Availability { get; set; }
+
     public GeneratedPromoUsage Usage { get; set; } = GeneratedPromoUsage.Fallback;
 
     /// <summary>For <see cref="GeneratedPromoUsage.Mixed"/>: odds of choosing this over an available clip.</summary>
@@ -225,6 +235,19 @@ public sealed class GeneratedPromoTemplate
     [YamlIgnore]
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public List<GeneratedSharedImage>? SharedImages { get; set; }
+}
+
+public sealed class GeneratedPromoAvailability
+{
+    public GeneratedBackgroundTimeRange? TimeRange { get; set; }
+    public GeneratedAnnualDateRange? DateRange { get; set; }
+}
+
+/// <summary>Inclusive month/day endpoints, repeated each year; an earlier end crosses New Year.</summary>
+public sealed class GeneratedAnnualDateRange
+{
+    public string Start { get; set; } = "12-01";
+    public string End { get; set; } = "12-31";
 }
 
 public sealed class GeneratedBackgroundRule
@@ -657,6 +680,9 @@ public interface IGeneratedPose
 
     float Opacity { get; set; }
 
+    /// <summary>Degrees clockwise, about the middle of the box; null is 0.</summary>
+    float? Rotation { get; set; }
+
     /// <summary>While there are any, they set the pose over time instead of the values above.</summary>
     List<GeneratedKeyframe>? Keyframes { get; set; }
 }
@@ -743,6 +769,9 @@ public sealed class GeneratedLayerOverride : IGeneratedPose
     public float Opacity { get; set; } = 1;
 
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public float? Rotation { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public List<GeneratedKeyframe>? Keyframes { get; set; }
 }
 
@@ -756,6 +785,14 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
     public string? Id { get; set; }
 
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The <see cref="Id"/> of the <see cref="GeneratedLayerKind.Group"/> this layer is inside; null at the top. A layer
+    /// inside a group has its position in the group's space (from the group's top-left corner), so it moves, rotates and
+    /// fades with the group. Layers still draw in list order; the editor keeps a group's layers right after it.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Parent { get; set; }
 
     public GeneratedLayerKind Kind { get; set; } = GeneratedLayerKind.Text;
 
@@ -789,7 +826,10 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public GeneratedShape? Shape { get; set; }
 
-    /// <summary>Clockwise degrees around the shape's centre.</summary>
+    /// <summary>
+    /// Clockwise degrees around the box's centre, for every kind of layer (a group turns everything inside it about its
+    /// centre); null is 0. Keyframes animate it.
+    /// </summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public float? Rotation { get; set; }
 
@@ -884,6 +924,11 @@ public sealed class GeneratedKeyframe
     public float Height { get; set; } = 100;
 
     public float Opacity { get; set; } = 1;
+
+    /// <summary>Degrees clockwise about the middle of the box.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)]
+    public float Rotation { get; set; }
 
     /// <summary>How it moves from here to the next keyframe.</summary>
     public GeneratedEasing Easing { get; set; } = GeneratedEasing.Linear;

@@ -15,6 +15,8 @@ public sealed class GeneratedPromoMaker(GeneratedPromoService promos) : IPromoMa
         DateTimeOffset airsAt, CancellationToken cancellationToken = default)
     {
         (GeneratedPromoSource? source, List<GeneratedPromoTemplate> templates) = Candidates(config, channel, blockName, type);
+        TimeZoneInfo zone = SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(channel.TimeZone) ? config.Settings.TimeZone : channel.TimeZone);
+        templates.RemoveAll(template => !GeneratedPromoEligibility.IsAvailable(template, airsAt, zone));
         if (source is null || templates.Count == 0)
         {
             return null;
@@ -41,7 +43,6 @@ public sealed class GeneratedPromoMaker(GeneratedPromoService promos) : IPromoMa
             return null;
         }
 
-        TimeZoneInfo zone = SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(channel.TimeZone) ? config.Settings.TimeZone : channel.TimeZone);
         if (GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, airsAt,
                 GeneratedImageSubjects.FromSchedule(schedule, airsAt, template: template)) is not { } promo)
         {

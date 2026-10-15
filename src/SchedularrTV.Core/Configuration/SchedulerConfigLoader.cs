@@ -395,6 +395,13 @@ public static class SchedulerConfigLoader
             if (!Enum.IsDefined(template.UpcomingGrouping))
                 errors.Add($"{templateScope}.upcoming_grouping: choose timeslot or show.");
 
+            if (template.Availability?.TimeRange is { } availableHours && !Scheduling.GeneratedPromoEligibility.Valid(availableHours))
+                errors.Add($"{templateScope}.availability.time_range: use different start/end times from 00:00 through 23:59:59; an earlier end crosses midnight.");
+            if (template.Availability?.DateRange is { } availableDates
+                && (!Scheduling.GeneratedPromoEligibility.TryMonthDay(availableDates.Start, out _)
+                    || !Scheduling.GeneratedPromoEligibility.TryMonthDay(availableDates.End, out _)))
+                errors.Add($"{templateScope}.availability.date_range: use valid month/day dates as MM-DD (no year), for example 12-01 through 12-31.");
+
             if (!IsColor(template.BackgroundColor))
             {
                 errors.Add($"{templateScope}: background_color must be a hex colour such as #101828.");
@@ -495,8 +502,7 @@ public static class SchedulerConfigLoader
                     errors.Add($"{templateScope}.background_rules: look ahead 1–10 shows or 1–1440 minutes.");
                 if (!double.IsFinite(rule.MatchWeight) || rule.MatchWeight is < 1 or > 1000)
                     errors.Add($"{templateScope}.background_rules: match_weight must be between 1 and 1000.");
-                if (rule.TimeRange is { } hours && (hours.Start < TimeSpan.Zero || hours.Start >= TimeSpan.FromDays(1)
-                    || hours.End < TimeSpan.Zero || hours.End >= TimeSpan.FromDays(1) || hours.Start == hours.End))
+                if (rule.TimeRange is { } hours && !Scheduling.GeneratedPromoEligibility.Valid(hours))
                     errors.Add($"{templateScope}.background_rules.time_range: start and end must be different times between 00:00 and 23:59:59; an earlier end crosses midnight.");
             }
 
@@ -541,6 +547,38 @@ public static class SchedulerConfigLoader
             }
 
             // A template doesn't have to name the show in text: it can show it with variable images alone.
+
+            // Groups: each needs an id for its layers to name, and a layer can't end up inside itself.
+            Dictionary<string, GeneratedLayer> groups = new(StringComparer.Ordinal);
+            foreach (GeneratedLayer group in template.Layers.Where(layer => layer.Kind == GeneratedLayerKind.Group))
+            {
+                if (string.IsNullOrWhiteSpace(group.Id) || !groups.TryAdd(group.Id, group))
+                {
+                    errors.Add($"{templateScope}.layers.{group.Name}: a group needs an id of its own.");
+                }
+            }
+
+            foreach (GeneratedLayer layer in template.Layers.Where(layer => layer.Parent is not null))
+            {
+                HashSet<string> seen = new(StringComparer.Ordinal);
+                GeneratedLayer? current = layer;
+                while (current?.Parent is { } parentId)
+                {
+                    if (!groups.TryGetValue(parentId, out GeneratedLayer? parent))
+                    {
+                        errors.Add($"{templateScope}.layers.{layer.Name}: parent '{parentId}' isn't a group in this template.");
+                        break;
+                    }
+
+                    if (!seen.Add(parentId))
+                    {
+                        errors.Add($"{templateScope}.layers.{layer.Name}: its groups are inside each other in a loop.");
+                        break;
+                    }
+
+                    current = parent;
+                }
+            }
 
             foreach (GeneratedLayer layer in template.Layers)
             {

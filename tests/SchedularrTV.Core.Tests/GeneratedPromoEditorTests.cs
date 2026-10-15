@@ -188,6 +188,30 @@ public sealed class GeneratedPromoEditorTests : IDisposable
     }
 
     [Fact]
+    public async Task Promo_availability_editor_uses_yearless_dates_and_allows_out_of_season_preview()
+    {
+        using ServiceProvider services = Services();
+        var template = GeneratedPromoTemplates.UpNext();
+        template.Availability = new()
+        {
+            DateRange = new() { Start = "12-01", End = "12-31" },
+            TimeRange = new() { Start = TimeSpan.FromHours(6), End = TimeSpan.FromHours(12) }
+        };
+        var channel = new ChannelConfig { Id = "zone", Name = "The Zone", GeneratedPromos = new() { Templates = [template] } };
+        services.GetRequiredService<ConfigEditor>().Working.Channels.Add(channel);
+        await using var renderer = new HtmlRenderer(services, services.GetRequiredService<ILoggerFactory>());
+        string html = await Render(renderer, channel);
+        Assert.Contains("Promo availability", html);
+        Assert.Contains("Only use this promo during a recurring date range", html);
+        Assert.Contains("Start month", html);
+        Assert.Contains("End day", html);
+        Assert.Contains("12-01 through 12-31 each year", html);
+        Assert.DoesNotContain("type=\"date\"", html);
+        Assert.Contains("Outside this template", html);
+        Assert.NotNull(services.GetRequiredService<GeneratedPromoPreview>().Resolve(template, channel, TimeZoneInfo.Utc));
+    }
+
+    [Fact]
     public async Task Still_preview_honours_background_eligibility()
     {
         Directory.CreateDirectory(_directory);

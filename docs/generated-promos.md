@@ -35,6 +35,35 @@ The **« ‹ › »** buttons step a frame or a second. After clicking the timel
 | **K** | Add a keyframe at the playhead |
 | **Delete** | Remove the keyframe at the playhead |
 
+### Whole-promo availability
+
+Expand **Promo availability** in a template's main settings to restrict when the **entire generated promo** can be selected:
+
+- **Daily time range:** start is inclusive and end is exclusive. `06:00–12:00` is mornings; `22:00–06:00` crosses midnight. Start and end must differ.
+- **Recurring date range:** choose a month and day at each end, with **no year**. Both days are included, every year. December 1–31 gives a Christmas season; December 25–25 gives Christmas Day only; December 20–January 5 crosses New Year. February 29 is supported and only occurs in leap years.
+- With both enabled, **both must match**. The date is the actual local calendar date of the promo's start, including the early-morning part of an overnight time range.
+
+Availability uses the promo's **scheduled start in the airing channel's timezone**, including daylight saving—not the day/time it is rendered or the timezone of a channel it borrows templates from. The scheduler checks eligibility while choosing templates and again after packing them into the break. Existing cached renders don't make an out-of-range template eligible.
+
+Set seasonal templates at channel level to have them considered across blocks that inherit the channel's promos, without creating Christmas-specific blocks. Blocks with explicit promo overrides continue to use their own configured templates. During an eligible period, normal template selection and fallback/mixed settings still apply; other eligible templates can also be chosen.
+
+Previewing remains available throughout the year so seasonal templates can be edited in advance. The editor indicates when a template is currently outside its availability. Background-level time/show rules are separate and still choose the media within an eligible promo.
+
+For a Christmas-season morning promo:
+
+```yaml
+name: Christmas mornings
+availability:
+  time_range:
+    start: '06:00:00'
+    end: '12:00:00'
+  date_range:
+    start: '12-01'
+    end: '12-31'
+```
+
+Omit either range to allow all times or all dates. Templates with no availability settings remain eligible year-round. These settings are saved and exported with the template.
+
 ### Counting upcoming programmes
 
 **Count upcoming programmes by** is a template-wide setting shared by **Up Next text, variable images, TTS, external generator listings, and background-rule lookahead**:
@@ -52,6 +81,19 @@ Mid-roll segments, intros, outros, and adverts never count as additional upcomin
 In every mode, the second Up Next text entry, variable-image `next2`, and TTS `{up_next_2}` refer to the same listing. Repeat wording such as “more Regular Show” only changes the spoken wording, not which listing was chosen.
 
 In YAML, set `upcoming_grouping: timeslot` (default) or `upcoming_grouping: show` directly on the template. The former voice-only `use_individual_episodes` option is no longer used; old files containing it still load and use the shared setting, defaulting to timeslots/episodes.
+
+### Layers, groups and turning
+
+The **Layers** list shows the layers top first, with each group's layers indented under it (▸ folds a group shut).
+
+- **Select several** with Ctrl (⌘) + click to add or drop one, or Shift + click for a run of rows. On the canvas, Ctrl or Shift + click a box does the same; dragging any selected box moves them all.
+- **Drag rows** to reorder them. Dropping on the top or bottom of a row puts the layers in front of or behind it; dropping on the middle of a group's row puts them inside it. The ↑ and ↓ buttons step a layer past its neighbour in its group.
+- **Group** puts the selected layers in a new group, sized to fit them. Nothing moves on screen. **Ungroup** takes them back out where they are at the playhead; the group's own animation goes with it.
+- **Turn** any layer with the round handle above its box (Shift for 15° steps) or the **Turn** field under Position. Turning can be keyframed like position, size and opacity.
+
+A group is a layer that draws nothing itself. Move, turn, fade, time and keyframe it like any layer, and everything inside goes with it while keeping its own animation: a bow that rocks and bobs inside a group still rocks and bobs as the group slides across the screen or turns. A layer inside a group is positioned from the group's top-left corner, and the group turns its contents about the middle of its box. A group's timing and transitions apply to everything inside it, and its opacity multiplies theirs. Duplicating or deleting a group includes what's inside it. Moving a layer into or out of a group keeps it where it is on screen, as things stand at the playhead.
+
+In YAML a group is a layer with `kind: group` and an `id`; layers inside it name it with `parent`, and come after it in the list. `rotation` (degrees clockwise) works on every layer and in keyframes.
 
 ### Text style
 

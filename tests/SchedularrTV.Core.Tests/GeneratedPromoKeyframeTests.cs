@@ -342,6 +342,53 @@ public sealed class GeneratedPromoKeyframeTests
         Assert.Null(template.BackgroundOverrides);
     }
 
+    [Theory]
+    [InlineData("08:30", 8, 30)]
+    [InlineData("08:30:00", 8, 30)] // How Blazor passes a time input's value on.
+    [InlineData("8:05", 8, 5)]
+    [InlineData("23:59:59", 23, 59)]
+    [InlineData("00:00:00", 0, 0)]
+    public void Time_inputs_are_read_with_or_without_seconds(string text, int hours, int minutes)
+    {
+        Assert.True(GeneratedPromoEditing.TryParseTimeOfDay(text, out TimeSpan time));
+        Assert.Equal(new TimeSpan(hours, minutes, 0), time);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    [InlineData("24:00")]
+    [InlineData("8h")]
+    public void Not_a_time_of_day_changes_nothing(string? text) =>
+        Assert.False(GeneratedPromoEditing.TryParseTimeOfDay(text, out _));
+
+    [Fact]
+    public void Time_ranges_survive_saving_and_loading()
+    {
+        GeneratedPromoTemplate template = GeneratedPromoTemplates.UpNext();
+        GeneratedPromoEditing.SetBackgrounds(template, ["morning.mp4", "night.mp4"]);
+        template.Availability = new() { TimeRange = new() { Start = new TimeSpan(8, 30, 0), End = TimeSpan.FromHours(14) } };
+        template.BackgroundRules =
+        [
+            new() { Background = "night.mp4", MatchShows = false, TimeRange = new() { Start = TimeSpan.FromHours(20), End = new TimeSpan(5, 45, 0) } }
+        ];
+        var config = new SchedulerConfig
+        {
+            Channels = [new() { Id = "channel", Name = "Channel", Number = 1, BaseRotation = new() { Query = "*" },
+                GeneratedPromos = new() { Templates = [template] } }]
+        };
+
+        // Saved the way the editor saves (merged with what's on disk, durations made friendly), then loaded again.
+        string first = YamlCommentMerger.Merge(string.Empty, SchedulerConfigLoader.Serialize(config));
+        string second = YamlCommentMerger.Merge(first, SchedulerConfigLoader.Serialize(SchedulerConfigLoader.Parse(first)));
+        GeneratedPromoTemplate loaded = SchedulerConfigLoader.Parse(second).Channels[0].GeneratedPromos!.Templates[0];
+
+        Assert.Equal(new TimeSpan(8, 30, 0), loaded.Availability!.TimeRange!.Start);
+        Assert.Equal(TimeSpan.FromHours(14), loaded.Availability.TimeRange.End);
+        Assert.Equal(TimeSpan.FromHours(20), loaded.BackgroundRules![0].TimeRange!.Start);
+        Assert.Equal(new TimeSpan(5, 45, 0), loaded.BackgroundRules[0].TimeRange!.End);
+    }
+
     [Fact]
     public void Each_promo_picks_one_of_the_backgrounds_and_keeps_it()
     {

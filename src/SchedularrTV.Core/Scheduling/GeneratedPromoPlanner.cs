@@ -66,17 +66,20 @@ public static class GeneratedPromoPlanner
         GeneratedPromoType type,
         bool clipAvailable,
         TimeSpan available,
-        DateTimeOffset at)
+        DateTimeOffset at,
+        bool endsAt = false)
     {
         if (Source(config, channel, block) is not { } source)
         {
             return null;
         }
 
+        TimeZoneInfo zone = SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(channel.TimeZone) ? config.Settings.TimeZone : channel.TimeZone);
         List<GeneratedPromoTemplate> candidates = [.. source.Promos.Templates.Where(template =>
             template.Enabled && template.Type == type
             && template.Duration > TimeSpan.Zero
             && template.Duration <= available
+            && GeneratedPromoEligibility.IsAvailable(template, endsAt ? at - template.Duration : at, zone)
             && (!clipAvailable || template.Usage == GeneratedPromoUsage.Mixed))];
 
         if (candidates.Count == 0)

@@ -17,9 +17,7 @@ public static class GeneratedPromoBackgrounds
         if (rule.TimeRange is { } range)
         {
             TimeSpan local = TimeZoneInfo.ConvertTime(at, zone ?? TimeZoneInfo.Utc).TimeOfDay;
-            bool eligible = range.Start < range.End ? local >= range.Start && local < range.End
-                : range.Start > range.End && (local >= range.Start || local < range.End);
-            if (!eligible) return 0;
+            if (!GeneratedPromoEligibility.Contains(range, local)) return 0;
         }
         if (rule.MatchShows == false) return 1;
         IEnumerable<UpNextListing> candidates = upcoming.Take(1);

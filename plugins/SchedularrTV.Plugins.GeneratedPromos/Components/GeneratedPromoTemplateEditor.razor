@@ -88,6 +88,61 @@
     </label>
     <p class="hint">Shared by Up Next text, variable images, voice-over, external generators, and background rules. Timeslot / episode counts episodes packed into one channel slot together; when packing is disabled, each episode counts separately. Mid-roll segments never count as new programmes.</p>
 
+    <details class="ed-plain">
+        <summary>Promo availability · @(Template.Availability?.TimeRange is { } summaryHours ? $"{BackgroundTime(summaryHours.Start)}–{BackgroundTime(summaryHours.End)}" : "any time") · @(Template.Availability?.DateRange is { } summaryDates ? $"{summaryDates.Start} through {summaryDates.End} each year" : "all year")</summary>
+        <p class="hint">Controls whether this entire template can be selected, using the promo's scheduled start in @Zone.Id. When both restrictions are enabled, both must match. Previewing remains available outside these ranges.</p>
+        <label class="check">
+            <input type="checkbox" checked="@(Template.Availability?.TimeRange is not null)" @onchange="e => TogglePromoAvailability(time: true, e.Value is true)" />
+            <span>Only use this promo during a daily time range</span>
+        </label>
+        @if (Template.Availability?.TimeRange is { } availableHours)
+        {
+            <div class="grid grid-2">
+                <label class="field">
+                    <span>From (inclusive)</span>
+                    <input type="time" step="60" value="@BackgroundTime(availableHours.Start)" @onchange="e => SetBackgroundTime(e, value => availableHours.Start = value)" />
+                </label>
+                <label class="field">
+                    <span>Until (exclusive)</span>
+                    <input type="time" step="60" value="@BackgroundTime(availableHours.End)" @onchange="e => SetBackgroundTime(e, value => availableHours.End = value)" />
+                </label>
+            </div>
+            <p class="hint">An earlier end crosses midnight (for example 22:00–06:00). Start and end must differ.</p>
+        }
+        <label class="check">
+            <input type="checkbox" checked="@(Template.Availability?.DateRange is not null)" @onchange="e => TogglePromoAvailability(time: false, e.Value is true)" />
+            <span>Only use this promo during a recurring date range</span>
+        </label>
+        @if (Template.Availability?.DateRange is { } availableDates)
+        {
+            <div class="grid grid-2">
+                @foreach (bool start in new[] { true, false })
+                {
+                    string date = start ? availableDates.Start : availableDates.End;
+                    <div class="field">
+                        <span>@(start ? "First day (inclusive)" : "Last day (inclusive)")</span>
+                        <div class="row">
+                            <select aria-label="@(start ? "Start month" : "End month")" value="@AvailabilityDatePart(date, month: true)"
+                                    @onchange="e => SetAvailabilityDate(availableDates, start, month: true, e)">
+                                @for (int month = 1; month <= 12; month++)
+                                {
+                                    <option value="@month">@CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(month)</option>
+                                }
+                            </select>
+                            <input type="number" aria-label="@(start ? "Start day" : "End day")" min="1" max="31" value="@AvailabilityDatePart(date, month: false)"
+                                   @onchange="e => SetAvailabilityDate(availableDates, start, month: false, e)" />
+                        </div>
+                    </div>
+                }
+            </div>
+            <p class="hint">Repeats every year. December 1–31 covers Christmas season; December 20–January 5 crosses New Year. Use the same date at both ends for a single day. February 29 is eligible only in leap years.</p>
+        }
+        @if (Template.Availability is not null && !GeneratedPromoEligibility.IsAvailable(Template, Preview.Now, Zone))
+        {
+            <p class="hint warn">Outside this template's availability right now. It can still be previewed, but won't be selected for airings outside its ranges.</p>
+        }
+    </details>
+
     <VariableImagesEditor Template="Template" Changed="Commit" />
 
     @if (Template.Generator is { } generator)
@@ -261,19 +316,25 @@
                 @foreach (GeneratedLayer layer in Template.Layers)
                 {
                     bool isSelected = ReferenceEquals(layer, _layer);
-                    LayerPose pose = GeneratedPromoEditing.PoseAt(Pose(layer), Time);
+                    bool inSelection = _chosen.Contains(layer);
+                    // Where it ends up on the canvas, inside whatever groups it's in: its middle, size and total turn.
+                    WorldBox box = GeneratedPromoHierarchy.World(Template, layer, Pose, Time);
                     bool placedHere = PlacedHere(layer);
-                    <div class="layer-box @(isSelected ? "selected" : "") @(VisibleAt(layer) ? "" : "hidden-now") @(GeneratedPromoEditing.HasKeyframes(Pose(layer)) ? "keyed" : "") @(placedHere ? "placed" : "")" @key="layer"
-                         style="left:@Pct(pose.X, Template.Width);top:@Pct(pose.Y, Template.Height);width:@Pct(pose.Width, Template.Width);height:@Pct(pose.Height, Template.Height);"
+                    bool isGroupBox = GeneratedPromoHierarchy.IsGroup(layer);
+                    <div class="layer-box @(isSelected ? "selected" : inSelection ? "chosen" : "") @(VisibleAt(layer) ? "" : "hidden-now") @(GeneratedPromoEditing.HasKeyframes(Pose(layer)) ? "keyed" : "") @(placedHere ? "placed" : "") @(isGroupBox ? "group" : "")" @key="layer"
+                         style="left:@Pct(box.CenterX - box.Width / 2, Template.Width);top:@Pct(box.CenterY - box.Height / 2, Template.Height);width:@Pct(box.Width, Template.Width);height:@Pct(box.Height, Template.Height);@(Math.Abs(box.Angle) > 0.001 ? $"transform:rotate({Number(box.Angle)}deg);" : "")"
                          title="@layer.Name" @onpointerdown="e => StartDrag(e, layer, Move)" @onpointerdown:preventDefault="true">
-                        <span class="layer-tag">@(GeneratedPromoEditing.HasKeyframes(Pose(layer)) ? "◆ " : "")@(placedHere ? "⌖ " : "")@Label(layer)</span>
+                        <span class="layer-tag">@(isGroupBox ? "▣ " : "")@(GeneratedPromoEditing.HasKeyframes(Pose(layer)) ? "◆ " : "")@(placedHere ? "⌖ " : "")@Label(layer)</span>
                         @if (isSelected)
                         {
-                            @foreach (string handle in Handles)
+                            // A group's box is only what it turns about, so it's moved and turned rather than stretched.
+                            @foreach (string handle in isGroupBox ? [] : Handles)
                             {
                                 <span class="handle handle-@handle" aria-hidden="true" @onpointerdown="e => StartDrag(e, layer, handle)"
                                       @onpointerdown:stopPropagation="true" @onpointerdown:preventDefault="true"></span>
                             }
+                            <span class="handle handle-rotate" title="Drag to turn it (hold Shift for 15° steps)" aria-hidden="true"
+                                  @onpointerdown="e => StartRotate(e, layer)" @onpointerdown:stopPropagation="true" @onpointerdown:preventDefault="true"></span>
                         }
                     </div>
                 }
@@ -389,26 +450,59 @@
 
         <div class="ed-side">
             <h3 class="ed-section">Layers <span class="ed-meta">top first</span></h3>
-            <ol class="layer-list">
-                @foreach (GeneratedLayer layer in Enumerable.Reverse(Template.Layers).ToList())
+            <div class="layer-actions">
+                <span class="ed-meta">@(_chosen.Count > 1 ? $"{_chosen.Count} selected" : "Ctrl or Shift + click to select several")</span>
+                <div class="spacer"></div>
+                <button class="btn btn-sm" type="button" disabled="@(_chosen.Count == 0)" title="Put the selected layers in a group, which can then be moved, turned, faded and animated as one"
+                        @onclick="GroupChosen">Group</button>
+                @if (_layer is { Kind: GeneratedLayerKind.Group } openGroup)
                 {
-                    int index = Template.Layers.IndexOf(layer);
-                    <li class="layer-row @(ReferenceEquals(layer, _layer) ? "selected" : "")" @key="layer">
-                        <button type="button" class="layer-select" aria-pressed="@(ReferenceEquals(layer, _layer) ? "true" : "false")"
-                                @onclick="() => Select(layer)">
-                            <span>@Label(layer)</span>
-                            <small>@KindName(layer.Kind)</small>
+                    <button class="btn btn-sm" type="button" title="Take the layers out of this group and remove it (its own animation goes with it)"
+                            @onclick="() => Ungroup(openGroup)">Ungroup</button>
+                }
+                @if (_chosen.Count > 1)
+                {
+                    <button class="btn btn-sm btn-danger" type="button" @onclick="RemoveChosen">Delete @_chosen.Count</button>
+                }
+            </div>
+            <ol class="layer-list layer-tree @(_listDrag is null ? "" : "dragging")" aria-label="Layers">
+                @foreach ((GeneratedLayer layer, int depth) in GeneratedPromoHierarchy.Rows(Template, IsOpen))
+                {
+                    bool rowGroup = GeneratedPromoHierarchy.IsGroup(layer);
+                    string drop = ReferenceEquals(_dropOn, layer) ? $"drop-{_dropWhere.ToString().ToLowerInvariant()}" : "";
+                    <li class="layer-row @(ReferenceEquals(layer, _layer) ? "selected" : "") @(_chosen.Contains(layer) ? "chosen" : "") @drop" @key="layer"
+                        style="padding-left:@(depth * 16)px" draggable="true"
+                        @ondragstart="() => StartListDrag(layer)" @ondragend="EndListDrag"
+                        @ondragover="e => ListDragOver(e, layer)" @ondragover:preventDefault="true"
+                        @ondrop="e => ListDrop(e, layer)" @ondrop:preventDefault="true">
+                        @if (rowGroup)
+                        {
+                            <button type="button" class="layer-twisty" aria-label="@(IsOpen(layer) ? "Fold" : "Unfold") @Label(layer)"
+                                    @onclick="() => ToggleOpen(layer)">@(IsOpen(layer) ? "▾" : "▸")</button>
+                        }
+                        else
+                        {
+                            <span class="layer-twisty" aria-hidden="true"></span>
+                        }
+                        <button type="button" class="layer-select" aria-pressed="@(_chosen.Contains(layer) ? "true" : "false")"
+                                @onclick="e => ClickRow(e, layer)">
+                            <span>@(rowGroup ? "▣ " : "")@Label(layer)</span>
+                            <small>@(rowGroup ? $"{GeneratedPromoHierarchy.Children(Template, layer).Count} inside" : KindName(layer.Kind))</small>
                         </button>
                         <button class="btn btn-sm" type="button" title="Bring forward" aria-label="Bring @Label(layer) forward"
-                                disabled="@(index == Template.Layers.Count - 1)" @onclick="() => MoveLayer(layer, 1)">↑</button>
+                                @onclick="() => StepLayer(layer, 1)">↑</button>
                         <button class="btn btn-sm" type="button" title="Send backward" aria-label="Send @Label(layer) backward"
-                                disabled="@(index == 0)" @onclick="() => MoveLayer(layer, -1)">↓</button>
+                                @onclick="() => StepLayer(layer, -1)">↓</button>
                     </li>
                 }
             </ol>
             @if (Template.Layers.Count == 0)
             {
                 <p class="hint">No layers yet. Add one above the canvas.</p>
+            }
+            else
+            {
+                <p class="hint">Drag layers to reorder them, or onto a group to put them inside it; dropping between rows of a group's layers puts it in there too.</p>
             }
 
             @if (_layer is { } selected)
@@ -612,7 +706,15 @@
                         <p class="hint">Text shrinks to fit its box.</p>
                     }
 
-                    @if (selected.Kind != GeneratedLayerKind.Image)
+                    @if (selected.Kind == GeneratedLayerKind.Group)
+                    {
+                        <p class="hint">
+                            A group holds @GeneratedPromoHierarchy.Children(Template, selected).Count layer(s). Move, turn, fade, time and keyframe it like any
+                            layer, and everything inside goes with it while keeping its own animation. Its box is what it turns about;
+                            resize it with the numbers below (that moves the turning point, not what's inside).
+                        </p>
+                    }
+                    @if (selected.Kind is not (GeneratedLayerKind.Image or GeneratedLayerKind.Group))
                     {
                         (string rgb, int alpha) = GeneratedPromoEditing.SplitColor(ColorOf(selected));
                         bool ownColour = _editBackground is not null && GeneratedPromoResolver.Recolour(Template, _editBackground, selected) is not null;
@@ -641,19 +743,12 @@
                                 }
                             </select>
                         </label>
-                        <div class="grid grid-2">
-                            <label class="field">
-                                <span>Rotation (degrees)</span>
-                                <input type="number" step="1" value="@Number(selected.Rotation ?? 0)"
-                                       @onchange="e => SetNumber(e, value => selected.Rotation = (float)(value % 360))" />
-                            </label>
-                            <label class="field">
-                                <span>Soft edges (pixels)</span>
-                                <input type="number" min="0" max="200" step="1" value="@Number(selected.SoftEdges ?? 0)"
-                                       @onchange="e => SetNumber(e, value => selected.SoftEdges = (float)Math.Clamp(value, 0, 200))" />
-                            </label>
-                        </div>
-                        <p class="hint">Rotation is around the centre. Soft edges feather the outline; 0 keeps it sharp. These settings apply across backgrounds.</p>
+                        <label class="field">
+                            <span>Soft edges (pixels)</span>
+                            <input type="number" min="0" max="200" step="1" value="@Number(selected.SoftEdges ?? 0)"
+                                   @onchange="e => SetNumber(e, value => selected.SoftEdges = (float)Math.Clamp(value, 0, 200))" />
+                        </label>
+                        <p class="hint">Soft edges feather the outline; 0 keeps it sharp. Shape and softness apply across backgrounds; turning is under Position.</p>
                         @if (selected.Shape is null or GeneratedShape.Rectangle)
                         {
                             <label class="field">
@@ -695,16 +790,30 @@
                         <label class="field"><span>Width</span><input type="number" min="1" value="@Number(Math.Round(selectedPose.Width, 1))" @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Width = value })" /></label>
                         <label class="field"><span>Height</span><input type="number" min="1" value="@Number(Math.Round(selectedPose.Height, 1))" @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Height = value })" /></label>
                     </div>
-                    <label class="field">
-                        <span>Opacity: @($"{selectedPose.Opacity:P0}")</span>
-                        <input type="range" min="0" max="100" value="@Number(Math.Round(selectedPose.Opacity * 100))"
-                               @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Opacity = value / 100 })" />
-                    </label>
+                    <div class="grid grid-2">
+                        <label class="field">
+                            <span>Turn (degrees, clockwise)</span>
+                            <input type="number" step="1" value="@Number(Math.Round(selectedPose.Rotation ?? 0, 1))"
+                                   @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Rotation = value })" />
+                        </label>
+                        <label class="field">
+                            <span>Opacity: @($"{selectedPose.Opacity:P0}")</span>
+                            <input type="range" min="0" max="100" value="@Number(Math.Round(selectedPose.Opacity * 100))"
+                                   @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Opacity = value / 100 })" />
+                        </label>
+                    </div>
+                    @if (GeneratedPromoHierarchy.ParentOf(Template, selected) is { } holder)
+                    {
+                        <p class="hint">Inside “@Label(holder)”: these are from the group's top-left corner, turned with it.</p>
+                    }
+                    @if (selected.Kind != GeneratedLayerKind.Group)
+                    {
                     <label class="check">
                         <input type="checkbox" checked="@(selected.MutesClip == true)"
                                @onchange="e => Set(() => selected.MutesClip = e.Value is true ? true : null)" />
                         <span>Mutes the episode clip (as much as it's showing)</span>
                     </label>
+                    }
                     @if (selected.MutesClip == true)
                     {
                         <p class="hint @(Template.BackgroundClip is { IncludeAudio: true } ? string.Empty : "warn")">
@@ -1123,7 +1232,37 @@
     private sealed record DragState(GeneratedLayer Layer, string Handle, double StartX, double StartY, float X, float Y, float Width, float Height)
     {
         public bool Moved { get; set; }
+
+        /// <summary>Moving: every selected layer (bar those inside another selected one), each from where it started.</summary>
+        public List<Mover> Movers { get; init; } = [];
+
+        /// <summary>Resizing: the layer's own turn, and its groups' turn on top of that.</summary>
+        public double OwnRotation { get; init; }
+
+        public double SpaceRotation { get; init; }
+
+        /// <summary>Turning: the box's middle on screen, the pointer's angle from it at the start, and the turn it started at.</summary>
+        public double CentreClientX { get; init; }
+
+        public double CentreClientY { get; init; }
+
+        public double StartAngle { get; init; }
     }
+
+    /// <param name="SpaceRotation">How far the groups it's in are turned: a drag on screen moves it that much less turned.</param>
+    private sealed record Mover(GeneratedLayer Layer, float X, float Y, double SpaceRotation);
+
+    private const string Rotate = "rotate";
+
+    // Selected layers: _layer is the one the settings show; _chosen holds every selected one (it among them).
+    private readonly HashSet<GeneratedLayer> _chosen = [];
+    // Groups folded shut in the layer list.
+    private readonly HashSet<GeneratedLayer> _folded = [];
+    // Dragging in the layer list: what's dragged, and where it would land.
+    private List<GeneratedLayer>? _listDrag;
+    private GeneratedLayer? _dropOn;
+    private LayerDrop _dropWhere;
+    private const double RowHeight = 34;
 
     private readonly CancellationTokenSource _life = new();
     private GeneratedLayer? _layer;
@@ -1179,6 +1318,7 @@
         }
 
         _layer =Template.Layers.FirstOrDefault(layer => layer.Kind == GeneratedPromoKinds.RequiredLayer(Template.Type)) ?? Template.Layers.FirstOrDefault();
+        if (_layer is not null) _chosen.Add(_layer);
         _time = SnapToFrame(Math.Min(2, Template.Duration.TotalSeconds));
         _ = RefreshStill();
         _ = PrepareStandIn();
@@ -1191,6 +1331,7 @@
             _layer = Template.Layers.FirstOrDefault();
         }
 
+        PruneSelection();
         _ = LoadVoices();
     }
 
@@ -1893,49 +2034,288 @@
             })
             : Task.CompletedTask;
 
-    private void Select(GeneratedLayer layer) => _layer = layer;
+    /// <summary>Selects just this layer.</summary>
+    private void Select(GeneratedLayer layer)
+    {
+        _layer = layer;
+        _chosen.Clear();
+        _chosen.Add(layer);
+    }
+
+    /// <summary>A click on a row: alone it selects the layer; Ctrl (⌘) adds or drops it; Shift selects the rows from the last one to it.</summary>
+    private void ClickRow(MouseEventArgs e, GeneratedLayer layer)
+    {
+        if (e.CtrlKey || e.MetaKey)
+        {
+            Toggle(layer);
+            return;
+        }
+
+        if (e.ShiftKey && _layer is { } anchor)
+        {
+            List<GeneratedLayer> rows = [.. GeneratedPromoHierarchy.Rows(Template, IsOpen).Select(row => row.Layer)];
+            int from = rows.IndexOf(anchor);
+            int to = rows.IndexOf(layer);
+            if (from >= 0 && to >= 0)
+            {
+                _chosen.Clear();
+                foreach (GeneratedLayer row in rows.Skip(Math.Min(from, to)).Take(Math.Abs(to - from) + 1))
+                {
+                    _chosen.Add(row);
+                }
+
+                _layer = layer;
+                return;
+            }
+        }
+
+        Select(layer);
+    }
+
+    private void Toggle(GeneratedLayer layer)
+    {
+        if (_chosen.Add(layer))
+        {
+            _layer = layer;
+        }
+        else
+        {
+            _chosen.Remove(layer);
+            if (ReferenceEquals(_layer, layer))
+            {
+                _layer = _chosen.FirstOrDefault();
+            }
+        }
+    }
+
+    private bool IsOpen(GeneratedLayer layer) => !_folded.Contains(layer);
+
+    private void ToggleOpen(GeneratedLayer layer)
+    {
+        if (!_folded.Remove(layer))
+        {
+            _folded.Add(layer);
+        }
+    }
+
+    /// <summary>Drops selections of layers that are gone (deleted, or the template reloaded).</summary>
+    private void PruneSelection()
+    {
+        _chosen.RemoveWhere(layer => !Template.Layers.Contains(layer));
+        _folded.RemoveWhere(layer => !Template.Layers.Contains(layer));
+        if (_layer is not null && !Template.Layers.Contains(_layer))
+        {
+            _layer = _chosen.FirstOrDefault();
+        }
+
+        if (_layer is not null)
+        {
+            _chosen.Add(_layer);
+        }
+    }
 
     private Task AddLayer(GeneratedLayerKind kind)
     {
         GeneratedLayer layer = GeneratedPromoEditing.NewLayer(Template, kind);
         Template.Layers.Add(layer);
-        _layer = layer;
+        Select(layer);
         return Commit();
     }
 
-    private Task DuplicateLayer(GeneratedLayer layer)
-    {
-        GeneratedLayer copy = GeneratedPromoEditing.Copy(layer);
-        copy.Name = GeneratedPromoEditing.UniqueName(Template.Layers.Select(existing => existing.Name), layer.Name);
-        GeneratedPromoEditing.Offset(copy, 20, 20);
-        // A layer of its own: the original's per-background placements stay with the original.
-        copy.Id = null;
-        Template.Layers.Insert(Template.Layers.IndexOf(layer) + 1, copy);
-        _layer = copy;
-        return Commit();
-    }
+    // A copy of the layer, or of a group with everything inside it, with ids of its own (so the original's
+    // per-background placements stay with the original).
+    private Task DuplicateLayer(GeneratedLayer layer) => Set(() => Select(GeneratedPromoHierarchy.Duplicate(Template, layer)));
 
-    private Task RemoveLayer(GeneratedLayer layer)
+    private Task RemoveLayer(GeneratedLayer layer) => Set(() =>
     {
         int index = Template.Layers.IndexOf(layer);
-        Template.Layers.Remove(layer);
-        GeneratedPromoEditing.ForgetLayer(Template, layer);
-        _layer = Template.Layers.Count == 0 ? null : Template.Layers[Math.Clamp(index - 1, 0, Template.Layers.Count - 1)];
-        return Commit();
+        GeneratedPromoHierarchy.Remove(Template, layer);
+        _chosen.Clear();
+        _layer = null;
+        if (Template.Layers.Count > 0)
+        {
+            Select(Template.Layers[Math.Clamp(index - 1, 0, Template.Layers.Count - 1)]);
+        }
+    });
+
+    private Task RemoveChosen() => Set(() =>
+    {
+        foreach (GeneratedLayer layer in GeneratedPromoHierarchy.Outermost(Template, _chosen))
+        {
+            GeneratedPromoHierarchy.Remove(Template, layer);
+        }
+
+        _chosen.Clear();
+        _layer = null;
+        if (Template.Layers.LastOrDefault() is { } top)
+        {
+            Select(top);
+        }
+    });
+
+    private Task StepLayer(GeneratedLayer layer, int direction) => Set(() => GeneratedPromoHierarchy.Step(Template, layer, direction, Time));
+
+    // Grouping keeps everything where it is on screen, as it is at the preview time.
+    private Task GroupChosen() => _chosen.Count == 0 ? Task.CompletedTask : Set(() =>
+    {
+        GeneratedLayer group = GeneratedPromoHierarchy.Group(Template, _chosen, Time);
+        Select(group);
+    });
+
+    private Task Ungroup(GeneratedLayer group) => Set(() =>
+    {
+        List<GeneratedLayer> members = GeneratedPromoHierarchy.Ungroup(Template, group, Time);
+        _chosen.Clear();
+        _layer = null;
+        foreach (GeneratedLayer member in members)
+        {
+            _chosen.Add(member);
+            _layer ??= member;
+        }
+    });
+
+    // ---- Dragging in the layer list ----
+
+    private void StartListDrag(GeneratedLayer layer)
+    {
+        if (!_chosen.Contains(layer))
+        {
+            Select(layer);
+        }
+
+        _listDrag = GeneratedPromoHierarchy.Outermost(Template, _chosen);
     }
 
-    private Task MoveLayer(GeneratedLayer layer, int delta) => Set(() => GeneratedPromoEditing.Move(Template.Layers, layer, delta));
+    private void EndListDrag()
+    {
+        _listDrag = null;
+        _dropOn = null;
+    }
+
+    /// <summary>Top of a row puts it in front, bottom behind; the middle of a group's row puts it inside.</summary>
+    private static LayerDrop DropAt(DragEventArgs e, GeneratedLayer layer)
+    {
+        double y = e.OffsetY;
+        if (GeneratedPromoHierarchy.IsGroup(layer))
+        {
+            return y < RowHeight * 0.3 ? LayerDrop.Above : y > RowHeight * 0.7 ? LayerDrop.Below : LayerDrop.Into;
+        }
+
+        return y < RowHeight / 2 ? LayerDrop.Above : LayerDrop.Below;
+    }
+
+    private void ListDragOver(DragEventArgs e, GeneratedLayer layer)
+    {
+        if (_listDrag is not { } dragged || dragged.Any(moving => GeneratedPromoHierarchy.IsWithin(Template, layer, moving)))
+        {
+            _dropOn = null;
+            return;
+        }
+
+        (_dropOn, _dropWhere) = (layer, DropAt(e, layer));
+    }
+
+    private Task ListDrop(DragEventArgs e, GeneratedLayer layer)
+    {
+        List<GeneratedLayer>? dragged = _listDrag;
+        EndListDrag();
+        if (dragged is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        LayerDrop where = DropAt(e, layer);
+        return Set(() =>
+        {
+            if (GeneratedPromoHierarchy.Move(Template, dragged, layer, where, Time) && where == LayerDrop.Into)
+            {
+                _folded.Remove(layer);
+            }
+        });
+    }
+
+    // ---- Dragging on the canvas ----
 
     private void StartDrag(PointerEventArgs e, GeneratedLayer layer, string handle)
     {
-        Select(layer);
+        // Ctrl (⌘) or Shift on a box adds it to the selection or takes it out, without moving anything.
+        if (handle == Move && (e.CtrlKey || e.MetaKey || e.ShiftKey))
+        {
+            Toggle(layer);
+            return;
+        }
+
+        // Pressing a box that's already selected keeps the selection, so they all move together.
+        if (_chosen.Contains(layer))
+        {
+            _layer = layer;
+        }
+        else
+        {
+            Select(layer);
+        }
+
         // From where the layer is at the preview time, so an animated layer is dragged from what's on screen.
         LayerPose pose = GeneratedPromoEditing.PoseAt(Pose(layer), Time);
-        _drag = new DragState(layer, handle, e.ClientX, e.ClientY, pose.X, pose.Y, pose.Width, pose.Height);
+        List<Mover> movers = handle != Move ? [] :
+        [
+            .. GeneratedPromoHierarchy.Outermost(Template, _chosen).Select(chosen =>
+            {
+                LayerPose start = GeneratedPromoEditing.PoseAt(Pose(chosen), Time);
+                return new Mover(chosen, start.X, start.Y, GeneratedPromoHierarchy.SpaceAngle(Template, chosen, Pose, Time));
+            })
+        ];
+        _drag = new DragState(layer, handle, e.ClientX, e.ClientY, pose.X, pose.Y, pose.Width, pose.Height)
+        {
+            Movers = movers,
+            OwnRotation = pose.Rotation ?? 0,
+            SpaceRotation = GeneratedPromoHierarchy.SpaceAngle(Template, layer, Pose, Time)
+        };
         // Usually already measured when the pointer came onto the canvas; this catches a resized window.
         _ = MeasureCanvas();
         // So ←/→ step through frames right after placing the box, to line it up with the background.
         _ = FocusRuler();
+    }
+
+    /// <summary>Starts turning the layer by its round handle: the angle is taken about the box's middle on screen.</summary>
+    private async Task StartRotate(PointerEventArgs e, GeneratedLayer layer)
+    {
+        Select(layer);
+        LayerPose pose = GeneratedPromoEditing.PoseAt(Pose(layer), Time);
+        // The overlay comes up straight away; the turn follows once it's known where the canvas is.
+        var pending = new DragState(layer, Rotate, e.ClientX, e.ClientY, pose.X, pose.Y, pose.Width, pose.Height) { OwnRotation = pose.Rotation ?? 0 };
+        _drag = pending;
+        (double left, double top, double width) = await CanvasBox();
+        if (!ReferenceEquals(_drag, pending) || width <= 0)
+        {
+            return;
+        }
+
+        _canvasPixels = width;
+        WorldBox box = GeneratedPromoHierarchy.World(Template, layer, Pose, Time);
+        double centreX = left + box.CenterX * Scale;
+        double centreY = top + box.CenterY * Scale;
+        _drag = pending with
+        {
+            CentreClientX = centreX,
+            CentreClientY = centreY,
+            StartAngle = Math.Atan2(e.ClientY - centreY, e.ClientX - centreX) * 180 / Math.PI
+        };
+    }
+
+    /// <summary>Where the canvas is on screen (left, top, width), or zeros when it can't be told.</summary>
+    private async Task<(double Left, double Top, double Width)> CanvasBox()
+    {
+        try
+        {
+            double[] box = await JS.InvokeAsync<double[]>("eval",
+                $"(r => r ? [r.left, r.top, r.width] : [0, 0, 0])(document.getElementById('{_canvasId}')?.getBoundingClientRect())");
+            return box is [var left, var top, var width] ? (left, top, width) : (0, 0, 0);
+        }
+        catch (Exception)
+        {
+            return (0, 0, 0);
+        }
     }
 
     private void Drag(PointerEventArgs e)
@@ -1945,56 +2325,85 @@
             return;
         }
 
-        float dx = (float)((e.ClientX - drag.StartX) / Scale);
-        float dy = (float)((e.ClientY - drag.StartY) / Scale);
+        // Canvas pixels the pointer has moved, as the canvas is drawn (before any group's turn).
+        double screenDx = (e.ClientX - drag.StartX) / Scale;
+        double screenDy = (e.ClientY - drag.StartY) / Scale;
         GeneratedLayer layer = drag.Layer;
         const float minimum = 8;
-        drag.Moved |= Math.Abs(dx) >= 1 || Math.Abs(dy) >= 1;
+        drag.Moved |= Math.Abs(screenDx) >= 1 || Math.Abs(screenDy) >= 1;
         // A click that doesn't move the box changes nothing (and adds no keyframe).
         if (!drag.Moved)
         {
             return;
         }
 
-        (float x, float y, float width, float height) = (drag.X, drag.Y, drag.Width, drag.Height);
+        if (drag.Handle == Rotate)
+        {
+            if (drag.StartAngle is 0 && drag.CentreClientX is 0)
+            {
+                return;
+            }
+
+            double angle = Math.Atan2(e.ClientY - drag.CentreClientY, e.ClientX - drag.CentreClientX) * 180 / Math.PI;
+            double turned = drag.OwnRotation + (angle - drag.StartAngle);
+            turned = e.ShiftKey ? Math.Round(turned / 15) * 15 : Math.Round(turned, 1);
+            turned = ((turned + 180) % 360 + 360) % 360 - 180;
+            IGeneratedPose turning = Editable(layer);
+            GeneratedPromoEditing.SetPose(turning, Time, GeneratedPromoEditing.PoseAt(turning, Time) with { Rotation = (float)turned });
+            RequestStill(fast: true);
+            return;
+        }
+
         if (drag.Handle == Move)
         {
-            (x, y, _snapX, _snapY) = e.AltKey
-                ? (MathF.Round(drag.X + dx), MathF.Round(drag.Y + dy), false, false)
-                : GeneratedPromoEditing.SnapToCenter(MathF.Round(drag.X + dx), MathF.Round(drag.Y + dy), width, height,
-                    Template.Width, Template.Height, (float)(SnapDistance / Scale));
+            // Each layer moves in its own group's space, so a drag goes the same way on screen however its groups are turned.
+            bool snaps = drag.Movers.Count == 1 && GeneratedPromoHierarchy.ParentOf(Template, drag.Movers[0].Layer) is null && !e.AltKey;
+            _snapX = _snapY = false;
+            foreach (Mover mover in drag.Movers)
+            {
+                (double localDx, double localDy) = Rigid.Rotate(screenDx, screenDy, -mover.SpaceRotation);
+                IGeneratedPose target = Editable(mover.Layer);
+                LayerPose current = GeneratedPromoEditing.PoseAt(target, Time);
+                float x = (float)Math.Round(mover.X + localDx);
+                float y = (float)Math.Round(mover.Y + localDy);
+                if (snaps)
+                {
+                    (x, y, _snapX, _snapY) = GeneratedPromoEditing.SnapToCenter(x, y, current.Width, current.Height,
+                        Template.Width, Template.Height, (float)(SnapDistance / Scale));
+                }
+
+                // On an animated layer this sets (or adds) the keyframe at the preview time; while placing layers for
+                // one background, it goes into that background's placement instead.
+                GeneratedPromoEditing.SetPose(target, Time, current with { X = x, Y = y, Rotation = null });
+            }
+
+            RequestStill(fast: true);
+            return;
         }
-        else
+
+        // Resizing works along the box's own edges, however it and its groups are turned; the opposite edge stays put.
+        (double dx, double dy) = Rigid.Rotate(screenDx, screenDy, -(drag.SpaceRotation + drag.OwnRotation));
+        double left = 0, right = 0, top = 0, bottom = 0;
+        if (drag.Handle.Contains('e')) right = Math.Max(minimum - drag.Width, dx);
+        if (drag.Handle.Contains('w')) left = Math.Min(dx, drag.Width - minimum);
+        if (drag.Handle.Contains('s')) bottom = Math.Max(minimum - drag.Height, dy);
+        if (drag.Handle.Contains('n')) top = Math.Min(dy, drag.Height - minimum);
+        double width = drag.Width - left + right;
+        double height = drag.Height - top + bottom;
+        (double shiftX, double shiftY) = Rigid.Rotate((left + right) / 2, (top + bottom) / 2, drag.OwnRotation);
+        double centreX = drag.X + drag.Width / 2.0 + shiftX;
+        double centreY = drag.Y + drag.Height / 2.0 + shiftY;
+
+        IGeneratedPose resized = Editable(layer);
+        LayerPose was = GeneratedPromoEditing.PoseAt(resized, Time);
+        GeneratedPromoEditing.SetPose(resized, Time, was with
         {
-            if (drag.Handle.Contains('e'))
-            {
-                width = MathF.Round(Math.Max(minimum, drag.Width + dx));
-            }
-
-            if (drag.Handle.Contains('w'))
-            {
-                float shift = Math.Min(dx, drag.Width - minimum);
-                x = MathF.Round(drag.X + shift);
-                width = MathF.Round(drag.Width - shift);
-            }
-
-            if (drag.Handle.Contains('s'))
-            {
-                height = MathF.Round(Math.Max(minimum, drag.Height + dy));
-            }
-
-            if (drag.Handle.Contains('n'))
-            {
-                float shift = Math.Min(dy, drag.Height - minimum);
-                y = MathF.Round(drag.Y + shift);
-                height = MathF.Round(drag.Height - shift);
-            }
-        }
-
-        // On an animated layer this sets (or adds) the keyframe at the preview time; while placing layers for one
-        // background, it goes into that background's placement instead.
-        IGeneratedPose target = Editable(layer);
-        GeneratedPromoEditing.SetPose(target, Time, new LayerPose(x, y, width, height, GeneratedPromoEditing.PoseAt(target, Time).Opacity));
+            X = (float)Math.Round(centreX - width / 2),
+            Y = (float)Math.Round(centreY - height / 2),
+            Width = (float)Math.Round(width),
+            Height = (float)Math.Round(height),
+            Rotation = null
+        });
         RequestStill(fast: true);
     }
 
@@ -2221,6 +2630,29 @@
     private Task AddBackgrounds(IReadOnlyList<string> picked) =>
         Set(() => GeneratedPromoEditing.SetBackgrounds(Template, [.. BackgroundList, .. picked]));
 
+    private Task TogglePromoAvailability(bool time, bool enabled) => Set(() =>
+    {
+        Template.Availability ??= new GeneratedPromoAvailability();
+        if (time) Template.Availability.TimeRange = enabled ? Template.Availability.TimeRange ?? new GeneratedBackgroundTimeRange() : null;
+        else Template.Availability.DateRange = enabled ? Template.Availability.DateRange ?? new GeneratedAnnualDateRange() : null;
+        if (Template.Availability.TimeRange is null && Template.Availability.DateRange is null) Template.Availability = null;
+    });
+
+    private static int AvailabilityDatePart(string date, bool month)
+    {
+        string[] parts = date.Split('-');
+        return parts.Length == 2 && int.TryParse(parts[month ? 0 : 1], out int part) ? part : 1;
+    }
+
+    private Task SetAvailabilityDate(GeneratedAnnualDateRange range, bool start, bool month, ChangeEventArgs e) => SetNumber(e, value =>
+    {
+        string date = start ? range.Start : range.End;
+        int newMonth = month ? (int)Math.Clamp(value, 1, 12) : AvailabilityDatePart(date, month: true);
+        int newDay = month ? AvailabilityDatePart(date, month: false) : (int)Math.Clamp(value, 1, 31);
+        string changed = FormattableString.Invariant($"{newMonth:00}-{newDay:00}");
+        if (start) range.Start = changed; else range.End = changed;
+    });
+
     private Task ToggleBackgroundRule(string background, bool enabled) => Set(() =>
     {
         GeneratedBackgroundRule rule = EditableBackgroundRule(background);
@@ -2251,8 +2683,9 @@
 
     private static string BackgroundTime(TimeSpan time) => time.ToString(@"hh\:mm", CultureInfo.InvariantCulture);
 
+    // Blazor hands a time input's value over as HH:mm:ss (it adds ":00" to the browser's HH:mm), so both are read.
     private Task SetBackgroundTime(ChangeEventArgs e, Action<TimeSpan> apply) =>
-        TimeSpan.TryParseExact(Text(e), @"hh\:mm", CultureInfo.InvariantCulture, out TimeSpan time)
+        GeneratedPromoEditing.TryParseTimeOfDay(Text(e), out TimeSpan time)
             ? Set(() => apply(time)) : Task.CompletedTask;
 
     private void PreviewBackground(string? background)
@@ -2556,7 +2989,7 @@
         }
 
         Template.Type = type;
-        _layer = Template.Layers.FirstOrDefault(layer => layer.Kind == RequiredKind) ?? _layer;
+        if (Template.Layers.FirstOrDefault(layer => layer.Kind == RequiredKind) is { } shown) Select(shown);
     });
 
     private IReadOnlyList<UpNextListing> PreviewListings(out bool sample) => Preview.Listings(Channel, Template, out sample);

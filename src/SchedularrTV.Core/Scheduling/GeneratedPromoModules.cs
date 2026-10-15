@@ -13,7 +13,8 @@ internal sealed class GeneratedPromoSubstitute : IPromoSpotSubstitute
         GeneratedPromoPlanner.Has(context.Config, context.Channel, context.Block, type);
 
     public GeneratedPromoTemplate? Choose(BreakContext context, GeneratedPromoType type, bool clipAvailable, TimeSpan available, DateTimeOffset at) =>
-        GeneratedPromoPlanner.Choose(context.Config, context.Channel, context.Block, type, clipAvailable, available, at);
+        GeneratedPromoPlanner.Choose(context.Config, context.Channel, context.Block, type, clipAvailable, available, at,
+            endsAt: type is GeneratedPromoType.UpNext or GeneratedPromoType.NowPlaying or GeneratedPromoType.BackToTheShow);
 
     public MediaItem Placeholder(GeneratedPromoTemplate template) => GeneratedPromoPlanner.Placeholder(template);
 
@@ -126,6 +127,8 @@ internal sealed class GeneratedPromoStandIns : IBreakFinalizer
     public async ValueTask FinalizeAsync(BreakContext context, int breakStart, CancellationToken cancellationToken)
     {
         List<ScheduleEntry> entries = context.Entries;
+        TimeZoneInfo zone = SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(context.Channel.TimeZone)
+            ? context.Config.Settings.TimeZone : context.Channel.TimeZone);
         for (int index = breakStart; index < entries.Count; index++)
         {
             ScheduleEntry generated = entries[index];
@@ -136,6 +139,16 @@ internal sealed class GeneratedPromoStandIns : IBreakFinalizer
 
             List<ScheduleEntry> standIn = [];
             await context.PackAsync(generated.Start, generated.End, standIn, cancellationToken).ConfigureAwait(false);
+            GeneratedPromoTemplate? template = GeneratedPromoPlanner.Source(context.Config, context.Channel, generated.BlockName)?.Promos.Templates
+                .FirstOrDefault(candidate => string.Equals(candidate.Name, generated.GeneratedTemplate, StringComparison.OrdinalIgnoreCase));
+            // Packing can move held/tail promos across an eligibility boundary. Check the final airtime too.
+            if (template is not null && !GeneratedPromoEligibility.IsAvailable(template, generated.Start, zone))
+            {
+                entries.RemoveAt(index);
+                entries.InsertRange(index, standIn);
+                index += standIn.Count - 1;
+                continue;
+            }
             if (standIn.Count > 0)
             {
                 entries[index] = generated with { Fallback = standIn };

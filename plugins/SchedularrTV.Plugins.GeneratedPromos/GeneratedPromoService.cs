@@ -186,7 +186,7 @@ public sealed partial class GeneratedPromoService(
                     .FirstOrDefault(candidate => string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase));
                 string? path = null;
 
-                if (template is not null && source is not null)
+                if (template is { Enabled: true } && source is not null && GeneratedPromoEligibility.IsAvailable(template, entry.Start, zone))
                 {
                     int needed = GeneratedPromoResolver.ListingsNeeded(template);
                     IReadOnlyList<UpNextListing> listings = Subject(template.Type, schedule, entry, needed, template.UpcomingGrouping);

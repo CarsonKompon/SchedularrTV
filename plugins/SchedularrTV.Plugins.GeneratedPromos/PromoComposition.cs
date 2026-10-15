@@ -33,7 +33,19 @@ public abstract record PromoLayer
 
     /// <summary>In time order; while there are any they set the bounds and opacity instead of <see cref="Bounds"/> and <see cref="Opacity"/>.</summary>
     public IReadOnlyList<PromoKeyframe>? Keyframes { get; init; }
+
+    /// <summary>Degrees clockwise about the middle of <see cref="Bounds"/>.</summary>
+    public float Rotation { get; init; }
+
+    /// <summary>
+    /// The group this layer is inside, or null at the top. Its bounds are then in the group's space (from the group's
+    /// top-left corner), and the group's movement, rotation, opacity and timing apply on top of its own.
+    /// </summary>
+    public PromoGroupLayer? Parent { get; init; }
 }
+
+/// <summary>Draws nothing: places the layers inside it (see <see cref="PromoLayer.Parent"/>).</summary>
+public sealed record PromoGroupLayer : PromoLayer;
 
 public enum PromoVerticalAlign
 {
@@ -52,7 +64,7 @@ public enum PromoEasing
 }
 
 /// <summary>A layer's bounds and opacity at <see cref="At"/>; <see cref="Easing"/> is how it moves on to the next one.</summary>
-public readonly record struct PromoKeyframe(TimeSpan At, SKRect Bounds, float Opacity, PromoEasing Easing = PromoEasing.Linear);
+public readonly record struct PromoKeyframe(TimeSpan At, SKRect Bounds, float Opacity, PromoEasing Easing = PromoEasing.Linear, float Rotation = 0);
 
 public sealed record PromoRectLayer : PromoLayer
 {
@@ -61,7 +73,8 @@ public sealed record PromoRectLayer : PromoLayer
     public float CornerRadius { get; init; }
 
     public SchedularrTV.Core.Configuration.GeneratedShape Shape { get; init; }
-    public float Rotation { get; init; }
+
+    // Rotation is on every layer now (PromoLayer.Rotation), so shapes, text, pictures and groups all turn the same way.
     public float SoftEdges { get; init; }
 }
 
@@ -131,7 +144,8 @@ public sealed record PromoComposition
 }
 
 /// <param name="Bounds">Where the layer is at this moment: its keyframed bounds, or its own when it has none.</param>
-public readonly record struct PromoLayerFrame(float Opacity, float OffsetX, float OffsetY, float Scale, SKRect Bounds = default);
+/// <param name="Rotation">Degrees clockwise about the middle of <paramref name="Bounds"/>.</param>
+public readonly record struct PromoLayerFrame(float Opacity, float OffsetX, float OffsetY, float Scale, SKRect Bounds = default, float Rotation = 0);
 
 public sealed record PromoMusic(string Path, double Volume, TimeSpan StartAt, TimeSpan FadeIn, TimeSpan FadeOut, bool DuckUnderVoice, bool Loop = true)
 {
@@ -254,7 +268,7 @@ public static class PromoAnimation
         float distance = canvasHeight * 0.12f;
 
         (SKRect bounds, float opacity) = Pose(layer.Bounds, layer.Opacity, layer.Keyframes, time);
-        var frame = new PromoLayerFrame(opacity, 0, 0, 1, bounds);
+        var frame = new PromoLayerFrame(opacity, 0, 0, 1, bounds, RotationAt(layer.Rotation, layer.Keyframes, time));
         frame = Apply(frame, layer.In, entering, distance, entering: true);
         return Apply(frame, layer.Out, leaving, distance, entering: false);
     }
@@ -295,6 +309,61 @@ public static class PromoAnimation
         }
 
         return (keyframes[^1].Bounds, keyframes[^1].Opacity);
+    }
+
+    /// <summary>The rotation at <paramref name="time"/>, following the keyframes the same way as <see cref="Pose"/>.</summary>
+    public static float RotationAt(float rotation, IReadOnlyList<PromoKeyframe>? keyframes, TimeSpan time)
+    {
+        if (keyframes is not { Count: > 0 })
+        {
+            return rotation;
+        }
+
+        if (time <= keyframes[0].At)
+        {
+            return keyframes[0].Rotation;
+        }
+
+        for (int index = 0; index < keyframes.Count - 1; index++)
+        {
+            PromoKeyframe from = keyframes[index];
+            PromoKeyframe to = keyframes[index + 1];
+            if (time >= to.At)
+            {
+                continue;
+            }
+
+            double span = (to.At - from.At).TotalSeconds;
+            float progress = span <= 0 ? 1 : Curve(from.Easing, (time - from.At).TotalSeconds / span);
+            return Lerp(from.Rotation, to.Rotation, progress);
+        }
+
+        return keyframes[^1].Rotation;
+    }
+
+    /// <summary>
+    /// The layer's frame with every group it's inside applied too: null when it or any of them is off screen, otherwise
+    /// its own frame with the opacity of all of them. Where it is on screen comes from <see cref="PromoRenderer"/>, which
+    /// stacks the groups' movement and rotation.
+    /// </summary>
+    public static PromoLayerFrame? EvaluateInGroups(PromoLayer layer, TimeSpan time, TimeSpan duration, float canvasHeight)
+    {
+        if (Evaluate(layer, time, duration, canvasHeight) is not { } frame)
+        {
+            return null;
+        }
+
+        for (PromoGroupLayer? group = layer.Parent; group is not null; group = group.Parent)
+        {
+            if (Evaluate(group, time, duration, canvasHeight) is not { } around)
+            {
+                return null;
+            }
+
+            frame = frame with { Opacity = frame.Opacity * around.Opacity };
+        }
+
+        return frame;
     }
 
     /// <summary>How far along (0 to 1) a move with this easing is at <paramref name="progress"/> of its time.</summary>

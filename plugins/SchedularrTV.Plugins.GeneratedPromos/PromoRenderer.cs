@@ -192,16 +192,26 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
 
         foreach (PromoLayer layer in composition.Layers)
         {
-            if (PromoAnimation.Evaluate(layer, time, composition.Duration, composition.Height) is not { } state || state.Opacity <= 0)
+            // Groups draw nothing; their layers draw inside them. A layer shows only while every group it's in does.
+            if (layer is PromoGroupLayer
+                || PromoAnimation.EvaluateInGroups(layer, time, composition.Duration, composition.Height) is not { } state || state.Opacity <= 0)
             {
                 continue;
             }
 
             SKRect bounds = state.Bounds;
             canvas.Save();
-            canvas.Translate(state.OffsetX, state.OffsetY);
-            canvas.Scale(state.Scale, state.Scale, bounds.MidX, bounds.MidY);
-            if (layer is PromoRectLayer shape) canvas.RotateDegrees(shape.Rotation, bounds.MidX, bounds.MidY);
+            // Into the space of the groups it's in, outermost first: each moves its contents to its corner and turns them about its middle.
+            foreach (PromoGroupLayer group in Groups(layer))
+            {
+                if (PromoAnimation.Evaluate(group, time, composition.Duration, composition.Height) is { } around)
+                {
+                    Place(canvas, around, around.Bounds);
+                    canvas.Translate(around.Bounds.Left, around.Bounds.Top);
+                }
+            }
+
+            Place(canvas, state, bounds);
             bool translucent = state.Opacity < 0.999f;
             if (translucent)
             {
@@ -269,6 +279,30 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         path.Close();
         using var outline = path.Detach();
         canvas.DrawPath(outline, paint);
+    }
+
+    /// <summary>The groups a layer is inside, outermost first.</summary>
+    private static List<PromoGroupLayer> Groups(PromoLayer layer)
+    {
+        List<PromoGroupLayer> groups = [];
+        for (PromoGroupLayer? group = layer.Parent; group is not null; group = group.Parent)
+        {
+            groups.Insert(0, group);
+        }
+
+        return groups;
+    }
+
+    /// <summary>A layer's transition movement and zoom, and its rotation, all about the middle of its box.</summary>
+    private static void Place(SKCanvas canvas, PromoLayerFrame state, SKRect bounds)
+    {
+        canvas.Translate(state.OffsetX, state.OffsetY);
+        if (Math.Abs(state.Rotation) > 0.001f)
+        {
+            canvas.RotateDegrees(state.Rotation, bounds.MidX, bounds.MidY);
+        }
+
+        canvas.Scale(state.Scale, state.Scale, bounds.MidX, bounds.MidY);
     }
 
     private static void DrawText(SKCanvas canvas, PromoTextLayer layer, SKRect bounds, PromoImageCache cache)

@@ -145,7 +145,25 @@
 .gp-scope .snap-guide-x { left: 50%; top: 0; bottom: 0; border-left-width: 1px; }
 .gp-scope .snap-guide-y { top: 50%; left: 0; right: 0; border-top-width: 1px; }
 
-.gp-scope .layer-list { list-style: none; margin: 0 0 12px; padding: 0; max-height: 260px; overflow: auto; }
+/* Groups, several selected, and turning */
+.gp-scope .layer-box.chosen { border: 2px dashed var(--accent); }
+.gp-scope .layer-box.group { border-style: dotted; background: rgba(255,255,255,.03); }
+.gp-scope .layer-box.group.selected { border-style: solid; }
+.gp-scope .handle-rotate { left: 50%; top: -22px; border-radius: 50%; cursor: grab; }
+.gp-scope .handle-rotate::after { content: ""; position: absolute; left: 3px; top: 10px; width: 2px; height: 12px; background: var(--accent); }
+.gp-scope .layer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -4px 0 8px; }
+.gp-scope .layer-actions .spacer { flex: 1; }
+.gp-scope .layer-tree .layer-row { min-height: 34px; height: 34px; box-sizing: border-box; margin-bottom: 2px; border-radius: 6px; position: relative; }
+.gp-scope .layer-tree .layer-row[draggable="true"] { cursor: grab; }
+.gp-scope .layer-tree.dragging .layer-row * { pointer-events: none; }
+.gp-scope .layer-tree .layer-row.chosen .layer-select { border-color: var(--accent); }
+.gp-scope .layer-tree .layer-row.drop-above { box-shadow: inset 0 3px 0 var(--accent); }
+.gp-scope .layer-tree .layer-row.drop-below { box-shadow: inset 0 -3px 0 var(--accent); }
+.gp-scope .layer-tree .layer-row.drop-into { background: rgba(255,255,255,.08); outline: 2px solid var(--accent); outline-offset: -2px; }
+.gp-scope .layer-twisty {
+    flex: none; width: 18px; height: 22px; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 12px; line-height: 22px;
+}
+.gp-scope .layer-list { list-style: none; margin: 0 0 12px; padding: 0; max-height: 360px; overflow: auto; }
 .gp-scope .layer-row { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
 .gp-scope .layer-select {
     flex: 1; min-width: 0; display: flex; justify-content: space-between; gap: 8px; padding: 6px 9px; text-align: left; cursor: pointer;
