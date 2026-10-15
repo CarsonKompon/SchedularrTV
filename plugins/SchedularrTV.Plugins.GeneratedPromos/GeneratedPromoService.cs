@@ -333,6 +333,14 @@ public sealed partial class GeneratedPromoService(
                 BackgroundAudio = await AudibleAsync(composition.BackgroundAudio, cancellationToken).ConfigureAwait(false),
                 OverlayAudio = await AudibleAsync(composition.OverlayAudio, cancellationToken).ConfigureAwait(false)
             };
+            // Video layers whose files have no sound track play silently rather than stopping the render.
+            List<PromoMusic> layerAudio = [];
+            foreach (PromoMusic sound in composition.LayerAudio)
+            {
+                if (await AudibleAsync(sound, cancellationToken).ConfigureAwait(false) is { } audible) layerAudio.Add(audible);
+            }
+
+            composition = composition with { LayerAudio = layerAudio };
             if (composition.Music is null && template.Music is { FromLibrary: true } fromLibrary)
             {
                 composition = composition with { Music = await LibraryMusicAsync(fromLibrary, promo.Key, cancellationToken).ConfigureAwait(false) };

@@ -82,6 +82,19 @@ In every mode, the second Up Next text entry, variable-image `next2`, and TTS `{
 
 In YAML, set `upcoming_grouping: timeslot` (default) or `upcoming_grouping: show` directly on the template. The former voice-only `use_individual_episodes` option is no longer used; old files containing it still load and use the shared setting, defaulting to timeslots/episodes.
 
+### Video layers
+
+**+ Video** adds a box that plays a video. Under **Plays**, choose a video file, or a clip of an episode: the one the promo is for, what's on now (or before the break), the next episode, or one 2 to 10 shows ahead. An episode clip starts where you set it, or, left blank, somewhere in the middle that changes each airing. If there's no such show, or its file can't be read, the layer is left out.
+
+Video layers move, resize, turn, fade, group and keyframe like any other layer, and can be placed and timed per background.
+
+- **Starts playing**: when the layer appears (it waits for its entrance), or with the promo (so it's already playing when it appears).
+- **Fill the box** crops the video to fill its box; otherwise the whole video fits inside, with clear space around it.
+- **Loop** starts it over when it runs out; otherwise it stays on its last frame.
+- **Play its sound** mixes its audio in, at its own volume, lowered under the voice-over if you like. The sound plays in step with the picture and fades in and out with the layer, following its opacity. Files without a sound track play silently.
+
+The editor shows each video's frame at the playhead. Before the channel's schedule is built, only the promo's own episode has a stand-in file for previews. In YAML, a video layer has `kind: video`, its file in `path`, and a `video` section with `episode` (`promoted`, `watching`, `next`, `next2`…), `clip_start`, `file_start`, `playback` (`with_layer` or `with_promo`), `loop`, `fill`, `include_audio`, `volume` and `duck_under_voice`.
+
 ### Layers, groups and turning
 
 The **Layers** list shows the layers top first, with each group's layers indented under it (▸ folds a group shut).

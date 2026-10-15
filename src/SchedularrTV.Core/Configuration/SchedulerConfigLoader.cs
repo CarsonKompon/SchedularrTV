@@ -603,6 +603,26 @@ public static class SchedulerConfigLoader
                 {
                     errors.Add($"{layerScope}: variable_image must name a configured variable image.");
                 }
+                if (layer.Kind == GeneratedLayerKind.Video)
+                {
+                    if (layer.Video?.Episode is { } episode)
+                    {
+                        if (!GeneratedImageSelectors.TryParse(episode, out _, out _))
+                        {
+                            errors.Add($"{layerScope}: video.episode must be promoted, watching, next or next2 to next{GeneratedImageSelectors.MaxAhead}.");
+                        }
+                    }
+                    else if (string.IsNullOrWhiteSpace(layer.Path))
+                    {
+                        errors.Add($"{layerScope}: a video layer needs a video file, or an episode to play a clip of.");
+                    }
+
+                    if (layer.Video is { } video && (video.Volume is < 0 or > 1 || video.ClipStart < TimeSpan.Zero || video.FileStart < TimeSpan.Zero))
+                    {
+                        errors.Add($"{layerScope}: video volume must be between 0 and 1, and its start points zero or more.");
+                    }
+                }
+
                 if (layer.VariableImageShow is { } selector && !GeneratedImageSelectors.TryParse(selector, out _, out _))
                 {
                     errors.Add($"{layerScope}: variable_image_show must be promoted, watching, next or next2 to next{GeneratedImageSelectors.MaxAhead}.");

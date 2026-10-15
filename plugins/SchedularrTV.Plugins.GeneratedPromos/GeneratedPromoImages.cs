@@ -61,6 +61,18 @@ public static class GeneratedPromoImages
     {
         foreach (GeneratedLayer layer in template.Layers)
         {
+            // A video of an upcoming episode counts the same way.
+            if (layer is { Kind: GeneratedLayerKind.Video, Video.Episode: { } episode }
+                && GeneratedImageSelectors.TryParse(episode, out GeneratedImageContext videoContext, out int videoOffset))
+            {
+                if (videoContext == GeneratedImageContext.UpNext)
+                {
+                    yield return Math.Max(0, videoOffset) + 1;
+                }
+
+                continue;
+            }
+
             if (layer.Kind != GeneratedLayerKind.Image || layer.VariableImage is not { Length: > 0 } name
                 || template.VariableImages?.FirstOrDefault(image => string.Equals(image.Name, name, StringComparison.OrdinalIgnoreCase)) is not { } image)
             {
@@ -108,8 +120,8 @@ public static class GeneratedPromoImages
         }
     }
 
-    /// <summary>The show a variable image is resolved for in this context, or null when the promo has none there.</summary>
-    private static UpNextListing? Show(GeneratedPromoTemplate template, IReadOnlyList<UpNextListing> promoted, GeneratedImageSubjects? subjects,
+    /// <summary>The show a variable image (or a video layer's episode) is resolved for in this context, or null when the promo has none there.</summary>
+    public static UpNextListing? Show(GeneratedPromoTemplate template, IReadOnlyList<UpNextListing> promoted, GeneratedImageSubjects? subjects,
         GeneratedImageContext context, int offset) => context switch
     {
         GeneratedImageContext.CurrentlyWatching => subjects is not null ? subjects.Current

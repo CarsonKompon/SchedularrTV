@@ -60,7 +60,8 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         bool videoBackground = composition.BackgroundPath is { } background && !IsImage(background);
         var stopwatch = Stopwatch.StartNew();
         string? mixed = null;
-        if (composition.AudioPath is not null || composition.Music is not null || composition.BackgroundAudio is not null || composition.OverlayAudio is not null)
+        if (composition.AudioPath is not null || composition.Music is not null || composition.BackgroundAudio is not null || composition.OverlayAudio is not null
+            || composition.LayerAudio.Count > 0)
         {
             // Tempo changes mixed straight into AAC lose the voice in ffmpeg, so the mix is made as PCM first.
             mixed = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath))!, $".{Guid.NewGuid():N}.audio.wav");
@@ -136,17 +137,21 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             using var pixels = new SKBitmap(output);
             Stream input = ffmpeg.StandardInput.BaseStream;
             PromoLayerFrame?[]? previous = null;
+            // Video layers' frames, each video decoded straight through by an ffmpeg of its own as the frames are drawn.
+            using var videos = new PromoVideoStreams(ffmpegPath, composition.Fps);
+            PromoVideoLayer[] videoLayers = [.. composition.Layers.OfType<PromoVideoLayer>()];
 
             for (int index = 0; index < composition.FrameCount; index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var time = TimeSpan.FromSeconds(index / (double)composition.Fps);
                 PromoLayerFrame?[] states = [.. composition.Layers.Select(layer => PromoAnimation.Evaluate(layer, time, composition.Duration, composition.Height))];
+                bool videoShowing = videoLayers.Any(video => PromoAnimation.EvaluateInGroups(video, time, composition.Duration, composition.Height) is not null);
 
-                // Held poses between transitions are identical, so resend the last frame unchanged.
-                if (previous is null || !states.SequenceEqual(previous))
+                // Held poses between transitions are identical, so resend the last frame unchanged (not while a video plays).
+                if (previous is null || videoShowing || !states.SequenceEqual(previous))
                 {
-                    DrawFrame(surface.Canvas, composition, time, images, !videoBackground);
+                    DrawFrame(surface.Canvas, composition, time, images, !videoBackground, videos);
                     if (!surface.ReadPixels(output, pixels.GetPixels(), pixels.RowBytes, 0, 0))
                     {
                         throw new InvalidOperationException("Could not read the rendered frame.");
@@ -180,7 +185,9 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         return new PromoRenderResult(outputPath, composition.FrameCount, stopwatch.Elapsed);
     }
 
-    public static void DrawFrame(SKCanvas canvas, PromoComposition composition, TimeSpan time, PromoImageCache images, bool drawBackground = true)
+    /// <param name="videos">Where video layers' frames come from; without it they're left out.</param>
+    public static void DrawFrame(SKCanvas canvas, PromoComposition composition, TimeSpan time, PromoImageCache images, bool drawBackground = true,
+        IPromoVideoFrames? videos = null)
     {
         canvas.Clear(drawBackground ? composition.BackgroundColor : SKColors.Transparent);
         var frame = SKRect.Create(composition.Width, composition.Height);
@@ -233,6 +240,10 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
                     break;
                 case PromoImageLayer picture when images.Get(picture.Path) is { } bitmap:
                     DrawImage(canvas, bitmap, bounds, cover: false, paint: null);
+                    break;
+                // Its frames come already fitted to (or filling) a box of its shape, so they're drawn to fill the box.
+                case PromoVideoLayer video when videos?.Frame(video, video.PlaybackAt(time)) is { } still:
+                    canvas.DrawImage(still, bounds, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None), null);
                     break;
             }
 
@@ -436,7 +447,7 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
     {
         List<string> args = ["-hide_banner", "-loglevel", "error", "-y"];
         args.AddRange(composition.AudioPath is { } audioPath ? ["-i", audioPath] : ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]);
-        PromoMusic[] beds = [.. new[] { composition.Music, composition.BackgroundAudio, composition.OverlayAudio }.OfType<PromoMusic>()];
+        PromoMusic[] beds = [.. new[] { composition.Music, composition.BackgroundAudio, composition.OverlayAudio }.OfType<PromoMusic>(), .. composition.LayerAudio];
         foreach (PromoMusic bed in beds)
         {
             args.AddRange(bed.Loop
@@ -463,6 +474,8 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             PromoMusic bed = beds[index];
             TimeSpan fadeOut = bed.FadeOut > composition.Duration ? composition.Duration : bed.FadeOut;
             chains.Add($"[{index + 1}:a:0]aresample=48000,aformat=channel_layouts=stereo,"
+                // A video layer's sound held back until its picture starts playing (its levels are in promo time, after this).
+                + (bed.Delay > TimeSpan.Zero ? $"adelay={(long)bed.Delay.TotalMilliseconds}:all=1," : string.Empty)
                 + $"volume={Math.Clamp(bed.Volume, 0, 1).ToString("0.###", CultureInfo.InvariantCulture)},"
                 + $"afade=t=in:st=0:d={Seconds(bed.FadeIn)},afade=t=out:st={Seconds(composition.Duration - fadeOut)}:d={Seconds(fadeOut)},"
                 // Layers that block the episode's sound: quoted, since the expression is full of commas.

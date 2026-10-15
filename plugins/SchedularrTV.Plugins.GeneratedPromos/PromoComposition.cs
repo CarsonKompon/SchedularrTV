@@ -140,6 +140,9 @@ public sealed record PromoComposition
 
     public PromoMusic? Music { get; init; }
 
+    /// <summary>The sound of video layers that include it, each starting and fading with its layer.</summary>
+    public IReadOnlyList<PromoMusic> LayerAudio { get; init; } = [];
+
     public int FrameCount => (int)Math.Ceiling(Duration.TotalSeconds * Fps);
 }
 
@@ -157,6 +160,9 @@ public sealed record PromoMusic(string Path, double Volume, TimeSpan StartAt, Ti
 
     /// <summary>For the music: dips while the episode clip's sound (<see cref="PromoComposition.BackgroundAudio"/>) is playing.</summary>
     public bool DuckUnderBackground { get; init; }
+
+    /// <summary>How far into the promo it starts (silent until then); <see cref="Levels"/> are still in promo time.</summary>
+    public TimeSpan Delay { get; init; }
 }
 
 /// <summary>A sound's level (0 to 1) at a point in the promo.</summary>
@@ -205,6 +211,44 @@ public static class PromoAudioEnvelope
         List<PromoLevel> points = [.. times.Select(time => new PromoLevel(TimeSpan.FromSeconds(time), Level(blockers, time, duration)))];
 
         // Points in the middle of a flat stretch say nothing.
+        List<PromoLevel> kept = [];
+        for (int index = 0; index < points.Count; index++)
+        {
+            bool flat = index > 0 && index < points.Count - 1
+                && Math.Abs(points[index - 1].Level - points[index].Level) < 0.0005
+                && Math.Abs(points[index + 1].Level - points[index].Level) < 0.0005;
+            if (!flat)
+            {
+                kept.Add(points[index]);
+            }
+        }
+
+        return kept;
+    }
+
+    /// <summary>
+    /// A sound that follows a layer: as loud as the layer is opaque (with the groups it's in), silent while it's off
+    /// screen. Sampled every 50 ms, which follows fades, transitions and keyframed opacity closely enough to hear.
+    /// </summary>
+    public static IReadOnlyList<PromoLevel> ForLayer(PromoLayer layer, TimeSpan duration)
+    {
+        double total = duration.TotalSeconds;
+        SortedSet<double> times = [0, total];
+        for (double time = 0; time < total; time += 0.05)
+        {
+            times.Add(Math.Round(time, 4));
+        }
+
+        // Hard edges where it appears and leaves.
+        foreach (double edge in (double[])[layer.Start.TotalSeconds, (layer.End ?? duration).TotalSeconds])
+        {
+            if (edge - Step >= 0 && edge <= total) times.Add(Math.Round(edge - Step, 4));
+            if (edge >= 0 && edge <= total) times.Add(Math.Round(edge, 4));
+        }
+
+        List<PromoLevel> points = [.. times.Select(time => new PromoLevel(TimeSpan.FromSeconds(time),
+            Math.Clamp(PromoAnimation.EvaluateInGroups(layer, TimeSpan.FromSeconds(time), duration, 1)?.Opacity ?? 0, 0, 1)))];
+
         List<PromoLevel> kept = [];
         for (int index = 0; index < points.Count; index++)
         {

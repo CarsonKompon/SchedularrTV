@@ -100,6 +100,12 @@ public static class GeneratedPromoEditing
     {
         float width = template.Width * (kind == GeneratedLayerKind.Rect ? 0.5f : 0.4f);
         float height = template.Height * (kind is GeneratedLayerKind.Text or GeneratedLayerKind.UpNext || GeneratedPromoKinds.IsShowLayer(kind) ? 0.12f : 0.3f);
+        if (kind == GeneratedLayerKind.Video)
+        {
+            // Widescreen, like most episodes.
+            height = width * 9 / 16;
+        }
+
         var layer = new GeneratedLayer
         {
             Kind = kind,
@@ -114,6 +120,7 @@ public static class GeneratedPromoEditing
                 GeneratedLayerKind.BackToTheShow => "Back to the Show",
                 GeneratedLayerKind.Rect => "Shape",
                 GeneratedLayerKind.Image => "Image",
+                GeneratedLayerKind.Video => "Video",
                 _ => "Text"
             }),
             X = (float)Math.Round((template.Width - width) / 2),
@@ -124,7 +131,9 @@ public static class GeneratedPromoEditing
             Color = kind == GeneratedLayerKind.Rect ? "#96000000" : "#FFFFFF",
             Text = kind == GeneratedLayerKind.Text ? "Only on {channel}" : null,
             UpNext = kind == GeneratedLayerKind.UpNext ? new GeneratedUpNextOptions() : null,
-            Show = GeneratedPromoKinds.IsShowLayer(kind) ? GeneratedPromoResolver.DefaultShowOptions(kind) : null
+            Show = GeneratedPromoKinds.IsShowLayer(kind) ? GeneratedPromoResolver.DefaultShowOptions(kind) : null,
+            // A clip of the promoted episode to start with: it works without choosing a file.
+            Video = kind == GeneratedLayerKind.Video ? new GeneratedVideoOptions { Episode = "promoted" } : null
         };
         return layer;
     }

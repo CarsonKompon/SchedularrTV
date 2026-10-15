@@ -67,7 +67,56 @@ public enum GeneratedLayerKind
     /// Draws nothing itself: layers whose <see cref="GeneratedLayer.Parent"/> is this group are placed, rotated, faded and
     /// timed inside it, so moving or animating the group carries them along while they keep their own animation.
     /// </summary>
-    Group
+    Group,
+
+    /// <summary>A video playing in a box: a file, or a clip of an episode (see <see cref="GeneratedLayer.Video"/>).</summary>
+    Video
+}
+
+/// <summary>When a video layer's video starts playing.</summary>
+public enum GeneratedVideoPlayback
+{
+    /// <summary>From the start of the promo, so it's already playing when the layer appears.</summary>
+    WithPromo,
+
+    /// <summary>From when the layer starts to appear.</summary>
+    WithLayer
+}
+
+/// <summary>What a <see cref="GeneratedLayerKind.Video"/> layer plays, and how.</summary>
+public sealed class GeneratedVideoOptions
+{
+    /// <summary>
+    /// Null plays the layer's own file (<see cref="GeneratedLayer.Path"/>); otherwise a clip of an episode, chosen like a
+    /// variable image's show (see <see cref="GeneratedImageSelectors"/>): <c>promoted</c>, <c>watching</c>, <c>next</c>,
+    /// <c>next2</c>…
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Episode { get; set; }
+
+    /// <summary>Where in the episode the clip starts; null picks a spot in its middle, different for each airing.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public TimeSpan? ClipStart { get; set; }
+
+    /// <summary>Where in the file it starts.</summary>
+    public TimeSpan FileStart { get; set; }
+
+    public GeneratedVideoPlayback Playback { get; set; } = GeneratedVideoPlayback.WithLayer;
+
+    /// <summary>Starts over when it runs out; otherwise it stays on its last frame.</summary>
+    public bool Loop { get; set; }
+
+    /// <summary>Fills the box (cropping the video) rather than fitting inside it.</summary>
+    public bool Fill { get; set; }
+
+    /// <summary>Plays the video's sound while the layer shows, as loud as the layer is opaque.</summary>
+    public bool IncludeAudio { get; set; }
+
+    /// <summary>0 to 1, relative to the video's own level.</summary>
+    public double Volume { get; set; } = 1;
+
+    /// <summary>Lowers its sound while the voice-over speaks.</summary>
+    public bool DuckUnderVoice { get; set; } = true;
 }
 
 public static class GeneratedPromoKinds
@@ -840,8 +889,12 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
     /// <summary>Literal text for <see cref="GeneratedLayerKind.Text"/>; newlines split lines.</summary>
     public string? Text { get; set; }
 
-    /// <summary>Image file for <see cref="GeneratedLayerKind.Image"/>.</summary>
+    /// <summary>Image file for <see cref="GeneratedLayerKind.Image"/>, or video file for <see cref="GeneratedLayerKind.Video"/>.</summary>
     public string? Path { get; set; }
+
+    /// <summary>For <see cref="GeneratedLayerKind.Video"/>: what it plays and how.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedVideoOptions? Video { get; set; }
 
     /// <summary>A named variable image instead of the static image path.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]

@@ -144,6 +144,17 @@ public sealed class GeneratedPromoPreview(
             composition = composition with { BackgroundPath = await FrameAsync(background, composition, time, cancellationToken).ConfigureAwait(false) };
         }
 
+        // Each video layer on screen now shows its frame for this moment, decoded the way the render decodes it.
+        Dictionary<PromoVideoLayer, string> videoFrames = [];
+        foreach (PromoVideoLayer video in composition.Layers.OfType<PromoVideoLayer>())
+        {
+            if (PromoAnimation.EvaluateInGroups(video, time, composition.Duration, composition.Height) is not null
+                && await VideoFrameAsync(video, video.PlaybackAt(time), composition.Fps, cancellationToken).ConfigureAwait(false) is { } file)
+            {
+                videoFrames[video] = file;
+            }
+        }
+
         return await Task.Run(() =>
         {
             float scale = Math.Clamp(width / (float)composition.Width, 0.05f, 1f);
@@ -151,11 +162,76 @@ public sealed class GeneratedPromoPreview(
             using SKSurface surface = SKSurface.Create(info);
             surface.Canvas.Scale(scale);
             using var images = new PromoImageCache();
-            PromoRenderer.DrawFrame(surface.Canvas, composition, time, images);
+            Dictionary<PromoVideoLayer, SKImage> frames = [];
+            try
+            {
+                foreach ((PromoVideoLayer video, string file) in videoFrames)
+                {
+                    if (SKImage.FromEncodedData(file) is { } frame) frames[video] = frame;
+                }
+
+                PromoRenderer.DrawFrame(surface.Canvas, composition, time, images, videos: new FixedVideoFrames(frames));
+            }
+            finally
+            {
+                foreach (SKImage frame in frames.Values) frame.Dispose();
+            }
+
             using SKImage image = surface.Snapshot();
             using SKData data = image.Encode(SKEncodedImageFormat.Jpeg, 85);
             return data.ToArray();
         }, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A video layer's frame <paramref name="playback"/> into its playback, sized and fitted as the render does it, as a
+    /// picture file (kept, so scrubbing back over it is quick); null when it can't be had.
+    /// </summary>
+    private async Task<string?> VideoFrameAsync(PromoVideoLayer video, TimeSpan playback, int fps, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(video.Path))
+        {
+            return null;
+        }
+
+        int frame = (int)Math.Round(playback.TotalSeconds * Math.Max(1, fps));
+        double second = (video.SourceStart + TimeSpan.FromSeconds(frame / (double)Math.Max(1, fps))).TotalSeconds;
+        (int width, int height) = video.FrameSize;
+        string key = $"{Path.GetFullPath(video.Path)}|{File.GetLastWriteTimeUtc(video.Path).Ticks}|{second.ToString("0.###", CultureInfo.InvariantCulture)}|{width}x{height}|{video.Fill}|layer";
+        if (_frames.TryGetValue(key, out string? cached) && (cached is null || File.Exists(cached)))
+        {
+            return cached;
+        }
+
+        string directory = Path.Combine(promos.Root, "preview-frames");
+        Directory.CreateDirectory(directory);
+        string output = Path.Combine(directory, Hash(key) + ".png");
+        string filter = video.SizeFilter(Math.Max(1, fps));
+        // Past the end of the video (it would hold its last frame), its opening frame stands in.
+        string? result = await ExtractFilteredAsync(video.Path, second, filter, output, cancellationToken).ConfigureAwait(false)
+            ?? await ExtractFilteredAsync(video.Path, video.SourceStart.TotalSeconds, filter, output, cancellationToken).ConfigureAwait(false);
+        _frames[key] = result;
+        return result;
+    }
+
+    private async Task<string?> ExtractFilteredAsync(string video, double second, string filter, string output, CancellationToken cancellationToken)
+    {
+        var info = new ProcessStartInfo(options.Value.FfmpegPath)
+        {
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        foreach (string argument in (string[])["-hide_banner", "-loglevel", "error", "-y",
+                     "-ss", Math.Max(0, second).ToString("0.###", CultureInfo.InvariantCulture), "-i", video, "-frames:v", "1", "-an", "-vf", filter, output])
+        {
+            info.ArgumentList.Add(argument);
+        }
+
+        using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffmpeg could not be started.");
+        await process.StandardError.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        return process.ExitCode == 0 && File.Exists(output) ? output : null;
     }
 
     /// <summary>Full render with voice and music, cached like a scheduled promo.</summary>

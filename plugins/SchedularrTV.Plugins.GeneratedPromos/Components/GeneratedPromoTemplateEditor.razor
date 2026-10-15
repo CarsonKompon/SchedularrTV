@@ -281,6 +281,7 @@
                 <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Text)">+ Text</button>
                 <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Rect)">+ Shape</button>
                 <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Image)">+ Image</button>
+                <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Video)">+ Video</button>
                 <div class="spacer"></div>
                 <span class="ed-meta">@Template.Width × @Template.Height</span>
             </div>
@@ -640,6 +641,87 @@
                         }
                         }
                     }
+                    else if (selected.Kind == GeneratedLayerKind.Video)
+                    {
+                        GeneratedVideoOptions video = VideoOptions(selected);
+                        <label class="field">
+                            <span>Plays</span>
+                            <select value="@(video.Episode ?? VideoFile)" @onchange="e => Set(() => video.Episode = Text(e) == VideoFile ? null : Text(e))">
+                                <option value="@VideoFile">A video file</option>
+                                @foreach (string selector in ImageShowSelectors)
+                                {
+                                    <option value="@selector">@VideoSourceName(selector)</option>
+                                }
+                            </select>
+                        </label>
+                        @if (video.Episode is null)
+                        {
+                            <div class="field">
+                                <span>Video file</span>
+                                <FilePathPicker Value="@selected.Path" ValueChanged="value => Set(() => selected.Path = value)" KeepCopyIn="@GeneratedPromoPackages.AssetCategory"
+                                                Extensions="FileBrowsing.Videos" Label="video" Placeholder="D:\Media\Promos\Clips\sting.mp4" />
+                            </div>
+                            @if (Missing(selected.Path))
+                            {
+                                <p class="hint warn">The scheduler can't find this file.</p>
+                            }
+                            <label class="field">
+                                <span>Start into the file (s)</span>
+                                <input type="number" min="0" step="0.1" value="@Number(video.FileStart.TotalSeconds)"
+                                       @onchange="e => SetSeconds(e, value => video.FileStart = value)" />
+                            </label>
+                        }
+                        else
+                        {
+                            <label class="field">
+                                <span>Start into the episode (s; blank picks a spot in the middle, different each airing)</span>
+                                <input type="number" min="0" step="1" value="@(video.ClipStart is { } clipStart ? Number(clipStart.TotalSeconds) : "")"
+                                       placeholder="Middle of the episode" @onchange="e => SetOptionalSeconds(e, value => video.ClipStart = value)" />
+                            </label>
+                            <p class="hint">
+                                Plays the episode file of that show. With nothing there (no such show yet, or a file the scheduler can't read) the layer is left out.
+                                @(PreviewIsSample ? "Until the channel's schedule is built, the preview only has an episode for the show this promo is for." : "")
+                            </p>
+                        }
+                        <div class="grid grid-2">
+                            <label class="field">
+                                <span>Starts playing</span>
+                                <select value="@video.Playback" @onchange="e => Set(() => video.Playback = Enum.Parse<GeneratedVideoPlayback>(Text(e)))">
+                                    <option value="@GeneratedVideoPlayback.WithLayer">When the layer appears</option>
+                                    <option value="@GeneratedVideoPlayback.WithPromo">When the promo starts</option>
+                                </select>
+                            </label>
+                            <div class="check-stack">
+                                <label class="check">
+                                    <input type="checkbox" checked="@video.Fill" @onchange="e => Set(() => video.Fill = e.Value is true)" />
+                                    <span>Fill the box (crop the video)</span>
+                                </label>
+                                <label class="check">
+                                    <input type="checkbox" checked="@video.Loop" @onchange="e => Set(() => video.Loop = e.Value is true)" />
+                                    <span>Loop (otherwise it stays on its last frame)</span>
+                                </label>
+                            </div>
+                        </div>
+                        <label class="check">
+                            <input type="checkbox" checked="@video.IncludeAudio" @onchange="e => Set(() => video.IncludeAudio = e.Value is true)" />
+                            <span>Play its sound</span>
+                        </label>
+                        @if (video.IncludeAudio)
+                        {
+                            <div class="grid grid-2">
+                                <label class="field">
+                                    <span>Its volume: @($"{video.Volume:P0}")</span>
+                                    <input type="range" min="0" max="100" value="@Number(video.Volume * 100)"
+                                           @onchange="e => SetNumber(e, value => video.Volume = Math.Clamp(value / 100, 0, 1))" />
+                                </label>
+                                <label class="check template-enabled">
+                                    <input type="checkbox" checked="@video.DuckUnderVoice" @onchange="e => Set(() => video.DuckUnderVoice = e.Value is true)" />
+                                    <span>Lower it while the voice speaks</span>
+                                </label>
+                            </div>
+                            <p class="hint">Its sound fades in and out with the layer, and follows its opacity.</p>
+                        }
+                    }
 
                     @if (selected.Kind is GeneratedLayerKind.Text or GeneratedLayerKind.UpNext || GeneratedPromoKinds.IsShowLayer(selected.Kind))
                     {
@@ -714,7 +796,7 @@
                             resize it with the numbers below (that moves the turning point, not what's inside).
                         </p>
                     }
-                    @if (selected.Kind is not (GeneratedLayerKind.Image or GeneratedLayerKind.Group))
+                    @if (selected.Kind is not (GeneratedLayerKind.Image or GeneratedLayerKind.Group or GeneratedLayerKind.Video))
                     {
                         (string rgb, int alpha) = GeneratedPromoEditing.SplitColor(ColorOf(selected));
                         bool ownColour = _editBackground is not null && GeneratedPromoResolver.Recolour(Template, _editBackground, selected) is not null;
@@ -1375,7 +1457,9 @@
         _ = PrepareStandIn();
     }
 
-    private bool NeedsClip => Template.BackgroundClip is not null || GeneratedPromoResolver.UsesClip(Template.Generator);
+    // Video layers playing an episode need one to preview with too.
+    private bool NeedsClip => Template.BackgroundClip is not null || GeneratedPromoResolver.UsesClip(Template.Generator)
+        || Template.Layers.Any(layer => layer is { Kind: GeneratedLayerKind.Video, Video.Episode: not null });
 
     private bool PreviewIsSample
     {
@@ -1944,6 +2028,22 @@
             : selector;
 
     private static string? ShowSelector(string value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    // ---- Video layers ----
+
+    private const string VideoFile = "file";
+
+    private static GeneratedVideoOptions VideoOptions(GeneratedLayer layer) => layer.Video ??= new GeneratedVideoOptions();
+
+    private static string VideoSourceName(string selector) =>
+        GeneratedImageSelectors.TryParse(selector, out GeneratedImageContext context, out int offset)
+            ? context switch
+            {
+                GeneratedImageContext.CurrentlyWatching => "A clip of what's on now (or before the break)",
+                GeneratedImageContext.UpNext => offset == 0 ? "A clip of the next episode" : $"A clip of the episode {offset + 1} shows ahead",
+                _ => "A clip of the episode this promo is for"
+            }
+            : selector;
 
     /// <summary>Picks the variable image a layer shows. Its show choice stays when swapping variables, and goes with a static file.</summary>
     private Task SetVariableImage(GeneratedLayer layer, string? name) => Set(() =>

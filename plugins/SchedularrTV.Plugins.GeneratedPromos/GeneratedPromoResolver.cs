@@ -38,7 +38,13 @@ public sealed record ResolvedGeneratedPromo(
 
     /// <summary>AI-written text layers by index; <see cref="LayerLines"/> holds their usual text until they're written.</summary>
     public IReadOnlyDictionary<int, AiTextJob> LayerJobs { get; init; } = new Dictionary<int, AiTextJob>();
+
+    /// <summary>What each video layer plays, by index: its file, or a clip of its episode. Missing when there's nothing to play.</summary>
+    public IReadOnlyDictionary<int, PromoVideoSource> LayerVideos { get; init; } = new Dictionary<int, PromoVideoSource>();
 }
+
+/// <summary>A video file and where in it a video layer starts playing.</summary>
+public sealed record PromoVideoSource(string Path, TimeSpan Start);
 
 public static partial class GeneratedPromoResolver
 {
@@ -150,6 +156,18 @@ public static partial class GeneratedPromoResolver
             identity += $"|clip|{source.Path}|{source.Start.Ticks}";
         }
 
+        // Each video layer's file and start: an episode's clip changes with the shows, so the promo does too.
+        Dictionary<int, PromoVideoSource> videos = [];
+        for (int index = 0; index < template.Layers.Count; index++)
+        {
+            if (VideoSource(template, template.Layers[index], index, listings, imageSubjects, promoTime) is { } video)
+            {
+                videos[index] = video;
+                identity += $"|video|{index}|{video.Path}|{video.Start.Ticks}";
+                if (File.Exists(video.Path)) identity += $"|{File.GetLastWriteTimeUtc(video.Path).Ticks}";
+            }
+        }
+
         // Background videos once played silently; promos that now play one's sound are rendered again.
         if (BackgroundSound(template).Enabled && template.BackgroundChoices.Any(path => !PromoRenderer.IsImage(path)))
         {
@@ -184,8 +202,53 @@ public static partial class GeneratedPromoResolver
             GeneratorArguments = arguments,
             VariableImages = images,
             ScriptJob = scriptJob,
-            LayerJobs = layerJobs
+            LayerJobs = layerJobs,
+            LayerVideos = videos
         };
+    }
+
+    /// <summary>
+    /// What a video layer plays: its own file from its set start, or a clip of the episode it names (promoted, watching,
+    /// next, next2…). Null for other layers, and when there's no file to play (no episode there, or one that can't be read).
+    /// </summary>
+    public static PromoVideoSource? VideoSource(GeneratedPromoTemplate template, GeneratedLayer layer, int index,
+        IReadOnlyList<UpNextListing> listings, GeneratedImageSubjects? subjects, DateTimeOffset airsAt)
+    {
+        if (layer.Kind != GeneratedLayerKind.Video)
+        {
+            return null;
+        }
+
+        GeneratedVideoOptions options = layer.Video ?? new GeneratedVideoOptions();
+        if (options.Episode is not { } episode)
+        {
+            return string.IsNullOrWhiteSpace(layer.Path) || PromoRenderer.IsImage(layer.Path)
+                ? null
+                : new PromoVideoSource(layer.Path, options.FileStart < TimeSpan.Zero ? TimeSpan.Zero : options.FileStart);
+        }
+
+        if (!GeneratedImageSelectors.TryParse(episode, out GeneratedImageContext context, out int offset)
+            || GeneratedPromoImages.Show(template, listings, subjects, context, offset) is not { Path: { Length: > 0 } path } show
+            || PromoRenderer.IsImage(path) || !File.Exists(path))
+        {
+            return null;
+        }
+
+        // A set start (kept clear of the end), or somewhere in the middle third-ish, different for each airing and layer.
+        TimeSpan room = show.Runtime is { } runtime ? runtime - template.Duration : TimeSpan.Zero;
+        if (options.ClipStart is { } start)
+        {
+            return new PromoVideoSource(path, room > TimeSpan.Zero && start > room ? room : start);
+        }
+
+        if (room <= TimeSpan.Zero)
+        {
+            return new PromoVideoSource(path, TimeSpan.Zero);
+        }
+
+        uint hash = BitConverter.ToUInt32(SHA256.HashData(Encoding.UTF8.GetBytes($"{path}|{show.Start.UtcTicks}|{airsAt.UtcTicks}|video|{index}")));
+        double fraction = 0.15 + 0.6 * (hash / (double)uint.MaxValue);
+        return new PromoVideoSource(path, TimeSpan.FromSeconds(Math.Round(Math.Min(room.TotalSeconds, show.Runtime!.Value.TotalSeconds * fraction))));
     }
 
     /// <summary>
@@ -355,8 +418,12 @@ public static partial class GeneratedPromoResolver
         string? clipPath = template.BackgroundClip is null || UsesClip(template.Generator) ? null : promo.ClipPath;
         string? background = clipPath ?? (template.BackgroundRules is { Count: > 0 }
             ? promo.SelectedBackground : Background(template.BackgroundChoices, promo.Key));
+        // Over an episode clip there's no chosen background, so layers sit where the template puts them.
+        Dictionary<int, PromoLayer> drawnByIndex = [];
+        List<PromoLayer> layers = template.Generator is not null ? [] : DrawnLayers(promo, clipPath is null ? background : null, drawnByIndex);
         return new PromoComposition
         {
+            LayerAudio = VideoAudio(template, drawnByIndex),
             Width = template.Width,
             Height = template.Height,
             Fps = template.Fps,
@@ -390,17 +457,41 @@ public static partial class GeneratedPromoResolver
                     DuckUnderBackground = music.DuckUnderClip == true
                 }
                 : null,
-            Layers = template.Generator is not null ? []
-                // Over an episode clip there's no chosen background, so layers sit where the template puts them.
-                : DrawnLayers(promo, clipPath is null ? background : null)
+            Layers = layers
         };
+    }
+
+    /// <summary>
+    /// The sound of each video layer that includes it: playing in step with its picture (from the promo's start, or
+    /// held back until the layer appears), as loud as the layer is opaque, so it fades in and out with it.
+    /// </summary>
+    private static List<PromoMusic> VideoAudio(GeneratedPromoTemplate template, IReadOnlyDictionary<int, PromoLayer> drawn)
+    {
+        List<PromoMusic> sounds = [];
+        foreach ((int index, PromoLayer layer) in drawn.OrderBy(entry => entry.Key))
+        {
+            if (layer is not PromoVideoLayer video || template.Layers[index].Video is not { IncludeAudio: true } options)
+            {
+                continue;
+            }
+
+            sounds.Add(new PromoMusic(video.Path, Math.Clamp(options.Volume, 0, 1), video.SourceStart, TimeSpan.FromMilliseconds(10),
+                TimeSpan.FromMilliseconds(10), options.DuckUnderVoice, Loop: video.Loop)
+            {
+                Delay = video.StartsWithLayer ? video.Start : TimeSpan.Zero,
+                Levels = PromoAudioEnvelope.ForLayer(video, template.Duration)
+            });
+        }
+
+        return sounds;
     }
 
     /// <summary>
     /// The template's layers for drawing, in list order, each linked to the group it's inside. A layer inside a group
     /// that isn't in the template (or a group inside itself) is drawn at the top level instead.
     /// </summary>
-    private static List<PromoLayer> DrawnLayers(ResolvedGeneratedPromo promo, string? background)
+    /// <param name="byIndex">Filled with each drawn layer by its index in the template.</param>
+    private static List<PromoLayer> DrawnLayers(ResolvedGeneratedPromo promo, string? background, Dictionary<int, PromoLayer> byIndex)
     {
         GeneratedPromoTemplate template = promo.Template;
         Dictionary<string, int> groups = new(StringComparer.Ordinal);
@@ -423,7 +514,7 @@ public static partial class GeneratedPromoResolver
 
             GeneratedLayer layer = template.Layers[index];
             PromoLayer? drawn = Layer(layer, Pose(template, background, layer), TimingFor(template, background, layer),
-                ColorFor(template, background, layer), promo.LayerLines[index], promo.VariableImages);
+                ColorFor(template, background, layer), promo.LayerLines[index], promo.VariableImages, promo.LayerVideos.GetValueOrDefault(index));
             building.Add(index);
             if (drawn is not null && layer.Parent is { } parentId && groups.TryGetValue(parentId, out int parentIndex)
                 && !building.Contains(parentIndex) && Build(parentIndex) is PromoGroupLayer parent)
@@ -442,6 +533,7 @@ public static partial class GeneratedPromoResolver
             if (Build(index) is { } drawn)
             {
                 layers.Add(drawn);
+                byIndex[index] = drawn;
             }
         }
 
@@ -630,8 +722,9 @@ public static partial class GeneratedPromoResolver
     /// <param name="pose">Where it's placed: the layer itself, or the chosen background's placement of it.</param>
     /// <param name="colour">Its colour: the layer's, or the chosen background's for it.</param>
     /// <param name="timing">When it shows and how it comes and goes: the layer's, or the chosen background's for it.</param>
+    /// <param name="video">For a video layer: what it plays (none: nothing is drawn).</param>
     private static PromoLayer? Layer(GeneratedLayer layer, IGeneratedPose pose, IGeneratedTiming timing, string colour, IReadOnlyList<string> lines,
-        IReadOnlyDictionary<string, string> images)
+        IReadOnlyDictionary<string, string> images, PromoVideoSource? video = null)
     {
         SKRect bounds = SKRect.Create(pose.X, pose.Y, pose.Width, pose.Height);
         SKColor color = SKColor.Parse(colour);
@@ -649,6 +742,15 @@ public static partial class GeneratedPromoResolver
             // Always drawn (as nothing), so the layers inside it have it to be placed in.
             GeneratedLayerKind.Group => new PromoGroupLayer { Bounds = bounds },
             GeneratedLayerKind.Image when !string.IsNullOrWhiteSpace(imagePath) => new PromoImageLayer { Bounds = bounds, Path = imagePath },
+            GeneratedLayerKind.Video when video is not null => new PromoVideoLayer
+            {
+                Bounds = bounds,
+                Path = video.Path,
+                SourceStart = video.Start,
+                StartsWithLayer = (layer.Video?.Playback ?? GeneratedVideoPlayback.WithLayer) == GeneratedVideoPlayback.WithLayer,
+                Loop = layer.Video?.Loop == true,
+                Fill = layer.Video?.Fill == true
+            },
             var kind when (kind is GeneratedLayerKind.Text or GeneratedLayerKind.UpNext || GeneratedPromoKinds.IsShowLayer(kind))
                 && lines.Any(line => line.Length > 0) => new PromoTextLayer
             {
