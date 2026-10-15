@@ -282,6 +282,10 @@
                 <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Rect)">+ Shape</button>
                 <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Image)">+ Image</button>
                 <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Video)">+ Video</button>
+                <span class="ed-toolbar-label" style="margin-left:8px;">Tool</span>
+                <button class="btn btn-sm @(_pinTool ? "btn-primary" : "")" type="button" aria-pressed="@(_pinTool ? "true" : "false")"
+                        title="Drag the selected layer's corners for a perspective look, like text on the side of a building (P)"
+                        @onclick="() => _pinTool = !_pinTool">⬚ Perspective</button>
                 <div class="spacer"></div>
                 <span class="ed-meta">@Template.Width × @Template.Height</span>
             </div>
@@ -322,11 +326,13 @@
                     WorldBox box = GeneratedPromoHierarchy.World(Template, layer, Pose, Time);
                     bool placedHere = PlacedHere(layer);
                     bool isGroupBox = GeneratedPromoHierarchy.IsGroup(layer);
-                    <div class="layer-box @(isSelected ? "selected" : inSelection ? "chosen" : "") @(VisibleAt(layer) ? "" : "hidden-now") @(GeneratedPromoEditing.HasKeyframes(Pose(layer)) ? "keyed" : "") @(placedHere ? "placed" : "") @(isGroupBox ? "group" : "")" @key="layer"
+                    // A pinned box is outlined by its pinned shape (drawn below) rather than its square.
+                    bool pinned = IsPinned(layer);
+                    <div class="layer-box @(isSelected ? "selected" : inSelection ? "chosen" : "") @(VisibleAt(layer) ? "" : "hidden-now") @(GeneratedPromoEditing.HasKeyframes(Pose(layer)) ? "keyed" : "") @(placedHere ? "placed" : "") @(isGroupBox ? "group" : "") @(pinned ? "pinned" : "")" @key="layer"
                          style="left:@Pct(box.CenterX - box.Width / 2, Template.Width);top:@Pct(box.CenterY - box.Height / 2, Template.Height);width:@Pct(box.Width, Template.Width);height:@Pct(box.Height, Template.Height);@(Math.Abs(box.Angle) > 0.001 ? $"transform:rotate({Number(box.Angle)}deg);" : "")"
                          title="@layer.Name" @onpointerdown="e => StartDrag(e, layer, Move)" @onpointerdown:preventDefault="true">
                         <span class="layer-tag">@(isGroupBox ? "▣ " : "")@(GeneratedPromoEditing.HasKeyframes(Pose(layer)) ? "◆ " : "")@(placedHere ? "⌖ " : "")@Label(layer)</span>
-                        @if (isSelected)
+                        @if (isSelected && !_pinTool)
                         {
                             // A group's box is only what it turns about, so it's moved and turned rather than stretched.
                             @foreach (string handle in isGroupBox ? [] : Handles)
@@ -339,6 +345,31 @@
                         }
                     </div>
                 }
+                @* Pinned layers' shapes, and with the Perspective tool, the selected layer's four corners to drag. In the
+                   template's own pixels, so they line up with the frame however wide the canvas is drawn. *@
+                <svg class="ed-quads" viewBox="0 0 @Template.Width @Template.Height" preserveAspectRatio="none" aria-hidden="true">
+                    @foreach (GeneratedLayer layer in Template.Layers)
+                    {
+                        bool showQuad = IsPinned(layer) || (_pinTool && ReferenceEquals(layer, _layer));
+                        if (showQuad)
+                        {
+                            <polygon class="ed-quad @(ReferenceEquals(layer, _layer) ? "selected" : "")" points="@QuadPoints(layer)" />
+                        }
+                    }
+                    @if (_pinTool && _layer is { } pinning)
+                    {
+                        (double X, double Y)[] corners = GeneratedPromoHierarchy.WorldQuad(Template, pinning, Pose, Time);
+                        double radius = 7 / Math.Max(0.01, Scale);
+                        for (int corner = 0; corner < 4; corner++)
+                        {
+                            int which = corner;
+                            <circle class="ed-pin" cx="@Number(corners[which].X)" cy="@Number(corners[which].Y)" r="@Number(radius)"
+                                    @onpointerdown="e => StartPin(e, pinning, which)" @onpointerdown:stopPropagation="true" @onpointerdown:preventDefault="true">
+                                <title>@PinCornerNames[which] corner: drag it</title>
+                            </circle>
+                        }
+                    }
+                </svg>
                 @if (_drag is not null && _snapX)
                 {
                     <div class="snap-guide snap-guide-x" aria-hidden="true"></div>
@@ -884,6 +915,25 @@
                                    @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Opacity = value / 100 })" />
                         </label>
                     </div>
+                    <div class="ed-pin-row">
+                        <span>Perspective: @(selectedPose.Corners is { IsSquare: false } ? "corners pulled" : "square")</span>
+                        <div class="spacer"></div>
+                        <button class="btn btn-sm @(_pinTool ? "btn-primary" : "")" type="button" aria-pressed="@(_pinTool ? "true" : "false")"
+                                @onclick="() => _pinTool = !_pinTool">@(_pinTool ? "Done pulling corners" : "Pull corners")</button>
+                        @if (selectedPose.Corners is { IsSquare: false })
+                        {
+                            <button class="btn btn-sm" type="button" title="Square the corners up again (at this keyframe, on an animated layer)"
+                                    @onclick="() => ResetPin(selected)">Square up</button>
+                        }
+                    </div>
+                    @if (_pinTool)
+                    {
+                        <p class="hint">
+                            Drag the round corners on the canvas to stretch the layer with perspective, as if it were on a wall or the side of a
+                            block. On an animated layer each change sets a keyframe at the playhead, so the corners can follow a turning face.
+                            @(GeneratedPromoHierarchy.IsGroup(selected) ? "Everything inside the group is stretched with it." : "")
+                        </p>
+                    }
                     @if (GeneratedPromoHierarchy.ParentOf(Template, selected) is { } holder)
                     {
                         <p class="hint">Inside “@Label(holder)”: these are from the group's top-left corner, turned with it.</p>
@@ -1329,12 +1379,56 @@
         public double CentreClientY { get; init; }
 
         public double StartAngle { get; init; }
+
+        /// <summary>Pulling a corner: which (0 top left, clockwise), and the pin it started from.</summary>
+        public int Corner { get; init; }
+
+        public PromoCorners PinStart { get; init; }
     }
 
     /// <param name="SpaceRotation">How far the groups it's in are turned: a drag on screen moves it that much less turned.</param>
     private sealed record Mover(GeneratedLayer Layer, float X, float Y, double SpaceRotation);
 
     private const string Rotate = "rotate";
+    private const string PinHandle = "pin";
+
+    // ---- Perspective (corner pin) ----
+
+    // The Perspective tool: the selected layer shows its four corners to drag instead of resize handles.
+    private bool _pinTool;
+
+    private static readonly string[] PinCornerNames = ["Top left", "Top right", "Bottom right", "Bottom left"];
+
+    /// <summary>Whether the layer's corners are pulled at the preview time (in what the canvas shows).</summary>
+    private bool IsPinned(GeneratedLayer layer) => GeneratedPromoEditing.PoseAt(Pose(layer), Time).Corners is { IsSquare: false };
+
+    /// <summary>The layer's pinned shape on the canvas, as SVG polygon points in template pixels.</summary>
+    private string QuadPoints(GeneratedLayer layer) => string.Join(' ',
+        GeneratedPromoHierarchy.WorldQuad(Template, layer, Pose, Time).Select(point => $"{Number(point.X)},{Number(point.Y)}"));
+
+    /// <summary>Starts dragging one of the layer's corners (0 top left, clockwise).</summary>
+    private void StartPin(PointerEventArgs e, GeneratedLayer layer, int corner)
+    {
+        _layer = layer;
+        _chosen.Add(layer);
+        LayerPose pose = GeneratedPromoEditing.PoseAt(Pose(layer), Time);
+        _drag = new DragState(layer, PinHandle, e.ClientX, e.ClientY, pose.X, pose.Y, pose.Width, pose.Height)
+        {
+            OwnRotation = pose.Rotation ?? 0,
+            SpaceRotation = GeneratedPromoHierarchy.SpaceAngle(Template, layer, Pose, Time),
+            Corner = corner,
+            PinStart = pose.Corners ?? default
+        };
+        _ = MeasureCanvas();
+        _ = FocusRuler();
+    }
+
+    /// <summary>Squares the layer's corners up again (at the preview time, when it's keyframed).</summary>
+    private Task ResetPin(GeneratedLayer layer) => Set(() =>
+    {
+        IGeneratedPose target = Editable(layer);
+        GeneratedPromoEditing.SetPose(target, Time, GeneratedPromoEditing.PoseAt(target, Time) with { Rotation = null, Corners = default(PromoCorners) });
+    });
 
     // Selected layers: _layer is the one the settings show; _chosen holds every selected one (it among them).
     private readonly HashSet<GeneratedLayer> _chosen = [];
@@ -1868,6 +1962,9 @@
                 return RemoveKeyframe(layer, key);
             case "k" or "K" when _layer is { } layer:
                 return AddKeyframe(layer);
+            case "p" or "P":
+                _pinTool = !_pinTool;
+                break;
         }
 
         return Task.CompletedTask;
@@ -2450,6 +2547,19 @@
             turned = ((turned + 180) % 360 + 360) % 360 - 180;
             IGeneratedPose turning = Editable(layer);
             GeneratedPromoEditing.SetPose(turning, Time, GeneratedPromoEditing.PoseAt(turning, Time) with { Rotation = (float)turned });
+            RequestStill(fast: true);
+            return;
+        }
+
+        if (drag.Handle == PinHandle)
+        {
+            // The corner follows the pointer: the pull is along the box's own edges, so undo its turn and its groups'.
+            (double pullX, double pullY) = Rigid.Rotate(screenDx, screenDy, -(drag.SpaceRotation + drag.OwnRotation));
+            (float startX, float startY) = drag.PinStart[drag.Corner];
+            PromoCorners pulled = drag.PinStart.With(drag.Corner, (float)Math.Round(startX + pullX, 1), (float)Math.Round(startY + pullY, 1));
+            IGeneratedPose pinning = Editable(layer);
+            // On an animated layer this sets (or adds) the keyframe at the preview time, so the pin can follow a turning face.
+            GeneratedPromoEditing.SetPose(pinning, Time, GeneratedPromoEditing.PoseAt(pinning, Time) with { Rotation = null, Corners = pulled });
             RequestStill(fast: true);
             return;
         }

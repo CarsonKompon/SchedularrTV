@@ -145,6 +145,15 @@
 .gp-scope .snap-guide-x { left: 50%; top: 0; bottom: 0; border-left-width: 1px; }
 .gp-scope .snap-guide-y { top: 50%; left: 0; right: 0; border-top-width: 1px; }
 
+/* Perspective: pinned shapes and the corners to drag */
+.gp-scope .ed-quads { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 4; }
+.gp-scope .ed-quad { fill: none; stroke: rgba(255,255,255,.55); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-dasharray: 6 4; }
+.gp-scope .ed-quad.selected { stroke: var(--accent); stroke-width: 2; stroke-dasharray: none; }
+.gp-scope .ed-pin { fill: #fff; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: all; cursor: move; }
+.gp-scope .layer-box.pinned, .gp-scope .layer-box.pinned:hover, .gp-scope .layer-box.pinned.selected { border-color: transparent; }
+.gp-scope .ed-pin-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0 10px; font-size: 12.5px; }
+.gp-scope .ed-pin-row .spacer { flex: 1; }
+
 /* Groups, several selected, and turning */
 .gp-scope .layer-box.chosen { border: 2px dashed var(--accent); }
 .gp-scope .layer-box.group { border-style: dotted; background: rgba(255,255,255,.03); }

@@ -603,6 +603,11 @@ public static class SchedulerConfigLoader
                 {
                     errors.Add($"{layerScope}: variable_image must name a configured variable image.");
                 }
+                if (layer.Corners is { IsFinite: false } || (layer.Keyframes ?? []).Any(key => key.Corners is { IsFinite: false }))
+                {
+                    errors.Add($"{layerScope}: corners must be numbers.");
+                }
+
                 if (layer.Kind == GeneratedLayerKind.Video)
                 {
                     if (layer.Video?.Episode is { } episode)

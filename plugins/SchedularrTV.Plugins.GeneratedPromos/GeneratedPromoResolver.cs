@@ -605,7 +605,7 @@ public static partial class GeneratedPromoResolver
             ? keyframes
                 .OrderBy(key => key.At)
                 .Select(key => new PromoKeyframe(key.At, SKRect.Create(key.X, key.Y, key.Width, key.Height), key.Opacity,
-                    Enum.Parse<PromoEasing>(key.Easing.ToString()), float.IsFinite(key.Rotation) ? key.Rotation : 0))
+                    Enum.Parse<PromoEasing>(key.Easing.ToString()), float.IsFinite(key.Rotation) ? key.Rotation : 0, PromoCorners.From(key.Corners)))
                 .ToList()
             : null;
 
@@ -792,6 +792,7 @@ public static partial class GeneratedPromoResolver
             TransitionDuration = timing.TransitionDuration,
             Opacity = pose.Opacity,
             Rotation = Degrees(pose.Rotation),
+            Corners = PromoCorners.From(pose.Corners),
             Keyframes = Keyframes(pose)
         };
     }

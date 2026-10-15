@@ -214,11 +214,13 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
                 if (PromoAnimation.Evaluate(group, time, composition.Duration, composition.Height) is { } around)
                 {
                     Place(canvas, around, around.Bounds);
+                    Pin(canvas, around);
                     canvas.Translate(around.Bounds.Left, around.Bounds.Top);
                 }
             }
 
             Place(canvas, state, bounds);
+            Pin(canvas, state);
             bool translucent = state.Opacity < 0.999f;
             if (translucent)
             {
@@ -302,6 +304,18 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         }
 
         return groups;
+    }
+
+    /// <summary>
+    /// A layer's corner pin: what's drawn in its box from here on is stretched with perspective to its pulled corners
+    /// (and, for a group, everything inside it).
+    /// </summary>
+    private static void Pin(SKCanvas canvas, PromoLayerFrame state)
+    {
+        if (PromoPerspective.Matrix(state.Bounds, state.Corners) is { } perspective)
+        {
+            canvas.Concat(perspective);
+        }
     }
 
     /// <summary>A layer's transition movement and zoom, and its rotation, all about the middle of its box.</summary>

@@ -732,8 +732,36 @@ public interface IGeneratedPose
     /// <summary>Degrees clockwise, about the middle of the box; null is 0.</summary>
     float? Rotation { get; set; }
 
+    /// <summary>Corner pin: where each corner of the box is pulled to, for a perspective look; null leaves it square.</summary>
+    GeneratedCorners? Corners { get; set; }
+
     /// <summary>While there are any, they set the pose over time instead of the values above.</summary>
     List<GeneratedKeyframe>? Keyframes { get; set; }
+}
+
+/// <summary>
+/// A corner pin: how far (in pixels, along the box's own edges, before it's turned) each corner of a layer's box is
+/// pulled from where it would be. The layer's contents are stretched to the four corners with perspective, so text can
+/// sit on the side of a building, or follow a turning block's face as the corners are keyframed.
+/// </summary>
+public sealed class GeneratedCorners
+{
+    public float TopLeftX { get; set; }
+    public float TopLeftY { get; set; }
+    public float TopRightX { get; set; }
+    public float TopRightY { get; set; }
+    public float BottomRightX { get; set; }
+    public float BottomRightY { get; set; }
+    public float BottomLeftX { get; set; }
+    public float BottomLeftY { get; set; }
+
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public bool IsSquare => new[] { TopLeftX, TopLeftY, TopRightX, TopRightY, BottomRightX, BottomRightY, BottomLeftX, BottomLeftY }
+        .All(value => Math.Abs(value) < 0.01f);
+
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public bool IsFinite => new[] { TopLeftX, TopLeftY, TopRightX, TopRightY, BottomRightX, BottomRightY, BottomLeftX, BottomLeftY }
+        .All(float.IsFinite);
 }
 
 /// <summary>How a template's layers are placed over one of its backgrounds, where that differs from the template.</summary>
@@ -821,6 +849,9 @@ public sealed class GeneratedLayerOverride : IGeneratedPose
     public float? Rotation { get; set; }
 
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedCorners? Corners { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public List<GeneratedKeyframe>? Keyframes { get; set; }
 }
 
@@ -881,6 +912,10 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public float? Rotation { get; set; }
+
+    /// <summary>Corner pin for a perspective look (see <see cref="GeneratedCorners"/>); null leaves the box square. Keyframes animate it.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedCorners? Corners { get; set; }
 
     /// <summary>Gaussian edge softness in output pixels (sigma); null means sharp edges.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
@@ -982,6 +1017,10 @@ public sealed class GeneratedKeyframe
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
     [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)]
     public float Rotation { get; set; }
+
+    /// <summary>The corner pin at this moment; null is square.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedCorners? Corners { get; set; }
 
     /// <summary>How it moves from here to the next keyframe.</summary>
     public GeneratedEasing Easing { get; set; } = GeneratedEasing.Linear;

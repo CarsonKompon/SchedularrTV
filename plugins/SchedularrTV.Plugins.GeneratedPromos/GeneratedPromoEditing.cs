@@ -166,6 +166,17 @@ public static class GeneratedPromoEditing
             ScaleKeyframes(layer, scaleX, scaleY);
         }
 
+        // Corner pins are pixels too.
+        foreach (IGeneratedPose pose in template.Layers.Cast<IGeneratedPose>()
+                     .Concat((template.BackgroundOverrides ?? []).SelectMany(tracked => tracked.Layers)))
+        {
+            pose.Corners = ScaleCorners(pose.Corners, scaleX, scaleY);
+            foreach (GeneratedKeyframe key in pose.Keyframes ?? [])
+            {
+                key.Corners = ScaleCorners(key.Corners, scaleX, scaleY);
+            }
+        }
+
         // Each background's own placements move with the frame too.
         foreach (GeneratedLayerOverride placed in (template.BackgroundOverrides ?? []).SelectMany(tracked => tracked.Layers))
         {
@@ -178,6 +189,18 @@ public static class GeneratedPromoEditing
 
         template.Width = width;
         template.Height = height;
+    }
+
+    private static GeneratedCorners? ScaleCorners(GeneratedCorners? corners, float scaleX, float scaleY)
+    {
+        if (corners is null)
+        {
+            return null;
+        }
+
+        PromoCorners pin = PromoCorners.From(corners);
+        return new PromoCorners(pin.TopLeftX * scaleX, pin.TopLeftY * scaleY, pin.TopRightX * scaleX, pin.TopRightY * scaleY,
+            pin.BottomRightX * scaleX, pin.BottomRightY * scaleY, pin.BottomLeftX * scaleX, pin.BottomLeftY * scaleY).ToConfig();
     }
 
     private static void ScaleKeyframes(IGeneratedPose pose, float scaleX, float scaleY)
@@ -214,6 +237,7 @@ public static class GeneratedPromoEditing
             Height = layer.Height,
             Opacity = layer.Opacity,
             Rotation = layer.Rotation,
+            Corners = PromoCorners.From(layer.Corners).ToConfig(),
             Keyframes = layer.Keyframes is { Count: > 0 } keys ? keys.Select(key => CopyKeyframe(key)).ToList() : null
         };
         tracked.Layers.Add(placed);
@@ -398,7 +422,7 @@ public static class GeneratedPromoEditing
     private static GeneratedKeyframe CopyKeyframe(GeneratedKeyframe key) => new()
     {
         At = key.At, X = key.X, Y = key.Y, Width = key.Width, Height = key.Height, Opacity = key.Opacity, Easing = key.Easing,
-        Rotation = key.Rotation
+        Rotation = key.Rotation, Corners = PromoCorners.From(key.Corners).ToConfig()
     };
 
     /// <summary>Moves a layer, and every keyframe it has, by the same amount.</summary>
@@ -431,7 +455,8 @@ public static class GeneratedPromoEditing
         IReadOnlyList<PromoKeyframe>? keyframes = GeneratedPromoResolver.Keyframes(layer);
         (SKRect bounds, float opacity) = PromoAnimation.Pose(SKRect.Create(layer.X, layer.Y, layer.Width, layer.Height), layer.Opacity, keyframes, time);
         return new LayerPose(bounds.Left, bounds.Top, bounds.Width, bounds.Height, opacity,
-            PromoAnimation.RotationAt(GeneratedPromoResolver.Degrees(layer.Rotation), keyframes, time));
+            PromoAnimation.RotationAt(GeneratedPromoResolver.Degrees(layer.Rotation), keyframes, time),
+            PromoAnimation.CornersAt(PromoCorners.From(layer.Corners), keyframes, time));
     }
 
     /// <summary>The keyframe at <paramref name="time"/>, if there is one.</summary>
@@ -456,6 +481,11 @@ public static class GeneratedPromoEditing
                 layer.Rotation = Math.Abs(turned) < 0.0005f ? null : turned;
             }
 
+            if (pose.Corners is { } pinned)
+            {
+                layer.Corners = pinned.ToConfig();
+            }
+
             return;
         }
 
@@ -464,6 +494,11 @@ public static class GeneratedPromoEditing
         if (pose.Rotation is { } rotation)
         {
             key.Rotation = rotation;
+        }
+
+        if (pose.Corners is { } corners)
+        {
+            key.Corners = corners.ToConfig();
         }
     }
 
@@ -489,6 +524,7 @@ public static class GeneratedPromoEditing
             Height = MathF.Round(pose.Height),
             Opacity = pose.Opacity,
             Rotation = pose.Rotation ?? 0,
+            Corners = pose.Corners?.ToConfig(),
             Easing = keys.Where(other => other.At <= time).OrderBy(other => other.At).LastOrDefault()?.Easing ?? GeneratedEasing.Linear
         };
         keys.Add(key);
@@ -524,6 +560,7 @@ public static class GeneratedPromoEditing
             layer.Keyframes = null;
             (layer.X, layer.Y, layer.Width, layer.Height, layer.Opacity) = (key.X, key.Y, key.Width, key.Height, key.Opacity);
             layer.Rotation = Math.Abs(key.Rotation) < 0.0005f ? null : key.Rotation;
+            layer.Corners = PromoCorners.From(key.Corners).ToConfig();
         }
     }
 
@@ -569,4 +606,5 @@ public static class GeneratedPromoEditing
 
 /// <summary>A layer's position, size and opacity at one moment.</summary>
 /// <param name="Rotation">Degrees clockwise; when setting a pose, null leaves the rotation as it is.</param>
-public readonly record struct LayerPose(float X, float Y, float Width, float Height, float Opacity, float? Rotation = null);
+/// <param name="Corners">The corner pin; when setting a pose, null leaves it as it is.</param>
+public readonly record struct LayerPose(float X, float Y, float Width, float Height, float Opacity, float? Rotation = null, PromoCorners? Corners = null);

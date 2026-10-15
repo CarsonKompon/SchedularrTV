@@ -155,6 +155,47 @@ public static class GeneratedPromoHierarchy
         return new WorldBox(x, y, local.Width, local.Height, space.Angle + (local.Rotation ?? 0));
     }
 
+    /// <summary>
+    /// Where a point of the layer's box (given as its group's pixels, before any pin or turn) ends up on the canvas:
+    /// pinned, turned about the box's middle, then the same through each group around it, as the renderer draws it.
+    /// </summary>
+    public static (double X, double Y) WorldPoint(GeneratedPromoTemplate template, GeneratedLayer layer, Func<GeneratedLayer, IGeneratedPose> pose,
+        TimeSpan time, double x, double y)
+    {
+        (x, y) = Placed(GeneratedPromoEditing.PoseAt(pose(layer), time), x, y);
+        foreach (GeneratedLayer group in Ancestors(template, layer))
+        {
+            LayerPose around = GeneratedPromoEditing.PoseAt(pose(group), time);
+            (x, y) = Placed(around, x + around.X, y + around.Y);
+        }
+
+        return (x, y);
+    }
+
+    /// <summary>The layer's four corners on the canvas (top left, top right, bottom right, bottom left), pins and turns included.</summary>
+    public static (double X, double Y)[] WorldQuad(GeneratedPromoTemplate template, GeneratedLayer layer, Func<GeneratedLayer, IGeneratedPose> pose, TimeSpan time)
+    {
+        LayerPose own = GeneratedPromoEditing.PoseAt(pose(layer), time);
+        return
+        [
+            WorldPoint(template, layer, pose, time, own.X, own.Y),
+            WorldPoint(template, layer, pose, time, own.X + own.Width, own.Y),
+            WorldPoint(template, layer, pose, time, own.X + own.Width, own.Y + own.Height),
+            WorldPoint(template, layer, pose, time, own.X, own.Y + own.Height)
+        ];
+    }
+
+    // A point in a box's own pixels, pinned and then turned about the box's middle.
+    private static (double X, double Y) Placed(LayerPose pose, double x, double y)
+    {
+        SkiaSharp.SKRect bounds = SkiaSharp.SKRect.Create(pose.X, pose.Y, pose.Width, pose.Height);
+        (x, y) = PromoPerspective.Apply(PromoPerspective.Homography(bounds, pose.Corners ?? default), x, y);
+        double centreX = pose.X + pose.Width / 2.0;
+        double centreY = pose.Y + pose.Height / 2.0;
+        (double turnedX, double turnedY) = Rigid.Rotate(x - centreX, y - centreY, pose.Rotation ?? 0);
+        return (centreX + turnedX, centreY + turnedY);
+    }
+
     /// <summary>The total turn of the space the layer is placed in (its groups', not its own).</summary>
     public static double SpaceAngle(GeneratedPromoTemplate template, GeneratedLayer layer, Func<GeneratedLayer, IGeneratedPose> pose, TimeSpan time) =>
         SpaceOf(template, ParentOf(template, layer), pose, time).Angle;

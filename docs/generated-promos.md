@@ -82,6 +82,17 @@ In every mode, the second Up Next text entry, variable-image `next2`, and TTS `{
 
 In YAML, set `upcoming_grouping: timeslot` (default) or `upcoming_grouping: show` directly on the template. The former voice-only `use_individual_episodes` option is no longer used; old files containing it still load and use the shared setting, defaulting to timeslots/episodes.
 
+### Perspective (corner pin)
+
+The **⬚ Perspective** tool (or **P** after clicking the timeline or a box) swaps the selected layer's resize handles for four round corners. Drag them to stretch the layer with true perspective, for text on the side of a building, a picture on a screen in the background video, or a label on one face of a box. It works on text, shapes, pictures, videos and groups; pinning a group stretches everything inside it.
+
+- Pins are kept along the box's own edges, so moving, resizing or turning the layer afterwards keeps its perspective.
+- On an animated layer, pulling a corner sets a keyframe at the playhead. Keyframe the corners across a few frames to keep text on the face of a turning block; they ease between keyframes like position does.
+- **Square up** (under Position) puts the corners back, at the playhead on an animated layer. A pin pulled so far it would fold the picture over itself is drawn square instead.
+- Pins can be set per background, like position.
+
+In YAML a pin is `corners:` on a layer or keyframe, with `top_left_x`, `top_left_y`, `top_right_x` … `bottom_left_y`, each how many pixels that corner is pulled.
+
 ### Video layers
 
 **+ Video** adds a box that plays a video. Under **Plays**, choose a video file, or a clip of an episode: the one the promo is for, what's on now (or before the break), the next episode, or one 2 to 10 shows ahead. An episode clip starts where you set it, or, left blank, somewhere in the middle that changes each airing. If there's no such show, or its file can't be read, the layer is left out.

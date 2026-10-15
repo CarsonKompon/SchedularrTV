@@ -37,6 +37,9 @@ public abstract record PromoLayer
     /// <summary>Degrees clockwise about the middle of <see cref="Bounds"/>.</summary>
     public float Rotation { get; init; }
 
+    /// <summary>Corner pin: the box's contents stretched with perspective to its four pulled corners (all zero: none).</summary>
+    public PromoCorners Corners { get; init; }
+
     /// <summary>
     /// The group this layer is inside, or null at the top. Its bounds are then in the group's space (from the group's
     /// top-left corner), and the group's movement, rotation, opacity and timing apply on top of its own.
@@ -64,7 +67,8 @@ public enum PromoEasing
 }
 
 /// <summary>A layer's bounds and opacity at <see cref="At"/>; <see cref="Easing"/> is how it moves on to the next one.</summary>
-public readonly record struct PromoKeyframe(TimeSpan At, SKRect Bounds, float Opacity, PromoEasing Easing = PromoEasing.Linear, float Rotation = 0);
+public readonly record struct PromoKeyframe(TimeSpan At, SKRect Bounds, float Opacity, PromoEasing Easing = PromoEasing.Linear, float Rotation = 0,
+    PromoCorners Corners = default);
 
 public sealed record PromoRectLayer : PromoLayer
 {
@@ -148,7 +152,8 @@ public sealed record PromoComposition
 
 /// <param name="Bounds">Where the layer is at this moment: its keyframed bounds, or its own when it has none.</param>
 /// <param name="Rotation">Degrees clockwise about the middle of <paramref name="Bounds"/>.</param>
-public readonly record struct PromoLayerFrame(float Opacity, float OffsetX, float OffsetY, float Scale, SKRect Bounds = default, float Rotation = 0);
+public readonly record struct PromoLayerFrame(float Opacity, float OffsetX, float OffsetY, float Scale, SKRect Bounds = default, float Rotation = 0,
+    PromoCorners Corners = default);
 
 public sealed record PromoMusic(string Path, double Volume, TimeSpan StartAt, TimeSpan FadeIn, TimeSpan FadeOut, bool DuckUnderVoice, bool Loop = true)
 {
@@ -312,7 +317,8 @@ public static class PromoAnimation
         float distance = canvasHeight * 0.12f;
 
         (SKRect bounds, float opacity) = Pose(layer.Bounds, layer.Opacity, layer.Keyframes, time);
-        var frame = new PromoLayerFrame(opacity, 0, 0, 1, bounds, RotationAt(layer.Rotation, layer.Keyframes, time));
+        var frame = new PromoLayerFrame(opacity, 0, 0, 1, bounds, RotationAt(layer.Rotation, layer.Keyframes, time),
+            CornersAt(layer.Corners, layer.Keyframes, time));
         frame = Apply(frame, layer.In, entering, distance, entering: true);
         return Apply(frame, layer.Out, leaving, distance, entering: false);
     }
@@ -383,6 +389,36 @@ public static class PromoAnimation
         }
 
         return keyframes[^1].Rotation;
+    }
+
+    /// <summary>The corner pin at <paramref name="time"/>, following the keyframes the same way as <see cref="Pose"/>.</summary>
+    public static PromoCorners CornersAt(PromoCorners corners, IReadOnlyList<PromoKeyframe>? keyframes, TimeSpan time)
+    {
+        if (keyframes is not { Count: > 0 })
+        {
+            return corners;
+        }
+
+        if (time <= keyframes[0].At)
+        {
+            return keyframes[0].Corners;
+        }
+
+        for (int index = 0; index < keyframes.Count - 1; index++)
+        {
+            PromoKeyframe from = keyframes[index];
+            PromoKeyframe to = keyframes[index + 1];
+            if (time >= to.At)
+            {
+                continue;
+            }
+
+            double span = (to.At - from.At).TotalSeconds;
+            float progress = span <= 0 ? 1 : Curve(from.Easing, (time - from.At).TotalSeconds / span);
+            return PromoCorners.Lerp(from.Corners, to.Corners, progress);
+        }
+
+        return keyframes[^1].Corners;
     }
 
     /// <summary>
