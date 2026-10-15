@@ -6,11 +6,20 @@ namespace SchedularrTV.GeneratedPromos;
 /// <summary>The shows around the promo, independent of the show it is promoting.</summary>
 public sealed record GeneratedImageSubjects(UpNextListing? Current, IReadOnlyList<UpNextListing> Upcoming)
 {
-    public static GeneratedImageSubjects FromSchedule(ChannelSchedule schedule, DateTimeOffset at, DateTimeOffset? after = null)
+    public static GeneratedImageSubjects FromSchedule(ChannelSchedule schedule, DateTimeOffset at, DateTimeOffset? after = null,
+        GeneratedPromoTemplate? template = null)
     {
         UpNextListing? current = UpNextPromo.Previous(schedule, at);
-        // Listings already excludes mid-show continuations, intros, outros and stacked episodes.
-        IReadOnlyList<UpNextListing> upcoming = UpNextPromo.Listings(schedule, after ?? at, 10);
+        GeneratedUpcomingGrouping grouping = template?.UpcomingGrouping ?? GeneratedUpcomingGrouping.Timeslot;
+        int needed = Math.Max(10, template is null ? 1 : GeneratedPromoResolver.ListingsNeeded(template));
+        IReadOnlyList<UpNextListing> upcoming = UpNextPromo.Listings(schedule, after ?? at, needed, grouping: grouping);
+        TimeSpan within = (template?.BackgroundRules ?? []).Where(rule => rule.MatchShows != false)
+            .Select(rule => rule.Within ?? TimeSpan.Zero).DefaultIfEmpty().Max();
+        if (within > TimeSpan.Zero)
+        {
+            upcoming = [.. upcoming.Concat(UpNextPromo.Listings(schedule, after ?? at, int.MaxValue, at + within, grouping))
+                .DistinctBy(show => (show.Title, show.Start)).OrderBy(show => show.Start)];
+        }
         return new(current, upcoming);
     }
 }
@@ -42,6 +51,33 @@ public static class GeneratedPromoImages
         }
 
         return images;
+    }
+
+    /// <summary>
+    /// For each image layer showing an upcoming show (by its own choice or its variable's usual show): how many shows
+    /// ahead it reaches, 1 being the next show.
+    /// </summary>
+    public static IEnumerable<int> UpcomingShown(GeneratedPromoTemplate template)
+    {
+        foreach (GeneratedLayer layer in template.Layers)
+        {
+            if (layer.Kind != GeneratedLayerKind.Image || layer.VariableImage is not { Length: > 0 } name
+                || template.VariableImages?.FirstOrDefault(image => string.Equals(image.Name, name, StringComparison.OrdinalIgnoreCase)) is not { } image)
+            {
+                continue;
+            }
+
+            (GeneratedImageContext context, int offset) = (image.Context, image.Offset);
+            if (layer.VariableImageShow is { Length: > 0 } selector && GeneratedImageSelectors.TryParse(selector, out GeneratedImageContext chosen, out int ahead))
+            {
+                (context, offset) = (chosen, ahead);
+            }
+
+            if (context == GeneratedImageContext.UpNext)
+            {
+                yield return Math.Max(0, offset) + 1;
+            }
+        }
     }
 
     /// <summary>Every variable image use that picks its own show: from image layers, and from generator arguments.</summary>
@@ -85,10 +121,5 @@ public static class GeneratedPromoImages
         _ => promoted.FirstOrDefault()
     };
 
-    private static string PathFor(GeneratedVariableImage image, UpNextListing? show)
-    {
-        string? path = show is null ? null : image.Shows.FirstOrDefault(candidate =>
-            string.Equals(candidate.Show.Trim(), show.Title.Trim(), StringComparison.OrdinalIgnoreCase))?.Path;
-        return string.IsNullOrWhiteSpace(path) ? image.DefaultPath ?? string.Empty : path;
-    }
+    private static string PathFor(GeneratedVariableImage image, UpNextListing? show) => image.PathFor(show?.Title, show?.Block);
 }

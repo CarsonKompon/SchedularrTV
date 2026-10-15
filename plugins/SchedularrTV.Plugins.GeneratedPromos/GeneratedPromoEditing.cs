@@ -78,7 +78,7 @@ public static class GeneratedPromoEditing
                 GeneratedLayerKind.Eventually => "Eventually",
                 GeneratedLayerKind.YoureWatching => "You're Watching",
                 GeneratedLayerKind.BackToTheShow => "Back to the Show",
-                GeneratedLayerKind.Rect => "Rectangle",
+                GeneratedLayerKind.Rect => "Shape",
                 GeneratedLayerKind.Image => "Image",
                 _ => "Text"
             }),
@@ -119,18 +119,242 @@ public static class GeneratedPromoEditing
             layer.Height = Math.Max(1, (float)Math.Round(layer.Height * scaleY));
             layer.FontSize = Math.Max(4, (float)Math.Round(layer.FontSize * scaleY));
             layer.CornerRadius = (float)Math.Round(layer.CornerRadius * Math.Min(scaleX, scaleY));
-            foreach (GeneratedKeyframe key in layer.Keyframes ?? [])
-            {
-                key.X = (float)Math.Round(key.X * scaleX);
-                key.Y = (float)Math.Round(key.Y * scaleY);
-                key.Width = Math.Max(1, (float)Math.Round(key.Width * scaleX));
-                key.Height = Math.Max(1, (float)Math.Round(key.Height * scaleY));
-            }
+            if (layer.SoftEdges is { } softness) layer.SoftEdges = Math.Clamp(softness * Math.Min(scaleX, scaleY), 0, 200);
+            ScaleKeyframes(layer, scaleX, scaleY);
+        }
+
+        // Each background's own placements move with the frame too.
+        foreach (GeneratedLayerOverride placed in (template.BackgroundOverrides ?? []).SelectMany(tracked => tracked.Layers))
+        {
+            placed.X = (float)Math.Round(placed.X * scaleX);
+            placed.Y = (float)Math.Round(placed.Y * scaleY);
+            placed.Width = Math.Max(1, (float)Math.Round(placed.Width * scaleX));
+            placed.Height = Math.Max(1, (float)Math.Round(placed.Height * scaleY));
+            ScaleKeyframes(placed, scaleX, scaleY);
         }
 
         template.Width = width;
         template.Height = height;
     }
+
+    private static void ScaleKeyframes(IGeneratedPose pose, float scaleX, float scaleY)
+    {
+        foreach (GeneratedKeyframe key in pose.Keyframes ?? [])
+        {
+            key.X = (float)Math.Round(key.X * scaleX);
+            key.Y = (float)Math.Round(key.Y * scaleY);
+            key.Width = Math.Max(1, (float)Math.Round(key.Width * scaleX));
+            key.Height = Math.Max(1, (float)Math.Round(key.Height * scaleY));
+        }
+    }
+
+    // ---- Per-background placements ----
+
+    /// <summary>
+    /// <paramref name="background"/>'s own placement of the layer, made on first use as a copy of where the template puts
+    /// it (keyframes and all), so editing it starts from what's on screen. The layer is given an id if it has none.
+    /// </summary>
+    public static GeneratedLayerOverride Place(GeneratedPromoTemplate template, string background, GeneratedLayer layer)
+    {
+        if (GeneratedPromoResolver.Placement(template, background, layer) is { } existing)
+        {
+            return existing;
+        }
+
+        GeneratedBackgroundOverride tracked = Tracked(template, background, layer);
+        var placed = new GeneratedLayerOverride
+        {
+            Layer = layer.Id!,
+            X = layer.X,
+            Y = layer.Y,
+            Width = layer.Width,
+            Height = layer.Height,
+            Opacity = layer.Opacity,
+            Keyframes = layer.Keyframes is { Count: > 0 } keys ? keys.Select(key => CopyKeyframe(key)).ToList() : null
+        };
+        tracked.Layers.Add(placed);
+        return placed;
+    }
+
+    /// <summary>
+    /// The background's entry, made if it has none yet; the layer is given an id if it has none, for the entry to name it by.
+    /// </summary>
+    private static GeneratedBackgroundOverride Tracked(GeneratedPromoTemplate template, string background, GeneratedLayer layer)
+    {
+        layer.Id ??= NewLayerId(template);
+        List<GeneratedBackgroundOverride> all = template.BackgroundOverrides ??= [];
+        return all.FirstOrDefault(candidate => string.Equals(candidate.Background, background, StringComparison.OrdinalIgnoreCase))
+            ?? Add(all, new GeneratedBackgroundOverride { Background = background });
+    }
+
+    /// <summary>
+    /// Colours the layer differently over <paramref name="background"/>; the layer's own colour (or null) goes back to it.
+    /// </summary>
+    public static void Recolour(GeneratedPromoTemplate template, string background, GeneratedLayer layer, string? color)
+    {
+        if (string.IsNullOrWhiteSpace(color) || string.Equals(color, layer.Color, StringComparison.OrdinalIgnoreCase))
+        {
+            if (GeneratedPromoResolver.Recolour(template, background, layer) is { } existing)
+            {
+                Entry(template, background)?.Colors?.Remove(existing);
+            }
+
+            Tidy(template);
+            return;
+        }
+
+        if (GeneratedPromoResolver.Recolour(template, background, layer) is { } current)
+        {
+            current.Color = color;
+            return;
+        }
+
+        GeneratedBackgroundOverride tracked = Tracked(template, background, layer);
+        (tracked.Colors ??= []).Add(new GeneratedLayerColor { Layer = layer.Id!, Color = color });
+    }
+
+    /// <summary>
+    /// <paramref name="background"/>'s own timing of the layer, made on first use as a copy of the layer's (start, end,
+    /// enter and exit transitions and their length), so editing it starts from what the template does.
+    /// </summary>
+    public static GeneratedLayerTiming Retime(GeneratedPromoTemplate template, string background, GeneratedLayer layer)
+    {
+        if (GeneratedPromoResolver.Retiming(template, background, layer) is { } existing)
+        {
+            return existing;
+        }
+
+        GeneratedBackgroundOverride tracked = Tracked(template, background, layer);
+        var timed = new GeneratedLayerTiming
+        {
+            Layer = layer.Id!,
+            Start = layer.Start,
+            End = layer.End,
+            TransitionIn = layer.TransitionIn,
+            TransitionOut = layer.TransitionOut,
+            TransitionDuration = layer.TransitionDuration
+        };
+        (tracked.Timings ??= []).Add(timed);
+        return timed;
+    }
+
+    /// <summary>Puts the layer back the way the template has it (place, keyframes, timing and colour), over <paramref name="background"/>.</summary>
+    public static void Unplace(GeneratedPromoTemplate template, string background, GeneratedLayer layer)
+    {
+        if (Entry(template, background) is { } tracked)
+        {
+            if (GeneratedPromoResolver.Placement(template, background, layer) is { } placed) tracked.Layers.Remove(placed);
+            if (GeneratedPromoResolver.Recolour(template, background, layer) is { } colour) tracked.Colors?.Remove(colour);
+            if (GeneratedPromoResolver.Retiming(template, background, layer) is { } timing) tracked.Timings?.Remove(timing);
+        }
+
+        Tidy(template);
+    }
+
+    /// <summary>Puts only the layer's timing back to the template's, over <paramref name="background"/>.</summary>
+    public static void Untime(GeneratedPromoTemplate template, string background, GeneratedLayer layer)
+    {
+        if (GeneratedPromoResolver.Retiming(template, background, layer) is { } timing)
+        {
+            Entry(template, background)?.Timings?.Remove(timing);
+        }
+
+        Tidy(template);
+    }
+
+    /// <summary>Whether <paramref name="background"/> places, times or colours the layer its own way.</summary>
+    public static bool Customised(GeneratedPromoTemplate template, string? background, GeneratedLayer layer) =>
+        GeneratedPromoResolver.Placement(template, background, layer) is not null
+        || GeneratedPromoResolver.Recolour(template, background, layer) is not null
+        || GeneratedPromoResolver.Retiming(template, background, layer) is not null;
+
+    /// <summary>How many layers <paramref name="background"/> places or colours its own way.</summary>
+    public static int PlacedCount(GeneratedPromoTemplate template, string background) =>
+        template.Layers.Count(layer => Customised(template, background, layer));
+
+    private static GeneratedBackgroundOverride? Entry(GeneratedPromoTemplate template, string background) =>
+        template.BackgroundOverrides?.FirstOrDefault(candidate => string.Equals(candidate.Background, background, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Follows a background file being swapped for another (null: removed), keeping or dropping its placements.</summary>
+    public static void RenameBackground(GeneratedPromoTemplate template, string from, string? to)
+    {
+        foreach (GeneratedBackgroundRule rule in (template.BackgroundRules ?? [])
+                     .Where(rule => string.Equals(rule.Background, from, StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            if (string.IsNullOrWhiteSpace(to)) template.BackgroundRules!.Remove(rule);
+            else rule.Background = to;
+        }
+        if (template.BackgroundRules is { Count: 0 }) template.BackgroundRules = null;
+        foreach (GeneratedBackgroundOverride tracked in (template.BackgroundOverrides ?? [])
+                     .Where(candidate => string.Equals(candidate.Background, from, StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            if (string.IsNullOrWhiteSpace(to))
+            {
+                template.BackgroundOverrides!.Remove(tracked);
+            }
+            else
+            {
+                tracked.Background = to;
+            }
+        }
+
+        Tidy(template);
+    }
+
+    /// <summary>Drops a deleted layer's placements.</summary>
+    public static void ForgetLayer(GeneratedPromoTemplate template, GeneratedLayer layer)
+    {
+        if (layer.Id is { Length: > 0 } id)
+        {
+            foreach (GeneratedBackgroundOverride tracked in template.BackgroundOverrides ?? [])
+            {
+                tracked.Layers.RemoveAll(placed => string.Equals(placed.Layer, id, StringComparison.Ordinal));
+                tracked.Colors?.RemoveAll(colour => string.Equals(colour.Layer, id, StringComparison.Ordinal));
+                tracked.Timings?.RemoveAll(timing => string.Equals(timing.Layer, id, StringComparison.Ordinal));
+            }
+        }
+
+        Tidy(template);
+    }
+
+    // Empty lists go, so the YAML and render keys stay as if there had never been any.
+    private static void Tidy(GeneratedPromoTemplate template)
+    {
+        foreach (GeneratedBackgroundOverride tracked in template.BackgroundOverrides ?? [])
+        {
+            if (tracked.Colors is { Count: 0 }) tracked.Colors = null;
+            if (tracked.Timings is { Count: 0 }) tracked.Timings = null;
+        }
+
+        template.BackgroundOverrides?.RemoveAll(tracked => tracked.Layers.Count == 0 && tracked.Colors is null && tracked.Timings is null);
+        if (template.BackgroundOverrides is { Count: 0 })
+        {
+            template.BackgroundOverrides = null;
+        }
+    }
+
+    private static string NewLayerId(GeneratedPromoTemplate template)
+    {
+        while (true)
+        {
+            string id = Guid.NewGuid().ToString("N")[..8];
+            if (!template.Layers.Any(layer => string.Equals(layer.Id, id, StringComparison.Ordinal)))
+            {
+                return id;
+            }
+        }
+    }
+
+    private static T Add<T>(List<T> list, T item)
+    {
+        list.Add(item);
+        return item;
+    }
+
+    private static GeneratedKeyframe CopyKeyframe(GeneratedKeyframe key) => new()
+    {
+        At = key.At, X = key.X, Y = key.Y, Width = key.Width, Height = key.Height, Opacity = key.Opacity, Easing = key.Easing
+    };
 
     /// <summary>Moves a layer, and every keyframe it has, by the same amount.</summary>
     public static void Offset(GeneratedLayer layer, float dx, float dy)
@@ -152,10 +376,12 @@ public static class GeneratedPromoEditing
     /// </summary>
     public const double KeyframeTolerance = 0.002;
 
-    public static bool HasKeyframes(GeneratedLayer layer) => layer.Keyframes is { Count: > 0 };
+    // These work on a layer, or on one background's placement of it (both are poses).
+
+    public static bool HasKeyframes(IGeneratedPose layer) => layer.Keyframes is { Count: > 0 };
 
     /// <summary>Where the layer is, how big and how opaque, at <paramref name="time"/>, following its keyframes.</summary>
-    public static LayerPose PoseAt(GeneratedLayer layer, TimeSpan time)
+    public static LayerPose PoseAt(IGeneratedPose layer, TimeSpan time)
     {
         (SKRect bounds, float opacity) = PromoAnimation.Pose(SKRect.Create(layer.X, layer.Y, layer.Width, layer.Height), layer.Opacity,
             GeneratedPromoResolver.Keyframes(layer), time);
@@ -163,7 +389,7 @@ public static class GeneratedPromoEditing
     }
 
     /// <summary>The keyframe at <paramref name="time"/>, if there is one.</summary>
-    public static GeneratedKeyframe? KeyframeAt(GeneratedLayer layer, TimeSpan time) =>
+    public static GeneratedKeyframe? KeyframeAt(IGeneratedPose layer, TimeSpan time) =>
         layer.Keyframes?.Where(key => Math.Abs((key.At - time).TotalSeconds) <= KeyframeTolerance)
             .OrderBy(key => Math.Abs((key.At - time).TotalSeconds))
             .FirstOrDefault();
@@ -172,7 +398,7 @@ public static class GeneratedPromoEditing
     /// Sets the layer's pose at <paramref name="time"/>: its own position, size and opacity when it has no keyframes,
     /// otherwise the keyframe there, which is added if there isn't one yet.
     /// </summary>
-    public static void SetPose(GeneratedLayer layer, TimeSpan time, LayerPose pose)
+    public static void SetPose(IGeneratedPose layer, TimeSpan time, LayerPose pose)
     {
         pose = pose with { Width = Math.Max(1, pose.Width), Height = Math.Max(1, pose.Height), Opacity = Math.Clamp(pose.Opacity, 0, 1) };
         if (!HasKeyframes(layer))
@@ -189,7 +415,7 @@ public static class GeneratedPromoEditing
     /// A keyframe at <paramref name="time"/> holding the pose the layer has there, so adding it changes nothing until it's
     /// moved. It eases on the way the keyframe before it does. An existing keyframe there is returned instead.
     /// </summary>
-    public static GeneratedKeyframe AddKeyframe(GeneratedLayer layer, TimeSpan time)
+    public static GeneratedKeyframe AddKeyframe(IGeneratedPose layer, TimeSpan time)
     {
         if (KeyframeAt(layer, time) is { } existing)
         {
@@ -214,14 +440,14 @@ public static class GeneratedPromoEditing
     }
 
     /// <summary>Starts animating the layer with one keyframe, at <paramref name="time"/>, where it is now.</summary>
-    public static GeneratedKeyframe StartKeyframes(GeneratedLayer layer, TimeSpan time)
+    public static GeneratedKeyframe StartKeyframes(IGeneratedPose layer, TimeSpan time)
     {
         layer.Keyframes = null;
         return AddKeyframe(layer, time);
     }
 
     /// <summary>Stops animating the layer, leaving it where it is at <paramref name="time"/>.</summary>
-    public static void StopKeyframes(GeneratedLayer layer, TimeSpan time)
+    public static void StopKeyframes(IGeneratedPose layer, TimeSpan time)
     {
         LayerPose pose = PoseAt(layer, time);
         layer.Keyframes = null;
@@ -229,7 +455,7 @@ public static class GeneratedPromoEditing
     }
 
     /// <summary>Removes a keyframe; removing the last one stops the animation, leaving the layer where that keyframe had it.</summary>
-    public static void RemoveKeyframe(GeneratedLayer layer, GeneratedKeyframe key)
+    public static void RemoveKeyframe(IGeneratedPose layer, GeneratedKeyframe key)
     {
         if (layer.Keyframes is not { } keys || !keys.Remove(key))
         {
@@ -244,13 +470,13 @@ public static class GeneratedPromoEditing
     }
 
     /// <summary>Moves a keyframe to <paramref name="time"/> (within the promo), keeping the list in time order.</summary>
-    public static void MoveKeyframe(GeneratedLayer layer, GeneratedKeyframe key, TimeSpan time, TimeSpan duration)
+    public static void MoveKeyframe(IGeneratedPose layer, GeneratedKeyframe key, TimeSpan time, TimeSpan duration)
     {
         key.At = RoundTime(time < TimeSpan.Zero ? TimeSpan.Zero : time > duration ? duration : time);
         SortKeyframes(layer);
     }
 
-    public static void SortKeyframes(GeneratedLayer layer)
+    public static void SortKeyframes(IGeneratedPose layer)
     {
         if (layer.Keyframes is { Count: > 1 } keys)
         {

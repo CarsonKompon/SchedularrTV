@@ -19,11 +19,16 @@
 }
 else
 {
-    <div class="file-field">
+    <div class="file-field @(CanDrop ? "file-drop-target" : null)" title="@(CanDrop ? $"Drop {Label} here to upload it" : null)">
         <input type="text" value="@Value" placeholder="@Placeholder" aria-label="@Label" @onchange="Typed" />
         @if (CanBrowse)
         {
             <button class="btn btn-sm" type="button" disabled="@(_browsing || _copying)" @onclick="Browse">@(_copying ? "Copying…" : _browsing ? "Choosing…" : "Browse…")</button>
+        }
+        @if (CanDrop)
+        {
+            @* Invisible until a file is dragged over the page (see file-drop.js), then it catches the drop. *@
+            <InputFile class="file-drop-input" OnChange="Dropped" accept="@string.Join(',', Extensions)" tabindex="-1" aria-hidden="true" />
         }
     </div>
 }
@@ -62,7 +67,15 @@ else
     private string? _problem;
     private string? _typed;
 
+    /// <summary>Largest file accepted by dragging it onto the picker.</summary>
+    [Parameter] public long MaxDropBytes { get; set; } = 256L * 1024 * 1024;
+
     private bool CanBrowse => Local?.IsLocal ?? true;
+
+    // A dropped file arrives as content, not a path, so it's saved into the data folder's assets.
+    private TemplateAssets? Assets => Services.GetService(typeof(TemplateAssets)) as TemplateAssets;
+
+    private bool CanDrop => !Multiple && !PickFolder && Assets is not null;
 
     private string KindKey => PickFolder ? "folder" : string.Join(',', Extensions);
 
@@ -148,6 +161,44 @@ else
         {
             _problem = $"Couldn't keep a copy in the data folder, so the file is used where it is: {ex.Message}";
             return paths;
+        }
+        finally
+        {
+            _copying = false;
+        }
+    }
+
+    private async Task Dropped(InputFileChangeEventArgs e)
+    {
+        _problem = null;
+        IBrowserFile file = e.File;
+        if (Extensions.Length > 0 && !Extensions.Contains(Path.GetExtension(file.Name), StringComparer.OrdinalIgnoreCase))
+        {
+            _problem = $"{file.Name} isn't a supported file. Use {string.Join(", ", Extensions)}.";
+            return;
+        }
+
+        if (file.Size > MaxDropBytes)
+        {
+            _problem = $"{file.Name} is {file.Size / (1024 * 1024)}MB; the limit for dropped files is {MaxDropBytes / (1024 * 1024)}MB.";
+            return;
+        }
+
+        if (Assets is not { } assets)
+        {
+            return;
+        }
+
+        _copying = true;
+        try
+        {
+            await using Stream content = file.OpenReadStream(MaxDropBytes);
+            string kept = await assets.KeepAsync(KeepCopyIn is { Length: > 0 } category ? category : "uploads", file.Name, content);
+            await ValueChanged.InvokeAsync(kept);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            _problem = $"Couldn't save {file.Name}: {ex.Message}";
         }
         finally
         {

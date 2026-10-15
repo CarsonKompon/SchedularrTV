@@ -59,6 +59,10 @@ public sealed record PromoRectLayer : PromoLayer
     public SKColor Color { get; init; } = SKColors.Black;
 
     public float CornerRadius { get; init; }
+
+    public SchedularrTV.Core.Configuration.GeneratedShape Shape { get; init; }
+    public float Rotation { get; init; }
+    public float SoftEdges { get; init; }
 }
 
 public sealed record PromoTextLayer : PromoLayer

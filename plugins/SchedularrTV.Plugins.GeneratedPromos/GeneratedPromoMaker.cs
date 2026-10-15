@@ -30,11 +30,11 @@ public sealed class GeneratedPromoMaker(GeneratedPromoService promos) : IPromoMa
                 UpNextPromo.Previous(schedule, airsAt) is { } previous ? [previous] : [],
 
             // Something later today that isn't the next programme.
-            GeneratedPromoType.ComingUp => UpNextPromo.Listings(schedule, airsAt, 4) is { Count: > 1 } upcoming ? [upcoming[^1]] : [],
+            GeneratedPromoType.ComingUp => UpNextPromo.Listings(schedule, airsAt, 4, grouping: template.UpcomingGrouping) is { Count: > 1 } upcoming ? [upcoming[^1]] : [],
 
             // Something well after it.
-            GeneratedPromoType.Eventually => UpNextPromo.Listings(schedule, airsAt + TimeSpan.FromHours(6), 1),
-            _ => UpNextPromo.Listings(schedule, airsAt, needed)
+            GeneratedPromoType.Eventually => UpNextPromo.Listings(schedule, airsAt + TimeSpan.FromHours(6), 1, grouping: template.UpcomingGrouping),
+            _ => UpNextPromo.Listings(schedule, airsAt, needed, grouping: template.UpcomingGrouping)
         };
         if (listings.Count == 0)
         {
@@ -43,7 +43,7 @@ public sealed class GeneratedPromoMaker(GeneratedPromoService promos) : IPromoMa
 
         TimeZoneInfo zone = SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(channel.TimeZone) ? config.Settings.TimeZone : channel.TimeZone);
         if (GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, airsAt,
-                GeneratedImageSubjects.FromSchedule(schedule, airsAt)) is not { } promo)
+                GeneratedImageSubjects.FromSchedule(schedule, airsAt, template: template)) is not { } promo)
         {
             return null;
         }

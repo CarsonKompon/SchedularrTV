@@ -67,7 +67,7 @@ public sealed class GeneratedPromoTests
 
         Assert.Equal(["SpongeBob SquarePants", "Jimmy Neutron: Boy Genius"], listings.Select(listing => listing.Title));
         Assert.Equal(
-            "Coming up next... SpongeBob SquarePants. Then Jimmy Neutron: Boy Genius at 12:30! Only on The Zone!",
+            "Coming up next... SpongeBob SquarePants. Then Jimmy Neutron Boy Genius at 12:30! Only on The Zone!",
             UpNextPromo.Script(listings, eastern, postMessage: "Only on The Zone!"));
         Assert.Equal("Coming up next... Wow! Wow! Wubbzy!",
             UpNextPromo.Script([new UpNextListing("Wow! Wow! Wubbzy!", Noon)], eastern));

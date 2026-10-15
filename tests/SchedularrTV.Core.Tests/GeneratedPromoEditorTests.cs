@@ -115,6 +115,105 @@ public sealed class GeneratedPromoEditorTests : IDisposable
         Assert.True(centre.Red > 200 && centre.Green < 60, $"video frame {centre}");
     }
 
+    [Theory]
+    [InlineData(GeneratedPromoType.UpNext)]
+    [InlineData(GeneratedPromoType.NowPlaying)]
+    public async Task Background_rule_controls_show_names_eligibility_weight_and_time_window(GeneratedPromoType type)
+    {
+        using ServiceProvider services = Services();
+        var template = GeneratedPromoTemplates.UpNext();
+        template.Type = type;
+        template.Background = "special.png";
+        template.BackgroundRules = [new()
+        {
+            Background = "special.png", Shows = ["Rugrats", "Doug"], OnlyWhenMatching = true,
+            Within = TimeSpan.FromMinutes(90), MatchWeight = 8,
+            TimeRange = new() { Start = TimeSpan.FromHours(22), End = TimeSpan.FromHours(6) }
+        }];
+        var channel = new ChannelConfig { Id = "zone", Name = "The Zone", GeneratedPromos = new() { Templates = [template] } };
+        services.GetRequiredService<ConfigEditor>().Working.Channels.Add(channel);
+        await using var renderer = new HtmlRenderer(services, services.GetRequiredService<ILoggerFactory>());
+        string html = await Render(renderer, channel);
+        Assert.Contains(type == GeneratedPromoType.NowPlaying ? "Choose based on the Now Playing show" : "Choose based on upcoming shows", html);
+        Assert.Contains("Rugrats", html);
+        Assert.Contains("Doug", html);
+        Assert.Contains("only when matching", html);
+        Assert.Contains("Relative chance when matching", html);
+        Assert.Contains("<details class=\"ed-background-rules\">", html);
+        Assert.Contains("Only choose during a daily time range", html);
+        Assert.Contains("value=\"22:00\"", html);
+        Assert.Contains("value=\"06:00\"", html);
+        if (type == GeneratedPromoType.NowPlaying)
+        {
+            Assert.DoesNotContain("Look ahead by", html);
+            Assert.Contains("including a show that has already started", html);
+        }
+        else
+        {
+            Assert.Contains("Within the next (minutes)", html);
+            Assert.Contains("value=\"90\"", html);
+        }
+    }
+
+    [Fact]
+    public async Task Advanced_voice_editor_shows_authored_scripts_and_optional_affixes_instead_of_AI_controls()
+    {
+        using ServiceProvider services = Services();
+        var template = GeneratedPromoTemplates.UpNext();
+        template.Voice!.Advanced = new()
+        {
+            Templates = ["Now, it's {up_next}. Crazy right? Then after that it's {up_next_2}!"]
+        };
+        template.Voice.Writer = new();
+        var channel = new ChannelConfig { Id = "zone", Name = "The Zone", GeneratedPromos = new() { Templates = [template] } };
+        services.GetRequiredService<ConfigEditor>().Working.Channels.Add(channel);
+        await using var renderer = new HtmlRenderer(services, services.GetRequiredService<ILoggerFactory>());
+        string html = await Render(renderer, channel);
+        Assert.Contains("Script template 1", html);
+        Assert.Contains("Template read-out:", html);
+        Assert.Contains("Crazy right?", html);
+        Assert.Contains("Before a repeated show title", html);
+        Assert.Contains("Count upcoming programmes by", html);
+        Assert.Contains("Timeslot / episode (follow the channel", html);
+        Assert.DoesNotContain("Count individual episodes instead of matching the image selectors", html);
+        Assert.DoesNotContain("Have AI word it naturally", html);
+        Assert.DoesNotContain("Said first", html);
+        Assert.DoesNotContain("Said last", html);
+        Assert.DoesNotContain("No usable voice-over template", html);
+        template.Voice.Advanced.IncludePreMessages = true;
+        template.Voice.Advanced.IncludePostMessages = true;
+        html = await Render(renderer, channel);
+        Assert.Contains("Said first", html);
+        Assert.Contains("Said last", html);
+    }
+
+    [Fact]
+    public async Task Still_preview_honours_background_eligibility()
+    {
+        Directory.CreateDirectory(_directory);
+        string path = Path.Combine(_directory, "red.png");
+        using (var bitmap = new SKBitmap(16, 16))
+        {
+            bitmap.Erase(SKColors.Red);
+            using var image = SKImage.FromBitmap(bitmap);
+            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+            await File.WriteAllBytesAsync(path, data.ToArray());
+        }
+        using ServiceProvider services = Services();
+        var template = new GeneratedPromoTemplate
+        {
+            Background = path, BackgroundColor = "#0000FF",
+            BackgroundRules = [new() { Background = path, Shows = ["Rugrats"], OnlyWhenMatching = true }]
+        };
+        var preview = services.GetRequiredService<GeneratedPromoPreview>();
+        using var excluded = SKBitmap.Decode(await preview.RenderStillAsync(template, "Channel", [new("Doug", Noon)],
+            TimeZoneInfo.Utc, TimeSpan.Zero, 160, airsAt: Noon));
+        using var included = SKBitmap.Decode(await preview.RenderStillAsync(template, "Channel", [new("Rugrats", Noon)],
+            TimeZoneInfo.Utc, TimeSpan.Zero, 160, airsAt: Noon));
+        Assert.True(excluded.GetPixel(80, 45).Blue > 200);
+        Assert.True(included.GetPixel(80, 45).Red > 200);
+    }
+
     [Fact]
     public async Task Tab_offers_a_template_then_shows_canvas_layers_voice_music_and_up_next_validation()
     {

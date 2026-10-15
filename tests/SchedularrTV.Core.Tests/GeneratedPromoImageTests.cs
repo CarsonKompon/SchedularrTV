@@ -24,7 +24,7 @@ public sealed class GeneratedPromoImageTests
     };
 
     [Fact]
-    public void Images_resolve_independent_contexts_and_canvas_bounds_without_changing_voice_listings()
+    public void Images_resolve_independent_contexts_and_canvas_bounds()
     {
         GeneratedPromoTemplate template = Template();
         var subjects = new GeneratedImageSubjects(new("Current", At), [new("Next", At), new(" later ", At.AddHours(1))]);
@@ -32,7 +32,8 @@ public sealed class GeneratedPromoImageTests
         Assert.Equal("target.png", promo.VariableImages["variable_image_01"]);
         Assert.Equal("current.png", promo.VariableImages["variable_image_02"]);
         Assert.Equal("later.png", promo.VariableImages["variable_image_03"]);
-        Assert.Equal(1, GeneratedPromoResolver.ListingsNeeded(template));
+        // The image shows the show after next, so the Up Next promo (and its voice-over) is about two shows.
+        Assert.Equal(2, GeneratedPromoResolver.ListingsNeeded(template));
         PromoImageLayer layer = Assert.Single(GeneratedPromoResolver.Compose(promo).Layers.OfType<PromoImageLayer>());
         Assert.Equal("later.png", layer.Path);
         Assert.Equal(10, layer.Bounds.Left);
@@ -56,6 +57,20 @@ public sealed class GeneratedPromoImageTests
         Assert.Equal("default.png", promo.VariableImages["variable_image_02"]);
         Assert.Equal("", promo.VariableImages["variable_image_03"]);
         Assert.Empty(GeneratedPromoResolver.Compose(promo).Layers.OfType<PromoImageLayer>());
+    }
+
+    [Fact]
+    public void Block_override_is_used_when_the_show_has_no_override_of_its_own()
+    {
+        GeneratedPromoTemplate template = Template();
+        template.VariableImages![0].Shows.Add(new() { Show = "Toonami", Block = true, Path = "toonami.png" });
+
+        Assert.Equal("target.png", GeneratedPromoResolver.Resolve(template, "Channel",
+            [new("Target", At, Block: "Toonami")], TimeZoneInfo.Utc)!.VariableImages["variable_image_01"]);
+        Assert.Equal("toonami.png", GeneratedPromoResolver.Resolve(template, "Channel",
+            [new("Unassigned", At, Block: "TOONAMI")], TimeZoneInfo.Utc)!.VariableImages["variable_image_01"]);
+        Assert.Equal("default.png", GeneratedPromoResolver.Resolve(template, "Channel",
+            [new("Toonami", At)], TimeZoneInfo.Utc)!.VariableImages["variable_image_01"]);
     }
 
     [Fact]
@@ -176,6 +191,31 @@ public sealed class GeneratedPromoImageTests
             Channels = [new() { Id = "channel", Name = "Channel", Number = 1, BaseRotation = new() { Query = "*" },
                 GeneratedPromos = new() { Templates = [template] } }]
         }).Errors, error => error.Contains("{variable_image_01:later}"));
+    }
+
+    [Fact]
+    public void The_voice_over_reads_out_every_show_the_images_show()
+    {
+        GeneratedPromoTemplate template = Template();
+        template.Voice = new GeneratedVoiceConfig { Voice = "voice" };
+        template.Layers =
+        [
+            new() { Kind = GeneratedLayerKind.Image, VariableImage = "variable_image_01", VariableImageShow = "next" },
+            new() { Kind = GeneratedLayerKind.Image, VariableImage = "variable_image_01", VariableImageShow = "next2" }
+        ];
+        UpNextListing[] listings = [new("Rugrats", At.AddMinutes(30)), new("Doug", At.AddMinutes(60)), new("Recess", At.AddMinutes(90))];
+
+        Assert.Equal(2, GeneratedPromoResolver.ListingsNeeded(template));
+        string script = GeneratedPromoResolver.Resolve(template, "Channel", listings, TimeZoneInfo.Utc, At)!.Script!;
+        Assert.Contains("Rugrats", script);
+        Assert.Contains("Doug", script);
+        Assert.DoesNotContain("Recess", script);
+
+        // Its variable's usual show counts too, when the layer doesn't choose one.
+        template.Layers = [new() { Kind = GeneratedLayerKind.Image, VariableImage = "variable_image_03" }];
+        Assert.Equal(2, GeneratedPromoResolver.ListingsNeeded(template));
+        template.Layers = [new() { Kind = GeneratedLayerKind.Image, VariableImage = "variable_image_02" }];
+        Assert.Equal(1, GeneratedPromoResolver.ListingsNeeded(template));
     }
 
     [Fact]

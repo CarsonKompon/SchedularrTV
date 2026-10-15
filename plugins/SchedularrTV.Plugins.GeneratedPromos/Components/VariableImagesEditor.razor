@@ -5,7 +5,7 @@
     <p class="hint">Each use can pick its own show, so one variable can show what's on now, what's next and what's after it at once:
         on an image layer choose <em>For which show</em>; in arguments add it after a colon, as in
         <code>{variable_image_01:watching}</code>, <code>{variable_image_01:next}</code> or <code>{variable_image_01:next2}</code>
-        (<code>:promoted</code> is the show the promo is for; <code>:next2</code> to <code>:next10</code> are that many shows ahead).</p>
+        (<code>:promoted</code> is the show the promo is for; <code>:next2</code> to <code>:next10</code> use the template's shared upcoming grouping, just like Up Next text and TTS).</p>
     @foreach (GeneratedVariableImage image in Template.VariableImages ?? [])
     {
         <div class="card" @key="image">
@@ -45,24 +45,40 @@
             @foreach (GeneratedShowImage show in image.Shows)
             {
                 <div class="grid grid-3" @key="show">
-                    <label class="field">
-                        <span>Show title</span>
-                        <input type="text" @bind="show.Show" @bind:after="Notify" placeholder="Exact series / show title" />
-                    </label>
                     <div class="field">
-                        <span>Image for this show</span>
-                        <FilePathPicker Value="@show.Path" ValueChanged="value => Set(() => show.Path = value)"
-                                        KeepCopyIn="@GeneratedPromoPackages.AssetCategory" Extensions="FileBrowsing.Images"
-                                        Label="show image" StartIn="Environment.SpecialFolder.MyPictures" />
+                        <span>@(show.Block ? "Block name" : "Show title")</span>
+                        <div class="row">
+                            <select style="flex: none; width: auto;" aria-label="Match a show or a block" title="Match a show, or the block a show airs in"
+                                    value="@(show.Block ? "block" : "show")" @onchange="@(e => Set(() => show.Block = e.Value as string == "block"))">
+                                <option value="show">Show</option>
+                                <option value="block">Block</option>
+                            </select>
+                            <input type="text" style="flex: 1; min-width: 0;" @bind="show.Show" @bind:after="Notify"
+                                   placeholder="@(show.Block ? "Exact block name" : "Exact series / show title")" />
+                        </div>
                     </div>
-                    <div><button class="btn btn-sm btn-danger" type="button" @onclick="() => Set(() => image.Shows.Remove(show))">Remove show</button></div>
+                    <div class="field">
+                        <span>@(show.Block ? "Image for this block" : "Image for this show")</span>
+                        <div class="row">
+                            <div style="flex: 1; min-width: 0;">
+                                <FilePathPicker Value="@show.Path" ValueChanged="value => Set(() => show.Path = value)"
+                                                KeepCopyIn="@GeneratedPromoPackages.AssetCategory" Extensions="FileBrowsing.Images"
+                                                Label="show image" StartIn="Environment.SpecialFolder.MyPictures" />
+                            </div>
+                            <ImageThumbnail Path="@show.Path" />
+                        </div>
+                    </div>
+                    <div style="align-self: end;"><button class="btn btn-sm btn-danger" type="button" @onclick="() => Set(() => image.Shows.Remove(show))">Remove show</button></div>
                 </div>
             }
             <button class="btn btn-sm" type="button" @onclick="() => Set(() => image.Shows.Add(new()))">+ Show override</button>
+            <button class="btn btn-sm" type="button" @onclick="() => Set(() => image.Shows.Add(new() { Block = true }))">+ Block override</button>
         </div>
     }
     <button class="btn btn-sm" type="button" @onclick="Add">+ Variable image</button>
-    <p class="hint">Show titles are case-insensitive. An unassigned show or unavailable show context uses the default.
+    <p class="hint">Show titles and block names are matched loosely: case, punctuation, accents, "&amp;" for "and", a missing "The" and small typos
+        are all forgiven. A show override wins; otherwise a block override for the block the show airs in
+        is used; otherwise the default. An unavailable show context uses the default.
         With no default, the image is hidden and the external placeholder is empty. Up next skips the current show's continuation during a mid-show break.</p>
 </details>
 

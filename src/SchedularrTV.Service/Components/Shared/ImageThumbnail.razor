@@ -1,0 +1,92 @@
+@* A small preview of an image file on the computer running SchedularrTV, so a chosen picture can be recognised at a glance. *@
+@using System.Collections.Concurrent
+@using SkiaSharp
+
+<span class="image-thumb @(_url is null ? "image-thumb-none" : null)" title="@(_url is null ? EmptyText : Path)">
+    @if (_url is not null)
+    {
+        <img src="@_url" alt="" />
+    }
+</span>
+
+@code {
+    /// <summary>Full path of the image file. Missing or unreadable files show an empty box.</summary>
+    [Parameter] public string? Path { get; set; }
+
+    private const int Pixels = 64; // shown at 32px, drawn at 2x for sharp high-DPI screens
+    private const int CacheLimit = 500;
+
+    // Thumbnails keyed by path and last write time, so a replaced file gets a fresh preview.
+    private static readonly ConcurrentDictionary<(string Path, DateTime Written), string?> Cache = new();
+
+    private string? _url;
+    private string? _loadedPath;
+
+    private string EmptyText => string.IsNullOrWhiteSpace(Path) ? "No image chosen" : "Image not found or can't be read";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.Equals(_loadedPath, Path, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _loadedPath = Path;
+        string? path = Path;
+        string? url = string.IsNullOrWhiteSpace(path) ? null : await Task.Run(() => Load(path));
+        if (string.Equals(_loadedPath, path, StringComparison.Ordinal))
+        {
+            _url = url;
+        }
+    }
+
+    private static string? Load(string path)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            var key = (path, File.GetLastWriteTimeUtc(path));
+            if (Cache.TryGetValue(key, out string? cached))
+            {
+                return cached;
+            }
+
+            string? url = Render(path);
+            if (Cache.Count >= CacheLimit)
+            {
+                Cache.Clear();
+            }
+
+            Cache[key] = url;
+            return url;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return null;
+        }
+    }
+
+    private static string? Render(string path)
+    {
+        using SKImage? image = SKImage.FromEncodedData(path);
+        if (image is null || image.Width <= 0 || image.Height <= 0)
+        {
+            return null;
+        }
+
+        float scale = Math.Min(1f, (float)Pixels / Math.Max(image.Width, image.Height));
+        int width = Math.Max(1, (int)Math.Round(image.Width * scale));
+        int height = Math.Max(1, (int)Math.Round(image.Height * scale));
+
+        using SKSurface surface = SKSurface.Create(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul));
+        surface.Canvas.Clear(SKColors.Transparent);
+        surface.Canvas.DrawImage(image, SKRect.Create(width, height), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
+        using SKImage thumb = surface.Snapshot();
+        using SKData png = thumb.Encode(SKEncodedImageFormat.Png, 100);
+        return "data:image/png;base64," + Convert.ToBase64String(png.AsSpan());
+    }
+}

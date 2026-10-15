@@ -364,7 +364,7 @@ public sealed class GeneratedPromoTypeTests
     [InlineData(GeneratedPromoType.Eventually, "eventually")]
     [InlineData(GeneratedPromoType.YoureWatching, "youre_watching")]
     [InlineData(GeneratedPromoType.BackToTheShow, "back_to_the_show")]
-    public void Each_type_round_trips_and_requires_its_own_text_block(GeneratedPromoType type, string layer)
+    public void Each_type_round_trips_and_can_do_without_its_own_text_block(GeneratedPromoType type, string layer)
     {
         var config = new SchedulerConfig { Channels = [Channel(GeneratedPromoTemplates.ForType(type))] };
         SchedulerConfig parsed = SchedulerConfigLoader.Parse(SchedulerConfigLoader.Serialize(config));
@@ -376,8 +376,12 @@ public sealed class GeneratedPromoTypeTests
         Assert.Empty(template.Voice!.PreMessages);
         Assert.NotNull(show.Show);
 
+        Assert.Equal(layer, YamlDotNet.Serialization.NamingConventions.UnderscoredNamingConvention.Instance.Apply(show.Kind.ToString()));
+
+        // Showing the show with images alone (no text block of its type) is allowed.
         template.Layers.Remove(show);
-        template.Layers.Add(new GeneratedLayer { Kind = GeneratedLayerKind.UpNext });
-        Assert.Contains(SchedulerConfigLoader.Validate(parsed).Errors, error => error.EndsWith($"needs its '{layer}' text layer.", StringComparison.Ordinal));
+        template.VariableImages = [new GeneratedVariableImage { Name = "variable_image_01", DefaultPath = "show.png" }];
+        template.Layers.Add(new GeneratedLayer { Kind = GeneratedLayerKind.Image, VariableImage = "variable_image_01", VariableImageShow = "promoted" });
+        Assert.True(SchedulerConfigLoader.Validate(parsed).IsValid, string.Join("; ", SchedulerConfigLoader.Validate(parsed).Errors));
     }
 }

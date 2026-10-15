@@ -79,6 +79,15 @@
         </label>
     </div>
 
+    <label class="field">
+        <span>Count upcoming programmes by</span>
+        <select value="@Template.UpcomingGrouping" @onchange="e => Set(() => Template.UpcomingGrouping = Enum.Parse<GeneratedUpcomingGrouping>(Text(e)))">
+            <option value="@GeneratedUpcomingGrouping.Timeslot">Timeslot / episode (follow the channel's slots)</option>
+            <option value="@GeneratedUpcomingGrouping.Show">Show (group consecutive slots of the same show)</option>
+        </select>
+    </label>
+    <p class="hint">Shared by Up Next text, variable images, voice-over, external generators, and background rules. Timeslot / episode counts episodes packed into one channel slot together; when packing is disabled, each episode counts separately. Mid-roll segments never count as new programmes.</p>
+
     <VariableImagesEditor Template="Template" Changed="Commit" />
 
     @if (Template.Generator is { } generator)
@@ -215,17 +224,34 @@
                 <span class="ed-toolbar-label">Add</span>
                 <button class="btn btn-sm" type="button" @onclick="() => AddLayer(RequiredKind)">+ @KindName(RequiredKind)</button>
                 <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Text)">+ Text</button>
-                <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Rect)">+ Rectangle</button>
+                <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Rect)">+ Shape</button>
                 <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Image)">+ Image</button>
                 <div class="spacer"></div>
                 <span class="ed-meta">@Template.Width × @Template.Height</span>
             </div>
+            @if (_editBackground is { } editingBackground)
+            {
+                <div class="banner ed-placing" role="status">
+                    <div>
+                        <strong>Placing layers for @Path.GetFileName(editingBackground)</strong>
+                        <span class="hint" style="margin:0;display:block;">
+                            Moving, resizing, opacity, keyframes, colour, and when layers appear, leave and how they animate in and out now change this background only (⌖ marks layers set for it;
+                            @GeneratedPromoEditing.PlacedCount(Template, editingBackground) so far). Everything else still applies to every background.
+                        </span>
+                    </div>
+                    <div class="spacer"></div>
+                    <button class="btn btn-sm btn-primary" type="button" @onclick="() => EditBackground(null)">Done</button>
+                </div>
+            }
             @if (!Template.Layers.Any(layer => layer.Kind == RequiredKind))
             {
-                <div class="banner banner-error">
-                    This template needs a “@KindName(RequiredKind)” block to show the promoted show.
+                @* Optional: a template can show the shows with variable images alone. *@
+                <p class="hint">
+                    No “@KindName(RequiredKind)” block, so the show's name isn't written on screen
+                    @(Template.Layers.Any(layer => !string.IsNullOrWhiteSpace(layer.VariableImage)) ? "(its variable images show it)" : "")
+                    — fine if that's intended.
                     <button class="btn btn-sm" type="button" @onclick="() => AddLayer(RequiredKind)">Add one</button>
-                </div>
+                </p>
             }
             <div class="ed-canvas" id="@_canvasId" role="group" aria-label="Promo canvas" @onpointerenter="MeasureCanvas"
                  style="aspect-ratio:@(Template.Width) / @(Template.Height);">
@@ -235,11 +261,12 @@
                 @foreach (GeneratedLayer layer in Template.Layers)
                 {
                     bool isSelected = ReferenceEquals(layer, _layer);
-                    LayerPose pose = GeneratedPromoEditing.PoseAt(layer, Time);
-                    <div class="layer-box @(isSelected ? "selected" : "") @(VisibleAt(layer) ? "" : "hidden-now") @(GeneratedPromoEditing.HasKeyframes(layer) ? "keyed" : "")" @key="layer"
+                    LayerPose pose = GeneratedPromoEditing.PoseAt(Pose(layer), Time);
+                    bool placedHere = PlacedHere(layer);
+                    <div class="layer-box @(isSelected ? "selected" : "") @(VisibleAt(layer) ? "" : "hidden-now") @(GeneratedPromoEditing.HasKeyframes(Pose(layer)) ? "keyed" : "") @(placedHere ? "placed" : "")" @key="layer"
                          style="left:@Pct(pose.X, Template.Width);top:@Pct(pose.Y, Template.Height);width:@Pct(pose.Width, Template.Width);height:@Pct(pose.Height, Template.Height);"
                          title="@layer.Name" @onpointerdown="e => StartDrag(e, layer, Move)" @onpointerdown:preventDefault="true">
-                        <span class="layer-tag">@(GeneratedPromoEditing.HasKeyframes(layer) ? "◆ " : "")@Label(layer)</span>
+                        <span class="layer-tag">@(GeneratedPromoEditing.HasKeyframes(Pose(layer)) ? "◆ " : "")@(placedHere ? "⌖ " : "")@Label(layer)</span>
                         @if (isSelected)
                         {
                             @foreach (string handle in Handles)
@@ -274,7 +301,7 @@
                     <div class="spacer"></div>
                     @if (_layer is { } timedLayer)
                     {
-                        <span class="ed-meta">@Label(timedLayer)@(GeneratedPromoEditing.HasKeyframes(timedLayer) ? $" · {timedLayer.Keyframes!.Count} keyframe{(timedLayer.Keyframes!.Count == 1 ? "" : "s")}" : "")</span>
+                        <span class="ed-meta">@Label(timedLayer)@(Pose(timedLayer).Keyframes is { Count: > 0 } timedKeys ? $" · {timedKeys.Count} keyframe{(timedKeys.Count == 1 ? "" : "s")}" : "")@(PlacedHere(timedLayer) ? " · placed for this background" : "")</span>
                     }
                 </div>
                 <div class="ed-ruler" id="@_rulerId" role="slider" tabindex="0" aria-label="Preview time" aria-valuemin="0"
@@ -286,11 +313,12 @@
                     }
                     @if (_layer is { } spanLayer)
                     {
-                        double spanStart = spanLayer.Start.TotalSeconds;
-                        double spanEnd = Math.Min(DurationSeconds, (spanLayer.End ?? Template.Duration).TotalSeconds);
+                        IGeneratedTiming spanTiming = Timing(spanLayer);
+                        double spanStart = spanTiming.Start.TotalSeconds;
+                        double spanEnd = Math.Min(DurationSeconds, (spanTiming.End ?? Template.Duration).TotalSeconds);
                         <span class="ed-span" style="left:@Pct(spanStart, DurationSeconds);width:@Pct(Math.Max(0, spanEnd - spanStart), DurationSeconds)"></span>
                         GeneratedKeyframe? currentFrame = CurrentKeyframe;
-                        @foreach (GeneratedKeyframe frame in spanLayer.Keyframes ?? [])
+                        @foreach (GeneratedKeyframe frame in Pose(spanLayer).Keyframes ?? [])
                         {
                             <span class="ed-key @(ReferenceEquals(frame, currentFrame) ? "current" : "") @($"ease-{frame.Easing.ToString().ToLowerInvariant()}")" @key="frame"
                                   style="left:@Pct(frame.At.TotalSeconds, DurationSeconds)"
@@ -303,7 +331,7 @@
                 @if (_layer is { } keyLayer)
                 {
                     <div class="ed-keybar" aria-label="Keyframes">
-                        @if (!GeneratedPromoEditing.HasKeyframes(keyLayer))
+                        @if (!GeneratedPromoEditing.HasKeyframes(Pose(keyLayer)))
                         {
                             <button class="btn btn-sm" type="button" @onclick="() => StartKeyframes(keyLayer)"
                                     title="Animate this layer's position, size and opacity by setting them at different times">◆ Animate with keyframes</button>
@@ -323,7 +351,7 @@
                                 <label class="ed-keyfield">
                                     <span>Then</span>
                                     <select value="@key.Easing" title="How it moves on to the next keyframe"
-                                            @onchange="e => Set(() => key.Easing = Enum.Parse<GeneratedEasing>(Text(e)))">
+                                            @onchange="e => SetEasing(keyLayer, key, Enum.Parse<GeneratedEasing>(Text(e)))">
                                         @foreach (GeneratedEasing easing in Enum.GetValues<GeneratedEasing>())
                                         {
                                             <option value="@easing">@EasingName(easing)</option>
@@ -433,7 +461,7 @@
                                           @onchange="e => Set(() => UpNext(selected).Suffix = Affix(e))">@(selected.UpNext?.Suffix)</textarea>
                             </label>
                         </div>
-                        <p class="hint">Joined onto the first and last show, spaces included, so the whole line is one layer; a new line puts it on a line of its own. {channel} is the channel name.</p>
+                        <p class="hint">Joined onto the first and last show, spaces included, so the whole line is one layer; a new line puts it on a line of its own. {channel} is the channel name. {start_time} and {end_time} are the first listed show's start and last listed show's end in the channel's local time. An unknown end time is left blank.</p>
                     }
                     else if (GeneratedPromoKinds.IsShowLayer(selected.Kind))
                     {
@@ -586,33 +614,77 @@
 
                     @if (selected.Kind != GeneratedLayerKind.Image)
                     {
-                        (string rgb, int alpha) = GeneratedPromoEditing.SplitColor(selected.Color);
+                        (string rgb, int alpha) = GeneratedPromoEditing.SplitColor(ColorOf(selected));
+                        bool ownColour = _editBackground is not null && GeneratedPromoResolver.Recolour(Template, _editBackground, selected) is not null;
                         <div class="grid grid-2">
                             <div class="field">
-                                <span>Colour</span>
-                                <input type="color" class="ed-colour" aria-label="Layer colour" value="@rgb"
-                                       @onchange="e => Set(() => selected.Color = GeneratedPromoEditing.JoinColor(Text(e), alpha))" />
+                                <span>Colour@(_editBackground is null ? "" : ownColour ? " (this background's)" : " (the template's; changing it sets this background's)")</span>
+                                <ScreenColourPicker @key="selected" Value="@rgb"
+                                                    ValueChanged="colour => SetColor(selected, GeneratedPromoEditing.JoinColor(colour, alpha))" />
                             </div>
                             <label class="field">
                                 <span>Colour transparency: @(100 - alpha)%</span>
                                 <input type="range" min="0" max="100" value="@(100 - alpha)"
-                                       @onchange="e => SetNumber(e, value => selected.Color = GeneratedPromoEditing.JoinColor(rgb, 100 - (int)value))" />
+                                       @onchange="e => int.TryParse(Text(e), out int transparency) ? SetColor(selected, GeneratedPromoEditing.JoinColor(rgb, 100 - transparency)) : Task.CompletedTask" />
                             </label>
                         </div>
                     }
                     @if (selected.Kind == GeneratedLayerKind.Rect)
                     {
                         <label class="field">
-                            <span>Corner radius</span>
-                            <input type="number" min="0" value="@Number(selected.CornerRadius)"
-                                   @onchange="e => SetNumber(e, value => selected.CornerRadius = (float)Math.Max(0, value))" />
+                            <span>Shape</span>
+                            <select value="@(selected.Shape ?? GeneratedShape.Rectangle)"
+                                    @onchange="e => Set(() => selected.Shape = Enum.Parse<GeneratedShape>(Text(e)))">
+                                @foreach (var shape in Enum.GetValues<GeneratedShape>())
+                                {
+                                    <option value="@shape">@shape</option>
+                                }
+                            </select>
                         </label>
+                        <div class="grid grid-2">
+                            <label class="field">
+                                <span>Rotation (degrees)</span>
+                                <input type="number" step="1" value="@Number(selected.Rotation ?? 0)"
+                                       @onchange="e => SetNumber(e, value => selected.Rotation = (float)(value % 360))" />
+                            </label>
+                            <label class="field">
+                                <span>Soft edges (pixels)</span>
+                                <input type="number" min="0" max="200" step="1" value="@Number(selected.SoftEdges ?? 0)"
+                                       @onchange="e => SetNumber(e, value => selected.SoftEdges = (float)Math.Clamp(value, 0, 200))" />
+                            </label>
+                        </div>
+                        <p class="hint">Rotation is around the centre. Soft edges feather the outline; 0 keeps it sharp. These settings apply across backgrounds.</p>
+                        @if (selected.Shape is null or GeneratedShape.Rectangle)
+                        {
+                            <label class="field">
+                                <span>Corner radius</span>
+                                <input type="number" min="0" value="@Number(selected.CornerRadius)"
+                                       @onchange="e => SetNumber(e, value => selected.CornerRadius = (float)Math.Max(0, value))" />
+                            </label>
+                        }
                     }
 
-                    @{ LayerPose selectedPose = GeneratedPromoEditing.PoseAt(selected, Time); }
+                    @{ LayerPose selectedPose = GeneratedPromoEditing.PoseAt(Pose(selected), Time); }
+                    @if (_editBackground is { } placingFor)
+                    {
+                        <div class="ed-placing-layer">
+                            @if (PlacedHere(selected))
+                            {
+                                <span class="hint" style="margin:0;">
+                                    ⌖ @CustomisedParts(selected, placingFor) its own way for @Path.GetFileName(placingFor).
+                                </span>
+                                <button class="btn btn-sm" type="button" title="Use the template's position, size, opacity, keyframes, timing and colour again for this background"
+                                        @onclick="() => ResetPlacement(selected)">Use the template's</button>
+                            }
+                            else
+                            {
+                                <span class="hint" style="margin:0;">As the template has it; move it or change its colour to set it for @Path.GetFileName(placingFor) only.</span>
+                            }
+                        </div>
+                    }
                     <h4>
                         Position (pixels)
-                        @if (GeneratedPromoEditing.HasKeyframes(selected))
+                        @if (GeneratedPromoEditing.HasKeyframes(Pose(selected)))
                         {
                             <span class="ed-meta">· at @($"{_time:0.00}")s; @(CurrentKeyframe is null ? "changing these adds a keyframe" : "this keyframe")</span>
                         }
@@ -640,21 +712,37 @@
                         </p>
                     }
 
-                    <h4>Timing and animation</h4>
+                    @{ IGeneratedTiming timing = Timing(selected); }
+                    <h4>
+                        Timing and animation
+                        @if (_editBackground is { } timingFor)
+                        {
+                            @if (GeneratedPromoResolver.Retiming(Template, timingFor, selected) is not null)
+                            {
+                                <span class="ed-meta">· this background's own</span>
+                                <button class="btn btn-sm" type="button" title="Use the template's timing and transitions again for this background"
+                                        @onclick="() => ResetTiming(selected)">Use the template's</button>
+                            }
+                            else
+                            {
+                                <span class="ed-meta">· the template's; changing it sets this background's</span>
+                            }
+                        }
+                    </h4>
                     <div class="grid grid-2">
                         <label class="field">
                             <span>Appears at (s)</span>
-                            <input type="number" min="0" step="0.05" value="@Number(selected.Start.TotalSeconds)"
-                                   @onchange="e => SetSeconds(e, value => selected.Start = value)" />
+                            <input type="number" min="0" step="0.05" value="@Number(timing.Start.TotalSeconds)"
+                                   @onchange="e => SetSeconds(e, value => EditableTiming(selected).Start = value)" />
                         </label>
                         <label class="field">
                             <span>Leaves at (s, blank = end)</span>
-                            <input type="number" min="0" step="0.05" value="@(selected.End is { } end ? Number(end.TotalSeconds) : "")"
-                                   @onchange="e => SetOptionalSeconds(e, value => selected.End = value)" />
+                            <input type="number" min="0" step="0.05" value="@(timing.End is { } end ? Number(end.TotalSeconds) : "")"
+                                   @onchange="e => SetOptionalSeconds(e, value => EditableTiming(selected).End = value)" />
                         </label>
                         <label class="field">
                             <span>Enter</span>
-                            <select value="@selected.TransitionIn" @onchange="e => Set(() => selected.TransitionIn = Enum.Parse<GeneratedTransition>(Text(e)))">
+                            <select value="@timing.TransitionIn" @onchange="e => Set(() => EditableTiming(selected).TransitionIn = Enum.Parse<GeneratedTransition>(Text(e)))">
                                 @foreach (GeneratedTransition transition in Enum.GetValues<GeneratedTransition>())
                                 {
                                     <option value="@transition">@Words(transition)</option>
@@ -663,7 +751,7 @@
                         </label>
                         <label class="field">
                             <span>Exit</span>
-                            <select value="@selected.TransitionOut" @onchange="e => Set(() => selected.TransitionOut = Enum.Parse<GeneratedTransition>(Text(e)))">
+                            <select value="@timing.TransitionOut" @onchange="e => Set(() => EditableTiming(selected).TransitionOut = Enum.Parse<GeneratedTransition>(Text(e)))">
                                 @foreach (GeneratedTransition transition in Enum.GetValues<GeneratedTransition>())
                                 {
                                     <option value="@transition">@Words(transition)</option>
@@ -672,8 +760,8 @@
                         </label>
                         <label class="field">
                             <span>Transition length (s)</span>
-                            <input type="number" min="0" max="5" step="0.05" value="@Number(selected.TransitionDuration.TotalSeconds)"
-                                   @onchange="e => SetSeconds(e, value => selected.TransitionDuration = value)" />
+                            <input type="number" min="0" max="5" step="0.05" value="@Number(timing.TransitionDuration.TotalSeconds)"
+                                   @onchange="e => SetSeconds(e, value => EditableTiming(selected).TransitionDuration = value)" />
                         </label>
                     </div>
                 </div>
@@ -689,6 +777,7 @@
     </label>
     @if (Template.Voice is { Enabled: true } voice)
     {
+        bool advancedVoice = voice.Advanced is { Enabled: true };
         ITextToSpeechProvider? provider = Voices.Providers.FirstOrDefault(candidate => string.Equals(candidate.Id, voice.Provider, StringComparison.OrdinalIgnoreCase));
         IReadOnlyList<TtsVoice> voiceList = VoiceList(provider);
         IReadOnlyList<string> languages = [.. voiceList.Select(option => option.Language).Distinct().Order()];
@@ -750,21 +839,73 @@
         {
             <p class="hint warn">Couldn't load the voice list: @voiceError</p>
         }
+        <label class="check">
+            <input type="checkbox" checked="@advancedVoice" @onchange="e => ToggleAdvancedVoice(voice, e.Value is true)" />
+            <span>Advanced voice-over templates (write the complete script)</span>
+        </label>
+        @if (voice.Advanced is { Enabled: true } advanced)
+        {
+            <p class="hint">One of your eligible templates is picked for each promo. Its wording is used exactly, with tokens filled in—no automatic linking phrases or AI rewriting.</p>
+            @for (int index = 0; index < advanced.Templates.Count; index++)
+            {
+                int position = index;
+                <div class="field" @key="position">
+                    <label for="@($"{_canvasId}-voice-{position}")">Script template @(position + 1)</label>
+                    <textarea id="@($"{_canvasId}-voice-{position}")" rows="3"
+                              @onchange="e => Set(() => advanced.Templates[position] = Text(e))">@advanced.Templates[position]</textarea>
+                    <button class="btn btn-sm btn-danger" type="button" @onclick="() => Set(() => advanced.Templates.RemoveAt(position))">Remove template</button>
+                </div>
+            }
+            <button class="btn btn-sm" type="button" @onclick="() => Set(() => advanced.Templates.Add(DefaultVoiceTemplate))">Add script template</button>
+            <p class="hint">{up_next}, {up_next_2} … {up_next_10} always use the same upcoming sequence as text and variable images. The template's “Count upcoming programmes by” setting controls whether this counts timeslots/episodes or groups consecutive slots by show. {show} names the show this promo is for; {channel}, {episode}, {start_time}, and {end_time} are also available.</p>
+            <p class="hint">Use {up_next_2:raw} to bypass repeat wording, or :episode, :start_time, or :end_time for its details. A template referencing an unavailable upcoming listing is skipped; add a shorter template as a fallback. If none can be used, this promo has no voice-over.</p>
+            <div class="grid grid-2">
+                <label class="field">
+                    <span>Before a repeated show title (spaces included)</span>
+                    <input type="text" value="@advanced.RepeatPrefix" @onchange="e => Set(() => advanced.RepeatPrefix = Text(e))" />
+                </label>
+                <label class="field">
+                    <span>After a repeated show title (spaces included)</span>
+                    <input type="text" value="@advanced.RepeatSuffix" @onchange="e => Set(() => advanced.RepeatSuffix = Text(e))" />
+                </label>
+            </div>
+            <p class="hint">For example, “more ” makes a later token say “more Rugrats” if an earlier listing is also Rugrats. Separate slots of the same show can repeat in Timeslot / episode mode; episodes packed into one slot stay together. Clear both fields to repeat titles unchanged.</p>
+            <label class="check">
+                <input type="checkbox" checked="@advanced.IncludePreMessages" @onchange="e => Set(() => advanced.IncludePreMessages = e.Value is true)" />
+                <span>Include an opener before the script (optional)</span>
+            </label>
+            <label class="check">
+                <input type="checkbox" checked="@advanced.IncludePostMessages" @onchange="e => Set(() => advanced.IncludePostMessages = e.Value is true)" />
+                <span>Include a closer after the script (optional)</span>
+            </label>
+        }
         <div class="grid grid-2">
+            @if (!advancedVoice || voice.Advanced!.IncludePreMessages)
+            {
             <div class="field">
                 <span>Said first (one is picked for each promo)</span>
                 <PhraseListEditor Values="PreMessages(voice)" Changed="Commit" Label="Opener"
                                   Placeholder="@GeneratedPromoResolver.DefaultPreMessage(Template.Type)"
-                                  EmptyHint="@($"Says the usual “{GeneratedPromoResolver.DefaultPreMessage(Template.Type)}”")" />
+                                  EmptyHint="@(advancedVoice ? "No opener; the script stands on its own." : $"Says the usual “{GeneratedPromoResolver.DefaultPreMessage(Template.Type)}”")" />
             </div>
+            }
+            @if (!advancedVoice || voice.Advanced!.IncludePostMessages)
+            {
             <div class="field">
                 <span>Said last ({channel} is the channel name)</span>
                 <PhraseListEditor Values="PostMessages(voice)" Changed="Commit" Label="Closer" Placeholder="Only on {channel}!"
                                   EmptyHint="Nothing is said after the shows." />
             </div>
+            }
         </div>
-        <p class="hint">@(voice.Writer is null ? ReadOutLabel : UsualReadOutLabel) <em>@Script()</em></p>
+        <p class="hint">@(advancedVoice ? "Template read-out:" : voice.Writer is null ? ReadOutLabel : UsualReadOutLabel) <em>@Script()</em></p>
+        @if (advancedVoice && string.IsNullOrWhiteSpace(Script()))
+        {
+            <p class="hint warn">No usable voice-over template for these shows. Check tokens and add a template requiring fewer upcoming listings.</p>
+        }
 
+        @if (!advancedVoice)
+        {
         <label class="check">
             <input type="checkbox" checked="@(voice.Writer is not null)"
                    @onchange="e => Set(() => voice.Writer = e.Value is true ? voice.Writer ?? new AiTextConfig() : null)" />
@@ -775,6 +916,7 @@
             <AiTextSettings Config="voiceWriter" Changed="Commit" PromptLabel="Anything else it should do (optional)"
                             PromptPlaceholder="@VoicePromptPlaceholder" WordsPlaceholder="@VoiceWords(voice)" Try="@TryVoice"
                             TryHint="Writes one with this channel's next shows (a new one each time)." />
+        }
         }
     }
 
@@ -1188,7 +1330,7 @@
                     // The canvas fills the editor's width, so the still is drawn about as wide as a large screen shows it.
                     int width = Math.Min(fast ? ScrubWidth : 1600, Template.Width);
                     byte[] jpeg = await Preview.RenderStillAsync(StillTemplate(), Channel.Name, listings, Zone, TimeSpan.FromSeconds(_time), width, _life.Token,
-                        imageSubjects: Preview.ImageSubjects(Channel));
+                        imageSubjects: Preview.ImageSubjects(Channel, Template));
                     _still = $"data:image/jpeg;base64,{Convert.ToBase64String(jpeg)}";
                     _stillError = null;
                     // Waits until the browser has the frame on screen, which also keeps frames from piling up.
@@ -1271,6 +1413,7 @@
 
         GeneratedPromoTemplate copy = GeneratedPromoEditing.Copy(Template);
         GeneratedPromoEditing.SetBackgrounds(copy, [background]);
+        copy.BackgroundRules = null; // Explicit audition/editing can show an otherwise ineligible background.
         return copy;
     }
 
@@ -1326,6 +1469,11 @@
     private sealed record KeyDragState(GeneratedLayer Layer, GeneratedKeyframe Key, double StartX, TimeSpan StartAt)
     {
         public bool Moved { get; set; }
+
+        /// <summary>What the move goes into, and the keyframe there, once it has moved.</summary>
+        public IGeneratedPose? Target { get; set; }
+
+        public GeneratedKeyframe? Editing { get; set; }
     }
 
     private readonly string _rulerId = $"promo-ruler-{Guid.NewGuid():N}";
@@ -1335,7 +1483,7 @@
     private KeyDragState? _keyDrag;
 
     /// <summary>The selected layer's keyframe under the playhead, which the keyframe bar edits.</summary>
-    private GeneratedKeyframe? CurrentKeyframe => _layer is { } layer ? GeneratedPromoEditing.KeyframeAt(layer, Time) : null;
+    private GeneratedKeyframe? CurrentKeyframe => _layer is { } layer ? GeneratedPromoEditing.KeyframeAt(Pose(layer), Time) : null;
 
     /// <summary>Where the timeline is on screen, for turning the pointer into a time.</summary>
     private async Task MeasureRuler()
@@ -1447,10 +1595,21 @@
             return;
         }
 
+        // Found once the diamond really moves, so clicking one doesn't place the layer for the edited background.
+        if (drag.Target is null)
+        {
+            (drag.Target, drag.Editing) = EditableKey(drag.Layer, drag.Key);
+        }
+
+        if (drag.Editing is not { } key)
+        {
+            return;
+        }
+
         // Keyframes land on whole frames, like the playhead.
-        GeneratedPromoEditing.MoveKeyframe(drag.Layer, drag.Key, TimeSpan.FromSeconds(SnapToFrame(drag.StartAt.TotalSeconds + seconds)), TimeSpan.FromSeconds(LastTime));
+        GeneratedPromoEditing.MoveKeyframe(drag.Target, key, TimeSpan.FromSeconds(SnapToFrame(drag.StartAt.TotalSeconds + seconds)), TimeSpan.FromSeconds(LastTime));
         // The playhead follows the keyframe, so it stays the one being edited.
-        SetTimeTo(drag.Key.At.TotalSeconds, fast: true);
+        SetTimeTo(key.At.TotalSeconds, fast: true);
     }
 
     /// <summary>
@@ -1489,35 +1648,47 @@
         return Task.CompletedTask;
     }
 
-    private Task StartKeyframes(GeneratedLayer layer) => Set(() => GeneratedPromoEditing.StartKeyframes(layer, Time));
+    private Task StartKeyframes(GeneratedLayer layer) => Set(() => GeneratedPromoEditing.StartKeyframes(Editable(layer), Time));
 
-    private Task StopKeyframes(GeneratedLayer layer) => Set(() => GeneratedPromoEditing.StopKeyframes(layer, Time));
+    private Task StopKeyframes(GeneratedLayer layer) => Set(() => GeneratedPromoEditing.StopKeyframes(Editable(layer), Time));
 
     private Task AddKeyframe(GeneratedLayer layer) => Set(() =>
     {
-        if (!GeneratedPromoEditing.HasKeyframes(layer))
+        IGeneratedPose target = Editable(layer);
+        if (!GeneratedPromoEditing.HasKeyframes(target))
         {
-            GeneratedPromoEditing.StartKeyframes(layer, Time);
+            GeneratedPromoEditing.StartKeyframes(target, Time);
         }
         else
         {
-            GeneratedPromoEditing.AddKeyframe(layer, Time);
+            GeneratedPromoEditing.AddKeyframe(target, Time);
         }
     });
 
-    private Task RemoveKeyframe(GeneratedLayer layer, GeneratedKeyframe key) => Set(() => GeneratedPromoEditing.RemoveKeyframe(layer, key));
+    private Task RemoveKeyframe(GeneratedLayer layer, GeneratedKeyframe key) => Set(() =>
+    {
+        (IGeneratedPose target, GeneratedKeyframe? editable) = EditableKey(layer, key);
+        if (editable is not null) GeneratedPromoEditing.RemoveKeyframe(target, editable);
+    });
+
+    private Task SetEasing(GeneratedLayer layer, GeneratedKeyframe key, GeneratedEasing easing) => Set(() =>
+    {
+        if (EditableKey(layer, key).Key is { } editable) editable.Easing = easing;
+    });
 
     private Task SetKeyframeTime(ChangeEventArgs e, GeneratedLayer layer, GeneratedKeyframe key) => SetNumber(e, value =>
     {
-        GeneratedPromoEditing.MoveKeyframe(layer, key, TimeSpan.FromSeconds(SnapToFrame(value)), TimeSpan.FromSeconds(LastTime));
-        _time = SnapToFrame(key.At.TotalSeconds);
+        (IGeneratedPose target, GeneratedKeyframe? editable) = EditableKey(layer, key);
+        if (editable is null) return;
+        GeneratedPromoEditing.MoveKeyframe(target, editable, TimeSpan.FromSeconds(SnapToFrame(value)), TimeSpan.FromSeconds(LastTime));
+        _time = SnapToFrame(editable.At.TotalSeconds);
     });
 
     /// <summary>The selected layer's keyframe before (-1) or after (1) the playhead.</summary>
     private GeneratedKeyframe? NextKeyframe(GeneratedLayer layer, int direction) =>
         direction < 0
-            ? layer.Keyframes?.Where(key => key.At.TotalSeconds < _time - GeneratedPromoEditing.KeyframeTolerance).OrderBy(key => key.At).LastOrDefault()
-            : layer.Keyframes?.Where(key => key.At.TotalSeconds > _time + GeneratedPromoEditing.KeyframeTolerance).OrderBy(key => key.At).FirstOrDefault();
+            ? Pose(layer).Keyframes?.Where(key => key.At.TotalSeconds < _time - GeneratedPromoEditing.KeyframeTolerance).OrderBy(key => key.At).LastOrDefault()
+            : Pose(layer).Keyframes?.Where(key => key.At.TotalSeconds > _time + GeneratedPromoEditing.KeyframeTolerance).OrderBy(key => key.At).FirstOrDefault();
 
     private void GoToKeyframe(GeneratedLayer layer, int direction)
     {
@@ -1528,7 +1699,89 @@
     }
 
     private Task SetPoseValue(ChangeEventArgs e, GeneratedLayer layer, Func<LayerPose, float, LayerPose> change) =>
-        SetNumber(e, value => GeneratedPromoEditing.SetPose(layer, Time, change(GeneratedPromoEditing.PoseAt(layer, Time), (float)value)));
+        SetNumber(e, value =>
+        {
+            IGeneratedPose target = Editable(layer);
+            GeneratedPromoEditing.SetPose(target, Time, change(GeneratedPromoEditing.PoseAt(target, Time), (float)value));
+        });
+
+    // ---- Placing layers per background ----
+
+    // The background whose placements are being edited; null edits the template's own.
+    private string? _editBackground;
+
+    /// <summary>Where the layer is in what the canvas shows: the edited background's placement of it, or the template's.</summary>
+    private IGeneratedPose Pose(GeneratedLayer layer) => GeneratedPromoResolver.Pose(Template, _editBackground, layer);
+
+    /// <summary>What a move, resize or keyframe change goes into: the edited background's placement (made on first change), or the layer.</summary>
+    private IGeneratedPose Editable(GeneratedLayer layer) =>
+        _editBackground is { } background ? GeneratedPromoEditing.Place(Template, background, layer) : layer;
+
+    /// <summary>
+    /// <paramref name="key"/> (one of what <see cref="Pose"/> shows) in what gets edited: the same keyframe, or its copy in
+    /// the edited background's placement once one is made from the template's.
+    /// </summary>
+    private (IGeneratedPose Target, GeneratedKeyframe? Key) EditableKey(GeneratedLayer layer, GeneratedKeyframe key)
+    {
+        IGeneratedPose shown = Pose(layer);
+        IGeneratedPose target = Editable(layer);
+        return ReferenceEquals(shown, target) ? (target, key) : (target, GeneratedPromoEditing.KeyframeAt(target, key.At));
+    }
+
+    private bool PlacedHere(GeneratedLayer layer) => GeneratedPromoEditing.Customised(Template, _editBackground, layer);
+
+    /// <summary>When the layer shows in what the canvas shows: the edited background's own timing, or the layer's.</summary>
+    private IGeneratedTiming Timing(GeneratedLayer layer) => GeneratedPromoResolver.TimingFor(Template, _editBackground, layer);
+
+    /// <summary>What a timing change goes into: the edited background's timing (made on first change), or the layer.</summary>
+    private IGeneratedTiming EditableTiming(GeneratedLayer layer) =>
+        _editBackground is { } background ? GeneratedPromoEditing.Retime(Template, background, layer) : layer;
+
+    /// <summary>"Placed", "Timed and coloured" and the like: what <paramref name="background"/> sets its own way for the layer.</summary>
+    private string CustomisedParts(GeneratedLayer layer, string background)
+    {
+        List<string> parts = [];
+        if (GeneratedPromoResolver.Placement(Template, background, layer) is not null) parts.Add("placed");
+        if (GeneratedPromoResolver.Retiming(Template, background, layer) is not null) parts.Add("timed");
+        if (GeneratedPromoResolver.Recolour(Template, background, layer) is not null) parts.Add("coloured");
+        string text = parts.Count switch
+        {
+            0 => "set",
+            1 => parts[0],
+            _ => $"{string.Join(", ", parts.Take(parts.Count - 1))} and {parts[^1]}"
+        };
+        return char.ToUpperInvariant(text[0]) + text[1..];
+    }
+
+    private Task ResetTiming(GeneratedLayer layer) =>
+        _editBackground is { } background ? Set(() => GeneratedPromoEditing.Untime(Template, background, layer)) : Task.CompletedTask;
+
+    /// <summary>The layer's colour in what the canvas shows: the edited background's own, or the layer's.</summary>
+    private string ColorOf(GeneratedLayer layer) => GeneratedPromoResolver.ColorFor(Template, _editBackground, layer);
+
+    /// <summary>Sets the layer's colour: for the edited background only while placing layers for one, otherwise everywhere.</summary>
+    private Task SetColor(GeneratedLayer layer, string color) => Set(() =>
+    {
+        if (_editBackground is { } background)
+        {
+            GeneratedPromoEditing.Recolour(Template, background, layer, color);
+        }
+        else
+        {
+            layer.Color = color;
+        }
+    });
+
+    /// <summary>Starts (or stops, with null) placing layers for one background; the canvas shows that background meanwhile.</summary>
+    private void EditBackground(string? background)
+    {
+        _editBackground = background;
+        _previewBackground = background;
+        RequestStill();
+    }
+
+    private Task ResetPlacement(GeneratedLayer layer) =>
+        _editBackground is { } background ? Set(() => GeneratedPromoEditing.Unplace(Template, background, layer)) : Task.CompletedTask;
 
     // ---- Variable image uses ----
 
@@ -1655,6 +1908,8 @@
         GeneratedLayer copy = GeneratedPromoEditing.Copy(layer);
         copy.Name = GeneratedPromoEditing.UniqueName(Template.Layers.Select(existing => existing.Name), layer.Name);
         GeneratedPromoEditing.Offset(copy, 20, 20);
+        // A layer of its own: the original's per-background placements stay with the original.
+        copy.Id = null;
         Template.Layers.Insert(Template.Layers.IndexOf(layer) + 1, copy);
         _layer = copy;
         return Commit();
@@ -1664,6 +1919,7 @@
     {
         int index = Template.Layers.IndexOf(layer);
         Template.Layers.Remove(layer);
+        GeneratedPromoEditing.ForgetLayer(Template, layer);
         _layer = Template.Layers.Count == 0 ? null : Template.Layers[Math.Clamp(index - 1, 0, Template.Layers.Count - 1)];
         return Commit();
     }
@@ -1674,7 +1930,7 @@
     {
         Select(layer);
         // From where the layer is at the preview time, so an animated layer is dragged from what's on screen.
-        LayerPose pose = GeneratedPromoEditing.PoseAt(layer, Time);
+        LayerPose pose = GeneratedPromoEditing.PoseAt(Pose(layer), Time);
         _drag = new DragState(layer, handle, e.ClientX, e.ClientY, pose.X, pose.Y, pose.Width, pose.Height);
         // Usually already measured when the pointer came onto the canvas; this catches a resized window.
         _ = MeasureCanvas();
@@ -1735,8 +1991,10 @@
             }
         }
 
-        // On an animated layer this sets (or adds) the keyframe at the preview time.
-        GeneratedPromoEditing.SetPose(layer, Time, new LayerPose(x, y, width, height, GeneratedPromoEditing.PoseAt(layer, Time).Opacity));
+        // On an animated layer this sets (or adds) the keyframe at the preview time; while placing layers for one
+        // background, it goes into that background's placement instead.
+        IGeneratedPose target = Editable(layer);
+        GeneratedPromoEditing.SetPose(target, Time, new LayerPose(x, y, width, height, GeneratedPromoEditing.PoseAt(target, Time).Opacity));
         RequestStill(fast: true);
     }
 
@@ -1759,7 +2017,8 @@
     private bool VisibleAt(GeneratedLayer layer)
     {
         var time = TimeSpan.FromSeconds(_time);
-        return time >= layer.Start && time < (layer.End ?? Template.Duration);
+        IGeneratedTiming timing = Timing(layer);
+        return time >= timing.Start && time < (timing.End ?? Template.Duration);
     }
 
     private async Task ToggleVoice(ChangeEventArgs e)
@@ -1910,7 +2169,7 @@
         }
 
         IReadOnlyList<UpNextListing> listings = PreviewListings(out _);
-        return GeneratedPromoResolver.Resolve(Template, Channel.Name, listings, Zone, Preview.Now, Preview.ImageSubjects(Channel)) is { } promo
+        return GeneratedPromoResolver.Resolve(Template, Channel.Name, listings, Zone, Preview.Now, Preview.ImageSubjects(Channel, Template)) is { } promo
             ? ExternalPromoGenerator.Describe(generator, promo.GeneratorArguments)
             : string.Empty;
     }
@@ -1929,10 +2188,20 @@
             return;
         }
 
-        if (string.Equals(_previewBackground, backgrounds[index], StringComparison.OrdinalIgnoreCase))
+        string old = backgrounds[index];
+        string? replacement = string.IsNullOrWhiteSpace(value) ? null : value;
+        if (string.Equals(_previewBackground, old, StringComparison.OrdinalIgnoreCase))
         {
-            _previewBackground = string.IsNullOrWhiteSpace(value) ? null : value;
+            _previewBackground = replacement;
         }
+
+        if (string.Equals(_editBackground, old, StringComparison.OrdinalIgnoreCase))
+        {
+            _editBackground = replacement;
+        }
+
+        // Its layer placements go with it to the new file, or with it when it's removed.
+        GeneratedPromoEditing.RenameBackground(Template, old, replacement);
 
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -1952,8 +2221,44 @@
     private Task AddBackgrounds(IReadOnlyList<string> picked) =>
         Set(() => GeneratedPromoEditing.SetBackgrounds(Template, [.. BackgroundList, .. picked]));
 
+    private Task ToggleBackgroundRule(string background, bool enabled) => Set(() =>
+    {
+        GeneratedBackgroundRule rule = EditableBackgroundRule(background);
+        rule.MatchShows = enabled ? null : false;
+        RemoveUnusedBackgroundRule(rule);
+    });
+
+    private GeneratedBackgroundRule EditableBackgroundRule(string background)
+    {
+        if (GeneratedPromoBackgrounds.Rule(Template, background) is { } rule) return rule;
+        rule = new GeneratedBackgroundRule { Background = background, MatchShows = false };
+        (Template.BackgroundRules ??= []).Add(rule);
+        return rule;
+    }
+
+    private Task ToggleBackgroundTimeRange(string background, bool enabled) => Set(() =>
+    {
+        GeneratedBackgroundRule rule = EditableBackgroundRule(background);
+        rule.TimeRange = enabled ? rule.TimeRange ?? new GeneratedBackgroundTimeRange() : null;
+        RemoveUnusedBackgroundRule(rule);
+    });
+
+    private void RemoveUnusedBackgroundRule(GeneratedBackgroundRule rule)
+    {
+        if (rule.MatchShows == false && rule.TimeRange is null) Template.BackgroundRules?.Remove(rule);
+        if (Template.BackgroundRules is { Count: 0 }) Template.BackgroundRules = null;
+    }
+
+    private static string BackgroundTime(TimeSpan time) => time.ToString(@"hh\:mm", CultureInfo.InvariantCulture);
+
+    private Task SetBackgroundTime(ChangeEventArgs e, Action<TimeSpan> apply) =>
+        TimeSpan.TryParseExact(Text(e), @"hh\:mm", CultureInfo.InvariantCulture, out TimeSpan time)
+            ? Set(() => apply(time)) : Task.CompletedTask;
+
     private void PreviewBackground(string? background)
     {
+        // Looking at another background ends placing layers for the one being edited.
+        _editBackground = null;
         _previewBackground = background;
         RequestStill();
     }
@@ -2146,8 +2451,16 @@
     private string Script()
     {
         IReadOnlyList<UpNextListing> listings = PreviewListings(out _);
-        return GeneratedPromoResolver.Resolve(Template, Channel.Name, listings, Zone, Preview.Now)?.Script ?? string.Empty;
+        return GeneratedPromoResolver.Resolve(Template, Channel.Name, listings, Zone, Preview.Now, Preview.ImageSubjects(Channel, Template))?.Script ?? string.Empty;
     }
+
+    private string DefaultVoiceTemplate => Template.Type == GeneratedPromoType.UpNext ? "Now, it's {up_next}." : "It's {show} on {channel}!";
+
+    private Task ToggleAdvancedVoice(GeneratedVoiceConfig voice, bool enabled) => Set(() =>
+    {
+        voice.Advanced ??= new GeneratedAdvancedVoiceConfig { Templates = [DefaultVoiceTemplate] };
+        voice.Advanced.Enabled = enabled;
+    });
 
     /// <summary>The word limit the voice-over gets when none is set, worked out from the promo's length.</summary>
     private string VoiceWords(GeneratedVoiceConfig voice) =>
@@ -2203,7 +2516,7 @@
 
             IReadOnlyList<UpNextListing> listings = PreviewListings(out _sample);
             GeneratedPromoRender render = await Preview.RenderVideoAsync(GeneratedPromoEditing.Copy(Template), Channel.Name, listings, Zone, _life.Token, song,
-                Preview.ImageSubjects(Channel));
+                Preview.ImageSubjects(Channel, Template));
             _videoUrl = $"{Preview.FileUrl(render.Path)}?v={DateTime.UtcNow.Ticks}";
             _videoMessage = render.VoiceError is { } error
                 ? $"The voice-over failed, so this preview is silent: {error.GetBaseException().Message}"
@@ -2285,7 +2598,7 @@
         GeneratedLayerKind.Eventually => "Eventually text",
         GeneratedLayerKind.YoureWatching => "You're Watching text",
         GeneratedLayerKind.BackToTheShow => "Back to the Show text",
-        GeneratedLayerKind.Rect => "Rectangle",
+        GeneratedLayerKind.Rect => "Shape",
         _ => kind.ToString()
     };
 
@@ -2364,7 +2677,17 @@
                         <div class="song-row">
                             <FilePathPicker Value="@background" ValueChanged="value => SetBackground(position, value)" KeepCopyIn="@GeneratedPromoPackages.AssetCategory"
                                             Extensions="BackgroundExtensions" Label="background image or video" Placeholder="D:\Media\Promos\Backgrounds\loop.mp4" />
-                            @if (BackgroundList.Count > 1 && Template.Generator is null)
+                            @if (Template.Generator is null)
+                            {
+                                bool editing = string.Equals(_editBackground, background, StringComparison.OrdinalIgnoreCase);
+                                int placed = GeneratedPromoEditing.PlacedCount(Template, background);
+                                <button class="btn btn-sm @(editing ? "btn-primary" : "")" type="button" aria-pressed="@(editing ? "true" : "false")"
+                                        title="@(editing ? "Back to editing the template's own layout" : "Place and animate layers for this background only")"
+                                        @onclick="() => EditBackground(editing ? null : background)">
+                                    @(editing ? "Done" : placed > 0 ? $"Edit ({placed})" : "Edit")
+                                </button>
+                            }
+                            @if (BackgroundList.Count > 1 && Template.Generator is null && !string.Equals(_editBackground, background, StringComparison.OrdinalIgnoreCase))
                             {
                                 <button class="btn btn-sm" type="button" aria-pressed="@(previewing ? "true" : "false")"
                                         title="@(previewing ? "Go back to the background this promo picks" : "Show this background in the canvas preview")"
@@ -2379,6 +2702,98 @@
                         {
                             <p class="hint warn">The scheduler can't find this file.</p>
                         }
+                        @{
+                            GeneratedBackgroundRule? rule = GeneratedPromoBackgrounds.Rule(Template, background);
+                            bool matchShows = rule is not null && rule.MatchShows != false;
+                        }
+                        <details class="ed-background-rules">
+                            <summary>Background selection · @(matchShows ? "show matching on" : "show matching off") · @(rule?.TimeRange is { } hours ? $"{BackgroundTime(hours.Start)}–{BackgroundTime(hours.End)}" : "any time")</summary>
+                        <label class="check">
+                            <input type="checkbox" checked="@matchShows" @onchange="e => ToggleBackgroundRule(background, e.Value is true)" />
+                            <span>@(Template.Type == GeneratedPromoType.NowPlaying ? "Choose based on the Now Playing show" : "Choose based on upcoming shows")</span>
+                        </label>
+                        @if (matchShows && rule is not null)
+                        {
+                            <div class="grid grid-2">
+                                <label class="field">
+                                    <span>Matching shows (one per line; any can match)</span>
+                                    <textarea rows="3" placeholder="SpongeBob SquarePants&#10;Rugrats"
+                                              @onchange="e => Set(() => rule.Shows = Text(e).Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.OrdinalIgnoreCase).ToList())">@string.Join('\n', rule.Shows)</textarea>
+                                </label>
+                                <label class="field">
+                                    <span>When no show matches</span>
+                                    <select value="@(rule.OnlyWhenMatching ? "exclude" : "normal")"
+                                            @onchange='e => Set(() => rule.OnlyWhenMatching = Text(e) == "exclude")'>
+                                        <option value="normal">Still eligible at normal chance (prefer on match)</option>
+                                        <option value="exclude">Never use this background (only when matching)</option>
+                                    </select>
+                                </label>
+                                @if (Template.Type != GeneratedPromoType.NowPlaying)
+                                {
+                                <label class="field">
+                                    <span>Look ahead by</span>
+                                    <select value="@(rule.Within is null ? "shows" : "time")"
+                                            @onchange='e => Set(() => rule.Within = Text(e) == "time" ? TimeSpan.FromMinutes(60) : null)'>
+                                        <option value="shows">Number of upcoming shows</option>
+                                        <option value="time">Time from the promo's start</option>
+                                    </select>
+                                </label>
+                                @if (rule.Within is { } within)
+                                {
+                                    <label class="field">
+                                        <span>Within the next (minutes)</span>
+                                        <input type="number" min="1" max="1440" step="1" value="@Number(within.TotalMinutes)"
+                                               @onchange="e => SetNumber(e, value => rule.Within = TimeSpan.FromMinutes(Math.Clamp(value, 1, 1440)))" />
+                                    </label>
+                                }
+                                else
+                                {
+                                    <label class="field">
+                                        <span>Next shows (1 = only the next show)</span>
+                                        <input type="number" min="1" max="10" value="@rule.NextShows"
+                                               @onchange="e => SetNumber(e, value => rule.NextShows = (int)Math.Clamp(value, 1, 10))" />
+                                    </label>
+                                }
+                                }
+                                <label class="field">
+                                    <span>Relative chance when matching</span>
+                                    <input type="number" min="1" max="1000" step="1" value="@Number(rule.MatchWeight)"
+                                           @onchange="e => SetNumber(e, value => rule.MatchWeight = Math.Clamp(value, 1, 1000))" />
+                                </label>
+                            </div>
+                            @if (Template.Type == GeneratedPromoType.NowPlaying)
+                            {
+                                <p class="hint">Matches the show this Now Playing promo identifies, including a show that has already started. Lookahead settings aren't used for this promo type.</p>
+                            }
+                            <p class="hint">Normal chance is 1. A weight of 5 gives five times the chance of an ordinary background. “Only when matching” restricts this background; other eligible backgrounds can still be picked. Names use the same loose matching as variable images. These rules don't add shows to the text or voice-over.</p>
+                            @if (rule.Shows.Count == 0)
+                            {
+                                <p class="hint warn">Add at least one show for this rule to match.</p>
+                            }
+                        }
+                        <label class="check">
+                            <input type="checkbox" checked="@(rule?.TimeRange is not null)" @onchange="e => ToggleBackgroundTimeRange(background, e.Value is true)" />
+                            <span>Only choose during a daily time range</span>
+                        </label>
+                        @if (rule?.TimeRange is { } range)
+                        {
+                            <div class="grid grid-2">
+                                <label class="field">
+                                    <span>From (channel-local time, inclusive)</span>
+                                    <input type="time" step="60" value="@BackgroundTime(range.Start)" @onchange="e => SetBackgroundTime(e, value => range.Start = value)" />
+                                </label>
+                                <label class="field">
+                                    <span>Until (exclusive)</span>
+                                    <input type="time" step="60" value="@BackgroundTime(range.End)" @onchange="e => SetBackgroundTime(e, value => range.End = value)" />
+                                </label>
+                            </div>
+                            <p class="hint">Uses the promo's scheduled start in @Zone.Id. An earlier end crosses midnight, such as 22:00–06:00. Outside this range the background cannot be chosen, even when its show matches. Show matching is optional.</p>
+                            @if (range.Start == range.End)
+                            {
+                                <p class="hint warn">Start and end must differ. Turn off the time range to allow any time.</p>
+                            }
+                        }
+                        </details>
                     </li>
                 }
             </ol>
@@ -2390,6 +2805,10 @@
                     <span class="hint" style="margin:0;">@(_previewBackground is null ? "The canvas shows the one these shows would get." : "The canvas shows the one you're previewing.")</span>
                 }
             </div>
+            @if (Template.BackgroundRules is { Count: > 0 })
+            {
+                <p class="hint">If no background is eligible, the background colour is used. Preview/Edit buttons let you inspect a background regardless of its rule.</p>
+            }
         </div>
         @if (BackgroundList.Any(background => !PromoRenderer.IsImage(background)))
         {

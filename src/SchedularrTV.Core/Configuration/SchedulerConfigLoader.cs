@@ -377,6 +377,9 @@ public static class SchedulerConfigLoader
                 errors.Add($"{templateScope}: mix_chance must be between 0 and 1.");
             }
 
+            if (!Enum.IsDefined(template.UpcomingGrouping))
+                errors.Add($"{templateScope}.upcoming_grouping: choose timeslot or show.");
+
             if (!IsColor(template.BackgroundColor))
             {
                 errors.Add($"{templateScope}: background_color must be a hex colour such as #101828.");
@@ -386,6 +389,17 @@ public static class SchedulerConfigLoader
                 && (string.IsNullOrWhiteSpace(voice.Provider) || string.IsNullOrWhiteSpace(voice.Voice)))
             {
                 errors.Add($"{templateScope}.voice: choose a provider and a voice.");
+            }
+
+            if (template.Voice is { Enabled: true, Advanced: { Enabled: true } advanced } authoredVoice)
+            {
+                if (advanced.Templates.Count == 0 || advanced.Templates.Any(string.IsNullOrWhiteSpace))
+                    errors.Add($"{templateScope}.voice.advanced: add at least one nonempty script template.");
+                IEnumerable<string> scripts = advanced.Templates;
+                if (advanced.IncludePreMessages) scripts = scripts.Concat(authoredVoice.PreMessages);
+                if (advanced.IncludePostMessages) scripts = scripts.Concat(authoredVoice.PostMessages);
+                foreach (string token in scripts.SelectMany(GeneratedVoiceTokens.Unknown).Distinct(StringComparer.OrdinalIgnoreCase))
+                    errors.Add($"{templateScope}.voice.advanced: unknown token '{{{token}}}'. Use up_next (or up_next_2 through up_next_10), show, channel, episode, start_time or end_time.");
             }
 
             if (template.Music is { } music
@@ -435,8 +449,8 @@ public static class SchedulerConfigLoader
                 HashSet<string> shows = new(StringComparer.OrdinalIgnoreCase);
                 foreach (GeneratedShowImage show in image.Shows)
                 {
-                    if (string.IsNullOrWhiteSpace(show.Show) || !shows.Add(show.Show.Trim()))
-                        errors.Add($"{imageScope}: each show override needs a unique show title.");
+                    if (string.IsNullOrWhiteSpace(show.Show) || !shows.Add((show.Block ? "block:" : "show:") + show.Show.Trim()))
+                        errors.Add($"{imageScope}: each override needs a unique show title or block name.");
                 }
             }
 
@@ -452,16 +466,64 @@ public static class SchedulerConfigLoader
                 }
             }
 
+            HashSet<string> ruledBackgrounds = new(StringComparer.OrdinalIgnoreCase);
+            foreach (GeneratedBackgroundRule rule in template.BackgroundRules ?? [])
+            {
+                if (!template.BackgroundChoices.Contains(rule.Background, StringComparer.OrdinalIgnoreCase)
+                    || !ruledBackgrounds.Add(rule.Background))
+                    errors.Add($"{templateScope}.background_rules: each rule must name a different background in this template.");
+                if (rule.MatchShows != false && (rule.Shows.Count == 0 || rule.Shows.Any(string.IsNullOrWhiteSpace)))
+                    errors.Add($"{templateScope}.background_rules: each rule needs at least one nonempty show name.");
+                if (rule.NextShows is < 1 or > 10 || rule.Within is { } within && (within < TimeSpan.FromMinutes(1) || within > TimeSpan.FromDays(1)))
+                    errors.Add($"{templateScope}.background_rules: look ahead 1–10 shows or 1–1440 minutes.");
+                if (!double.IsFinite(rule.MatchWeight) || rule.MatchWeight is < 1 or > 1000)
+                    errors.Add($"{templateScope}.background_rules: match_weight must be between 1 and 1000.");
+                if (rule.TimeRange is { } hours && (hours.Start < TimeSpan.Zero || hours.Start >= TimeSpan.FromDays(1)
+                    || hours.End < TimeSpan.Zero || hours.End >= TimeSpan.FromDays(1) || hours.Start == hours.End))
+                    errors.Add($"{templateScope}.background_rules.time_range: start and end must be different times between 00:00 and 23:59:59; an earlier end crosses midnight.");
+            }
+
+            foreach (GeneratedBackgroundOverride tracked in template.BackgroundOverrides ?? [])
+            {
+                string trackedScope = $"{templateScope}.background_overrides.{Path.GetFileName(tracked.Background)}";
+                if (string.IsNullOrWhiteSpace(tracked.Background))
+                {
+                    errors.Add($"{templateScope}.background_overrides: each needs the background it's for.");
+                }
+
+                foreach (GeneratedLayerTiming timed in tracked.Timings ?? [])
+                {
+                    if (string.IsNullOrWhiteSpace(timed.Layer) || timed.Start < TimeSpan.Zero || timed.End <= timed.Start
+                        || timed.TransitionDuration < TimeSpan.Zero || !Enum.IsDefined(timed.TransitionIn) || !Enum.IsDefined(timed.TransitionOut))
+                    {
+                        errors.Add($"{trackedScope}: each timing needs its layer's id, a start of zero or more before its end, and valid transitions.");
+                    }
+                }
+
+                foreach (GeneratedLayerColor recoloured in tracked.Colors ?? [])
+                {
+                    if (string.IsNullOrWhiteSpace(recoloured.Layer) || !IsColor(recoloured.Color))
+                    {
+                        errors.Add($"{trackedScope}: each colour needs its layer's id and a hex colour such as #202020.");
+                    }
+                }
+
+                foreach (GeneratedLayerOverride placed in tracked.Layers)
+                {
+                    if (string.IsNullOrWhiteSpace(placed.Layer) || placed.Width <= 0 || placed.Height <= 0 || placed.Opacity is < 0 or > 1
+                        || (placed.Keyframes ?? []).Any(key => key.At < TimeSpan.Zero || key.Width <= 0 || key.Height <= 0 || key.Opacity is < 0 or > 1))
+                    {
+                        errors.Add($"{trackedScope}: each layer needs its id, a positive size and an opacity between 0 and 1 (in its keyframes too).");
+                    }
+                }
+            }
+
             if (template.BackgroundSound is { Volume: < 0 or > 1 })
             {
                 errors.Add($"{templateScope}.background_sound: volume must be between 0 and 1.");
             }
 
-            GeneratedLayerKind required = GeneratedPromoKinds.RequiredLayer(template.Type);
-            if (template.Generator is null && !template.Layers.Any(layer => layer.Kind == required))
-            {
-                errors.Add($"{templateScope}: this promo type needs its '{UnderscoredNamingConvention.Instance.Apply(required.ToString())}' text layer.");
-            }
+            // A template doesn't have to name the show in text: it can show it with variable images alone.
 
             foreach (GeneratedLayer layer in template.Layers)
             {

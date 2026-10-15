@@ -216,7 +216,7 @@ public sealed class Overlay
         copy.VariableImages = [.. VariableImages.Select(image => new GeneratedVariableImage
         {
             Name = image.Name, Context = image.Context, Offset = image.Offset, DefaultPath = image.DefaultPath,
-            Shows = [.. image.Shows.Select(show => new GeneratedShowImage { Show = show.Show, Path = show.Path })]
+            Shows = [.. image.Shows.Select(show => new GeneratedShowImage { Show = show.Show, Block = show.Block, Path = show.Path })]
         })];
         return copy;
     }

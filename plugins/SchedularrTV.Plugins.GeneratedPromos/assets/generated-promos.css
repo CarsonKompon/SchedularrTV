@@ -28,6 +28,9 @@
 .gp-scope .song-start { display: flex; align-items: center; gap: 4px; font-size: 12.5px; white-space: nowrap; }
 .gp-scope .song-start input { width: 72px; }
 .gp-scope .song-row .btn { white-space: nowrap; }
+.gp-scope .ed-background-rules { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.gp-scope .ed-background-rules > summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.gp-scope .ed-background-rules[open] > summary { margin-bottom: 10px; }
 .gp-scope .song-preview { display: block; width: 100%; height: 32px; margin-top: 4px; }
 .gp-scope .promo-video { width: 100%; max-width: 960px; margin-top: 12px; border-radius: 8px; background: #000; }
 
@@ -49,6 +52,13 @@
     position: relative; width: 100%; overflow: hidden; border: 1px solid var(--line); border-radius: 8px;
     background-color: #000; background-size: 100% 100%; background-repeat: no-repeat; touch-action: none; user-select: none;
 }
+.gp-scope .ed-placing {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 8px 12px;
+    border: 1px solid var(--accent); border-radius: 8px; background: rgba(255,255,255,.04);
+}
+.gp-scope .ed-placing-layer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 10px; }
+.gp-scope .layer-box.placed { border-color: #ffb020; }
+.gp-scope .layer-box.placed.selected { border-color: #ffb020; }
 .gp-scope .ed-still { position: absolute; inset: 0; background-size: 100% 100%; background-repeat: no-repeat; pointer-events: none; }
 .gp-scope .ed-timeline { margin-top: 10px; }
 .gp-scope .ed-timeline .field { margin-bottom: 0; }

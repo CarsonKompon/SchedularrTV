@@ -607,6 +607,13 @@ progress::-moz-progress-bar { background: var(--accent-gradient); border-radius:
 .logo-drop img { max-width: 100%; max-height: 100%; object-fit: contain; padding: 8px; }
 .logo-drop input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
 
+/* File pickers accept a dropped file: the hidden input only takes pointer events while files are dragged (file-drop.js). */
+.file-drop-target { position: relative; border-radius: var(--r); }
+.file-drop-target > input.file-drop-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; }
+html.files-dragging .file-drop-target > input.file-drop-input { pointer-events: auto; cursor: copy; }
+html.files-dragging .file-drop-target { outline: 1.5px dashed var(--line-strong); outline-offset: 3px; }
+html.files-dragging .file-drop-target:hover { outline-color: var(--accent); background: rgba(123, 139, 255, .06); }
+
 /* ==========================================================================
    Dashboard
    ========================================================================== */

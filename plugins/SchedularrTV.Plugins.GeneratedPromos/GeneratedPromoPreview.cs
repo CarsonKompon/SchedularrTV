@@ -59,9 +59,9 @@ public sealed class GeneratedPromoPreview(
         {
             GeneratedPromoType.ThisHasBeen or GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow =>
                 UpNextPromo.Previous(schedule, now) is { } previous ? [previous] : [],
-            GeneratedPromoType.ComingUp => UpNextPromo.Listings(schedule, now, 3) is { Count: > 1 } upcoming ? [upcoming[^1]] : [],
+            GeneratedPromoType.ComingUp => UpNextPromo.Listings(schedule, now, 3, grouping: template.UpcomingGrouping) is { Count: > 1 } upcoming ? [upcoming[^1]] : [],
             GeneratedPromoType.Eventually => [],
-            _ => UpNextPromo.Listings(schedule, now, needed)
+            _ => UpNextPromo.Listings(schedule, now, needed, grouping: template.UpcomingGrouping)
         };
         sample = real.Count == 0;
         if (!sample)
@@ -93,14 +93,22 @@ public sealed class GeneratedPromoPreview(
 
     public DateTimeOffset Now => clock.GetUtcNow();
 
-    public GeneratedImageSubjects ImageSubjects(ChannelConfig channel)
+    public GeneratedImageSubjects ImageSubjects(ChannelConfig channel, GeneratedPromoTemplate? template = null)
     {
         DateTimeOffset now = clock.GetUtcNow();
         ChannelSchedule? schedule = services.GetService<ScheduleCoordinator>()?.Latest
             .FirstOrDefault(candidate => string.Equals(candidate.ChannelId, channel.Id, StringComparison.OrdinalIgnoreCase));
-        return schedule is not null ? GeneratedImageSubjects.FromSchedule(schedule, now)
-            : new(new UpNextListing(SampleTitles[0], now.AddMinutes(-15)),
-                [.. Enumerable.Range(0, 10).Select(index => new UpNextListing(SampleTitles[(index + 1) % SampleTitles.Length], now.AddMinutes(30 * (index + 1))))]);
+        if (schedule is not null) return GeneratedImageSubjects.FromSchedule(schedule, now, template: template);
+        // Use the same first sample and airtime as the text preview, so its background rules agree with its caption.
+        var next = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, now.Minute < 30 ? 30 : 0, 0, now.Offset);
+        if (now.Minute >= 30) next = next.AddHours(1);
+        int count = Math.Max(10, (int)Math.Ceiling((template?.BackgroundRules ?? [])
+            .Where(rule => rule.MatchShows != false)
+            .Select(rule => rule.Within?.TotalMinutes ?? 0).DefaultIfEmpty().Max() / 30) + 1);
+        List<UpNextListing> samples = [.. Enumerable.Range(0, count)
+            .Select(index => new UpNextListing(SampleTitles[index % SampleTitles.Length], next.AddMinutes(30 * index)))];
+        if (_standIns.GetValueOrDefault(channel.Id) is { } standIn) samples[0] = UpNextPromo.Listing(standIn, next);
+        return new(new UpNextListing(SampleTitles[0], now.AddMinutes(-15)), samples);
     }
 
     /// <summary>The AI writer, when the scheduler provides one (it always does; tools and tests may not).</summary>
@@ -108,7 +116,7 @@ public sealed class GeneratedPromoPreview(
 
     /// <summary>The template's AI jobs for the editor's "Try it", with what it would air with right now.</summary>
     public ResolvedGeneratedPromo? Resolve(GeneratedPromoTemplate template, ChannelConfig channel, TimeZoneInfo zone) =>
-        GeneratedPromoResolver.Resolve(template, channel.Name, Listings(channel, template, out _), zone, clock.GetUtcNow(), ImageSubjects(channel));
+        GeneratedPromoResolver.Resolve(template, channel.Name, Listings(channel, template, out _), zone, clock.GetUtcNow(), ImageSubjects(channel, template));
 
     public static TimeZoneInfo Zone(SchedulerConfig config, ChannelConfig channel) =>
         SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(channel.TimeZone) ? config.Settings.TimeZone : channel.TimeZone);

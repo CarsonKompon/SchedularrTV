@@ -83,6 +83,8 @@ public static class GeneratedPromoKinds
             or GeneratedLayerKind.YoureWatching or GeneratedLayerKind.BackToTheShow;
 }
 
+public enum GeneratedShape { Rectangle, Ellipse, Triangle, Diamond, Star }
+
 public enum GeneratedTransition
 {
     None,
@@ -127,11 +129,22 @@ public sealed class GeneratedPromosConfig
     public List<GeneratedPromoTemplate> Templates { get; set; } = [];
 }
 
+public enum GeneratedUpcomingGrouping
+{
+    /// <summary>One entry per scheduled slot: stacked episodes stay together; otherwise each episode is a slot.</summary>
+    Timeslot,
+    /// <summary>Combine consecutive slots naming the same show.</summary>
+    Show
+}
+
 public sealed class GeneratedPromoTemplate
 {
     public string Name { get; set; } = string.Empty;
 
     public GeneratedPromoType Type { get; set; } = GeneratedPromoType.UpNext;
+
+    /// <summary>Shared upcoming sequence for text, images, voice-over, generators and background rules.</summary>
+    public GeneratedUpcomingGrouping UpcomingGrouping { get; set; } = GeneratedUpcomingGrouping.Timeslot;
 
     public bool Enabled { get; set; } = true;
 
@@ -163,6 +176,18 @@ public sealed class GeneratedPromoTemplate
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? Backgrounds { get; set; }
 
+    /// <summary>Optional show-based eligibility and relative selection weights, keyed by background path.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedBackgroundRule>? BackgroundRules { get; set; }
+
+    /// <summary>
+    /// Layers placed differently over particular backgrounds (to follow what's in a video, say): while the promo uses
+    /// that background, each listed layer takes its position, size, opacity and keyframes from here instead. Null when
+    /// there are none, so templates without them keep their render keys.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedBackgroundOverride>? BackgroundOverrides { get; set; }
+
     /// <summary>Every background to pick from: <see cref="Background"/> first, then <see cref="Backgrounds"/>, without blanks or repeats.</summary>
     [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
     public IReadOnlyList<string> BackgroundChoices =>
@@ -192,6 +217,34 @@ public sealed class GeneratedPromoTemplate
     /// <summary>Named image slots shared by canvas layers and external generator arguments.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public List<GeneratedVariableImage>? VariableImages { get; set; }
+}
+
+public sealed class GeneratedBackgroundRule
+{
+    public string Background { get; set; } = string.Empty;
+    /// <summary>Null keeps existing show rules enabled; false allows a time-only rule.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? MatchShows { get; set; }
+    /// <summary>Daily eligibility in the channel's local time, independent of show matching.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedBackgroundTimeRange? TimeRange { get; set; }
+    public List<string> Shows { get; set; } = [];
+    /// <summary>Check the next N listings using the template's upcoming grouping. Ignored when Within is set.</summary>
+    public int NextShows { get; set; } = 1;
+    /// <summary>Alternatively check shows starting between the promo's airtime and this far ahead.</summary>
+    public TimeSpan? Within { get; set; }
+    /// <summary>Exclude this background entirely when none of its shows matches.</summary>
+    public bool OnlyWhenMatching { get; set; }
+    /// <summary>Relative chance on a match. Ordinary backgrounds, and nonmatching preferred backgrounds, weigh 1.</summary>
+    public double MatchWeight { get; set; } = 5;
+}
+
+public sealed class GeneratedBackgroundTimeRange
+{
+    /// <summary>Inclusive local time of day.</summary>
+    public TimeSpan Start { get; set; } = TimeSpan.FromHours(6);
+    /// <summary>Exclusive local time of day; earlier than Start means the range crosses midnight.</summary>
+    public TimeSpan End { get; set; } = TimeSpan.FromHours(12);
 }
 
 public enum GeneratedImageContext { PromotedShow, CurrentlyWatching, UpNext }
@@ -259,18 +312,39 @@ public sealed class GeneratedVariableImage
     public int Offset { get; set; }
     public string? DefaultPath { get; set; }
     public List<GeneratedShowImage> Shows { get; set; } = [];
+
+    /// <summary>
+    /// The file for a programme: an override naming its show first, then one naming the block it airs in, then
+    /// <see cref="DefaultPath"/>. Empty when none applies.
+    /// </summary>
+    public string PathFor(string? show, string? block) =>
+        Match(show, block: false) ?? Match(block, block: true) ?? DefaultPath ?? string.Empty;
+
+    // Loosely matched (see ShowTitleMatcher), so "Powerpuff Girls" finds "The Powerpuff Girls" and "Squibillies" finds "Squidbillies".
+    private string? Match(string? name, bool block) => Scheduling.ShowTitleMatcher.Find(name,
+        Shows.Where(candidate => candidate.Block == block && !string.IsNullOrWhiteSpace(candidate.Path)), candidate => candidate.Show)?.Path;
 }
 
 public sealed class GeneratedShowImage
 {
-    /// <summary>Series/show title, matched without regard to case.</summary>
+    /// <summary>Series/show title, or the block name when <see cref="Block"/> is set; matched without regard to case.</summary>
     public string Show { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Matches the schedule block a programme airs in instead of its show. Used when no show override matches.
+    /// </summary>
+    public bool Block { get; set; }
+
     public string? Path { get; set; }
 }
 
 public sealed class GeneratedVoiceConfig
 {
     public bool Enabled { get; set; } = true;
+
+    /// <summary>User-authored scripts instead of automatic wording; null keeps legacy read-outs and render keys.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedAdvancedVoiceConfig? Advanced { get; set; }
 
     /// <summary>Text-to-speech provider id, e.g. <c>tiktok</c>.</summary>
     public string Provider { get; set; } = "tiktok";
@@ -297,6 +371,18 @@ public sealed class GeneratedVoiceConfig
     /// <remarks>Left out of render keys while null, so templates without it keep their renders.</remarks>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public AiTextConfig? Writer { get; set; }
+}
+
+public sealed class GeneratedAdvancedVoiceConfig
+{
+    public bool Enabled { get; set; } = true;
+    /// <summary>One eligible template is chosen per promo. Missing referenced upcoming listings make a template ineligible.</summary>
+    public List<string> Templates { get; set; } = [];
+    public bool IncludePreMessages { get; set; }
+    public bool IncludePostMessages { get; set; }
+    /// <summary>Added to a later upcoming title when the same show was listed earlier; spaces are literal.</summary>
+    public string RepeatPrefix { get; set; } = "more ";
+    public string RepeatSuffix { get; set; } = string.Empty;
 }
 
 public sealed class GeneratedMusicConfig
@@ -453,8 +539,117 @@ public sealed class GeneratedScriptConfig
     public bool DuckUnderVoice { get; set; } = true;
 }
 
-public sealed class GeneratedLayer
+/// <summary>Where a layer is, how big and how opaque, and how that changes over the promo.</summary>
+public interface IGeneratedPose
 {
+    float X { get; set; }
+
+    float Y { get; set; }
+
+    float Width { get; set; }
+
+    float Height { get; set; }
+
+    float Opacity { get; set; }
+
+    /// <summary>While there are any, they set the pose over time instead of the values above.</summary>
+    List<GeneratedKeyframe>? Keyframes { get; set; }
+}
+
+/// <summary>How a template's layers are placed over one of its backgrounds, where that differs from the template.</summary>
+public sealed class GeneratedBackgroundOverride
+{
+    /// <summary>The background file, as listed in the template's backgrounds.</summary>
+    public string Background { get; set; } = string.Empty;
+
+    public List<GeneratedLayerOverride> Layers { get; set; } = [];
+
+    /// <summary>
+    /// Layers coloured differently over this background (darker text over a light one, say), by layer id. Kept apart
+    /// from <see cref="Layers"/>, so recolouring a layer leaves it following the template's position and keyframes.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedLayerColor>? Colors { get; set; }
+
+    /// <summary>
+    /// Layers timed differently over this background (when they appear and leave, and how they come and go), by layer
+    /// id. Kept apart from <see cref="Layers"/> and <see cref="Colors"/>, so retiming a layer leaves the rest following the template.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedLayerTiming>? Timings { get; set; }
+}
+
+/// <summary>When a layer is on screen, and how it comes and goes.</summary>
+public interface IGeneratedTiming
+{
+    TimeSpan Start { get; set; }
+
+    /// <summary>Null keeps it until the promo ends.</summary>
+    TimeSpan? End { get; set; }
+
+    GeneratedTransition TransitionIn { get; set; }
+
+    GeneratedTransition TransitionOut { get; set; }
+
+    TimeSpan TransitionDuration { get; set; }
+}
+
+/// <summary>A layer's whole timing over one background, replacing the layer's own for it.</summary>
+public sealed class GeneratedLayerTiming : IGeneratedTiming
+{
+    /// <summary>The layer's <see cref="GeneratedLayer.Id"/>.</summary>
+    public string Layer { get; set; } = string.Empty;
+
+    public TimeSpan Start { get; set; }
+
+    public TimeSpan? End { get; set; }
+
+    public GeneratedTransition TransitionIn { get; set; } = GeneratedTransition.Fade;
+
+    public GeneratedTransition TransitionOut { get; set; } = GeneratedTransition.Fade;
+
+    public TimeSpan TransitionDuration { get; set; } = TimeSpan.FromMilliseconds(400);
+}
+
+/// <summary>A layer's colour over one background, replacing <see cref="GeneratedLayer.Color"/> for it.</summary>
+public sealed class GeneratedLayerColor
+{
+    /// <summary>The layer's <see cref="GeneratedLayer.Id"/>.</summary>
+    public string Layer { get; set; } = string.Empty;
+
+    /// <summary>Hex colour, e.g. <c>#202020</c> or <c>#80000000</c>.</summary>
+    public string Color { get; set; } = "#FFFFFF";
+}
+
+/// <summary>A layer's whole pose over one background, replacing the template's own for it.</summary>
+public sealed class GeneratedLayerOverride : IGeneratedPose
+{
+    /// <summary>The layer's <see cref="GeneratedLayer.Id"/>.</summary>
+    public string Layer { get; set; } = string.Empty;
+
+    public float X { get; set; }
+
+    public float Y { get; set; }
+
+    public float Width { get; set; } = 400;
+
+    public float Height { get; set; } = 100;
+
+    public float Opacity { get; set; } = 1;
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedKeyframe>? Keyframes { get; set; }
+}
+
+public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
+{
+    /// <summary>
+    /// Stable identity for per-background placements (<see cref="GeneratedPromoTemplate.BackgroundOverrides"/>), given
+    /// when the first one is made; null until then, so templates without them keep their render keys.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Id { get; set; }
+
     public string Name { get; set; } = string.Empty;
 
     public GeneratedLayerKind Kind { get; set; } = GeneratedLayerKind.Text;
@@ -484,6 +679,18 @@ public sealed class GeneratedLayer
     public string Color { get; set; } = "#FFFFFF";
 
     public float CornerRadius { get; set; }
+
+    /// <summary>Geometry of a Rect layer; null retains the original rectangle.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedShape? Shape { get; set; }
+
+    /// <summary>Clockwise degrees around the shape's centre.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public float? Rotation { get; set; }
+
+    /// <summary>Gaussian edge softness in output pixels (sigma); null means sharp edges.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public float? SoftEdges { get; set; }
 
     /// <summary>Literal text for <see cref="GeneratedLayerKind.Text"/>; newlines split lines.</summary>
     public string? Text { get; set; }
@@ -603,7 +810,8 @@ public sealed class GeneratedUpNextOptions
 
     /// <summary>
     /// Text before the first show, e.g. <c>Up next: </c>; a new line in it puts it on its own line. <c>{channel}</c> is
-    /// the channel name. Null when unused, so templates without it keep their render keys.
+    /// the channel name; <c>{start_time}</c> and <c>{end_time}</c> are the selected shows' first start and last end,
+    /// in channel-local time. Null when unused, so templates without it keep their render keys.
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? Prefix { get; set; }

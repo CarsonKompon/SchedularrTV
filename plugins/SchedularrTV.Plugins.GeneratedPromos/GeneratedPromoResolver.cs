@@ -20,6 +20,9 @@ public sealed record ResolvedGeneratedPromo(
     /// <summary>Sub-folder of the render cache this promo is written to.</summary>
     public string Folder { get; init; } = string.Empty;
 
+    /// <summary>Background chosen by show rules; null also represents no eligible background while rules are enabled.</summary>
+    public string? SelectedBackground { get; init; }
+
     /// <summary>The promoted episode's file when the template plays a clip of it.</summary>
     public string? ClipPath { get; init; }
 
@@ -45,14 +48,19 @@ public static partial class GeneratedPromoResolver
     public const string OutputToken = "\u0001output\u0001";
     public const string OutputDirectoryToken = "\u0001output_dir\u0001";
 
+    /// <summary>
+    /// How many upcoming shows an Up Next promo is about, which is also how many the automatic voice-over reads out: as far ahead
+    /// as its Up Next text lists, or its image layers show (an image of the show after next counts as two).
+    /// </summary>
     public static int ListingsNeeded(GeneratedPromoTemplate template) =>
         template.Type != GeneratedPromoType.UpNext ? 1
         : template.Generator is { } generator ? Math.Clamp(generator.Shows, 1, 10)
         : Math.Max(1, template.Layers
-        .Where(layer => layer.Kind == GeneratedLayerKind.UpNext)
-        .Select(layer => (layer.UpNext?.Offset ?? 0) + (layer.UpNext?.ShowsAhead ?? 1))
-        .DefaultIfEmpty(1)
-        .Max());
+            .Where(layer => layer.Kind == GeneratedLayerKind.UpNext)
+            .Select(layer => (layer.UpNext?.Offset ?? 0) + (layer.UpNext?.ShowsAhead ?? 1))
+            .Concat(GeneratedPromoImages.UpcomingShown(template))
+            .DefaultIfEmpty(1)
+            .Max());
 
     /// <summary>Usual opener for each promo type; a template's own pre-message replaces it.</summary>
     public static string DefaultPreMessage(GeneratedPromoType type) => type switch
@@ -83,14 +91,20 @@ public static partial class GeneratedPromoResolver
             return null;
         }
 
-        List<UpNextListing> used = [.. listings.Take(ListingsNeeded(template))];
+        IReadOnlyList<UpNextListing> upcoming = imageSubjects?.Upcoming
+            ?? (template.Type is GeneratedPromoType.UpNext or GeneratedPromoType.NowPlaying ? listings : []);
+        List<UpNextListing> used = [.. (template.Type == GeneratedPromoType.UpNext && upcoming.Count > 0 ? upcoming : listings)
+            .Take(ListingsNeeded(template))];
         IReadOnlyDictionary<string, string> images = GeneratedPromoImages.Resolve(template, listings, imageSubjects);
         DateTimeOffset promoTime = airsAt ?? used[0].Start;
 
-        List<IReadOnlyList<string>> lines = [.. template.Layers.Select(layer => Lines(layer, used, zone, channelName, promoTime))];
+        List<IReadOnlyList<string>> lines = [.. template.Layers.Select(layer => Lines(layer,
+            layer.Kind == GeneratedLayerKind.UpNext ? upcoming : used, zone, channelName, promoTime))];
         string variety = $"{string.Join('|', used.Select(listing => $"{listing.Title}@{listing.Start.UtcTicks}"))}|{promoTime.UtcTicks}";
         string? script = template.Voice is { Enabled: true } voice
-            ? Script(template.Type, used, zone, promoTime,
+            ? voice.Advanced is { Enabled: true }
+                ? GeneratedPromoVoice.Script(voice, upcoming, used[0], channelName, zone, variety)
+                : Script(template.Type, used, zone, promoTime,
                 Tokens(Phrase(voice.PreMessages, voice.PreMessage, $"{variety}|pre"), channelName),
                 Tokens(Phrase(voice.PostMessages, voice.PostMessage, $"{variety}|post"), channelName),
                 variety)
@@ -150,9 +164,21 @@ public static partial class GeneratedPromoResolver
             identity += $"|generator|{JsonSerializer.Serialize(arguments, KeyJson)}";
         }
 
+        string? selectedBackground = null;
+        if (template.BackgroundRules is { Count: > 0 })
+        {
+            bool nowPlaying = template.Type == GeneratedPromoType.NowPlaying;
+            // The Now Playing subject is authoritative, even when it started before the promo or the
+            // surrounding schedule context still calls the previous programme "current" at a break boundary.
+            IReadOnlyList<UpNextListing> subjects = nowPlaying ? used
+                : imageSubjects?.Upcoming ?? (template.Type == GeneratedPromoType.UpNext ? listings : []);
+            selectedBackground = GeneratedPromoBackgrounds.Select(template, subjects, promoTime, identity + variety, nowPlaying, zone);
+            identity += $"|selected-background|{JsonSerializer.Serialize(selectedBackground)}";
+        }
         string key = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity)))[..32];
         return new ResolvedGeneratedPromo(template, lines, script, key)
         {
+            SelectedBackground = selectedBackground,
             ClipPath = clip?.Path,
             ClipStart = clip?.Start ?? TimeSpan.Zero,
             GeneratorArguments = arguments,
@@ -327,7 +353,8 @@ public static partial class GeneratedPromoResolver
         GeneratedPromoTemplate template = promo.Template;
         // A generator that is handed the clip plays it itself, so it isn't laid underneath as well.
         string? clipPath = template.BackgroundClip is null || UsesClip(template.Generator) ? null : promo.ClipPath;
-        string? background = clipPath ?? Background(template.BackgroundChoices, promo.Key);
+        string? background = clipPath ?? (template.BackgroundRules is { Count: > 0 }
+            ? promo.SelectedBackground : Background(template.BackgroundChoices, promo.Key));
         return new PromoComposition
         {
             Width = template.Width,
@@ -364,7 +391,10 @@ public static partial class GeneratedPromoResolver
                 }
                 : null,
             Layers = template.Generator is not null ? []
-                : [.. template.Layers.Select((layer, index) => Layer(layer, promo.LayerLines[index], promo.VariableImages)).OfType<PromoLayer>()]
+                // Over an episode clip there's no chosen background, so layers sit where the template puts them.
+                : [.. template.Layers.Select((layer, index) => Layer(layer, Pose(template, clipPath is null ? background : null, layer),
+                    TimingFor(template, clipPath is null ? background : null, layer), ColorFor(template, clipPath is null ? background : null, layer),
+                    promo.LayerLines[index], promo.VariableImages)).OfType<PromoLayer>()]
         };
     }
 
@@ -391,8 +421,44 @@ public static partial class GeneratedPromoResolver
     public static GeneratedBackgroundSoundConfig BackgroundSound(GeneratedPromoTemplate template) =>
         template.BackgroundSound ?? new GeneratedBackgroundSoundConfig();
 
-    /// <summary>The layer's keyframes in time order for drawing, or null when it has none.</summary>
-    public static IReadOnlyList<PromoKeyframe>? Keyframes(GeneratedLayer layer) =>
+    /// <summary>
+    /// Where the layer is placed over <paramref name="background"/>: that background's own placement of it, if the
+    /// template has one, otherwise the layer's.
+    /// </summary>
+    public static IGeneratedPose Pose(GeneratedPromoTemplate template, string? background, GeneratedLayer layer) =>
+        Placement(template, background, layer) ?? (IGeneratedPose)layer;
+
+    /// <summary><paramref name="background"/>'s own placement of the layer, or null when it uses the template's.</summary>
+    public static GeneratedLayerOverride? Placement(GeneratedPromoTemplate template, string? background, GeneratedLayer layer) =>
+        background is null || layer.Id is not { Length: > 0 } id ? null
+            : template.BackgroundOverrides?
+                .FirstOrDefault(tracked => string.Equals(tracked.Background, background, StringComparison.OrdinalIgnoreCase))?
+                .Layers.FirstOrDefault(placed => string.Equals(placed.Layer, id, StringComparison.Ordinal));
+
+    /// <summary><paramref name="background"/>'s own colour for the layer, or null when it uses the layer's.</summary>
+    public static GeneratedLayerColor? Recolour(GeneratedPromoTemplate template, string? background, GeneratedLayer layer) =>
+        background is null || layer.Id is not { Length: > 0 } id ? null
+            : template.BackgroundOverrides?
+                .FirstOrDefault(tracked => string.Equals(tracked.Background, background, StringComparison.OrdinalIgnoreCase))?
+                .Colors?.FirstOrDefault(colour => string.Equals(colour.Layer, id, StringComparison.Ordinal));
+
+    /// <summary><paramref name="background"/>'s own timing of the layer, or null when it uses the layer's.</summary>
+    public static GeneratedLayerTiming? Retiming(GeneratedPromoTemplate template, string? background, GeneratedLayer layer) =>
+        background is null || layer.Id is not { Length: > 0 } id ? null
+            : template.BackgroundOverrides?
+                .FirstOrDefault(tracked => string.Equals(tracked.Background, background, StringComparison.OrdinalIgnoreCase))?
+                .Timings?.FirstOrDefault(timed => string.Equals(timed.Layer, id, StringComparison.Ordinal));
+
+    /// <summary>When the layer shows over <paramref name="background"/>, and how it comes and goes: that background's own timing, or the layer's.</summary>
+    public static IGeneratedTiming TimingFor(GeneratedPromoTemplate template, string? background, GeneratedLayer layer) =>
+        Retiming(template, background, layer) ?? (IGeneratedTiming)layer;
+
+    /// <summary>The layer's colour over <paramref name="background"/>: that background's own, or the layer's.</summary>
+    public static string ColorFor(GeneratedPromoTemplate template, string? background, GeneratedLayer layer) =>
+        Recolour(template, background, layer)?.Color ?? layer.Color;
+
+    /// <summary>The pose's keyframes in time order for drawing, or null when it has none.</summary>
+    public static IReadOnlyList<PromoKeyframe>? Keyframes(IGeneratedPose layer) =>
         layer.Keyframes is { Count: > 0 } keyframes
             ? keyframes
                 .OrderBy(key => key.At)
@@ -434,9 +500,9 @@ public static partial class GeneratedPromoResolver
         string when = UpNextPromo.When(show.Start, airsAt, zone, day: true, time: true);
         string body = (type switch
         {
-            GeneratedPromoType.ComingUp => $"{pre} {(pre.Length == 0 ? when : when.ToLowerInvariant())}, {show.Title}",
-            GeneratedPromoType.Eventually => $"{pre} {show.Title}, {when}",
-            _ => $"{pre} {show.Title}"
+            GeneratedPromoType.ComingUp => $"{pre} {(pre.Length == 0 ? when : when.ToLowerInvariant())}, {UpNextPromo.SpokenTitle(show.Title)}",
+            GeneratedPromoType.Eventually => $"{pre} {UpNextPromo.SpokenTitle(show.Title)}, {when}",
+            _ => $"{pre} {UpNextPromo.SpokenTitle(show.Title)}"
         }).Trim();
         return string.Join(' ', new[] { UpNextPromo.Sentence(body, '!'), postMessage }.Where(part => !string.IsNullOrWhiteSpace(part)));
     }
@@ -458,29 +524,36 @@ public static partial class GeneratedPromoResolver
         DateTimeOffset airsAt) =>
         layer.Kind switch
         {
-            GeneratedLayerKind.UpNext => Affix([.. listings
+            GeneratedLayerKind.UpNext => UpNextLines([.. listings
                 .Skip(layer.UpNext?.Offset ?? 0)
-                .Take(layer.UpNext?.ShowsAhead ?? 1)
-                .Select(listing => layer.UpNext?.IncludeTime == true
-                    ? $"{UpNextPromo.Clock(listing.Start, zone)}  {listing.Title}"
-                    : listing.Title)], layer.UpNext?.Prefix, layer.UpNext?.Suffix, channelName),
+                .Take(layer.UpNext?.ShowsAhead ?? 1)], layer.UpNext, zone, channelName),
             GeneratedLayerKind.Text => (Tokens(layer.Text, channelName) ?? string.Empty).Replace("\r\n", "\n").Split('\n'),
             _ when GeneratedPromoKinds.IsShowLayer(layer.Kind) => ShowLines(layer, listings[0], zone, airsAt),
             _ => []
         };
 
     /// <summary>
-    /// <paramref name="prefix"/> joined onto the first line and <paramref name="suffix"/> onto the last; new lines in
+    /// The prefix joined onto the first line and the suffix onto the last; new lines in
     /// either start lines of their own. Nothing is added when there are no shows to list.
     /// </summary>
-    private static IReadOnlyList<string> Affix(List<string> lines, string? prefix, string? suffix, string channelName)
+    private static IReadOnlyList<string> UpNextLines(IReadOnlyList<UpNextListing> listings, GeneratedUpNextOptions? options,
+        TimeZoneInfo zone, string channelName)
     {
+        List<string> lines = [.. listings.Select(listing => options?.IncludeTime == true
+            ? $"{UpNextPromo.Clock(listing.Start, zone)}  {listing.Title}" : listing.Title)];
+        string? prefix = options?.Prefix;
+        string? suffix = options?.Suffix;
         if (lines.Count == 0 || (string.IsNullOrEmpty(prefix) && string.IsNullOrEmpty(suffix)))
         {
             return lines;
         }
 
-        string text = Tokens(prefix, channelName) + string.Join('\n', lines) + Tokens(suffix, channelName);
+        DateTimeOffset? end = listings[^1].End
+            ?? (listings[^1].Runtime is { } runtime ? listings[^1].Start + runtime : null);
+        string Expand(string? text) => (Tokens(text, channelName) ?? string.Empty)
+            .Replace("{start_time}", UpNextPromo.Clock(listings[0].Start, zone), StringComparison.OrdinalIgnoreCase)
+            .Replace("{end_time}", end is { } until ? UpNextPromo.Clock(until, zone) : string.Empty, StringComparison.OrdinalIgnoreCase);
+        string text = Expand(prefix) + string.Join('\n', lines) + Expand(suffix);
         return text.Replace("\r\n", "\n").Split('\n');
     }
 
@@ -504,16 +577,26 @@ public static partial class GeneratedPromoResolver
     private static string? Tokens(string? text, string channelName) =>
         text?.Replace("{channel}", channelName, StringComparison.OrdinalIgnoreCase);
 
-    private static PromoLayer? Layer(GeneratedLayer layer, IReadOnlyList<string> lines, IReadOnlyDictionary<string, string> images)
+    /// <param name="pose">Where it's placed: the layer itself, or the chosen background's placement of it.</param>
+    /// <param name="colour">Its colour: the layer's, or the chosen background's for it.</param>
+    /// <param name="timing">When it shows and how it comes and goes: the layer's, or the chosen background's for it.</param>
+    private static PromoLayer? Layer(GeneratedLayer layer, IGeneratedPose pose, IGeneratedTiming timing, string colour, IReadOnlyList<string> lines,
+        IReadOnlyDictionary<string, string> images)
     {
-        SKRect bounds = SKRect.Create(layer.X, layer.Y, layer.Width, layer.Height);
-        SKColor color = SKColor.Parse(layer.Color);
+        SKRect bounds = SKRect.Create(pose.X, pose.Y, pose.Width, pose.Height);
+        SKColor color = SKColor.Parse(colour);
         string? imagePath = layer.VariableImage is { Length: > 0 } variable
             ? images.GetValueOrDefault(GeneratedImageSelectors.Reference(variable, layer.VariableImageShow))
             : layer.Path;
         PromoLayer? drawn = layer.Kind switch
         {
-            GeneratedLayerKind.Rect => new PromoRectLayer { Bounds = bounds, Color = color, CornerRadius = layer.CornerRadius },
+            GeneratedLayerKind.Rect => new PromoRectLayer
+            {
+                Bounds = bounds, Color = color, CornerRadius = layer.CornerRadius,
+                Shape = layer.Shape ?? GeneratedShape.Rectangle,
+                Rotation = float.IsFinite(layer.Rotation ?? 0) ? (layer.Rotation ?? 0) % 360 : 0,
+                SoftEdges = float.IsFinite(layer.SoftEdges ?? 0) ? Math.Clamp(layer.SoftEdges ?? 0, 0, 200) : 0
+            },
             GeneratedLayerKind.Image when !string.IsNullOrWhiteSpace(imagePath) => new PromoImageLayer { Bounds = bounds, Path = imagePath },
             var kind when (kind is GeneratedLayerKind.Text or GeneratedLayerKind.UpNext || GeneratedPromoKinds.IsShowLayer(kind))
                 && lines.Any(line => line.Length > 0) => new PromoTextLayer
@@ -549,13 +632,13 @@ public static partial class GeneratedPromoResolver
 
         return drawn is null ? null : drawn with
         {
-            Start = layer.Start,
-            End = layer.End,
-            In = Enum.Parse<PromoTransition>(layer.TransitionIn.ToString()),
-            Out = Enum.Parse<PromoTransition>(layer.TransitionOut.ToString()),
-            TransitionDuration = layer.TransitionDuration,
-            Opacity = layer.Opacity,
-            Keyframes = Keyframes(layer)
+            Start = timing.Start,
+            End = timing.End,
+            In = Enum.Parse<PromoTransition>(timing.TransitionIn.ToString()),
+            Out = Enum.Parse<PromoTransition>(timing.TransitionOut.ToString()),
+            TransitionDuration = timing.TransitionDuration,
+            Opacity = pose.Opacity,
+            Keyframes = Keyframes(pose)
         };
     }
 }

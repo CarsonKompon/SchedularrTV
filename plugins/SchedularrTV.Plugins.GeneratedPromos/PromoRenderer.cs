@@ -201,12 +201,14 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             canvas.Save();
             canvas.Translate(state.OffsetX, state.OffsetY);
             canvas.Scale(state.Scale, state.Scale, bounds.MidX, bounds.MidY);
+            if (layer is PromoRectLayer shape) canvas.RotateDegrees(shape.Rotation, bounds.MidX, bounds.MidY);
             bool translucent = state.Opacity < 0.999f;
             if (translucent)
             {
                 // Shadows spill past the text box, so leave headroom around the offscreen layer.
                 SKRect area = bounds;
                 area.Inflate(bounds.Height * 0.25f + 8, bounds.Height * 0.25f + 8);
+                if (layer is PromoRectLayer soft) area.Inflate(soft.SoftEdges * 4, soft.SoftEdges * 4);
                 using var alpha = new SKPaint { Color = SKColors.Black.WithAlpha((byte)Math.Round(Math.Clamp(state.Opacity, 0, 1) * 255)) };
                 canvas.SaveLayer(area, alpha);
             }
@@ -214,8 +216,7 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             switch (layer)
             {
                 case PromoRectLayer rect:
-                    using (var paint = new SKPaint { Color = rect.Color, IsAntialias = true })
-                        canvas.DrawRoundRect(bounds, rect.CornerRadius, rect.CornerRadius, paint);
+                    DrawShape(canvas, rect, bounds);
                     break;
                 case PromoTextLayer text:
                     DrawText(canvas, text, bounds, images);
@@ -228,6 +229,46 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             if (translucent) canvas.Restore();
             canvas.Restore();
         }
+    }
+
+    private static void DrawShape(SKCanvas canvas, PromoRectLayer layer, SKRect bounds)
+    {
+        using var blur = layer.SoftEdges > 0 ? SKMaskFilter.CreateBlur(SKBlurStyle.Normal, layer.SoftEdges) : null;
+        using var paint = new SKPaint { Color = layer.Color, IsAntialias = true, MaskFilter = blur };
+        using var path = new SKPathBuilder();
+        switch (layer.Shape)
+        {
+            case SchedularrTV.Core.Configuration.GeneratedShape.Ellipse:
+                canvas.DrawOval(bounds, paint);
+                return;
+            case SchedularrTV.Core.Configuration.GeneratedShape.Triangle:
+                path.MoveTo(bounds.MidX, bounds.Top);
+                path.LineTo(bounds.Right, bounds.Bottom);
+                path.LineTo(bounds.Left, bounds.Bottom);
+                break;
+            case SchedularrTV.Core.Configuration.GeneratedShape.Diamond:
+                path.MoveTo(bounds.MidX, bounds.Top);
+                path.LineTo(bounds.Right, bounds.MidY);
+                path.LineTo(bounds.MidX, bounds.Bottom);
+                path.LineTo(bounds.Left, bounds.MidY);
+                break;
+            case SchedularrTV.Core.Configuration.GeneratedShape.Star:
+                for (int i = 0; i < 10; i++)
+                {
+                    double angle = -Math.PI / 2 + i * Math.PI / 5;
+                    float radius = i % 2 == 0 ? 1 : 0.4f;
+                    float x = bounds.MidX + (float)Math.Cos(angle) * bounds.Width / 2 * radius;
+                    float y = bounds.MidY + (float)Math.Sin(angle) * bounds.Height / 2 * radius;
+                    if (i == 0) path.MoveTo(x, y); else path.LineTo(x, y);
+                }
+                break;
+            default:
+                canvas.DrawRoundRect(bounds, layer.CornerRadius, layer.CornerRadius, paint);
+                return;
+        }
+        path.Close();
+        using var outline = path.Detach();
+        canvas.DrawPath(outline, paint);
     }
 
     private static void DrawText(SKCanvas canvas, PromoTextLayer layer, SKRect bounds, PromoImageCache cache)

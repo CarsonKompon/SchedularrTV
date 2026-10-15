@@ -189,11 +189,11 @@ public sealed partial class GeneratedPromoService(
                 if (template is not null && source is not null)
                 {
                     int needed = GeneratedPromoResolver.ListingsNeeded(template);
-                    IReadOnlyList<UpNextListing> listings = Subject(template.Type, schedule, entry, needed);
+                    IReadOnlyList<UpNextListing> listings = Subject(template.Type, schedule, entry, needed, template.UpcomingGrouping);
                     if (listings.Count >= needed || (listings.Count > 0 && entry.Start - now < PartialListingWindow))
                     {
                         ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, entry.Start,
-                            GeneratedImageSubjects.FromSchedule(schedule, entry.Start, entry.End))!
+                            GeneratedImageSubjects.FromSchedule(schedule, entry.Start, entry.End, template))!
                             with { Folder = Folder(source, template) };
                         path = Existing(promo);
                         if (path is not null)
@@ -237,7 +237,8 @@ public sealed partial class GeneratedPromoService(
     /// Which programme a slot promotes: what follows it, what preceded it (a sign-off, or the show a mid-show break
     /// interrupts), or its target airing.
     /// </summary>
-    public static IReadOnlyList<UpNextListing> Subject(GeneratedPromoType type, ChannelSchedule schedule, ScheduleEntry entry, int needed) =>
+    public static IReadOnlyList<UpNextListing> Subject(GeneratedPromoType type, ChannelSchedule schedule, ScheduleEntry entry, int needed,
+        GeneratedUpcomingGrouping grouping = GeneratedUpcomingGrouping.Timeslot) =>
         type switch
         {
             GeneratedPromoType.ThisHasBeen or GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow =>
@@ -247,7 +248,7 @@ public sealed partial class GeneratedPromoService(
                     ? UpNextPromo.FirstFrom(schedule, at, OpenTargetReach, type == GeneratedPromoType.ComingUp ? Around(schedule, entry) : Array.Empty<string>())
                     : UpNextPromo.At(schedule, at, entry.GeneratedSubject)) is { } target ? [target] : [],
             GeneratedPromoType.ComingUp or GeneratedPromoType.Eventually => [],
-            _ => UpNextPromo.Listings(schedule, entry.End, needed)
+            _ => UpNextPromo.Listings(schedule, entry.End, needed, grouping: grouping)
         };
 
     // An airing with no predicted show (a block of several shows, or rotation time) names the first programme from then.

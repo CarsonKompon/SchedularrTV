@@ -1,0 +1,31 @@
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div @ref="_element">
+    <input type="color" class="ed-colour" aria-label="Layer colour" value="@Value"
+           @onchange="e => ValueChanged.InvokeAsync(e.Value?.ToString() ?? Value)" />
+    <button type="button" class="btn btn-sm" data-eyedropper disabled title="Screen colour picking is loading">Pick from screen</button>
+    <span class="hint" role="status" data-eyedropper-status></span>
+</div>
+
+@code {
+    [Parameter] public string Value { get; set; } = "#ffffff";
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    private ElementReference _element;
+    private IJSObjectReference? _module;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./screen-colour-picker.js");
+        await _module.InvokeVoidAsync("attach", _element);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is null) return;
+        try { await _module.DisposeAsync(); }
+        catch (JSDisconnectedException) { }
+    }
+}

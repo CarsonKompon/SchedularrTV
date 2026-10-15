@@ -69,6 +69,26 @@ public sealed class OverlayImageTests : IDisposable
     }
 
     [Fact]
+    public void Block_override_applies_when_no_show_override_matches()
+    {
+        Overlay overlay = Bug();
+        overlay.VariableImages[0].Shows.Add(new() { Show = "Toonami", Block = true, Path = "toonami.png" });
+        overlay.VariableImages[0].Shows.Add(new() { Show = "Later", Block = true, Path = "block-named-later.png" });
+
+        Assert.Equal("current.png", OverlayImages.ResolveFor(overlay, new("Current", "Toonami"), []).File);
+        Assert.Equal("toonami.png", OverlayImages.ResolveFor(overlay, new("Unassigned", " toonami "), []).File);
+        Assert.Equal("default.png", OverlayImages.ResolveFor(overlay, new("Unassigned", "Other block"), []).File);
+        // A block override never matches a show title, and vice versa.
+        Assert.Equal("default.png", OverlayImages.ResolveFor(overlay, new("Toonami"), []).File);
+        Assert.Equal("later.png", OverlayImages.ResolveFor(overlay, new("Later", "Later"), []).File);
+
+        ScheduleEntry[] entries = [.. Entries().Select(entry => entry with { BlockName = "Toonami" })];
+        (OverlayImageSubject? current, IReadOnlyList<OverlayImageSubject> upcoming) = OverlayImages.Programmes(entries, 1);
+        Assert.Equal(new OverlayImageSubject("Current", "Toonami"), current);
+        Assert.All(upcoming, subject => Assert.Equal("Toonami", subject.Block));
+    }
+
+    [Fact]
     public async Task Screenbug_resolves_on_air_with_variant_priority_and_no_default_hides_it()
     {
         Overlay bug = Bug();

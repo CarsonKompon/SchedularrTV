@@ -1,4 +1,5 @@
 using System.Globalization;
+using SchedularrTV.Core.Configuration;
 using SchedularrTV.Core.Media;
 using SchedularrTV.Core.Scheduling;
 
@@ -6,34 +7,63 @@ namespace SchedularrTV.GeneratedPromos;
 
 /// <summary>
 /// A programme a promo names; <paramref name="Path"/> and <paramref name="Runtime"/> locate its file for background
-/// clips, and <paramref name="Overview"/> (what the episode is about) lets an AI-written voice-over talk about it.
+/// clips, <paramref name="Overview"/> (what the episode is about) lets an AI-written voice-over talk about it, and
+/// <paramref name="Block"/> is the schedule block it airs in, for block-matched variable images.
 /// </summary>
 public sealed record UpNextListing(string Title, DateTimeOffset Start, string? Episode = null, string? Path = null, TimeSpan? Runtime = null,
-    string? Overview = null);
+    string? Overview = null, string? Block = null)
+{
+    /// <summary>Scheduled end of the listed show, including its later segments and stacked episodes.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? End { get; init; }
+}
 
 /// <summary>Reads programmes from a schedule and phrases them for a voice-over.</summary>
 public static class UpNextPromo
 {
-    public static IReadOnlyList<UpNextListing> Listings(ChannelSchedule schedule, DateTimeOffset after, int count)
+    private static readonly System.Text.RegularExpressions.Regex TitleYear = new(@"\s*\(\s*[0-9]{4}\s*\)",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    private static readonly System.Text.RegularExpressions.Regex TitleSeparators = new(@"[:\-\u2010-\u2015\u2212]",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    private static readonly System.Text.RegularExpressions.Regex TitleWhitespace = new(@"\s+",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>Release-year disambiguators belong in metadata, not in spoken show names.</summary>
+    public static string WithoutTitleYears(string text) => TitleYear.Replace(text, string.Empty).Trim();
+
+    /// <summary>Speak show titles without release years or colon/dash separators that make TTS pause.</summary>
+    public static string SpokenTitle(string title) =>
+        TitleWhitespace.Replace(TitleSeparators.Replace(WithoutTitleYears(title), " "), " ").Trim();
+
+    /// <summary>Upcoming scheduled slots, optionally merging consecutive slots of the same show.</summary>
+    public static IReadOnlyList<UpNextListing> Listings(ChannelSchedule schedule, DateTimeOffset after, int count,
+        DateTimeOffset? before = null, GeneratedUpcomingGrouping grouping = GeneratedUpcomingGrouping.Timeslot)
     {
+        if (count <= 0) return [];
         List<UpNextListing> listings = [];
+        bool inUpcomingSlot = false;
         foreach (ScheduleEntry entry in schedule.Entries.OrderBy(entry => entry.Start))
         {
-            if (entry.Start < after || !IsListing(entry) || entry.Item is not { } item)
-            {
+            if (entry.Kind != ScheduleEntryKind.Program || entry.Item is not { } item || entry.IsSlotIntro || entry.IsSlotOutro)
                 continue;
-            }
-
-            string title = TitleOf(item);
-            if (listings.Count > 0 && string.Equals(listings[^1].Title, title, StringComparison.OrdinalIgnoreCase))
+            if (IsListing(entry))
             {
-                continue;
+                inUpcomingSlot = entry.Start >= after;
+                if (!inUpcomingSlot) continue;
+                string title = TitleOf(item);
+                bool merge = grouping == GeneratedUpcomingGrouping.Show && listings.Count > 0
+                    && string.Equals(listings[^1].Title, title, StringComparison.OrdinalIgnoreCase);
+                if (!merge)
+                {
+                    if (listings.Count >= count || before is { } until && entry.Start > until) break;
+                    listings.Add(Listing(item, entry.Start, entry.BlockName) with { End = entry.End });
+                }
             }
-
-            listings.Add(Listing(item, entry.Start));
-            if (listings.Count == count)
+            // Later mid-roll segments and episodes packed into this slot extend it; they don't increment lookahead.
+            if (inUpcomingSlot && listings.Count > 0 && entry.End > listings[^1].End)
             {
-                break;
+                listings[^1] = listings[^1] with { End = entry.End };
             }
         }
 
@@ -47,7 +77,7 @@ public static class UpNextPromo
             .Where(entry => entry.Start < before && entry.Kind == ScheduleEntryKind.Program && entry.Item is not null
                 && !entry.IsSlotIntro && !entry.IsSlotOutro)
             .MaxBy(entry => entry.Start);
-        return last?.Item is { } item ? Listing(item, last.Start) : null;
+        return last?.Item is { } item ? Listing(item, last.Start, last.BlockName) : null;
     }
 
     /// <summary>
@@ -61,7 +91,7 @@ public static class UpNextPromo
             .MinBy(entry => entry.Start);
         if (scheduled?.Item is { } item)
         {
-            return Listing(item, at);
+            return Listing(item, at, scheduled.BlockName);
         }
 
         return string.IsNullOrWhiteSpace(predicted) ? null : new UpNextListing(predicted, at);
@@ -77,7 +107,7 @@ public static class UpNextPromo
             .Where(entry => entry.Start >= at - TimeSpan.FromSeconds(1) && entry.Start <= at + within && IsListing(entry)
                 && entry.Item is { } item && !skip.Contains(TitleOf(item), StringComparer.OrdinalIgnoreCase))
             .MinBy(entry => entry.Start);
-        return scheduled?.Item is { } found ? Listing(found, scheduled.Start) : null;
+        return scheduled?.Item is { } found ? Listing(found, scheduled.Start, scheduled.BlockName) : null;
     }
 
     /// <summary>
@@ -96,15 +126,15 @@ public static class UpNextPromo
             throw new ArgumentException("An Up Next promo needs at least one listing.", nameof(listings));
         }
 
-        List<string> parts = [preMessage ?? "Coming up next...", Sentence(listings[0].Title, '.')];
+        List<string> parts = [preMessage ?? "Coming up next...", Sentence(SpokenTitle(listings[0].Title), '.')];
         if (variety is null)
         {
-            parts.AddRange(listings.Skip(1).Select(listing => $"Then {listing.Title} at {Clock(listing.Start, zone)}!"));
+            parts.AddRange(listings.Skip(1).Select(listing => $"Then {SpokenTitle(listing.Title)} at {Clock(listing.Start, zone)}!"));
         }
         else if (listings.Count > 1)
         {
             (string first, string middle, string last) = Links[Pick(variety, Links.Length)];
-            List<string> later = [.. listings.Skip(1).Select(listing => $"{listing.Title} at {SpokenClock(listing.Start, zone)}")];
+            List<string> later = [.. listings.Skip(1).Select(listing => $"{SpokenTitle(listing.Title)} at {SpokenClock(listing.Start, zone)}")];
             string linked = later.Count == 1
                 ? $"{first} {later[0]}"
                 : $"{first} {string.Join(", ", later.Take(later.Count - 1).Select((show, index) => index == 0 ? show : $"{middle} {show}"))}, {last} {later[^1]}";
@@ -171,9 +201,9 @@ public static class UpNextPromo
 
     private static string TitleOf(MediaItem item) => string.IsNullOrWhiteSpace(item.SeriesName) ? item.Title : item.SeriesName;
 
-    public static UpNextListing Listing(MediaItem item, DateTimeOffset start) =>
+    public static UpNextListing Listing(MediaItem item, DateTimeOffset start, string? block = null) =>
         new(TitleOf(item), start, EpisodeOf(item), item.Path, item.Duration > TimeSpan.Zero ? item.Duration : null,
-            string.IsNullOrWhiteSpace(item.Overview) ? null : item.Overview.Trim());
+            string.IsNullOrWhiteSpace(item.Overview) ? null : item.Overview.Trim(), string.IsNullOrWhiteSpace(block) ? null : block);
 
     private static string? EpisodeOf(MediaItem item) =>
         !string.IsNullOrWhiteSpace(item.SeriesName) && !string.Equals(item.Title, item.SeriesName, StringComparison.OrdinalIgnoreCase)

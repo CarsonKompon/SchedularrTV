@@ -221,6 +221,128 @@ public sealed class GeneratedPromoKeyframeTests
     }
 
     [Fact]
+    public void Layers_can_be_placed_and_animated_differently_over_each_background()
+    {
+        GeneratedPromoTemplate template = GeneratedPromoTemplates.UpNext();
+        GeneratedPromoEditing.SetBackgrounds(template, ["red.mp4", "blue.mp4"]);
+        string before = JsonSerializer.Serialize(template);
+        Assert.DoesNotContain("BackgroundOverrides", before);
+        Assert.DoesNotContain("\"Id\"", before);
+
+        GeneratedLayer panel = template.Layers[0];
+        GeneratedLayerOverride onBlue = GeneratedPromoEditing.Place(template, "blue.mp4", panel);
+        Assert.NotNull(panel.Id);
+        Assert.Equal(panel.X, onBlue.X);
+        Assert.Same(onBlue, GeneratedPromoEditing.Place(template, "BLUE.mp4", panel));
+
+        GeneratedPromoEditing.StartKeyframes(onBlue, TimeSpan.FromSeconds(1));
+        GeneratedPromoEditing.SetPose(onBlue, TimeSpan.FromSeconds(3), new LayerPose(900, 50, 200, 100, 1));
+        Assert.Null(panel.Keyframes);
+        Assert.Equal(1, GeneratedPromoEditing.PlacedCount(template, "blue.mp4"));
+
+        UpNextListing[] listings = [new UpNextListing("Show", Noon.AddMinutes(30))];
+        PromoLayer Drawn(string background)
+        {
+            GeneratedPromoTemplate only = GeneratedPromoEditing.Copy(template);
+            GeneratedPromoEditing.SetBackgrounds(only, [background]);
+            return GeneratedPromoResolver.Compose(GeneratedPromoResolver.Resolve(only, "Channel", listings, TimeZoneInfo.Utc, Noon)!).Layers[0];
+        }
+
+        Assert.Equal(panel.X, Drawn("red.mp4").Bounds.Left);
+        Assert.Null(Drawn("red.mp4").Keyframes);
+        Assert.Equal(900, Drawn("blue.mp4").Keyframes![^1].Bounds.Left);
+
+        // A swapped file keeps its placements; a removed one, or a deleted layer, takes them away.
+        GeneratedPromoEditing.RenameBackground(template, "blue.mp4", "navy.mp4");
+        Assert.NotNull(GeneratedPromoResolver.Placement(template, "navy.mp4", panel));
+        GeneratedPromoEditing.Unplace(template, "navy.mp4", panel);
+        Assert.Null(template.BackgroundOverrides);
+
+        GeneratedPromoEditing.Place(template, "red.mp4", panel);
+        GeneratedPromoEditing.ForgetLayer(template, panel);
+        Assert.Null(template.BackgroundOverrides);
+    }
+
+    [Fact]
+    public void Layers_can_be_coloured_differently_over_each_background_without_moving()
+    {
+        GeneratedPromoTemplate template = GeneratedPromoTemplates.UpNext();
+        GeneratedPromoEditing.SetBackgrounds(template, ["dark.mp4", "light.png"]);
+        GeneratedLayer heading = template.Layers[2];
+        string usual = heading.Color;
+
+        GeneratedPromoEditing.Recolour(template, "light.png", heading, "#202020");
+        Assert.Null(GeneratedPromoResolver.Placement(template, "light.png", heading));
+        Assert.True(GeneratedPromoEditing.Customised(template, "light.png", heading));
+        Assert.Equal(1, GeneratedPromoEditing.PlacedCount(template, "light.png"));
+
+        // Moving the layer in the template still moves it over the light background.
+        heading.X += 50;
+        UpNextListing[] listings = [new UpNextListing("Show", Noon.AddMinutes(30))];
+        PromoTextLayer Drawn(string background)
+        {
+            GeneratedPromoTemplate only = GeneratedPromoEditing.Copy(template);
+            GeneratedPromoEditing.SetBackgrounds(only, [background]);
+            return (PromoTextLayer)GeneratedPromoResolver.Compose(GeneratedPromoResolver.Resolve(only, "Channel", listings, TimeZoneInfo.Utc, Noon)!).Layers[2];
+        }
+
+        Assert.Equal(SKColor.Parse("#202020"), Drawn("light.png").Color);
+        Assert.Equal(heading.X, Drawn("light.png").Bounds.Left);
+        Assert.Equal(SKColor.Parse(usual), Drawn("dark.mp4").Color);
+
+        // Choosing the layer's own colour again, or resetting it, takes the background's away.
+        GeneratedPromoEditing.Recolour(template, "light.png", heading, usual);
+        Assert.Null(template.BackgroundOverrides);
+        GeneratedPromoEditing.Recolour(template, "light.png", heading, "#101010");
+        GeneratedPromoEditing.Unplace(template, "light.png", heading);
+        Assert.Null(template.BackgroundOverrides);
+    }
+
+    [Fact]
+    public void Layers_can_be_timed_and_animated_in_differently_over_each_background()
+    {
+        GeneratedPromoTemplate template = GeneratedPromoTemplates.UpNext();
+        GeneratedPromoEditing.SetBackgrounds(template, ["slow.mp4", "fast.mp4"]);
+        GeneratedLayer heading = template.Layers[2];
+
+        GeneratedLayerTiming onFast = GeneratedPromoEditing.Retime(template, "fast.mp4", heading);
+        Assert.Equal(heading.Start, onFast.Start);
+        Assert.Equal(heading.TransitionIn, onFast.TransitionIn);
+        onFast.Start = TimeSpan.FromSeconds(2);
+        onFast.End = TimeSpan.FromSeconds(5);
+        onFast.TransitionIn = GeneratedTransition.SlideLeft;
+        onFast.TransitionDuration = TimeSpan.FromSeconds(1);
+        Assert.Null(GeneratedPromoResolver.Placement(template, "fast.mp4", heading));
+
+        UpNextListing[] listings = [new UpNextListing("Show", Noon.AddMinutes(30))];
+        PromoLayer Drawn(string background)
+        {
+            GeneratedPromoTemplate only = GeneratedPromoEditing.Copy(template);
+            GeneratedPromoEditing.SetBackgrounds(only, [background]);
+            return GeneratedPromoResolver.Compose(GeneratedPromoResolver.Resolve(only, "Channel", listings, TimeZoneInfo.Utc, Noon)!).Layers[2];
+        }
+
+        PromoLayer fast = Drawn("fast.mp4");
+        Assert.Equal(TimeSpan.FromSeconds(2), fast.Start);
+        Assert.Equal(TimeSpan.FromSeconds(5), fast.End);
+        Assert.Equal(PromoTransition.SlideLeft, fast.In);
+        Assert.Equal(TimeSpan.FromSeconds(1), fast.TransitionDuration);
+        Assert.Equal(heading.X, fast.Bounds.Left);
+
+        PromoLayer slow = Drawn("slow.mp4");
+        Assert.Equal(heading.Start, slow.Start);
+        Assert.Equal(heading.End, slow.End);
+
+        // Timing alone is reset without touching anything else the background sets.
+        GeneratedPromoEditing.Recolour(template, "fast.mp4", heading, "#202020");
+        GeneratedPromoEditing.Untime(template, "fast.mp4", heading);
+        Assert.Null(GeneratedPromoResolver.Retiming(template, "fast.mp4", heading));
+        Assert.NotNull(GeneratedPromoResolver.Recolour(template, "fast.mp4", heading));
+        GeneratedPromoEditing.Unplace(template, "fast.mp4", heading);
+        Assert.Null(template.BackgroundOverrides);
+    }
+
+    [Fact]
     public void Each_promo_picks_one_of_the_backgrounds_and_keeps_it()
     {
         GeneratedPromoTemplate template = GeneratedPromoTemplates.UpNext();

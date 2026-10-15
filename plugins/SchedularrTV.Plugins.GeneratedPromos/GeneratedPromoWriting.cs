@@ -24,7 +24,8 @@ public static class GeneratedPromoWriting
         string fallback,
         string variety)
     {
-        if (template.Voice is not { Enabled: true, Writer: { } writer } voice || listings.Count == 0)
+        if (template.Voice is not { Enabled: true, Writer: { } writer } voice || listings.Count == 0
+            || voice.Advanced is { Enabled: true })
         {
             return null;
         }
@@ -42,6 +43,10 @@ public static class GeneratedPromoWriting
 
         guidance.Add($"Leave room to breathe: it has to be said in about {Seconds(template.Duration - voice.Start)} seconds.");
 
+        IReadOnlyList<UpNextListing> spoken = [.. listings.Select(show => show with { Title = UpNextPromo.SpokenTitle(show.Title) })];
+        if (listings.Any(show => show.Title != UpNextPromo.SpokenTitle(show.Title)))
+            guidance.Add("Use the show names exactly as given here; do not add parenthesised release years, colons or dashes to spoken titles.");
+
         return new AiTextJob
         {
             Config = writer,
@@ -49,9 +54,9 @@ public static class GeneratedPromoWriting
             Channel = channelName,
             Purpose = $"the announcer's voice-over for {Kind(template.Type)}",
             Fallback = fallback,
-            Facts = Facts(template.Type, channelName, listings, zone, airsAt, writer.UseDescriptions),
+            Facts = Facts(template.Type, channelName, spoken, zone, airsAt, writer.UseDescriptions),
             Guidance = guidance,
-            MustSay = [.. listings.Select(listing => listing.Title).Distinct(StringComparer.OrdinalIgnoreCase)],
+            MustSay = [.. spoken.Select(listing => listing.Title).Distinct(StringComparer.OrdinalIgnoreCase)],
             MaxWords = AiTextRules.SpokenWords(template.Duration - voice.Start - TimeSpan.FromMilliseconds(300)),
             Seed = $"{variety}|voice",
             Source = Source,
@@ -103,7 +108,8 @@ public static class GeneratedPromoWriting
         string? script = promo.Script;
         if (promo.ScriptJob is { } voice)
         {
-            script = (await writer.WriteAsync(voice, cancellationToken).ConfigureAwait(false)).Text;
+            // This is a whole script: keep its sentence punctuation and clock times, unlike title-only cleanup.
+            script = UpNextPromo.WithoutTitleYears((await writer.WriteAsync(voice, cancellationToken).ConfigureAwait(false)).Text);
         }
 
         List<IReadOnlyList<string>> lines = [.. promo.LayerLines];

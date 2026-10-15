@@ -85,7 +85,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
             var layers = new JsonArray();
             Dictionary<string, string>? tokens = null;
             OverlayMoment? moment = null;
-            (string? Current, IReadOnlyList<string> Upcoming)? imageSubjects = null;
+            (OverlayImageSubject? Current, IReadOnlyList<OverlayImageSubject> Upcoming)? imageSubjects = null;
             foreach (Overlay overlay in resolved.Overlays.SelectMany(OverlayTiming.Rules))
             {
                 if (OverlayTiming.For(overlay, entry) is not { } showing)
@@ -100,8 +100,8 @@ public sealed class OverlayProcessor : IPlayoutProcessor
                     if (overlay.VariableImages.Count > 0 || !string.IsNullOrWhiteSpace(overlay.VariableImage)
                         || overlay.Layers.Any(layer => !string.IsNullOrWhiteSpace(layer.VariableImage)))
                     {
-                        imageSubjects ??= OverlayImages.Subjects(ordered, index);
-                        shown = OverlayImages.Resolve(overlay, imageSubjects.Value.Current, imageSubjects.Value.Upcoming);
+                        imageSubjects ??= OverlayImages.Programmes(ordered, index);
+                        shown = OverlayImages.ResolveFor(overlay, imageSubjects.Value.Current, imageSubjects.Value.Upcoming);
                     }
                     if (overlay.Kind == OverlayKinds.File && overlay.Variants.Count > 0)
                     {

@@ -41,6 +41,34 @@ public static class GeneratedPromoPackages
             template.Backgrounds = mapped.Count == 0 ? null : mapped;
         }
 
+        if (template.BackgroundRules is { } rules)
+        {
+            foreach (GeneratedBackgroundRule rule in rules.ToList())
+            {
+                if (await map(rule.Background).ConfigureAwait(false) is { Length: > 0 } moved) rule.Background = moved;
+                else rules.Remove(rule);
+            }
+            template.BackgroundRules = rules.Count == 0 ? null : rules;
+        }
+
+        // Layer placements per background follow their background to its new path.
+        if (template.BackgroundOverrides is { } overrides)
+        {
+            foreach (GeneratedBackgroundOverride tracked in overrides.ToList())
+            {
+                if (await map(tracked.Background).ConfigureAwait(false) is { Length: > 0 } moved)
+                {
+                    tracked.Background = moved;
+                }
+                else
+                {
+                    overrides.Remove(tracked);
+                }
+            }
+
+            template.BackgroundOverrides = overrides.Count == 0 ? null : overrides;
+        }
+
         foreach (GeneratedLayer layer in template.Layers)
         {
             layer.Path = await map(layer.Path).ConfigureAwait(false);

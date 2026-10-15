@@ -87,7 +87,8 @@ public sealed class GeneratedPromoPipelineTests : IDisposable
         template.Layers[0].Color = "yellow";
         parsed.Channels[0].GeneratedPromos!.Templates.Add(new GeneratedPromoTemplate { Name = template.Name, Duration = TimeSpan.Zero });
         IReadOnlyList<string> errors = SchedulerConfigLoader.Validate(parsed).Errors;
-        Assert.Contains(errors, error => error.Contains("needs its 'up_next' text layer"));
+        // Without its Up Next text it's still valid: it can show the shows with variable images alone.
+        Assert.DoesNotContain(errors, error => error.Contains("text layer"));
         Assert.Contains(errors, error => error.Contains("hex colour"));
         Assert.Contains(errors, error => error.Contains("used more than once"));
         Assert.Contains(errors, error => error.Contains("duration must be"));
