@@ -128,6 +128,7 @@
 .ov-scope .ed-key.ease-hold { border-radius: 0; background: var(--panel-2); }
 .ov-scope .ed-key.ease-easein, .ov-scope .ed-key.ease-easeout, .ov-scope .ed-key.ease-easeinout { border-radius: 50% 2px; }
 .ov-scope .ed-key.current { background: var(--accent); box-shadow: 0 0 0 2px rgba(255,255,255,.85); }
+.ov-scope .ed-key.selected { background: var(--accent); border-color: #fff; box-shadow: 0 0 0 2px var(--accent); z-index: 4; }
 .ov-scope .ed-playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #ff3da8; z-index: 3; }
 .ov-scope .ed-playhead::before {
     content: ""; position: absolute; top: 0; left: -4px; border: 5px solid transparent; border-top-color: #ff3da8;

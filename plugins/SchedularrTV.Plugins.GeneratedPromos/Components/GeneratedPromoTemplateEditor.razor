@@ -423,9 +423,9 @@
                         GeneratedKeyframe? currentFrame = CurrentKeyframe;
                         @foreach (GeneratedKeyframe frame in Pose(spanLayer).Keyframes ?? [])
                         {
-                            <span class="ed-key @(ReferenceEquals(frame, currentFrame) ? "current" : "") @($"ease-{frame.Easing.ToString().ToLowerInvariant()}")" @key="frame"
+                            <span class="ed-key @(ReferenceEquals(frame, currentFrame) ? "current" : "") @(SelectedKeys.Contains(frame) ? "selected" : "") @($"ease-{frame.Easing.ToString().ToLowerInvariant()}")" @key="frame"
                                   style="left:@Pct(frame.At.TotalSeconds, DurationSeconds)"
-                                  title="@($"Keyframe at {frame.At.TotalSeconds:0.00}s, then {EasingName(frame.Easing).ToLowerInvariant()}. Drag to move it.")"
+                                  title="@($"Keyframe at {frame.At.TotalSeconds:0.00}s, then {EasingName(frame.Easing).ToLowerInvariant()}. Ctrl/⌘-click to toggle, Shift-click for a range; drag to move the selection.")"
                                   @onpointerdown="e => StartKeyDrag(e, spanLayer, frame)" @onpointerdown:stopPropagation="true" @onpointerdown:preventDefault="true"></span>
                         }
                     }
@@ -444,7 +444,23 @@
                         {
                             <button class="btn btn-sm" type="button" title="Previous keyframe" aria-label="Previous keyframe"
                                     disabled="@(NextKeyframe(keyLayer, -1) is null)" @onclick="() => GoToKeyframe(keyLayer, -1)">◀</button>
-                            @if (CurrentKeyframe is { } key)
+                            @if (SelectedKeys.Count > 1)
+                            {
+                                <strong>@SelectedKeys.Count selected</strong>
+                                <label class="ed-keyfield">
+                                    <span>Then (all)</span>
+                                    <select value="@SelectedEasing" @onchange="e => SetSelectedEasing(keyLayer, e)">
+                                        <option value="" disabled>Mixed easing</option>
+                                        @foreach (GeneratedEasing easing in Enum.GetValues<GeneratedEasing>())
+                                        {
+                                            <option value="@easing">@EasingName(easing)</option>
+                                        }
+                                    </select>
+                                </label>
+                                <button class="btn btn-sm btn-danger" type="button" @onclick="() => RemoveSelectedKeys(keyLayer)">Delete selected</button>
+                                <button class="btn btn-sm" type="button" @onclick="() => _keys.Clear()">Clear selection</button>
+                            }
+                            else if (EditingKeyframe is { } key)
                             {
                                 <label class="ed-keyfield">
                                     <span>At (s)</span>
@@ -469,6 +485,7 @@
                             }
                             <button class="btn btn-sm" type="button" title="Next keyframe" aria-label="Next keyframe"
                                     disabled="@(NextKeyframe(keyLayer, 1) is null)" @onclick="() => GoToKeyframe(keyLayer, 1)">▶</button>
+                            <span class="hint">Ctrl/⌘-click to select several; Shift-click for a range. Drag any selected keyframe to move them together.</span>
                             <div class="spacer"></div>
                             <button class="btn btn-sm" type="button" title="Remove every keyframe, leaving the layer where it is now"
                                     @onclick="() => StopKeyframes(keyLayer)">Stop animating</button>
@@ -2002,6 +2019,8 @@
         public IGeneratedPose? Target { get; set; }
 
         public GeneratedKeyframe? Editing { get; set; }
+
+        public List<(GeneratedKeyframe Key, double At)> Starts { get; set; } = [];
     }
 
     private readonly string _rulerId = $"promo-ruler-{Guid.NewGuid():N}";
@@ -2009,6 +2028,19 @@
     private double _rulerWidth;
     private bool _scrubbing;
     private KeyDragState? _keyDrag;
+
+    private readonly SchedularrTV.Core.Editing.KeyframeSelection<GeneratedKeyframe> _keys = new(key => key.At.TotalSeconds);
+    private IReadOnlyList<GeneratedKeyframe> SelectedKeys
+    {
+        get
+        {
+            IGeneratedPose? pose = _layer is { } layer ? Pose(layer) : null;
+            _keys.Bind(pose, pose?.Keyframes ?? []);
+            return _keys.Selected;
+        }
+    }
+    private GeneratedKeyframe? EditingKeyframe => SelectedKeys.LastOrDefault() ?? CurrentKeyframe;
+    private string SelectedEasing => SelectedKeys.Select(key => key.Easing).Distinct().ToArray() is [var easing] ? easing.ToString() : "";
 
     /// <summary>The selected layer's keyframe under the playhead, which the keyframe bar edits.</summary>
     private GeneratedKeyframe? CurrentKeyframe => _layer is { } layer ? GeneratedPromoEditing.KeyframeAt(Pose(layer), Time) : null;
@@ -2052,6 +2084,8 @@
 
     private async Task StartScrub(PointerEventArgs e)
     {
+        if (e.Button != 0) return;
+        _keys.Clear();
         _scrubbing = true;
         _ = FocusRuler();
         await MeasureRuler();
@@ -2063,7 +2097,14 @@
 
     private async Task StartKeyDrag(PointerEventArgs e, GeneratedLayer layer, GeneratedKeyframe key)
     {
-        _keyDrag = new KeyDragState(layer, key, e.ClientX, key.At);
+        if (e.Button != 0) return;
+        _ = SelectedKeys;
+        _ = FocusRuler();
+        if (!_keys.Click(key, Pose(layer).Keyframes ?? [], e.CtrlKey || e.MetaKey, e.ShiftKey)) return;
+        _keyDrag = new KeyDragState(layer, key, e.ClientX, key.At)
+        {
+            Starts = [.. SelectedKeys.Select(frame => (frame, frame.At.TotalSeconds))]
+        };
         // Jump to the keyframe, so its pose is what the canvas shows and the keyframe bar edits.
         SetTimeTo(key.At.TotalSeconds);
         _ = FocusRuler();
@@ -2126,7 +2167,16 @@
         // Found once the diamond really moves, so clicking one doesn't place the layer for the edited background.
         if (drag.Target is null)
         {
-            (drag.Target, drag.Editing) = EditableKey(drag.Layer, drag.Key);
+            IGeneratedPose shown = Pose(drag.Layer);
+            drag.Target = Editable(drag.Layer);
+            if (!ReferenceEquals(shown, drag.Target))
+            {
+                drag.Starts = [.. drag.Starts.Select(start => (Key: GeneratedPromoEditing.KeyframeAt(drag.Target, TimeSpan.FromSeconds(start.At)), start.At))
+                    .Where(start => start.Key is not null).Select(start => (start.Key!, start.At))];
+                drag.Editing = GeneratedPromoEditing.KeyframeAt(drag.Target, drag.StartAt);
+            }
+            else drag.Editing = drag.Key;
+            _keys.Replace(drag.Target, drag.Starts.Select(start => start.Key), drag.Editing);
         }
 
         if (drag.Editing is not { } key)
@@ -2135,7 +2185,10 @@
         }
 
         // Keyframes land on whole frames, like the playhead.
-        GeneratedPromoEditing.MoveKeyframe(drag.Target, key, TimeSpan.FromSeconds(SnapToFrame(drag.StartAt.TotalSeconds + seconds)), TimeSpan.FromSeconds(LastTime));
+        double delta = SchedularrTV.Core.Editing.KeyframeMoves.Delta(drag.Starts.Select(start => start.At), seconds, LastTime, Fps);
+        foreach (var start in drag.Starts)
+            start.Key.At = TimeSpan.FromSeconds(Math.Round(start.At + delta, 4));
+        GeneratedPromoEditing.SortKeyframes(drag.Target);
         // The playhead follows the keyframe, so it stays the one being edited.
         SetTimeTo(key.At.TotalSeconds, fast: true);
     }
@@ -2167,6 +2220,11 @@
             case "]" when _layer is { } layer:
                 GoToKeyframe(layer, 1);
                 break;
+            case "Escape":
+                _keys.Clear();
+                break;
+            case "Delete" or "Backspace" when _layer is { } layer && SelectedKeys.Count > 0:
+                return RemoveSelectedKeys(layer);
             case "Delete" or "Backspace" when _layer is { } layer && CurrentKeyframe is { } key:
                 return RemoveKeyframe(layer, key);
             case "k" or "K" when _layer is { } layer:
@@ -2205,6 +2263,30 @@
     private Task SetEasing(GeneratedLayer layer, GeneratedKeyframe key, GeneratedEasing easing) => Set(() =>
     {
         if (EditableKey(layer, key).Key is { } editable) editable.Easing = easing;
+    });
+
+    private (IGeneratedPose Target, List<GeneratedKeyframe> Keys) EditableSelectedKeys(GeneratedLayer layer)
+    {
+        var selected = SelectedKeys.ToArray();
+        IGeneratedPose shown = Pose(layer);
+        IGeneratedPose target = Editable(layer);
+        List<GeneratedKeyframe> keys = ReferenceEquals(shown, target) ? [.. selected]
+            : [.. selected.Select(key => GeneratedPromoEditing.KeyframeAt(target, key.At)).OfType<GeneratedKeyframe>()];
+        _keys.Replace(target, keys);
+        return (target, keys);
+    }
+
+    private Task RemoveSelectedKeys(GeneratedLayer layer) => Set(() =>
+    {
+        var (target, keys) = EditableSelectedKeys(layer);
+        foreach (GeneratedKeyframe key in keys) GeneratedPromoEditing.RemoveKeyframe(target, key);
+        _keys.Clear();
+    });
+
+    private Task SetSelectedEasing(GeneratedLayer layer, ChangeEventArgs e) => Set(() =>
+    {
+        if (!Enum.TryParse<GeneratedEasing>(e.Value?.ToString(), out var easing)) return;
+        foreach (GeneratedKeyframe key in EditableSelectedKeys(layer).Keys) key.Easing = easing;
     });
 
     private Task SetKeyframeTime(ChangeEventArgs e, GeneratedLayer layer, GeneratedKeyframe key) => SetNumber(e, value =>
@@ -2306,6 +2388,7 @@
     /// <summary>Starts (or stops, with null) placing layers for one background; the canvas shows that background meanwhile.</summary>
     private void EditBackground(string? background)
     {
+        _keys.Clear();
         _editBackground = background;
         _previewBackground = background;
         RequestStill();
@@ -2460,6 +2543,7 @@
     /// <summary>Selects just this layer.</summary>
     private void Select(GeneratedLayer layer)
     {
+        if (!ReferenceEquals(_layer, layer)) _keys.Clear();
         _layer = layer;
         _chosen.Clear();
         _chosen.Add(layer);
@@ -2468,6 +2552,7 @@
     /// <summary>A click on a row: alone it selects the layer; Ctrl (⌘) adds or drops it; Shift selects the rows from the last one to it.</summary>
     private void ClickRow(MouseEventArgs e, GeneratedLayer layer)
     {
+        if (!ReferenceEquals(_layer, layer)) _keys.Clear();
         if (e.CtrlKey || e.MetaKey)
         {
             Toggle(layer);
@@ -2497,6 +2582,7 @@
 
     private void Toggle(GeneratedLayer layer)
     {
+        if (!ReferenceEquals(_layer, layer)) _keys.Clear();
         if (_chosen.Add(layer))
         {
             _layer = layer;

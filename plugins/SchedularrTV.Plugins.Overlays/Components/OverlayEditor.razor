@@ -142,9 +142,9 @@
                             OverlayKeyframe? currentFrame = CurrentKeyframe;
                             @foreach (OverlayKeyframe frame in spanLayer.Keyframes ?? [])
                             {
-                                <span class="ed-key @(ReferenceEquals(frame, currentFrame) ? "current" : "") @($"ease-{frame.Easing.ToString().ToLowerInvariant()}")" @key="frame"
+                                <span class="ed-key @(ReferenceEquals(frame, currentFrame) ? "current" : "") @(SelectedKeys.Contains(frame) ? "selected" : "") @($"ease-{frame.Easing.ToString().ToLowerInvariant()}")" @key="frame"
                                       style="left:@Pct(frame.At.TotalSeconds, TimelineLength)"
-                                      title="@($"Keyframe at {frame.At.TotalSeconds:0.00}s, then {EasingName(frame.Easing).ToLowerInvariant()}. Drag to move it.")"
+                                      title="@($"Keyframe at {frame.At.TotalSeconds:0.00}s, then {EasingName(frame.Easing).ToLowerInvariant()}. Ctrl/⌘-click to toggle, Shift-click for a range; drag to move the selection.")"
                                       @onpointerdown="e => StartKeyDrag(e, spanLayer, frame)" @onpointerdown:stopPropagation="true" @onpointerdown:preventDefault="true"></span>
                             }
                         }
@@ -167,7 +167,23 @@
                             {
                                 <button class="btn btn-sm" type="button" title="Previous keyframe" aria-label="Previous keyframe"
                                         disabled="@(NextKeyframe(keyLayer, -1) is null)" @onclick="() => GoToKeyframe(keyLayer, -1)">◀</button>
-                                @if (CurrentKeyframe is { } key)
+                                @if (SelectedKeys.Count > 1)
+                                {
+                                    <strong>@SelectedKeys.Count selected</strong>
+                                    <label class="ed-keyfield">
+                                        <span>Then (all)</span>
+                                        <select value="@SelectedEasing" @onchange="SetSelectedEasing">
+                                            <option value="" disabled>Mixed easing</option>
+                                            @foreach (GeneratedEasing easing in Enum.GetValues<GeneratedEasing>())
+                                            {
+                                                <option value="@easing">@EasingName(easing)</option>
+                                            }
+                                        </select>
+                                    </label>
+                                    <button class="btn btn-sm btn-danger" type="button" @onclick="() => RemoveSelectedKeys(keyLayer)">Delete selected</button>
+                                    <button class="btn btn-sm" type="button" @onclick="() => _keys.Clear()">Clear selection</button>
+                                }
+                                else if (EditingKeyframe is { } key)
                                 {
                                     <label class="ed-keyfield">
                                         <span>At (s)</span>
@@ -192,6 +208,7 @@
                                 }
                                 <button class="btn btn-sm" type="button" title="Next keyframe" aria-label="Next keyframe"
                                         disabled="@(NextKeyframe(keyLayer, 1) is null)" @onclick="() => GoToKeyframe(keyLayer, 1)">▶</button>
+                                <span class="hint">Ctrl/⌘-click to select several; Shift-click for a range. Drag any selected keyframe to move them together.</span>
                                 <div class="spacer"></div>
                                 <button class="btn btn-sm" type="button" title="Remove every keyframe, leaving the layer where it is now"
                                         @onclick="() => StopKeyframes(keyLayer)">Stop animating</button>
@@ -768,6 +785,7 @@
     private sealed record KeyDragState(OverlayLayer Layer, OverlayKeyframe Key, double StartX, double StartAt)
     {
         public bool Moved { get; set; }
+        public List<(OverlayKeyframe Key, double At)> Starts { get; init; } = [];
     }
 
     private readonly CancellationTokenSource _life = new();
@@ -1202,6 +1220,18 @@
 
     private OverlayKeyframe? CurrentKeyframe => _layer is { } layer ? OverlayAnimation.KeyframeAt(layer, _time) : null;
 
+    private readonly SchedularrTV.Core.Editing.KeyframeSelection<OverlayKeyframe> _keys = new(key => key.At.TotalSeconds);
+    private IReadOnlyList<OverlayKeyframe> SelectedKeys
+    {
+        get
+        {
+            _keys.Bind(_layer, _layer?.Keyframes ?? []);
+            return _keys.Selected;
+        }
+    }
+    private OverlayKeyframe? EditingKeyframe => SelectedKeys.LastOrDefault() ?? CurrentKeyframe;
+    private string SelectedEasing => SelectedKeys.Select(key => key.Easing).Distinct().ToArray() is [var easing] ? easing.ToString() : "";
+
     private async Task MeasureRuler()
     {
         try
@@ -1237,6 +1267,8 @@
 
     private async Task StartScrub(PointerEventArgs e)
     {
+        if (e.Button != 0) return;
+        _keys.Clear();
         _scrubbing = true;
         _ = FocusRuler();
         await MeasureRuler();
@@ -1248,7 +1280,14 @@
 
     private async Task StartKeyDrag(PointerEventArgs e, OverlayLayer layer, OverlayKeyframe key)
     {
-        _keyDrag = new KeyDragState(layer, key, e.ClientX, key.At.TotalSeconds);
+        if (e.Button != 0) return;
+        _ = SelectedKeys;
+        _ = FocusRuler();
+        if (!_keys.Click(key, layer.Keyframes ?? [], e.CtrlKey || e.MetaKey, e.ShiftKey)) return;
+        _keyDrag = new KeyDragState(layer, key, e.ClientX, key.At.TotalSeconds)
+        {
+            Starts = [.. SelectedKeys.Select(frame => (frame, frame.At.TotalSeconds))]
+        };
         SetTimeTo(key.At.TotalSeconds);
         _ = FocusRuler();
         await MeasureRuler();
@@ -1306,7 +1345,10 @@
             return;
         }
 
-        OverlayAnimation.MoveKeyframe(drag.Layer, drag.Key, SnapToFrame(drag.StartAt + seconds), LastTime);
+        double delta = SchedularrTV.Core.Editing.KeyframeMoves.Delta(drag.Starts.Select(start => start.At), seconds, LastTime, Fps);
+        foreach (var start in drag.Starts)
+            start.Key.At = TimeSpan.FromSeconds(Math.Round(start.At + delta, 4));
+        drag.Layer.Keyframes = [.. drag.Layer.Keyframes!.OrderBy(key => key.At)];
         SetTimeTo(drag.Key.At.TotalSeconds, fast: true);
     }
 
@@ -1337,6 +1379,11 @@
             case "]" when _layer is { } layer:
                 GoToKeyframe(layer, 1);
                 break;
+            case "Escape":
+                _keys.Clear();
+                break;
+            case "Delete" or "Backspace" when _layer is { } layer && SelectedKeys.Count > 0:
+                return RemoveSelectedKeys(layer);
             case "Delete" or "Backspace" when _layer is { } layer && CurrentKeyframe is { } key:
                 return RemoveKeyframe(layer, key);
             case "k" or "K" when _layer is { Kind: not OverlayLayerKinds.Video } layer:
@@ -1363,6 +1410,18 @@
     });
 
     private Task RemoveKeyframe(OverlayLayer layer, OverlayKeyframe key) => Set(() => OverlayAnimation.RemoveKeyframe(layer, key));
+
+    private Task RemoveSelectedKeys(OverlayLayer layer) => Set(() =>
+    {
+        foreach (OverlayKeyframe key in SelectedKeys.ToArray()) OverlayAnimation.RemoveKeyframe(layer, key);
+        _keys.Clear();
+    });
+
+    private Task SetSelectedEasing(ChangeEventArgs e) => Set(() =>
+    {
+        if (!Enum.TryParse<GeneratedEasing>(e.Value?.ToString(), out var easing)) return;
+        foreach (OverlayKeyframe key in SelectedKeys) key.Easing = easing;
+    });
 
     private Task SetKeyframeTime(ChangeEventArgs e, OverlayLayer layer, OverlayKeyframe key) => Set(() =>
     {
@@ -1406,6 +1465,7 @@
 
     private void Select(OverlayLayer layer)
     {
+        if (!ReferenceEquals(_layer, layer)) _keys.Clear();
         _layer = layer;
         _chosen.Clear();
         _chosen.Add(layer);
@@ -1414,6 +1474,7 @@
     /// <summary>A click on a row: alone it selects the layer; Ctrl (⌘) adds or drops it; Shift selects the rows from the last one to it.</summary>
     private void ClickRow(MouseEventArgs e, OverlayLayer layer)
     {
+        if (!ReferenceEquals(_layer, layer)) _keys.Clear();
         if (e.CtrlKey || e.MetaKey)
         {
             Toggle(layer);
@@ -1443,6 +1504,7 @@
 
     private void Toggle(OverlayLayer layer)
     {
+        if (!ReferenceEquals(_layer, layer)) _keys.Clear();
         if (_chosen.Add(layer))
         {
             _layer = layer;
