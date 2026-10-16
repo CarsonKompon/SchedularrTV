@@ -292,7 +292,7 @@ public sealed class GeneratedPromoImageTests
         Assert.DoesNotContain("generated_promos_shared_images", saved);
         SchedulerConfig again = SchedulerConfigLoader.Parse(saved);
         Assert.Equal("changed.png", again.Channels[0].GeneratedPromos!.Templates[0].VariableImages![0].PathFor("Target", null));
-        Assert.Empty(SchedulerConfigLoader.Validate(again).Warnings.Where(warning => warning.Contains("shared image")));
+        Assert.DoesNotContain(SchedulerConfigLoader.Validate(again).Warnings, warning => warning.Contains("shared image"));
     }
 
     [Fact]

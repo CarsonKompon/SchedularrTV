@@ -1,5 +1,5 @@
 @* Channel tab: the overlays the channel and each of its blocks show (their own, another channel's, or none), and their editor. *@
-@inject TemplateAssets Assets
+@inject TemplateAssets TemplateFiles
 
 @if (Context.Channel is { } channel)
 {
@@ -352,7 +352,7 @@
             throw new InvalidOperationException("Choose this channel's own overlays first.");
         }
 
-        Overlay overlay = await OverlayPackages.ImportAsync(reader, Assets);
+        Overlay overlay = await OverlayPackages.ImportAsync(reader, TemplateFiles);
         string name = string.IsNullOrWhiteSpace(overlay.Name) ? "Overlay" : overlay.Name;
         overlay.Name = name;
         for (int number = 2; section.Overlays.Any(other => string.Equals(other.Name, overlay.Name, StringComparison.OrdinalIgnoreCase)); number++)

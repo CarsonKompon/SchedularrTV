@@ -34,6 +34,8 @@ The canvas editor works like the [Generated promos](generated-promos.md) one:
 
 Drag along the timeline under the canvas to scrub through one appearance: layers coming in late or going early fade as they will on air. For a whole-programme overlay, the timeline is its **Animation length** (10 seconds unless set under Timing). The **« ‹ › »** buttons and **← / →** (Shift for a second), **Home / End**, **[ / ]**, **K** and **Delete** work as in Generated promos.
 
+Video layers show their frame at the playhead, playing from when the layer comes in (as on air) and holding their last frame after they end. The first time a video is scrubbed, the frames the timeline covers are taken once in the background (kept under the plugin's `stills/frames` folder and cleared after a week unused); until then each frame is fetched as you land on it.
+
 Select a layer or group and choose **◆ Animate with keyframes**. Its position, size, turn and opacity then come from keyframes: move the playhead and drag, resize or turn the box (or change its numbers) to set one there. Drag a diamond to retime it; **Then** sets the easing to the next one. A group's animation carries everything inside it. Video layers are placed by ErsatzTV, so they can't be animated, turned or masked.
 
 On air, an animated design is sent as a transparent video (VP9 WebM, or ProRes 4444 if ffmpeg lacks VP9) of each appearance, made in the background with the ffmpeg set for Generated promos, for programmes in the next 12 hours; the schedule is published again as each is ready. Until then the design shows standing still. A whole-programme animated overlay plays its animation as each part of the programme starts, then stays as it ends up. In YAML:

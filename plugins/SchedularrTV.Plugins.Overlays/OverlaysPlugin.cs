@@ -20,7 +20,14 @@ public sealed class OverlaysPlugin : IPlugin
         });
 
         // For the editor: design videos' lengths, sizes and stills.
-        services.AddSingleton(_ => new OverlayVideos(() => OverlayVideos.ResolveFfmpeg(context), Path.Combine(context.DataDirectory, "stills")));
+        services.AddSingleton(provider =>
+        {
+            var videos = new OverlayVideos(() => OverlayVideos.ResolveFfmpeg(context), Path.Combine(context.DataDirectory, "stills"));
+
+            // Frames taken for scrubbing that no one has looked at for a week are cleared out.
+            _ = Task.Run(() => videos.PruneFrames(TimeSpan.FromDays(7)));
+            return videos;
+        });
 
         // Animated designs, made into videos beside the drawn ones (ErsatzTV reads both from there).
         services.AddSingleton(provider => new OverlayAnimations(

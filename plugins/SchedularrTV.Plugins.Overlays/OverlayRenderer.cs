@@ -351,7 +351,7 @@ public sealed class OverlayRenderer(Func<string> folder)
                 DrawText(canvas, layer, Fill(layer.Text, tokens), bounds);
                 break;
             case OverlayLayerKinds.Video:
-                DrawVideoStill(canvas, layer, bounds, posters);
+                DrawVideoStill(canvas, layer, bounds, posters, FrameKey(overlay, layer));
                 break;
         }
 
@@ -464,9 +464,17 @@ public sealed class OverlayRenderer(Func<string> folder)
     /// In the preview, a video as ErsatzTV places it: its still at the box's width from the box's top-left (ErsatzTV sizes
     /// it by width), or a marked box when there's no still.
     /// </summary>
-    private static void DrawVideoStill(SKCanvas canvas, OverlayLayer layer, SKRect bounds, IReadOnlyDictionary<string, string>? posters)
+    /// <summary>
+    /// What a video layer's frame at the preview's moment is filed under in the stills given to the preview: its file
+    /// and when it starts playing (as it comes in), since layers playing one file from different moments show different frames.
+    /// </summary>
+    public static string FrameKey(Overlay overlay, OverlayLayer video) =>
+        $"{video.Path}|{OverlayHierarchy.EffectiveTiming(overlay, video).InSeconds.ToString("0.###", CultureInfo.InvariantCulture)}";
+
+    /// <param name="frameKey">The layer's own frame among <paramref name="posters"/> (see <see cref="FrameKey"/>), else its file's still.</param>
+    private static void DrawVideoStill(SKCanvas canvas, OverlayLayer layer, SKRect bounds, IReadOnlyDictionary<string, string>? posters, string frameKey)
     {
-        if (layer.Path is { Length: > 0 } path && posters?.GetValueOrDefault(path) is { } poster && File.Exists(poster))
+        if (layer.Path is { Length: > 0 } path && (posters?.GetValueOrDefault(frameKey) ?? posters?.GetValueOrDefault(path)) is { } poster && File.Exists(poster))
         {
             using SKImage? still = SKImage.FromEncodedData(poster);
             if (still is not null)

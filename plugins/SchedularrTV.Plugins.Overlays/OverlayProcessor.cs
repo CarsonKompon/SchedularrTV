@@ -225,7 +225,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
         {
             if (parts.Count == 1 && parts[0].Kind == OverlayLayerKinds.Video)
             {
-                if (OverlayTiming.For(overlay, entry, LayerTiming.Of(parts[0])) is { } own && VideoLayer(overlay, parts[0], own) is { } video)
+                if (OverlayTiming.For(overlay, entry, OverlayHierarchy.EffectiveTiming(overlay, parts[0])) is { } own && VideoLayer(overlay, parts[0], own) is { } video)
                 {
                     yield return video;
                 }

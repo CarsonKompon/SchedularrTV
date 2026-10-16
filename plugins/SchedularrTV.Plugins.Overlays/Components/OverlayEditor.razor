@@ -472,6 +472,10 @@
                             {
                                 <p class="hint">
                                     @(info.Width > 0 ? $"{info.Width} × {info.Height}" : "")@(info.Width > 0 && info.Duration is not null ? ", " : "")@(info.Duration is { } runs ? $"{Number(runs.TotalSeconds)}s long" : "").
+                                    @if (_videoFrames.TryGetValue(videoPath, out var shownFrame))
+                                    {
+                                        <span>@(shownFrame.Shown ? $"Showing its frame {shownFrame.Seconds:0.00}s in." : $"Couldn't take its frame {shownFrame.Seconds:0.00}s in (ffmpeg).")</span>
+                                    }
                                 </p>
                                 <div class="ed-toolbar">
                                     @if (info.Aspect is not null)
@@ -904,7 +908,7 @@
                     };
                     float scale = Math.Min(1f, (fast ? FastPreviewPixels : PreviewPixels) / CanvasWidth);
                     OverlayClock? clock = IsDesign ? PreviewClock : null;
-                    Dictionary<string, string> posters = await PostersAsync(snapshot);
+                    Dictionary<string, string> posters = await PostersAsync(snapshot, clock);
                     byte[] png = await Task.Run(() => OverlayRenderer.Preview(snapshot, tokens, scale, posters, clock));
                     _preview = "data:image/png;base64," + Convert.ToBase64String(png);
                     _previewError = null;
@@ -974,8 +978,12 @@
     private OverlayClock PreviewClock => new(_time, TimelineLength, Overlay.FadeSeconds, FadeIn: true, FadeOut: !TimingSchedule.Always,
         LayerOuts: !TimingSchedule.Always);
 
-    /// <summary>A still for each of the design's videos (taken once and kept), and what's known of each, for the inspector.</summary>
-    private async Task<Dictionary<string, string>> PostersAsync(Overlay overlay)
+    /// <summary>
+    /// For each of the design's videos, its frame at the playhead (it plays from when its layer comes in, as on air),
+    /// or with no moment a still from part-way through; and what's known of each, for the inspector. The frames an
+    /// appearance uses are taken in the background the first time, so scrubbing is quick after that.
+    /// </summary>
+    private async Task<Dictionary<string, string>> PostersAsync(Overlay overlay, OverlayClock? clock)
     {
         Dictionary<string, string> posters = new(StringComparer.Ordinal);
         if (_videos is null || overlay.Kind == OverlayKinds.File)
@@ -983,18 +991,47 @@
             return posters;
         }
 
-        foreach (string path in overlay.Layers.Where(layer => layer.Kind == OverlayLayerKinds.Video && layer.Path is { Length: > 0 } && File.Exists(layer.Path))
-                     .Select(layer => layer.Path!).Distinct(StringComparer.Ordinal))
+        foreach (OverlayLayer video in overlay.Layers.Where(layer => layer.Kind == OverlayLayerKinds.Video && layer.Path is { Length: > 0 } && File.Exists(layer.Path)))
         {
-            _videoInfo[path] = await _videos.InfoAsync(path);
-            if (await _videos.PosterAsync(path) is { } poster)
+            string path = video.Path!;
+            string key = OverlayRenderer.FrameKey(overlay, video);
+            if (posters.ContainsKey(key))
             {
-                posters[path] = poster;
+                continue;
             }
+
+            if (!_videoInfo.ContainsKey(path))
+            {
+                _videoInfo[path] = await _videos.InfoAsync(path);
+            }
+
+            if (clock is null)
+            {
+                if (await _videos.PosterAsync(path) is { } poster)
+                {
+                    posters[key] = poster;
+                }
+
+                continue;
+            }
+
+            double playing = Math.Max(0, clock.Seconds - OverlayHierarchy.EffectiveTiming(overlay, video).InSeconds);
+            double needed = Math.Min(clock.Length, _videoInfo[path]?.Duration?.TotalSeconds ?? clock.Length);
+            _ = _videos.PrepareFramesAsync(path, needed);
+            string? frame = await _videos.FrameAsync(path, playing, _life.Token);
+            if (frame is not null)
+            {
+                posters[key] = frame;
+            }
+
+            _videoFrames[path] = (playing, frame is not null);
         }
 
         return posters;
     }
+
+    /// <summary>Each video's frame the preview last showed: how far into it, and whether ffmpeg could take it.</summary>
+    private readonly Dictionary<string, (double Seconds, bool Shown)> _videoFrames = new(StringComparer.Ordinal);
 
     // ---- The timeline ----
 

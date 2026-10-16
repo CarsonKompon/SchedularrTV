@@ -145,6 +145,161 @@ public sealed class OverlayVideos(Func<string> ffmpeg, string folder)
         }
     }
 
+    // ---- Frames, for scrubbing ----
+
+    /// <summary>Frames a second the editor's frames are taken at: the timeline's.</summary>
+    private static int Fps => OverlayAnimation.Fps;
+
+    // One extraction of a video's frames at a time each, however often the editor asks.
+    private readonly ConcurrentDictionary<string, Task> _preparing = new(StringComparer.Ordinal);
+
+    private string FramesFolder(string path) => Path.Combine(folder, "frames", Key(path));
+
+    /// <summary>
+    /// The frame <paramref name="seconds"/> into the video, as a PNG (keeping its transparency): one of those taken
+    /// in the background by <see cref="PrepareFramesAsync"/> when it's there, otherwise taken now on its own. Past the
+    /// end it's the last frame. Null when ffmpeg can't take one.
+    /// </summary>
+    public async Task<string?> FrameAsync(string path, double seconds, CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        OverlayVideoInfo? info = await InfoAsync(path, cancellationToken).ConfigureAwait(false);
+        double last = info?.Duration is { } length ? Math.Max(0, length.TotalSeconds - 1.0 / Fps) : double.MaxValue;
+        int index = (int)Math.Round(Math.Clamp(seconds, 0, last) * Fps);
+        string frames = FramesFolder(path);
+
+        // ffmpeg numbers the frames it writes from 1.
+        string prepared = Path.Combine(frames, $"{index + 1:00000}.png");
+        if (File.Exists(prepared))
+        {
+            return prepared;
+        }
+
+        string single = Path.Combine(frames, $"at-{index}.png");
+        if (File.Exists(single))
+        {
+            return single;
+        }
+
+        Directory.CreateDirectory(frames);
+        string temp = Path.Combine(frames, $"at-{index}.{Guid.NewGuid():N}.png");
+        List<string> arguments = ["-v", "error", "-y", "-ss", (index / (double)Fps).ToString("0.####", CultureInfo.InvariantCulture)];
+        arguments.AddRange(Decoder(path));
+        arguments.AddRange(["-i", path, "-frames:v", "1", "-pix_fmt", "rgba", "-vf", "scale='min(1280,iw)':-2", temp]);
+        try
+        {
+            (int code, _) = await RunAsync(Ffmpeg, arguments, cancellationToken).ConfigureAwait(false);
+            if (code != 0 || !File.Exists(temp))
+            {
+                TryDelete(temp);
+                return null;
+            }
+
+            File.Move(temp, single, overwrite: true);
+            return single;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or IOException)
+        {
+            TryDelete(temp);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Takes every frame of the video's first <paramref name="seconds"/> in one go, in the background, so scrubbing
+    /// over it is quick once done. Done once a video (and again for a longer stretch).
+    /// </summary>
+    public Task PrepareFramesAsync(string path, double seconds)
+    {
+        if (!File.Exists(path))
+        {
+            return Task.CompletedTask;
+        }
+
+        double wanted = Math.Clamp(Math.Ceiling(seconds), 1, 300);
+        return _preparing.GetOrAdd($"{Key(path)}|{wanted}", _ => Task.Run(() => ExtractAsync(path, wanted)));
+    }
+
+    private async Task ExtractAsync(string path, double seconds)
+    {
+        string frames = FramesFolder(path);
+        string done = Path.Combine(frames, $"done-{seconds.ToString("0", CultureInfo.InvariantCulture)}");
+        if (File.Exists(done))
+        {
+            return;
+        }
+
+        string temp = Path.Combine(frames, $"extract-{Guid.NewGuid():N}");
+        try
+        {
+            Directory.CreateDirectory(temp);
+            List<string> arguments = ["-v", "error", "-y"];
+            arguments.AddRange(Decoder(path));
+            arguments.AddRange(["-i", path, "-t", seconds.ToString("0", CultureInfo.InvariantCulture),
+                "-vf", $"fps={Fps},scale='min(1280,iw)':-2", "-pix_fmt", "rgba", Path.Combine(temp, "%05d.png")]);
+            (int code, _) = await RunAsync(Ffmpeg, arguments, CancellationToken.None, TimeSpan.FromMinutes(5)).ConfigureAwait(false);
+            if (code != 0)
+            {
+                return;
+            }
+
+            foreach (string frame in Directory.EnumerateFiles(temp, "*.png"))
+            {
+                File.Move(frame, Path.Combine(frames, Path.GetFileName(frame)), overwrite: true);
+            }
+
+            await File.WriteAllTextAsync(done, string.Empty).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or IOException
+                                       or UnauthorizedAccessException or OperationCanceledException)
+        {
+            // Frames are then taken one at a time as they're asked for.
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(temp)) Directory.Delete(temp, recursive: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    /// <summary>Removes videos' frames the editor hasn't taken for <paramref name="age"/>.</summary>
+    public void PruneFrames(TimeSpan age)
+    {
+        string root = Path.Combine(folder, "frames");
+        if (!Directory.Exists(root))
+        {
+            return;
+        }
+
+        DateTime cutoff = DateTime.UtcNow - age;
+        foreach (string video in Directory.EnumerateDirectories(root))
+        {
+            try
+            {
+                if (Directory.GetLastWriteTimeUtc(video) < cutoff)
+                {
+                    Directory.Delete(video, recursive: true);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    // ffmpeg's own VP9 decoder drops the alpha channel; libvpx keeps it.
+    private static string[] Decoder(string path) =>
+        Path.GetExtension(path).Equals(".webm", StringComparison.OrdinalIgnoreCase) ? ["-c:v", "libvpx-vp9"] : [];
+
     private static string Key(string path)
     {
         long stamp = File.Exists(path) ? File.GetLastWriteTimeUtc(path).Ticks : 0;
@@ -163,7 +318,8 @@ public sealed class OverlayVideos(Func<string> ffmpeg, string folder)
         }
     }
 
-    private static async Task<(int Code, string Output)> RunAsync(string program, IEnumerable<string> arguments, CancellationToken cancellationToken)
+    private static async Task<(int Code, string Output)> RunAsync(string program, IEnumerable<string> arguments, CancellationToken cancellationToken,
+        TimeSpan? timeout = null)
     {
         var start = new ProcessStartInfo(program) { UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, CreateNoWindow = true };
         foreach (string argument in arguments)
@@ -175,7 +331,7 @@ public sealed class OverlayVideos(Func<string> ffmpeg, string folder)
         Task<string> errors = process.StandardError.ReadToEndAsync(cancellationToken);
         Task<string> output = process.StandardOutput.ReadToEndAsync(cancellationToken);
         using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        limit.CancelAfter(TimeSpan.FromSeconds(30));
+        limit.CancelAfter(timeout ?? TimeSpan.FromSeconds(30));
         try
         {
             await process.WaitForExitAsync(limit.Token).ConfigureAwait(false);
