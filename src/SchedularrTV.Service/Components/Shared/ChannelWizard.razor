@@ -5,6 +5,7 @@
 @inject CommercialTree CommercialFolderTree
 @inject IEnumerable<IMediaSourceInfo> Sources
 @using SchedularrTV.Providers.ErsatzTv
+@inject Microsoft.Extensions.Options.IOptions<ErsatzTvOptions> ErsatzOptions
 
 <div class="modal-backdrop">
     <div class="modal wizard" role="dialog" aria-modal="true" aria-label="Create a channel">
@@ -278,19 +279,18 @@
                             }
                         </select>
                     </label>
+                    <EncodingPictureSettings Value="WizardPicture" Inherited="ErsatzTvEncoding.Defaults(ErsatzOptions.Value.Encoding)" Changed="SetWizardPicture" />
                     <label class="field">
-                        <span>Picture size</span>
-                        <select @bind="_height">
+                        <span>Media sizing</span>
+                        <select @bind="_scalingMode">
                             <option value="">App default</option>
-                            @foreach (int height in ErsatzTvEncoding.Heights)
-                            {
-                                <option value="@height">@(height)p</option>
-                            }
+                            <option value="scale_and_pad">Fit — entire image, black bars if needed</option>
+                            <option value="crop">Fill — crop edges to fill the frame</option>
                         </select>
                     </label>
                     <label class="field"><span>Bitrate (kbps)</span><input type="number" min="300" max="100000" @bind="_bitrate" placeholder="App default" /></label>
                 </div>
-                <p class="hint">Encoding changes may restart ErsatzTV and briefly interrupt viewers.</p>
+                <p class="hint">Use 640×480 for 4:3 or 854×480 for widescreen. Dimensions are rounded down to even pixels. Encoding changes may restart ErsatzTV and briefly interrupt viewers.</p>
                 break;
 
             default:
@@ -301,7 +301,7 @@
                     <li><Icon Name="clock" Size="15" /><span>@TimingSummary()</span></li>
                     <li><Icon Name="megaphone" Size="15" /><span>@BreakSummary()</span></li>
                     <li><Icon Name="sliders" Size="15" /><span>@(string.IsNullOrWhiteSpace(_timeZone) ? Editor.Working.Settings.TimeZone : _timeZone) · @(_alwaysOn ? "Always on" : "On demand")</span></li>
-                    <li><Icon Name="tv" Size="15" /><span>@(string.IsNullOrWhiteSpace(_hardware) ? "Default encoder" : ErsatzTvEncoding.Label(_hardware)) · @(_height is null ? "Default size" : $"{_height}p") · @(_bitrate is null ? "Default bitrate" : $"{_bitrate} kbps")</span></li>
+                    <li><Icon Name="tv" Size="15" /><span>@(string.IsNullOrWhiteSpace(_hardware) ? "Default encoder" : ErsatzTvEncoding.Label(_hardware)) · @(_width is not null ? $"{_width}×{_height}" : _height is null ? "Default size" : $"{_height}p") @(_aspectRatio) · @(_frameRate is null ? "Default frame rate" : _frameRate == "source" ? "Match source" : $"{_frameRate} fps") · @(_bitrate is null ? "Default bitrate" : $"{_bitrate} kbps")</span></li>
                     @if (_addBlock)
                     {
                         <li><Icon Name="layers" Size="15" /><span>Block “@_block.Name.Trim()”, @BlockTimes() @DaysSummary(), with @BlockTitles() title(s)</span></li>
@@ -386,7 +386,22 @@
     private string? _creationError;
     private string _group = "SchedularrTV";
     private string? _logo, _timeZone, _hardware;
-    private int? _height, _bitrate;
+    private int? _height, _width, _bitrate;
+    private string? _scalingMode;
+    private string? _aspectRatio, _frameRate;
+
+    private ChannelEncodingConfig WizardPicture => new()
+    {
+        Height = _height, Width = _width, AspectRatio = _aspectRatio, FrameRate = _frameRate
+    };
+
+    private void SetWizardPicture(ChannelEncodingConfig value)
+    {
+        _height = value.Height;
+        _width = value.Width;
+        _aspectRatio = value.AspectRatio;
+        _frameRate = value.FrameRate;
+    }
     private bool _alwaysOn;
     private bool _countsAsWatched = true;
 
@@ -535,6 +550,8 @@
         5 when _addBlock && _block.Recurrence == Recurrence.DaysOfWeek && _block.Days.Count == 0 => "Choose at least one day for the block.",
         5 when _addBlock && !_block.Shows.Any(HasContent) => "Give the block something to play, or untick “Add a block now”.",
         7 when _bitrate is < 300 or > 100000 => "Bitrate must be between 300 and 100000 kbps.",
+        7 when _height is < 240 or > 4320 => "Height must be between 240 and 4320 pixels.",
+        7 when _width is < 160 or > 7680 => "Width must be between 160 and 7680 pixels.",
         _ => null
     };
 
@@ -611,8 +628,11 @@
             TimeZone = string.IsNullOrWhiteSpace(_timeZone) ? null : _timeZone.Trim(),
             AlwaysOn = _alwaysOn ? true : null,
             AlwaysOnCountsAsWatched = _alwaysOn && !_countsAsWatched ? false : null,
-            Encoding = string.IsNullOrWhiteSpace(_hardware) && _height is null && _bitrate is null ? null
-                : new ChannelEncodingConfig { Hardware = string.IsNullOrWhiteSpace(_hardware) ? null : _hardware, Height = _height, BitrateKbps = _bitrate },
+            Encoding = string.IsNullOrWhiteSpace(_hardware) && _height is null && _width is null && _bitrate is null
+                && string.IsNullOrWhiteSpace(_scalingMode) && _aspectRatio is null && _frameRate is null ? null
+                : new ChannelEncodingConfig { Hardware = string.IsNullOrWhiteSpace(_hardware) ? null : _hardware, Height = _height,
+                    Width = _width, AspectRatio = _aspectRatio, FrameRate = _frameRate,
+                    ScalingMode = string.IsNullOrWhiteSpace(_scalingMode) ? null : _scalingMode, BitrateKbps = _bitrate },
             BaseRotation = Selector(_source switch
             {
                 Source.LibraryCollection => new ContentSelector { Include = [new ContentInclude { Collection = _libraryCollection }] },

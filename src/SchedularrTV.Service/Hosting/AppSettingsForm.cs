@@ -79,6 +79,8 @@ public sealed class AppSettingsForm(
         "LiveEncoding:Encoder", "LiveEncoding:Preset", "LiveEncoding:Height", "LiveEncoding:FrameRate", "LiveEncoding:BitrateKbps", "LiveEncoding:Threads",
         "Rendering:Encoder", "Rendering:Preset", "Rendering:Threads", "Rendering:HardwareBitrateKbps",
         ErsatzEncodingPrefix + "Hardware", ErsatzEncodingPrefix + "Height", ErsatzEncodingPrefix + "BitrateKbps",
+        ErsatzEncodingPrefix + "Width", ErsatzEncodingPrefix + "ScalingMode",
+        ErsatzEncodingPrefix + "AspectRatio", ErsatzEncodingPrefix + "FrameRate",
         ErsatzEncodingPrefix + "VaapiDevice", ErsatzEncodingPrefix + "VaapiDriver"
     ];
 

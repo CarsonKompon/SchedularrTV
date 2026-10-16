@@ -11,8 +11,20 @@ public sealed class ChannelEncodingConfig
     /// </summary>
     public string? Hardware { get; set; }
 
-    /// <summary>Picture height (the width follows at 16:9). Null inherits.</summary>
+    /// <summary>Picture height in pixels. Null inherits.</summary>
     public int? Height { get; set; }
+
+    /// <summary>Picture width in pixels. Null inherits; without a width the picture is 16:9.</summary>
+    public int? Width { get; set; }
+
+    /// <summary>Preset picture shape; explicit Width takes precedence. Null inherits.</summary>
+    public string? AspectRatio { get; set; }
+
+    /// <summary>source, or a positive frame rate (N or N/D). Null inherits.</summary>
+    public string? FrameRate { get; set; }
+
+    /// <summary>scale_and_pad (fit) or crop (fill). Null inherits.</summary>
+    public string? ScalingMode { get; set; }
 
     /// <summary>Video bitrate in kbps. Null inherits.</summary>
     public int? BitrateKbps { get; set; }
@@ -20,5 +32,7 @@ public sealed class ChannelEncodingConfig
     /// <summary>True when nothing is set, so the section can be left out of the YAML.</summary>
     [YamlDotNet.Serialization.YamlIgnore]
     [System.Text.Json.Serialization.JsonIgnore]
-    public bool IsEmpty => string.IsNullOrWhiteSpace(Hardware) && Height is null && BitrateKbps is null;
+    public bool IsEmpty => string.IsNullOrWhiteSpace(Hardware) && Height is null && Width is null
+                           && string.IsNullOrWhiteSpace(AspectRatio) && string.IsNullOrWhiteSpace(FrameRate)
+                           && string.IsNullOrWhiteSpace(ScalingMode) && BitrateKbps is null;
 }

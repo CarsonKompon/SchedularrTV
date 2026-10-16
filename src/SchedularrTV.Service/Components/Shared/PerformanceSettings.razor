@@ -1,6 +1,7 @@
 @* Hardware profile and video encoding (ErsatzTV channels, live page channels, rendered clips); part of App settings. *@
 @using SchedularrTV.Service.Hosting
 @using SchedularrTV.Providers.ErsatzTv
+@using SchedularrTV.Core.Configuration
 @inject IServiceProvider Services
 
 <div class="grid grid-2">
@@ -45,13 +46,12 @@
             }
         </select>
     </label>
+    <EncodingPictureSettings Value="EtvPicture" Inherited="EtvDefaults" AllowInheritance="false" Changed="SetEtvPicture" />
     <label class="field">
-        <span>Picture size</span>
-        <select value="@EtvDefaults.Height" @onchange="e => Edit(EtvHeightKey, e.Value?.ToString())">
-            @foreach (int height in ErsatzTvEncoding.Heights)
-            {
-                <option value="@height">@(height)p (@(ErsatzTvEncoding.WidthFor(height))×@height)</option>
-            }
+        <span>Media sizing</span>
+        <select value="@EtvDefaults.ScalingMode" @onchange="e => Edit(EtvScalingKey, e.Value?.ToString())">
+            <option value="scale_and_pad">Fit — entire image, black bars if needed</option>
+            <option value="crop">Fill — crop edges to fill the frame</option>
         </select>
     </label>
     <label class="field">
@@ -61,6 +61,10 @@
     </label>
 </div>
 <p class="hint">@HintFor(EtvDefaults.Hardware)</p>
+<p class="hint">
+    Default output: @(EtvDefaults.Width)×@(EtvDefaults.Height) pixels. Use 640×480 for 4:3 or 854×480 for widescreen.
+    Dimensions are rounded down to even pixels. Source-based channels keep their source size and passthrough behavior unless overridden on the channel.
+</p>
 @if (EtvDefaults.Hardware == "vaapi")
 {
     <div class="grid grid-2">
@@ -217,6 +221,10 @@
     private const string RenderBitrateKey = "Rendering:HardwareBitrateKbps";
     private const string EtvHardwareKey = AppSettingsForm.ErsatzEncodingPrefix + "Hardware";
     private const string EtvHeightKey = AppSettingsForm.ErsatzEncodingPrefix + "Height";
+    private const string EtvWidthKey = AppSettingsForm.ErsatzEncodingPrefix + "Width";
+    private const string EtvAspectKey = AppSettingsForm.ErsatzEncodingPrefix + "AspectRatio";
+    private const string EtvRateKey = AppSettingsForm.ErsatzEncodingPrefix + "FrameRate";
+    private const string EtvScalingKey = AppSettingsForm.ErsatzEncodingPrefix + "ScalingMode";
     private const string EtvBitrateKey = AppSettingsForm.ErsatzEncodingPrefix + "BitrateKbps";
     private const string EtvVaapiDeviceKey = AppSettingsForm.ErsatzEncodingPrefix + "VaapiDevice";
     private const string EtvVaapiDriverKey = AppSettingsForm.ErsatzEncodingPrefix + "VaapiDriver";
@@ -226,10 +234,31 @@
     {
         Hardware = Typed(EtvHardwareKey),
         Height = Typed(EtvHeightKey),
+        Width = Typed(EtvWidthKey),
+        AspectRatio = Typed(EtvAspectKey),
+        FrameRate = Typed(EtvRateKey),
+        ScalingMode = Typed(EtvScalingKey),
         BitrateKbps = Typed(EtvBitrateKey),
         VaapiDevice = Typed(EtvVaapiDeviceKey),
         VaapiDriver = Typed(EtvVaapiDriverKey)
     });
+
+    private ChannelEncodingConfig EtvPicture => new()
+    {
+        Height = EtvDefaults.Height,
+        Width = int.TryParse(Typed(EtvWidthKey), out int width) ? width : null,
+        AspectRatio = Typed(EtvAspectKey),
+        FrameRate = Typed(EtvRateKey)
+    };
+
+    private async Task SetEtvPicture(ChannelEncodingConfig value)
+    {
+        Form.SetPerformance(EtvHeightKey, value.Height?.ToString());
+        Form.SetPerformance(EtvWidthKey, value.Width?.ToString());
+        Form.SetPerformance(EtvAspectKey, value.AspectRatio);
+        Form.SetPerformance(EtvRateKey, value.FrameRate);
+        await Changed.InvokeAsync();
+    }
 
     private static string? HintFor(string? hardware) =>
         ErsatzTvEncoding.Hardware.FirstOrDefault(choice => choice.Value == hardware)?.Hint;

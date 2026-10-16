@@ -80,6 +80,54 @@ public class ErsatzTvPublishingTests
 
     // --- Playout documents ----------------------------------------------------------------------
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Explicit_picture_settings_override_video_passthrough_in_the_published_lineup(bool explicitSettings)
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"encoding-lineup-{Guid.NewGuid():N}");
+        var options = Microsoft.Extensions.Options.Options.Create(new ErsatzTvOptions
+        {
+            ConfigRoot = root, WriteLineup = true,
+            Encoding = new() { Height = "1080" }
+        });
+        using var supervisor = new ErsatzTvProcessSupervisor(options,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ErsatzTvProcessSupervisor>.Instance);
+        var publisher = new LineupPublisher(options, supervisor,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<LineupPublisher>.Instance);
+        var annotations = new Dictionary<string, string>
+        {
+            [LineupPublisher.CopyAnnotation] = "true",
+            [ErsatzTvEncoding.PictureAnnotation] = "1920x1080"
+        };
+        if (explicitSettings)
+        {
+            annotations[ErsatzTvEncoding.Annotation] = ErsatzTvEncoding.ToAnnotation(new()
+            {
+                Width = 640, Height = 480, ScalingMode = "crop"
+            })!;
+        }
+
+        try
+        {
+            await publisher.PublishAsync([Schedule() with { Annotations = annotations }]);
+            using JsonDocument lineup = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(root, "lineup.json")));
+            JsonElement overlays = lineup.RootElement.GetProperty("channels")[0].GetProperty("overlays");
+            using JsonDocument copy = JsonDocument.Parse(await File.ReadAllTextAsync(overlays[0].GetString()!));
+            Assert.Equal("copy", copy.RootElement.GetProperty("normalization").GetProperty("audio").GetProperty("mode").GetString());
+            using JsonDocument encoding = JsonDocument.Parse(await File.ReadAllTextAsync(overlays[1].GetString()!));
+            JsonElement video = encoding.RootElement.GetProperty("normalization").GetProperty("video");
+            Assert.Equal(explicitSettings ? "transcode" : "copy", video.GetProperty("mode").GetString());
+            Assert.Equal(explicitSettings ? 480 : 1080, video.GetProperty("height").GetInt32());
+            Assert.Equal(explicitSettings ? 640 : 1920, video.GetProperty("width").GetInt32());
+            Assert.Equal(explicitSettings ? "crop" : "scale_and_pad", video.GetProperty("scaling_mode").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void Playout_file_names_use_compact_iso_8601()
     {

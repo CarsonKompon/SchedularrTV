@@ -20,6 +20,8 @@ public sealed record ErsatzTvHardware(string Value, string Label, string Hint);
 public sealed record EffectiveEncoding(string Hardware, int Height, int BitrateKbps, string? VaapiDevice, string? VaapiDriver, int? SourceWidth = null)
 {
     public int Width => SourceWidth ?? ErsatzTvEncoding.WidthFor(Height);
+    public string ScalingMode { get; init; } = "scale_and_pad";
+    public string? FrameRate { get; init; }
 }
 
 /// <summary>
@@ -60,6 +62,31 @@ public static class ErsatzTvEncoding
 
     public static readonly IReadOnlyList<int> Heights = [480, 540, 720, 1080, 1440, 2160];
 
+    public static readonly IReadOnlyList<string> AspectRatios = ["16:9", "4:3", "16:10", "1:1", "21:9", "9:16"];
+    public static readonly IReadOnlyList<string> FrameRates = ["24000/1001", "24", "25", "30000/1001", "30", "50", "60000/1001", "60"];
+
+    public static int WidthFor(int height, string aspectRatio)
+    {
+        string[] parts = aspectRatio.Split(':');
+        return (int)Math.Round(height * double.Parse(parts[0], CultureInfo.InvariantCulture)
+            / double.Parse(parts[1], CultureInfo.InvariantCulture) / 2, MidpointRounding.AwayFromZero) * 2;
+    }
+
+    /// <summary>FFmpeg/ErsatzTV accepts rational frame rates; source removes any inherited fixed rate.</summary>
+    public static string? NormalizeFrameRate(string? value)
+    {
+        string? text = Clean(value);
+        if (text == "source") return text;
+        string[] parts = (text ?? "").Split('/');
+        if (parts.Length is < 1 or > 2
+            || !int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out int numerator) || numerator <= 0)
+            return null;
+        int denominator = 1;
+        if (parts.Length == 2 && (!int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out denominator) || denominator <= 0))
+            return null;
+        return (double)numerator / denominator is >= 1 and <= 240 ? text : null;
+    }
+
     public static readonly IReadOnlyList<string> VaapiDrivers = ["ihd", "i965", "radeonsi"];
 
     /// <summary>Where the video is encoded until App settings says otherwise: the processor, which works everywhere.</summary>
@@ -84,7 +111,14 @@ public static class ErsatzTvEncoding
     public static string? ToAnnotation(ChannelEncodingConfig? channel) =>
         channel is null || channel.IsEmpty
             ? null
-            : JsonSerializer.Serialize(new { hardware = Clean(channel.Hardware), height = channel.Height, bitrate_kbps = channel.BitrateKbps });
+            : JsonSerializer.Serialize(new { hardware = Clean(channel.Hardware), height = channel.Height, width = channel.Width,
+                aspect_ratio = channel.AspectRatio, frame_rate = channel.FrameRate,
+                scaling_mode = Clean(channel.ScalingMode), bitrate_kbps = channel.BitrateKbps });
+
+    /// <summary>Explicit channel settings must not be bypassed by a source's copy-mode overlay.</summary>
+    public static bool HasOverrides(ChannelSchedule schedule) =>
+        schedule.Annotations?.TryGetValue(Annotation, out string? json) == true
+        && FromAnnotation(json) is { IsEmpty: false };
 
     /// <summary>
     /// The settings a channel ends up with: its own (from its annotation), else its source's picture size (from its
@@ -94,7 +128,9 @@ public static class ErsatzTvEncoding
     {
         ChannelEncodingConfig? own = schedule.Annotations?.TryGetValue(Annotation, out string? json) == true ? FromAnnotation(json) : null;
         EffectiveEncoding resolved = Resolve(global, own);
-        return own?.Height is null && schedule.Annotations?.TryGetValue(PictureAnnotation, out string? picture) == true
+        return Valid(own?.Height) is null && ValidWidth(own?.Width) is null
+               && !AspectRatios.Contains(own?.AspectRatio ?? "")
+               && schedule.Annotations?.TryGetValue(PictureAnnotation, out string? picture) == true
                && ParsePicture(picture) is { } size
             ? resolved with { Height = size.Height, SourceWidth = size.Width }
             : resolved;
@@ -123,16 +159,29 @@ public static class ErsatzTvEncoding
         int height = Valid(channel?.Height) ?? Valid(Number(global.Height)) ?? DefaultHeight;
         int bitrate = Bitrate(channel?.BitrateKbps) ?? Bitrate(Number(global.BitrateKbps)) ?? DefaultBitrateKbps;
         bool vaapi = hardware == "vaapi";
+        string? aspect = AspectRatios.Contains(channel?.AspectRatio ?? "") ? channel!.AspectRatio
+            : AspectRatios.Contains(global.AspectRatio ?? "") ? global.AspectRatio : null;
+        int? width = ValidWidth(channel?.Width)
+            ?? (aspect is not null ? WidthFor(height, aspect) : ValidWidth(Number(global.Width)));
+        string? frameRate = NormalizeFrameRate(channel?.FrameRate) ?? NormalizeFrameRate(global.FrameRate);
         return new EffectiveEncoding(hardware, height, bitrate,
             vaapi ? Clean(global.VaapiDevice) : null,
-            vaapi && Clean(global.VaapiDriver) is { } driver && VaapiDrivers.Contains(driver) ? driver : null);
+            vaapi && Clean(global.VaapiDriver) is { } driver && VaapiDrivers.Contains(driver) ? driver : null,
+            width)
+        {
+            ScalingMode = Scaling(channel?.ScalingMode) ?? Scaling(global.ScalingMode) ?? "scale_and_pad",
+            FrameRate = frameRate == "source" ? null : frameRate
+        };
     }
 
     /// <summary>The overlay that gives a channel <paramref name="encoding"/>, whatever its channel.json says.</summary>
-    public static string Overlay(EffectiveEncoding encoding)
+    public static string Overlay(EffectiveEncoding encoding, bool copyVideo = false)
     {
         var video = new JsonObject
         {
+            ["mode"] = copyVideo ? "copy" : "transcode",
+            ["scaling_mode"] = encoding.ScalingMode,
+            ["frame_rate"] = encoding.FrameRate,
             // Null in an overlay removes the key, so any acceleration in channel.json gives way to the processor.
             ["accel"] = encoding.Hardware == Software ? null : encoding.Hardware,
             ["width"] = encoding.Width,
@@ -178,6 +227,10 @@ public static class ErsatzTvEncoding
             {
                 Hardware = root.TryGetProperty("hardware", out JsonElement hardware) && hardware.ValueKind == JsonValueKind.String ? hardware.GetString() : null,
                 Height = root.TryGetProperty("height", out JsonElement height) && height.ValueKind == JsonValueKind.Number ? height.GetInt32() : null,
+                Width = root.TryGetProperty("width", out JsonElement width) && width.ValueKind == JsonValueKind.Number ? width.GetInt32() : null,
+                AspectRatio = root.TryGetProperty("aspect_ratio", out JsonElement aspect) && aspect.ValueKind == JsonValueKind.String ? aspect.GetString() : null,
+                FrameRate = root.TryGetProperty("frame_rate", out JsonElement rate) && rate.ValueKind == JsonValueKind.String ? rate.GetString() : null,
+                ScalingMode = root.TryGetProperty("scaling_mode", out JsonElement scaling) && scaling.ValueKind == JsonValueKind.String ? scaling.GetString() : null,
                 BitrateKbps = root.TryGetProperty("bitrate_kbps", out JsonElement bitrate) && bitrate.ValueKind == JsonValueKind.Number ? bitrate.GetInt32() : null
             };
         }
@@ -197,7 +250,11 @@ public static class ErsatzTvEncoding
     private static int? Number(string? text) =>
         int.TryParse(text?.Trim().Trim('"'), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) ? value : null;
 
-    private static int? Valid(int? height) => height is >= 240 and <= 4320 ? height : null;
+    private static int? Valid(int? height) => height is >= 240 and <= 4320 ? height / 2 * 2 : null;
+
+    private static int? ValidWidth(int? width) => width is >= 160 and <= 7680 ? width / 2 * 2 : null;
+
+    private static string? Scaling(string? value) => Clean(value) is "scale_and_pad" or "crop" ? Clean(value) : null;
 
     private static int? Bitrate(int? kbps) => kbps is >= 300 and <= 100_000 ? kbps : null;
 }

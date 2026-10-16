@@ -1,0 +1,156 @@
+@using SchedularrTV.Core.Configuration
+@using SchedularrTV.Providers.ErsatzTv
+
+<label class="field">
+    <span>Resolution</span>
+    <select value="@Resolution" @onchange="SetResolution">
+        @if (AllowInheritance)
+        {
+            <option value="">Default / source size</option>
+        }
+        @foreach (int height in ErsatzTvEncoding.Heights)
+        {
+            <option value="@height">@(height)p</option>
+        }
+        <option value="custom">Custom</option>
+    </select>
+</label>
+@if (Resolution == "custom")
+{
+    <label class="field">
+        <span>Width (pixels)</span>
+        <input type="number" min="160" max="7680" step="2" value="@Value.Width" @onchange="SetWidth" />
+    </label>
+    <label class="field">
+        <span>Height (pixels)</span>
+        <input type="number" min="240" max="4320" step="2" value="@Value.Height" @onchange="SetHeight" />
+    </label>
+}
+else
+{
+    <label class="field">
+        <span>Aspect ratio</span>
+        <select value="@(Value.AspectRatio ?? (AllowInheritance ? "" : "16:9"))" @onchange="SetAspect">
+            @if (AllowInheritance)
+            {
+                <option value="">Default / source shape</option>
+            }
+            @foreach (string aspect in ErsatzTvEncoding.AspectRatios)
+            {
+                <option value="@aspect">@aspect</option>
+            }
+        </select>
+    </label>
+}
+<label class="field">
+    <span>Frame rate</span>
+    <select value="@RateChoice" @onchange="SetRate">
+        @if (AllowInheritance)
+        {
+            <option value="">Default (@(Inherited.FrameRate ?? "Match source"))</option>
+        }
+        <option value="source">Match source</option>
+        @foreach (string rate in ErsatzTvEncoding.FrameRates)
+        {
+            <option value="@rate">@RateLabel(rate) fps</option>
+        }
+        <option value="custom">Custom</option>
+    </select>
+</label>
+@if (RateChoice == "custom")
+{
+    <label class="field">
+        <span>Custom frame rate</span>
+        <input type="text" value="@Value.FrameRate" placeholder="48 or 30000/1001" @onchange="SetCustomRate" />
+        <span class="hint">1–240 fps. Enter a whole number or fraction (N/D).</span>
+        @if (_rateError)
+        {
+            <span class="hint warn" role="alert">Enter a valid rate from 1 to 240 fps. The previous rate is kept.</span>
+        }
+    </label>
+}
+<p class="hint">Match source keeps each video's frame rate; fixed rates drop or repeat frames to match the selected rate.</p>
+
+@code {
+    [Parameter, EditorRequired] public ChannelEncodingConfig Value { get; set; } = default!;
+    [Parameter, EditorRequired] public EffectiveEncoding Inherited { get; set; } = default!;
+    [Parameter] public bool AllowInheritance { get; set; } = true;
+    [Parameter] public EventCallback<ChannelEncodingConfig> Changed { get; set; }
+
+    private bool _customRate;
+    private bool _rateError;
+    private string Resolution => Value.Width is not null || Value.Height is { } h && !ErsatzTvEncoding.Heights.Contains(h)
+        ? "custom" : Value.Height?.ToString() ?? (AllowInheritance ? "" : Inherited.Height.ToString());
+    private string RateChoice => _customRate || Value.FrameRate is { Length: > 0 } rate && rate != "source" && !ErsatzTvEncoding.FrameRates.Contains(rate)
+        ? "custom" : Value.FrameRate ?? (AllowInheritance ? "" : "source");
+
+    private async Task SetResolution(ChangeEventArgs e)
+    {
+        string? choice = e.Value?.ToString();
+        if (choice == "custom")
+        {
+            Value.Height ??= Inherited.Height;
+            Value.Width ??= Value.AspectRatio is { } aspect && ErsatzTvEncoding.AspectRatios.Contains(aspect)
+                ? ErsatzTvEncoding.WidthFor(Value.Height.Value, aspect)
+                : (int)Math.Round((double)Value.Height.Value * Inherited.Width / Inherited.Height / 2, MidpointRounding.AwayFromZero) * 2;
+            Value.AspectRatio = null;
+        }
+        else
+        {
+            Value.Height = int.TryParse(choice, out int height) ? height : null;
+            Value.Width = null;
+            if (Value.Height is not null) Value.AspectRatio ??= "16:9";
+            else Value.AspectRatio = null;
+        }
+        await Changed.InvokeAsync(Value);
+    }
+
+    private async Task SetWidth(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int width) && width is >= 160 and <= 7680)
+        {
+            Value.Width = width / 2 * 2;
+            await Changed.InvokeAsync(Value);
+        }
+    }
+
+    private async Task SetHeight(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int height) && height is >= 240 and <= 4320)
+        {
+            Value.Height = height / 2 * 2;
+            await Changed.InvokeAsync(Value);
+        }
+    }
+
+    private async Task SetAspect(ChangeEventArgs e)
+    {
+        Value.AspectRatio = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString();
+        await Changed.InvokeAsync(Value);
+    }
+
+    private async Task SetRate(ChangeEventArgs e)
+    {
+        string? rate = e.Value?.ToString();
+        _customRate = rate == "custom";
+        _rateError = false;
+        Value.FrameRate = _customRate ? "48" : string.IsNullOrEmpty(rate) ? null : rate;
+        await Changed.InvokeAsync(Value);
+    }
+
+    private async Task SetCustomRate(ChangeEventArgs e)
+    {
+        string? rate = ErsatzTvEncoding.NormalizeFrameRate(e.Value?.ToString());
+        _rateError = rate is null or "source";
+        if (!_rateError)
+        {
+            Value.FrameRate = rate;
+            await Changed.InvokeAsync(Value);
+        }
+    }
+
+    private static string RateLabel(string rate) => rate switch
+    {
+        "24000/1001" => "23.976", "30000/1001" => "29.97", "60000/1001" => "59.94", _ => rate
+    };
+}

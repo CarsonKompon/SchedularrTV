@@ -219,14 +219,14 @@ else
                         }
                     </select>
                 </label>
+                <EncodingPictureSettings @key="_channel.Id" Value="@(_channel.Encoding ?? new ChannelEncodingConfig())"
+                                         Inherited="Inherited" Changed="SetEncodingPicture" />
                 <label class="field">
-                    <span>Picture size</span>
-                    <select value="@(_channel.Encoding?.Height?.ToString() ?? string.Empty)" @onchange="SetEncodingHeight">
-                        <option value="">Default (@InheritedHeight)</option>
-                        @foreach (int height in ErsatzTvEncoding.Heights)
-                        {
-                            <option value="@height">@(height)p</option>
-                        }
+                    <span>Media sizing</span>
+                    <select value="@(_channel.Encoding?.ScalingMode ?? string.Empty)" @onchange="SetEncodingScaling">
+                        <option value="">Default (@(Inherited.ScalingMode == "crop" ? "Fill" : "Fit"))</option>
+                        <option value="scale_and_pad">Fit — entire image, black bars if needed</option>
+                        <option value="crop">Fill — crop edges to fill the frame</option>
                     </select>
                 </label>
                 <label class="field">
@@ -236,7 +236,16 @@ else
                 </label>
             </div>
             <p class="hint">
-                Overrides <a href="settings/app">app encoding defaults</a>. Saving encoding changes restarts ErsatzTV and briefly interrupts viewers.
+                @if (_channel.Encoding?.Width is not null || _channel.Encoding?.Height is not null)
+                {
+                    <text>Output: @(SelectedEncoding.Width)×@(SelectedEncoding.Height) pixels.</text>
+                }
+                480p is a height, not an aspect ratio. Use 640×480 for 4:3 or 854×480 for widescreen.
+                Dimensions are rounded down to even pixels. Blank dimensions use source size on source-based channels, otherwise app defaults.
+            </p>
+            <p class="hint">
+                Overrides <a href="settings/app">app encoding defaults</a>. Explicit overrides re-encode video, including passthrough channels.
+                Saving encoding changes restarts ErsatzTV and briefly interrupts viewers.
             </p>
         </div>;
 
@@ -496,15 +505,23 @@ else
 
     private string InheritedHardware => ErsatzTvEncoding.Label(Inherited.Hardware);
 
-    private string InheritedHeight => $"{Inherited.Height}p";
+    private EffectiveEncoding SelectedEncoding => ErsatzTvEncoding.Resolve(GlobalEncoding, _channel?.Encoding);
 
     private string InheritedBitrate => $"Default ({Inherited.BitrateKbps})";
 
     private void SetEncodingHardware(ChangeEventArgs e) =>
         EditEncoding(encoding => encoding.Hardware = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString());
 
-    private void SetEncodingHeight(ChangeEventArgs e) =>
-        EditEncoding(encoding => encoding.Height = int.TryParse(e.Value?.ToString(), out int height) ? height : null);
+    private void SetEncodingPicture(ChannelEncodingConfig value) => EditEncoding(encoding =>
+    {
+        encoding.Height = value.Height;
+        encoding.Width = value.Width;
+        encoding.AspectRatio = value.AspectRatio;
+        encoding.FrameRate = value.FrameRate;
+    });
+
+    private void SetEncodingScaling(ChangeEventArgs e) =>
+        EditEncoding(encoding => encoding.ScalingMode = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString());
 
     private void SetEncodingBitrate(ChangeEventArgs e) =>
         EditEncoding(encoding => encoding.BitrateKbps = int.TryParse(e.Value?.ToString(), out int kbps) && kbps > 0 ? Math.Clamp(kbps, 300, 100_000) : null);

@@ -28,6 +28,8 @@ public sealed class ChannelEditLoadingTests
         {
             var services = new ServiceCollection();
             services.AddLogging();
+            services.AddOptions();
+            services.AddSingleton<CommercialTree>();
             services.AddSingleton<IOptions<SchedulerServiceOptions>>(Options.Create(new SchedulerServiceOptions
             {
                 ConfigPath = Path.Combine(directory, "schedule.yaml"), WatchConfig = false, AutoRebuild = false

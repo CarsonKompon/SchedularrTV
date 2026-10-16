@@ -77,14 +77,15 @@ public sealed class LineupPublisher(
                 await ChannelConfigSchema.UpgradeFileAsync(channelConfigPath, logger, cancellationToken).ConfigureAwait(false);
             }
 
-            // Copying first, then the encoding chosen in SchedularrTV, which applies to whatever can't be copied.
+            // Keep audio passthrough, but explicit video settings must take precedence over copying video.
             List<string> overlays = [];
             if (IsPassthrough(schedule))
             {
                 overlays.Add(await EnsureCopyOverlayAsync(root, cancellationToken).ConfigureAwait(false));
             }
 
-            string encoding = ErsatzTvEncoding.Overlay(ErsatzTvEncoding.Resolve(_options.Encoding, schedule));
+            string encoding = ErsatzTvEncoding.Overlay(ErsatzTvEncoding.Resolve(_options.Encoding, schedule),
+                copyVideo: IsPassthrough(schedule) && !ErsatzTvEncoding.HasOverrides(schedule));
             string encodingPath = await EnsureOverlayAsync(root, ErsatzTvEncoding.FileName(encoding), encoding, cancellationToken).ConfigureAwait(false);
             encodingOverlays.Add(encodingPath);
             overlays.Add(encodingPath);

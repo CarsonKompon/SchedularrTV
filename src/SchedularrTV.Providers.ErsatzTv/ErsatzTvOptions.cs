@@ -123,8 +123,17 @@ public sealed class ErsatzTvEncodingOptions
     /// <summary><c>none</c> for the processor, or an ErsatzTV acceleration (<see cref="ErsatzTvEncoding.Hardware"/>).</summary>
     public string? Hardware { get; set; }
 
-    /// <summary>Picture height; the width follows at 16:9.</summary>
+    /// <summary>Picture height; without an explicit width the picture is 16:9.</summary>
     public string? Height { get; set; }
+
+    public string? Width { get; set; }
+
+    public string? AspectRatio { get; set; }
+
+    public string? FrameRate { get; set; }
+
+    /// <summary>scale_and_pad (fit) or crop (fill).</summary>
+    public string? ScalingMode { get; set; }
 
     public string? BitrateKbps { get; set; }
 

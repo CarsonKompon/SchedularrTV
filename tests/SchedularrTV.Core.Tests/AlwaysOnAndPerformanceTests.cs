@@ -200,6 +200,8 @@ public sealed class AlwaysOnAndPerformanceTests
 
         Assert.Equal(ErsatzTvEncoding.OverlayVersion, root.GetProperty("version").GetString());
         Assert.Equal("vaapi", video.GetProperty("accel").GetString());
+        Assert.Equal("transcode", video.GetProperty("mode").GetString());
+        Assert.Equal("scale_and_pad", video.GetProperty("scaling_mode").GetString());
         Assert.Equal(1920, video.GetProperty("width").GetInt32());
         Assert.Equal(1080, video.GetProperty("height").GetInt32());
         Assert.Equal(12000, video.GetProperty("buffer_kbps").GetInt32());
@@ -320,15 +322,110 @@ public sealed class AlwaysOnAndPerformanceTests
               encoding:
                 hardware: cuda
                 height: 720
+                width: 960
+                scaling_mode: crop
             """);
 
         Assert.Equal("cuda", config.Channels[0].Encoding?.Hardware);
         Assert.Equal(720, config.Channels[0].Encoding?.Height);
+        Assert.Equal(960, config.Channels[0].Encoding?.Width);
+        Assert.Equal("crop", config.Channels[0].Encoding?.ScalingMode);
 
         string yaml = SchedulerConfigLoader.Serialize(config);
         Assert.Contains("hardware: cuda", yaml, StringComparison.Ordinal);
+        Assert.Contains("width: 960", yaml, StringComparison.Ordinal);
+        Assert.Contains("scaling_mode: crop", yaml, StringComparison.Ordinal);
         Assert.DoesNotContain("is_empty", yaml, StringComparison.Ordinal);
         Assert.DoesNotContain("bitrate_kbps", yaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Custom_dimensions_and_sizing_inherit_and_normalize_for_encoders()
+    {
+        var global = new ErsatzTvEncodingOptions { Width = "1440", Height = "1080", ScalingMode = "crop" };
+        EffectiveEncoding inherited = ErsatzTvEncoding.Defaults(global);
+        Assert.Equal(1440, inherited.Width);
+        Assert.Equal("crop", inherited.ScalingMode);
+
+        EffectiveEncoding own = ErsatzTvEncoding.Resolve(global, new ChannelEncodingConfig
+        {
+            Width = 641, Height = 481, ScalingMode = "scale_and_pad"
+        });
+        Assert.Equal(640, own.Width);
+        Assert.Equal(480, own.Height);
+        Assert.Equal("scale_and_pad", own.ScalingMode);
+        Assert.Equal(inherited, ErsatzTvEncoding.Resolve(global, new ChannelEncodingConfig
+        {
+            Width = -1, Height = 99999, ScalingMode = "invalid"
+        }));
+        Assert.False(new ChannelEncodingConfig { Width = 640 }.IsEmpty);
+        Assert.False(new ChannelEncodingConfig { ScalingMode = "crop" }.IsEmpty);
+        Assert.NotEqual(ErsatzTvEncoding.FileName(ErsatzTvEncoding.Overlay(own)),
+            ErsatzTvEncoding.FileName(ErsatzTvEncoding.Overlay(own with { ScalingMode = "crop" })));
+    }
+
+    [Theory]
+    [InlineData(480, "4:3", 640)]
+    [InlineData(720, "4:3", 960)]
+    [InlineData(480, "16:9", 854)]
+    [InlineData(1080, "1:1", 1080)]
+    [InlineData(720, "9:16", 406)]
+    public void Resolution_presets_keep_the_selected_shape(int height, string aspect, int width)
+    {
+        var global = new ErsatzTvEncodingOptions { Height = "1080", AspectRatio = aspect };
+        EffectiveEncoding result = ErsatzTvEncoding.Resolve(global, new ChannelEncodingConfig { Height = height });
+        Assert.Equal(width, result.Width);
+        Assert.Equal(800, ErsatzTvEncoding.Resolve(global, new ChannelEncodingConfig { Height = height, Width = 800 }).Width);
+    }
+
+    [Theory]
+    [InlineData("source", "source")]
+    [InlineData("24000/1001", "24000/1001")]
+    [InlineData("48", "48")]
+    [InlineData("240", "240")]
+    [InlineData("241", null)]
+    [InlineData("29.97", null)]
+    [InlineData("30/0", null)]
+    [InlineData("0", null)]
+    [InlineData("1/2", null)]
+    [InlineData("30/1/1", null)]
+    public void Custom_frame_rates_are_validated(string input, string? expected) =>
+        Assert.Equal(expected, ErsatzTvEncoding.NormalizeFrameRate(input));
+
+    [Fact]
+    public void Source_frame_rate_removes_fixed_defaults_and_round_trips_through_the_schedule()
+    {
+        var config = SchedulerConfigLoader.Parse("""
+            channels:
+            - id: news
+              name: News
+              number: 3
+              encoding:
+                height: 480
+                aspect_ratio: '4:3'
+                frame_rate: source
+            """);
+        config = SchedulerConfigLoader.Parse(SchedulerConfigLoader.Serialize(config));
+        var global = new ErsatzTvEncodingOptions { FrameRate = "30000/1001" };
+        var schedule = new ChannelSchedule
+        {
+            ChannelId = "news", ChannelName = "News", ChannelNumber = 3,
+            Start = DateTimeOffset.UnixEpoch, End = DateTimeOffset.UnixEpoch.AddHours(1), Entries = [],
+            Annotations = new Dictionary<string, string> { [ErsatzTvEncoding.PictureAnnotation] = "1920x1080" }
+        };
+        EffectiveEncoding resolved = ErsatzTvEncoding.Resolve(global, ScheduleCoordinator.WithEncoding(config, [schedule])[0]);
+        Assert.Equal(640, resolved.Width);
+        Assert.Equal(480, resolved.Height);
+        Assert.Null(resolved.FrameRate);
+        Assert.True(ErsatzTvEncoding.HasOverrides(ScheduleCoordinator.WithEncoding(config, [schedule])[0]));
+        using var source = System.Text.Json.JsonDocument.Parse(ErsatzTvEncoding.Overlay(resolved));
+        Assert.Equal(System.Text.Json.JsonValueKind.Null,
+            source.RootElement.GetProperty("normalization").GetProperty("video").GetProperty("frame_rate").ValueKind);
+        Assert.Null(ErsatzTvEncoding.Defaults(new()).FrameRate);
+        EffectiveEncoding fixedRate = ErsatzTvEncoding.Defaults(global);
+        Assert.Equal("30000/1001", fixedRate.FrameRate);
+        Assert.NotEqual(ErsatzTvEncoding.FileName(ErsatzTvEncoding.Overlay(resolved)),
+            ErsatzTvEncoding.FileName(ErsatzTvEncoding.Overlay(resolved with { FrameRate = fixedRate.FrameRate })));
     }
 
     [Fact]
