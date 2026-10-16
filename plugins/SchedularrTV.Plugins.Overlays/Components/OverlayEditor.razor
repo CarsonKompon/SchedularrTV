@@ -489,9 +489,10 @@
                                 <div class="check-stack">
                                     <label class="check"><input type="checkbox" checked="@selected.Bold" @onchange="e => Set(() => selected.Bold = e.Value is true)" /><span>Bold</span></label>
                                     <label class="check"><input type="checkbox" checked="@selected.Shadow" @onchange="e => Set(() => selected.Shadow = e.Value is true)" /><span>Drop shadow</span></label>
+                                    <label class="check"><input type="checkbox" checked="@(selected.WordWrap == true)" @onchange="e => Set(() => selected.WordWrap = e.Value is true ? true : null)" /><span>Word wrap</span></label>
                                 </div>
                             </div>
-                            <p class="hint">Text shrinks to fit its box.</p>
+                            <p class="hint">Text shrinks to fit its box@(selected.WordWrap == true ? ", after long lines wrap between words (and at new lines)" : "").</p>
                         }
                         else if (selected.Kind == OverlayLayerKinds.Image)
                         {

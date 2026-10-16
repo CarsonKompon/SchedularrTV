@@ -106,6 +106,9 @@ public sealed record PromoTextLayer : PromoLayer
 
     public PromoVerticalAlign VerticalAlign { get; init; } = PromoVerticalAlign.Top;
 
+    /// <summary>Long lines break between words to fill the box's width before the text shrinks.</summary>
+    public bool WordWrap { get; init; }
+
     public SKColor? Shadow { get; init; } = new SKColor(0, 0, 0, 160);
 }
 

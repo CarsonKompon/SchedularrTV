@@ -202,9 +202,9 @@ public sealed class OverlayRenderer(Func<string> folder)
 
     // Text cased or placed up and down its box: only then are those part of the hash, so other drawings are kept.
     private static object Styled(OverlayLayer layer, object look) =>
-        layer.VerticalAlign is null && layer.TextCase is null
+        layer.VerticalAlign is null && layer.TextCase is null && layer.WordWrap is null
             ? look
-            : new { Look = look, VerticalAlign = layer.VerticalAlign?.ToString(), TextCase = layer.TextCase?.ToString() };
+            : new { Look = look, VerticalAlign = layer.VerticalAlign?.ToString(), TextCase = layer.TextCase?.ToString(), layer.WordWrap };
 
     // A layer as its drawing depends on it. Layers using none of the newer settings hash as they always have, so their
     // drawings are kept.
@@ -513,11 +513,11 @@ public sealed class OverlayRenderer(Func<string> folder)
             : null;
         paint.ImageFilter = shadow;
 
-        // Long text shrinks to fit the box rather than run out of it.
-        while (font.Size > 8 && (font.MeasureText(text, paint) > bounds.Width || font.Spacing > bounds.Height * 1.15f))
-        {
-            font.Size *= 0.94f;
-        }
+        // Long text shrinks to fit the box rather than run out of it (shared with generated promos); with word wrap it
+        // breaks between words (and at new lines) first.
+        bool wrap = layer.WordWrap == true;
+        IReadOnlyList<string> lines = SchedularrTV.Service.Rendering.TextFit.Fit(
+            wrap ? text.Replace("\r\n", "\n").Split('\n') : [text], bounds, font, paint, wrap, heightAllowance: wrap ? 1f : 1.15f);
 
         SKTextAlign align = layer.Align switch
         {
@@ -534,13 +534,31 @@ public sealed class OverlayRenderer(Func<string> folder)
 
         // Centred in the box's height unless set to its top or bottom.
         SKFontMetrics metrics = font.Metrics;
-        float y = layer.VerticalAlign switch
+        if (lines.Count <= 1)
         {
-            GeneratedVerticalAlign.Top => bounds.Top - metrics.Ascent,
-            GeneratedVerticalAlign.Bottom => bounds.Bottom - metrics.Descent,
-            _ => bounds.MidY - (metrics.Ascent + metrics.Descent) / 2
-        };
-        canvas.DrawText(text, x, y, align, font, paint);
+            float y = layer.VerticalAlign switch
+            {
+                GeneratedVerticalAlign.Top => bounds.Top - metrics.Ascent,
+                GeneratedVerticalAlign.Bottom => bounds.Bottom - metrics.Descent,
+                _ => bounds.MidY - (metrics.Ascent + metrics.Descent) / 2
+            };
+            canvas.DrawText(lines.Count == 0 ? text : lines[0], x, y, align, font, paint);
+            return;
+        }
+
+        // Wrapped lines go as a block, placed like the generated promos' text.
+        float block = font.Spacing * lines.Count;
+        float top = layer.VerticalAlign switch
+        {
+            GeneratedVerticalAlign.Top => bounds.Top,
+            GeneratedVerticalAlign.Bottom => bounds.Bottom - block,
+            _ => bounds.Top + (bounds.Height - block) / 2
+        } - metrics.Ascent;
+        foreach (string line in lines)
+        {
+            canvas.DrawText(line, x, top, align, font, paint);
+            top += font.Spacing;
+        }
     }
 
     /// <summary>

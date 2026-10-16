@@ -456,6 +456,9 @@ public sealed class OverlayLayer
     /// <summary>Upper or lower cases every letter (filled-in tokens and AI-written text too); null keeps it as written.</summary>
     public GeneratedTextCase? TextCase { get; set; }
 
+    /// <summary>Breaks long text between words (and at new lines) to fill the box before it shrinks; null is off.</summary>
+    public bool? WordWrap { get; set; }
+
     /// <summary><see cref="Align"/> as the shared alignment pad reads it.</summary>
     [YamlDotNet.Serialization.YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
     public GeneratedTextAlign HorizontalAlign

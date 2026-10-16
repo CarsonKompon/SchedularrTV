@@ -802,6 +802,7 @@ public static partial class GeneratedPromoResolver
                 Lines = layer.TextCase is null or GeneratedTextCase.AsWritten
                     ? lines
                     : lines.Select(line => GeneratedTextStyle.Cased(line, layer.TextCase)).ToList(),
+                WordWrap = layer.WordWrap == true,
                 VerticalAlign = layer.VerticalAlign switch
                 {
                     GeneratedVerticalAlign.Middle => PromoVerticalAlign.Middle,

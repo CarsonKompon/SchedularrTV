@@ -115,6 +115,29 @@ public class OverlayConditionTests
     }
 
     [Fact]
+    public void Word_wrap_breaks_between_words_to_fit_the_width()
+    {
+        using var font = new SkiaSharp.SKFont(SkiaSharp.SKTypeface.Default, 20);
+        using var paint = new SkiaSharp.SKPaint();
+        float width = font.MeasureText("an all-new episode", paint) + 1;
+
+        IReadOnlyList<string> lines = SchedularrTV.Service.Rendering.TextFit.Wrap(
+            ["Don't miss an all-new episode tonight at eight"], width, font, paint);
+
+        Assert.True(lines.Count > 1);
+        Assert.All(lines, line => Assert.True(font.MeasureText(line, paint) <= width));
+        Assert.Equal("Don't miss an all-new episode tonight at eight", string.Join(' ', lines));
+
+        // With wrapping, a long line fills the box rather than shrinking to one thin line.
+        var box = new SkiaSharp.SKRect(0, 0, width, 400);
+        using var wrapped = new SkiaSharp.SKFont(SkiaSharp.SKTypeface.Default, 20);
+        using var single = new SkiaSharp.SKFont(SkiaSharp.SKTypeface.Default, 20);
+        SchedularrTV.Service.Rendering.TextFit.Fit(["Don't miss an all-new episode tonight at eight"], box, wrapped, paint, wrap: true);
+        SchedularrTV.Service.Rendering.TextFit.Fit(["Don't miss an all-new episode tonight at eight"], box, single, paint, wrap: false);
+        Assert.True(wrapped.Size > single.Size);
+    }
+
+    [Fact]
     public void Either_choice_comes_up_across_airings()
     {
         Overlay first = new() { Name = "A", When = OverlayWhen.Always, Additive = false };

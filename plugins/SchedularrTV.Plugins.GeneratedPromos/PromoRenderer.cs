@@ -403,12 +403,8 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             : null;
         paint.ImageFilter = shadow;
 
-        while (font.Size > 8
-               && (layer.Lines.Max(line => font.MeasureText(line, paint)) > bounds.Width
-                   || font.Spacing * layer.Lines.Count > bounds.Height))
-        {
-            font.Size *= 0.94f;
-        }
+        // Shrinks to fit (shared with overlays), wrapping between words first when the layer asks to.
+        IReadOnlyList<string> lines = SchedularrTV.Service.Rendering.TextFit.Fit(layer.Lines, bounds, font, paint, layer.WordWrap);
 
         float x = layer.Align switch
         {
@@ -416,7 +412,7 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             SKTextAlign.Right => bounds.Right,
             _ => bounds.Left
         };
-        float block = font.Spacing * layer.Lines.Count;
+        float block = font.Spacing * lines.Count;
         float y = layer.VerticalAlign switch
         {
             PromoVerticalAlign.Middle => bounds.Top + (bounds.Height - block) / 2,
@@ -424,7 +420,7 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             _ => bounds.Top
         } - font.Metrics.Ascent;
 
-        foreach (string line in layer.Lines)
+        foreach (string line in lines)
         {
             canvas.DrawText(line, x, y, layer.Align, font, paint);
             y += font.Spacing;

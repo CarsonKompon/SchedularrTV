@@ -1203,6 +1203,13 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public GeneratedTextCase? TextCase { get; set; }
 
+    /// <summary>
+    /// Breaks long lines between words to fill the box's width before the text shrinks. Null (off) keeps render keys of
+    /// older templates.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? WordWrap { get; set; }
+
     public bool Shadow { get; set; } = true;
 
     public GeneratedUpNextOptions? UpNext { get; set; }
