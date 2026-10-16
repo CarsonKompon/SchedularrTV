@@ -1,0 +1,84 @@
+@* A default image, its show and block overrides, and an automatic picture for shows without one: a shared image's (or a
+   variable image's own). Used by every editor with variable images: generated promos and overlays. *@
+<div class="field">
+    <span>Default image</span>
+    <FilePathPicker Value="@Images.DefaultPath" ValueChanged="value => Set(() => Images.DefaultPath = value)"
+                    KeepCopyIn="@AssetCategory" Extensions="FileBrowsing.Images"
+                    Label="default image" StartIn="Environment.SpecialFolder.MyPictures" />
+</div>
+@foreach (GeneratedShowImage show in Images.Shows)
+{
+    <div class="grid grid-3" @key="show">
+        <div class="field">
+            <span>@(show.Block ? "Block name" : "Show title")</span>
+            <div class="row">
+                <select style="flex: none; width: auto;" aria-label="Match a show or a block" title="Match a show, or the block a show airs in"
+                        value="@(show.Block ? "block" : "show")" @onchange="@(e => Set(() => show.Block = e.Value as string == "block"))">
+                    <option value="show">Show</option>
+                    <option value="block">Block</option>
+                </select>
+                <input type="text" style="flex: 1; min-width: 0;" @bind="show.Show" @bind:after="Notify"
+                       placeholder="@(show.Block ? "Exact block name" : "Exact series / show title")" />
+            </div>
+        </div>
+        <div class="field">
+            <span>@(show.Block ? "Image for this block" : "Image for this show")</span>
+            <div class="row">
+                <div style="flex: 1; min-width: 0;">
+                    <FilePathPicker Value="@show.Path" ValueChanged="value => Set(() => show.Path = value)"
+                                    KeepCopyIn="@AssetCategory" Extensions="FileBrowsing.Images"
+                                    Label="show image" StartIn="Environment.SpecialFolder.MyPictures" />
+                </div>
+                <ImageThumbnail Path="@show.Path" />
+            </div>
+        </div>
+        <div style="align-self: end;"><button class="btn btn-sm btn-danger" type="button" @onclick="() => Set(() => Images.Shows.Remove(show))">Remove show</button></div>
+    </div>
+}
+@if (Images.Shows.Any(show => string.IsNullOrWhiteSpace(show.Show))
+     || Images.Shows.Select(GeneratedImageChoices.Key).Distinct(StringComparer.OrdinalIgnoreCase).Count() != Images.Shows.Count)
+{
+    <p class="hint warn">Give each override a unique show title or block name. If one appears twice, the first match is used.</p>
+}
+<button class="btn btn-sm" type="button" @onclick="() => Set(() => Images.Shows.Add(new()))">+ Show override</button>
+<button class="btn btn-sm" type="button" @onclick="() => Set(() => Images.Shows.Add(new() { Block = true }))">+ Block override</button>
+
+<label class="check" style="margin-top: 12px;">
+    <input type="checkbox" checked="@(Images.Automatic is not null)" @onchange="e => ToggleAutomatic(e.Value is true)" />
+    <span>Find a picture automatically for shows and blocks without one (with a picture search)</span>
+</label>
+@if (Images.Automatic is { } automatic)
+{
+    <AutomaticImageFields Config="automatic" Changed="Notify" Tokens="@AutomaticHelp" QueryPlaceholder="@AutomaticPlaceholder" />
+    <p class="hint">An override for the show (or its block) always wins; the default is used when the search finds nothing.</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public IGeneratedImageChoices Images { get; set; } = default!;
+    [Parameter] public EventCallback Changed { get; set; }
+
+    /// <summary>Where chosen files are kept, under the data folder's assets.</summary>
+    [Parameter] public string AssetCategory { get; set; } = "shared-images";
+
+    private const string AutomaticPlaceholder = "{show} main character png";
+    private const string AutomaticHelp = "Tokens: " + AutomaticImageQuery.Help;
+
+    private Task Notify() => Changed.InvokeAsync();
+    private Task Set(Action change) { change(); return Notify(); }
+
+    // Switching it off and on again keeps what was typed while this editor is open.
+    private AutomaticImageConfig? _off;
+
+    private Task ToggleAutomatic(bool on) => Set(() =>
+    {
+        if (on)
+        {
+            Images.Automatic ??= _off ?? new AutomaticImageConfig { Query = AutomaticPlaceholder, Transparent = true };
+        }
+        else
+        {
+            _off = Images.Automatic;
+            Images.Automatic = null;
+        }
+    });
+}

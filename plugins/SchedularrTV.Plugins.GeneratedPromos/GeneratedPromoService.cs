@@ -12,8 +12,7 @@ using SchedularrTV.Core.Scheduling;
 
 namespace SchedularrTV.GeneratedPromos;
 
-/// <param name="ImageProblem">Why some automatic images weren't found (the render is then provisional, like a silent one, and tried again).</param>
-public sealed record GeneratedPromoRender(string Path, Exception? VoiceError, string? ImageProblem = null);
+public sealed record GeneratedPromoRender(string Path, Exception? VoiceError);
 
 /// <summary>A promo being rendered: where it's filed (channel › block › template) and when it airs.</summary>
 public sealed record GeneratedPromoJob(string Label, DateTimeOffset AirsAt, DateTimeOffset StartedAt);
@@ -194,8 +193,10 @@ public sealed partial class GeneratedPromoService(
                     IReadOnlyList<UpNextListing> listings = Subject(template.Type, schedule, entry, needed, template.UpcomingGrouping);
                     if (listings.Count >= needed || (listings.Count > 0 && entry.Start - now < PartialListingWindow))
                     {
+                        // Variable images' automatic pictures are looked for (in the background) for promos about to be made.
+                        bool making = watched && WithinLead(config.Settings, entry.Start, now);
                         ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, entry.Start,
-                            GeneratedImageSubjects.FromSchedule(schedule, entry.Start, entry.End, template))!
+                            GeneratedImageSubjects.FromSchedule(schedule, entry.Start, entry.End, template), automaticImages?.Lookup(queue: making))!
                             with { Folder = Folder(source, template) };
                         path = Existing(promo);
                         if (path is not null)
@@ -203,7 +204,9 @@ public sealed partial class GeneratedPromoService(
                             referenced.Add(path);
                         }
 
-                        if ((path is null || !File.Exists(FinalPath(promo))) && watched && WithinLead(config.Settings, entry.Start, now))
+                        // One whose picture is still being searched for is made once it's found (or the search gives up),
+                        // on a later pass, rather than twice.
+                        if ((path is null || !File.Exists(FinalPath(promo))) && making && !promo.ImagesPending)
                         {
                             wanted.Add(FinalPath(promo));
                             queued |= Enqueue(promo, entry.Start, now);
@@ -281,14 +284,6 @@ public sealed partial class GeneratedPromoService(
         // An AI-written voice-over or caption is written now (or taken from what was written before); the usual words
         // stand in wherever it can't be.
         promo = await GeneratedPromoWriting.WriteAsync(promo, writer, cancellationToken).ConfigureAwait(false);
-
-        // Automatic images are searched for now (or taken from what was found before); one that can't be found is left
-        // out, and the promo is made again later in case it can be then.
-        (promo, IReadOnlyList<string> missingImages) = await GeneratedPromoImages.FindAutomaticAsync(promo, automaticImages, wait: true, cancellationToken)
-            .ConfigureAwait(false);
-        string? imageProblem = missingImages.Count == 0 ? null
-            : $"no picture found for {string.Join(", ", missingImages.Select(query => $"“{query}”"))}"
-              + (automaticImages?.SetupProblem(null) is { } setup ? $" ({setup})" : string.Empty);
         GeneratedPromoTemplate template = promo.Template;
         string? audio = null;
         Exception? voiceError = null;
@@ -313,7 +308,7 @@ public sealed partial class GeneratedPromoService(
             }
         }
 
-        string target = voiceError is null && imageProblem is null ? FinalPath(promo) : SilentPath(promo);
+        string target = voiceError is null ? FinalPath(promo) : SilentPath(promo);
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         string partial = Path.Combine(Path.GetDirectoryName(target)!, $"{promo.Key}.{Guid.NewGuid():N}.partial.mp4");
         string? source = null;
@@ -376,7 +371,7 @@ public sealed partial class GeneratedPromoService(
             if (source is not null) File.Delete(source);
         }
 
-        return new GeneratedPromoRender(target, voiceError, imageProblem);
+        return new GeneratedPromoRender(target, voiceError);
     }
 
     /// <summary>Where songs from a music library are copied for rendering (those that aren't files already).</summary>
@@ -481,12 +476,6 @@ public sealed partial class GeneratedPromoService(
                 {
                     logger.LogWarning("Voice-over for generated promo '{Template}' failed; using a silent render until retry: {Message}",
                         promo.Template.Name, error.GetBaseException().Message);
-                    lock (_gate) _failedAt[FinalPath(promo)] = clock.GetUtcNow();
-                }
-                else if (render.ImageProblem is { } imageProblem)
-                {
-                    logger.LogWarning("Generated promo '{Template}' was made without some automatic images; it's made again later: {Problem}",
-                        promo.Template.Name, imageProblem);
                     lock (_gate) _failedAt[FinalPath(promo)] = clock.GetUtcNow();
                 }
 

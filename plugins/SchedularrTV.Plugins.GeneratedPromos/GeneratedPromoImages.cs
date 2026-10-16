@@ -31,14 +31,15 @@ public static class GeneratedPromoImages
     /// <c>name:selector</c> the template uses (resolved for that show instead), from image layers and generator arguments.
     /// Only the uses there are get entries, so templates that don't choose a show per use keep their render keys.
     /// </summary>
+    /// <param name="automatic">Finds automatic pictures for shows without an override; without it, the default is used.</param>
     public static IReadOnlyDictionary<string, string> Resolve(GeneratedPromoTemplate template,
-        IReadOnlyList<UpNextListing> promoted, GeneratedImageSubjects? subjects = null)
+        IReadOnlyList<UpNextListing> promoted, GeneratedImageSubjects? subjects = null, IAutomaticImageLookup? automatic = null)
     {
         Dictionary<string, string> images = new(StringComparer.OrdinalIgnoreCase);
         List<GeneratedVariableImage> variables = template.VariableImages ?? [];
         foreach (GeneratedVariableImage image in variables)
         {
-            images[image.Name] = PathFor(image, Show(template, promoted, subjects, image.Context, image.Offset));
+            images[image.Name] = PathFor(image, Show(template, promoted, subjects, image.Context, image.Offset), automatic);
         }
 
         foreach ((string name, string selector) in Uses(template))
@@ -46,7 +47,7 @@ public static class GeneratedPromoImages
             if (variables.FirstOrDefault(image => string.Equals(image.Name, name, StringComparison.OrdinalIgnoreCase)) is { } image
                 && GeneratedImageSelectors.TryParse(selector, out GeneratedImageContext context, out int offset))
             {
-                images[GeneratedImageSelectors.Reference(image.Name, selector)] = PathFor(image, Show(template, promoted, subjects, context, offset));
+                images[GeneratedImageSelectors.Reference(image.Name, selector)] = PathFor(image, Show(template, promoted, subjects, context, offset), automatic);
             }
         }
 
@@ -133,38 +134,6 @@ public static class GeneratedPromoImages
         _ => promoted.FirstOrDefault()
     };
 
-    private static string PathFor(GeneratedVariableImage image, UpNextListing? show) => image.PathFor(show?.Title, show?.Block);
-
-    /// <summary>
-    /// The promo with its automatic images' pictures, and the queries no picture was found for (yet). With
-    /// <paramref name="wait"/> each is searched for now if it hasn't been; otherwise only pictures already found are
-    /// used, and the rest are looked for in the background.
-    /// </summary>
-    public static async Task<(ResolvedGeneratedPromo Promo, IReadOnlyList<string> Missing)> FindAutomaticAsync(ResolvedGeneratedPromo promo,
-        SchedularrTV.Service.Images.AutomaticImages? images, bool wait, CancellationToken cancellationToken = default)
-    {
-        if (promo.AutomaticImages.Count == 0)
-        {
-            return (promo, []);
-        }
-
-        Dictionary<int, string> paths = [];
-        List<string> missing = [];
-        foreach ((int index, SchedularrTV.Service.Images.AutomaticImageRequest request) in promo.AutomaticImages)
-        {
-            string? path = images is null ? null
-                : wait ? await images.GetAsync(request, cancellationToken).ConfigureAwait(false)
-                : images.Peek(request);
-            if (path is not null)
-            {
-                paths[index] = path;
-            }
-            else
-            {
-                missing.Add(request.Query);
-            }
-        }
-
-        return (promo with { AutomaticImagePaths = paths }, missing);
-    }
+    private static string PathFor(GeneratedVariableImage image, UpNextListing? show, IAutomaticImageLookup? automatic) =>
+        image.PathFor(show?.Title, show?.Block, automatic);
 }

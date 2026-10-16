@@ -81,6 +81,9 @@ public static class SchedulerConfigLoader
     public static T? ConvertSection<T>(object section) where T : class =>
         SectionDeserializer.Deserialize<T>(SectionSerializer.Serialize(section));
 
+    /// <summary>A plugin section as the YAML it's saved as.</summary>
+    public static string SerializeSection(object section) => SectionSerializer.Serialize(section);
+
     // Plugins read their sections per entry on every publish, so the builders are made once (they're thread-safe).
     private static readonly ISerializer SectionSerializer = CreateSerializer();
     private static readonly IDeserializer SectionDeserializer = CreateDeserializer();
@@ -656,19 +659,7 @@ public static class SchedulerConfigLoader
                 {
                     errors.Add($"{layerScope}: variable_image_show must be promoted, watching, next or next2 to next{GeneratedImageSelectors.MaxAhead}.");
                 }
-                if (layer.Kind == GeneratedLayerKind.Image && layer.AutomaticImage is { } automatic)
-                {
-                    if (string.IsNullOrWhiteSpace(automatic.Query))
-                    {
-                        errors.Add($"{layerScope}: automatic_image needs a query.");
-                    }
-
-                    if (automatic.Result is < 1 or > 50)
-                    {
-                        errors.Add($"{layerScope}: automatic_image.result must be from 1 to 50.");
-                    }
-                }
-                else if (layer.Kind == GeneratedLayerKind.Image && string.IsNullOrWhiteSpace(layer.Path) && string.IsNullOrWhiteSpace(layer.VariableImage))
+                if (layer.Kind == GeneratedLayerKind.Image && string.IsNullOrWhiteSpace(layer.Path) && string.IsNullOrWhiteSpace(layer.VariableImage))
                 {
                     errors.Add($"{layerScope}: an image layer needs a path.");
                 }

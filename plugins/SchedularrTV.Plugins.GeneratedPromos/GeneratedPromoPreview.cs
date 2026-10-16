@@ -119,7 +119,8 @@ public sealed class GeneratedPromoPreview(
 
     /// <summary>The template's AI jobs for the editor's "Try it", with what it would air with right now.</summary>
     public ResolvedGeneratedPromo? Resolve(GeneratedPromoTemplate template, ChannelConfig channel, TimeZoneInfo zone) =>
-        GeneratedPromoResolver.Resolve(template, channel.Name, Listings(channel, template, out _), zone, clock.GetUtcNow(), ImageSubjects(channel, template));
+        GeneratedPromoResolver.Resolve(template, channel.Name, Listings(channel, template, out _), zone, clock.GetUtcNow(), ImageSubjects(channel, template),
+            AutomaticImages?.Lookup(queue: true));
 
     public static TimeZoneInfo Zone(SchedulerConfig config, ChannelConfig channel) =>
         SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(channel.TimeZone) ? config.Settings.TimeZone : channel.TimeZone);
@@ -136,13 +137,13 @@ public sealed class GeneratedPromoPreview(
         DateTimeOffset? airsAt = null,
         GeneratedImageSubjects? imageSubjects = null)
     {
-        ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(template, channelName, listings, zone, airsAt ?? clock.GetUtcNow(), imageSubjects)
+        // Variable images' automatic pictures show once found (looked for in the background; the editor redraws when they are).
+        ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(template, channelName, listings, zone, airsAt ?? clock.GetUtcNow(), imageSubjects,
+                AutomaticImages?.Lookup(queue: true))
             ?? throw new InvalidOperationException("The preview needs at least one upcoming programme.");
 
         // AI-written captions show once they're written (the usual text until then; the editor redraws when they are).
         promo = GeneratedPromoWriting.Peek(promo, Writer);
-        // Automatic images show once found (looked for in the background; the editor redraws when they are).
-        (promo, _) = await GeneratedPromoImages.FindAutomaticAsync(promo, AutomaticImages, wait: false, cancellationToken).ConfigureAwait(false);
         PromoComposition composition = GeneratedPromoResolver.Compose(promo);
         if (composition.BackgroundPath is { } background && !PromoRenderer.IsImage(background))
         {
@@ -249,19 +250,29 @@ public sealed class GeneratedPromoPreview(
 
     /// <summary>Full render with voice and music, cached like a scheduled promo.</summary>
     /// <param name="song">Renders it with this background song (one of the template's) instead of the one it would pick.</param>
-    public Task<GeneratedPromoRender> RenderVideoAsync(
+    public async Task<GeneratedPromoRender> RenderVideoAsync(
         GeneratedPromoTemplate template,
         string channelName,
         IReadOnlyList<UpNextListing> listings,
         TimeZoneInfo zone,
         CancellationToken cancellationToken = default,
         string? song = null,
-        GeneratedImageSubjects? imageSubjects = null) =>
-        promos.RenderAsync(
-            (GeneratedPromoResolver.Resolve(WithSong(template, song), channelName, listings, zone, clock.GetUtcNow(), imageSubjects)
-                ?? throw new InvalidOperationException("The preview needs at least one upcoming programme."))
-            with { Folder = GeneratedPromoService.PreviewFolder },
-            cancellationToken);
+        GeneratedImageSubjects? imageSubjects = null)
+    {
+        GeneratedPromoTemplate rendered = WithSong(template, song);
+        DateTimeOffset now = clock.GetUtcNow();
+
+        // Made exactly as it will air, so variable images' automatic pictures are waited for.
+        if (AutomaticImages?.Lookup(queue: true) is { } lookup)
+        {
+            _ = GeneratedPromoResolver.Resolve(rendered, channelName, listings, zone, now, imageSubjects, lookup);
+            await lookup.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(rendered, channelName, listings, zone, now, imageSubjects, AutomaticImages?.Lookup(queue: false))
+            ?? throw new InvalidOperationException("The preview needs at least one upcoming programme.");
+        return await promos.RenderAsync(promo with { Folder = GeneratedPromoService.PreviewFolder }, cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>A copy of the template whose only song is <paramref name="song"/>, keeping its start and volume.</summary>
     public static GeneratedPromoTemplate WithSong(GeneratedPromoTemplate template, string? song)

@@ -160,6 +160,7 @@ public static class GeneratedPromoPackages
 
                 image.DefaultPath = source.DefaultPath;
                 image.Shows = GeneratedPromoEditing.Copy(source.Shows);
+                image.Automatic = source.Automatic?.Copy();
             }
 
             image.Linked = null;
@@ -240,6 +241,7 @@ public static class GeneratedPromoPackages
             {
                 image.DefaultPath = null;
                 image.Shows = [];
+                image.Automatic = null;
             }
             else
             {
@@ -317,6 +319,9 @@ public static class GeneratedPromoPackages
             {
                 mine.DefaultPath = await keep(image.DefaultPath).ConfigureAwait(false);
             }
+
+            // An automatic picture it lacks is added too; one it has is kept.
+            mine.Automatic ??= image.Automatic;
 
             HashSet<string> have = new(mine.Shows.Where(show => !string.IsNullOrWhiteSpace(show.Show)).Select(GeneratedImageChoices.Key),
                 StringComparer.OrdinalIgnoreCase);

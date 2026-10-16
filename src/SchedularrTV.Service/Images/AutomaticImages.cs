@@ -24,8 +24,44 @@ public sealed record AutomaticImageRequest(string Query, int Result, bool Transp
                 string.IsNullOrWhiteSpace(config.Provider) ? null : config.Provider);
 }
 
+/// <summary>Variable images' automatic pictures, as found so far; see <see cref="AutomaticImages.Lookup"/>.</summary>
+public sealed class AutomaticImageLookup(AutomaticImages images, bool queue) : IAutomaticImageLookup
+{
+    private readonly List<AutomaticImageRequest> _pending = [];
+
+    /// <summary>Whether a picture asked for is still being searched for (so what used it may change once it's found).</summary>
+    public bool Pending => _pending.Count > 0;
+
+    public string? Find(AutomaticImageConfig config, string query)
+    {
+        if (AutomaticImageRequest.For(config, query) is not { } request)
+        {
+            return null;
+        }
+
+        string? found = images.Peek(request, queue);
+        if (found is null && images.IsSearching(request))
+        {
+            lock (_pending) _pending.Add(request);
+        }
+
+        return found;
+    }
+
+    /// <summary>Waits for the searches still going when pictures were asked for (each ends found or not).</summary>
+    public async Task WaitAsync(CancellationToken cancellationToken = default)
+    {
+        AutomaticImageRequest[] waiting;
+        lock (_pending) waiting = [.. _pending];
+        foreach (AutomaticImageRequest request in waiting)
+        {
+            await images.GetAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+    }
+}
+
 /// <summary>
-/// Finds automatic image layers' pictures with the installed picture searches (plugins), and keeps them: each search's
+/// Finds variable images' automatic pictures with the installed picture searches (plugins), and keeps them: each search's
 /// results, each picture downloaded (checked, and saved as a PNG), and which picture each request got. A request is
 /// only ever searched for once, so pictures stay the same from airing to airing and searches (often paid for) aren't
 /// repeated. Callers that can't wait <see cref="Peek"/>, which starts the search in the background and raises
@@ -102,6 +138,15 @@ public sealed class AutomaticImages
 
         return null;
     }
+
+    /// <summary>Whether the request is being searched for right now.</summary>
+    public bool IsSearching(AutomaticImageRequest request) => _running.ContainsKey(request.Key);
+
+    /// <summary>
+    /// A lookup for resolving variable images with: pictures already found, and (with <paramref name="queue"/>) the rest
+    /// looked for in the background. <see cref="AutomaticImageLookup.Pending"/> then says whether any is still coming.
+    /// </summary>
+    public AutomaticImageLookup Lookup(bool queue = true) => new(this, queue);
 
     /// <summary>The request's picture, looked for now if it hasn't been yet; null when none can be found.</summary>
     public async Task<string?> GetAsync(AutomaticImageRequest request, CancellationToken cancellationToken = default)

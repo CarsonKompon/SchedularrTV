@@ -30,7 +30,6 @@ The canvas editor works like the [Generated promos](generated-promos.md) one:
 - **+ Shape** adds a rectangle that can be changed to an **Ellipse**, **Triangle**, **Diamond** or **Star**, with **Soft edges** and, for rectangles, **Corner radius**. Older color blocks are rectangles and look as before.
 - A shape or picture can be a **mask** instead of artwork: under **Use as**, choose **Add mask — reveal inside** or **Subtract mask — hide inside**, then the **Mask target** beneath it. Picture masks use the picture's transparency. Masks can't target groups, videos or other masks.
 
-- **+ Automatic image** adds a picture found with a picture search for each programme, from a query such as `{title} main character png`, as in [Generated promos](generated-promos.md#automatic-images). The query can use `{title}`, `{episode}`, `{season_episode}`, `{year}`, `{next}` and `{channel}`. Pictures for programmes in the next 36 hours are looked for in the background, and the schedule is published again as they're found. Until then the layer is left out. Use **Preview show contexts** to try the query with a real show.
 
 ### Timeline and keyframes
 
@@ -101,18 +100,20 @@ A **file overlay** places an existing image or video at a preset position with p
 
 ## Variable images for overlays and screenbugs
 
-Use **Variable images → + Variable image** to create an image slot with a **default image** and **per-show overrides**, just like Generated Promos. Show titles match without regard to case.
+Use **Variable images → + Variable image** to create an image slot, then choose its **Shared image**, or **New shared image…**. Shared images are the same ones [Generated promos](generated-promos.md#shared-images) use, kept once for the whole schedule: **Edit shared images…** sets each one's **default image**, **per-show and per-block overrides**, and an optional [automatic picture](generated-promos.md#automatic-pictures-for-shared-images) found with a picture search (such as `{show} main character png`) for shows without an override. Show titles match loosely. A variable from before shared images keeps its own pictures until **Move to a shared image**.
+
+Automatic pictures for programmes in the next 36 hours are looked for in the background, and the schedule is published again as they're found; until then the shared image's default shows. Exported overlay packages carry the shared images they use, merged by id on import.
 
 - **Currently watching / before the break** uses the programme being shown. During an ad break it uses the preceding programme, when the overlay is set to appear during breaks.
 - **Up next** selects the next show, two shows ahead, or up to ten shows ahead. Continuation segments, intros/outros, and stacked episodes are skipped; consecutive listings of the same show count once.
 
 For a canvas design, add/select a **Picture** layer and choose the variable under **Image source**. The image keeps the layer's position, size, opacity, and timing. For a file-based screenbug, choose the variable under **File source**; placement, sizing, margins, and fades work as usual.
 
-Unassigned shows and unavailable schedule contexts use the default image. With no default, that image is hidden. Matching **Other pictures** variants (such as holiday or rating badges) take priority over a screenbug's variable image.
+Shows without an override (or automatic picture) and unavailable schedule contexts use the default image. With no default, that image is hidden. Matching **Other pictures** variants (such as holiday or rating badges) take priority over a screenbug's variable image.
 
-Use **Preview show contexts** to enter a current show and upcoming titles and see their images on the canvas. These fields only affect the preview; the live overlay uses the actual schedule. Variables and all their default/per-show files are included in exported overlay packages and deep-copied when copying overlays.
+Use **Preview show contexts** to enter a current show and upcoming titles and see their images on the canvas; a picture layer showing a variable with an automatic picture says what was found for the preview's show. These fields only affect the preview; the live overlay uses the actual schedule.
 
-Example inside an overlay's YAML:
+Example inside an overlay's YAML (the shared image itself is under `settings.plugins.generated-promos.shared_images`, as for Generated promos):
 
 ```yaml
 kind: file
@@ -120,11 +121,10 @@ variable_image: variable_image_01
 variable_images:
   - name: variable_image_01
     context: currently_watching
-    default_path: 'D:\Media\Logos\default.png'
-    shows:
-      - show: SpongeBob SquarePants
-        path: 'D:\Media\Logos\spongebob.png'
+    shared: 6f1c2b0e9a8d4c7fb3e2a1d0c9b8a7f6
 ```
+
+Older overlays whose variables carry their own `default_path` and `shows` keep working.
 
 For an upcoming show, use `context: up_next` and `offset: 0` for next or `offset: 1` for two shows ahead. Canvas image layers reference the same slot with `variable_image: variable_image_01` instead of `path`.
 

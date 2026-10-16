@@ -1,5 +1,5 @@
-@* An automatic image layer's settings (generated promos and overlays): what to search for, which result, and
-   whether only transparent pictures will do. *@
+@* A shared image's automatic picture settings (used by generated promos and overlays): what to search for, which
+   result, and whether only transparent pictures will do. *@
 @using SchedularrTV.Core.Configuration
 @using SchedularrTV.Service.Images
 @inject IServiceProvider Services
@@ -52,8 +52,8 @@
     <p class="hint">@Status</p>
 }
 <p class="hint">
-    The picture is fitted inside the box. Each query is searched for once, and the picture it finds is kept and reused every time the
-    same words come up, so it doesn't change from airing to airing. Results are counted after leaving out pictures that can't be
+    Each query is searched for once, and the picture it finds is kept and reused every time the same show comes up, so it doesn't
+    change from airing to airing. Results are counted after leaving out pictures that can't be
     downloaded@(Config.Transparent ? " or have no transparent background" : "").
 </p>
 
@@ -68,7 +68,7 @@
     /// <summary>What the preview found (or why not), if known.</summary>
     [Parameter] public string? Status { get; set; }
 
-    [Parameter] public string QueryPlaceholder { get; set; } = "{up_next} main character png";
+    [Parameter] public string QueryPlaceholder { get; set; } = "{show} main character png";
 
     private AutomaticImages? Images => Services.GetService(typeof(AutomaticImages)) as AutomaticImages;
 

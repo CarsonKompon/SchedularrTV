@@ -342,7 +342,7 @@
 
     private Task<string> ExportSelected(TemplatePackageWriter writer) =>
         _selected is { } overlay
-            ? OverlayPackages.ExportAsync(overlay, writer)
+            ? OverlayPackages.ExportAsync(overlay, writer, Context.Config.Settings.GeneratedPromosSharedImages)
             : throw new InvalidOperationException("Choose an overlay to export.");
 
     private async Task<string> ImportPackage(TemplatePackageReader reader)
@@ -352,7 +352,7 @@
             throw new InvalidOperationException("Choose this channel's own overlays first.");
         }
 
-        Overlay overlay = await OverlayPackages.ImportAsync(reader, TemplateFiles);
+        (Overlay overlay, string shared) = await OverlayPackages.ImportAsync(reader, TemplateFiles, Context.Config.Settings.GeneratedPromosSharedImages);
         string name = string.IsNullOrWhiteSpace(overlay.Name) ? "Overlay" : overlay.Name;
         overlay.Name = name;
         for (int number = 2; section.Overlays.Any(other => string.Equals(other.Name, overlay.Name, StringComparison.OrdinalIgnoreCase)); number++)
@@ -364,7 +364,7 @@
         _selected = overlay;
         Commit();
         StateHasChanged();
-        return $"Imported “{overlay.Name}”. Save to keep it.";
+        return $"Imported “{overlay.Name}”. {(shared.Length > 0 ? shared + " " : "")}Save to keep it.";
     }
 
     private void Duplicate(Overlay overlay)

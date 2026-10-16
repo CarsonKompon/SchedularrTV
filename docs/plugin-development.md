@@ -84,7 +84,7 @@ Required dependencies must be available and meet minimum versions. Dependencies 
 | Output | **`AddPlayoutOutput<T>()`** · `IPlayoutPublisher` |
 | Speech | **`AddSpeechProvider<T>()`** · `ITextToSpeechProvider` |
 | Text generation | **`AddTextGenerator<T>()`** · `ITextGenerator` |
-| Picture search (API 1.9) | **`AddImageSearchProvider<T>()`** · `IImageSearchProvider`, for automatic image layers |
+| Picture search (API 1.9) | **`AddImageSearchProvider<T>()`** · `IImageSearchProvider`, for shared images' automatic pictures |
 | Publish-time processing | **`AddPlayoutProcessor<T>()`** · `IPlayoutProcessor` |
 | Complete external channels | **`AddExternalChannels<T>()`** · `IExternalChannelSource` |
 | Watched-channel detection | **`AddChannelViewers<T>()`** · `IChannelViewers` |

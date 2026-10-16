@@ -119,8 +119,12 @@ public sealed class OverlayProcessor : IPlayoutProcessor
                     if (overlay.VariableImages.Count > 0 || !string.IsNullOrWhiteSpace(overlay.VariableImage)
                         || overlay.Layers.Any(layer => !string.IsNullOrWhiteSpace(layer.VariableImage)))
                     {
+                        // Variable images' automatic pictures show once found; programmes coming up soon have theirs looked
+                        // for in the background, and the schedule is published again when they're found.
+                        bool soon = entry.Start - DateTimeOffset.UtcNow < OverlayWriting.Lookahead;
                         imageSubjects ??= OverlayImages.Programmes(ordered, index);
-                        shown = OverlayImages.ResolveFor(overlay, imageSubjects.Value.Current, imageSubjects.Value.Upcoming);
+                        shown = OverlayImages.ResolveFor(overlay, imageSubjects.Value.Current, imageSubjects.Value.Upcoming,
+                            context.Config.Settings.GeneratedPromosSharedImages, automaticImages?.Lookup(queue: soon));
                     }
                     if (overlay.Kind == OverlayKinds.File && overlay.Variants.Count > 0)
                     {
@@ -139,11 +143,6 @@ public sealed class OverlayProcessor : IPlayoutProcessor
                     }
 
                     tokens ??= Tokens(entry, Next(ordered, index), resolved.Owner);
-
-                    // Automatic images show once found; programmes coming up soon have theirs looked for in the background,
-                    // and the schedule is published again when they're found.
-                    bool soon = entry.Start - DateTimeOffset.UtcNow < OverlayWriting.Lookahead;
-                    shown = OverlayImages.WithAutomatic(shown, tokens, request => automaticImages?.Peek(request, queue: soon));
                     foreach (JsonObject layer in Layers(Written(shown, entry, tokens), entry, showing, tokens))
                     {
                         layers.Add(layer);

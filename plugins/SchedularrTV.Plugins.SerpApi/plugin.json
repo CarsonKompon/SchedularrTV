@@ -2,7 +2,7 @@
   "id": "images-serpapi",
   "name": "SerpApi image search",
   "version": "1.0.0",
-  "description": "Finds pictures for automatic image layers in generated promos and overlays (\"{up_next} main character png\") from Google Images results, through SerpApi. Needs a SerpApi account; each query is only searched for once, and what's found is kept.",
+  "description": "Finds automatic pictures for shared variable images, for shows without one of their own (\"{show} main character png\"), from Google Images results through SerpApi. Used by generated promos and overlays. Needs a SerpApi account; each query is only searched for once, and what's found is kept.",
   "author": "SchedularrTV",
   "apiVersion": "1.9",
   "entryAssembly": "SchedularrTV.Plugins.SerpApi.dll",

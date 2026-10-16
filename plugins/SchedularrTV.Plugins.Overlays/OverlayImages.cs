@@ -45,80 +45,47 @@ public static class OverlayImages
     private static string? Title(MediaItem? item) => string.IsNullOrWhiteSpace(item?.SeriesName) ? item?.Title : item.SeriesName;
 
     /// <summary>Resolves by show title alone (no block matching).</summary>
-    public static Overlay Resolve(Overlay overlay, string? current, IReadOnlyList<string> upcoming) =>
-        ResolveFor(overlay, current is null ? null : new OverlayImageSubject(current), [.. upcoming.Select(title => new OverlayImageSubject(title))]);
+    public static Overlay Resolve(Overlay overlay, string? current, IReadOnlyList<string> upcoming,
+        IEnumerable<GeneratedSharedImage>? library = null, IAutomaticImageLookup? automatic = null) =>
+        ResolveFor(overlay, current is null ? null : new OverlayImageSubject(current), [.. upcoming.Select(title => new OverlayImageSubject(title))],
+            library, automatic);
 
-    /// <summary>Whether any of the design's pictures is found with a picture search.</summary>
-    public static bool HasAutomatic(Overlay overlay) =>
-        overlay.Kind != OverlayKinds.File && overlay.Layers.Any(layer => layer is { Kind: OverlayLayerKinds.Image, AutomaticImage: not null });
+    /// <summary>Points the overlay's variable images that name a shared image at it in <paramref name="library"/> (or at nothing, when it's gone).</summary>
+    public static void Link(Overlay overlay, IEnumerable<GeneratedSharedImage>? library)
+    {
+        foreach (GeneratedVariableImage image in overlay.VariableImages)
+        {
+            image.Linked = image.IsShared ? GeneratedSharedImages.Find(library, image.Shared) : null;
+        }
+    }
 
-    /// <summary>The tokens an automatic image's query can use, for the editor's help text.</summary>
-    public const string AutomaticTokenHelp =
-        "Tokens: {title} the show on now, {episode}, {season_episode}, {year}, {next} the next show, {channel}. A token with nothing to fill it (no next show) leaves the picture out.";
+    /// <summary>Whether any of the overlay's variable images finds pictures automatically (once linked).</summary>
+    public static bool HasAutomatic(Overlay overlay) => overlay.VariableImages.Any(image => image.Choices.Automatic is not null);
 
     /// <summary>
-    /// A copy of the design whose automatic images point at their pictures, as <paramref name="find"/> has them (null
-    /// leaves a picture out). The saved overlay isn't changed.
+    /// A copy of the overlay with its variable images' pictures in place for these shows: each variable's shared image
+    /// (from <paramref name="library"/>) picks one by show or block, else finds one automatically with
+    /// <paramref name="automatic"/>, else uses its default.
     /// </summary>
-    public static Overlay WithAutomatic(Overlay overlay, IReadOnlyDictionary<string, string> tokens,
-        Func<SchedularrTV.Service.Images.AutomaticImageRequest, string?> find)
-    {
-        if (!HasAutomatic(overlay))
-        {
-            return overlay;
-        }
-
-        Overlay copy = overlay.Copy();
-        foreach (OverlayLayer layer in copy.Layers.Where(layer => layer is { Kind: OverlayLayerKinds.Image, AutomaticImage: not null }))
-        {
-            layer.Path = Request(layer, tokens) is { } request ? find(request) : null;
-        }
-
-        return copy;
-    }
-
-    /// <summary>What an automatic image searches for with these tokens; null when its query names something they don't have.</summary>
-    public static SchedularrTV.Service.Images.AutomaticImageRequest? Request(OverlayLayer layer, IReadOnlyDictionary<string, string> tokens) =>
-        layer.AutomaticImage is { } config && FillQuery(config.Query, tokens) is { } query
-            ? SchedularrTV.Service.Images.AutomaticImageRequest.For(config, query)
-            : null;
-
-    /// <summary>The query with its tokens filled in; null when a token it uses is empty here (no next show, say).</summary>
-    public static string? FillQuery(string? query, IReadOnlyDictionary<string, string> tokens)
-    {
-        if (string.IsNullOrWhiteSpace(query))
-        {
-            return null;
-        }
-
-        bool missing = false;
-        string filled = System.Text.RegularExpressions.Regex.Replace(query, @"\{([a-z_][a-z_0-9]*)\}", match =>
-        {
-            string? value = tokens.FirstOrDefault(token => string.Equals(token.Key, match.Groups[1].Value, StringComparison.OrdinalIgnoreCase)).Value;
-            if (value is null)
-            {
-                return match.Value;
-            }
-
-            missing |= string.IsNullOrWhiteSpace(value);
-            return value;
-        }, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        return missing || string.IsNullOrWhiteSpace(filled)
-            ? null
-            : string.Join(' ', filled.Split((char[])[' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
-    }
-
-    public static Overlay ResolveFor(Overlay overlay, OverlayImageSubject? current, IReadOnlyList<OverlayImageSubject> upcoming)
+    public static Overlay ResolveFor(Overlay overlay, OverlayImageSubject? current, IReadOnlyList<OverlayImageSubject> upcoming,
+        IEnumerable<GeneratedSharedImage>? library = null, IAutomaticImageLookup? automatic = null)
     {
         if (overlay.VariableImages.Count == 0 && string.IsNullOrWhiteSpace(overlay.VariableImage)
             && !overlay.Layers.Any(layer => !string.IsNullOrWhiteSpace(layer.VariableImage))) return overlay;
 
         Dictionary<string, string?> paths = new(StringComparer.OrdinalIgnoreCase);
-        foreach (GeneratedVariableImage image in overlay.VariableImages)
+        foreach (GeneratedVariableImage original in overlay.VariableImages)
         {
+            GeneratedVariableImage image = original;
+            if (library is not null && image.IsShared)
+            {
+                image = original.Copy();
+                image.Linked = GeneratedSharedImages.Find(library, image.Shared);
+            }
+
             OverlayImageSubject? show = image.Context == GeneratedImageContext.UpNext ? upcoming.ElementAtOrDefault(Math.Clamp(image.Offset, 0, 9)) : current;
-            string path = image.PathFor(show?.Title, show?.Block);
-            paths[image.Name] = path.Length == 0 ? image.DefaultPath : path;
+            string path = image.PathFor(show?.Title, show?.Block, automatic);
+            paths[image.Name] = path.Length == 0 ? null : path;
         }
 
         Overlay copy = overlay.Copy();

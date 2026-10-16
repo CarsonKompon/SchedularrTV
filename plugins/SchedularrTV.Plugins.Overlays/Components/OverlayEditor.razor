@@ -5,6 +5,7 @@
 @implements IDisposable
 @inject IJSRuntime JS
 @inject IServiceProvider Services
+@inject ConfigEditor Editor
 
 <div class="card visual-editor">
     <div class="card-head">
@@ -23,7 +24,7 @@
     </div>
 
     <OverlayImagesEditor Overlay="Overlay" Changed="CommitAsync" />
-    @if (Overlay.VariableImages.Count > 0 || OverlayImages.HasAutomatic(Overlay))
+    @if (Overlay.VariableImages.Count > 0)
     {
         <details class="ed-plain">
             <summary>Preview show contexts</summary>
@@ -46,10 +47,7 @@
                 <div class="ed-toolbar">
                     <span class="ed-toolbar-label">Add</span>
                     <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Text)">+ Text</button>
-                    <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Image)">+ Picture</button>
-                    <button class="btn btn-sm" type="button" title="A picture found with a picture search for each programme, e.g. “{title} main character png”"
-                            @onclick="AddAutomaticImage">+ Automatic image</button>
-                    <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Rect)">+ Shape</button>
+                    <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Image)">+ Picture</button>                    <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Rect)">+ Shape</button>
                     <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Video)">+ Video</button>
                     <div class="spacer"></div>
                     <span class="ed-meta">@Overlay.Width × @Overlay.Height</span>
@@ -467,19 +465,17 @@
                         else if (selected.Kind == OverlayLayerKinds.Image)
                         {
                             <label class="field"><span>Image source</span>
-                                <select value="@(selected.AutomaticImage is not null ? AutomaticSource : selected.VariableImage)" @onchange="e => SetImageSource(selected, Text(e, string.Empty))">
+                                <select value="@selected.VariableImage" @onchange="e => Set(() => selected.VariableImage = Text(e, string.Empty))">
                                     <option value="">Static picture file</option>
-                                    <option value="@AutomaticSource">Automatic (found with a picture search)</option>
                                     @foreach (GeneratedVariableImage image in Overlay.VariableImages)
                                     {
-                                        <option value="@image.Name">@image.Name</option>
+                                        <option value="@image.Name">@(image.Linked is { } linked ? $"{image.Name} (shared: {linked.Name})" : image.Name)</option>
                                     }
                                 </select>
                             </label>
-                            @if (selected.AutomaticImage is { } automatic)
+                            @if (!string.IsNullOrWhiteSpace(selected.VariableImage) && VariableStatus(selected.VariableImage) is { } variableStatus)
                             {
-                                <AutomaticImageFields @key="selected" Config="automatic" Changed="CommitAsync" Tokens="@OverlayImages.AutomaticTokenHelp"
-                                                      Status="@AutomaticStatus(selected)" QueryPlaceholder="@AutomaticPlaceholder" />
+                                <p class="hint">@variableStatus</p>
                             }
                             else if (string.IsNullOrWhiteSpace(selected.VariableImage))
                             {
@@ -809,6 +805,8 @@
         _fonts = InstalledFonts();
         _videos = Services.GetService<OverlayVideos>();
         _automatic = Services.GetService<SchedularrTV.Service.Images.AutomaticImages>();
+        // Its variable images show their shared images' names and settings.
+        OverlayImages.Link(Overlay, Editor.Working.Settings.GeneratedPromosSharedImages);
         if (_automatic is not null)
         {
             _automatic.Fetched += OnAutomaticImage;
@@ -955,14 +953,13 @@
                 {
                     Overlay snapshot = Overlay.Copy();
                     string[] upcoming = _previewUpcoming.Replace("\r", "").Split('\n').Select(title => title.Trim()).ToArray();
-                    snapshot = OverlayImages.Resolve(snapshot, _previewCurrent, upcoming);
+                    // Variable images' automatic pictures show once found; they're looked for in the background, and drawn again when they are.
+                    snapshot = OverlayImages.Resolve(snapshot, _previewCurrent, upcoming, Editor.Working.Settings.GeneratedPromosSharedImages,
+                        _automatic?.Lookup(queue: true));
                     Dictionary<string, string> tokens = new(OverlayProcessor.SampleTokens)
                     {
                         ["channel"] = ChannelName, ["title"] = _previewCurrent, ["next"] = upcoming.FirstOrDefault() ?? string.Empty
-                    };
-                    // Automatic images show once found; they're looked for in the background, and drawn again when they are.
-                    snapshot = OverlayImages.WithAutomatic(snapshot, tokens, request => _automatic?.Peek(request));
-                    float scale = Math.Min(1f, (fast ? FastPreviewPixels : PreviewPixels) / CanvasWidth);
+                    };                    float scale = Math.Min(1f, (fast ? FastPreviewPixels : PreviewPixels) / CanvasWidth);
                     OverlayClock? clock = IsDesign ? PreviewClock : null;
                     Dictionary<string, string> posters = await PostersAsync(snapshot, clock);
                     byte[] png = await Task.Run(() => OverlayRenderer.Preview(snapshot, tokens, scale, posters, clock));
@@ -1558,10 +1555,7 @@
 
     // ---- Automatic images ----
 
-    // Variable image names are identifiers (variable_image_01), so this can't be one.
-    private const string AutomaticSource = "*automatic*";
-    private const string AutomaticPlaceholder = "{title} main character png";
-
+    // A variable image's automatic picture found (or not): drawn again, so it shows.
     private void OnAutomaticImage(SchedularrTV.Service.Images.AutomaticImageRequest request)
     {
         if (OverlayImages.HasAutomatic(Overlay) && !_life.IsCancellationRequested)
@@ -1574,57 +1568,42 @@
         }
     }
 
-    private async Task AddAutomaticImage()
+    /// <summary>
+    /// For a picture layer showing a variable image whose shared image finds pictures automatically: what the preview's
+    /// show got (found, being searched for, or why not). Null otherwise.
+    /// </summary>
+    private string? VariableStatus(string name)
     {
-        var layer = new OverlayLayer
-        {
-            Kind = OverlayLayerKinds.Image,
-            Name = OverlayHierarchy.UniqueName(Overlay, "Automatic image"),
-            X = Overlay.Width * 0.7f,
-            Y = Overlay.Height * 0.45f,
-            Width = Overlay.Width * 0.22f,
-            Height = Overlay.Height * 0.45f,
-            AutomaticImage = new AutomaticImageConfig { Query = AutomaticPlaceholder, Transparent = true }
-        };
-        Overlay.Layers.Add(layer);
-        Select(layer);
-        await CommitAsync();
-    }
-
-    private Task SetImageSource(OverlayLayer layer, string value) => Set(() =>
-    {
-        if (value == AutomaticSource)
-        {
-            layer.AutomaticImage ??= new AutomaticImageConfig { Query = "{title} png", Transparent = true };
-            layer.VariableImage = null;
-            return;
-        }
-
-        layer.AutomaticImage = null;
-        layer.VariableImage = value;
-    });
-
-    /// <summary>What the preview's automatic image for the layer is: found, being searched for, or why not.</summary>
-    private string? AutomaticStatus(OverlayLayer layer)
-    {
-        if (_automatic is null)
+        if (_automatic is null
+            || Overlay.VariableImages.FirstOrDefault(image => string.Equals(image.Name, name, StringComparison.OrdinalIgnoreCase)) is not { } variable
+            || variable.Choices.Automatic is not { } config)
         {
             return null;
         }
 
         string[] upcoming = _previewUpcoming.Replace("\r", "").Split('\n').Select(title => title.Trim()).ToArray();
-        Dictionary<string, string> tokens = new(OverlayProcessor.SampleTokens)
+        string? show = variable.Context == GeneratedImageContext.UpNext ? upcoming.ElementAtOrDefault(Math.Clamp(variable.Offset, 0, 9)) : _previewCurrent;
+        if (string.IsNullOrWhiteSpace(show))
         {
-            ["channel"] = ChannelName, ["title"] = _previewCurrent, ["next"] = upcoming.FirstOrDefault() ?? string.Empty
-        };
-        if (OverlayImages.Request(layer, tokens) is not { } request)
+            return null;
+        }
+
+        // Without an automatic search, anything but the default comes from an override.
+        if (GeneratedImageChoices.PathFor(variable.Choices, show, null) is { Length: > 0 } own
+            && !string.Equals(own, variable.Choices.DefaultPath, StringComparison.OrdinalIgnoreCase))
         {
-            return string.IsNullOrWhiteSpace(layer.AutomaticImage?.Query) ? "Enter what to search for." : "Its query names something the preview has nothing for, so it's left out.";
+            return $"“{show}” has its own picture in the shared image.";
+        }
+
+        if (AutomaticImageQuery.ForShow(config.Query, show, null) is not { } query
+            || SchedularrTV.Service.Images.AutomaticImageRequest.For(config, query) is not { } request)
+        {
+            return "Its shared image's automatic search has nothing to search for here.";
         }
 
         return _automatic.Peek(request, queue: false) is not null
-            ? $"Showing the {(request.Result == 1 ? "first" : $"no. {request.Result}")} picture found for “{request.Query}” (with the preview's sample show)."
-            : _automatic.Problem(request) ?? $"Searching for “{request.Query}”…";
+            ? $"Showing the picture found for “{request.Query}” (for the preview's “{show}”)."
+            : _automatic.Problem(request) ?? (_automatic.SetupProblem(config.Provider) is { } setup ? setup : $"Searching for “{request.Query}”…");
     }
 
     // ---- Videos ----

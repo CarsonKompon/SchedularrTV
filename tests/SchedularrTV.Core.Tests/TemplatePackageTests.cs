@@ -327,7 +327,7 @@ public sealed class TemplatePackageTests : IDisposable
         await using (FileStream stream = File.OpenRead(overlayZip))
         using (TemplatePackageReader reader = await packages.OpenAsync(stream))
         {
-            Overlay imported = await OverlayPackages.ImportAsync(reader, otherAssets);
+            (Overlay imported, _) = await OverlayPackages.ImportAsync(reader, otherAssets);
             Assert.Equal("Bug", imported.Name);
             Assert.True(otherAssets.IsKept(imported.File));
             Assert.Equal(imported.File, imported.Variants[0].File);

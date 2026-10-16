@@ -398,16 +398,83 @@ public interface IGeneratedImageChoices
 {
     string? DefaultPath { get; set; }
     List<GeneratedShowImage> Shows { get; set; }
+
+    /// <summary>
+    /// A picture search used when no show or block override matches, such as <c>{show} main character png</c>; the
+    /// default is used when it finds nothing. Null searches for nothing.
+    /// </summary>
+    AutomaticImageConfig? Automatic { get; set; }
+}
+
+/// <summary>
+/// Finds automatic images' pictures for whoever resolves variable images (the scheduler's picture searches), so the
+/// configuration doesn't depend on them.
+/// </summary>
+public interface IAutomaticImageLookup
+{
+    /// <summary>The picture found for <paramref name="config"/> with <paramref name="query"/> filled in, or null when there isn't one (yet).</summary>
+    string? Find(AutomaticImageConfig config, string query);
+}
+
+/// <summary>Automatic image queries: their tokens filled in.</summary>
+public static class AutomaticImageQuery
+{
+    private static readonly System.Text.RegularExpressions.Regex Token = new(@"\{([a-z_][a-z_0-9]*)\}",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// The query with its tokens filled in, ignoring case and tidying spaces; unknown tokens are left as written. Null
+    /// when it's empty, or a token it uses has nothing here (a block name for a show outside any block, say).
+    /// </summary>
+    public static string? Fill(string? query, IReadOnlyDictionary<string, string?> tokens)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return null;
+        }
+
+        bool missing = false;
+        string filled = Token.Replace(query, match =>
+        {
+            string name = match.Groups[1].Value;
+            string? key = tokens.Keys.FirstOrDefault(candidate => string.Equals(candidate, name, StringComparison.OrdinalIgnoreCase));
+            if (key is null)
+            {
+                return match.Value;
+            }
+
+            string? value = tokens[key];
+            missing |= string.IsNullOrWhiteSpace(value);
+            return value ?? string.Empty;
+        });
+        return missing || string.IsNullOrWhiteSpace(filled)
+            ? null
+            : string.Join(' ', filled.Split((char[])[' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    /// <summary>A variable image's query for a show: <c>{show}</c> (or <c>{title}</c>) is its title, <c>{block}</c> the block it airs in.</summary>
+    public static string? ForShow(string? query, string? show, string? block) =>
+        Fill(query, new Dictionary<string, string?> { ["show"] = show, ["title"] = show, ["block"] = block });
+
+    /// <summary>The tokens a variable image's query can use, for help text.</summary>
+    public const string Help = "{show} is the show's title and {block} the block it airs in.";
 }
 
 public static class GeneratedImageChoices
 {
     /// <summary>
-    /// The file for a programme: an override naming its show first, then one naming the block it airs in, then the
-    /// default. Empty when none applies.
+    /// The file for a programme: an override naming its show first, then one naming the block it airs in, then a
+    /// picture found automatically (with <paramref name="automatic"/>), then the default. Empty when none applies.
     /// </summary>
-    public static string PathFor(IGeneratedImageChoices choices, string? show, string? block) =>
-        Match(choices, show, block: false) ?? Match(choices, block, block: true) ?? choices.DefaultPath ?? string.Empty;
+    public static string PathFor(IGeneratedImageChoices choices, string? show, string? block, IAutomaticImageLookup? automatic = null) =>
+        Match(choices, show, block: false) ?? Match(choices, block, block: true) ?? Automatic(choices, show, block, automatic)
+        ?? choices.DefaultPath ?? string.Empty;
+
+    private static string? Automatic(IGeneratedImageChoices choices, string? show, string? block, IAutomaticImageLookup? automatic) =>
+        automatic is not null && !string.IsNullOrWhiteSpace(show) && choices.Automatic is { } config
+        && AutomaticImageQuery.ForShow(config.Query, show, block) is { } query
+            ? automatic.Find(config, query)
+            : null;
 
     /// <summary>What an override is matched by: whether it names a block, and the trimmed name.</summary>
     public static string Key(GeneratedShowImage show) => (show.Block ? "block:" : "show:") + show.Show.Trim().ToLowerInvariant();
@@ -440,6 +507,9 @@ public sealed class GeneratedVariableImage : IGeneratedImageChoices
     public string? DefaultPath { get; set; }
     public List<GeneratedShowImage> Shows { get; set; } = [];
 
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public AutomaticImageConfig? Automatic { get; set; }
+
     /// <summary>Whether this variable takes its images from a shared image.</summary>
     [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
     public bool IsShared => !string.IsNullOrWhiteSpace(Shared);
@@ -455,7 +525,15 @@ public sealed class GeneratedVariableImage : IGeneratedImageChoices
     /// The file for a programme: an override naming its show first, then one naming the block it airs in, then
     /// the default. Empty when none applies.
     /// </summary>
-    public string PathFor(string? show, string? block) => GeneratedImageChoices.PathFor(Choices, show, block);
+    public string PathFor(string? show, string? block, IAutomaticImageLookup? automatic = null) => GeneratedImageChoices.PathFor(Choices, show, block, automatic);
+
+    /// <summary>A copy, still linked to the same shared image.</summary>
+    public GeneratedVariableImage Copy() => new()
+    {
+        Name = Name, Context = Context, Offset = Offset, Shared = Shared, Linked = Linked, DefaultPath = DefaultPath,
+        Shows = [.. Shows.Select(show => new GeneratedShowImage { Show = show.Show, Block = show.Block, Path = show.Path })],
+        Automatic = Automatic?.Copy()
+    };
 }
 
 /// <summary>
@@ -471,6 +549,10 @@ public sealed class GeneratedSharedImage : IGeneratedImageChoices
     public string? DefaultPath { get; set; }
 
     public List<GeneratedShowImage> Shows { get; set; } = [];
+
+    /// <summary>A picture search for shows without an override; see <see cref="IGeneratedImageChoices.Automatic"/>.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public AutomaticImageConfig? Automatic { get; set; }
 
     public static string NewId() => Guid.NewGuid().ToString("N");
 
@@ -507,10 +589,53 @@ public static class GeneratedSharedImages
         config.Channels.SelectMany(channel => (channel.GeneratedPromos?.Templates ?? [])
             .Concat(channel.Blocks.SelectMany(block => block.GeneratedPromos?.Templates ?? [])));
 
-    /// <summary>How many template variables use the shared image.</summary>
+    /// <summary>
+    /// How many variables use the shared image: generated promo templates', and any plugin's (overlays' variable images
+    /// name it the same way, by its id, which is unique enough to be found in their sections as written).
+    /// </summary>
     public static int Uses(SchedulerConfig config, string id) =>
         Templates(config).SelectMany(template => template.VariableImages ?? [])
-            .Count(image => string.Equals(image.Shared, id, StringComparison.OrdinalIgnoreCase));
+            .Count(image => string.Equals(image.Shared, id, StringComparison.OrdinalIgnoreCase))
+        + PluginUses(config, id);
+
+    private static int PluginUses(SchedulerConfig config, string id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return 0;
+        }
+
+        int uses = 0;
+        IEnumerable<Dictionary<string, object?>?> sections = config.Channels
+            .SelectMany(channel => channel.Blocks.Select(block => block.Plugins).Prepend(channel.Plugins));
+        foreach (Dictionary<string, object?>? plugins in sections)
+        {
+            foreach (object? section in plugins?.Values ?? Enumerable.Empty<object?>())
+            {
+                if (section is null)
+                {
+                    continue;
+                }
+
+                string text;
+                try
+                {
+                    text = SchedulerConfigLoader.SerializeSection(section);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException)
+                {
+                    continue;
+                }
+
+                for (int at = text.IndexOf(id, StringComparison.OrdinalIgnoreCase); at >= 0; at = text.IndexOf(id, at + id.Length, StringComparison.OrdinalIgnoreCase))
+                {
+                    uses++;
+                }
+            }
+        }
+
+        return uses;
+    }
 }
 
 public sealed class GeneratedShowImage
@@ -867,13 +992,13 @@ public sealed class GeneratedLayerOverride : IGeneratedPose
 }
 
 /// <summary>
-/// An automatic image layer's picture: looked up with a picture search (a plugin such as SerpApi) for each airing, by
-/// a query with tokens like <c>{up_next} main character png</c>, and kept once found so the same query reuses it.
-/// Used by generated promo templates and overlays.
+/// A variable (or shared) image's automatic picture: for a show without an override of its own, a picture search (a
+/// plugin such as SerpApi) with a query like <c>{show} main character png</c>. What it finds is kept, so the same query
+/// always gets the same picture. Used wherever variable images are, in generated promos and overlays.
 /// </summary>
 public sealed class AutomaticImageConfig
 {
-    /// <summary>What to search for; tokens are filled in for the airing first.</summary>
+    /// <summary>What to search for; <c>{show}</c> and <c>{block}</c> are filled in for the show first.</summary>
     public string Query { get; set; } = string.Empty;
 
     /// <summary>Which result to use: 1 is the first (best) one, 2 the second…, counting only pictures that can be used.</summary>
@@ -992,14 +1117,6 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
     /// <summary>A named variable image instead of the static image path.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? VariableImage { get; set; }
-
-    /// <summary>
-    /// For <see cref="GeneratedLayerKind.Image"/>: an automatic image, looked up with a picture search for each promo,
-    /// instead of <see cref="Path"/> or <see cref="VariableImage"/>.
-    /// </summary>
-    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    public AutomaticImageConfig? AutomaticImage { get; set; }
-
     /// <summary>
     /// Which show <see cref="VariableImage"/> is resolved for here (<c>promoted</c>, <c>watching</c>, <c>next</c>,
     /// <c>next2</c>…); null uses the variable's own show context. See <see cref="GeneratedImageSelectors"/>.

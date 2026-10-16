@@ -156,8 +156,14 @@ public sealed class Overlay
     /// <summary>Named variable image used instead of File for a screenbug.</summary>
     public string? VariableImage { get; set; }
 
-    /// <summary>Show-dependent images shared by the file screenbug and design image layers.</summary>
+    /// <summary>
+    /// Show-dependent images used by the file screenbug and design image layers. Each picks one of the schedule's shared
+    /// images (<c>settings.plugins.generated-promos.shared_images</c>), the same ones generated promos use.
+    /// </summary>
     public List<GeneratedVariableImage> VariableImages { get; set; } = [];
+
+    /// <summary>Only in an exported package: the shared images its variable images use, so it works on its own.</summary>
+    public List<GeneratedSharedImage>? SharedImages { get; set; }
 
     /// <summary><see cref="OverlayAnchors"/>.</summary>
     public string Anchor { get; set; } = "bottom_right";
@@ -228,11 +234,13 @@ public sealed class Overlay
         copy.Layers = [.. Layers.Select(layer => layer.Copy())];
         copy.Variants = [.. Variants.Select(variant => variant.Copy())];
         copy.Schedule = Schedule?.Copy();
-        copy.VariableImages = [.. VariableImages.Select(image => new GeneratedVariableImage
+        // Shared images stay linked: the copy names the same ones.
+        copy.VariableImages = [.. VariableImages.Select(image => image.Copy())];
+        copy.SharedImages = SharedImages?.Select(image => new GeneratedSharedImage
         {
-            Name = image.Name, Context = image.Context, Offset = image.Offset, DefaultPath = image.DefaultPath,
+            Id = image.Id, Name = image.Name, DefaultPath = image.DefaultPath, Automatic = image.Automatic?.Copy(),
             Shows = [.. image.Shows.Select(show => new GeneratedShowImage { Show = show.Show, Block = show.Block, Path = show.Path })]
-        })];
+        }).ToList();
         return copy;
     }
 }
@@ -401,10 +409,6 @@ public sealed class OverlayLayer
 
     /// <summary>For an image: a named variable image instead of Path.</summary>
     public string? VariableImage { get; set; }
-
-    /// <summary>For an image: a picture found with a picture search for each programme, instead of Path.</summary>
-    public AutomaticImageConfig? AutomaticImage { get; set; }
-
     /// <summary>
     /// Comes in this long after the overlay does (fading in then), so text can wait for a video's design to animate in.
     /// </summary>
@@ -440,9 +444,7 @@ public sealed class OverlayLayer
     {
         var copy = (OverlayLayer)MemberwiseClone();
         copy.Mask = Mask is null ? null : new GeneratedLayerMask { Mode = Mask.Mode, Target = Mask.Target };
-        copy.Keyframes = Keyframes?.Select(key => key.Copy()).ToList();
-        copy.AutomaticImage = AutomaticImage?.Copy();
-        copy.Writer = Writer is null ? null : new AiTextConfig
+        copy.Keyframes = Keyframes?.Select(key => key.Copy()).ToList();        copy.Writer = Writer is null ? null : new AiTextConfig
         {
             Generator = Writer.Generator,
             Prompt = Writer.Prompt,

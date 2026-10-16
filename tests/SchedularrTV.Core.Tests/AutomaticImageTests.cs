@@ -1,6 +1,5 @@
 using System.Net;
 using SchedularrTV.Core.Configuration;
-using SchedularrTV.GeneratedPromos;
 using SchedularrTV.Images.SerpApi;
 using SchedularrTV.Overlays;
 using SchedularrTV.Plugins.Images;
@@ -10,7 +9,7 @@ using Xunit;
 
 namespace SchedularrTV.Core.Tests;
 
-/// <summary>Automatic image layers: their queries, the picture search, and which picture each one gets.</summary>
+/// <summary>Variable images' automatic pictures: their queries, the picture search, and which picture each one gets.</summary>
 public sealed class AutomaticImageTests : IDisposable
 {
     private readonly string _folder = Path.Combine(Path.GetTempPath(), "automatic-image-tests-" + Guid.NewGuid().ToString("N"));
@@ -18,16 +17,67 @@ public sealed class AutomaticImageTests : IDisposable
     public void Dispose() => TestFolders.Delete(_folder);
 
     [Fact]
-    public void A_query_fills_its_tokens_and_one_naming_a_missing_show_finds_nothing()
+    public void A_query_fills_in_the_show_and_one_naming_a_missing_block_finds_nothing()
     {
-        Dictionary<string, string> tokens = new(StringComparer.OrdinalIgnoreCase) { ["up_next"] = "Rugrats", ["up_next_2"] = "" };
+        Assert.Equal("Rugrats main character png", AutomaticImageQuery.ForShow("{SHOW}  main character png", "Rugrats", null));
+        Assert.Equal("Rugrats Toonami", AutomaticImageQuery.ForShow("{title} {block}", "Rugrats", "Toonami"));
+        Assert.Null(AutomaticImageQuery.ForShow("{block} logo", "Rugrats", null));
+        Assert.Equal("{unknown} Rugrats", AutomaticImageQuery.ForShow("{unknown} {show}", "Rugrats", null));
+    }
 
-        Assert.Equal("Rugrats main character png", GeneratedPromoResolver.FillQuery("{UP_NEXT}  main character png", tokens));
-        Assert.Null(GeneratedPromoResolver.FillQuery("{up_next_2} logo", tokens));
-        Assert.Equal("{unknown} Rugrats", GeneratedPromoResolver.FillQuery("{unknown} {up_next}", tokens));
+    private sealed class FakeLookup(string? found) : IAutomaticImageLookup
+    {
+        public List<string> Queries { get; } = [];
 
-        Assert.Equal("Doug logo", OverlayImages.FillQuery("{title} logo", new Dictionary<string, string> { ["title"] = "Doug", ["next"] = "" }));
-        Assert.Null(OverlayImages.FillQuery("{next} logo", new Dictionary<string, string> { ["title"] = "Doug", ["next"] = "" }));
+        public string? Find(AutomaticImageConfig config, string query)
+        {
+            Queries.Add(query);
+            return found;
+        }
+    }
+
+    [Fact]
+    public void A_shared_image_finds_a_picture_for_shows_without_one_before_using_its_default()
+    {
+        var shared = new GeneratedSharedImage
+        {
+            DefaultPath = "default.png",
+            Shows = [new GeneratedShowImage { Show = "Rugrats", Path = "rugrats.png" }, new GeneratedShowImage { Show = "Toonami", Block = true, Path = "toonami.png" }],
+            Automatic = new AutomaticImageConfig { Query = "{show} main character png", Transparent = true }
+        };
+        var variable = new GeneratedVariableImage { Shared = shared.Id, Linked = shared };
+        var lookup = new FakeLookup("found.png");
+
+        Assert.Equal("rugrats.png", variable.PathFor("Rugrats", null, lookup));
+        Assert.Equal("toonami.png", variable.PathFor("Dragon Ball Z", "Toonami", lookup));
+        Assert.Equal("found.png", variable.PathFor("Doug", null, lookup));
+        Assert.Equal(["Doug main character png"], lookup.Queries);
+
+        // Nothing found (yet), or no picture search: the default.
+        Assert.Equal("default.png", variable.PathFor("Doug", null, new FakeLookup(null)));
+        Assert.Equal("default.png", variable.PathFor("Doug", null));
+    }
+
+    [Fact]
+    public void An_overlay_variable_uses_the_schedules_shared_image()
+    {
+        var shared = new GeneratedSharedImage
+        {
+            DefaultPath = "default.png",
+            Shows = [new GeneratedShowImage { Show = "Rugrats", Path = "rugrats.png" }],
+            Automatic = new AutomaticImageConfig { Query = "{show} logo" }
+        };
+        var overlay = new Overlay
+        {
+            Kind = OverlayKinds.File,
+            VariableImage = "variable_image_01",
+            VariableImages = [new GeneratedVariableImage { Name = "variable_image_01", Context = GeneratedImageContext.CurrentlyWatching, Shared = shared.Id }]
+        };
+
+        Assert.Equal("rugrats.png", OverlayImages.Resolve(overlay, "Rugrats", [], [shared]).File);
+        Assert.Equal("found.png", OverlayImages.Resolve(overlay, "Doug", [], [shared], new FakeLookup("found.png")).File);
+        Assert.Equal("default.png", OverlayImages.Resolve(overlay, "Doug", [], [shared]).File);
+        Assert.Null(OverlayImages.Resolve(overlay, "Doug", [], []).File);
     }
 
     [Fact]

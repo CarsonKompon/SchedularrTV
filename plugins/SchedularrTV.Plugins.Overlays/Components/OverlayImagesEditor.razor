@@ -1,8 +1,17 @@
+@* An overlay's variable images: each shows one of the schedule's shared images (the same ones generated promos use),
+   picking its picture by show. Laid out like the Generated promos template's variable images: keep the two in step. *@
+@inject ConfigEditor Editor
+
 <details class="ed-plain">
     <summary>Variable images (@Overlay.VariableImages.Count)</summary>
-    <p class="hint">Choose a default image and per-show overrides, then select the variable as a picture layer's image source or the screenbug's file source.</p>
+    <p class="hint">Each variable shows one of the <strong>shared images</strong>, picking its picture by show (or finding one automatically). Shared
+        images are kept once for every overlay and generated promo template, so they're edited in one place:
+        <button class="btn btn-sm" type="button" @onclick="() => OpenDialog(null)">Edit shared images…</button></p>
+    <p class="hint">Select a variable as a picture layer's image source, or as the screenbug's file source.</p>
     @foreach (GeneratedVariableImage image in Overlay.VariableImages)
     {
+        GeneratedSharedImage? shared = image.IsShared ? GeneratedSharedImages.Find(Library, image.Shared) : null;
+        bool ownImages = !image.IsShared && (!string.IsNullOrWhiteSpace(image.DefaultPath) || image.Shows.Count > 0 || image.Automatic is not null);
         <div class="card" @key="image">
             <div class="card-head">
                 <code>@image.Name</code>
@@ -10,7 +19,29 @@
                 <button class="btn btn-sm btn-danger" type="button" @onclick="() => Remove(image)">Remove variable</button>
             </div>
             <div class="grid grid-2">
-                <label class="field"><span>Show context</span>
+                <div class="field">
+                    <span>Shared image</span>
+                    <div class="row">
+                        <select style="flex: 1; min-width: 0;" aria-label="Shared image" value="@(image.IsShared ? image.Shared : "")" @onchange="e => Choose(image, e.Value?.ToString())">
+                            <option value="">@(ownImages ? "Its own images (from before shared images)" : "Choose a shared image")</option>
+                            @foreach (GeneratedSharedImage choice in Library)
+                            {
+                                <option value="@choice.Id">@choice.Name</option>
+                            }
+                            @if (image.IsShared && shared is null)
+                            {
+                                <option value="@image.Shared">Missing shared image</option>
+                            }
+                            <option value="@NewShared">New shared image…</option>
+                        </select>
+                        <ImageThumbnail Path="@shared?.DefaultPath" />
+                        @if (shared is not null)
+                        {
+                            <button class="btn btn-sm" type="button" title="Edit this shared image" @onclick="() => OpenDialog(shared.Id)">Edit…</button>
+                        }
+                    </div>
+                </div>
+                <label class="field"><span>Show</span>
                     <select @bind="image.Context" @bind:after="Notify">
                         <option value="@GeneratedImageContext.CurrentlyWatching">Currently watching / before the break</option>
                         @if (image.Context == GeneratedImageContext.PromotedShow)
@@ -31,80 +62,137 @@
                         </select>
                     </label>
                 }
-                <div class="field"><span>Default image</span>
-                    <FilePathPicker Value="@image.DefaultPath" ValueChanged="value => Set(() => image.DefaultPath = value)"
-                                    Extensions="FileBrowsing.Images" KeepCopyIn="@OverlayPackages.AssetCategory"
-                                    Label="default image" StartIn="Environment.SpecialFolder.MyPictures" />
-                </div>
             </div>
-            @foreach (GeneratedShowImage show in image.Shows)
+            @if (image.IsShared && shared is null)
             {
-                <div class="grid grid-3" @key="show">
-                    <div class="field"><span>@(show.Block ? "Block name" : "Show title")</span>
-                        <div class="row">
-                            <select style="flex: none; width: auto;" aria-label="Match a show or a block" title="Match a show, or the block a show airs in"
-                                    value="@(show.Block ? "block" : "show")" @onchange="@(e => Set(() => show.Block = e.Value as string == "block"))">
-                                <option value="show">Show</option>
-                                <option value="block">Block</option>
-                            </select>
-                            <input type="text" style="flex: 1; min-width: 0;" @bind="show.Show" @bind:after="Notify"
-                                   placeholder="@(show.Block ? "Exact block name" : "Exact series / show title")" />
-                        </div>
-                    </div>
-                    <div class="field"><span>@(show.Block ? "Image for this block" : "Image for this show")</span>
-                        <div class="row">
-                            <div style="flex: 1; min-width: 0;">
-                                <FilePathPicker Value="@show.Path" ValueChanged="value => Set(() => show.Path = value)"
-                                                Extensions="FileBrowsing.Images" KeepCopyIn="@OverlayPackages.AssetCategory"
-                                                Label="show image" StartIn="Environment.SpecialFolder.MyPictures" />
-                            </div>
-                            <ImageThumbnail Path="@show.Path" />
-                        </div>
-                    </div>
-                    <div><button class="btn btn-sm btn-danger" type="button" @onclick="() => Set(() => image.Shows.Remove(show))">Remove show</button></div>
-                </div>
+                <p class="hint warn" role="alert">Its shared image no longer exists, so it shows nothing. Choose another.</p>
             }
-            @if (image.Shows.Any(show => string.IsNullOrWhiteSpace(show.Show))
-                || image.Shows.Select(show => (show.Block ? "block:" : "show:") + show.Show.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() != image.Shows.Count)
+            else if (ownImages)
             {
-                <p class="hint warn">Give each override a unique show title or block name. If one appears twice, the first match is used.</p>
+                <p class="hint warn">
+                    This variable still has its own images (@(image.Shows.Count == 1 ? "1 override" : $"{image.Shows.Count} overrides")), made before shared images.
+                    They keep working, but can only be edited once moved to a shared image.
+                    <button class="btn btn-sm" type="button" @onclick="() => MoveToShared(image)">Move to a shared image</button>
+                </p>
             }
-            <button class="btn btn-sm" type="button" @onclick="() => Set(() => image.Shows.Add(new()))">+ Show override</button>
-            <button class="btn btn-sm" type="button" @onclick="() => Set(() => image.Shows.Add(new() { Block = true }))">+ Block override</button>
+            else if (!image.IsShared)
+            {
+                <p class="hint">Choose a shared image; until then this variable shows nothing.</p>
+            }
         </div>
     }
     <button class="btn btn-sm" type="button" @onclick="Add">+ Variable image</button>
-    <p class="hint">Titles and block names are matched loosely: case, punctuation, accents, "&amp;" for "and", a missing "The" and small typos
-        are all forgiven. A show override wins; otherwise a block override for the block the show airs in
-        is used; otherwise the default image (also used for unavailable contexts).
-        With no default, the image is hidden. Up next skips continuations of the current programme.</p>
+    <p class="hint">Up next skips continuations of the current programme. A show with no picture of its own (and no automatic one found) uses the
+        shared image's default, also used when there's no such show.</p>
 </details>
+
+@if (_dialogOpen)
+{
+    <SharedImagesWindow Focus="@_focus" Changed="Notify" OnClose="CloseDialog" AssetCategory="@OverlayPackages.AssetCategory" />
+}
 
 @code {
     [Parameter, EditorRequired] public Overlay Overlay { get; set; } = new();
     [Parameter] public EventCallback Changed { get; set; }
-    private Task Notify() => Changed.InvokeAsync();
+
+    // Not a valid id (ids are 32 hex digits), so it can't clash with a shared image.
+    private const string NewShared = "__new__";
+
+    private bool _dialogOpen;
+    private string? _focus;
+
+    private List<GeneratedSharedImage> Library => Editor.Working.Settings.GeneratedPromosSharedImages;
+
+    private Task Notify()
+    {
+        OverlayImages.Link(Overlay, Library);
+        return Changed.InvokeAsync();
+    }
+
     private Task Set(Action change) { change(); return Notify(); }
+
+    private void OpenDialog(string? focus)
+    {
+        _focus = focus;
+        _dialogOpen = true;
+    }
+
+    private void CloseDialog() => _dialogOpen = false;
 
     private Task Add() => Set(() =>
     {
         int number = 1;
         while (Overlay.VariableImages.Any(image => string.Equals(image.Name, $"variable_image_{number:00}", StringComparison.OrdinalIgnoreCase))) number++;
-        Overlay.VariableImages.Add(new() { Name = $"variable_image_{number:00}", Context = GeneratedImageContext.CurrentlyWatching });
+        GeneratedVariableImage added = new() { Name = $"variable_image_{number:00}", Context = GeneratedImageContext.CurrentlyWatching };
+        // With just one shared image there's nothing to choose.
+        if (Library.Count == 1) Link(added, Library[0]);
+        Overlay.VariableImages.Add(added);
     });
 
     private Task Remove(GeneratedVariableImage image) => Set(() =>
     {
+        string? fallback = image.Choices.DefaultPath;
         Overlay.VariableImages.Remove(image);
         if (string.Equals(Overlay.VariableImage, image.Name, StringComparison.OrdinalIgnoreCase))
         {
             Overlay.VariableImage = null;
-            Overlay.File = image.DefaultPath;
+            Overlay.File = fallback;
         }
+
         foreach (OverlayLayer layer in Overlay.Layers.Where(layer => string.Equals(layer.VariableImage, image.Name, StringComparison.OrdinalIgnoreCase)))
         {
             layer.VariableImage = null;
-            layer.Path = image.DefaultPath;
+            layer.Path = fallback;
         }
     });
+
+    private async Task Choose(GeneratedVariableImage image, string? value)
+    {
+        if (value == NewShared)
+        {
+            GeneratedSharedImage created = new() { Name = SharedImagesWindow.UniqueName(Library.Select(item => item.Name), "Shared image") };
+            Library.Add(created);
+            Link(image, created);
+            await Notify();
+            OpenDialog(created.Id);
+        }
+        else if (GeneratedSharedImages.Find(Library, value) is { } chosen)
+        {
+            await Set(() => Link(image, chosen));
+        }
+        else if (string.IsNullOrEmpty(value) && image.IsShared)
+        {
+            await Set(() =>
+            {
+                image.Shared = null;
+                image.Linked = null;
+            });
+        }
+    }
+
+    /// <summary>Moves a variable's own images (from before shared images) into a new shared image, and uses that.</summary>
+    private async Task MoveToShared(GeneratedVariableImage image)
+    {
+        GeneratedSharedImage created = new()
+        {
+            Name = SharedImagesWindow.UniqueName(Library.Select(item => item.Name),
+                string.IsNullOrWhiteSpace(Overlay.Name) ? image.Name : $"{Overlay.Name} {image.Name}"),
+            DefaultPath = image.DefaultPath,
+            Shows = image.Shows,
+            Automatic = image.Automatic
+        };
+        Library.Add(created);
+        Link(image, created);
+        await Notify();
+        OpenDialog(created.Id);
+    }
+
+    private static void Link(GeneratedVariableImage image, GeneratedSharedImage shared)
+    {
+        image.Shared = shared.Id;
+        image.Linked = shared;
+        image.DefaultPath = null;
+        image.Shows = [];
+        image.Automatic = null;
+    }
 }

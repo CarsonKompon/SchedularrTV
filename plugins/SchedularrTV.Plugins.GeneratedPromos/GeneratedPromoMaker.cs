@@ -6,7 +6,7 @@ using SchedularrTV.Plugins.Promos;
 namespace SchedularrTV.GeneratedPromos;
 
 /// <summary>Makes a channel's generated promos for other plugins on request (a credit squeeze's panel, say).</summary>
-public sealed class GeneratedPromoMaker(GeneratedPromoService promos) : IPromoMaker
+public sealed class GeneratedPromoMaker(GeneratedPromoService promos, SchedularrTV.Service.Images.AutomaticImages? automaticImages = null) : IPromoMaker
 {
     public bool CanMake(SchedulerConfig config, ChannelConfig channel, string? blockName, GeneratedPromoType type) =>
         Candidates(config, channel, blockName, type).Templates.Count > 0;
@@ -43,8 +43,17 @@ public sealed class GeneratedPromoMaker(GeneratedPromoService promos) : IPromoMa
             return null;
         }
 
-        if (GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, airsAt,
-                GeneratedImageSubjects.FromSchedule(schedule, airsAt, template: template)) is not { } promo)
+        GeneratedImageSubjects subjects = GeneratedImageSubjects.FromSchedule(schedule, airsAt, template: template);
+
+        // Made now, so variable images' automatic pictures are waited for first.
+        if (automaticImages?.Lookup(queue: true) is { } lookup)
+        {
+            _ = GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, airsAt, subjects, lookup);
+            await lookup.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, airsAt, subjects,
+                automaticImages?.Lookup(queue: false)) is not { } promo)
         {
             return null;
         }

@@ -2,8 +2,8 @@
 
 <details class="ed-plain">
     <summary>Variable images (@(Template.VariableImages?.Count ?? 0))</summary>
-    <p class="hint">Each variable shows one of the <strong>shared images</strong>, picking its picture by show. Shared images are kept once
-        for every template, so they're edited in one place: <button class="btn btn-sm" type="button" @onclick="() => OpenDialog(null)">Edit shared images…</button></p>
+    <p class="hint">Each variable shows one of the <strong>shared images</strong>, picking its picture by show (or, for shows without one, finding
+        one automatically with a picture search). Shared images are kept once for every template and overlay, so they're edited in one place: <button class="btn btn-sm" type="button" @onclick="() => OpenDialog(null)">Edit shared images…</button></p>
     <p class="hint">Use a variable as an image layer's source, or pass its placeholder (for example, {variable_image_01}) in external program
         arguments, where it becomes an image file path. Each use can pick its own show, so one variable can show what's on now, what's next and
         what's after it at once: on an image layer choose <em>For which show</em>; in arguments add it after a colon, as in
@@ -168,7 +168,8 @@
             Name = GeneratedPromoEditing.UniqueName(Library.Select(item => item.Name),
                 string.IsNullOrWhiteSpace(Template.Name) ? image.Name : $"{Template.Name} {image.Name}"),
             DefaultPath = image.DefaultPath,
-            Shows = image.Shows
+            Shows = image.Shows,
+            Automatic = image.Automatic
         };
         Library.Add(created);
         Link(image, created);
@@ -182,5 +183,6 @@
         image.Linked = shared;
         image.DefaultPath = null;
         image.Shows = [];
+        image.Automatic = null;
     }
 }
