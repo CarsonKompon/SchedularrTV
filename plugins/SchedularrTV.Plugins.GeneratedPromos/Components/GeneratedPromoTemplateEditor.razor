@@ -281,6 +281,8 @@
                 <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Text)">+ Text</button>
                 <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Rect)">+ Shape</button>
                 <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Image)">+ Image</button>
+                <button class="btn btn-sm" type="button" title="A picture found with a picture search for each promo, e.g. “{up_next} main character png”"
+                        @onclick="AddAutomaticImage">+ Automatic image</button>
                 <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Video)">+ Video</button>
                 <span class="ed-toolbar-label" style="margin-left:8px;">Tool</span>
                 <button class="btn btn-sm @(_pinTool ? "btn-primary" : "")" type="button" aria-pressed="@(_pinTool ? "true" : "false")"
@@ -683,15 +685,20 @@
                     {
                         <label class="field">
                             <span>Image source</span>
-                            <select value="@selected.VariableImage" @onchange="e => SetVariableImage(selected, Optional(e))">
+                            <select value="@(selected.AutomaticImage is not null ? AutomaticSource : selected.VariableImage)" @onchange="e => SetImageSource(selected, Optional(e))">
                                 <option value="">Static image file</option>
+                                <option value="@AutomaticSource">Automatic (found with a picture search)</option>
                                 @foreach (GeneratedVariableImage image in Template.VariableImages ?? [])
                                 {
                                     <option value="@image.Name">@(image.Linked is { } linked ? $"{image.Name} (shared: {linked.Name})" : image.Name)</option>
                                 }
                             </select>
                         </label>
-                        @if (Template.VariableImages?.FirstOrDefault(image => string.Equals(image.Name, selected.VariableImage, StringComparison.OrdinalIgnoreCase)) is { } variable)
+                        @if (selected.AutomaticImage is { } automatic)
+                        {
+                            <AutomaticImageFields @key="selected" Config="automatic" Changed="Commit" Tokens="@AutomaticTokenHelp" Status="@AutomaticStatus(selected)" />
+                        }
+                        else if (Template.VariableImages?.FirstOrDefault(image => string.Equals(image.Name, selected.VariableImage, StringComparison.OrdinalIgnoreCase)) is { } variable)
                         {
                             <label class="field">
                                 <span>For which show</span>
@@ -708,7 +715,7 @@
                                 <code>@($"{{{GeneratedImageSelectors.Reference(variable.Name, selected.VariableImageShow)}}}")</code>.
                             </p>
                         }
-                        @if (string.IsNullOrWhiteSpace(selected.VariableImage))
+                        @if (string.IsNullOrWhiteSpace(selected.VariableImage) && selected.AutomaticImage is null)
                         {
                         <div class="field">
                             <span>Image file</span>
@@ -1573,6 +1580,11 @@
             writer.Written += OnWritten;
         }
 
+        if (Preview.AutomaticImages is { } automatic)
+        {
+            automatic.Fetched += OnAutomaticImage;
+        }
+
         _layer =Template.Layers.FirstOrDefault(layer => layer.Kind == GeneratedPromoKinds.RequiredLayer(Template.Type)) ?? Template.Layers.FirstOrDefault();
         if (_layer is not null) _chosen.Add(_layer);
         _time = SnapToFrame(Math.Min(2, Template.Duration.TotalSeconds));
@@ -1624,6 +1636,11 @@
         if (Preview.Writer is { } writer)
         {
             writer.Written -= OnWritten;
+        }
+
+        if (Preview.AutomaticImages is { } automatic)
+        {
+            automatic.Fetched -= OnAutomaticImage;
         }
 
         _life.Cancel();
@@ -2341,6 +2358,70 @@
                 _ => "A clip of the episode this promo is for"
             }
             : selector;
+
+    // ---- Automatic images ----
+
+    // Variable image names are written as identifiers (variable_image_01), so this can't be one.
+    private const string AutomaticSource = "*automatic*";
+
+    private static readonly string AutomaticTokenHelp = "Tokens: " + string.Join(", ",
+        GeneratedPromoResolver.AutomaticImageTokenHelp.Select(token => $"{token.Token} {token.Meaning}")) + ". A token for a show the promo doesn't have leaves the layer out.";
+
+    private Task AddAutomaticImage()
+    {
+        GeneratedLayer layer = GeneratedPromoEditing.NewLayer(Template, GeneratedLayerKind.Image);
+        layer.Name = GeneratedPromoEditing.UniqueName(Template.Layers.Select(existing => existing.Name), "Automatic image");
+        layer.AutomaticImage = new AutomaticImageConfig
+        {
+            Query = Template.Type == GeneratedPromoType.UpNext ? "{up_next} main character png" : "{show} main character png",
+            Transparent = true
+        };
+        Template.Layers.Add(layer);
+        Select(layer);
+        return Commit();
+    }
+
+    /// <summary>Picks where an image layer's picture comes from: a file, a variable image, or a picture search.</summary>
+    private Task SetImageSource(GeneratedLayer layer, string? value) => Set(() =>
+    {
+        if (value == AutomaticSource)
+        {
+            layer.AutomaticImage ??= new AutomaticImageConfig { Query = "{show} png", Transparent = true };
+            layer.VariableImage = null;
+            layer.VariableImageShow = null;
+            return;
+        }
+
+        layer.AutomaticImage = null;
+        layer.VariableImage = value;
+        if (value is null)
+        {
+            layer.VariableImageShow = null;
+        }
+    });
+
+    /// <summary>What the preview's automatic image for the layer is: found, being searched for, or why not.</summary>
+    private string? AutomaticStatus(GeneratedLayer layer)
+    {
+        if (Preview.AutomaticImages is not { } images || Preview.Resolve(Template, Channel, Zone) is not { } promo)
+        {
+            return null;
+        }
+
+        int index = Template.Layers.IndexOf(layer);
+        if (!promo.AutomaticImages.TryGetValue(index, out SchedularrTV.Service.Images.AutomaticImageRequest? request))
+        {
+            return string.IsNullOrWhiteSpace(layer.AutomaticImage?.Query)
+                ? "Enter what to search for."
+                : "With the shows the preview has, its query names one this promo doesn't have, so it's left out.";
+        }
+
+        return images.Peek(request, queue: false) is not null
+            ? $"Showing the {(request.Result == 1 ? "first" : $"no. {request.Result}")} picture found for “{request.Query}”."
+            : images.Problem(request) is { } problem
+                ? problem
+                : $"Searching for “{request.Query}”…";
+    }
 
     /// <summary>Picks the variable image a layer shows. Its show choice stays when swapping variables, and goes with a static file.</summary>
     private Task SetVariableImage(GeneratedLayer layer, string? name) => Set(() =>
@@ -3391,6 +3472,19 @@
     }
 
     // A caption the AI finished writing shows in the preview straight away.
+    // A picture found for an automatic image layer (or not): redrawn, so it shows, or the layer says why not.
+    private void OnAutomaticImage(SchedularrTV.Service.Images.AutomaticImageRequest request)
+    {
+        if (Template.Layers.Any(layer => layer.AutomaticImage is not null) && !_life.IsCancellationRequested)
+        {
+            _ = InvokeAsync(async () =>
+            {
+                await RefreshStill();
+                StateHasChanged();
+            });
+        }
+    }
+
     private void OnWritten(AiTextJob job, AiTextResult result)
     {
         if (job.Source == GeneratedPromoWriting.Source && result.Written && Template.Layers.Any(layer => layer.Writer is not null))

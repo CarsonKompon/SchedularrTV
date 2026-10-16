@@ -30,11 +30,15 @@ The canvas editor works like the [Generated promos](generated-promos.md) one:
 - **+ Shape** adds a rectangle that can be changed to an **Ellipse**, **Triangle**, **Diamond** or **Star**, with **Soft edges** and, for rectangles, **Corner radius**. Older color blocks are rectangles and look as before.
 - A shape or picture can be a **mask** instead of artwork: under **Use as**, choose **Add mask — reveal inside** or **Subtract mask — hide inside**, then the **Mask target** beneath it. Picture masks use the picture's transparency. Masks can't target groups, videos or other masks.
 
+- **+ Automatic image** adds a picture found with a picture search for each programme, from a query such as `{title} main character png`, as in [Generated promos](generated-promos.md#automatic-images). The query can use `{title}`, `{episode}`, `{season_episode}`, `{year}`, `{next}` and `{channel}`. Pictures for programmes in the next 36 hours are looked for in the background, and the schedule is published again as they're found. Until then the layer is left out. Use **Preview show contexts** to try the query with a real show.
+
 ### Timeline and keyframes
 
 Drag along the timeline under the canvas to scrub through one appearance: layers coming in late or going early fade as they will on air. For a whole-programme overlay, the timeline is its **Animation length** (10 seconds unless set under Timing). The **« ‹ › »** buttons and **← / →** (Shift for a second), **Home / End**, **[ / ]**, **K** and **Delete** work as in Generated promos.
 
 Video layers show their frame at the playhead, playing from when the layer comes in (as on air) and holding their last frame after they end. The first time a video is scrubbed, the frames the timeline covers are taken once in the background (kept under the plugin's `stills/frames` folder and cleared after a week unused); until then each frame is fetched as you land on it.
+
+**Frame rate** (under Canvas) sets the timeline's frames, which keyframes land on, and the rate an animated design's video is made at. It's 30 unless set. Choosing the design's first video sets it to that video's rate, and **Match the video's … fps** sets it to another's, so keyframed layers line up frame for frame with the video under them. In YAML it's `fps: 25`.
 
 Select a layer or group and choose **◆ Animate with keyframes**. Its position, size, turn and opacity then come from keyframes: move the playhead and drag, resize or turn the box (or change its numbers) to set one there. Drag a diamond to retime it; **Then** sets the easing to the next one. A group's animation carries everything inside it. Video layers are placed by ErsatzTV, so they can't be animated, turned or masked.
 

@@ -79,7 +79,7 @@ public sealed class OverlayAnimations : IDisposable
     {
         string text = string.Join('|', OverlayRenderer.Key(design, tokens),
             clock.Length.ToString("0.###", CultureInfo.InvariantCulture), clock.Fade.ToString("0.###", CultureInfo.InvariantCulture),
-            clock.FadeIn, clock.LayerOuts, OverlayAnimation.Fps, "v1");
+            clock.FadeIn, clock.LayerOuts, OverlayAnimation.FpsText(OverlayAnimation.FpsOf(design)), "v1");
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(text));
         return "anim-" + Convert.ToHexString(hash, 0, 12).ToLowerInvariant();
     }
@@ -152,7 +152,8 @@ public sealed class OverlayAnimations : IDisposable
     {
         int width = Math.Max(2, Math.Clamp(job.Design.Width, 64, 7680) / 2 * 2);
         int height = Math.Max(2, Math.Clamp(job.Design.Height, 64, 4320) / 2 * 2);
-        int frames = Math.Max(1, (int)Math.Ceiling(job.Clock.Length * OverlayAnimation.Fps));
+        double fps = OverlayAnimation.FpsOf(job.Design);
+        int frames = Math.Max(1, (int)Math.Ceiling(job.Clock.Length * fps));
         string final = Path.Combine(Folder, job.Key + extension);
         string temp = Path.Combine(Folder, $"{job.Key}.{Guid.NewGuid():N}.part");
 
@@ -163,7 +164,7 @@ public sealed class OverlayAnimations : IDisposable
         foreach (string argument in (string[])
                  [
                      "-hide_banner", "-loglevel", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgba",
-                     "-s", $"{width}x{height}", "-r", OverlayAnimation.Fps.ToString(CultureInfo.InvariantCulture), "-i", "-", "-an"
+                     "-s", $"{width}x{height}", "-r", OverlayAnimation.FpsText(fps), "-i", "-", "-an"
                  ])
         {
             start.ArgumentList.Add(argument);
@@ -203,7 +204,7 @@ public sealed class OverlayAnimations : IDisposable
                 cancellationToken.ThrowIfCancellationRequested();
                 SKCanvas canvas = surface.Canvas;
                 canvas.Clear(SKColors.Transparent);
-                OverlayRenderer.DrawDesign(canvas, job.Design, job.Tokens, null, job.Clock with { Seconds = index / (double)OverlayAnimation.Fps });
+                OverlayRenderer.DrawDesign(canvas, job.Design, job.Tokens, null, job.Clock with { Seconds = index / fps });
                 if (!surface.ReadPixels(output, pixels.GetPixels(), pixels.RowBytes, 0, 0))
                 {
                     throw new InvalidOperationException("Couldn't read a drawn frame.");

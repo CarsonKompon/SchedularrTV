@@ -27,6 +27,7 @@
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.Streamers\SchedularrTV.Plugins.Streamers.csproj" />
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.CreditSqueeze\SchedularrTV.Plugins.CreditSqueeze.csproj" />
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.News\SchedularrTV.Plugins.News.csproj" />
+    <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.SerpApi\SchedularrTV.Plugins.SerpApi.csproj" />
   </ItemGroup>
 
   <ItemGroup>

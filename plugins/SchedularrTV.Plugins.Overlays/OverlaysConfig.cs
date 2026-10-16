@@ -206,6 +206,12 @@ public sealed class Overlay
 
     public const double DefaultAnimationSeconds = 10;
 
+    /// <summary>
+    /// Frames a second for the editor's timeline and an animated design's video, so keyframes land on the same frames as
+    /// its videos'; null is 30.
+    /// </summary>
+    public double? Fps { get; set; }
+
     /// <summary><see cref="OverlayAppliesTo"/>.</summary>
     public string AppliesTo { get; set; } = OverlayAppliesTo.Programmes;
 
@@ -396,6 +402,9 @@ public sealed class OverlayLayer
     /// <summary>For an image: a named variable image instead of Path.</summary>
     public string? VariableImage { get; set; }
 
+    /// <summary>For an image: a picture found with a picture search for each programme, instead of Path.</summary>
+    public AutomaticImageConfig? AutomaticImage { get; set; }
+
     /// <summary>
     /// Comes in this long after the overlay does (fading in then), so text can wait for a video's design to animate in.
     /// </summary>
@@ -432,6 +441,7 @@ public sealed class OverlayLayer
         var copy = (OverlayLayer)MemberwiseClone();
         copy.Mask = Mask is null ? null : new GeneratedLayerMask { Mode = Mask.Mode, Target = Mask.Target };
         copy.Keyframes = Keyframes?.Select(key => key.Copy()).ToList();
+        copy.AutomaticImage = AutomaticImage?.Copy();
         copy.Writer = Writer is null ? null : new AiTextConfig
         {
             Generator = Writer.Generator,

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    SerpApi picture search (Google Images results), for automatic image layers in generated promos and overlays. Not
+    part of the main download: it ships in the all-plugins zip of each release (see .github/workflows/build.yml) and is
+    installed from the Plugins page.
+  -->
+  <PropertyGroup>
+    <RootNamespace>SchedularrTV.Images.SerpApi</RootNamespace>
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Supplied by the scheduler at runtime, so it isn't copied into the plugin. -->
+    <ProjectReference Include="..\..\src\SchedularrTV.Plugins.Abstractions\SchedularrTV.Plugins.Abstractions.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="SchedularrTV.Plugins" />
+    <Using Include="SchedularrTV.Plugins.Images" />
+  </ItemGroup>
+
+</Project>

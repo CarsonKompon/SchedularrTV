@@ -21,8 +21,15 @@ public sealed record OverlayClock(double Seconds, double Length, double Fade, bo
 /// <summary>Keyframes: where a layer is at a moment of an appearance, and how it comes and goes within it.</summary>
 public static class OverlayAnimation
 {
-    /// <summary>Frames a second, in the editor's timeline and an animated overlay's video.</summary>
-    public const int Fps = 30;
+    /// <summary>Frames a second, in the editor's timeline and an animated overlay's video, unless the overlay sets its own.</summary>
+    public const double DefaultFps = 30;
+
+    /// <summary>The overlay's frame rate: its own (to match its videos), or <see cref="DefaultFps"/>.</summary>
+    public static double FpsOf(Overlay overlay) =>
+        overlay.Fps is { } fps && double.IsFinite(fps) ? Math.Clamp(fps, 1, 120) : DefaultFps;
+
+    /// <summary>A frame rate as ffmpeg and file names take it: 30, 29.97, 23.976.</summary>
+    public static string FpsText(double fps) => fps.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>Two keyframes closer than this (seconds) are the same one: well under a frame.</summary>
     public const double KeyframeTolerance = 0.002;

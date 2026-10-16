@@ -22,6 +22,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
     private readonly ILogger<OverlayProcessor> logger;
     private readonly AiTextWriter? writer;
     private readonly OverlayAnimations? animations;
+    private readonly SchedularrTV.Service.Images.AutomaticImages? automaticImages;
 
     /// <summary>Animated designs are made into videos for programmes starting this soon; later ones as they get closer.</summary>
     public static readonly TimeSpan AnimationLookahead = TimeSpan.FromHours(12);
@@ -30,15 +31,22 @@ public sealed class OverlayProcessor : IPlayoutProcessor
     /// <param name="republisher">Publishes again when AI-written captions (or animated designs' videos) are ready, so they're used.</param>
     /// <param name="animations">Makes animated designs into videos; without it they show standing still.</param>
     public OverlayProcessor(OverlayRenderer renderer, ILogger<OverlayProcessor> logger, AiTextWriter? writer = null,
-        IScheduleRepublisher? republisher = null, OverlayAnimations? animations = null)
+        IScheduleRepublisher? republisher = null, OverlayAnimations? animations = null,
+        SchedularrTV.Service.Images.AutomaticImages? automaticImages = null)
     {
         this.renderer = renderer;
         this.logger = logger;
         this.writer = writer;
         this.animations = animations;
+        this.automaticImages = automaticImages;
         if (animations is not null && republisher is not null)
         {
             animations.Rendered += republisher.RequestRepublish;
+        }
+
+        if (automaticImages is not null && republisher is not null)
+        {
+            automaticImages.Fetched += _ => republisher.RequestRepublish();
         }
 
         if (writer is not null && republisher is not null)
@@ -131,6 +139,11 @@ public sealed class OverlayProcessor : IPlayoutProcessor
                     }
 
                     tokens ??= Tokens(entry, Next(ordered, index), resolved.Owner);
+
+                    // Automatic images show once found; programmes coming up soon have theirs looked for in the background,
+                    // and the schedule is published again when they're found.
+                    bool soon = entry.Start - DateTimeOffset.UtcNow < OverlayWriting.Lookahead;
+                    shown = OverlayImages.WithAutomatic(shown, tokens, request => automaticImages?.Peek(request, queue: soon));
                     foreach (JsonObject layer in Layers(Written(shown, entry, tokens), entry, showing, tokens))
                     {
                         layers.Add(layer);

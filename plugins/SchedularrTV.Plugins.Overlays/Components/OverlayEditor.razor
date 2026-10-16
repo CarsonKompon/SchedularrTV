@@ -23,7 +23,7 @@
     </div>
 
     <OverlayImagesEditor Overlay="Overlay" Changed="CommitAsync" />
-    @if (Overlay.VariableImages.Count > 0)
+    @if (Overlay.VariableImages.Count > 0 || OverlayImages.HasAutomatic(Overlay))
     {
         <details class="ed-plain">
             <summary>Preview show contexts</summary>
@@ -47,6 +47,8 @@
                     <span class="ed-toolbar-label">Add</span>
                     <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Text)">+ Text</button>
                     <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Image)">+ Picture</button>
+                    <button class="btn btn-sm" type="button" title="A picture found with a picture search for each programme, e.g. “{title} main character png”"
+                            @onclick="AddAutomaticImage">+ Automatic image</button>
                     <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Rect)">+ Shape</button>
                     <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Video)">+ Video</button>
                     <div class="spacer"></div>
@@ -104,10 +106,10 @@
                 <div class="ed-timeline">
                     <div class="ed-timeline-head">
                         <div class="ed-frame-step" role="group" aria-label="Step through frames">
-                            <button class="btn btn-sm" type="button" title="Back a second (Shift+←)" aria-label="Back a second" @onclick="() => StepFrames(-Fps)">«</button>
+                            <button class="btn btn-sm" type="button" title="Back a second (Shift+←)" aria-label="Back a second" @onclick="() => StepFrames(-FramesPerSecond)">«</button>
                             <button class="btn btn-sm" type="button" title="Previous frame (← or ,)" aria-label="Previous frame" @onclick="() => StepFrames(-1)">‹</button>
                             <button class="btn btn-sm" type="button" title="Next frame (→ or .)" aria-label="Next frame" @onclick="() => StepFrames(1)">›</button>
-                            <button class="btn btn-sm" type="button" title="Forward a second (Shift+→)" aria-label="Forward a second" @onclick="() => StepFrames(Fps)">»</button>
+                            <button class="btn btn-sm" type="button" title="Forward a second (Shift+→)" aria-label="Forward a second" @onclick="() => StepFrames(FramesPerSecond)">»</button>
                         </div>
                         <span>
                             <strong>@($"{_time:0.000}")s</strong> of @($"{TimelineLength:0.#}")s
@@ -279,10 +281,35 @@
                                 <option value="@($"{width}x{height}")">@label</option>
                             }
                         </select></label>
+                    <label class="field"><span>Frame rate</span>
+                        <select value="@OverlayAnimation.FpsText(Fps)" @onchange="e => SetFps(Number(e, OverlayAnimation.DefaultFps))">
+                            @if (!FrameRates.Contains(Fps))
+                            {
+                                <option value="@OverlayAnimation.FpsText(Fps)">@OverlayAnimation.FpsText(Fps) fps</option>
+                            }
+                            @foreach (double rate in FrameRates)
+                            {
+                                <option value="@OverlayAnimation.FpsText(rate)">@OverlayAnimation.FpsText(rate) fps</option>
+                            }
+                        </select></label>
                 }
                 <label class="field"><span>Overall opacity: @Overlay.Opacity.ToString("0", CultureInfo.InvariantCulture)%</span>
                     <input type="range" min="5" max="100" step="1" value="@Number(Overlay.Opacity)" @onchange="e => Set(() => Overlay.Opacity = Number(e, 100))" /></label>
             </div>
+            @if (IsDesign)
+            {
+                List<double> videoRates = [.. Overlay.Layers
+                    .Where(layer => layer.Kind == OverlayLayerKinds.Video && layer.Path is { Length: > 0 })
+                    .Select(layer => _videoInfo.GetValueOrDefault(layer.Path!)?.FrameRate)
+                    .OfType<double>()
+                    .Distinct()];
+                @foreach (double rate in videoRates.Where(rate => Math.Abs(rate - Fps) > 0.0005))
+                {
+                    <button class="btn btn-sm" type="button" @onclick="() => SetFps(rate)">Match the video's @OverlayAnimation.FpsText(rate) fps</button>
+                }
+                <p class="hint">The timeline steps a frame at a time at this rate, keyframes land on its frames, and an animated design's video is made at it.
+                    Match it to the design's videos so keyframed layers line up with their frames.</p>
+            }
         </div>
 
         <div class="ed-side">
@@ -440,15 +467,21 @@
                         else if (selected.Kind == OverlayLayerKinds.Image)
                         {
                             <label class="field"><span>Image source</span>
-                                <select value="@selected.VariableImage" @onchange="e => Set(() => selected.VariableImage = Text(e, string.Empty))">
+                                <select value="@(selected.AutomaticImage is not null ? AutomaticSource : selected.VariableImage)" @onchange="e => SetImageSource(selected, Text(e, string.Empty))">
                                     <option value="">Static picture file</option>
+                                    <option value="@AutomaticSource">Automatic (found with a picture search)</option>
                                     @foreach (GeneratedVariableImage image in Overlay.VariableImages)
                                     {
                                         <option value="@image.Name">@image.Name</option>
                                     }
                                 </select>
                             </label>
-                            @if (string.IsNullOrWhiteSpace(selected.VariableImage))
+                            @if (selected.AutomaticImage is { } automatic)
+                            {
+                                <AutomaticImageFields @key="selected" Config="automatic" Changed="CommitAsync" Tokens="@OverlayImages.AutomaticTokenHelp"
+                                                      Status="@AutomaticStatus(selected)" QueryPlaceholder="@AutomaticPlaceholder" />
+                            }
+                            else if (string.IsNullOrWhiteSpace(selected.VariableImage))
                             {
                                 <div class="field"><span>Picture</span>
                                     <FilePathPicker Value="@selected.Path" ValueChanged="value => Set(() => selected.Path = value)" Extensions="FileBrowsing.Images" KeepCopyIn="@OverlayPackages.AssetCategory"
@@ -471,7 +504,7 @@
                             else if (selected.Path is { Length: > 0 } videoPath && _videoInfo.GetValueOrDefault(videoPath) is { } info)
                             {
                                 <p class="hint">
-                                    @(info.Width > 0 ? $"{info.Width} × {info.Height}" : "")@(info.Width > 0 && info.Duration is not null ? ", " : "")@(info.Duration is { } runs ? $"{Number(runs.TotalSeconds)}s long" : "").
+                                    @(info.Width > 0 ? $"{info.Width} × {info.Height}" : "")@(info.Width > 0 && info.Duration is not null ? ", " : "")@(info.Duration is { } runs ? $"{Number(runs.TotalSeconds)}s long" : "")@(info.FrameRate is { } videoRate ? $", {OverlayAnimation.FpsText(videoRate)} fps" : "").
                                     @if (_videoFrames.TryGetValue(videoPath, out var shownFrame))
                                     {
                                         <span>@(shownFrame.Shown ? $"Showing its frame {shownFrame.Seconds:0.00}s in." : $"Couldn't take its frame {shownFrame.Seconds:0.00}s in (ffmpeg).")</span>
@@ -750,6 +783,7 @@
     private string _previewUpcoming = "Another Show\nA Later Show";
     private string? _previewError;
     private OverlayVideos? _videos;
+    private SchedularrTV.Service.Images.AutomaticImages? _automatic;
 
     /// <summary>What's known of each video layer's file (null once looked up and ffprobe couldn't say).</summary>
     private readonly Dictionary<string, OverlayVideoInfo?> _videoInfo = new(StringComparer.Ordinal);
@@ -774,6 +808,11 @@
     {
         _fonts = InstalledFonts();
         _videos = Services.GetService<OverlayVideos>();
+        _automatic = Services.GetService<SchedularrTV.Service.Images.AutomaticImages>();
+        if (_automatic is not null)
+        {
+            _automatic.Fetched += OnAutomaticImage;
+        }
         if (Overlay.Layers.LastOrDefault() is { } top)
         {
             Select(top);
@@ -801,6 +840,11 @@
 
     public void Dispose()
     {
+        if (_automatic is not null)
+        {
+            _automatic.Fetched -= OnAutomaticImage;
+        }
+
         _life.Cancel();
         _life.Dispose();
     }
@@ -857,6 +901,16 @@
         return CommitAsync();
     }
 
+    private static readonly double[] FrameRates = [23.976, 24, 25, 29.97, 30, 50, 59.94, 60];
+
+    // 30 is stored as nothing, so overlays that never set one stay as they were.
+    private Task SetFps(double fps) => Set(() =>
+    {
+        double rate = Math.Round(Math.Clamp(fps, 1, 120), 3);
+        Overlay.Fps = Math.Abs(rate - OverlayAnimation.DefaultFps) < 0.0005 ? null : rate;
+        _time = SnapToFrame(_time);
+    });
+
     private Task SetAnimationLength(ChangeEventArgs e) => Set(() =>
     {
         double seconds = Math.Clamp(Number(e, Overlay.DefaultAnimationSeconds), 1, 120);
@@ -906,6 +960,8 @@
                     {
                         ["channel"] = ChannelName, ["title"] = _previewCurrent, ["next"] = upcoming.FirstOrDefault() ?? string.Empty
                     };
+                    // Automatic images show once found; they're looked for in the background, and drawn again when they are.
+                    snapshot = OverlayImages.WithAutomatic(snapshot, tokens, request => _automatic?.Peek(request));
                     float scale = Math.Min(1f, (fast ? FastPreviewPixels : PreviewPixels) / CanvasWidth);
                     OverlayClock? clock = IsDesign ? PreviewClock : null;
                     Dictionary<string, string> posters = await PostersAsync(snapshot, clock);
@@ -1017,8 +1073,8 @@
 
             double playing = Math.Max(0, clock.Seconds - OverlayHierarchy.EffectiveTiming(overlay, video).InSeconds);
             double needed = Math.Min(clock.Length, _videoInfo[path]?.Duration?.TotalSeconds ?? clock.Length);
-            _ = _videos.PrepareFramesAsync(path, needed);
-            string? frame = await _videos.FrameAsync(path, playing, _life.Token);
+            _ = _videos.PrepareFramesAsync(path, needed, Fps);
+            string? frame = await _videos.FrameAsync(path, playing, Fps, _life.Token);
             if (frame is not null)
             {
                 posters[key] = frame;
@@ -1037,7 +1093,10 @@
 
     private double TimelineLength => Math.Max(0.5, OverlayAnimation.TimelineSeconds(Overlay));
 
-    private static int Fps => OverlayAnimation.Fps;
+    private double Fps => OverlayAnimation.FpsOf(Overlay);
+
+    /// <summary>A second's worth of frames, for stepping by a second.</summary>
+    private int FramesPerSecond => Math.Max(1, (int)Math.Round(Fps));
 
     private int FrameCount => Math.Max(1, (int)Math.Ceiling(TimelineLength * Fps));
 
@@ -1205,7 +1264,7 @@
     /// </summary>
     private Task RulerKey(KeyboardEventArgs e)
     {
-        int step = e.ShiftKey ? Fps : 1;
+        int step = e.ShiftKey ? FramesPerSecond : 1;
         switch (e.Key)
         {
             case "ArrowLeft" or "," or "<":
@@ -1497,6 +1556,77 @@
     private static GeneratedShape? ShapeOf(ChangeEventArgs e) =>
         Enum.TryParse(e.Value?.ToString(), out GeneratedShape shape) && shape != GeneratedShape.Rectangle ? shape : null;
 
+    // ---- Automatic images ----
+
+    // Variable image names are identifiers (variable_image_01), so this can't be one.
+    private const string AutomaticSource = "*automatic*";
+    private const string AutomaticPlaceholder = "{title} main character png";
+
+    private void OnAutomaticImage(SchedularrTV.Service.Images.AutomaticImageRequest request)
+    {
+        if (OverlayImages.HasAutomatic(Overlay) && !_life.IsCancellationRequested)
+        {
+            _ = InvokeAsync(() =>
+            {
+                RequestPreview();
+                StateHasChanged();
+            });
+        }
+    }
+
+    private async Task AddAutomaticImage()
+    {
+        var layer = new OverlayLayer
+        {
+            Kind = OverlayLayerKinds.Image,
+            Name = OverlayHierarchy.UniqueName(Overlay, "Automatic image"),
+            X = Overlay.Width * 0.7f,
+            Y = Overlay.Height * 0.45f,
+            Width = Overlay.Width * 0.22f,
+            Height = Overlay.Height * 0.45f,
+            AutomaticImage = new AutomaticImageConfig { Query = AutomaticPlaceholder, Transparent = true }
+        };
+        Overlay.Layers.Add(layer);
+        Select(layer);
+        await CommitAsync();
+    }
+
+    private Task SetImageSource(OverlayLayer layer, string value) => Set(() =>
+    {
+        if (value == AutomaticSource)
+        {
+            layer.AutomaticImage ??= new AutomaticImageConfig { Query = "{title} png", Transparent = true };
+            layer.VariableImage = null;
+            return;
+        }
+
+        layer.AutomaticImage = null;
+        layer.VariableImage = value;
+    });
+
+    /// <summary>What the preview's automatic image for the layer is: found, being searched for, or why not.</summary>
+    private string? AutomaticStatus(OverlayLayer layer)
+    {
+        if (_automatic is null)
+        {
+            return null;
+        }
+
+        string[] upcoming = _previewUpcoming.Replace("\r", "").Split('\n').Select(title => title.Trim()).ToArray();
+        Dictionary<string, string> tokens = new(OverlayProcessor.SampleTokens)
+        {
+            ["channel"] = ChannelName, ["title"] = _previewCurrent, ["next"] = upcoming.FirstOrDefault() ?? string.Empty
+        };
+        if (OverlayImages.Request(layer, tokens) is not { } request)
+        {
+            return string.IsNullOrWhiteSpace(layer.AutomaticImage?.Query) ? "Enter what to search for." : "Its query names something the preview has nothing for, so it's left out.";
+        }
+
+        return _automatic.Peek(request, queue: false) is not null
+            ? $"Showing the {(request.Result == 1 ? "first" : $"no. {request.Result}")} picture found for “{request.Query}” (with the preview's sample show)."
+            : _automatic.Problem(request) ?? $"Searching for “{request.Query}”…";
+    }
+
     // ---- Videos ----
 
     /// <summary>A video chosen: its box takes its shape, and the first one chosen sets how long the overlay shows.</summary>
@@ -1517,6 +1647,13 @@
             if (first && info?.Duration is { } length && !TimingSchedule.Always)
             {
                 SetDurations(length.TotalSeconds);
+            }
+
+            // The first video also sets the frame rate, while the overlay hasn't one of its own.
+            if (first && Overlay.Fps is null && info?.FrameRate is { } rate && Math.Abs(rate - OverlayAnimation.DefaultFps) >= 0.0005)
+            {
+                Overlay.Fps = Math.Round(Math.Clamp(rate, 1, 120), 3);
+                _time = SnapToFrame(_time);
             }
         }
 

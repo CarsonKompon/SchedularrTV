@@ -359,6 +359,32 @@ variable_images:
 
 An image layer references it with `variable_image: variable_image_01` instead of `path`. Other contexts are `promoted_show` and `currently_watching`.
 
+### Automatic images
+
+**+ Automatic image** adds an image layer whose picture is found with a picture search for each promo, from a query such as `{up_next} main character png`. Any image layer can be switched to it under **Image source › Automatic**.
+
+1. Install a picture search plugin, such as **SerpApi image search** (Google Images results), and enter its API key under **Plugins › Settings**. Google's own search API is closed to new users, so a service like SerpApi is needed.
+2. Write the query. Tokens: `{show}` (or `{title}`) the show the promo is for, `{episode}`, `{up_next}` / `{up_next_2}` … `{up_next_10}`, `{watching}` and `{channel}`. A token with no show to fill it leaves the layer out.
+3. Choose which result to **Use** (1st, 2nd…), and tick **Only pictures with a transparent background** for cut-outs. SerpApi asks Google for transparent pictures only, and each picture is checked after download as well.
+
+The picture is fitted inside the layer's box, and works like any image layer: move, keyframe, group or mask with it. Results are counted after leaving out pictures that can't be downloaded or decoded, or (with transparency on) have no clear background.
+
+Each query is searched for once. The picture it finds is kept in the data folder's `automatic-images` folder and reused whenever the same words come up, so it doesn't change between airings, and searches (which a service may charge for) aren't repeated. Anything unused for 90 days is removed. The editor shows the picture once it has been found. A promo made before its picture could be found is made again later, like one whose voice-over failed.
+
+```yaml
+- name: Character
+  kind: image
+  x: 1200
+  y: 200
+  width: 600
+  height: 800
+  automatic_image:
+    query: '{up_next} main character png'
+    result: 1 # 1 is the first result
+    transparent: true
+    # provider: serpapi # optional; the first picture search set up otherwise
+```
+
 ### Shared images
 
 A variable image's pictures (its default and show/block overrides) live in a **shared image**, kept once for every template, so title cards for every show, say, are edited in one place:

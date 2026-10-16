@@ -1,0 +1,92 @@
+@* An automatic image layer's settings (generated promos and overlays): what to search for, which result, and
+   whether only transparent pictures will do. *@
+@using SchedularrTV.Core.Configuration
+@using SchedularrTV.Service.Images
+@inject IServiceProvider Services
+
+<label class="field">
+    <span>Search for</span>
+    <input type="text" value="@Config.Query" placeholder="@QueryPlaceholder" spellcheck="false"
+           @onchange="e => Set(() => Config.Query = e.Value?.ToString()?.Trim() ?? string.Empty)" />
+</label>
+@if (!string.IsNullOrWhiteSpace(Tokens))
+{
+    <p class="hint">@Tokens</p>
+}
+<div class="grid grid-2">
+    <label class="field">
+        <span>Use</span>
+        <select value="@Config.Result" @onchange="e => Set(() => Config.Result = int.TryParse(e.Value?.ToString(), out int result) ? Math.Clamp(result, 1, 50) : 1)">
+            @for (int result = 1; result <= Math.Max(10, Config.Result); result++)
+            {
+                <option value="@result">@Ordinal(result) result</option>
+            }
+        </select>
+    </label>
+    <div class="check-stack">
+        <label class="check">
+            <input type="checkbox" checked="@Config.Transparent" @onchange="e => Set(() => Config.Transparent = e.Value is true)" />
+            <span>Only pictures with a transparent background</span>
+        </label>
+    </div>
+</div>
+@if (Images is { Providers.Count: > 1 } images)
+{
+    <label class="field">
+        <span>Search with</span>
+        <select value="@(Config.Provider ?? "")" @onchange="e => Set(() => Config.Provider = e.Value?.ToString() is { Length: > 0 } id ? id : null)">
+            <option value="">The first one set up</option>
+            @foreach (SchedularrTV.Plugins.Images.IImageSearchProvider provider in images.Providers)
+            {
+                <option value="@provider.Id">@provider.DisplayName</option>
+            }
+        </select>
+    </label>
+}
+@if (Images is null || Images.SetupProblem(Config.Provider) is not null)
+{
+    <p class="hint warn">@(Images?.SetupProblem(Config.Provider) ?? "Automatic images aren't available here.")</p>
+}
+@if (!string.IsNullOrWhiteSpace(Status))
+{
+    <p class="hint">@Status</p>
+}
+<p class="hint">
+    The picture is fitted inside the box. Each query is searched for once, and the picture it finds is kept and reused every time the
+    same words come up, so it doesn't change from airing to airing. Results are counted after leaving out pictures that can't be
+    downloaded@(Config.Transparent ? " or have no transparent background" : "").
+</p>
+
+@code {
+    [Parameter, EditorRequired] public AutomaticImageConfig Config { get; set; } = new();
+
+    [Parameter] public EventCallback Changed { get; set; }
+
+    /// <summary>The tokens the query can use, as a line of help.</summary>
+    [Parameter] public string? Tokens { get; set; }
+
+    /// <summary>What the preview found (or why not), if known.</summary>
+    [Parameter] public string? Status { get; set; }
+
+    [Parameter] public string QueryPlaceholder { get; set; } = "{up_next} main character png";
+
+    private AutomaticImages? Images => Services.GetService(typeof(AutomaticImages)) as AutomaticImages;
+
+    private async Task Set(Action change)
+    {
+        change();
+        await Changed.InvokeAsync();
+    }
+
+    private static string Ordinal(int number) => number switch
+    {
+        1 => "1st (best)",
+        2 => "2nd",
+        3 => "3rd",
+        _ when number % 100 is >= 11 and <= 13 => $"{number}th",
+        _ when number % 10 == 1 => $"{number}st",
+        _ when number % 10 == 2 => $"{number}nd",
+        _ when number % 10 == 3 => $"{number}rd",
+        _ => $"{number}th"
+    };
+}

@@ -232,6 +232,20 @@ public static class SchedulerHost
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<ILogger<SchedularrTV.Service.Writing.AiTextWriter>>()));
 
+        // Automatic image layers (generated promos, overlays) find their pictures with the picture search plugins; what
+        // they find is kept here, so each query is searched for once.
+        builder.Services.AddHttpClient(SchedularrTV.Service.Images.AutomaticImages.HttpClientName, http => http.Timeout = TimeSpan.FromSeconds(30));
+        builder.Services.AddSingleton(sp =>
+        {
+            var images = new SchedularrTV.Service.Images.AutomaticImages(
+                sp.GetServices<SchedularrTV.Plugins.Images.IImageSearchProvider>(),
+                sp.GetRequiredService<IHttpClientFactory>(),
+                Path.Combine(dataDirectory, "automatic-images"),
+                sp.GetRequiredService<ILogger<SchedularrTV.Service.Images.AutomaticImages>>());
+            _ = Task.Run(() => images.Prune(TimeSpan.FromDays(90)));
+            return images;
+        });
+
         builder.Services.AddCors(cors => cors.AddDefaultPolicy(policy => policy
             .WithOrigins(builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? [])
             .AllowAnyHeader()

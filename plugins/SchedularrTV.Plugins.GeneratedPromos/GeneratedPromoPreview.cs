@@ -114,6 +114,9 @@ public sealed class GeneratedPromoPreview(
     /// <summary>The AI writer, when the scheduler provides one (it always does; tools and tests may not).</summary>
     public SchedularrTV.Service.Writing.AiTextWriter? Writer => services.GetService<SchedularrTV.Service.Writing.AiTextWriter>();
 
+    /// <summary>Finds automatic image layers' pictures, when the scheduler provides it (it always does; tools and tests may not).</summary>
+    public SchedularrTV.Service.Images.AutomaticImages? AutomaticImages => services.GetService<SchedularrTV.Service.Images.AutomaticImages>();
+
     /// <summary>The template's AI jobs for the editor's "Try it", with what it would air with right now.</summary>
     public ResolvedGeneratedPromo? Resolve(GeneratedPromoTemplate template, ChannelConfig channel, TimeZoneInfo zone) =>
         GeneratedPromoResolver.Resolve(template, channel.Name, Listings(channel, template, out _), zone, clock.GetUtcNow(), ImageSubjects(channel, template));
@@ -138,6 +141,8 @@ public sealed class GeneratedPromoPreview(
 
         // AI-written captions show once they're written (the usual text until then; the editor redraws when they are).
         promo = GeneratedPromoWriting.Peek(promo, Writer);
+        // Automatic images show once found (looked for in the background; the editor redraws when they are).
+        (promo, _) = await GeneratedPromoImages.FindAutomaticAsync(promo, AutomaticImages, wait: false, cancellationToken).ConfigureAwait(false);
         PromoComposition composition = GeneratedPromoResolver.Compose(promo);
         if (composition.BackgroundPath is { } background && !PromoRenderer.IsImage(background))
         {

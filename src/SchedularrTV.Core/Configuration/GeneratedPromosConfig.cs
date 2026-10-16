@@ -866,6 +866,29 @@ public sealed class GeneratedLayerOverride : IGeneratedPose
     public List<GeneratedKeyframe>? Keyframes { get; set; }
 }
 
+/// <summary>
+/// An automatic image layer's picture: looked up with a picture search (a plugin such as SerpApi) for each airing, by
+/// a query with tokens like <c>{up_next} main character png</c>, and kept once found so the same query reuses it.
+/// Used by generated promo templates and overlays.
+/// </summary>
+public sealed class AutomaticImageConfig
+{
+    /// <summary>What to search for; tokens are filled in for the airing first.</summary>
+    public string Query { get; set; } = string.Empty;
+
+    /// <summary>Which result to use: 1 is the first (best) one, 2 the second…, counting only pictures that can be used.</summary>
+    public int Result { get; set; } = 1;
+
+    /// <summary>Only pictures with a transparent background.</summary>
+    public bool Transparent { get; set; }
+
+    /// <summary>The picture search's id; null uses the first one set up.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Provider { get; set; }
+
+    public AutomaticImageConfig Copy() => (AutomaticImageConfig)MemberwiseClone();
+}
+
 /// <summary>Add reveals inside the combined masks; subtract hides inside them, after any add masks.</summary>
 public enum GeneratedMaskMode { Add, Subtract }
 
@@ -969,6 +992,13 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
     /// <summary>A named variable image instead of the static image path.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? VariableImage { get; set; }
+
+    /// <summary>
+    /// For <see cref="GeneratedLayerKind.Image"/>: an automatic image, looked up with a picture search for each promo,
+    /// instead of <see cref="Path"/> or <see cref="VariableImage"/>.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public AutomaticImageConfig? AutomaticImage { get; set; }
 
     /// <summary>
     /// Which show <see cref="VariableImage"/> is resolved for here (<c>promoted</c>, <c>watching</c>, <c>next</c>,

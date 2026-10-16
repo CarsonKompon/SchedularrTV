@@ -17,9 +17,10 @@ public static class PluginApi
     /// Channels page and dashboard. 1.7 added <c>IPromoMaker</c>, for promos made on request. 1.8 added the hardware
     /// profile and encoding settings (<c>SchedularrTV.Core.Platform</c>: <c>HardwareProfile</c>, <c>LiveEncodingSettings</c>,
     /// <c>RenderEncodingSettings</c>), the <c>LowPowerNotice</c> component, and the manifest's <c>lowPowerNotice</c>
-    /// and settings' <c>lowPowerNote</c>, <c>lowPowerPlaceholder</c> and <c>lowPowerDefault</c>.
+    /// and settings' <c>lowPowerNote</c>, <c>lowPowerPlaceholder</c> and <c>lowPowerDefault</c>. 1.9 added picture
+    /// search services (<c>AddImageSearchProvider</c>), for automatic image layers.
     /// </remarks>
-    public static readonly Version Version = new(1, 8);
+    public static readonly Version Version = new(1, 9);
 
     public static bool IsCompatible(Version wanted) => wanted.Major == Version.Major && wanted.Minor <= Version.Minor;
 }

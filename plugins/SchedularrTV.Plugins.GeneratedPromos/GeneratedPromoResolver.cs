@@ -41,6 +41,16 @@ public sealed record ResolvedGeneratedPromo(
 
     /// <summary>What each video layer plays, by index: its file, or a clip of its episode. Missing when there's nothing to play.</summary>
     public IReadOnlyDictionary<int, PromoVideoSource> LayerVideos { get; init; } = new Dictionary<int, PromoVideoSource>();
+
+    /// <summary>
+    /// What each automatic image layer searches for, by index, with its tokens filled in. Missing for one whose query
+    /// names a show the promo doesn't have (it's left out).
+    /// </summary>
+    public IReadOnlyDictionary<int, SchedularrTV.Service.Images.AutomaticImageRequest> AutomaticImages { get; init; } =
+        new Dictionary<int, SchedularrTV.Service.Images.AutomaticImageRequest>();
+
+    /// <summary>The pictures found for <see cref="AutomaticImages"/>, by index, filled in just before drawing.</summary>
+    public IReadOnlyDictionary<int, string> AutomaticImagePaths { get; init; } = new Dictionary<int, string>();
 }
 
 /// <summary>A video file and where in it a video layer starts playing.</summary>
@@ -168,6 +178,26 @@ public static partial class GeneratedPromoResolver
             }
         }
 
+        // Automatic images: what each searches for (the picture found for a search never changes, so this is enough).
+        Dictionary<int, SchedularrTV.Service.Images.AutomaticImageRequest> automatic = [];
+        IReadOnlyDictionary<string, string>? automaticTokens = null;
+        for (int index = 0; index < template.Layers.Count; index++)
+        {
+            GeneratedLayer layer = template.Layers[index];
+            if (layer is not { Kind: GeneratedLayerKind.Image, AutomaticImage: { } config })
+            {
+                continue;
+            }
+
+            automaticTokens ??= AutomaticImageTokens(template, channelName, used, upcoming, imageSubjects);
+            if (FillQuery(config.Query, automaticTokens) is { } query
+                && SchedularrTV.Service.Images.AutomaticImageRequest.For(config, query) is { } request)
+            {
+                automatic[index] = request;
+                identity += $"|auto-image|{index}|{request.Key}";
+            }
+        }
+
         // Background videos once played silently; promos that now play one's sound are rendered again.
         if (BackgroundSound(template).Enabled && template.BackgroundChoices.Any(path => !PromoRenderer.IsImage(path)))
         {
@@ -203,8 +233,71 @@ public static partial class GeneratedPromoResolver
             VariableImages = images,
             ScriptJob = scriptJob,
             LayerJobs = layerJobs,
-            LayerVideos = videos
+            LayerVideos = videos,
+            AutomaticImages = automatic
         };
+    }
+
+    /// <summary>Tokens an automatic image's query can use, for the editor's help text.</summary>
+    public static readonly IReadOnlyList<(string Token, string Meaning)> AutomaticImageTokenHelp =
+    [
+        ("{show}", "the show this promo is for (also {title})"),
+        ("{episode}", "its episode title"),
+        ("{up_next}", "the next show (also {up_next_1})"),
+        ("{up_next_2}", "… {up_next_10}: that many shows ahead"),
+        ("{watching}", "what's on now, or before the break"),
+        ("{channel}", "the channel's name")
+    ];
+
+    /// <summary>What an automatic image's query tokens read as for this promo; a show it doesn't have reads as empty.</summary>
+    public static IReadOnlyDictionary<string, string> AutomaticImageTokens(GeneratedPromoTemplate template, string channelName,
+        IReadOnlyList<UpNextListing> used, IReadOnlyList<UpNextListing> upcoming, GeneratedImageSubjects? subjects)
+    {
+        UpNextListing? promoted = used.FirstOrDefault();
+        Dictionary<string, string> tokens = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["show"] = promoted?.Title ?? string.Empty,
+            ["title"] = promoted?.Title ?? string.Empty,
+            ["episode"] = promoted?.Episode ?? string.Empty,
+            ["channel"] = channelName,
+            ["watching"] = GeneratedPromoImages.Show(template, used, subjects, GeneratedImageContext.CurrentlyWatching, 0)?.Title ?? string.Empty
+        };
+        for (int ahead = 1; ahead <= 10; ahead++)
+        {
+            string title = upcoming.ElementAtOrDefault(ahead - 1)?.Title ?? string.Empty;
+            tokens[$"up_next_{ahead}"] = title;
+            if (ahead == 1)
+            {
+                tokens["up_next"] = title;
+            }
+        }
+
+        return tokens;
+    }
+
+    /// <summary>
+    /// The query with its tokens filled in; null when one names something the promo doesn't have (a show it can't
+    /// reach), so the layer is left out rather than searching for the rest of the words.
+    /// </summary>
+    public static string? FillQuery(string? query, IReadOnlyDictionary<string, string> tokens)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return null;
+        }
+
+        bool missing = false;
+        string filled = TokenPattern().Replace(query, match =>
+        {
+            if (!tokens.TryGetValue(match.Groups[1].Value, out string? value))
+            {
+                return match.Value;
+            }
+
+            missing |= string.IsNullOrWhiteSpace(value);
+            return value;
+        });
+        return missing || string.IsNullOrWhiteSpace(filled) ? null : string.Join(' ', filled.Split((char[])[' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
     }
 
     /// <summary>
@@ -514,7 +607,8 @@ public static partial class GeneratedPromoResolver
 
             GeneratedLayer layer = template.Layers[index];
             PromoLayer? drawn = Layer(layer, Pose(template, background, layer), TimingFor(template, background, layer),
-                ColorFor(template, background, layer), promo.LayerLines[index], promo.VariableImages, promo.LayerVideos.GetValueOrDefault(index));
+                ColorFor(template, background, layer), promo.LayerLines[index], promo.VariableImages, promo.LayerVideos.GetValueOrDefault(index),
+                promo.AutomaticImagePaths.GetValueOrDefault(index));
             building.Add(index);
             if (drawn is not null && layer.Parent is { } parentId && groups.TryGetValue(parentId, out int parentIndex)
                 && !building.Contains(parentIndex) && Build(parentIndex) is PromoGroupLayer parent)
@@ -723,14 +817,16 @@ public static partial class GeneratedPromoResolver
     /// <param name="colour">Its colour: the layer's, or the chosen background's for it.</param>
     /// <param name="timing">When it shows and how it comes and goes: the layer's, or the chosen background's for it.</param>
     /// <param name="video">For a video layer: what it plays (none: nothing is drawn).</param>
+    /// <param name="automaticImage">For an automatic image layer: the picture found for it (none: nothing is drawn).</param>
     private static PromoLayer? Layer(GeneratedLayer layer, IGeneratedPose pose, IGeneratedTiming timing, string colour, IReadOnlyList<string> lines,
-        IReadOnlyDictionary<string, string> images, PromoVideoSource? video = null)
+        IReadOnlyDictionary<string, string> images, PromoVideoSource? video = null, string? automaticImage = null)
     {
         SKRect bounds = SKRect.Create(pose.X, pose.Y, pose.Width, pose.Height);
         SKColor color = SKColor.Parse(colour);
-        string? imagePath = layer.VariableImage is { Length: > 0 } variable
-            ? images.GetValueOrDefault(GeneratedImageSelectors.Reference(variable, layer.VariableImageShow))
-            : layer.Path;
+        string? imagePath = layer.AutomaticImage is not null ? automaticImage
+            : layer.VariableImage is { Length: > 0 } variable
+                ? images.GetValueOrDefault(GeneratedImageSelectors.Reference(variable, layer.VariableImageShow))
+                : layer.Path;
         PromoLayer? drawn = layer.Kind switch
         {
             GeneratedLayerKind.Rect => new PromoRectLayer

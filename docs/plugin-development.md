@@ -36,7 +36,7 @@ The reference path above assumes a project under **`samples/<project>`**. Regist
   "id": "acme.screen-bug",
   "name": "Screen bug",
   "version": "1.0.0",
-  "apiVersion": "1.8",
+  "apiVersion": "1.9",
   "entryAssembly": "Acme.ScreenBug.dll",
   "enabledByDefault": true,
   "dependencies": [],
@@ -84,6 +84,7 @@ Required dependencies must be available and meet minimum versions. Dependencies 
 | Output | **`AddPlayoutOutput<T>()`** · `IPlayoutPublisher` |
 | Speech | **`AddSpeechProvider<T>()`** · `ITextToSpeechProvider` |
 | Text generation | **`AddTextGenerator<T>()`** · `ITextGenerator` |
+| Picture search (API 1.9) | **`AddImageSearchProvider<T>()`** · `IImageSearchProvider`, for automatic image layers |
 | Publish-time processing | **`AddPlayoutProcessor<T>()`** · `IPlayoutProcessor` |
 | Complete external channels | **`AddExternalChannels<T>()`** · `IExternalChannelSource` |
 | Watched-channel detection | **`AddChannelViewers<T>()`** · `IChannelViewers` |

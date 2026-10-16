@@ -58,6 +58,14 @@ public static class PluginServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>A picture search service for automatic image layers; see <see cref="Images.IImageSearchProvider"/>.</summary>
+    public static IServiceCollection AddImageSearchProvider<TProvider>(this IServiceCollection services)
+        where TProvider : class, Images.IImageSearchProvider
+    {
+        services.AddSingleton<Images.IImageSearchProvider, TProvider>();
+        return services;
+    }
+
     /// <summary>Changes schedules on their way to the outputs; see <see cref="IPlayoutProcessor"/>.</summary>
     public static IServiceCollection AddPlayoutProcessor<TProcessor>(this IServiceCollection services)
         where TProcessor : class, IPlayoutProcessor

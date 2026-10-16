@@ -656,7 +656,19 @@ public static class SchedulerConfigLoader
                 {
                     errors.Add($"{layerScope}: variable_image_show must be promoted, watching, next or next2 to next{GeneratedImageSelectors.MaxAhead}.");
                 }
-                if (layer.Kind == GeneratedLayerKind.Image && string.IsNullOrWhiteSpace(layer.Path) && string.IsNullOrWhiteSpace(layer.VariableImage))
+                if (layer.Kind == GeneratedLayerKind.Image && layer.AutomaticImage is { } automatic)
+                {
+                    if (string.IsNullOrWhiteSpace(automatic.Query))
+                    {
+                        errors.Add($"{layerScope}: automatic_image needs a query.");
+                    }
+
+                    if (automatic.Result is < 1 or > 50)
+                    {
+                        errors.Add($"{layerScope}: automatic_image.result must be from 1 to 50.");
+                    }
+                }
+                else if (layer.Kind == GeneratedLayerKind.Image && string.IsNullOrWhiteSpace(layer.Path) && string.IsNullOrWhiteSpace(layer.VariableImage))
                 {
                     errors.Add($"{layerScope}: an image layer needs a path.");
                 }

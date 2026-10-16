@@ -48,6 +48,66 @@ public static class OverlayImages
     public static Overlay Resolve(Overlay overlay, string? current, IReadOnlyList<string> upcoming) =>
         ResolveFor(overlay, current is null ? null : new OverlayImageSubject(current), [.. upcoming.Select(title => new OverlayImageSubject(title))]);
 
+    /// <summary>Whether any of the design's pictures is found with a picture search.</summary>
+    public static bool HasAutomatic(Overlay overlay) =>
+        overlay.Kind != OverlayKinds.File && overlay.Layers.Any(layer => layer is { Kind: OverlayLayerKinds.Image, AutomaticImage: not null });
+
+    /// <summary>The tokens an automatic image's query can use, for the editor's help text.</summary>
+    public const string AutomaticTokenHelp =
+        "Tokens: {title} the show on now, {episode}, {season_episode}, {year}, {next} the next show, {channel}. A token with nothing to fill it (no next show) leaves the picture out.";
+
+    /// <summary>
+    /// A copy of the design whose automatic images point at their pictures, as <paramref name="find"/> has them (null
+    /// leaves a picture out). The saved overlay isn't changed.
+    /// </summary>
+    public static Overlay WithAutomatic(Overlay overlay, IReadOnlyDictionary<string, string> tokens,
+        Func<SchedularrTV.Service.Images.AutomaticImageRequest, string?> find)
+    {
+        if (!HasAutomatic(overlay))
+        {
+            return overlay;
+        }
+
+        Overlay copy = overlay.Copy();
+        foreach (OverlayLayer layer in copy.Layers.Where(layer => layer is { Kind: OverlayLayerKinds.Image, AutomaticImage: not null }))
+        {
+            layer.Path = Request(layer, tokens) is { } request ? find(request) : null;
+        }
+
+        return copy;
+    }
+
+    /// <summary>What an automatic image searches for with these tokens; null when its query names something they don't have.</summary>
+    public static SchedularrTV.Service.Images.AutomaticImageRequest? Request(OverlayLayer layer, IReadOnlyDictionary<string, string> tokens) =>
+        layer.AutomaticImage is { } config && FillQuery(config.Query, tokens) is { } query
+            ? SchedularrTV.Service.Images.AutomaticImageRequest.For(config, query)
+            : null;
+
+    /// <summary>The query with its tokens filled in; null when a token it uses is empty here (no next show, say).</summary>
+    public static string? FillQuery(string? query, IReadOnlyDictionary<string, string> tokens)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return null;
+        }
+
+        bool missing = false;
+        string filled = System.Text.RegularExpressions.Regex.Replace(query, @"\{([a-z_][a-z_0-9]*)\}", match =>
+        {
+            string? value = tokens.FirstOrDefault(token => string.Equals(token.Key, match.Groups[1].Value, StringComparison.OrdinalIgnoreCase)).Value;
+            if (value is null)
+            {
+                return match.Value;
+            }
+
+            missing |= string.IsNullOrWhiteSpace(value);
+            return value;
+        }, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return missing || string.IsNullOrWhiteSpace(filled)
+            ? null
+            : string.Join(' ', filled.Split((char[])[' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+    }
+
     public static Overlay ResolveFor(Overlay overlay, OverlayImageSubject? current, IReadOnlyList<OverlayImageSubject> upcoming)
     {
         if (overlay.VariableImages.Count == 0 && string.IsNullOrWhiteSpace(overlay.VariableImage)

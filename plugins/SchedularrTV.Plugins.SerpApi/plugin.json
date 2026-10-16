@@ -1,0 +1,32 @@
+{
+  "id": "images-serpapi",
+  "name": "SerpApi image search",
+  "version": "1.0.0",
+  "description": "Finds pictures for automatic image layers in generated promos and overlays (\"{up_next} main character png\") from Google Images results, through SerpApi. Needs a SerpApi account; each query is only searched for once, and what's found is kept.",
+  "author": "SchedularrTV",
+  "apiVersion": "1.9",
+  "entryAssembly": "SchedularrTV.Plugins.SerpApi.dll",
+  "settings": [
+    {
+      "key": "ApiKey",
+      "label": "API key",
+      "type": "Secret",
+      "placeholder": "From serpapi.com › Your account › API key",
+      "description": "Stored in plain text in the settings file, readable by anyone who can open your data folder. SERPAPI_API_KEY in the environment is used when this is empty. Each new query uses one search from your SerpApi plan."
+    },
+    {
+      "key": "SafeSearch",
+      "label": "Safe search",
+      "type": "Boolean",
+      "default": "true",
+      "description": "Leaves explicit pictures out of the results. Recommended for anything that airs."
+    },
+    {
+      "key": "Country",
+      "label": "Country",
+      "type": "Text",
+      "placeholder": "us",
+      "description": "Two-letter country code Google searches from, which can change what's found."
+    }
+  ]
+}

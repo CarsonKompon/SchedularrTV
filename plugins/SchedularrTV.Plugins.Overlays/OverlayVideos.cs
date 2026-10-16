@@ -8,7 +8,8 @@ using SchedularrTV.Service.Hosting;
 namespace SchedularrTV.Overlays;
 
 /// <summary>What the editor needs to know of a video: how long it runs and its size.</summary>
-public sealed record OverlayVideoInfo(TimeSpan? Duration, int Width, int Height)
+/// <param name="FrameRate">Frames a second; null when ffprobe doesn't say.</param>
+public sealed record OverlayVideoInfo(TimeSpan? Duration, int Width, int Height, double? FrameRate = null)
 {
     /// <summary>Height ÷ width; null without a size.</summary>
     public double? Aspect => Width > 0 && Height > 0 ? Height / (double)Width : null;
@@ -54,7 +55,7 @@ public sealed class OverlayVideos(Func<string> ffmpeg, string folder)
         try
         {
             (int code, string output) = await RunAsync(Ffprobe,
-                ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration", "-of", "default=nw=1", path],
+                ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate:format=duration", "-of", "default=nw=1", path],
                 cancellationToken).ConfigureAwait(false);
             OverlayVideoInfo? info = code == 0 ? Parse(output) : null;
             _info[key] = info;
@@ -66,11 +67,12 @@ public sealed class OverlayVideos(Func<string> ffmpeg, string folder)
         }
     }
 
-    /// <summary>ffprobe's <c>width=</c>, <c>height=</c> and <c>duration=</c> lines.</summary>
+    /// <summary>ffprobe's <c>width=</c>, <c>height=</c>, <c>r_frame_rate=</c> (like <c>30000/1001</c>) and <c>duration=</c> lines.</summary>
     public static OverlayVideoInfo? Parse(string output)
     {
         int width = 0, height = 0;
         TimeSpan? duration = null;
+        double? frameRate = null;
         foreach (string line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             int equals = line.IndexOf('=', StringComparison.Ordinal);
@@ -91,10 +93,32 @@ public sealed class OverlayVideos(Func<string> ffmpeg, string folder)
                 case "duration" when double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds) && seconds > 0:
                     duration = TimeSpan.FromSeconds(seconds);
                     break;
+                case "r_frame_rate":
+                    frameRate = Rate(value);
+                    break;
             }
         }
 
-        return width <= 0 && height <= 0 && duration is null ? null : new OverlayVideoInfo(duration, width, height);
+        return width <= 0 && height <= 0 && duration is null ? null : new OverlayVideoInfo(duration, width, height, frameRate);
+    }
+
+    /// <summary>A rate as ffprobe writes it (<c>30000/1001</c>, <c>25/1</c>, <c>30</c>), rounded to 3 places; null for none or nonsense.</summary>
+    public static double? Rate(string value)
+    {
+        string[] parts = value.Trim().Split('/');
+        if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double top))
+        {
+            return null;
+        }
+
+        double bottom = 1;
+        if (parts.Length > 1 && !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out bottom))
+        {
+            return null;
+        }
+
+        double rate = bottom == 0 ? 0 : top / bottom;
+        return rate is >= 1 and <= 240 ? Math.Round(rate, 3) : null;
     }
 
     /// <summary>A PNG still (keeping its transparency) from part-way through; null when ffmpeg can't make one.</summary>
@@ -147,30 +171,29 @@ public sealed class OverlayVideos(Func<string> ffmpeg, string folder)
 
     // ---- Frames, for scrubbing ----
 
-    /// <summary>Frames a second the editor's frames are taken at: the timeline's.</summary>
-    private static int Fps => OverlayAnimation.Fps;
-
     // One extraction of a video's frames at a time each, however often the editor asks.
     private readonly ConcurrentDictionary<string, Task> _preparing = new(StringComparer.Ordinal);
 
-    private string FramesFolder(string path) => Path.Combine(folder, "frames", Key(path));
+    // Frames are taken at the timeline's rate (the overlay's), so each rate has its own.
+    private string FramesFolder(string path, double fps) => Path.Combine(folder, "frames", $"{Key(path)}-{OverlayAnimation.FpsText(fps)}");
 
     /// <summary>
-    /// The frame <paramref name="seconds"/> into the video, as a PNG (keeping its transparency): one of those taken
-    /// in the background by <see cref="PrepareFramesAsync"/> when it's there, otherwise taken now on its own. Past the
-    /// end it's the last frame. Null when ffmpeg can't take one.
+    /// The frame <paramref name="seconds"/> into the video at <paramref name="fps"/> (the timeline's frame rate), as a
+    /// PNG keeping its transparency: one of those taken in the background by <see cref="PrepareFramesAsync"/> when it's
+    /// there, otherwise taken now on its own. Past the end it's the last frame. Null when ffmpeg can't take one.
     /// </summary>
-    public async Task<string?> FrameAsync(string path, double seconds, CancellationToken cancellationToken = default)
+    public async Task<string?> FrameAsync(string path, double seconds, double fps, CancellationToken cancellationToken = default)
     {
         if (!File.Exists(path))
         {
             return null;
         }
 
+        double Fps = Math.Clamp(fps, 1, 240);
         OverlayVideoInfo? info = await InfoAsync(path, cancellationToken).ConfigureAwait(false);
         double last = info?.Duration is { } length ? Math.Max(0, length.TotalSeconds - 1.0 / Fps) : double.MaxValue;
         int index = (int)Math.Round(Math.Clamp(seconds, 0, last) * Fps);
-        string frames = FramesFolder(path);
+        string frames = FramesFolder(path, Fps);
 
         // ffmpeg numbers the frames it writes from 1.
         string prepared = Path.Combine(frames, $"{index + 1:00000}.png");
@@ -213,7 +236,7 @@ public sealed class OverlayVideos(Func<string> ffmpeg, string folder)
     /// Takes every frame of the video's first <paramref name="seconds"/> in one go, in the background, so scrubbing
     /// over it is quick once done. Done once a video (and again for a longer stretch).
     /// </summary>
-    public Task PrepareFramesAsync(string path, double seconds)
+    public Task PrepareFramesAsync(string path, double seconds, double fps)
     {
         if (!File.Exists(path))
         {
@@ -221,12 +244,13 @@ public sealed class OverlayVideos(Func<string> ffmpeg, string folder)
         }
 
         double wanted = Math.Clamp(Math.Ceiling(seconds), 1, 300);
-        return _preparing.GetOrAdd($"{Key(path)}|{wanted}", _ => Task.Run(() => ExtractAsync(path, wanted)));
+        double rate = Math.Clamp(fps, 1, 240);
+        return _preparing.GetOrAdd($"{Key(path)}|{wanted}|{OverlayAnimation.FpsText(rate)}", _ => Task.Run(() => ExtractAsync(path, wanted, rate)));
     }
 
-    private async Task ExtractAsync(string path, double seconds)
+    private async Task ExtractAsync(string path, double seconds, double Fps)
     {
-        string frames = FramesFolder(path);
+        string frames = FramesFolder(path, Fps);
         string done = Path.Combine(frames, $"done-{seconds.ToString("0", CultureInfo.InvariantCulture)}");
         if (File.Exists(done))
         {
@@ -240,7 +264,7 @@ public sealed class OverlayVideos(Func<string> ffmpeg, string folder)
             List<string> arguments = ["-v", "error", "-y"];
             arguments.AddRange(Decoder(path));
             arguments.AddRange(["-i", path, "-t", seconds.ToString("0", CultureInfo.InvariantCulture),
-                "-vf", $"fps={Fps},scale='min(1280,iw)':-2", "-pix_fmt", "rgba", Path.Combine(temp, "%05d.png")]);
+                "-vf", $"fps={OverlayAnimation.FpsText(Fps)},scale='min(1280,iw)':-2", "-pix_fmt", "rgba", Path.Combine(temp, "%05d.png")]);
             (int code, _) = await RunAsync(Ffmpeg, arguments, CancellationToken.None, TimeSpan.FromMinutes(5)).ConfigureAwait(false);
             if (code != 0)
             {

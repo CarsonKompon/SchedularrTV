@@ -134,4 +134,37 @@ public static class GeneratedPromoImages
     };
 
     private static string PathFor(GeneratedVariableImage image, UpNextListing? show) => image.PathFor(show?.Title, show?.Block);
+
+    /// <summary>
+    /// The promo with its automatic images' pictures, and the queries no picture was found for (yet). With
+    /// <paramref name="wait"/> each is searched for now if it hasn't been; otherwise only pictures already found are
+    /// used, and the rest are looked for in the background.
+    /// </summary>
+    public static async Task<(ResolvedGeneratedPromo Promo, IReadOnlyList<string> Missing)> FindAutomaticAsync(ResolvedGeneratedPromo promo,
+        SchedularrTV.Service.Images.AutomaticImages? images, bool wait, CancellationToken cancellationToken = default)
+    {
+        if (promo.AutomaticImages.Count == 0)
+        {
+            return (promo, []);
+        }
+
+        Dictionary<int, string> paths = [];
+        List<string> missing = [];
+        foreach ((int index, SchedularrTV.Service.Images.AutomaticImageRequest request) in promo.AutomaticImages)
+        {
+            string? path = images is null ? null
+                : wait ? await images.GetAsync(request, cancellationToken).ConfigureAwait(false)
+                : images.Peek(request);
+            if (path is not null)
+            {
+                paths[index] = path;
+            }
+            else
+            {
+                missing.Add(request.Query);
+            }
+        }
+
+        return (promo with { AutomaticImagePaths = paths }, missing);
+    }
 }
