@@ -7,10 +7,24 @@
         <div class="modal-head">
             <h2 id="shared-images-title">Shared images</h2>
             <div class="spacer"></div>
-            <button class="btn btn-sm" type="button" @onclick="ExpandAll">Expand all</button>
-            <button class="btn btn-sm" type="button" @onclick="() => _open.Clear()">Collapse all</button>
+            @if (!_cache)
+            {
+                <button class="btn btn-sm" type="button" @onclick="ExpandAll">Expand all</button>
+                <button class="btn btn-sm" type="button" @onclick="() => _open.Clear()">Collapse all</button>
+            }
             <button class="btn btn-ghost btn-icon btn-sm" type="button" title="Close" aria-label="Close" @onclick="Close"><Icon Name="x" Size="16" /></button>
         </div>
+        <div class="row" role="group" aria-label="Shared image settings">
+            <button class="btn btn-sm @(!_cache ? "btn-primary" : "")" type="button" aria-pressed="@(!_cache)" @onclick="() => _cache = false">Shared images</button>
+            <button class="btn btn-sm @(_cache ? "btn-primary" : "")" type="button" aria-pressed="@_cache" @onclick="() => _cache = true">Cache &amp; blocked results</button>
+        </div>
+        @if (_cache)
+        {
+            <AutomaticImageCacheBrowser Changed="Notify" />
+            <button class="btn btn-primary" type="button" @onclick="Close">Done</button>
+        }
+        else
+        {
         <p class="hint">
             Kept once for every generated promo template and overlay on every channel and block: a change here shows up everywhere the
             image is used. Templates and overlays pick one of these for each variable image. One can be removed once nothing uses it.
@@ -61,6 +75,7 @@
         <p class="hint">Show titles and block names are matched loosely: case, punctuation, accents, "&amp;" for "and", a missing "The" and small typos
             are all forgiven. A show override wins; otherwise a block override for the block the show airs in; otherwise the automatic picture,
             when it's on and finds one; otherwise the default. With none of these, the image is hidden and an external program's placeholder is empty.</p>
+        }
     </div>
 </div>
 
@@ -75,6 +90,7 @@
     [Parameter] public string AssetCategory { get; set; } = "shared-images";
 
     private readonly HashSet<string> _open = new(StringComparer.OrdinalIgnoreCase);
+    private bool _cache;
 
     private List<GeneratedSharedImage> Library => Editor.Working.Settings.GeneratedPromosSharedImages;
 

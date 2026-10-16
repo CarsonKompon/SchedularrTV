@@ -61,8 +61,9 @@
     <p class="hint">@Status</p>
 }
 <p class="hint">
-    Each query is searched for once, and the picture it finds is kept and reused every time the same show comes up, so it doesn't
-    change from airing to airing. Results are counted after leaving out pictures that can't be
+    Search results are cached for 30 days, and the chosen picture is kept and reused every time the same show comes up, so it doesn't
+    change from airing to airing. Use “Cache &amp; blocked results” in Edit shared images to inspect searches or reject a picture.
+    Results are counted after leaving out blocked pictures and pictures that can't be
     downloaded@(Config.Transparent ? " or have no transparent background" : "")@(Config.Animated ? " or aren't animated" : "").
     Animated pictures play (looping) from when their layer appears.
 </p>

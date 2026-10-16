@@ -1,0 +1,169 @@
+@using SchedularrTV.Service.Images
+@implements IDisposable
+@inject IServiceProvider Services
+
+<p class="hint">Search results, downloaded pictures and chosen images are cached on this computer. Blocking a result skips it for this
+    resolved query, provider and filters, across all templates and overlays using that search. Queries containing a show's name therefore
+    have their own blocklist. Other shows can still use the same picture. Blocks are saved immediately and survive restarts and cache cleanup.</p>
+<p class="hint">Results are ranked after blocked and unusable pictures are excluded. The next lookup tries the next usable cached result;
+    if none remain, the shared image's default is used. Unblocking also resets this search's choices so its ranking is used again.</p>
+
+@if (Images is null)
+{
+    <p class="hint warn">Automatic images aren't available here.</p>
+}
+else
+{
+    <div class="row">
+        <button class="btn btn-sm" type="button" disabled="@_busy" @onclick="Reload">Refresh cache</button>
+        <span class="hint">Viewing the list makes no search API requests. “Load preview” downloads only that image.</span>
+    </div>
+    @if (_error is not null)
+    {
+        <p class="hint warn" role="alert">@_error</p>
+    }
+    @if (_notice is not null)
+    {
+        <p class="hint" role="status">@_notice</p>
+    }
+    @if (_searches.FirstOrDefault(search => search.Id == _selected) is { } selected)
+    {
+        <button class="btn btn-sm" type="button" @onclick="() => _selected = null">← All cached searches</button>
+        <h3>@selected.Query</h3>
+        <p class="hint">@ProviderName(selected) · @selected.At.ToLocalTime().ToString("g")
+            @(selected.Transparent ? " · transparent only" : "")@(selected.Animated ? " · animated only" : "")</p>
+        @if (selected.Results.Count == 0)
+        {
+            <p class="hint">This cached search returned no results.</p>
+        }
+        @foreach (var entry in selected.Results.Select((result, index) => (Result: result, Number: index + 1)))
+        {
+            AutomaticImageCacheResult result = entry.Result;
+            <div class="cache-result @(result.Blocked ? "blocked" : "")" @key="result.Url">
+                <ImageThumbnail Path="@result.Picture" Size="120" />
+                <div class="cache-result-info">
+                    <strong>Result @entry.Number @(result.Blocked ? "· Blocked" : result.Picked ? "· Chosen" : "")</strong>
+                    <a class="cache-url" href="@result.Url" target="_blank" rel="noopener noreferrer">@result.Url</a>
+                    <span class="hint">@(result.Unusable ? "Couldn't download or decode this result." : result.Picture is null ? "Not downloaded yet." : "Cached locally.")</span>
+                    <div class="row">
+                        @if (result.Picture is null && !result.Unusable)
+                        {
+                            <button class="btn btn-sm" type="button" disabled="@_busy" @onclick="() => Preview(selected, result)">Load preview</button>
+                        }
+                        <button class="btn btn-sm @(result.Blocked ? "" : "btn-danger")" type="button" disabled="@_busy"
+                                @onclick="() => Block(selected, result)">@(result.Blocked ? "Unblock for this search" : "Block for this search")</button>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+    else
+    {
+        <label class="field"><span>Find a show or query</span><input type="search" @bind="_filter" @bind:event="oninput" /></label>
+        <label class="check"><input type="checkbox" @bind="_blockedOnly" /><span>Only searches with blocked results</span></label>
+        @if (_loading)
+        {
+            <p class="hint">Loading cache…</p>
+        }
+        else if (_searches.Count == 0)
+        {
+            <p class="hint">No cached searches yet. Preview or use a variable image with an automatic search to populate the cache.</p>
+        }
+        else if (!Filtered.Any())
+        {
+            <p class="hint">No cached searches match this filter.</p>
+        }
+        @foreach (AutomaticImageCacheSearch search in Filtered.Take(_limit))
+        {
+            <button class="cache-search" type="button" @onclick="() => _selected = search.Id">
+                <strong>@search.Query</strong>
+                <span class="hint">@ProviderName(search) · @search.Results.Count results · @search.Results.Count(result => result.Blocked) blocked
+                    @(search.Transparent ? " · transparent" : "")@(search.Animated ? " · animated" : "")</span>
+            </button>
+        }
+        @if (Filtered.Skip(_limit).Any())
+        {
+            <button class="btn btn-sm" type="button" @onclick="() => _limit += 50">Show more searches</button>
+        }
+    }
+}
+
+@code {
+    [Parameter] public EventCallback Changed { get; set; }
+    private AutomaticImages? Images;
+    private IReadOnlyList<AutomaticImageCacheSearch> _searches = [];
+    private string? _selected, _error, _notice;
+    private string _filter = "";
+    private bool _busy, _loading, _blockedOnly, _disposed;
+    private int _limit = 50;
+    private readonly CancellationTokenSource _life = new();
+    private IEnumerable<AutomaticImageCacheSearch> Filtered => _searches.Where(search =>
+        search.Query.Contains(_filter.Trim(), StringComparison.OrdinalIgnoreCase) && (!_blockedOnly || search.Results.Any(result => result.Blocked)));
+
+    protected override async Task OnInitializedAsync()
+    {
+        Images = Services.GetService(typeof(AutomaticImages)) as AutomaticImages;
+        if (Images is not null) Images.Fetched += OnFetched;
+        await Reload();
+    }
+
+    private string ProviderName(AutomaticImageCacheSearch search) =>
+        Images?.Providers.FirstOrDefault(provider => provider.Id == search.Provider)?.DisplayName ?? search.Provider ?? "Older search";
+
+    private async Task Reload()
+    {
+        if (Images is null || _disposed) return;
+        _loading = true;
+        try { _searches = await Images.CachedSearchesAsync(_life.Token); }
+        catch (OperationCanceledException) when (_disposed) { }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task Preview(AutomaticImageCacheSearch search, AutomaticImageCacheResult result)
+    {
+        await Act(async () =>
+        {
+            string? path = await Images!.PreviewCachedAsync(search.Id, result.Url, _life.Token);
+            _notice = path is null ? "This result couldn't be downloaded or decoded." : null;
+        });
+    }
+
+    private Task Block(AutomaticImageCacheSearch search, AutomaticImageCacheResult result) => Act(async () =>
+    {
+        await Images!.SetBlockedAsync(search.Id, result.Url, !result.Blocked, _life.Token);
+        _notice = result.Blocked ? "Result unblocked. This search's cached choices have been reset."
+            : "Result blocked for this search. The next lookup will choose from the remaining usable results.";
+        await Changed.InvokeAsync();
+    });
+
+    private async Task Act(Func<Task> action)
+    {
+        if (_busy || Images is null) return;
+        _busy = true;
+        _error = null;
+        _notice = null;
+        try { await action(); await Reload(); }
+        catch (OperationCanceledException) when (_disposed) { }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    private void OnFetched(AutomaticImageRequest request)
+    {
+        if (!_disposed) _ = InvokeAsync(async () =>
+        {
+            if (_disposed || _busy) return;
+            await Reload();
+            if (!_disposed) StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        if (Images is not null) Images.Fetched -= OnFetched;
+        _life.Cancel();
+        _life.Dispose();
+    }
+}

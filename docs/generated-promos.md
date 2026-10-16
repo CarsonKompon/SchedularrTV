@@ -379,7 +379,18 @@ Google browser search opens a hidden, isolated browser for each uncached search,
 
 Results are counted after leaving out pictures that can't be downloaded or decoded, or (with transparency on) have no clear background. When nothing usable is found, the default is used.
 
-Each query is searched for once. The picture it finds is kept in the data folder's `automatic-images` folder and reused whenever the same show comes up, so it doesn't change between airings, and searches (which a service may charge for) aren't repeated. Anything unused for 90 days is removed. A promo waiting on a picture that's still being searched for is made once the search finishes, rather than twice; the editor shows the picture once it's found.
+Search result lists are cached for **30 days**. The chosen picture is kept in the data folder's `automatic-images` folder and reused whenever the same show comes up, so it doesn't change between airings and repeated lookups don't spend another API search. Chosen pictures can continue to be reused after the result list expires. Unused cache entries are removed after **90 days**. A promo waiting on a picture that's still being searched for is made once the search finishes, rather than twice; the editor shows the picture once it's found.
+
+#### Inspecting cached images and blocking unwanted results
+
+Open **Edit shared images… → Cache & blocked results** from either Generated Promos or Overlays. This lists searches from across the schedule; filter by a show title or query, or show only searches with blocked results. Open a search to see its candidate URLs, cached previews, chosen images, and blocked or unusable results. **Load preview** downloads an uncached candidate without making a new search API request or selecting it.
+
+- **Block for this search** saves the block immediately and resets the choices for that query. The next lookup skips blocked images and chooses from the remaining usable cached results, respecting the configured result number. If none remain, the shared image's default is used.
+- Blocks apply to the **resolved query, search provider and transparency/animation filters**, across all variables using that same search. A query such as `Rugrats main character png` has its own blocklist; other shows can still use the same image. A constant query without a show token shares its blocklist wherever it is used.
+- **Unblock for this search** makes the image eligible again and resets that search's choices to use the ranking again.
+- Blocklists survive restarts and ordinary cache cleanup. Cached image files stay available to other queries; blocking does not delete them. Opening the cache list does not search or download anything.
+
+Older cache files remain usable. Their query labels appear after that variable's preview or live lookup is used again; until then they appear as **Older cached search**.
 
 ```yaml
 settings:

@@ -9,6 +9,9 @@
 .ov-scope .ov-item-name .muted { font-size: 12px; }
 
 /* File placement */
+.ov-scope .ov-preview-video { display: block; width: 100%; max-height: 70vh; margin-top: 12px; border-radius: 8px;
+    background: repeating-conic-gradient(#343434 0 25%, #555 0 50%) 0 0 / 20px 20px; }
+
 .ov-scope .ov-anchors { display: grid; grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(3, 22px); gap: 4px; padding: 6px;
     border: 1px solid var(--line); border-radius: 8px; width: max-content; background: rgba(255,255,255,.03); }
 .ov-scope .ov-anchor { border: 1px solid var(--line); border-radius: 4px; background: transparent; cursor: pointer; }

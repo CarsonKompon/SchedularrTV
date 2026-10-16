@@ -64,12 +64,12 @@ public sealed class AutomaticImageLookup(AutomaticImages images, bool queue) : I
 
 /// <summary>
 /// Finds variable images' automatic pictures with the installed picture searches (plugins), and keeps them: each search's
-/// results, each picture downloaded (checked, and saved as a PNG), and which picture each request got. A request is
-/// only ever searched for once, so pictures stay the same from airing to airing and searches (often paid for) aren't
-/// repeated. Callers that can't wait <see cref="Peek"/>, which starts the search in the background and raises
+/// results, each picture downloaded (checked, with animation preserved), and which picture each request got. Search
+/// results last 30 days; chosen pictures stay until unused cache entries are pruned or a user changes the blocklist.
+/// Callers that can't wait <see cref="Peek"/>, which starts the search in the background and raises
 /// <see cref="Fetched"/> when the picture's there.
 /// </summary>
-public sealed class AutomaticImages
+public sealed partial class AutomaticImages
 {
     public const string HttpClientName = "automatic-images";
 
@@ -77,7 +77,7 @@ public sealed class AutomaticImages
     private readonly IHttpClientFactory? _http;
     private readonly ILogger? _logger;
     private readonly string _folder;
-    private readonly ConcurrentDictionary<string, Task<string?>> _running = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Lazy<Task<string?>>> _running = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, (DateTime At, string Problem)> _failed = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, bool> _transparent = new(StringComparer.Ordinal);
 
@@ -128,6 +128,7 @@ public sealed class AutomaticImages
     /// </summary>
     public string? Peek(AutomaticImageRequest request, bool queue = true)
     {
+        RememberRequest(request);
         if (Picked(request) is { } picked)
         {
             return picked;
@@ -153,6 +154,7 @@ public sealed class AutomaticImages
     /// <summary>The request's picture, looked for now if it hasn't been yet; null when none can be found.</summary>
     public async Task<string?> GetAsync(AutomaticImageRequest request, CancellationToken cancellationToken = default)
     {
+        RememberRequest(request);
         if (Picked(request) is { } picked)
         {
             return picked;
@@ -168,7 +170,7 @@ public sealed class AutomaticImages
     }
 
     private Task<string?> Start(AutomaticImageRequest request) =>
-        _running.GetOrAdd(request.Key, key => Task.Run(async () =>
+        _running.GetOrAdd(request.Key, key => new Lazy<Task<string?>>(() => Task.Run(async () =>
         {
             try
             {
@@ -186,7 +188,7 @@ public sealed class AutomaticImages
                 _running.TryRemove(request.Key, out _);
                 Fetched?.Invoke(request);
             }
-        }));
+        }))).Value;
 
     private void Fail(AutomaticImageRequest request, string problem) => _failed[request.Key] = (DateTime.UtcNow, problem);
 
@@ -201,7 +203,7 @@ public sealed class AutomaticImages
             if (File.Exists(pick) && File.ReadAllText(pick).Trim() is { Length: > 0 } name)
             {
                 string picture = Path.Combine(_folder, "pictures", Path.GetFileName(name));
-                if (File.Exists(picture))
+                if (File.Exists(picture) && !BlockedPicture(request, name))
                 {
                     Touch(picture);
                     Touch(pick);
@@ -218,6 +220,19 @@ public sealed class AutomaticImages
 
     private async Task<string?> FindAsync(AutomaticImageRequest request, CancellationToken cancellationToken)
     {
+        string? searchId = SearchId(request);
+        if (searchId is null) return await FindCoreAsync(request, cancellationToken).ConfigureAwait(false);
+        SemaphoreSlim gate = SearchGate(searchId);
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await FindCoreAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        finally { gate.Release(); }
+    }
+
+    private async Task<string?> FindCoreAsync(AutomaticImageRequest request, CancellationToken cancellationToken)
+    {
         if (ProviderFor(request.Provider) is not { } provider)
         {
             Fail(request, "No picture search is installed.");
@@ -229,6 +244,7 @@ public sealed class AutomaticImages
         int usable = 0;
         foreach (string url in urls.Take(Candidates + wanted))
         {
+            if (BlockedUrls(SearchId(provider.Id, request)).Contains(url)) continue;
             if (await DownloadAsync(url, cancellationToken).ConfigureAwait(false) is not { } picture)
             {
                 continue;
@@ -261,13 +277,14 @@ public sealed class AutomaticImages
         return null;
     }
 
-    private sealed record SearchFile(DateTime At, List<string> Urls);
+    // Optional metadata keeps existing cache files readable; visiting an old query labels it through its request record.
+    private sealed record SearchFile(DateTime At, List<string> Urls, string? Query = null, string? Provider = null,
+        bool Transparent = false, bool Animated = false);
 
     /// <summary>The search's results (picture addresses, best first), kept so the same search isn't made twice.</summary>
     private async Task<IReadOnlyList<string>> SearchAsync(IImageSearchProvider provider, AutomaticImageRequest request, CancellationToken cancellationToken)
     {
-        string file = Path.Combine(_folder, "searches", Hash($"{provider.Id}|{request.Query.Trim().ToLowerInvariant()}|{request.Transparent}"
-            + (request.Animated ? "|animated" : string.Empty)) + ".json");
+        string file = SearchFilePath(SearchId(provider.Id, request));
         try
         {
             if (File.Exists(file) && JsonSerializer.Deserialize<SearchFile>(await File.ReadAllTextAsync(file, cancellationToken).ConfigureAwait(false)) is { } kept
@@ -286,7 +303,7 @@ public sealed class AutomaticImages
         List<string> urls = [.. results.Select(result => result.Url).Where(url => Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
             && uri.Scheme is "http" or "https").Distinct(StringComparer.Ordinal)];
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-        await File.WriteAllTextAsync(file, JsonSerializer.Serialize(new SearchFile(DateTime.UtcNow, urls)), cancellationToken).ConfigureAwait(false);
+        await WriteJsonAsync(file, new SearchFile(DateTime.UtcNow, urls, request.Query, provider.Id, request.Transparent, request.Animated), cancellationToken).ConfigureAwait(false);
         return urls;
     }
 
@@ -490,7 +507,7 @@ public sealed class AutomaticImages
     public void Prune(TimeSpan age)
     {
         DateTime cutoff = DateTime.UtcNow - age;
-        foreach (string sub in (string[])["pictures", "searches", "picks"])
+        foreach (string sub in (string[])["pictures", "searches", "picks", "requests"])
         {
             string directory = Path.Combine(_folder, sub);
             if (!Directory.Exists(directory))

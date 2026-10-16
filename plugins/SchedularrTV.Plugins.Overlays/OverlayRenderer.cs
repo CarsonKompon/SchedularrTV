@@ -73,6 +73,41 @@ public sealed class OverlayRenderer(Func<string> folder)
         return Draw(overlay, tokens, scale, backdrop: true, posters ?? new Dictionary<string, string>(), clock);
     }
 
+    /// <summary>A video-preview frame, with optional test backdrop. Video frames use the same placement as canvas stills.</summary>
+    public static void DrawPreviewFrame(SKCanvas canvas, Overlay overlay, IReadOnlyDictionary<string, string> tokens,
+        int width, int height, bool backdrop, IReadOnlyDictionary<string, string> videos, OverlayClock clock)
+    {
+        canvas.Clear(SKColors.Transparent);
+        if (backdrop) DrawBackdrop(canvas, width, height);
+        if (overlay.Kind == OverlayKinds.File)
+        {
+            string? source = overlay.File;
+            bool owned = false;
+            SKImage? picture = source is null ? null : IsVideo(source)
+                ? videos.TryGetValue(source, out string? frame) ? SKImage.FromEncodedData(frame) : null
+                : SchedularrTV.Service.Images.AnimatedImages.FrameAt(source, clock.Seconds, out owned);
+            if (source is not null && IsVideo(source)) owned = true;
+            try
+            {
+                if (picture is null) return;
+                SKRect box = FileBox(overlay, width, height, picture.Height / (float)picture.Width);
+                using var paint = new SKPaint { Color = SKColors.White.WithAlpha((byte)Math.Round(
+                    Math.Clamp(overlay.Opacity / 100 * OverlayAnimation.Envelope(clock), 0, 1) * 255)), IsAntialias = true };
+                canvas.DrawImage(picture, box, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear), paint);
+            }
+            finally { if (owned) picture?.Dispose(); }
+            return;
+        }
+
+        canvas.Save();
+        canvas.Scale(width / (float)Math.Max(1, overlay.Width), height / (float)Math.Max(1, overlay.Height));
+        using var opacity = new SKPaint { Color = SKColors.White.WithAlpha((byte)Math.Round(Math.Clamp(overlay.Opacity, 0, 100) / 100 * 255)) };
+        canvas.SaveLayer(SKRect.Create(overlay.Width, overlay.Height), opacity);
+        DrawDesign(canvas, overlay, tokens, videos, clock);
+        canvas.Restore();
+        canvas.Restore();
+    }
+
     /// <summary>Whether a layer is drawn into the design's picture itself (not a group, which draws nothing, nor a mask, drawn only into its target).</summary>
     public static bool IsDrawn(OverlayLayer layer) => !OverlayHierarchy.IsGroup(layer) && layer.Mask is null;
 

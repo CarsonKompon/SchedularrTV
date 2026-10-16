@@ -1,5 +1,8 @@
 using SchedularrTV.Overlays.Components;
 using SchedularrTV.Plugins.Editor;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 
 namespace SchedularrTV.Overlays;
 
@@ -35,7 +38,19 @@ public sealed class OverlaysPlugin : IPlugin
             () => OverlayVideos.ResolveFfmpeg(context),
             provider.GetService<ILoggerFactory>()?.CreateLogger<OverlayAnimations>()));
 
+        services.AddSingleton(provider => new OverlayPreviewVideos(Path.Combine(context.DataDirectory, "previews"),
+            () => OverlayVideos.ResolveFfmpeg(context), provider.GetRequiredService<OverlayVideos>()));
+
         services.AddPlayoutProcessor<OverlayProcessor>();
         services.AddChannelEditorTab<OverlaysChannelTab>(context, "Overlays", order: 55, icon: "layers");
+    }
+
+    public void MapEndpoints(IEndpointRouteBuilder endpoints, IPluginContext context)
+    {
+        endpoints.MapGet("/api/overlays/previews/{name}", (string name, bool? download, OverlayPreviewVideos previews) =>
+            previews.RenderedFile(name) is { } file
+                ? Results.File(file, Path.GetExtension(file) == ".webm" ? "video/webm" : "video/mp4",
+                    fileDownloadName: download == true ? name : null, enableRangeProcessing: true)
+                : Results.NotFound());
     }
 }

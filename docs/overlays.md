@@ -33,6 +33,19 @@ The canvas editor works like the [Generated promos](generated-promos.md) one:
 
 - **Animated GIFs** (and animated WebP) play in picture layers, variable images and file overlays. In a design, a GIF plays from when its layer comes in, looping, and makes the design animated: it airs as a transparent video of each appearance, like a keyframed one (a whole-programme overlay plays it for its **Animation length**, then holds). A file overlay's GIF is turned into a transparent video once, in the background, and shows as its still picture until then.
 
+### Render a preview video
+
+At the bottom of the overlay editor, open **Preview video**:
+
+1. Choose **Transparent WebM (alpha)** for an export with a transparent background, or **MP4 over the canvas test background** to inspect it against the same stand-in picture as the canvas.
+2. Choose **Quick preview** (up to 640 px wide), **Preview** (up to 1280 px), or **Full canvas size**. File overlays use a 1920×1080 canvas before this scaling. Output dimensions are rounded to even pixels for encoding.
+3. Set **Preview length** (up to 300 seconds). It starts with the editor's timeline length and renders from the beginning of one appearance; whole-programme overlays preview their opening animation without an end fade.
+4. Click **Render preview video**. Progress and **Cancel** are shown while it renders. When ready, play it in the editor or use **Download transparent WebM / MP4**.
+
+Previews use the current editor settings, its frame rate, sample text tokens, and **Preview show contexts** for variable images. Pending automatic-image lookups are awaited before rendering. Keyframes, masks, nested groups, GIFs, fades, and actual frames from video layers are included. Video layers play from their appearance time and hold their last frame after they end, as in canvas scrubbing. File overlays are anchored and sized as configured. These are **silent visual previews**; source-video audio is not included.
+
+The WebM player has a checkerboard behind it to show transparency; that checkerboard is not part of the exported video. Browser support for WebM alpha varies. Rendering needs ffmpeg with `libvpx-vp9` for WebM or `libx264` for MP4. Completed previews are stored separately from on-air graphics in the Overlays plugin's `previews` folder. Each is a snapshot, so render again after editing the overlay.
+
 ### Timeline and keyframes
 
 Drag along the timeline under the canvas to scrub through one appearance: layers coming in late or going early fade as they will on air. For a whole-programme overlay, the timeline is its **Animation length** (10 seconds unless set under Timing). The **« ‹ › »** buttons and **← / →** (Shift for a second), **Home / End**, **[ / ]**, **K** and **Delete** work as in Generated promos.
@@ -118,6 +131,8 @@ Each use has a **For which show** selector: **Its usual one**, **Currently watch
 Shows without an override (or automatic picture) and unavailable schedule contexts use the default image. With no default, that image is hidden. Matching **Other pictures** variants (such as holiday or rating badges) take priority over a screenbug's variable image.
 
 Use **Preview show contexts** to enter a current show and upcoming titles and see their images on the canvas; a picture layer showing a variable with an automatic picture says what was found for the preview's show. These fields only affect the preview; the live overlay uses the actual schedule.
+
+Automatic image searches reuse cached result lists and downloaded pictures. Open **Edit shared images… → Cache & blocked results** to inspect them and block an unwanted result for a resolved show/query. The next lookup picks from the remaining usable cached results. Blocks are saved immediately, shared with promos using the same query/provider/filters, and survive restarts and cache cleanup. **Unblock** makes a result eligible again. See [cache and blocklist controls](generated-promos.md#inspecting-cached-images-and-blocking-unwanted-results).
 
 Example inside an overlay's YAML (the shared image itself is under `settings.plugins.generated-promos.shared_images`, as for Generated promos):
 

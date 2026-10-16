@@ -1,0 +1,8 @@
+.cache-search { display: flex; flex-direction: column; gap: 4px; width: 100%; margin: 8px 0; padding: 12px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: inherit; text-align: left; cursor: pointer; }
+.cache-search:hover { border-color: var(--accent); }
+.cache-result { display: flex; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.cache-result.blocked { border-left: 3px solid var(--warn); padding-left: 10px; }
+.cache-result-info { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 8px; }
+.cache-url { overflow-wrap: anywhere; font-size: 12px; }
+@media (max-width: 540px) { .cache-result { flex-direction: column; } }

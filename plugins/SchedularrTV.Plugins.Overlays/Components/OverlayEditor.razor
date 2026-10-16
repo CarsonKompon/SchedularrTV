@@ -709,6 +709,54 @@
             }
         </div>
     </div>
+    <h3 class="ed-section">Preview video</h3>
+    <div class="grid grid-2">
+        <label class="field"><span>Output</span>
+            <select @bind="_videoTransparent" disabled="@_renderingVideo">
+                <option value="true">Transparent WebM (alpha)</option>
+                <option value="false">MP4 over the canvas test background</option>
+            </select>
+        </label>
+        <label class="field"><span>Size</span>
+            <select @bind="_videoWidth" disabled="@_renderingVideo">
+                <option value="640">Quick preview (up to 640 px wide)</option>
+                <option value="1280">Preview (up to 1280 px wide)</option>
+                <option value="0">Full canvas size</option>
+            </select>
+        </label>
+        <label class="field"><span>Preview length (seconds)</span>
+            <input type="number" min="0.1" max="300" step="0.1" value="@Number(VideoSeconds)" disabled="@_renderingVideo"
+                   @onchange="e => _videoSeconds = Math.Clamp(Number(e, VideoSeconds), 0.1, 300)" />
+        </label>
+    </div>
+    <p class="hint">Renders one appearance from the beginning using the preview show contexts above, at the overlay's frame rate.
+        Includes keyframes, masks, GIFs and video-layer pictures; audio is not included. Whole-programme overlays preview their opening animation.
+        The downloaded video is a snapshot: render again after edits. Preview length is limited to 5 minutes.</p>
+    <div class="row row-wrap">
+        <button class="btn btn-primary" type="button" disabled="@_renderingVideo" @onclick="RenderPreviewVideo">@(_renderingVideo ? "Rendering…" : "Render preview video")</button>
+        @if (_renderingVideo)
+        {
+            <button class="btn btn-sm" type="button" @onclick="() => _videoRenderCancel?.Cancel()">Cancel</button>
+            <progress max="100" value="@_videoProgress"></progress>
+        }
+        @if (_renderedVideo is { } video)
+        {
+            <a class="btn btn-sm" href="@(video.Url + "?download=true")" download="@video.Name">Download @(video.Transparent ? "transparent WebM" : "MP4")</a>
+            <span class="hint">@video.Width × @video.Height · @video.Seconds.ToString("0.##") seconds</span>
+        }
+    </div>
+    @if (_videoMessage is not null)
+    {
+        <p class="hint @(_videoFailed ? "warn" : "")" role="status">@_videoMessage</p>
+    }
+    @if (_renderedVideo is { } rendered)
+    {
+        <video class="ov-preview-video" @key="rendered.Name" src="@rendered.Url" controls playsinline></video>
+        @if (rendered.Transparent)
+        {
+            <p class="hint">The checkerboard is only behind the player; it isn't in the exported WebM. Alpha playback depends on browser support.</p>
+        }
+    }
 </div>
 
 @if (_drag is not null || _scrubbing || _keyDrag is not null)
@@ -822,6 +870,15 @@
     private string _previewCurrent = "The Show";
     private string _previewUpcoming = "Another Show\nA Later Show";
     private string? _previewError;
+    private bool _renderingVideo, _videoFailed;
+    private bool _videoTransparent = true;
+    private int _videoWidth = 1280;
+    private double? _videoSeconds;
+    private double _videoProgress;
+    private string? _videoMessage;
+    private OverlayPreviewVideo? _renderedVideo;
+    private CancellationTokenSource? _videoRenderCancel;
+    private double VideoSeconds => _videoSeconds ?? Math.Clamp(TimelineLength, 0.1, 300);
     private OverlayVideos? _videos;
     private SchedularrTV.Service.Images.AutomaticImages? _automatic;
 
@@ -1672,6 +1729,54 @@
         Enum.TryParse(e.Value?.ToString(), out GeneratedShape shape) && shape != GeneratedShape.Rectangle ? shape : null;
 
     // ---- Automatic images ----
+    private async Task RenderPreviewVideo()
+    {
+        if (_renderingVideo) return;
+        _renderingVideo = true;
+        _videoFailed = false;
+        _videoProgress = 0;
+        _videoMessage = "Preparing preview images…";
+        _renderedVideo = null;
+        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(_life.Token);
+        _videoRenderCancel = cancel;
+        try
+        {
+            var renderer = Services.GetRequiredService<OverlayPreviewVideos>();
+            Overlay source = Overlay.Copy();
+            double seconds = VideoSeconds;
+            bool whole = TimingSchedule.Always, transparent = _videoTransparent;
+            int width = _videoWidth;
+            string current = _previewCurrent;
+            string[] upcoming = _previewUpcoming.Replace("\r", "").Split('\n').Select(title => title.Trim()).ToArray();
+            var lookup = _automatic?.Lookup(queue: true);
+            Overlay snapshot = OverlayImages.Resolve(source, current, upcoming, Editor.Working.Settings.GeneratedPromosSharedImages, lookup);
+            if (lookup?.Pending == true)
+            {
+                _videoMessage = "Waiting for automatic images…";
+                await lookup.WaitAsync(cancel.Token);
+                snapshot = OverlayImages.Resolve(source, current, upcoming, Editor.Working.Settings.GeneratedPromosSharedImages, _automatic?.Lookup(queue: false));
+            }
+            var tokens = new Dictionary<string, string>(OverlayProcessor.SampleTokens)
+            {
+                ["channel"] = ChannelName, ["title"] = current, ["next"] = upcoming.FirstOrDefault() ?? string.Empty
+            };
+            var progress = new Progress<OverlayPreviewProgress>(update =>
+            {
+                if (!cancel.IsCancellationRequested && !_life.IsCancellationRequested)
+                    _ = InvokeAsync(() =>
+                    {
+                        if (!_renderingVideo || !ReferenceEquals(_videoRenderCancel, cancel)) return;
+                        _videoMessage = update.Message; _videoProgress = update.Percent; StateHasChanged();
+                    });
+            });
+            _renderedVideo = await renderer.RenderAsync(snapshot, tokens, seconds, whole, transparent, width, progress, cancel.Token);
+            _videoMessage = "Preview ready.";
+        }
+        catch (OperationCanceledException) { _videoMessage = "Preview cancelled."; }
+        catch (Exception ex) { _videoFailed = true; _videoMessage = ex.GetBaseException().Message; }
+        finally { _videoRenderCancel = null; _renderingVideo = false; }
+    }
+
 
     // A variable image's automatic picture found (or not): drawn again, so it shows.
     private void OnAutomaticImage(SchedularrTV.Service.Images.AutomaticImageRequest request)
