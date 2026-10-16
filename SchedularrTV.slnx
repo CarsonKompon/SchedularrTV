@@ -13,6 +13,7 @@
     <Project Path="plugins/SchedularrTV.Plugins.CreditSqueeze/SchedularrTV.Plugins.CreditSqueeze.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.GeneratedPromos/SchedularrTV.Plugins.GeneratedPromos.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.Iptv/SchedularrTV.Plugins.Iptv.csproj" />
+    <Project Path="plugins/SchedularrTV.Plugins.Klipy/SchedularrTV.Plugins.Klipy.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.LocalAi/SchedularrTV.Plugins.LocalAi.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.MiniMax/SchedularrTV.Plugins.MiniMax.csproj" />
     <Project Path="plugins/SchedularrTV.Plugins.News/SchedularrTV.Plugins.News.csproj" />

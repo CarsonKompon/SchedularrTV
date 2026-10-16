@@ -122,7 +122,7 @@ public sealed class AutomaticImageTests : IDisposable
 
         string? picture = await images.GetAsync(request);
 
-        Assert.NotNull(picture);
+        Assert.True(picture is not null, images.Problem(request));
         using (SKBitmap bitmap = SKBitmap.Decode(picture))
         {
             Assert.Equal(SKColors.Blue, bitmap.GetPixel(32, 32));

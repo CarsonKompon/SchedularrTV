@@ -168,7 +168,7 @@ public sealed class AutomaticImages
     }
 
     private Task<string?> Start(AutomaticImageRequest request) =>
-        _running.GetOrAdd(request.Key, _ => Task.Run(async () =>
+        _running.GetOrAdd(request.Key, key => Task.Run(async () =>
         {
             try
             {
@@ -413,7 +413,9 @@ public sealed class AutomaticImages
     /// <summary>A downloaded file as a PNG, shrunk to at most <see cref="MaxSide"/> on a side; null when it isn't a picture Skia can read.</summary>
     public static byte[]? Normalise(byte[] data)
     {
-        using SKBitmap? decoded = SKBitmap.Decode(data);
+        using SKCodec? codec = SKCodec.Create(new SKMemoryStream(data));
+        if (codec is null) return null;
+        using SKBitmap? decoded = SKBitmap.Decode(codec);
         if (decoded is null || decoded.Width <= 0 || decoded.Height <= 0)
         {
             return null;

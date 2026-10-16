@@ -47,6 +47,11 @@
         </select>
     </label>
 }
+@if (Images?.ProviderFor(Config.Provider)?.Id == "klipy")
+{
+    <p class="hint">Powered by <a href="https://klipy.com" target="_blank" rel="noopener noreferrer">KLIPY</a>.
+        Searches GIFs, or stickers when a transparent background is required.</p>
+}
 @if (Images is null || Images.SetupProblem(Config.Provider) is not null)
 {
     <p class="hint warn">@(Images?.SetupProblem(Config.Provider) ?? "Automatic images aren't available here.")</p>

@@ -1,0 +1,32 @@
+{
+  "id": "images-klipy",
+  "name": "Klipy GIF search",
+  "version": "1.0.0",
+  "description": "Powered by KLIPY. Finds animated GIFs for Variable Images in generated promos and overlays. Uses sticker search when transparent backgrounds are requested. Needs a Klipy API key; pictures are kept and reused with their animation intact.",
+  "author": "SchedularrTV",
+  "apiVersion": "1.9",
+  "entryAssembly": "SchedularrTV.Plugins.Klipy.dll",
+  "settings": [
+    {
+      "key": "ApiKey",
+      "label": "API key",
+      "type": "Secret",
+      "placeholder": "From partner.klipy.com › API Keys",
+      "description": "Stored in plain text in the settings file, readable by anyone who can open your data folder. KLIPY_API_KEY in the environment is used when this is empty."
+    },
+    {
+      "key": "SafeSearch",
+      "label": "Safe search",
+      "type": "Boolean",
+      "default": "true",
+      "description": "Uses Klipy's high content filter to leave explicit results out. Recommended for anything that airs."
+    },
+    {
+      "key": "Country",
+      "label": "Country",
+      "type": "Text",
+      "placeholder": "us",
+      "description": "Optional two-letter country code for localized search results."
+    }
+  ]
+}
