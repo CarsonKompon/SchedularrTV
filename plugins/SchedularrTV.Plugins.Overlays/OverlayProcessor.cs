@@ -21,15 +21,26 @@ public sealed class OverlayProcessor : IPlayoutProcessor
     private readonly OverlayRenderer renderer;
     private readonly ILogger<OverlayProcessor> logger;
     private readonly AiTextWriter? writer;
+    private readonly OverlayAnimations? animations;
+
+    /// <summary>Animated designs are made into videos for programmes starting this soon; later ones as they get closer.</summary>
+    public static readonly TimeSpan AnimationLookahead = TimeSpan.FromHours(12);
 
     /// <param name="writer">Writes AI-written text layers; without it they show their usual text.</param>
-    /// <param name="republisher">Publishes again when AI-written captions are ready, so they replace the usual text.</param>
+    /// <param name="republisher">Publishes again when AI-written captions (or animated designs' videos) are ready, so they're used.</param>
+    /// <param name="animations">Makes animated designs into videos; without it they show standing still.</param>
     public OverlayProcessor(OverlayRenderer renderer, ILogger<OverlayProcessor> logger, AiTextWriter? writer = null,
-        IScheduleRepublisher? republisher = null)
+        IScheduleRepublisher? republisher = null, OverlayAnimations? animations = null)
     {
         this.renderer = renderer;
         this.logger = logger;
         this.writer = writer;
+        this.animations = animations;
+        if (animations is not null && republisher is not null)
+        {
+            animations.Rendered += republisher.RequestRepublish;
+        }
+
         if (writer is not null && republisher is not null)
         {
             // Captions are written in the background (each publish uses what's ready); a finished one is put on air
@@ -161,6 +172,16 @@ public sealed class OverlayProcessor : IPlayoutProcessor
             yield break;
         }
 
+        if (OverlayAnimation.IsAnimated(overlay))
+        {
+            foreach (JsonObject animated in Animated(overlay, entry, showing, tokens))
+            {
+                yield return animated;
+            }
+
+            yield break;
+        }
+
         IReadOnlyList<(LayerTiming Timing, IReadOnlyList<OverlayLayer> Layers)> groups = OverlayRenderer.Groups(overlay);
         if (groups.Count == 1 && groups[0].Timing.IsWhole && groups[0].Layers.All(layer => layer.Kind != OverlayLayerKinds.Video))
         {
@@ -182,7 +203,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
 
             JsonObject? layer = parts.Count == 1 && parts[0].Kind == OverlayLayerKinds.Video
                 ? VideoLayer(overlay, parts[0], own)
-                : Layer(Part(overlay, parts), own, tokens);
+                : Layer(OverlayRenderer.Part(overlay, parts), own, tokens);
             if (layer is not null)
             {
                 yield return layer;
@@ -190,12 +211,91 @@ public sealed class OverlayProcessor : IPlayoutProcessor
         }
     }
 
-    /// <summary>The design with only these of its layers, drawn as a picture of its own.</summary>
-    private static Overlay Part(Overlay overlay, IReadOnlyList<OverlayLayer> layers)
+    /// <summary>
+    /// An animated design's layers on one entry. Its drawn layers (each run of them between its videos) go as a video of
+    /// one appearance, timed as the overlay is; a whole-programme one plays its animation as each part of the programme
+    /// starts and then stays as it ends up. Until a video is made, the design shows standing still.
+    /// </summary>
+    private IEnumerable<JsonObject> Animated(Overlay overlay, ScheduleEntry entry, OverlayShowing showing, IReadOnlyDictionary<string, string> tokens)
     {
-        Overlay part = overlay.Copy();
-        part.Layers = [.. layers.Select(layer => layer.Copy())];
-        return part;
+        bool whole = overlay.When == OverlayWhen.Always;
+        double length = OverlayAnimation.Length(overlay);
+        bool soon = entry.Start - DateTimeOffset.UtcNow < AnimationLookahead;
+        foreach (var (_, parts) in OverlayRenderer.Groups(overlay, byTiming: false))
+        {
+            if (parts.Count == 1 && parts[0].Kind == OverlayLayerKinds.Video)
+            {
+                if (OverlayTiming.For(overlay, entry, LayerTiming.Of(parts[0])) is { } own && VideoLayer(overlay, parts[0], own) is { } video)
+                {
+                    yield return video;
+                }
+
+                continue;
+            }
+
+            Overlay part = OverlayRenderer.Part(overlay, parts);
+            string? clip = animations?.Find(part, tokens, length, whole, queue: soon);
+            if (!whole)
+            {
+                JsonObject? layer = clip is not null
+                    ? Placed(overlay, clip, showing)
+                    // Standing still, as it is half way through, until its video is made.
+                    : Layer(OverlayAnimation.Freeze(part, length / 2), showing, tokens);
+                if (layer is not null)
+                {
+                    yield return layer;
+                }
+
+                continue;
+            }
+
+            // All the way through: the animation, then the design as it ends up, for the rest of each part. The still
+            // comes in as the animation's last moments play, so there's no gap between them.
+            Overlay held = OverlayAnimation.Freeze(part, length);
+            if (clip is not null)
+            {
+                if (OverlayTiming.Opening(overlay, entry, length) is { } opening && Placed(overlay, clip, opening) is { } video)
+                {
+                    yield return video;
+                }
+
+                double from = Math.Max(0, length - Math.Max(0, overlay.FadeSeconds));
+                foreach (OverlayLayer layer in held.Layers.Where(OverlayRenderer.IsDrawn))
+                {
+                    layer.InSeconds = Math.Max(layer.InSeconds, from);
+                }
+            }
+
+            foreach (JsonObject still in Layers(held, entry, showing, tokens))
+            {
+                yield return still;
+            }
+        }
+    }
+
+    /// <summary>A frame-sized picture or video of the design, covering the frame exactly.</summary>
+    private static JsonObject Placed(Overlay overlay, string path, OverlayShowing showing)
+    {
+        var layer = new JsonObject
+        {
+            ["source"] = new JsonObject { ["source_type"] = "local", ["path"] = path },
+            ["location"] = "top_left",
+            ["width_percent"] = 100,
+            ["horizontal_margin_percent"] = 0,
+            ["vertical_margin_percent"] = 0
+        };
+
+        if (overlay.Opacity < 100)
+        {
+            layer["opacity_percent"] = Math.Clamp(overlay.Opacity, 0, 100);
+        }
+
+        if (showing.Timing is { } timing)
+        {
+            layer["timing"] = timing.ToJson();
+        }
+
+        return layer;
     }
 
     /// <summary>
@@ -211,17 +311,25 @@ public sealed class OverlayProcessor : IPlayoutProcessor
 
         double width = Math.Max(1, overlay.Width);
         double height = Math.Max(1, overlay.Height);
+        // Inside a group, where the group puts it (ErsatzTV can't turn it, so only its place counts).
+        OverlayBox box = OverlayHierarchy.World(overlay, video, 0);
+        double left = box.CenterX - box.Width / 2;
+        double top = box.CenterY - box.Height / 2;
         var layer = new JsonObject
         {
             ["source"] = new JsonObject { ["source_type"] = "local", ["path"] = path },
             ["location"] = "top_left",
-            ["width_percent"] = Round(Math.Clamp(video.Width / width * 100, 1, 100)),
-            ["horizontal_margin_percent"] = Round(Math.Clamp(video.X / width * 100, 0, 100)),
-            ["vertical_margin_percent"] = Round(Math.Clamp(video.Y / height * 100, 0, 100)),
+            ["width_percent"] = Round(Math.Clamp(box.Width / width * 100, 1, 100)),
+            ["horizontal_margin_percent"] = Round(Math.Clamp(left / width * 100, 0, 100)),
+            ["vertical_margin_percent"] = Round(Math.Clamp(top / height * 100, 0, 100)),
             ["within_source_content"] = false
         };
 
         double opacity = Math.Clamp(overlay.Opacity, 0, 100) * Math.Clamp(video.Opacity, 0, 100) / 100;
+        foreach (OverlayLayer group in OverlayHierarchy.Ancestors(overlay, video))
+        {
+            opacity *= Math.Clamp(group.Opacity, 0, 100) / 100;
+        }
         if (opacity < 100)
         {
             layer["opacity_percent"] = Round(opacity);

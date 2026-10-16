@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using SchedularrTV.Core.Configuration;
 using SkiaSharp;
 
 namespace SchedularrTV.Overlays;
@@ -60,28 +61,34 @@ public sealed class OverlayRenderer(Func<string> folder)
     /// <paramref name="scale"/> of the design's size.
     /// </summary>
     /// <param name="posters">A still from each video layer's file (by its path), drawn in its box; one without shows as a marked box.</param>
-    public static byte[] Preview(Overlay overlay, IReadOnlyDictionary<string, string> tokens, float scale, IReadOnlyDictionary<string, string>? posters = null)
+    /// <param name="clock">The moment of an appearance to draw (keyframes, layers coming and going); null draws it as it stands.</param>
+    public static byte[] Preview(Overlay overlay, IReadOnlyDictionary<string, string> tokens, float scale, IReadOnlyDictionary<string, string>? posters = null,
+        OverlayClock? clock = null)
     {
         if (overlay.Kind == OverlayKinds.File)
         {
             return DrawFile(overlay, scale);
         }
 
-        return Draw(overlay, tokens, scale, backdrop: true, posters ?? new Dictionary<string, string>());
+        return Draw(overlay, tokens, scale, backdrop: true, posters ?? new Dictionary<string, string>(), clock);
     }
+
+    /// <summary>Whether a layer is drawn into the design's picture itself (not a group, which draws nothing, nor a mask, drawn only into its target).</summary>
+    public static bool IsDrawn(OverlayLayer layer) => !OverlayHierarchy.IsGroup(layer) && layer.Mask is null;
 
     /// <summary>
     /// A design split into what goes to ErsatzTV: each video layer on its own, and runs of the drawn layers between them
-    /// that come and go together, in drawing order (bottom first).
+    /// that come and go together (with their groups' timing), in drawing order (bottom first).
     /// </summary>
-    public static IReadOnlyList<(LayerTiming Timing, IReadOnlyList<OverlayLayer> Layers)> Groups(Overlay overlay)
+    /// <param name="byTiming">False keeps every drawn run between videos together, for an animated design whose timing is drawn into it.</param>
+    public static IReadOnlyList<(LayerTiming Timing, IReadOnlyList<OverlayLayer> Layers)> Groups(Overlay overlay, bool byTiming = true)
     {
         List<(LayerTiming, IReadOnlyList<OverlayLayer>)> groups = [];
         List<OverlayLayer>? run = null;
         LayerTiming runTiming = default;
-        foreach (OverlayLayer layer in overlay.Layers)
+        foreach (OverlayLayer layer in overlay.Layers.Where(IsDrawn))
         {
-            LayerTiming timing = LayerTiming.Of(layer);
+            LayerTiming timing = byTiming ? OverlayHierarchy.EffectiveTiming(overlay, layer) : LayerTiming.Whole;
             if (layer.Kind == OverlayLayerKinds.Video)
             {
                 run = null;
@@ -102,6 +109,21 @@ public sealed class OverlayRenderer(Func<string> folder)
         return groups;
     }
 
+    /// <summary>
+    /// The design with only these of its drawn layers, as a picture of its own: their groups (which draw nothing) and the
+    /// masks cutting them come along.
+    /// </summary>
+    public static Overlay Part(Overlay overlay, IReadOnlyCollection<OverlayLayer> layers)
+    {
+        HashSet<string> targets = [.. layers.Select(layer => layer.Id).OfType<string>()];
+        Overlay part = overlay.Copy();
+        part.Layers = [.. overlay.Layers
+            .Where(layer => layers.Contains(layer) || OverlayHierarchy.IsGroup(layer)
+                || (layer.Mask?.Target is { } target && targets.Contains(target)))
+            .Select(layer => layer.Copy())];
+        return part;
+    }
+
     /// <summary>Fills {tokens} in a text; unknown ones are left as written.</summary>
     public static string Fill(string? text, IReadOnlyDictionary<string, string> tokens)
     {
@@ -119,27 +141,59 @@ public sealed class OverlayRenderer(Func<string> folder)
         return result.ToString();
     }
 
-    private static string Key(Overlay overlay, IReadOnlyDictionary<string, string> tokens)
+    /// <summary>What a design looks like with these tokens, as a short hash: the name its drawing is kept under.</summary>
+    public static string Key(Overlay overlay, IReadOnlyDictionary<string, string> tokens)
     {
         var look = new
         {
             overlay.Width,
             overlay.Height,
-            Layers = overlay.Layers.Select(layer => new
-            {
-                layer.Kind, layer.X, layer.Y, layer.Width, layer.Height, Text = Fill(layer.Text, tokens), layer.Path,
-                PathStamp = layer.Path is { Length: > 0 } path && File.Exists(path) ? File.GetLastWriteTimeUtc(path).Ticks : 0,
-                layer.Color, layer.FontFamily, layer.FontSize, layer.Bold, layer.Align, layer.Shadow, layer.CornerRadius, layer.Opacity
-            })
+            Layers = overlay.Layers.Select(layer => Look(layer, tokens))
         };
 
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(look, HashJson)));
         return Convert.ToHexString(hash, 0, 12).ToLowerInvariant();
     }
 
+    // A layer as its drawing depends on it. Layers using none of the newer settings hash as they always have, so their
+    // drawings are kept.
+    private static object Look(OverlayLayer layer, IReadOnlyDictionary<string, string> tokens)
+    {
+        var basic = new
+        {
+            layer.Kind, layer.X, layer.Y, layer.Width, layer.Height, Text = Fill(layer.Text, tokens), layer.Path,
+            PathStamp = layer.Path is { Length: > 0 } path && File.Exists(path) ? File.GetLastWriteTimeUtc(path).Ticks : 0,
+            layer.Color, layer.FontFamily, layer.FontSize, layer.Bold, layer.Align, layer.Shadow, layer.CornerRadius, layer.Opacity
+        };
+
+        bool newer = layer.Id is not null || layer.Parent is not null || layer.Mask is not null || layer.Shape is not null
+                     || layer.SoftEdges is not null || layer.Rotation is not null || layer.Keyframes is { Count: > 0 };
+        if (!newer)
+        {
+            return basic;
+        }
+
+        return new
+        {
+            Basic = basic,
+            layer.Id,
+            layer.Parent,
+            Mask = layer.Mask is { } mask ? $"{mask.Mode}:{mask.Target}" : null,
+            Shape = layer.Shape?.ToString(),
+            layer.SoftEdges,
+            layer.Rotation,
+            layer.InSeconds,
+            layer.OutSeconds,
+            Keys = layer.Keyframes?.Select(key => new
+            {
+                At = key.At.TotalSeconds, key.X, key.Y, key.Width, key.Height, key.Opacity, key.Rotation, Easing = key.Easing.ToString()
+            }).ToList()
+        };
+    }
+
     /// <param name="posters">For the preview, stills of its videos; null when drawing for ErsatzTV, which shows videos itself.</param>
     private static byte[] Draw(Overlay overlay, IReadOnlyDictionary<string, string> tokens, float scale, bool backdrop,
-        IReadOnlyDictionary<string, string>? posters)
+        IReadOnlyDictionary<string, string>? posters, OverlayClock? clock = null)
     {
         int width = Math.Max(16, (int)Math.Round(Math.Clamp(overlay.Width, 64, 7680) * scale));
         int height = Math.Max(16, (int)Math.Round(Math.Clamp(overlay.Height, 64, 4320) * scale));
@@ -153,48 +207,127 @@ public sealed class OverlayRenderer(Func<string> folder)
         }
 
         canvas.Scale(scale);
-        foreach (OverlayLayer layer in overlay.Layers)
-        {
-            if (layer.Kind == OverlayLayerKinds.Video && posters is null)
-            {
-                continue;
-            }
-
-            DrawLayer(canvas, layer, tokens, posters);
-        }
+        DrawDesign(canvas, overlay, tokens, posters, clock);
 
         using SKImage image = surface.Snapshot();
         using SKData data = image.Encode(SKEncodedImageFormat.Png, 100);
         return data.ToArray();
     }
 
-    /// <summary>A stand-in for the programme underneath, so the preview shows how the overlay reads over a picture.</summary>
-    private static void DrawBackdrop(SKCanvas canvas, int width, int height)
+    /// <summary>
+    /// Draws the design's layers onto a canvas in its own pixels, bottom first: each inside its groups, cut by its masks,
+    /// and, with a <paramref name="clock"/>, posed by its keyframes and faded as it comes and goes at that moment.
+    /// </summary>
+    /// <param name="posters">Stills of its videos, for the preview; null leaves videos out (ErsatzTV shows them itself).</param>
+    public static void DrawDesign(SKCanvas canvas, Overlay overlay, IReadOnlyDictionary<string, string> tokens,
+        IReadOnlyDictionary<string, string>? posters, OverlayClock? clock)
     {
-        using var shader = SKShader.CreateLinearGradient(new SKPoint(0, 0), new SKPoint(width, height),
-            [new SKColor(0x2b, 0x3a, 0x67), new SKColor(0x6b, 0x4a, 0x7a), new SKColor(0x1f, 0x5f, 0x5b)], null, SKShaderTileMode.Clamp);
-        using var paint = new SKPaint { Shader = shader };
-        canvas.DrawRect(0, 0, width, height, paint);
-        using var haze = new SKPaint { Color = new SKColor(255, 255, 255, 18), IsAntialias = true };
-        canvas.DrawCircle(width * 0.3f, height * 0.4f, height * 0.35f, haze);
-        canvas.DrawCircle(width * 0.72f, height * 0.62f, height * 0.25f, haze);
+        var frame = SKRect.Create(Math.Max(1, overlay.Width), Math.Max(1, overlay.Height));
+        double envelope = clock is null ? 1 : OverlayAnimation.Envelope(clock);
+        ILookup<string, OverlayLayer> masks = overlay.Layers
+            .Where(layer => OverlayHierarchy.CanMask(layer) && layer.Mask?.Target is { Length: > 0 })
+            .ToLookup(layer => layer.Mask!.Target!, StringComparer.Ordinal);
+
+        foreach (OverlayLayer layer in overlay.Layers)
+        {
+            if (!IsDrawn(layer) || (layer.Kind == OverlayLayerKinds.Video && posters is null))
+            {
+                continue;
+            }
+
+            OverlayLayer[] applied = layer.Id is { } id && layer.Kind != OverlayLayerKinds.Video ? [.. masks[id]] : [];
+            if (applied.Length == 0)
+            {
+                DrawPlaced(canvas, overlay, layer, tokens, posters, clock, envelope);
+                continue;
+            }
+
+            // The target on its own first, so a cutout shows what's under it rather than erasing it.
+            canvas.SaveLayer(frame, null);
+            DrawPlaced(canvas, overlay, layer, tokens, posters, clock, envelope);
+            ApplyMasks(GeneratedMaskMode.Add, SKBlendMode.DstIn);
+            ApplyMasks(GeneratedMaskMode.Subtract, SKBlendMode.DstOut);
+            canvas.Restore();
+
+            void ApplyMasks(GeneratedMaskMode mode, SKBlendMode blend)
+            {
+                if (!applied.Any(mask => mask.Mask!.Mode == mode))
+                {
+                    return;
+                }
+
+                using var paint = new SKPaint { BlendMode = blend };
+                // A whole-frame layer: outside the masks drawn into it is clear, which DstIn needs.
+                canvas.SaveLayer(frame, paint);
+                foreach (OverlayLayer mask in applied.Where(mask => mask.Mask!.Mode == mode))
+                {
+                    DrawPlaced(canvas, overlay, mask, tokens, posters, clock, 1);
+                }
+
+                canvas.Restore();
+            }
+        }
     }
 
-    private static void DrawLayer(SKCanvas canvas, OverlayLayer layer, IReadOnlyDictionary<string, string> tokens,
-        IReadOnlyDictionary<string, string>? posters)
+    /// <summary>One layer where it is: inside its groups (outermost first, each moving its contents to its corner and turning them about its middle), turned, faded.</summary>
+    private static void DrawPlaced(SKCanvas canvas, Overlay overlay, OverlayLayer layer, IReadOnlyDictionary<string, string> tokens,
+        IReadOnlyDictionary<string, string>? posters, OverlayClock? clock, double envelope)
     {
-        SKRect bounds = SKRect.Create(layer.X, layer.Y, Math.Max(1, layer.Width), Math.Max(1, layer.Height));
-        byte alpha = (byte)Math.Round(Math.Clamp(layer.Opacity, 0, 100) / 100 * 255);
-        if (alpha == 0)
+        double seconds = clock?.Seconds ?? 0;
+        OverlayPose pose = OverlayAnimation.PoseAt(layer, seconds);
+        double opacity = Math.Clamp(pose.Opacity, 0, 100) / 100 * envelope;
+        if (clock is not null)
+        {
+            opacity *= OverlayAnimation.Visibility(layer, clock);
+        }
+
+        List<OverlayLayer> groups = [.. OverlayHierarchy.Ancestors(overlay, layer)];
+        groups.Reverse();
+        List<OverlayPose> groupPoses = [];
+        foreach (OverlayLayer group in groups)
+        {
+            OverlayPose around = OverlayAnimation.PoseAt(group, seconds);
+            groupPoses.Add(around);
+            opacity *= Math.Clamp(around.Opacity, 0, 100) / 100;
+            if (clock is not null)
+            {
+                opacity *= OverlayAnimation.Visibility(group, clock);
+            }
+        }
+
+        if (opacity <= 0.001)
         {
             return;
         }
 
+        canvas.Save();
+        foreach (OverlayPose around in groupPoses)
+        {
+            float turn = around.Rotation ?? 0;
+            if (Math.Abs(turn) > 0.001f)
+            {
+                canvas.RotateDegrees(turn, around.X + around.Width / 2, around.Y + around.Height / 2);
+            }
+
+            canvas.Translate(around.X, around.Y);
+        }
+
+        SKRect bounds = SKRect.Create(pose.X, pose.Y, Math.Max(1, pose.Width), Math.Max(1, pose.Height));
+        // ErsatzTV can't turn a video, so the preview doesn't either.
+        float rotation = layer.Kind == OverlayLayerKinds.Video ? 0 : pose.Rotation ?? 0;
+        if (Math.Abs(rotation) > 0.001f)
+        {
+            canvas.RotateDegrees(rotation, bounds.MidX, bounds.MidY);
+        }
+
+        byte alpha = (byte)Math.Round(Math.Clamp(opacity, 0, 1) * 255);
         bool translucent = alpha < 255;
         if (translucent)
         {
             SKRect area = bounds;
             area.Inflate(bounds.Height * 0.25f + 8, bounds.Height * 0.25f + 8);
+            float soft = layer.SoftEdges ?? 0;
+            area.Inflate(soft * 4, soft * 4);
             using var fade = new SKPaint { Color = SKColors.Black.WithAlpha(alpha) };
             canvas.SaveLayer(area, fade);
         }
@@ -202,11 +335,7 @@ public sealed class OverlayRenderer(Func<string> folder)
         switch (layer.Kind)
         {
             case OverlayLayerKinds.Rect:
-                using (var paint = new SKPaint { Color = Colour(layer.Color, SKColors.Black), IsAntialias = true })
-                {
-                    canvas.DrawRoundRect(bounds, layer.CornerRadius, layer.CornerRadius, paint);
-                }
-
+                DrawShape(canvas, layer, bounds);
                 break;
             case OverlayLayerKinds.Image when layer.Path is { Length: > 0 } path && File.Exists(path):
                 using (SKImage? picture = SKImage.FromEncodedData(path))
@@ -230,6 +359,64 @@ public sealed class OverlayRenderer(Func<string> folder)
         {
             canvas.Restore();
         }
+
+        canvas.Restore();
+    }
+
+    /// <summary>A shape: a (rounded) rectangle, ellipse, triangle, diamond or star filling its box, its edges feathered if set.</summary>
+    private static void DrawShape(SKCanvas canvas, OverlayLayer layer, SKRect bounds)
+    {
+        float soft = Math.Clamp(layer.SoftEdges ?? 0, 0, 200);
+        using SKMaskFilter? blur = soft > 0 ? SKMaskFilter.CreateBlur(SKBlurStyle.Normal, soft) : null;
+        using var paint = new SKPaint { Color = Colour(layer.Color, SKColors.Black), IsAntialias = true, MaskFilter = blur };
+        using var path = new SKPathBuilder();
+        switch (layer.Shape)
+        {
+            case GeneratedShape.Ellipse:
+                canvas.DrawOval(bounds, paint);
+                return;
+            case GeneratedShape.Triangle:
+                path.MoveTo(bounds.MidX, bounds.Top);
+                path.LineTo(bounds.Right, bounds.Bottom);
+                path.LineTo(bounds.Left, bounds.Bottom);
+                break;
+            case GeneratedShape.Diamond:
+                path.MoveTo(bounds.MidX, bounds.Top);
+                path.LineTo(bounds.Right, bounds.MidY);
+                path.LineTo(bounds.MidX, bounds.Bottom);
+                path.LineTo(bounds.Left, bounds.MidY);
+                break;
+            case GeneratedShape.Star:
+                for (int i = 0; i < 10; i++)
+                {
+                    double angle = -Math.PI / 2 + i * Math.PI / 5;
+                    float radius = i % 2 == 0 ? 1 : 0.4f;
+                    float x = bounds.MidX + (float)Math.Cos(angle) * bounds.Width / 2 * radius;
+                    float y = bounds.MidY + (float)Math.Sin(angle) * bounds.Height / 2 * radius;
+                    if (i == 0) path.MoveTo(x, y); else path.LineTo(x, y);
+                }
+
+                break;
+            default:
+                canvas.DrawRoundRect(bounds, layer.CornerRadius, layer.CornerRadius, paint);
+                return;
+        }
+
+        path.Close();
+        using SKPath outline = path.Detach();
+        canvas.DrawPath(outline, paint);
+    }
+
+    /// <summary>A stand-in for the programme underneath, so the preview shows how the overlay reads over a picture.</summary>
+    private static void DrawBackdrop(SKCanvas canvas, int width, int height)
+    {
+        using var shader = SKShader.CreateLinearGradient(new SKPoint(0, 0), new SKPoint(width, height),
+            [new SKColor(0x2b, 0x3a, 0x67), new SKColor(0x6b, 0x4a, 0x7a), new SKColor(0x1f, 0x5f, 0x5b)], null, SKShaderTileMode.Clamp);
+        using var paint = new SKPaint { Shader = shader };
+        canvas.DrawRect(0, 0, width, height, paint);
+        using var haze = new SKPaint { Color = new SKColor(255, 255, 255, 18), IsAntialias = true };
+        canvas.DrawCircle(width * 0.3f, height * 0.4f, height * 0.35f, haze);
+        canvas.DrawCircle(width * 0.72f, height * 0.62f, height * 0.25f, haze);
     }
 
     private static void DrawText(SKCanvas canvas, OverlayLayer layer, string text, SKRect bounds)
@@ -411,7 +598,10 @@ public sealed class OverlayRenderer(Func<string> folder)
 
         int removed = 0;
         DateTime cutoff = DateTime.UtcNow - age;
-        foreach (string file in Directory.EnumerateFiles(Folder, "*.png"))
+        // Drawings, and animated designs' videos.
+        foreach (string file in Directory.EnumerateFiles(Folder, "*.png")
+                     .Concat(Directory.EnumerateFiles(Folder, "anim-*.webm"))
+                     .Concat(Directory.EnumerateFiles(Folder, "anim-*.mov")))
         {
             try
             {

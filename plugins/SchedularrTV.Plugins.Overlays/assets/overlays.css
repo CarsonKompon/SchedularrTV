@@ -77,7 +77,76 @@
 .ov-scope .snap-guide-x { left: 50%; top: 0; bottom: 0; border-left-width: 1px; }
 .ov-scope .snap-guide-y { top: 50%; left: 0; right: 0; border-top-width: 1px; }
 
-.ov-scope .layer-list { list-style: none; margin: 0 0 12px; padding: 0; max-height: 260px; overflow: auto; }
+/* The preview picture, swapped in by script once decoded so the canvas never blanks while scrubbing. */
+.ov-scope .ed-still { position: absolute; inset: 0; background-size: 100% 100%; background-repeat: no-repeat; pointer-events: none; }
+
+/* Timeline: a scrubbable ruler with the selected layer's span and keyframes. */
+.ov-scope .ed-timeline-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+.ov-scope .ed-frame-step { display: inline-flex; gap: 2px; }
+.ov-scope .ed-frame-step .btn { min-width: 30px; padding-left: 6px; padding-right: 6px; font-variant-numeric: tabular-nums; }
+.ov-scope .ed-timeline-head strong { font-variant-numeric: tabular-nums; }
+.ov-scope .ed-timeline-head .spacer, .ov-scope .ed-keybar .spacer { flex: 1; }
+.ov-scope .ed-ruler {
+    position: relative; height: 46px; border-radius: 6px; border: 1px solid var(--line); background: rgba(255,255,255,.04);
+    cursor: ew-resize; touch-action: none; user-select: none; margin: 0 6px;
+}
+.ov-scope .ed-ruler:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ov-scope .ed-ruler > * { pointer-events: none; }
+.ov-scope .ed-tick { position: absolute; top: 0; height: 9px; border-left: 1px solid rgba(255,255,255,.3); }
+.ov-scope .ed-tick > span { position: absolute; top: 8px; left: 3px; font-size: 10px; line-height: 1; color: var(--muted); white-space: nowrap; }
+.ov-scope .ed-tick-end > span { left: auto; right: 3px; }
+.ov-scope .ed-span { position: absolute; bottom: 8px; height: 12px; border-radius: 4px; background: var(--accent); opacity: .3; }
+.ov-scope .ed-key {
+    position: absolute; bottom: 8px; width: 12px; height: 12px; margin-left: -6px; transform: rotate(45deg);
+    background: #fff; border: 2px solid var(--accent); border-radius: 2px; box-sizing: border-box; cursor: grab; z-index: 2;
+}
+.ov-scope .ed-ruler > .ed-key { pointer-events: auto; }
+.ov-scope .ed-key.ease-hold { border-radius: 0; background: var(--panel-2); }
+.ov-scope .ed-key.ease-easein, .ov-scope .ed-key.ease-easeout, .ov-scope .ed-key.ease-easeinout { border-radius: 50% 2px; }
+.ov-scope .ed-key.current { background: var(--accent); box-shadow: 0 0 0 2px rgba(255,255,255,.85); }
+.ov-scope .ed-playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #ff3da8; z-index: 3; }
+.ov-scope .ed-playhead::before {
+    content: ""; position: absolute; top: 0; left: -4px; border: 5px solid transparent; border-top-color: #ff3da8;
+}
+.ov-scope .ed-keybar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; min-height: 34px; }
+.ov-scope .ed-keybar .hint { margin: 0; }
+.ov-scope .ed-keyfield { display: flex; align-items: center; gap: 4px; font-size: 12.5px; white-space: nowrap; }
+.ov-scope .ed-keyfield input { width: 76px; }
+.ov-scope .drag-overlay.drag-time { cursor: ew-resize; }
+.ov-scope .layer-box.keyed .layer-tag { font-weight: 600; }
+
+/* Locked layers: shown faintly, and clicks pass through them to what's underneath */
+.ov-scope .layer-box.locked { pointer-events: none; border-style: dotted; border-color: rgba(255,255,255,.18); }
+.ov-scope .layer-box.locked .layer-tag { opacity: .6; }
+.ov-scope .layer-box.mask:not(.selected):not(.chosen) {border-color: rgba(255, 176, 32, .6); }
+.ov-scope .layer-lock {
+    flex: none; width: 26px; height: 26px; padding: 0; border: 1px solid transparent; border-radius: 6px; background: none;
+    cursor: pointer; font-size: 12px; line-height: 24px; opacity: .3;
+}
+.ov-scope .layer-row:hover .layer-lock { opacity: .7; }
+.ov-scope .layer-lock.on { opacity: 1; border-color: var(--line); }
+.ov-scope .layer-lock.inherited { opacity: .55; }
+
+/* Groups, several selected, and turning */
+.ov-scope .layer-box.chosen { border: 2px dashed var(--accent); }
+.ov-scope .layer-box.group { border-style: dotted; background: rgba(255,255,255,.03); }
+.ov-scope .layer-box.group.selected { border-style: solid; }
+.ov-scope .handle-rotate { left: 50%; top: -22px; border-radius: 50%; cursor: grab; }
+.ov-scope .handle-rotate::after { content: ""; position: absolute; left: 3px; top: 10px; width: 2px; height: 12px; background: var(--accent); }
+.ov-scope .layer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -4px 0 8px; }
+.ov-scope .layer-actions .spacer { flex: 1; }
+.ov-scope .layer-tree .layer-row { min-height: 34px; height: 34px; box-sizing: border-box; margin-bottom: 2px; border-radius: 6px; position: relative; }
+.ov-scope .layer-tree .layer-row[draggable="true"] { cursor: grab; }
+.ov-scope .layer-tree.dragging .layer-row * { pointer-events: none; }
+.ov-scope .layer-tree .layer-row.chosen .layer-select { border-color: var(--accent); }
+.ov-scope .layer-tree .layer-row.drop-above { box-shadow: inset 0 3px 0 var(--accent); }
+.ov-scope .layer-tree .layer-row.drop-below { box-shadow: inset 0 -3px 0 var(--accent); }
+.ov-scope .layer-tree .layer-row.drop-into { background: rgba(255,255,255,.08); outline: 2px solid var(--accent); outline-offset: -2px; }
+.ov-scope .layer-twisty {
+    flex: none; width: 18px; height: 22px; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 12px; line-height: 22px;
+}
+
+.ov-scope .layer-list { list-style: none; margin: 0 0 12px; padding: 0; max-height: 360px; overflow: auto; }
 .ov-scope .layer-row { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
 .ov-scope .layer-select {
     flex: 1; min-width: 0; display: flex; justify-content: space-between; gap: 8px; padding: 6px 9px; text-align: left; cursor: pointer;

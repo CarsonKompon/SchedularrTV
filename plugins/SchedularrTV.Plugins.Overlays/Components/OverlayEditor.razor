@@ -1,13 +1,15 @@
 @* One overlay: its look (a design on a canvas, or a file placed on the picture) and when it shows. Laid out like the
-   Generated promos template editor: the canvas fills the width with its layers on the right, and the rest under it. *@
+   Generated promos template editor: the canvas fills the width with its layers on the right, and the rest under it.
+   Its layer list, groups, locking, shapes, masks, timeline and keyframes work as the template editor's do: keep the two in step. *@
 @using Microsoft.JSInterop
+@implements IDisposable
 @inject IJSRuntime JS
 @inject IServiceProvider Services
 
 <div class="card visual-editor">
     <div class="card-head">
         <h2>@Overlay.Name</h2>
-        <span class="pill pill-muted">@(Overlay.Kind == OverlayKinds.File ? "File" : "Design")</span>
+        <span class="pill pill-muted">@(Overlay.Kind == OverlayKinds.File ? "File" : OverlayAnimation.IsAnimated(Overlay) ? "Animated design" : "Design")</span>
     </div>
 
     <div class="grid grid-2">
@@ -15,7 +17,7 @@
             <input type="text" value="@Overlay.Name" @onchange="e => Set(() => Overlay.Name = Text(e, Overlay.Name))" /></label>
         <label class="field"><span>Look</span>
             <select value="@Overlay.Kind" @onchange="e => Set(() => Overlay.Kind = Text(e, OverlayKinds.Design))">
-                <option value="design">Designed here (text, pictures, colour)</option>
+                <option value="design">Designed here (text, pictures, shapes)</option>
                 <option value="file">A picture or video file</option>
             </select></label>
     </div>
@@ -27,10 +29,10 @@
             <summary>Preview show contexts</summary>
             <div class="grid grid-2">
                 <label class="field"><span>Currently watching</span>
-                    <input type="text" @bind="_previewCurrent" @bind:after="RefreshPreviewAsync" />
+                    <input type="text" @bind="_previewCurrent" @bind:after="RefreshPreview" />
                 </label>
                 <label class="field"><span>Upcoming show titles (one per line, next first)</span>
-                    <textarea rows="3" @bind="_previewUpcoming" @bind:after="RefreshPreviewAsync"></textarea>
+                    <textarea rows="3" @bind="_previewUpcoming" @bind:after="RefreshPreview"></textarea>
                 </label>
             </div>
             <p class="hint">Try the show titles assigned below. These are preview-only; on air, the schedule supplies the shows.</p>
@@ -45,29 +47,43 @@
                     <span class="ed-toolbar-label">Add</span>
                     <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Text)">+ Text</button>
                     <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Image)">+ Picture</button>
-                    <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Rect)">+ Colour block</button>
+                    <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Rect)">+ Shape</button>
                     <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Video)">+ Video</button>
                     <div class="spacer"></div>
                     <span class="ed-meta">@Overlay.Width × @Overlay.Height</span>
                 </div>
             }
             <div class="ed-canvas" id="@_canvasId" role="group" aria-label="Overlay canvas" @onpointerenter="MeasureCanvas"
-                 style="aspect-ratio:@(CanvasWidth) / @(CanvasHeight);@(_preview is null ? "" : $"background-image:url('{_preview}');")">
+                 style="aspect-ratio:@(CanvasWidth) / @(CanvasHeight);">
+                @* The preview. Script swaps each new picture in once it has decoded, so it never blanks while scrubbing. *@
+                <div class="ed-still" id="@_stillId" aria-hidden="true"></div>
                 @if (IsDesign)
                 {
                     @foreach (OverlayLayer layer in Overlay.Layers)
                     {
                         bool isSelected = ReferenceEquals(layer, _layer);
-                        <div class="layer-box @(isSelected ? "selected" : "")" @key="layer"
-                             style="left:@Pct(layer.X, Overlay.Width);top:@Pct(layer.Y, Overlay.Height);width:@Pct(layer.Width, Overlay.Width);height:@Pct(layer.Height, Overlay.Height);"
+                        bool inSelection = _chosen.Contains(layer);
+                        OverlayBox box = OverlayHierarchy.World(Overlay, layer, _time);
+                        bool isGroupBox = OverlayHierarchy.IsGroup(layer);
+                        bool locked = OverlayHierarchy.IsLocked(Overlay, layer);
+                        bool keyed = OverlayAnimation.HasKeyframes(layer);
+                        double angle = layer.Kind == OverlayLayerKinds.Video ? 0 : box.Angle;
+                        <div class="layer-box @(isSelected ? "selected" : inSelection ? "chosen" : "") @(VisibleNow(layer) ? "" : "hidden-now") @(keyed ? "keyed" : "") @(isGroupBox ? "group" : "") @(locked ? "locked" : "") @(layer.Mask is null ? "" : "mask")" @key="layer"
+                             style="left:@Pct(box.CenterX - box.Width / 2, Overlay.Width);top:@Pct(box.CenterY - box.Height / 2, Overlay.Height);width:@Pct(box.Width, Overlay.Width);height:@Pct(box.Height, Overlay.Height);@(Math.Abs(angle) > 0.001 ? $"transform:rotate({Number(angle)}deg);" : "")"
                              title="@layer.Name" @onpointerdown="e => StartDrag(e, layer, MoveHandle)" @onpointerdown:preventDefault="true">
-                            <span class="layer-tag">@Label(layer)</span>
-                            @if (isSelected)
+                            <span class="layer-tag">@(locked ? "🔒 " : "")@(isGroupBox ? "▣ " : "")@(keyed ? "◆ " : "")@Label(layer)</span>
+                            @if (isSelected && !locked)
                             {
-                                @foreach (string handle in Handles)
+                                @* A group's box is only what it turns about, so it's moved and turned rather than stretched. *@
+                                @foreach (string handle in isGroupBox ? [] : Handles)
                                 {
                                     <span class="handle handle-@handle" aria-hidden="true" @onpointerdown="e => StartDrag(e, layer, handle)"
                                           @onpointerdown:stopPropagation="true" @onpointerdown:preventDefault="true"></span>
+                                }
+                                @if (layer.Kind != OverlayLayerKinds.Video)
+                                {
+                                    <span class="handle handle-rotate" title="Drag to turn it (hold Shift for 15° steps)" aria-hidden="true"
+                                          @onpointerdown="e => StartRotate(e, layer)" @onpointerdown:stopPropagation="true" @onpointerdown:preventDefault="true"></span>
                                 }
                             }
                         </div>
@@ -82,6 +98,100 @@
                     }
                 }
             </div>
+
+            @if (IsDesign)
+            {
+                <div class="ed-timeline">
+                    <div class="ed-timeline-head">
+                        <div class="ed-frame-step" role="group" aria-label="Step through frames">
+                            <button class="btn btn-sm" type="button" title="Back a second (Shift+←)" aria-label="Back a second" @onclick="() => StepFrames(-Fps)">«</button>
+                            <button class="btn btn-sm" type="button" title="Previous frame (← or ,)" aria-label="Previous frame" @onclick="() => StepFrames(-1)">‹</button>
+                            <button class="btn btn-sm" type="button" title="Next frame (→ or .)" aria-label="Next frame" @onclick="() => StepFrames(1)">›</button>
+                            <button class="btn btn-sm" type="button" title="Forward a second (Shift+→)" aria-label="Forward a second" @onclick="() => StepFrames(Fps)">»</button>
+                        </div>
+                        <span>
+                            <strong>@($"{_time:0.000}")s</strong> of @($"{TimelineLength:0.#}")s
+                            <span class="ed-meta">· frame @(CurrentFrame + 1) of @FrameCount · @(TimingSchedule.Always ? "the animation as each part of the programme starts" : "one appearance")</span>
+                        </span>
+                        <div class="spacer"></div>
+                        @if (_layer is { } timedLayer)
+                        {
+                            <span class="ed-meta">@Label(timedLayer)@(timedLayer.Keyframes is { Count: > 0 } timedKeys ? $" · {timedKeys.Count} keyframe{(timedKeys.Count == 1 ? "" : "s")}" : "")</span>
+                        }
+                    </div>
+                    <div class="ed-ruler" id="@_rulerId" role="slider" tabindex="0" aria-label="Preview time" aria-valuemin="0"
+                         aria-valuemax="@Number(TimelineLength)" aria-valuenow="@Number(_time)" aria-valuetext="@($"{_time:0.00} seconds")"
+                         @onpointerdown="StartScrub" @onpointerdown:preventDefault="true" @onkeydown="RulerKey">
+                        @foreach (double tick in Ticks())
+                        {
+                            <span class="ed-tick @(tick > TimelineLength * 0.92 ? "ed-tick-end" : "")" style="left:@Pct(tick, TimelineLength)"><span>@Number(tick)s</span></span>
+                        }
+                        @if (_layer is { } spanLayer)
+                        {
+                            var (spanStart, spanEnd) = Span(spanLayer);
+                            <span class="ed-span" style="left:@Pct(spanStart, TimelineLength);width:@Pct(Math.Max(0, spanEnd - spanStart), TimelineLength)"></span>
+                            OverlayKeyframe? currentFrame = CurrentKeyframe;
+                            @foreach (OverlayKeyframe frame in spanLayer.Keyframes ?? [])
+                            {
+                                <span class="ed-key @(ReferenceEquals(frame, currentFrame) ? "current" : "") @($"ease-{frame.Easing.ToString().ToLowerInvariant()}")" @key="frame"
+                                      style="left:@Pct(frame.At.TotalSeconds, TimelineLength)"
+                                      title="@($"Keyframe at {frame.At.TotalSeconds:0.00}s, then {EasingName(frame.Easing).ToLowerInvariant()}. Drag to move it.")"
+                                      @onpointerdown="e => StartKeyDrag(e, spanLayer, frame)" @onpointerdown:stopPropagation="true" @onpointerdown:preventDefault="true"></span>
+                            }
+                        }
+                        <span class="ed-playhead" style="left:@Pct(_time, TimelineLength)"></span>
+                    </div>
+                    @if (_layer is { } keyLayer)
+                    {
+                        <div class="ed-keybar" aria-label="Keyframes">
+                            @if (keyLayer.Kind == OverlayLayerKinds.Video)
+                            {
+                                <span class="hint">ErsatzTV plays a video layer where its box is, so it can't be animated; time it under “Timing within the overlay”.</span>
+                            }
+                            else if (!OverlayAnimation.HasKeyframes(keyLayer))
+                            {
+                                <button class="btn btn-sm" type="button" @onclick="() => StartKeyframes(keyLayer)"
+                                        title="Animate this layer's position, size, turn and opacity by setting them at different times">◆ Animate with keyframes</button>
+                                <span class="hint">Starts with a keyframe here; move the time and drag the box to add more.</span>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm" type="button" title="Previous keyframe" aria-label="Previous keyframe"
+                                        disabled="@(NextKeyframe(keyLayer, -1) is null)" @onclick="() => GoToKeyframe(keyLayer, -1)">◀</button>
+                                @if (CurrentKeyframe is { } key)
+                                {
+                                    <label class="ed-keyfield">
+                                        <span>At (s)</span>
+                                        <input type="number" min="0" max="@Number(TimelineLength)" step="0.05" value="@Number(key.At.TotalSeconds)"
+                                               @onchange="e => SetKeyframeTime(e, keyLayer, key)" />
+                                    </label>
+                                    <label class="ed-keyfield">
+                                        <span>Then</span>
+                                        <select value="@key.Easing" title="How it moves on to the next keyframe"
+                                                @onchange="e => Set(() => key.Easing = Enum.Parse<GeneratedEasing>(Text(e, nameof(GeneratedEasing.Linear))))">
+                                            @foreach (GeneratedEasing easing in Enum.GetValues<GeneratedEasing>())
+                                            {
+                                                <option value="@easing">@EasingName(easing)</option>
+                                            }
+                                        </select>
+                                    </label>
+                                    <button class="btn btn-sm btn-danger" type="button" @onclick="() => RemoveKeyframe(keyLayer, key)">Delete keyframe</button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm" type="button" @onclick="() => AddKeyframe(keyLayer)">◆ Add keyframe at @($"{_time:0.00}")s</button>
+                                }
+                                <button class="btn btn-sm" type="button" title="Next keyframe" aria-label="Next keyframe"
+                                        disabled="@(NextKeyframe(keyLayer, 1) is null)" @onclick="() => GoToKeyframe(keyLayer, 1)">▶</button>
+                                <div class="spacer"></div>
+                                <button class="btn btn-sm" type="button" title="Remove every keyframe, leaving the layer where it is now"
+                                        @onclick="() => StopKeyframes(keyLayer)">Stop animating</button>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
             <div class="ed-timeline">
                 <div class="field">
                     <span>When it shows, on a 22-minute programme</span>
@@ -99,12 +209,12 @@
                         double length = Math.Max(1, rule.DurationSeconds);
                         <div class="field ov-appearance">
                             <span>@OverlayDescriptions.When(rule) — layer by layer, top first</span>
-                            @foreach (OverlayLayer layer in Enumerable.Reverse(Overlay.Layers).ToList())
+                            @foreach (OverlayLayer layer in Enumerable.Reverse(Overlay.Layers.Where(OverlayRenderer.IsDrawn)).ToList())
                             {
                                 (double comesIn, double goesOut) = OverlayDescriptions.Within(rule, layer);
                                 string stripClass = layer.Kind == OverlayLayerKinds.Video ? "ed-strip-on ov-video" : "ed-strip-on";
                                 <div class="ov-appearance-row @(ReferenceEquals(layer, _layer) ? "selected" : "")" @key="layer">
-                                    <button type="button" class="ov-appearance-name" @onclick="() => _layer = layer">@Label(layer)</button>
+                                    <button type="button" class="ov-appearance-name" @onclick="() => Select(layer)">@Label(layer)</button>
                                     <div class="ed-strip">
                                         @if (goesOut > comesIn)
                                         {
@@ -121,16 +231,24 @@
             <p class="hint">
                 @OverlayDescriptions.When(Overlay).
                 @(IsDesign
-                    ? "Shown over a stand-in picture with sample words for {tokens}, and a still from part-way through any video. Drag a box to move it, or a handle to resize it; it snaps to the centre lines unless you hold Alt."
+                    ? "Shown over a stand-in picture with sample words for {tokens}, and a still from part-way through any video. Drag along the timeline to scrub through an appearance. Drag a box to move it, a handle to resize it, or the round handle to turn it; it snaps to the centre lines unless you hold Alt. Dashed boxes are hidden at this time. On an animated layer (◆), moving or resizing it sets a keyframe at the current time."
                     : "Shown where ErsatzTV will put it, over a stand-in picture. Videos show as a box here.")
             </p>
+            @if (IsDesign && OverlayAnimation.IsAnimated(Overlay))
+            {
+                <p class="hint">
+                    Animated: on air it's sent to ErsatzTV as a transparent video of each appearance, made in the background with ffmpeg
+                    (for programmes in the next @((int)OverlayProcessor.AnimationLookahead.TotalHours) hours). Until a video is made, the design shows standing still.
+                    @(TimingSchedule.Always ? "Shown all the way through, it animates as each part of the programme starts, then stays as it ends up." : "")
+                </p>
+            }
             @if (_previewError is not null)
             {
                 <p class="hint warn" role="alert">Preview failed: @_previewError</p>
             }
 
             <h3 class="ed-section">Timing</h3>
-            <OverlayScheduleEditor Schedule="TimingSchedule" Changed="CommitAsync" />
+            <OverlayScheduleEditor Schedule="TimingSchedule" Changed="TimingChanged" />
             <div class="grid grid-3">
                 <label class="field"><span>Fade in and out (seconds each)</span>
                     <input type="number" min="0" max="10" step="0.1" value="@Number(Overlay.FadeSeconds)" @onchange="e => Set(() => Overlay.FadeSeconds = Math.Clamp(Number(e, 1), 0, 10))" /></label>
@@ -139,9 +257,16 @@
                         <option value="programmes">Programmes only</option>
                         <option value="everything">Everything, breaks too</option>
                     </select></label>
+                @if (IsDesign && TimingSchedule.Always)
+                {
+                    <label class="field"><span>Animation length (seconds)</span>
+                        <input type="number" min="1" max="120" step="0.5" value="@Number(OverlayAnimation.AnimationSeconds(Overlay))"
+                               @onchange="e => SetAnimationLength(e)" /></label>
+                }
             </div>
             <p class="hint">Times are through the whole programme, so one split by ad breaks still gets it at the right moment. ErsatzTV fades in and
-                out over the same time.</p>
+                out over the same time.
+                @(IsDesign && TimingSchedule.Always ? "The animation length is the timeline above: keyframed layers move over it as each part of the programme starts." : "")</p>
 
             <h3 class="ed-section">Canvas</h3>
             <div class="grid grid-3">
@@ -164,26 +289,64 @@
             @if (IsDesign)
             {
                 <h3 class="ed-section">Layers <span class="ed-meta">top first</span></h3>
-                <ol class="layer-list">
-                    @foreach (OverlayLayer layer in Enumerable.Reverse(Overlay.Layers).ToList())
+                <div class="layer-actions">
+                    <span class="ed-meta">@(_chosen.Count > 1 ? $"{_chosen.Count} selected" : "Ctrl or Shift + click to select several")</span>
+                    <div class="spacer"></div>
+                    <button class="btn btn-sm" type="button" disabled="@(_chosen.Count == 0)" title="Put the selected layers in a group, which can then be moved, turned, faded and animated as one"
+                            @onclick="GroupChosen">Group</button>
+                    @if (_layer is { Kind: OverlayLayerKinds.Group } openGroup)
                     {
-                        int index = Overlay.Layers.IndexOf(layer);
-                        <li class="layer-row @(ReferenceEquals(layer, _layer) ? "selected" : "")" @key="layer">
-                            <button type="button" class="layer-select" aria-pressed="@(ReferenceEquals(layer, _layer) ? "true" : "false")"
-                                    @onclick="() => _layer = layer">
-                                <span>@Label(layer)</span>
-                                <small>@KindName(layer.Kind)</small>
+                        <button class="btn btn-sm" type="button" title="Take the layers out of this group and remove it (its own animation goes with it)"
+                                @onclick="() => Ungroup(openGroup)">Ungroup</button>
+                    }
+                    @if (_chosen.Count > 1)
+                    {
+                        <button class="btn btn-sm btn-danger" type="button" @onclick="RemoveChosen">Delete @_chosen.Count</button>
+                    }
+                </div>
+                <ol class="layer-list layer-tree @(_listDrag is null ? "" : "dragging")" aria-label="Layers">
+                    @foreach ((OverlayLayer layer, int depth) in OverlayHierarchy.Rows(Overlay, IsOpen))
+                    {
+                        bool rowGroup = OverlayHierarchy.IsGroup(layer);
+                        string drop = ReferenceEquals(_dropOn, layer) ? $"drop-{_dropWhere.ToString().ToLowerInvariant()}" : "";
+                        bool lockedByGroup = !layer.Locked && OverlayHierarchy.IsLocked(Overlay, layer);
+                        <li class="layer-row @(ReferenceEquals(layer, _layer) ? "selected" : "") @(_chosen.Contains(layer) ? "chosen" : "") @drop" @key="layer"
+                            style="padding-left:@(depth * 16)px" draggable="true"
+                            @ondragstart="() => StartListDrag(layer)" @ondragend="EndListDrag"
+                            @ondragover="e => ListDragOver(e, layer)" @ondragover:preventDefault="true"
+                            @ondrop="e => ListDrop(e, layer)" @ondrop:preventDefault="true">
+                            @if (rowGroup)
+                            {
+                                <button type="button" class="layer-twisty" aria-label="@(IsOpen(layer) ? "Fold" : "Unfold") @Label(layer)"
+                                        @onclick="() => ToggleOpen(layer)">@(IsOpen(layer) ? "▾" : "▸")</button>
+                            }
+                            else
+                            {
+                                <span class="layer-twisty" aria-hidden="true"></span>
+                            }
+                            <button type="button" class="layer-select" aria-pressed="@(_chosen.Contains(layer) ? "true" : "false")"
+                                    @onclick="e => ClickRow(e, layer)">
+                                <span>@(rowGroup ? "▣ " : "")@(OverlayAnimation.HasKeyframes(layer) ? "◆ " : "")@Label(layer)</span>
+                                <small>@(layer.Mask is { } rowMask ? $"{rowMask.Mode} mask" : rowGroup ? $"{OverlayHierarchy.Children(Overlay, layer).Count} inside" : KindName(layer.Kind))</small>
                             </button>
+                            <button class="layer-lock @(layer.Locked ? "on" : lockedByGroup ? "inherited" : "")" type="button"
+                                    aria-pressed="@(layer.Locked ? "true" : "false")" aria-label="@(layer.Locked ? "Unlock" : "Lock") @Label(layer)"
+                                    title="@(layer.Locked ? "Unlock: it can be picked and moved on the canvas again" : lockedByGroup ? "Locked by its group" : "Lock: it can't be picked or moved on the canvas (still editable here)")"
+                                    @onclick="() => ToggleLock(layer)">@(layer.Locked || lockedByGroup ? "🔒" : "🔓")</button>
                             <button class="btn btn-sm" type="button" title="Bring forward" aria-label="Bring @Label(layer) forward"
-                                    disabled="@(index == Overlay.Layers.Count - 1)" @onclick="() => MoveLayer(layer, 1)">↑</button>
+                                    @onclick="() => StepLayer(layer, 1)">↑</button>
                             <button class="btn btn-sm" type="button" title="Send backward" aria-label="Send @Label(layer) backward"
-                                    disabled="@(index == 0)" @onclick="() => MoveLayer(layer, -1)">↓</button>
+                                    @onclick="() => StepLayer(layer, -1)">↓</button>
                         </li>
                     }
                 </ol>
                 @if (Overlay.Layers.Count == 0)
                 {
                     <p class="hint">No layers yet. Add one above the canvas.</p>
+                }
+                else
+                {
+                    <p class="hint">Drag layers to reorder them, or onto the middle of a group to put them inside it.</p>
                 }
 
                 @if (_layer is { } selected && Overlay.Layers.Contains(selected))
@@ -197,6 +360,36 @@
                         </div>
                         <label class="field"><span>Layer name</span>
                             <input type="text" value="@selected.Name" @onchange="e => Set(() => selected.Name = Text(e, selected.Name))" /></label>
+
+                        @if (OverlayHierarchy.CanMask(selected))
+                        {
+                            <label class="field"><span>Use as</span>
+                                <select value="@(selected.Mask?.Mode.ToString() ?? "")" @onchange="e => SetLayerMask(selected, e.Value?.ToString() ?? string.Empty)">
+                                    <option value="">Visible layer</option>
+                                    <option value="@GeneratedMaskMode.Add">Add mask — reveal inside</option>
+                                    <option value="@GeneratedMaskMode.Subtract">Subtract mask — hide inside</option>
+                                </select></label>
+                            @if (selected.Mask is { } mask)
+                            {
+                                List<OverlayLayer> targets = [.. OverlayHierarchy.MaskTargets(Overlay, selected)];
+                                OverlayLayer? chosenTarget = targets.FirstOrDefault(target => target.Id is not null && target.Id == mask.Target);
+                                <label class="field"><span>Mask target</span>
+                                    <select value="@(chosenTarget is null ? "" : Overlay.Layers.IndexOf(chosenTarget).ToString(CultureInfo.InvariantCulture))"
+                                            @onchange="e => SetMaskTarget(selected, e.Value?.ToString() ?? string.Empty)">
+                                        <option value="">Choose a layer beneath this mask…</option>
+                                        @foreach (OverlayLayer target in targets)
+                                        {
+                                            <option value="@Overlay.Layers.IndexOf(target)">@Label(target)</option>
+                                        }
+                                    </select></label>
+                                @if (chosenTarget is null)
+                                {
+                                    <p class="hint warn">Choose a target beneath this mask. Move the mask above its target in the layer list if needed.</p>
+                                }
+                                <p class="hint">The mask itself isn't drawn; its opacity sets how strongly it cuts. Picture masks use the picture's transparency, not its
+                                    brightness. Add masks reveal the target only inside them; subtract masks cut holes in it. Keyframe the mask to follow something as it moves.</p>
+                            }
+                        }
 
                         @if (selected.Kind == OverlayLayerKinds.Text)
                         {
@@ -257,13 +450,13 @@
                             </label>
                             @if (string.IsNullOrWhiteSpace(selected.VariableImage))
                             {
-                            <div class="field"><span>Picture</span>
-                                <FilePathPicker Value="@selected.Path" ValueChanged="value => Set(() => selected.Path = value)" Extensions="FileBrowsing.Images" KeepCopyIn="@OverlayPackages.AssetCategory"
-                                                Label="picture" StartIn="Environment.SpecialFolder.MyPictures" Placeholder="D:\Media\Logos\channel.png" /></div>
-                            @if (Missing(selected.Path))
-                            {
-                                <p class="hint warn">The scheduler can't find this file.</p>
-                            }
+                                <div class="field"><span>Picture</span>
+                                    <FilePathPicker Value="@selected.Path" ValueChanged="value => Set(() => selected.Path = value)" Extensions="FileBrowsing.Images" KeepCopyIn="@OverlayPackages.AssetCategory"
+                                                    Label="picture" StartIn="Environment.SpecialFolder.MyPictures" Placeholder="D:\Media\Logos\channel.png" /></div>
+                                @if (Missing(selected.Path))
+                                {
+                                    <p class="hint warn">The scheduler can't find this file.</p>
+                                }
                             }
                         }
                         else if (selected.Kind == OverlayLayerKinds.Video)
@@ -298,33 +491,76 @@
                                 <p class="hint">Couldn't read its length or take a still: that needs ffmpeg and ffprobe (as set for Generated promos, or on the PATH).</p>
                             }
                             <p class="hint">A video with an alpha channel (ProRes 4444 .mov, or VP9 .webm) shows the programme through it. ErsatzTV sizes
-                                it by the box's width, keeping its shape. It doesn't fade:
+                                it by the box's width, keeping its shape, and can't turn, mask or animate it. It doesn't fade:
                                 its own animation brings it in and out, so time the other layers around it below.</p>
                         }
+                        else if (selected.Kind == OverlayLayerKinds.Group)
+                        {
+                            <p class="hint">
+                                A group holds @OverlayHierarchy.Children(Overlay, selected).Count layer(s). Move, turn, fade, time and keyframe it like any
+                                layer, and everything inside goes with it while keeping its own animation. Its box is what it turns about;
+                                resize it with the numbers below (that moves the turning point, not what's inside).
+                            </p>
+                        }
 
-                        @if (selected.Kind is not (OverlayLayerKinds.Image or OverlayLayerKinds.Video))
+                        @if (selected.Kind is OverlayLayerKinds.Text or OverlayLayerKinds.Rect)
+                        {
+                            <div class="field"><span>Colour</span>
+                                <ScreenColourPicker @key="selected" Value="@ColourValue(selected.Color)"
+                                                    ValueChanged="colour => Set(() => selected.Color = string.IsNullOrWhiteSpace(colour) ? selected.Color : colour)" /></div>
+                        }
+                        @if (selected.Kind == OverlayLayerKinds.Rect)
                         {
                             <div class="grid grid-2">
-                                <div class="field"><span>Colour</span>
-                                    <input type="color" class="ed-colour" aria-label="Layer colour" value="@ColourValue(selected.Color)"
-                                           @onchange="e => Set(() => selected.Color = Text(e, selected.Kind == OverlayLayerKinds.Rect ? Black : White))" /></div>
-                                @if (selected.Kind == OverlayLayerKinds.Rect)
+                                <label class="field"><span>Shape</span>
+                                    <select value="@(selected.Shape ?? GeneratedShape.Rectangle)"
+                                            @onchange="e => Set(() => selected.Shape = ShapeOf(e))">
+                                        @foreach (GeneratedShape shape in Enum.GetValues<GeneratedShape>())
+                                        {
+                                            <option value="@shape">@shape</option>
+                                        }
+                                    </select></label>
+                                <label class="field"><span>Soft edges (pixels)</span>
+                                    <input type="number" min="0" max="200" step="1" value="@Number(selected.SoftEdges ?? 0)"
+                                           @onchange="e => Set(() => selected.SoftEdges = Number(e, 0) is var soft && soft > 0 ? (float)Math.Clamp(soft, 0, 200) : null)" /></label>
+                                @if (selected.Shape is null or GeneratedShape.Rectangle)
                                 {
                                     <label class="field"><span>Corner radius</span>
                                         <input type="number" min="0" max="500" value="@Number(selected.CornerRadius)" @onchange="e => Set(() => selected.CornerRadius = (float)Math.Max(0, Number(e, 0)))" /></label>
                                 }
                             </div>
+                            <p class="hint">Use equal width and height for a circle. Soft edges feather the outline; 0 keeps it sharp.</p>
                         }
 
-                        <h4>Position (pixels)</h4>
+                        @{ OverlayPose selectedPose = OverlayAnimation.PoseAt(selected, _time); }
+                        <h4>
+                            Position (pixels)
+                            @if (OverlayAnimation.HasKeyframes(selected))
+                            {
+                                <span class="ed-meta">· at @($"{_time:0.00}")s; @(CurrentKeyframe is null ? "changing these adds a keyframe" : "this keyframe")</span>
+                            }
+                        </h4>
                         <div class="grid grid-4">
-                            <label class="field"><span>X</span><input type="number" value="@Number(selected.X)" @onchange="e => Set(() => selected.X = (float)Number(e, selected.X))" /></label>
-                            <label class="field"><span>Y</span><input type="number" value="@Number(selected.Y)" @onchange="e => Set(() => selected.Y = (float)Number(e, selected.Y))" /></label>
-                            <label class="field"><span>Width</span><input type="number" min="1" value="@Number(selected.Width)" @onchange="e => Set(() => selected.Width = (float)Math.Max(1, Number(e, selected.Width)))" /></label>
-                            <label class="field"><span>Height</span><input type="number" min="1" value="@Number(selected.Height)" @onchange="e => Set(() => selected.Height = (float)Math.Max(1, Number(e, selected.Height)))" /></label>
+                            <label class="field"><span>X</span><input type="number" value="@Number(Math.Round(selectedPose.X, 1))" @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { X = (float)value })" /></label>
+                            <label class="field"><span>Y</span><input type="number" value="@Number(Math.Round(selectedPose.Y, 1))" @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Y = (float)value })" /></label>
+                            <label class="field"><span>Width</span><input type="number" min="1" value="@Number(Math.Round(selectedPose.Width, 1))" @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Width = (float)value })" /></label>
+                            <label class="field"><span>Height</span><input type="number" min="1" value="@Number(Math.Round(selectedPose.Height, 1))" @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Height = (float)value })" /></label>
                         </div>
-                        <label class="field"><span>Opacity: @selected.Opacity.ToString("0", CultureInfo.InvariantCulture)%</span>
-                            <input type="range" min="0" max="100" step="1" value="@Number(selected.Opacity)" @onchange="e => Set(() => selected.Opacity = Math.Clamp(Number(e, 100), 0, 100))" /></label>
+                        <div class="grid grid-2">
+                            @if (selected.Kind != OverlayLayerKinds.Video)
+                            {
+                                <label class="field"><span>Turn (degrees, clockwise)</span>
+                                    <input type="number" step="1" value="@Number(Math.Round(selectedPose.Rotation ?? 0, 1))"
+                                           @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Rotation = (float)value })" /></label>
+                            }
+                            <label class="field"><span>Opacity: @selectedPose.Opacity.ToString("0", CultureInfo.InvariantCulture)%</span>
+                                <input type="range" min="0" max="100" step="1" value="@Number(Math.Round(selectedPose.Opacity))"
+                                       @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Opacity = Math.Clamp(value, 0, 100) })" /></label>
+                        </div>
+                        @if (OverlayHierarchy.ParentOf(Overlay, selected) is { } holder)
+                        {
+                            <p class="hint">Inside “@Label(holder)”: these are from the group's top-left corner, turned with it.</p>
+                        }
 
                         <h4>Timing within the overlay</h4>
                         <div class="grid grid-2">
@@ -336,9 +572,11 @@
                         <p class="hint">
                             @(selected.Kind == OverlayLayerKinds.Video
                                 ? "Usually 0 and 0: the video plays for the whole time the overlay shows."
-                                : TimingSchedule.Always
-                                    ? "Measured from the start and end of each part of the programme (between its breaks)."
-                                    : "E.g. text over a video that takes 1.5s to animate in and out: in after 1.5, out 1.5 before the end. It fades as the overlay does.")
+                                : selected.Kind == OverlayLayerKinds.Group
+                                    ? "Everything inside the group comes and goes with it."
+                                    : TimingSchedule.Always
+                                        ? "Measured from the start and end of each part of the programme (between its breaks)."
+                                        : "E.g. text over a video that takes 1.5s to animate in and out: in after 1.5, out 1.5 before the end. It fades as the overlay does.")
                         </p>
                     </div>
                 }
@@ -357,15 +595,15 @@
                 </label>
                 @if (string.IsNullOrWhiteSpace(Overlay.VariableImage))
                 {
-                <div class="field"><span>@(Overlay.Variants.Count > 0 ? "Default picture or video" : "Picture or video")</span>
-                    <FilePathPicker Value="@Overlay.File" ValueChanged="value => Set(() => Overlay.File = value)" Extensions="MediaExtensions" KeepCopyIn="@OverlayPackages.AssetCategory"
-                                    Label="picture or video" StartIn="Environment.SpecialFolder.MyPictures" Placeholder="D:\Media\Logos\bug.png" /></div>
-                @if (Missing(Overlay.File))
-                {
-                    <p class="hint warn">The scheduler can't find this file.</p>
-                }
-                <p class="hint">A PNG with transparency, or a video (with an alpha channel, such as a .mov) for an animated bug.
-                    @(Overlay.Variants.Count > 0 ? "Leave it empty to show only the pictures below (a rating badge with nothing for unrated shows)." : "")</p>
+                    <div class="field"><span>@(Overlay.Variants.Count > 0 ? "Default picture or video" : "Picture or video")</span>
+                        <FilePathPicker Value="@Overlay.File" ValueChanged="value => Set(() => Overlay.File = value)" Extensions="MediaExtensions" KeepCopyIn="@OverlayPackages.AssetCategory"
+                                        Label="picture or video" StartIn="Environment.SpecialFolder.MyPictures" Placeholder="D:\Media\Logos\bug.png" /></div>
+                    @if (Missing(Overlay.File))
+                    {
+                        <p class="hint warn">The scheduler can't find this file.</p>
+                    }
+                    <p class="hint">A PNG with transparency, or a video (with an alpha channel, such as a .mov) for an animated bug.
+                        @(Overlay.Variants.Count > 0 ? "Leave it empty to show only the pictures below (a rating badge with nothing for unrated shows)." : "")</p>
                 }
                 else
                 {
@@ -399,9 +637,9 @@
     </div>
 </div>
 
-@if (_drag is not null)
+@if (_drag is not null || _scrubbing || _keyDrag is not null)
 {
-    <div class="drag-overlay" @onpointermove="Drag" @onpointerup="EndDrag" @onpointercancel="EndDrag" @onpointerleave="EndDrag"></div>
+    <div class="drag-overlay @(_drag is null ? "drag-time" : "")" @onpointermove="OverlayMove" @onpointerup="OverlayEnd" @onpointercancel="OverlayEnd" @onpointerleave="OverlayEnd"></div>
 }
 
 @code {
@@ -415,12 +653,12 @@
     [Parameter] public IReadOnlyList<string> HolidayNames { get; set; } = [.. SchedularrTV.Core.Temporal.TemporalTagOptions.DefaultHolidays.Select(holiday => holiday.Name)];
 
     private const string MoveHandle = "move";
+    private const string RotateHandle = "rotate";
 
     // Named rather than written into the markup: a quoted string inside an attribute's own quotes ends the attribute.
     private const string DefaultFont = "Arial";
     private const string DefaultAlign = "left";
     private const string White = "#ffffff";
-    private const string Black = "#000000";
     private const string LayerPromptPlaceholder = "A cheeky one-liner about the episode";
     private const string LayerStylePlaceholder = "Short and punchy";
     private int _tries;
@@ -432,8 +670,10 @@
     private const int FileCanvasWidth = 1920;
     private const int FileCanvasHeight = 1080;
 
-    /// <summary>The preview is drawn about this wide; the canvas fills the editor's width.</summary>
+    /// <summary>The preview is drawn about this wide (smaller while scrubbing or dragging); the canvas fills the editor's width.</summary>
     private const float PreviewPixels = 1280;
+    private const float FastPreviewPixels = 720;
+    private const double RowHeight = 34;
     private static readonly string[] Handles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
     private static readonly TimeSpan SampleLength = TimeSpan.FromMinutes(22);
     private static readonly string[] MediaExtensions = [.. FileBrowsing.Images, ".mov", ".webm", ".mp4", ".mkv"];
@@ -446,31 +686,65 @@
         (720, 480, "720 × 480 (SD)")
     ];
 
-    private sealed class DragState(OverlayLayer layer, string handle, double startX, double startY)
+    private sealed record DragState(OverlayLayer Layer, string Handle, double StartX, double StartY, float X, float Y, float Width, float Height)
     {
-        public OverlayLayer Layer { get; } = layer;
-        public string Handle { get; } = handle;
-        public double StartX { get; } = startX;
-        public double StartY { get; } = startY;
-        public float X { get; } = layer.X;
-        public float Y { get; } = layer.Y;
-        public float Width { get; } = layer.Width;
-        public float Height { get; } = layer.Height;
+        public bool Moved { get; set; }
+
+        /// <summary>Moving: every selected layer (bar those inside another selected one), each from where it started.</summary>
+        public List<Mover> Movers { get; init; } = [];
+
+        /// <summary>Resizing: the layer's own turn, and its groups' turn on top of that.</summary>
+        public double OwnRotation { get; init; }
+
+        public double SpaceRotation { get; init; }
+
+        /// <summary>Turning: the box's middle on screen, and the pointer's angle from it at the start.</summary>
+        public double CentreClientX { get; init; }
+
+        public double CentreClientY { get; init; }
+
+        public double StartAngle { get; init; }
+    }
+
+    /// <param name="SpaceRotation">How far the groups it's in are turned: a drag on screen moves it that much less turned.</param>
+    private sealed record Mover(OverlayLayer Layer, float X, float Y, double SpaceRotation);
+
+    private sealed record KeyDragState(OverlayLayer Layer, OverlayKeyframe Key, double StartX, double StartAt)
+    {
         public bool Moved { get; set; }
     }
 
+    private readonly CancellationTokenSource _life = new();
     private readonly string _canvasId = $"overlay-canvas-{Guid.NewGuid():N}";
+    private readonly string _stillId = $"overlay-still-{Guid.NewGuid():N}";
+    private readonly string _rulerId = $"overlay-ruler-{Guid.NewGuid():N}";
     private double _canvasPixels;
     private IReadOnlyList<string> _fonts = [];
     private OverlayLayer? _layer;
+    // Every selected layer (_layer, whose settings show, among them).
+    private readonly HashSet<OverlayLayer> _chosen = [];
+    // Groups folded shut in the layer list.
+    private readonly HashSet<OverlayLayer> _folded = [];
+    private List<OverlayLayer>? _listDrag;
+    private OverlayLayer? _dropOn;
+    private OverlayDrop _dropWhere;
     private DragState? _drag;
+    private KeyDragState? _keyDrag;
+    private bool _scrubbing;
+    private double _rulerLeft;
+    private double _rulerWidth;
     private bool _snapX;
     private bool _snapY;
+    private double _time;
     private string? _preview;
+    private string? _shownPreview;
+    private bool _stillScriptReady;
+    private bool _previewWanted;
+    private bool _previewFast;
+    private bool _previewRunning;
     private string _previewCurrent = "The Show";
     private string _previewUpcoming = "Another Show\nA Later Show";
     private string? _previewError;
-    private int _previewVersion;
     private OverlayVideos? _videos;
 
     /// <summary>What's known of each video layer's file (null once looked up and ffprobe couldn't say).</summary>
@@ -482,7 +756,7 @@
 
     /// <summary>The one-appearance chart: worth showing once some part of a timed design comes or goes on its own.</summary>
     private bool ShowsAppearance =>
-        IsDesign && !TimingSchedule.Always && Overlay.Layers.Count > 1
+        IsDesign && !TimingSchedule.Always && Overlay.Layers.Count(OverlayRenderer.IsDrawn) > 1
         && Overlay.Layers.Any(layer => layer.Kind == OverlayLayerKinds.Video || layer.InSeconds > 0 || layer.OutSeconds > 0);
 
     private int CanvasWidth => IsDesign ? Math.Max(1, Overlay.Width) : FileCanvasWidth;
@@ -492,12 +766,18 @@
     /// <summary>Screen pixels per canvas pixel: the canvas fills the editor's width, so this follows the window.</summary>
     private double Scale => (_canvasPixels > 0 ? _canvasPixels : 640) / CanvasWidth;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         _fonts = InstalledFonts();
         _videos = Services.GetService<OverlayVideos>();
-        _layer = Overlay.Layers.LastOrDefault();
-        await RefreshPreviewAsync();
+        if (Overlay.Layers.LastOrDefault() is { } top)
+        {
+            Select(top);
+        }
+
+        // Part-way in, where everything that comes in has.
+        _time = SnapToFrame(TimelineLength / 2);
+        RequestPreview();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -507,6 +787,18 @@
         {
             await MeasureCanvas();
         }
+
+        // A picture drawn before the canvas was on the page.
+        if (_preview is not null && !ReferenceEquals(_preview, _shownPreview) && !_previewRunning)
+        {
+            await ShowPreview();
+        }
+    }
+
+    public void Dispose()
+    {
+        _life.Cancel();
+        _life.Dispose();
     }
 
     /// <summary>Reads how wide the canvas is drawn, for turning pointer movement into canvas pixels.</summary>
@@ -526,45 +818,161 @@
         }
     }
 
-    private async Task Set(Action change)
+    /// <summary>Where the canvas is on screen (left, top, width), or zeros when it can't be told.</summary>
+    private async Task<(double Left, double Top, double Width)> CanvasBox()
+    {
+        try
+        {
+            double[] box = await JS.InvokeAsync<double[]>("eval",
+                $"(r => r ? [r.left, r.top, r.width] : [0, 0, 0])(document.getElementById('{_canvasId}')?.getBoundingClientRect())");
+            return box is [var left, var top, var width] ? (left, top, width) : (0, 0, 0);
+        }
+        catch (Exception)
+        {
+            return (0, 0, 0);
+        }
+    }
+
+    private Task Set(Action change)
     {
         change();
-        await CommitAsync();
+        return CommitAsync();
     }
 
     private async Task CommitAsync()
     {
+        PruneSelection();
         await Changed.InvokeAsync();
-        await RefreshPreviewAsync();
+        RequestPreview();
     }
 
-    /// <summary>Draws the preview in the background; a newer change's preview wins over an older one still drawing.</summary>
-    private async Task RefreshPreviewAsync()
+    // Changing when it shows can change the timeline's length.
+    private Task TimingChanged()
     {
-        int version = ++_previewVersion;
-        Overlay snapshot = Overlay.Copy();
-        string[] upcoming = _previewUpcoming.Replace("\r", "").Split('\n').Select(title => title.Trim()).ToArray();
-        snapshot = OverlayImages.Resolve(snapshot, _previewCurrent, upcoming);
-        Dictionary<string, string> tokens = new(OverlayProcessor.SampleTokens)
+        _time = SnapToFrame(Math.Min(_time, TimelineLength));
+        return CommitAsync();
+    }
+
+    private Task SetAnimationLength(ChangeEventArgs e) => Set(() =>
+    {
+        double seconds = Math.Clamp(Number(e, Overlay.DefaultAnimationSeconds), 1, 120);
+        Overlay.AnimationSeconds = Math.Abs(seconds - Overlay.DefaultAnimationSeconds) < 0.001 ? null : seconds;
+        _time = SnapToFrame(Math.Min(_time, TimelineLength));
+    });
+
+    // ---- The preview ----
+
+    private Task RefreshPreview()
+    {
+        RequestPreview();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Asks for the preview to be drawn again. One is drawn at a time and the newest request wins, so scrubbing or
+    /// dragging shows pictures as fast as they can be drawn.
+    /// </summary>
+    /// <param name="fast">Smaller, for while the pointer moves; a full-size one follows when it stops.</param>
+    private void RequestPreview(bool fast = false)
+    {
+        _previewWanted = true;
+        _previewFast = fast;
+        if (!_previewRunning)
         {
-            ["channel"] = ChannelName, ["title"] = _previewCurrent, ["next"] = upcoming.FirstOrDefault() ?? string.Empty
-        };
-        float scale = Math.Min(1f, PreviewPixels / CanvasWidth);
+            _ = DrawPreviews();
+        }
+    }
+
+    private async Task DrawPreviews()
+    {
+        _previewRunning = true;
         try
         {
-            Dictionary<string, string> posters = await PostersAsync(snapshot);
-            byte[] png = await Task.Run(() => OverlayRenderer.Preview(snapshot, tokens, scale, posters));
-            if (version == _previewVersion)
+            await Task.Yield();
+            while (_previewWanted && !_life.IsCancellationRequested)
             {
-                _preview = "data:image/png;base64," + Convert.ToBase64String(png);
-                _previewError = null;
+                _previewWanted = false;
+                bool fast = _previewFast;
+                try
+                {
+                    Overlay snapshot = Overlay.Copy();
+                    string[] upcoming = _previewUpcoming.Replace("\r", "").Split('\n').Select(title => title.Trim()).ToArray();
+                    snapshot = OverlayImages.Resolve(snapshot, _previewCurrent, upcoming);
+                    Dictionary<string, string> tokens = new(OverlayProcessor.SampleTokens)
+                    {
+                        ["channel"] = ChannelName, ["title"] = _previewCurrent, ["next"] = upcoming.FirstOrDefault() ?? string.Empty
+                    };
+                    float scale = Math.Min(1f, (fast ? FastPreviewPixels : PreviewPixels) / CanvasWidth);
+                    OverlayClock? clock = IsDesign ? PreviewClock : null;
+                    Dictionary<string, string> posters = await PostersAsync(snapshot);
+                    byte[] png = await Task.Run(() => OverlayRenderer.Preview(snapshot, tokens, scale, posters, clock));
+                    _preview = "data:image/png;base64," + Convert.ToBase64String(png);
+                    _previewError = null;
+                    await ShowPreview();
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _previewError = ex.Message;
+                }
+
+                if (!_life.IsCancellationRequested)
+                {
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            _previewRunning = false;
+        }
+    }
+
+    // Decodes the new picture off screen and only then swaps it in, so the canvas never blanks between pictures.
+    private const string StillScript = """
+        window.schedularrOverlayStill ??= async (id, url) => {
+            const element = document.getElementById(id);
+            if (!element) return false;
+            const image = new Image();
+            image.src = url;
+            try { await image.decode(); } catch { }
+            if (!element.isConnected) return false;
+            element.style.backgroundImage = `url("${url}")`;
+            return true;
+        };
+        """;
+
+    private async Task ShowPreview()
+    {
+        if (_preview is not { } preview || ReferenceEquals(preview, _shownPreview))
+        {
+            return;
+        }
+
+        try
+        {
+            if (!_stillScriptReady)
+            {
+                await JS.InvokeVoidAsync("eval", StillScript);
+                _stillScriptReady = true;
+            }
+
+            if (await JS.InvokeAsync<bool>("schedularrOverlayStill", _stillId, preview))
+            {
+                _shownPreview = preview;
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _previewError = ex.Message;
+            // Disconnected, still prerendering or without script: tried again after the next render.
         }
     }
+
+    /// <summary>The moment the preview shows: the playhead, in one appearance (or a whole-programme overlay's opening).</summary>
+    private OverlayClock PreviewClock => new(_time, TimelineLength, Overlay.FadeSeconds, FadeIn: true, FadeOut: !TimingSchedule.Always,
+        LayerOuts: !TimingSchedule.Always);
 
     /// <summary>A still for each of the design's videos (taken once and kept), and what's known of each, for the inspector.</summary>
     private async Task<Dictionary<string, string>> PostersAsync(Overlay overlay)
@@ -587,6 +995,472 @@
 
         return posters;
     }
+
+    // ---- The timeline ----
+
+    private double TimelineLength => Math.Max(0.5, OverlayAnimation.TimelineSeconds(Overlay));
+
+    private static int Fps => OverlayAnimation.Fps;
+
+    private int FrameCount => Math.Max(1, (int)Math.Ceiling(TimelineLength * Fps));
+
+    private int FrameAt(double seconds) => Math.Clamp((int)Math.Round(Math.Clamp(seconds, 0, 86_400) * Fps), 0, FrameCount - 1);
+
+    private double SnapToFrame(double seconds) => Math.Round(FrameAt(seconds) / (double)Fps, 4);
+
+    private double LastTime => Math.Round((FrameCount - 1) / (double)Fps, 4);
+
+    private int CurrentFrame => FrameAt(_time);
+
+    private void StepFrames(int frames) => SetTimeTo((CurrentFrame + frames) / (double)Fps);
+
+    private void SetTimeTo(double seconds, bool fast = false)
+    {
+        double time = SnapToFrame(Math.Clamp(seconds, 0, TimelineLength));
+        if (fast && Math.Abs(time - _time) < 0.0001)
+        {
+            return;
+        }
+
+        _time = time;
+        RequestPreview(fast);
+    }
+
+    private IEnumerable<double> Ticks()
+    {
+        double length = TimelineLength;
+        double step = length <= 12 ? 1 : length <= 30 ? 2 : length <= 60 ? 5 : 10;
+        for (double tick = 0; tick <= length + 0.0001; tick += step)
+        {
+            yield return tick;
+        }
+    }
+
+    /// <summary>When the layer is on screen in the timeline: from coming in to going (with its groups').</summary>
+    private (double From, double To) Span(OverlayLayer layer)
+    {
+        LayerTiming timing = OverlayHierarchy.EffectiveTiming(Overlay, layer);
+        double to = TimingSchedule.Always ? TimelineLength : TimelineLength - timing.OutSeconds;
+        return (Math.Min(timing.InSeconds, TimelineLength), Math.Max(0, to));
+    }
+
+    /// <summary>Whether the layer (and every group it's in) shows at the playhead.</summary>
+    private bool VisibleNow(OverlayLayer layer)
+    {
+        OverlayClock clock = PreviewClock;
+        return OverlayAnimation.Visibility(layer, clock) > 0
+               && OverlayHierarchy.Ancestors(Overlay, layer).All(group => OverlayAnimation.Visibility(group, clock) > 0);
+    }
+
+    private OverlayKeyframe? CurrentKeyframe => _layer is { } layer ? OverlayAnimation.KeyframeAt(layer, _time) : null;
+
+    private async Task MeasureRuler()
+    {
+        try
+        {
+            double[] box = await JS.InvokeAsync<double[]>("eval",
+                $"(r => r ? [r.left, r.width] : [0, 0])(document.getElementById('{_rulerId}')?.getBoundingClientRect())");
+            if (box is [var left, var width] && width > 0)
+            {
+                (_rulerLeft, _rulerWidth) = (left, width);
+            }
+        }
+        catch (Exception)
+        {
+            // Disconnected or still prerendering: the last measurement stands in.
+        }
+    }
+
+    private double TimeAtPointer(double clientX) =>
+        _rulerWidth <= 0 ? _time : (clientX - _rulerLeft) / _rulerWidth * TimelineLength;
+
+    /// <summary>Gives the timeline the keyboard, so frame stepping works straight after scrubbing or dragging a box.</summary>
+    private async Task FocusRuler()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("eval", $"document.getElementById('{_rulerId}')?.focus({{ preventScroll: true }})");
+        }
+        catch (Exception)
+        {
+            // The keys work once the timeline is clicked again.
+        }
+    }
+
+    private async Task StartScrub(PointerEventArgs e)
+    {
+        _scrubbing = true;
+        _ = FocusRuler();
+        await MeasureRuler();
+        if (_scrubbing)
+        {
+            SetTimeTo(TimeAtPointer(e.ClientX), fast: true);
+        }
+    }
+
+    private async Task StartKeyDrag(PointerEventArgs e, OverlayLayer layer, OverlayKeyframe key)
+    {
+        _keyDrag = new KeyDragState(layer, key, e.ClientX, key.At.TotalSeconds);
+        SetTimeTo(key.At.TotalSeconds);
+        _ = FocusRuler();
+        await MeasureRuler();
+    }
+
+    private void OverlayMove(PointerEventArgs e)
+    {
+        if (_drag is not null)
+        {
+            Drag(e);
+        }
+        else if (_keyDrag is { } keyDrag)
+        {
+            MoveKeyDrag(keyDrag, e);
+        }
+        else if (_scrubbing)
+        {
+            SetTimeTo(TimeAtPointer(e.ClientX), fast: true);
+        }
+    }
+
+    private async Task OverlayEnd(PointerEventArgs e)
+    {
+        if (_drag is not null)
+        {
+            await EndDrag(e);
+        }
+        else if (_keyDrag is { } keyDrag)
+        {
+            MoveKeyDrag(keyDrag, e);
+            _keyDrag = null;
+            if (keyDrag.Moved)
+            {
+                await CommitAsync();
+            }
+        }
+        else if (_scrubbing)
+        {
+            _scrubbing = false;
+            SetTimeTo(TimeAtPointer(e.ClientX));
+        }
+    }
+
+    private void MoveKeyDrag(KeyDragState drag, PointerEventArgs e)
+    {
+        if (_rulerWidth <= 0)
+        {
+            return;
+        }
+
+        double seconds = (e.ClientX - drag.StartX) / _rulerWidth * TimelineLength;
+        drag.Moved |= Math.Abs(e.ClientX - drag.StartX) >= 2;
+        if (!drag.Moved)
+        {
+            return;
+        }
+
+        OverlayAnimation.MoveKeyframe(drag.Layer, drag.Key, SnapToFrame(drag.StartAt + seconds), LastTime);
+        SetTimeTo(drag.Key.At.TotalSeconds, fast: true);
+    }
+
+    /// <summary>
+    /// Timeline shortcuts: ←/→ or ,/. step one frame (Shift: a second), Home/End jump to either end, [/] to the selected
+    /// layer's previous or next keyframe, K adds a keyframe and Delete removes the one under the playhead.
+    /// </summary>
+    private Task RulerKey(KeyboardEventArgs e)
+    {
+        int step = e.ShiftKey ? Fps : 1;
+        switch (e.Key)
+        {
+            case "ArrowLeft" or "," or "<":
+                StepFrames(-step);
+                break;
+            case "ArrowRight" or "." or ">":
+                StepFrames(step);
+                break;
+            case "Home":
+                SetTimeTo(0);
+                break;
+            case "End":
+                SetTimeTo(LastTime);
+                break;
+            case "[" when _layer is { } layer:
+                GoToKeyframe(layer, -1);
+                break;
+            case "]" when _layer is { } layer:
+                GoToKeyframe(layer, 1);
+                break;
+            case "Delete" or "Backspace" when _layer is { } layer && CurrentKeyframe is { } key:
+                return RemoveKeyframe(layer, key);
+            case "k" or "K" when _layer is { Kind: not OverlayLayerKinds.Video } layer:
+                return AddKeyframe(layer);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private Task StartKeyframes(OverlayLayer layer) => Set(() => OverlayAnimation.StartKeyframes(layer, _time));
+
+    private Task StopKeyframes(OverlayLayer layer) => Set(() => OverlayAnimation.StopKeyframes(layer, _time));
+
+    private Task AddKeyframe(OverlayLayer layer) => Set(() =>
+    {
+        if (!OverlayAnimation.HasKeyframes(layer))
+        {
+            OverlayAnimation.StartKeyframes(layer, _time);
+        }
+        else
+        {
+            OverlayAnimation.AddKeyframe(layer, _time);
+        }
+    });
+
+    private Task RemoveKeyframe(OverlayLayer layer, OverlayKeyframe key) => Set(() => OverlayAnimation.RemoveKeyframe(layer, key));
+
+    private Task SetKeyframeTime(ChangeEventArgs e, OverlayLayer layer, OverlayKeyframe key) => Set(() =>
+    {
+        OverlayAnimation.MoveKeyframe(layer, key, SnapToFrame(Number(e, key.At.TotalSeconds)), LastTime);
+        _time = SnapToFrame(key.At.TotalSeconds);
+    });
+
+    private OverlayKeyframe? NextKeyframe(OverlayLayer layer, int direction) =>
+        direction < 0
+            ? layer.Keyframes?.Where(key => key.At.TotalSeconds < _time - OverlayAnimation.KeyframeTolerance).OrderBy(key => key.At).LastOrDefault()
+            : layer.Keyframes?.Where(key => key.At.TotalSeconds > _time + OverlayAnimation.KeyframeTolerance).OrderBy(key => key.At).FirstOrDefault();
+
+    private void GoToKeyframe(OverlayLayer layer, int direction)
+    {
+        if (NextKeyframe(layer, direction) is { } key)
+        {
+            SetTimeTo(key.At.TotalSeconds);
+        }
+    }
+
+    private Task SetPoseValue(ChangeEventArgs e, OverlayLayer layer, Func<OverlayPose, double, OverlayPose> change)
+    {
+        if (!double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value))
+        {
+            return Task.CompletedTask;
+        }
+
+        return Set(() => OverlayAnimation.SetPose(layer, _time, change(OverlayAnimation.PoseAt(layer, _time), value)));
+    }
+
+    private static string EasingName(GeneratedEasing easing) => easing switch
+    {
+        GeneratedEasing.EaseIn => "Ease in",
+        GeneratedEasing.EaseOut => "Ease out",
+        GeneratedEasing.EaseInOut => "Ease in and out",
+        GeneratedEasing.Hold => "Hold, then jump",
+        _ => "Linear"
+    };
+
+    // ---- Selecting, locking, grouping and the layer list ----
+
+    private void Select(OverlayLayer layer)
+    {
+        _layer = layer;
+        _chosen.Clear();
+        _chosen.Add(layer);
+    }
+
+    /// <summary>A click on a row: alone it selects the layer; Ctrl (⌘) adds or drops it; Shift selects the rows from the last one to it.</summary>
+    private void ClickRow(MouseEventArgs e, OverlayLayer layer)
+    {
+        if (e.CtrlKey || e.MetaKey)
+        {
+            Toggle(layer);
+            return;
+        }
+
+        if (e.ShiftKey && _layer is { } anchor)
+        {
+            List<OverlayLayer> rows = [.. OverlayHierarchy.Rows(Overlay, IsOpen).Select(row => row.Layer)];
+            int from = rows.IndexOf(anchor);
+            int to = rows.IndexOf(layer);
+            if (from >= 0 && to >= 0)
+            {
+                _chosen.Clear();
+                foreach (OverlayLayer row in rows.Skip(Math.Min(from, to)).Take(Math.Abs(to - from) + 1))
+                {
+                    _chosen.Add(row);
+                }
+
+                _layer = layer;
+                return;
+            }
+        }
+
+        Select(layer);
+    }
+
+    private void Toggle(OverlayLayer layer)
+    {
+        if (_chosen.Add(layer))
+        {
+            _layer = layer;
+        }
+        else
+        {
+            _chosen.Remove(layer);
+            if (ReferenceEquals(_layer, layer))
+            {
+                _layer = _chosen.FirstOrDefault();
+            }
+        }
+    }
+
+    private bool IsOpen(OverlayLayer layer) => !_folded.Contains(layer);
+
+    private void ToggleOpen(OverlayLayer layer)
+    {
+        if (!_folded.Remove(layer))
+        {
+            _folded.Add(layer);
+        }
+    }
+
+    /// <summary>Drops selections of layers that are gone.</summary>
+    private void PruneSelection()
+    {
+        _chosen.RemoveWhere(layer => !Overlay.Layers.Contains(layer));
+        _folded.RemoveWhere(layer => !Overlay.Layers.Contains(layer));
+        if (_layer is not null && !Overlay.Layers.Contains(_layer))
+        {
+            _layer = _chosen.FirstOrDefault();
+        }
+
+        if (_layer is not null)
+        {
+            _chosen.Add(_layer);
+        }
+    }
+
+    /// <summary>Locking drops it from a several-layer selection, so dragging the others leaves it be.</summary>
+    private Task ToggleLock(OverlayLayer layer) => Set(() =>
+    {
+        layer.Locked = !layer.Locked;
+        if (layer.Locked && _chosen.Count > 1)
+        {
+            _chosen.RemoveWhere(chosen => !ReferenceEquals(chosen, _layer) && OverlayHierarchy.IsLocked(Overlay, chosen));
+        }
+    });
+
+    private Task StepLayer(OverlayLayer layer, int direction) => Set(() => OverlayHierarchy.Step(Overlay, layer, direction, _time));
+
+    private Task GroupChosen() => _chosen.Count == 0 ? Task.CompletedTask : Set(() => Select(OverlayHierarchy.Group(Overlay, _chosen, _time)));
+
+    private Task Ungroup(OverlayLayer group) => Set(() =>
+    {
+        List<OverlayLayer> members = OverlayHierarchy.Ungroup(Overlay, group, _time);
+        _chosen.Clear();
+        _layer = null;
+        foreach (OverlayLayer member in members)
+        {
+            _chosen.Add(member);
+            _layer ??= member;
+        }
+    });
+
+    private void StartListDrag(OverlayLayer layer)
+    {
+        if (!_chosen.Contains(layer))
+        {
+            Select(layer);
+        }
+
+        _listDrag = OverlayHierarchy.Outermost(Overlay, _chosen);
+    }
+
+    private void EndListDrag()
+    {
+        _listDrag = null;
+        _dropOn = null;
+    }
+
+    /// <summary>Top of a row puts it in front, bottom behind; the middle of a group's row puts it inside.</summary>
+    private static OverlayDrop DropAt(DragEventArgs e, OverlayLayer layer)
+    {
+        double y = e.OffsetY;
+        if (OverlayHierarchy.IsGroup(layer))
+        {
+            return y < RowHeight * 0.3 ? OverlayDrop.Above : y > RowHeight * 0.7 ? OverlayDrop.Below : OverlayDrop.Into;
+        }
+
+        return y < RowHeight / 2 ? OverlayDrop.Above : OverlayDrop.Below;
+    }
+
+    private void ListDragOver(DragEventArgs e, OverlayLayer layer)
+    {
+        if (_listDrag is not { } dragged || dragged.Any(moving => OverlayHierarchy.IsWithin(Overlay, layer, moving)))
+        {
+            _dropOn = null;
+            return;
+        }
+
+        (_dropOn, _dropWhere) = (layer, DropAt(e, layer));
+    }
+
+    private Task ListDrop(DragEventArgs e, OverlayLayer layer)
+    {
+        List<OverlayLayer>? dragged = _listDrag;
+        EndListDrag();
+        if (dragged is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        OverlayDrop where = DropAt(e, layer);
+        return Set(() =>
+        {
+            if (OverlayHierarchy.Move(Overlay, dragged, layer, where, _time) && where == OverlayDrop.Into)
+            {
+                _folded.Remove(layer);
+            }
+        });
+    }
+
+    // ---- Masks ----
+
+    private Task SetLayerMask(OverlayLayer layer, string mode) => Set(() =>
+    {
+        if (string.IsNullOrEmpty(mode) || !Enum.TryParse(mode, out GeneratedMaskMode parsed))
+        {
+            layer.Mask = null;
+            return;
+        }
+
+        layer.Mask ??= new GeneratedLayerMask();
+        layer.Mask.Mode = parsed;
+        if (layer.Mask.Target is null && OverlayHierarchy.MaskTargets(Overlay, layer).FirstOrDefault() is { } target)
+        {
+            target.Id ??= OverlayHierarchy.NewId(Overlay);
+            layer.Mask.Target = target.Id;
+        }
+    });
+
+    private Task SetMaskTarget(OverlayLayer layer, string value) => Set(() =>
+    {
+        if (layer.Mask is not { } mask)
+        {
+            return;
+        }
+
+        OverlayLayer? target = int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int index) && index >= 0 && index < Overlay.Layers.Count
+                               && OverlayHierarchy.MaskTargets(Overlay, layer).Contains(Overlay.Layers[index])
+            ? Overlay.Layers[index]
+            : null;
+        if (target is not null)
+        {
+            target.Id ??= OverlayHierarchy.NewId(Overlay);
+        }
+
+        mask.Target = target?.Id;
+    });
+
+    private static GeneratedShape? ShapeOf(ChangeEventArgs e) =>
+        Enum.TryParse(e.Value?.ToString(), out GeneratedShape shape) && shape != GeneratedShape.Rectangle ? shape : null;
+
+    // ---- Videos ----
 
     /// <summary>A video chosen: its box takes its shape, and the first one chosen sets how long the overlay shows.</summary>
     private async Task SetVideo(OverlayLayer layer, string? path)
@@ -638,7 +1512,9 @@
         {
             slot.DurationSeconds = duration;
         }
+
         TimingSchedule.Automatic.DurationSeconds = duration;
+        _time = SnapToFrame(Math.Min(_time, TimelineLength));
     }
 
     private async Task SetSize(ChangeEventArgs e)
@@ -657,6 +1533,12 @@
                 layer.Width *= across;
                 layer.Height *= down;
                 layer.FontSize *= across;
+                if (layer.SoftEdges is { } soft)
+                {
+                    layer.SoftEdges = Math.Clamp(soft * Math.Min(across, down), 0, 200);
+                }
+
+                OverlayAnimation.Scale(layer, across, down);
             }
 
             Overlay.Width = width;
@@ -665,6 +1547,8 @@
         }
     }
 
+    // ---- Adding and removing layers ----
+
     private async Task AddLayer(string kind)
     {
         if (kind == OverlayLayerKinds.Video)
@@ -672,10 +1556,10 @@
             // Usually the design's backdrop, so it goes under everything, covering the canvas until a video gives it a shape.
             var video = new OverlayLayer
             {
-                Kind = kind, Name = UniqueName(KindName(kind)), X = 0, Y = 0, Width = Overlay.Width, Height = Overlay.Height, Shadow = false
+                Kind = kind, Name = OverlayHierarchy.UniqueName(Overlay, KindName(kind)), X = 0, Y = 0, Width = Overlay.Width, Height = Overlay.Height, Shadow = false
             };
             Overlay.Layers.Insert(0, video);
-            _layer = video;
+            Select(video);
             await CommitAsync();
             return;
         }
@@ -683,7 +1567,7 @@
         var layer = new OverlayLayer
         {
             Kind = kind,
-            Name = UniqueName(KindName(kind)),
+            Name = OverlayHierarchy.UniqueName(Overlay, KindName(kind)),
             X = Overlay.Width * 0.1f,
             Y = Overlay.Height * 0.75f,
             Width = kind == OverlayLayerKinds.Image ? Overlay.Width * 0.12f : Overlay.Width * 0.4f,
@@ -693,61 +1577,114 @@
             Opacity = kind == OverlayLayerKinds.Rect ? 85 : 100
         };
         Overlay.Layers.Add(layer);
-        _layer = layer;
+        Select(layer);
         await CommitAsync();
     }
 
-    private async Task DuplicateLayer(OverlayLayer layer)
-    {
-        OverlayLayer copy = layer.Copy();
-        copy.Name = UniqueName(layer.Name);
-        copy.X += 20;
-        copy.Y += 20;
-        Overlay.Layers.Insert(Overlay.Layers.IndexOf(layer) + 1, copy);
-        _layer = copy;
-        await CommitAsync();
-    }
+    // A copy of the layer, or of a group with everything inside it, with ids of its own.
+    private Task DuplicateLayer(OverlayLayer layer) => Set(() => Select(OverlayHierarchy.Duplicate(Overlay, layer)));
 
-    private async Task RemoveLayer(OverlayLayer layer)
+    private Task RemoveLayer(OverlayLayer layer) => Set(() =>
     {
         int index = Overlay.Layers.IndexOf(layer);
-        Overlay.Layers.Remove(layer);
-        _layer = Overlay.Layers.Count == 0 ? null : Overlay.Layers[Math.Clamp(index - 1, 0, Overlay.Layers.Count - 1)];
-        await CommitAsync();
-    }
+        OverlayHierarchy.Remove(Overlay, layer);
+        _chosen.Clear();
+        _layer = null;
+        if (Overlay.Layers.Count > 0)
+        {
+            Select(Overlay.Layers[Math.Clamp(index - 1, 0, Overlay.Layers.Count - 1)]);
+        }
+    });
 
-    /// <summary>Moves a layer forward (+1, drawn later so on top) or backward (-1).</summary>
-    private async Task MoveLayer(OverlayLayer layer, int delta)
+    private Task RemoveChosen() => Set(() =>
     {
-        int index = Overlay.Layers.IndexOf(layer);
-        if (index < 0 || index + delta < 0 || index + delta >= Overlay.Layers.Count)
+        foreach (OverlayLayer layer in OverlayHierarchy.Outermost(Overlay, _chosen))
+        {
+            OverlayHierarchy.Remove(Overlay, layer);
+        }
+
+        _chosen.Clear();
+        _layer = null;
+        if (Overlay.Layers.LastOrDefault() is { } top)
+        {
+            Select(top);
+        }
+    });
+
+    // ---- Dragging on the canvas ----
+
+    private void StartDrag(PointerEventArgs e, OverlayLayer layer, string handle)
+    {
+        // Only the main button moves things. Locked layers can't be picked here.
+        if (e.Button != 0 || OverlayHierarchy.IsLocked(Overlay, layer))
         {
             return;
         }
 
-        (Overlay.Layers[index], Overlay.Layers[index + delta]) = (Overlay.Layers[index + delta], Overlay.Layers[index]);
-        await CommitAsync();
-    }
-
-    private string UniqueName(string name)
-    {
-        string stem = name.TrimEnd(' ', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9');
-        stem = stem.Length == 0 ? name : stem;
-        string candidate = name;
-        for (int number = 2; Overlay.Layers.Any(layer => string.Equals(layer.Name, candidate, StringComparison.OrdinalIgnoreCase)); number++)
+        // Ctrl (⌘) or Shift on a box adds it to the selection or takes it out, without moving anything.
+        if (handle == MoveHandle && (e.CtrlKey || e.MetaKey || e.ShiftKey))
         {
-            candidate = $"{stem} {number}";
+            Toggle(layer);
+            return;
         }
 
-        return candidate;
+        if (_chosen.Contains(layer))
+        {
+            _layer = layer;
+        }
+        else
+        {
+            Select(layer);
+        }
+
+        OverlayPose pose = OverlayAnimation.PoseAt(layer, _time);
+        List<Mover> movers = handle != MoveHandle ? [] :
+        [
+            // Locked layers stay put while the rest of the selection moves.
+            .. OverlayHierarchy.Outermost(Overlay, _chosen).Where(chosen => !OverlayHierarchy.IsLocked(Overlay, chosen)).Select(chosen =>
+            {
+                OverlayPose start = OverlayAnimation.PoseAt(chosen, _time);
+                return new Mover(chosen, start.X, start.Y, OverlayHierarchy.SpaceAngle(Overlay, chosen, _time));
+            })
+        ];
+        _drag = new DragState(layer, handle, e.ClientX, e.ClientY, pose.X, pose.Y, pose.Width, pose.Height)
+        {
+            Movers = movers,
+            OwnRotation = layer.Kind == OverlayLayerKinds.Video ? 0 : pose.Rotation ?? 0,
+            SpaceRotation = OverlayHierarchy.SpaceAngle(Overlay, layer, _time)
+        };
+        _ = MeasureCanvas();
+        _ = FocusRuler();
     }
 
-    private void StartDrag(PointerEventArgs e, OverlayLayer layer, string handle)
+    /// <summary>Starts turning the layer by its round handle: the angle is taken about the box's middle on screen.</summary>
+    private async Task StartRotate(PointerEventArgs e, OverlayLayer layer)
     {
-        _layer = layer;
-        _drag = new DragState(layer, handle, e.ClientX, e.ClientY);
-        // Usually already measured when the pointer came onto the canvas; this catches a resized window.
-        _ = MeasureCanvas();
+        if (e.Button != 0 || OverlayHierarchy.IsLocked(Overlay, layer))
+        {
+            return;
+        }
+
+        Select(layer);
+        OverlayPose pose = OverlayAnimation.PoseAt(layer, _time);
+        var pending = new DragState(layer, RotateHandle, e.ClientX, e.ClientY, pose.X, pose.Y, pose.Width, pose.Height) { OwnRotation = pose.Rotation ?? 0 };
+        _drag = pending;
+        (double left, double top, double width) = await CanvasBox();
+        if (!ReferenceEquals(_drag, pending) || width <= 0)
+        {
+            return;
+        }
+
+        _canvasPixels = width;
+        OverlayBox box = OverlayHierarchy.World(Overlay, layer, _time);
+        double centreX = left + box.CenterX * Scale;
+        double centreY = top + box.CenterY * Scale;
+        _drag = pending with
+        {
+            CentreClientX = centreX,
+            CentreClientY = centreY,
+            StartAngle = Math.Atan2(e.ClientY - centreY, e.ClientX - centreX) * 180 / Math.PI
+        };
     }
 
     private void Drag(PointerEventArgs e)
@@ -757,57 +1694,86 @@
             return;
         }
 
-        float dx = (float)((e.ClientX - drag.StartX) / Scale);
-        float dy = (float)((e.ClientY - drag.StartY) / Scale);
+        double screenDx = (e.ClientX - drag.StartX) / Scale;
+        double screenDy = (e.ClientY - drag.StartY) / Scale;
         OverlayLayer layer = drag.Layer;
         const float minimum = 8;
-        drag.Moved |= Math.Abs(dx) >= 1 || Math.Abs(dy) >= 1;
-
-        if (drag.Handle == MoveHandle)
+        drag.Moved |= Math.Abs(screenDx) >= 1 || Math.Abs(screenDy) >= 1;
+        // A click that doesn't move the box changes nothing (and adds no keyframe).
+        if (!drag.Moved)
         {
-            float x = MathF.Round(drag.X + dx);
-            float y = MathF.Round(drag.Y + dy);
-            if (e.AltKey)
-            {
-                (layer.X, layer.Y, _snapX, _snapY) = (x, y, false, false);
-            }
-            else
-            {
-                float snap = (float)(SnapDistance / Scale);
-                float centreX = x + layer.Width / 2 - Overlay.Width / 2f;
-                float centreY = y + layer.Height / 2 - Overlay.Height / 2f;
-                _snapX = Math.Abs(centreX) <= snap;
-                _snapY = Math.Abs(centreY) <= snap;
-                layer.X = _snapX ? MathF.Round((Overlay.Width - layer.Width) / 2) : x;
-                layer.Y = _snapY ? MathF.Round((Overlay.Height - layer.Height) / 2) : y;
-            }
-
             return;
         }
 
-        if (drag.Handle.Contains('e'))
+        if (drag.Handle == RotateHandle)
         {
-            layer.Width = MathF.Round(Math.Max(minimum, drag.Width + dx));
+            if (drag.StartAngle is 0 && drag.CentreClientX is 0)
+            {
+                return;
+            }
+
+            double angle = Math.Atan2(e.ClientY - drag.CentreClientY, e.ClientX - drag.CentreClientX) * 180 / Math.PI;
+            double turned = drag.OwnRotation + (angle - drag.StartAngle);
+            turned = e.ShiftKey ? Math.Round(turned / 15) * 15 : Math.Round(turned, 1);
+            turned = ((turned + 180) % 360 + 360) % 360 - 180;
+            OverlayAnimation.SetPose(layer, _time, OverlayAnimation.PoseAt(layer, _time) with { Rotation = (float)turned });
+            RequestPreview(fast: true);
+            return;
         }
 
-        if (drag.Handle.Contains('w'))
+        if (drag.Handle == MoveHandle)
         {
-            float shift = Math.Min(dx, drag.Width - minimum);
-            layer.X = MathF.Round(drag.X + shift);
-            layer.Width = MathF.Round(drag.Width - shift);
+            // Each layer moves in its own group's space, so a drag goes the same way on screen however its groups are turned.
+            bool snaps = drag.Movers.Count == 1 && OverlayHierarchy.ParentOf(Overlay, drag.Movers[0].Layer) is null && !e.AltKey;
+            _snapX = _snapY = false;
+            foreach (Mover mover in drag.Movers)
+            {
+                (double localDx, double localDy) = OverlaySpace.Rotate(screenDx, screenDy, -mover.SpaceRotation);
+                OverlayPose current = OverlayAnimation.PoseAt(mover.Layer, _time);
+                float x = (float)Math.Round(mover.X + localDx);
+                float y = (float)Math.Round(mover.Y + localDy);
+                if (snaps)
+                {
+                    float snap = (float)(SnapDistance / Scale);
+                    float centredX = (Overlay.Width - current.Width) / 2;
+                    float centredY = (Overlay.Height - current.Height) / 2;
+                    _snapX = Math.Abs(x - centredX) <= snap;
+                    _snapY = Math.Abs(y - centredY) <= snap;
+                    x = _snapX ? MathF.Round(centredX) : x;
+                    y = _snapY ? MathF.Round(centredY) : y;
+                }
+
+                // On an animated layer this sets (or adds) the keyframe at the playhead.
+                OverlayAnimation.SetPose(mover.Layer, _time, current with { X = x, Y = y, Rotation = null });
+            }
+
+            RequestPreview(fast: true);
+            return;
         }
 
-        if (drag.Handle.Contains('s'))
-        {
-            layer.Height = MathF.Round(Math.Max(minimum, drag.Height + dy));
-        }
+        // Resizing works along the box's own edges, however it and its groups are turned; the opposite edge stays put.
+        (double dx, double dy) = OverlaySpace.Rotate(screenDx, screenDy, -(drag.SpaceRotation + drag.OwnRotation));
+        double left = 0, right = 0, top = 0, bottom = 0;
+        if (drag.Handle.Contains('e')) right = Math.Max(minimum - drag.Width, dx);
+        if (drag.Handle.Contains('w')) left = Math.Min(dx, drag.Width - minimum);
+        if (drag.Handle.Contains('s')) bottom = Math.Max(minimum - drag.Height, dy);
+        if (drag.Handle.Contains('n')) top = Math.Min(dy, drag.Height - minimum);
+        double width = drag.Width - left + right;
+        double height = drag.Height - top + bottom;
+        (double shiftX, double shiftY) = OverlaySpace.Rotate((left + right) / 2, (top + bottom) / 2, drag.OwnRotation);
+        double centreX = drag.X + drag.Width / 2.0 + shiftX;
+        double centreY = drag.Y + drag.Height / 2.0 + shiftY;
 
-        if (drag.Handle.Contains('n'))
+        OverlayPose was = OverlayAnimation.PoseAt(layer, _time);
+        OverlayAnimation.SetPose(layer, _time, was with
         {
-            float shift = Math.Min(dy, drag.Height - minimum);
-            layer.Y = MathF.Round(drag.Y + shift);
-            layer.Height = MathF.Round(drag.Height - shift);
-        }
+            X = (float)Math.Round(centreX - width / 2),
+            Y = (float)Math.Round(centreY - height / 2),
+            Width = (float)Math.Round(width),
+            Height = (float)Math.Round(height),
+            Rotation = null
+        });
+        RequestPreview(fast: true);
     }
 
     private async Task EndDrag(PointerEventArgs e)
@@ -865,21 +1831,22 @@
     private static string KindName(string kind) => kind switch
     {
         OverlayLayerKinds.Image => "Picture",
-        OverlayLayerKinds.Rect => "Colour block",
+        OverlayLayerKinds.Rect => "Shape",
         OverlayLayerKinds.Video => "Video",
+        OverlayLayerKinds.Group => "Group",
         _ => "Text"
     };
 
     private static string Fraction(double value, double of) => (Math.Clamp(value / Math.Max(0.001, of), 0, 1) * 100).ToString("0.###", CultureInfo.InvariantCulture) + "%";
 
     /// <summary>A canvas-pixel position or size as a percent of the canvas, so boxes follow the canvas at any width.</summary>
-    private static string Pct(double value, double of) => (value / Math.Max(1, of) * 100).ToString("0.###", CultureInfo.InvariantCulture) + "%";
+    private static string Pct(double value, double of) => (value / Math.Max(0.001, of) * 100).ToString("0.###", CultureInfo.InvariantCulture) + "%";
 
     private static string Percent(TimeSpan value) => (value.TotalMilliseconds / SampleLength.TotalMilliseconds * 100).ToString("0.###", CultureInfo.InvariantCulture) + "%";
 
     private static string Number(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
 
-    private static string ColourValue(string? value) => value is { Length: 7 } && value[0] == '#' ? value : White;
+    private static string ColourValue(string? value) => value is { Length: 7 } && value[0] == '#' ? value.ToLowerInvariant() : White;
 
     private static string Text(ChangeEventArgs e, string fallback) => e.Value?.ToString()?.Trim() is { Length: > 0 } text ? text : fallback;
 

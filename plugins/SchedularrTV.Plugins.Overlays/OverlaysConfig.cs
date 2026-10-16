@@ -197,6 +197,15 @@ public sealed class Overlay
     /// <summary>Fade in and fade out, each.</summary>
     public double FadeSeconds { get; set; } = 1;
 
+    /// <summary>
+    /// For a design shown all the way through with keyframed layers: how long its animation runs from the start of each
+    /// part of the programme, after which it stays as it is at the end. Null is <see cref="DefaultAnimationSeconds"/>.
+    /// Timed overlays animate over each appearance instead.
+    /// </summary>
+    public double? AnimationSeconds { get; set; }
+
+    public const double DefaultAnimationSeconds = 10;
+
     /// <summary><see cref="OverlayAppliesTo"/>.</summary>
     public string AppliesTo { get; set; } = OverlayAppliesTo.Programmes;
 
@@ -295,11 +304,76 @@ public static class OverlayLayerKinds
     /// under and over it.
     /// </summary>
     public const string Video = "video";
+
+    /// <summary>
+    /// Draws nothing itself: layers whose <see cref="OverlayLayer.Parent"/> is this group are placed, turned, faded and
+    /// timed inside it, so moving or animating the group carries them along while they keep their own animation.
+    /// </summary>
+    public const string Group = "group";
 }
 
-/// <summary>A box on a design's canvas: text, a picture or a block of colour, in canvas pixels.</summary>
+/// <summary>A layer's pose at one moment of an appearance; between keyframes it moves from one to the next.</summary>
+public sealed class OverlayKeyframe
+{
+    /// <summary>From the start of the overlay's appearance (not of the layer).</summary>
+    public TimeSpan At { get; set; }
+
+    public float X { get; set; }
+
+    public float Y { get; set; }
+
+    public float Width { get; set; } = 400;
+
+    public float Height { get; set; } = 80;
+
+    /// <summary>0 to 100, like the layer's own.</summary>
+    public double Opacity { get; set; } = 100;
+
+    /// <summary>Degrees clockwise about the middle of the box.</summary>
+    [YamlDotNet.Serialization.YamlMember(DefaultValuesHandling = YamlDotNet.Serialization.DefaultValuesHandling.OmitDefaults)]
+    public float Rotation { get; set; }
+
+    /// <summary>How it moves from here to the next keyframe.</summary>
+    public GeneratedEasing Easing { get; set; } = GeneratedEasing.Linear;
+
+    public OverlayKeyframe Copy() => (OverlayKeyframe)MemberwiseClone();
+}
+
+/// <summary>A box on a design's canvas: text, a picture, a shape, a video or a group, in canvas pixels.</summary>
 public sealed class OverlayLayer
 {
+    /// <summary>Stable identity, for groups (<see cref="Parent"/>) and mask targets; given when needed.</summary>
+    public string? Id { get; set; }
+
+    /// <summary>
+    /// The <see cref="Id"/> of the <see cref="OverlayLayerKinds.Group"/> this layer is inside; null at the top. Its
+    /// position is then in the group's space (from the group's top-left corner). The editor keeps a group's layers
+    /// right after it in the list.
+    /// </summary>
+    public string? Parent { get; set; }
+
+    /// <summary>Locked in the editor: it can't be picked or moved on the canvas. Only for editing.</summary>
+    [YamlDotNet.Serialization.YamlMember(DefaultValuesHandling = YamlDotNet.Serialization.DefaultValuesHandling.OmitDefaults)]
+    public bool Locked { get; set; }
+
+    /// <summary>When set, this shape or picture masks its target instead of being drawn.</summary>
+    public GeneratedLayerMask? Mask { get; set; }
+
+    /// <summary>A shape's outline; null is a (rounded) rectangle.</summary>
+    public GeneratedShape? Shape { get; set; }
+
+    /// <summary>A shape's feathered edge, in pixels; null is sharp.</summary>
+    public float? SoftEdges { get; set; }
+
+    /// <summary>Degrees clockwise about the middle of the box; null is 0. Keyframes animate it.</summary>
+    public float? Rotation { get; set; }
+
+    /// <summary>
+    /// While there are any, they set position, size, turn and opacity over each appearance instead of the values here
+    /// (kept for when animating is stopped).
+    /// </summary>
+    public List<OverlayKeyframe>? Keyframes { get; set; }
+
     public string Name { get; set; } = "Layer";
 
     /// <summary><see cref="OverlayLayerKinds"/>.</summary>
@@ -356,6 +430,8 @@ public sealed class OverlayLayer
     public OverlayLayer Copy()
     {
         var copy = (OverlayLayer)MemberwiseClone();
+        copy.Mask = Mask is null ? null : new GeneratedLayerMask { Mode = Mask.Mode, Target = Mask.Target };
+        copy.Keyframes = Keyframes?.Select(key => key.Copy()).ToList();
         copy.Writer = Writer is null ? null : new AiTextConfig
         {
             Generator = Writer.Generator,

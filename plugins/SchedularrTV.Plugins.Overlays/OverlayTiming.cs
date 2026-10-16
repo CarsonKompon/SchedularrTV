@@ -145,6 +145,24 @@ public static class OverlayTiming
         };
     }
 
+    /// <summary>
+    /// A whole-programme overlay's opening: the first <paramref name="seconds"/> of each part of the programme, unfaded
+    /// (its animation's video draws its own fade-in). Null when it doesn't show on this entry.
+    /// </summary>
+    public static OverlayShowing? Opening(Overlay overlay, ScheduleEntry entry, double seconds)
+    {
+        long partLength = (long)entry.Duration.TotalMilliseconds;
+        if (!AppliesTo(overlay, entry) || partLength <= 0)
+        {
+            return null;
+        }
+
+        long length = Math.Min(Ms(seconds), partLength);
+        return length < ShortestMs
+            ? null
+            : new OverlayShowing(new GraphicsTiming(Wall: false, FrequencyMs: Math.Max(partLength + 1000, length + 1), PhaseMs: 0, FadeMs: 0, HoldMs: length));
+    }
+
     public static bool AppliesTo(Overlay overlay, ScheduleEntry entry) =>
         entry.Kind != ScheduleEntryKind.Padding && entry.Item is not null
         && (overlay.AppliesTo == OverlayAppliesTo.Everything

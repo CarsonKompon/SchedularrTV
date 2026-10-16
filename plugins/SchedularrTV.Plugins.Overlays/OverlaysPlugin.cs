@@ -22,6 +22,12 @@ public sealed class OverlaysPlugin : IPlugin
         // For the editor: design videos' lengths, sizes and stills.
         services.AddSingleton(_ => new OverlayVideos(() => OverlayVideos.ResolveFfmpeg(context), Path.Combine(context.DataDirectory, "stills")));
 
+        // Animated designs, made into videos beside the drawn ones (ErsatzTV reads both from there).
+        services.AddSingleton(provider => new OverlayAnimations(
+            () => provider.GetRequiredService<OverlayRenderer>().Folder,
+            () => OverlayVideos.ResolveFfmpeg(context),
+            provider.GetService<ILoggerFactory>()?.CreateLogger<OverlayAnimations>()));
+
         services.AddPlayoutProcessor<OverlayProcessor>();
         services.AddChannelEditorTab<OverlaysChannelTab>(context, "Overlays", order: 55, icon: "layers");
     }

@@ -16,13 +16,62 @@ Presets include logo and text screen bugs, lower thirds, coming-up graphics, rat
 
 ## Design graphics
 
-- Add **text**, **pictures**, **color blocks**, or **video layers**
-- Drag boxes and resize handles on the canvas
+- Add **text**, **pictures**, **shapes**, or **video layers**
+- Drag boxes and resize handles on the canvas, and turn them with the round handle (Shift for 15° steps)
 - Hold **Alt** to bypass center-line snapping
 - Set fonts, colors, opacity, alignment, and shadows
 - Match the canvas shape to the output channel
 
 Long text shrinks to its box. [Local AI writer](local-ai.md) can generate captions while retaining the typed text as fallback.
+
+The canvas editor works like the [Generated promos](generated-promos.md) one:
+
+- **Layers** lists the top first, with each group's layers indented under it (▸ folds a group). Ctrl (⌘) + click or Shift + click selects several, in the list or on the canvas. **Drag rows** to reorder them; dropping on the middle of a group's row puts them inside it. **Lock** a layer with 🔓 so it can't be picked or moved on the canvas (locking a group locks what's inside). **Group** puts the selected layers in a group without moving them; **Ungroup** takes them back out.
+- **+ Shape** adds a rectangle that can be changed to an **Ellipse**, **Triangle**, **Diamond** or **Star**, with **Soft edges** and, for rectangles, **Corner radius**. Older color blocks are rectangles and look as before.
+- A shape or picture can be a **mask** instead of artwork: under **Use as**, choose **Add mask — reveal inside** or **Subtract mask — hide inside**, then the **Mask target** beneath it. Picture masks use the picture's transparency. Masks can't target groups, videos or other masks.
+
+### Timeline and keyframes
+
+Drag along the timeline under the canvas to scrub through one appearance: layers coming in late or going early fade as they will on air. For a whole-programme overlay, the timeline is its **Animation length** (10 seconds unless set under Timing). The **« ‹ › »** buttons and **← / →** (Shift for a second), **Home / End**, **[ / ]**, **K** and **Delete** work as in Generated promos.
+
+Select a layer or group and choose **◆ Animate with keyframes**. Its position, size, turn and opacity then come from keyframes: move the playhead and drag, resize or turn the box (or change its numbers) to set one there. Drag a diamond to retime it; **Then** sets the easing to the next one. A group's animation carries everything inside it. Video layers are placed by ErsatzTV, so they can't be animated, turned or masked.
+
+On air, an animated design is sent as a transparent video (VP9 WebM, or ProRes 4444 if ffmpeg lacks VP9) of each appearance, made in the background with the ffmpeg set for Generated promos, for programmes in the next 12 hours; the schedule is published again as each is ready. Until then the design shows standing still. A whole-programme animated overlay plays its animation as each part of the programme starts, then stays as it ends up. In YAML:
+
+```yaml
+layers:
+  - id: bar
+    name: Bar
+    kind: rect
+    shape: ellipse # rectangle (default), ellipse, triangle, diamond, star
+    soft_edges: 6
+    x: 80
+    y: 830
+    width: 940
+    height: 140
+    keyframes:
+      - at: 0s
+        x: -960
+        y: 830
+        width: 940
+        height: 140
+        opacity: 100
+        easing: ease_out
+      - at: 0.8s
+        x: 80
+        y: 830
+        width: 940
+        height: 140
+        opacity: 100
+  - name: Cutout
+    kind: rect
+    parent: group_id # inside a group (kind: group, id: group_id)
+    mask:
+      mode: subtract # or add
+      target: bar
+```
+
+Keyframe times are from the start of each appearance and opacity is 0–100, like the layer's own. `rotation` is degrees clockwise, `locked: true` only affects editing, and a whole-programme overlay's animation length is `animation_seconds`.
 
 ### Text tokens
 
