@@ -712,9 +712,9 @@
     <h3 class="ed-section">Preview video</h3>
     <div class="grid grid-2">
         <label class="field"><span>Output</span>
-            <select @bind="_videoTransparent" disabled="@_renderingVideo">
-                <option value="true">Transparent WebM (alpha)</option>
-                <option value="false">MP4 over the canvas test background</option>
+            <select @bind="_videoOutput" disabled="@_renderingVideo">
+                <option value="webm">Transparent WebM (alpha)</option>
+                <option value="mp4">MP4 over the canvas test background</option>
             </select>
         </label>
         <label class="field"><span>Size</span>
@@ -871,7 +871,7 @@
     private string _previewUpcoming = "Another Show\nA Later Show";
     private string? _previewError;
     private bool _renderingVideo, _videoFailed;
-    private bool _videoTransparent = true;
+    private string _videoOutput = "webm";
     private int _videoWidth = 1280;
     private double? _videoSeconds;
     private double _videoProgress;
@@ -1744,7 +1744,7 @@
             var renderer = Services.GetRequiredService<OverlayPreviewVideos>();
             Overlay source = Overlay.Copy();
             double seconds = VideoSeconds;
-            bool whole = TimingSchedule.Always, transparent = _videoTransparent;
+            bool whole = TimingSchedule.Always, transparent = _videoOutput == "webm";
             int width = _videoWidth;
             string current = _previewCurrent;
             string[] upcoming = _previewUpcoming.Replace("\r", "").Split('\n').Select(title => title.Trim()).ToArray();
