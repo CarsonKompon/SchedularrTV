@@ -200,12 +200,14 @@ public sealed class GeneratedPromoPreview(
         string key = $"{Path.GetFullPath(video.Path)}|{File.GetLastWriteTimeUtc(video.Path).Ticks}|{second.ToString("0.###", CultureInfo.InvariantCulture)}|{width}x{height}|{video.Fill}|layer";
         if (_frames.TryGetValue(key, out string? cached) && (cached is null || File.Exists(cached)))
         {
+            if (cached is not null) Used(cached);
             return cached;
         }
 
-        string directory = Path.Combine(promos.Root, "preview-frames");
+        string directory = Path.Combine(promos.Root, PreviewFrameCache.FolderName);
         Directory.CreateDirectory(directory);
         string output = Path.Combine(directory, Hash(key) + ".png");
+        TrimSoon();
         string filter = video.SizeFilter(Math.Max(1, fps));
         // Past the end of the video (it would hold its last frame), its opening frame stands in.
         string? result = await ExtractFilteredAsync(video.Path, second, filter, output, cancellationToken).ConfigureAwait(false)
@@ -362,14 +364,23 @@ public sealed class GeneratedPromoPreview(
         int index = Math.Clamp((int)Math.Round(time.TotalSeconds * fps), 0, count - 1);
         string source = $"{Path.GetFullPath(video)}|{File.GetLastWriteTimeUtc(video).Ticks}|{composition.BackgroundStart.Ticks}";
         string stripKey = $"{source}|{fps}|{count}|{FrameWidth}|strip";
-        string strip = Path.Combine(promos.Root, "preview-frames", Hash(stripKey));
+        string strip = Path.Combine(promos.Root, PreviewFrameCache.FolderName, Hash(stripKey));
 
         Task<string?> extracting = _strips.GetOrAdd(stripKey, _ => new Lazy<Task<string?>>(() =>
             Task.Run(() => ExtractStripAsync(video, composition.BackgroundStart, fps, count, strip)))).Value;
-        if (extracting.IsCompletedSuccessfully && extracting.Result is { } frames
-            && Path.Combine(frames, FrameName(index)) is var stripFrame && File.Exists(stripFrame))
+        if (extracting.IsCompletedSuccessfully && extracting.Result is { } frames)
         {
-            return stripFrame;
+            if (Path.Combine(frames, FrameName(index)) is var stripFrame && File.Exists(stripFrame))
+            {
+                Used(frames);
+                return stripFrame;
+            }
+
+            // Its strip was trimmed from the cache: it's extracted again next time.
+            if (!Directory.Exists(frames))
+            {
+                _strips.TryRemove(stripKey, out _);
+            }
         }
 
         // Not extracted yet (or it failed): this one frame on its own, seeking straight to it.
@@ -377,16 +388,67 @@ public sealed class GeneratedPromoPreview(
         string key = $"{source}|{index}|{fps}|{FrameWidth}";
         if (_frames.TryGetValue(key, out string? cached) && (cached is null || File.Exists(cached)))
         {
+            if (cached is not null) Used(cached);
             return cached;
         }
 
-        string directory = Path.Combine(promos.Root, "preview-frames");
+        string directory = Path.Combine(promos.Root, PreviewFrameCache.FolderName);
         Directory.CreateDirectory(directory);
         string frame = Path.Combine(directory, Hash(key) + ".jpg");
         string? result = await ExtractAsync(video, second, frame, cancellationToken).ConfigureAwait(false)
             ?? await ExtractAsync(video, 0, frame, cancellationToken).ConfigureAwait(false);
         _frames[key] = result;
+        TrimSoon();
         return result;
+    }
+
+    private readonly ConcurrentDictionary<string, DateTime> _touched = new(StringComparer.OrdinalIgnoreCase);
+    private DateTime _trimmedAt = DateTime.MinValue;
+    private int _trimming;
+
+    /// <summary>Marks a cached frame (or strip) as in use, at most once a minute each, so trimming keeps what's being edited.</summary>
+    private void Used(string path)
+    {
+        DateTime now = DateTime.UtcNow;
+        if (_touched.TryGetValue(path, out DateTime last) && now - last < TimeSpan.FromMinutes(1))
+        {
+            return;
+        }
+
+        _touched[path] = now;
+        PreviewFrameCache.Touch(path);
+    }
+
+    /// <summary>
+    /// Keeps the frame cache within its budget while editing (the service's own clean-up is only hourly): at most every
+    /// couple of minutes, in the background.
+    /// </summary>
+    private void TrimSoon()
+    {
+        DateTime now = DateTime.UtcNow;
+        if (now - _trimmedAt < TimeSpan.FromMinutes(2) || Interlocked.Exchange(ref _trimming, 1) == 1)
+        {
+            return;
+        }
+
+        _trimmedAt = now;
+        string directory = Path.Combine(promos.Root, PreviewFrameCache.FolderName);
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                PreviewFrameCache.Trim(directory, DateTime.UtcNow);
+                _touched.Clear();
+            }
+            catch (Exception)
+            {
+                // Only housekeeping; the service's clean-up tries again.
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _trimming, 0);
+            }
+        });
     }
 
     private static string FrameName(int index) => $"{index + 1:00000}.jpg";
@@ -440,6 +502,7 @@ public sealed class GeneratedPromoPreview(
                 // Another preview extracted the same frames at the same time; theirs stands.
             }
 
+            TrimSoon();
             return directory;
         }
         catch (Exception)

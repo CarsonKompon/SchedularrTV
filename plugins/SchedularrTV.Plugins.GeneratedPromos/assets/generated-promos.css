@@ -145,6 +145,37 @@
 .gp-scope .snap-guide-x { left: 50%; top: 0; bottom: 0; border-left-width: 1px; }
 .gp-scope .snap-guide-y { top: 50%; left: 0; right: 0; border-top-width: 1px; }
 
+/* Zooming and panning: the canvas is scaled inside this frame; handles and labels stay the same size on screen. */
+.gp-scope .ed-viewport { position: relative; overflow: hidden; border-radius: 8px; }
+.gp-scope .ed-viewport.zoomed .ed-canvas { border-radius: 0; }
+.gp-scope .ed-viewport.panning, .gp-scope .ed-viewport.panning * { cursor: grabbing !important; }
+.gp-scope .ed-zoom-badge {
+    position: absolute; right: 8px; top: 8px; z-index: 10; padding: 1px 7px; border-radius: 10px; font-size: 11px;
+    background: rgba(0,0,0,.65); color: #fff; pointer-events: none;
+}
+.gp-scope .ed-zoom-badge:empty { display: none; }
+.gp-scope .ed-canvas .handle {
+    width: calc(12px / var(--zoom, 1)); height: calc(12px / var(--zoom, 1));
+    margin: calc(-6px / var(--zoom, 1)) 0 0 calc(-6px / var(--zoom, 1)); border-width: calc(2px / var(--zoom, 1));
+}
+.gp-scope .ed-canvas .handle-rotate { top: calc(-22px / var(--zoom, 1)); }
+.gp-scope .ed-canvas .layer-tag { font-size: calc(10px / var(--zoom, 1)); line-height: calc(16px / var(--zoom, 1)); padding: 0 calc(5px / var(--zoom, 1)); }
+.gp-scope .ed-canvas .layer-box { border-width: calc(1px / var(--zoom, 1)); }
+.gp-scope .ed-canvas .layer-box.selected, .gp-scope .ed-canvas .layer-box.chosen { border-width: calc(2px / var(--zoom, 1)); }
+.gp-scope .ed-viewport-bar { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.gp-scope .ed-viewport-bar .spacer { flex: 1; }
+
+/* Locked layers: shown faintly, and clicks pass through them to what's underneath */
+.gp-scope .layer-box.locked { pointer-events: none; border-style: dotted; border-color: rgba(255,255,255,.18); }
+.gp-scope .layer-box.locked .layer-tag { opacity: .6; }
+.gp-scope .layer-lock {
+    flex: none; width: 26px; height: 26px; padding: 0; border: 1px solid transparent; border-radius: 6px; background: none;
+    cursor: pointer; font-size: 12px; line-height: 24px; opacity: .3;
+}
+.gp-scope .layer-row:hover .layer-lock { opacity: .7; }
+.gp-scope .layer-lock.on { opacity: 1; border-color: var(--line); }
+.gp-scope .layer-lock.inherited { opacity: .55; }
+
 /* Perspective: pinned shapes and the corners to drag */
 .gp-scope .ed-quads { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 4; }
 .gp-scope .ed-quad { fill: none; stroke: rgba(255,255,255,.55); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-dasharray: 6 4; }

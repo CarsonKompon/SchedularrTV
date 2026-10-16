@@ -678,8 +678,17 @@ public sealed partial class GeneratedPromoService(
         TimeSpan keepVideos = KeepVideos(config?.Current.Settings);
         TimeSpan keepAudio = KeepAudio(config?.Current.Settings);
 
+        // The editor's extracted frames have a much shorter life and a size budget of their own.
+        string previewFrames = Path.Combine(Root, PreviewFrameCache.FolderName);
+        PreviewFrameCache.Trim(previewFrames, now.UtcDateTime);
+
         foreach (string file in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories))
         {
+            if (file.StartsWith(previewFrames + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             try
             {
                 bool voice = string.Equals(Path.GetDirectoryName(file), VoiceDirectory, StringComparison.OrdinalIgnoreCase);

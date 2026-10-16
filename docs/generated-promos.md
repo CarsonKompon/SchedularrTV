@@ -24,6 +24,10 @@ Hold **Alt** while dragging to bypass snapping. **Browse** opens a file dialog o
 
 Drag along the timeline under the canvas to scrub: the preview redraws as you drag, a whole frame at a time, showing the background video's exact frame for that moment, the same one the render uses. The first time a background video is previewed, the frames the promo uses are extracted once in the background; until then each frame is fetched as you land on it, so scrubbing is quicker after a few seconds.
 
+For precise placement, **Ctrl + scroll** (⌘ on a Mac) over the canvas zooms in about the pointer, up to 16×, and dragging with the **middle mouse button** pans. Handles and labels stay the same size on screen, and moves, resizes, turns and corner pins stay exact at any zoom. **Fit** (or **Ctrl + 0** over the canvas) shows the whole frame again.
+
+Video frames the editor extracts are kept in the promos folder's `preview-frames` folder. Anything there unused for a day is removed, and once the folder passes 1 GB the least recently used frames are removed until it's under 512 MB. The editor checks every couple of minutes while you work, and the service checks hourly.
+
 The **« ‹ › »** buttons step a frame or a second. After clicking the timeline or dragging a box, these keys work:
 
 | Key | Does |
@@ -112,6 +116,7 @@ The **Layers** list shows the layers top first, with each group's layers indente
 
 - **Select several** with Ctrl (⌘) + click to add or drop one, or Shift + click for a run of rows. On the canvas, Ctrl or Shift + click a box does the same; dragging any selected box moves them all.
 - **Drag rows** to reorder them. Dropping on the top or bottom of a row puts the layers in front of or behind it; dropping on the middle of a group's row puts them inside it. The ↑ and ↓ buttons step a layer past its neighbour in its group.
+- **Lock** a layer with the 🔓 button on its row. A locked layer can't be picked, moved, resized, turned or corner-pinned on the canvas; clicks go through it to what's underneath, and it stays put when the rest of a selection is dragged. It can still be selected in the list and edited in its settings. Locking a group locks everything inside it. Locking only affects editing, not how the promo looks (in YAML, `locked: true`).
 - **Group** puts the selected layers in a new group, sized to fit them. Nothing moves on screen. **Ungroup** takes them back out where they are at the playhead; the group's own animation goes with it.
 - **Turn** any layer with the round handle above its box (Shift for 15° steps) or the **Turn** field under Position. Turning can be keyframed like position, size and opacity.
 

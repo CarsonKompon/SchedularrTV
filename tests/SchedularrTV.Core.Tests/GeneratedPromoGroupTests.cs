@@ -204,6 +204,30 @@ public sealed class GeneratedPromoGroupTests
     }
 
     [Fact]
+    public void Locking_is_kept_with_the_schedule_but_leaves_renders_alone()
+    {
+        GeneratedPromoTemplate template = Template();
+        string unlocked = GeneratedPromoResolver.Resolve(template, "Channel", [new UpNextListing("Show", Noon)], TimeZoneInfo.Utc, Noon)!.Key;
+        Assert.DoesNotContain("locked", SchedulerConfigLoader.Serialize(new SchedulerConfig
+        {
+            Channels = [new() { Id = "channel", Name = "Channel", Number = 1, BaseRotation = new() { Query = "*" },
+                GeneratedPromos = new() { Templates = [template] } }]
+        }));
+
+        template.Layers[0].Locked = true;
+        Assert.Equal(unlocked, GeneratedPromoResolver.Resolve(template, "Channel", [new UpNextListing("Show", Noon)], TimeZoneInfo.Utc, Noon)!.Key);
+
+        var config = new SchedulerConfig
+        {
+            Channels = [new() { Id = "channel", Name = "Channel", Number = 1, BaseRotation = new() { Query = "*" },
+                GeneratedPromos = new() { Templates = [template] } }]
+        };
+        GeneratedPromoTemplate loaded = SchedulerConfigLoader.Parse(SchedulerConfigLoader.Serialize(config)).Channels[0].GeneratedPromos!.Templates[0];
+        Assert.True(loaded.Layers[0].Locked);
+        Assert.False(loaded.Layers[1].Locked);
+    }
+
+    [Fact]
     public void Groups_must_have_ids_and_layers_must_name_real_groups()
     {
         GeneratedPromoTemplate template = Template();

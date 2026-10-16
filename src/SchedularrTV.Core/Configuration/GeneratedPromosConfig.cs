@@ -874,6 +874,14 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? Parent { get; set; }
 
+    /// <summary>
+    /// Locked in the editor: it can't be picked or moved on the canvas (a locked group locks what's inside it). Only
+    /// for editing, so it's left out of render keys and doesn't change how the promo looks.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)]
+    public bool Locked { get; set; }
+
     public GeneratedLayerKind Kind { get; set; } = GeneratedLayerKind.Text;
 
     public float X { get; set; }

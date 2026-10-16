@@ -313,6 +313,9 @@
                     <button class="btn btn-sm" type="button" @onclick="() => AddLayer(RequiredKind)">Add one</button>
                 </p>
             }
+            @* Ctrl + wheel zooms about the pointer and the middle button pans; script moves the canvas inside this frame. *@
+            <div class="ed-viewport" id="@_viewportId">
+            <span class="ed-zoom-badge" aria-hidden="true"></span>
             <div class="ed-canvas" id="@_canvasId" role="group" aria-label="Promo canvas" @onpointerenter="MeasureCanvas"
                  style="aspect-ratio:@(Template.Width) / @(Template.Height);">
                 @* The preview frame. Script swaps it in only once the next frame has decoded, so it never blanks between frames;
@@ -328,11 +331,13 @@
                     bool isGroupBox = GeneratedPromoHierarchy.IsGroup(layer);
                     // A pinned box is outlined by its pinned shape (drawn below) rather than its square.
                     bool pinned = IsPinned(layer);
-                    <div class="layer-box @(isSelected ? "selected" : inSelection ? "chosen" : "") @(VisibleAt(layer) ? "" : "hidden-now") @(GeneratedPromoEditing.HasKeyframes(Pose(layer)) ? "keyed" : "") @(placedHere ? "placed" : "") @(isGroupBox ? "group" : "") @(pinned ? "pinned" : "")" @key="layer"
+                    // Locked: clicks go straight through it to what's underneath.
+                    bool locked = IsLocked(layer);
+                    <div class="layer-box @(isSelected ? "selected" : inSelection ? "chosen" : "") @(VisibleAt(layer) ? "" : "hidden-now") @(GeneratedPromoEditing.HasKeyframes(Pose(layer)) ? "keyed" : "") @(placedHere ? "placed" : "") @(isGroupBox ? "group" : "") @(pinned ? "pinned" : "") @(locked ? "locked" : "")" @key="layer"
                          style="left:@Pct(box.CenterX - box.Width / 2, Template.Width);top:@Pct(box.CenterY - box.Height / 2, Template.Height);width:@Pct(box.Width, Template.Width);height:@Pct(box.Height, Template.Height);@(Math.Abs(box.Angle) > 0.001 ? $"transform:rotate({Number(box.Angle)}deg);" : "")"
                          title="@layer.Name" @onpointerdown="e => StartDrag(e, layer, Move)" @onpointerdown:preventDefault="true">
-                        <span class="layer-tag">@(isGroupBox ? "▣ " : "")@(GeneratedPromoEditing.HasKeyframes(Pose(layer)) ? "◆ " : "")@(placedHere ? "⌖ " : "")@Label(layer)</span>
-                        @if (isSelected && !_pinTool)
+                        <span class="layer-tag">@(locked ? "🔒 " : "")@(isGroupBox ? "▣ " : "")@(GeneratedPromoEditing.HasKeyframes(Pose(layer)) ? "◆ " : "")@(placedHere ? "⌖ " : "")@Label(layer)</span>
+                        @if (isSelected && !_pinTool && !locked)
                         {
                             // A group's box is only what it turns about, so it's moved and turned rather than stretched.
                             @foreach (string handle in isGroupBox ? [] : Handles)
@@ -356,7 +361,7 @@
                             <polygon class="ed-quad @(ReferenceEquals(layer, _layer) ? "selected" : "")" points="@QuadPoints(layer)" />
                         }
                     }
-                    @if (_pinTool && _layer is { } pinning)
+                    @if (_pinTool && _layer is { } pinning && !IsLocked(pinning))
                     {
                         (double X, double Y)[] corners = GeneratedPromoHierarchy.WorldQuad(Template, pinning, Pose, Time);
                         double radius = 7 / Math.Max(0.01, Scale);
@@ -378,6 +383,12 @@
                 {
                     <div class="snap-guide snap-guide-y" aria-hidden="true"></div>
                 }
+            </div>
+            </div>
+            <div class="ed-viewport-bar">
+                <span class="hint" style="margin:0;">Ctrl + scroll to zoom in for precise edits, middle-drag to pan.</span>
+                <div class="spacer"></div>
+                <button class="btn btn-sm" type="button" title="Show the whole frame again (Ctrl + 0)" @onclick="ResetZoom">Fit</button>
             </div>
             <div class="ed-timeline">
                 <div class="ed-timeline-head">
@@ -521,6 +532,13 @@
                             <span>@(rowGroup ? "▣ " : "")@Label(layer)</span>
                             <small>@(rowGroup ? $"{GeneratedPromoHierarchy.Children(Template, layer).Count} inside" : KindName(layer.Kind))</small>
                         </button>
+                        @{
+                            bool lockedByGroup = !layer.Locked && IsLocked(layer);
+                        }
+                        <button class="layer-lock @(layer.Locked ? "on" : lockedByGroup ? "inherited" : "")" type="button"
+                                aria-pressed="@(layer.Locked ? "true" : "false")" aria-label="@(layer.Locked ? "Unlock" : "Lock") @Label(layer)"
+                                title="@(layer.Locked ? "Unlock: it can be picked and moved on the canvas again" : lockedByGroup ? "Locked by its group" : "Lock: it can't be picked or moved on the canvas (still editable here)")"
+                                @onclick="() => ToggleLock(layer)">@(layer.Locked || lockedByGroup ? "🔒" : "🔓")</button>
                         <button class="btn btn-sm" type="button" title="Bring forward" aria-label="Bring @Label(layer) forward"
                                 @onclick="() => StepLayer(layer, 1)">↑</button>
                         <button class="btn btn-sm" type="button" title="Send backward" aria-label="Send @Label(layer) backward"
@@ -1409,6 +1427,11 @@
     /// <summary>Starts dragging one of the layer's corners (0 top left, clockwise).</summary>
     private void StartPin(PointerEventArgs e, GeneratedLayer layer, int corner)
     {
+        if (e.Button != 0 || IsLocked(layer))
+        {
+            return;
+        }
+
         _layer = layer;
         _chosen.Add(layer);
         LayerPose pose = GeneratedPromoEditing.PoseAt(Pose(layer), Time);
@@ -1515,8 +1538,9 @@
     {
         if (Template.Generator is not null)
         {
-            // The canvas is gone; its frame is put back when it returns.
+            // The canvas is gone; its frame (and zooming) are put back when it returns.
             _shownStill = null;
+            _zoomWired = false;
             return;
         }
 
@@ -1524,6 +1548,11 @@
         if (_canvasPixels <= 0)
         {
             await MeasureCanvas();
+        }
+
+        if (!_zoomWired)
+        {
+            _zoomWired = await SetUpZoom();
         }
 
         // A frame drawn before the canvas was on the page (or before it came back).
@@ -1647,7 +1676,8 @@
                 {
                     IReadOnlyList<UpNextListing> listings = PreviewListings(out _sample);
                     // The canvas fills the editor's width, so the still is drawn about as wide as a large screen shows it.
-                    int width = Math.Min(fast ? ScrubWidth : 1600, Template.Width);
+                    // Zoomed in, the canvas is drawn wider than the window, so the frame is drawn up to full size to stay sharp.
+                    int width = Math.Min(fast ? ScrubWidth : Math.Max(1600, (int)_canvasPixels), Template.Width);
                     byte[] jpeg = await Preview.RenderStillAsync(StillTemplate(), Channel.Name, listings, Zone, TimeSpan.FromSeconds(_time), width, _life.Token,
                         imageSubjects: Preview.ImageSubjects(Channel, Template));
                     _still = $"data:image/jpeg;base64,{Convert.ToBase64String(jpeg)}";
@@ -1674,6 +1704,119 @@
     }
 
     private readonly string _stillId = $"promo-still-{Guid.NewGuid():N}";
+
+    // ---- Zooming and panning the canvas ----
+
+    private readonly string _viewportId = $"promo-viewport-{Guid.NewGuid():N}";
+
+    /// <summary>
+    /// Zoom and pan live in the page: the canvas is scaled and moved inside its frame with a CSS transform. Everything
+    /// that turns the pointer into template pixels measures the canvas as drawn, so drags stay exact at any zoom.
+    /// Ctrl (⌘) + wheel zooms about the pointer (1× to 16×); the middle button drags it around; Ctrl + 0 fits it again.
+    /// </summary>
+    private const string ZoomScript = """
+        window.schedularrPromoZoom ??= (viewportId, canvasId) => {
+            const viewport = document.getElementById(viewportId);
+            const canvas = document.getElementById(canvasId);
+            if (!viewport || !canvas || viewport.promoZoom) return;
+            const badge = viewport.querySelector('.ed-zoom-badge');
+            let zoom = 1, x = 0, y = 0, pan = null;
+            const clamp = () => {
+                const width = viewport.clientWidth, height = viewport.clientHeight;
+                x = Math.min(0, Math.max(width - width * zoom, x));
+                y = Math.min(0, Math.max(height - height * zoom, y));
+            };
+            const apply = () => {
+                clamp();
+                canvas.style.transformOrigin = '0 0';
+                canvas.style.transform = zoom === 1 ? '' : `translate(${x}px, ${y}px) scale(${zoom})`;
+                canvas.style.setProperty('--zoom', zoom);
+                viewport.classList.toggle('zoomed', zoom !== 1);
+                if (badge) badge.textContent = zoom === 1 ? '' : `${Math.round(zoom * 100)}%`;
+            };
+            const zoomAt = (next, px, py) => {
+                next = Math.min(16, Math.max(1, next));
+                x = px - (px - x) * next / zoom;
+                y = py - (py - y) * next / zoom;
+                zoom = next;
+                if (zoom === 1) { x = 0; y = 0; }
+                apply();
+            };
+            viewport.addEventListener('wheel', e => {
+                if (!e.ctrlKey && !e.metaKey) return;
+                e.preventDefault();
+                const r = viewport.getBoundingClientRect();
+                zoomAt(zoom * Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)), e.clientX - r.left, e.clientY - r.top);
+            }, { passive: false });
+            // Middle button: pan, and keep the browser's autoscroll (and the editor's box dragging) out of it.
+            viewport.addEventListener('pointerdown', e => {
+                if (e.button !== 1) return;
+                e.preventDefault();
+                e.stopPropagation();
+                pan = { sx: e.clientX, sy: e.clientY, x, y };
+                viewport.setPointerCapture(e.pointerId);
+                viewport.classList.add('panning');
+            }, true);
+            viewport.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); }, true);
+            viewport.addEventListener('auxclick', e => { if (e.button === 1) e.preventDefault(); }, true);
+            viewport.addEventListener('pointermove', e => {
+                if (!pan) return;
+                x = pan.x + e.clientX - pan.sx;
+                y = pan.y + e.clientY - pan.sy;
+                apply();
+            });
+            const end = () => { pan = null; viewport.classList.remove('panning'); };
+            viewport.addEventListener('pointerup', end);
+            viewport.addEventListener('pointercancel', end);
+            document.addEventListener('keydown', e => {
+                if ((e.ctrlKey || e.metaKey) && e.key === '0' && viewport.isConnected && viewport.matches(':hover')) {
+                    e.preventDefault();
+                    zoomAt(1, 0, 0);
+                }
+            });
+            window.addEventListener('resize', apply);
+            viewport.promoZoom = { reset: () => zoomAt(1, 0, 0) };
+        };
+        window.schedularrPromoZoomReset ??= viewportId => document.getElementById(viewportId)?.promoZoom?.reset();
+        """;
+
+    private bool _zoomScriptReady;
+    private bool _zoomWired;
+
+    /// <summary>Wires zooming and panning up to the canvas (once per canvas; it's safe to call again).</summary>
+    private async Task<bool> SetUpZoom()
+    {
+        try
+        {
+            if (!_zoomScriptReady)
+            {
+                await JS.InvokeVoidAsync("eval", ZoomScript);
+                _zoomScriptReady = true;
+            }
+
+            await JS.InvokeVoidAsync("schedularrPromoZoom", _viewportId, _canvasId);
+            return true;
+        }
+        catch (Exception)
+        {
+            // Disconnected or still prerendering: wired up after the next render.
+            return false;
+        }
+    }
+
+    private async Task ResetZoom()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("schedularrPromoZoomReset", _viewportId);
+        }
+        catch (Exception)
+        {
+            // Nothing to reset.
+        }
+
+        await MeasureCanvas();
+    }
     // The frame the page is showing, so it's only sent again when it changes or the canvas comes back.
     private string? _shownStill;
     private bool _stillScriptReady;
@@ -2231,6 +2374,23 @@
             })
             : Task.CompletedTask;
 
+    /// <summary>Whether the layer is locked, by itself or by a group it's in.</summary>
+    private bool IsLocked(GeneratedLayer layer) =>
+        layer.Locked || GeneratedPromoHierarchy.Ancestors(Template, layer).Any(group => group.Locked);
+
+    /// <summary>
+    /// Locks or unlocks a layer. Locking drops it from a several-layer selection, so dragging the others leaves it be;
+    /// it stays the one the settings show, as it's still editable there.
+    /// </summary>
+    private Task ToggleLock(GeneratedLayer layer) => Set(() =>
+    {
+        layer.Locked = !layer.Locked;
+        if (layer.Locked && _chosen.Count > 1)
+        {
+            _chosen.RemoveWhere(chosen => !ReferenceEquals(chosen, _layer) && IsLocked(chosen));
+        }
+    });
+
     /// <summary>Selects just this layer.</summary>
     private void Select(GeneratedLayer layer)
     {
@@ -2435,6 +2595,12 @@
 
     private void StartDrag(PointerEventArgs e, GeneratedLayer layer, string handle)
     {
+        // The middle button pans the canvas; only the main one moves things. Locked layers can't be picked here.
+        if (e.Button != 0 || IsLocked(layer))
+        {
+            return;
+        }
+
         // Ctrl (⌘) or Shift on a box adds it to the selection or takes it out, without moving anything.
         if (handle == Move && (e.CtrlKey || e.MetaKey || e.ShiftKey))
         {
@@ -2456,7 +2622,8 @@
         LayerPose pose = GeneratedPromoEditing.PoseAt(Pose(layer), Time);
         List<Mover> movers = handle != Move ? [] :
         [
-            .. GeneratedPromoHierarchy.Outermost(Template, _chosen).Select(chosen =>
+            // Locked layers stay put while the rest of the selection moves.
+            .. GeneratedPromoHierarchy.Outermost(Template, _chosen).Where(chosen => !IsLocked(chosen)).Select(chosen =>
             {
                 LayerPose start = GeneratedPromoEditing.PoseAt(Pose(chosen), Time);
                 return new Mover(chosen, start.X, start.Y, GeneratedPromoHierarchy.SpaceAngle(Template, chosen, Pose, Time));
@@ -2477,6 +2644,11 @@
     /// <summary>Starts turning the layer by its round handle: the angle is taken about the box's middle on screen.</summary>
     private async Task StartRotate(PointerEventArgs e, GeneratedLayer layer)
     {
+        if (e.Button != 0 || IsLocked(layer))
+        {
+            return;
+        }
+
         Select(layer);
         LayerPose pose = GeneratedPromoEditing.PoseAt(Pose(layer), Time);
         // The overlay comes up straight away; the turn follows once it's known where the canvas is.
