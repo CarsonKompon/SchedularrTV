@@ -28,6 +28,10 @@
             <input type="checkbox" checked="@Config.Transparent" @onchange="e => Set(() => Config.Transparent = e.Value is true)" />
             <span>Only pictures with a transparent background</span>
         </label>
+        <label class="check">
+            <input type="checkbox" checked="@Config.Animated" @onchange="e => Set(() => Config.Animated = e.Value is true)" />
+            <span>Only animated pictures (GIFs)</span>
+        </label>
     </div>
 </div>
 @if (Images is { Providers.Count: > 1 } images)
@@ -54,7 +58,8 @@
 <p class="hint">
     Each query is searched for once, and the picture it finds is kept and reused every time the same show comes up, so it doesn't
     change from airing to airing. Results are counted after leaving out pictures that can't be
-    downloaded@(Config.Transparent ? " or have no transparent background" : "").
+    downloaded@(Config.Transparent ? " or have no transparent background" : "")@(Config.Animated ? " or aren't animated" : "").
+    Animated pictures play (looping) from when their layer appears.
 </p>
 
 @code {

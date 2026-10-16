@@ -36,9 +36,13 @@ public static class OverlayAnimation
 
     public static bool HasKeyframes(OverlayLayer layer) => layer.Keyframes is { Count: > 0 };
 
-    /// <summary>Whether a design moves: some layer (other than a video, which ErsatzTV places itself) has keyframes.</summary>
+    /// <summary>
+    /// Whether a design moves: some layer (other than a video, which ErsatzTV places itself) has keyframes, or a picture
+    /// layer shows an animated picture (a GIF).
+    /// </summary>
     public static bool IsAnimated(Overlay overlay) =>
-        overlay.Kind != OverlayKinds.File && overlay.Layers.Any(layer => layer.Kind != OverlayLayerKinds.Video && HasKeyframes(layer));
+        overlay.Kind != OverlayKinds.File && overlay.Layers.Any(layer => layer.Kind != OverlayLayerKinds.Video
+            && (HasKeyframes(layer) || (layer.Kind == OverlayLayerKinds.Image && SchedularrTV.Service.Images.AnimatedImages.IsAnimated(layer.Path))));
 
     /// <summary>How long a whole-programme overlay's animation runs.</summary>
     public static double AnimationSeconds(Overlay overlay) => Math.Clamp(overlay.AnimationSeconds ?? Overlay.DefaultAnimationSeconds, 1, 120);

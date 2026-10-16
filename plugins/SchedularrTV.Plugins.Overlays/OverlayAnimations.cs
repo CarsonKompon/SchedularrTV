@@ -43,7 +43,93 @@ public sealed class OverlayAnimations : IDisposable
     /// <summary>A failed video isn't tried again for this long.</summary>
     private static readonly TimeSpan RetryAfter = TimeSpan.FromHours(1);
 
-    private sealed record Job(string Key, Overlay Design, Dictionary<string, string> Tokens, OverlayClock Clock);
+    /// <param name="Source">For an animated picture made into a video as it is (a file overlay's GIF), the picture; null for a design.</param>
+    private sealed record Job(string Key, Overlay Design, Dictionary<string, string> Tokens, OverlayClock Clock, string? Source = null);
+
+    /// <summary>
+    /// An animated picture (a GIF a file overlay shows) as a transparent video ErsatzTV plays, made once (in the
+    /// background, when <paramref name="queue"/>); null until it's made.
+    /// </summary>
+    public string? Converted(string picture, bool queue)
+    {
+        string key = ConvertedKey(picture);
+        foreach (string extension in (string[])[".webm", ".mov"])
+        {
+            string path = Path.Combine(Folder, key + extension);
+            if (File.Exists(path))
+            {
+                Touch(path);
+                return path;
+            }
+        }
+
+        if (queue && !(_failed.TryGetValue(key, out DateTime failedAt) && DateTime.UtcNow - failedAt < RetryAfter) && _queued.TryAdd(key, 0))
+        {
+            _jobs.Writer.TryWrite(new Job(key, new Overlay { Name = Path.GetFileName(picture) }, new Dictionary<string, string>(), new OverlayClock(0, 1, 0), picture));
+            EnsureWorker();
+        }
+
+        return null;
+    }
+
+    private static string ConvertedKey(string picture)
+    {
+        long stamp = File.Exists(picture) ? File.GetLastWriteTimeUtc(picture).Ticks : 0;
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{Path.GetFullPath(picture)}|{stamp}|v1"));
+        return "anim-gif-" + Convert.ToHexString(hash, 0, 12).ToLowerInvariant();
+    }
+
+    /// <summary>A picture's frames encoded by ffmpeg as they are (their own timing and size, made even), keeping transparency.</summary>
+    private async Task ConvertAsync(Job job, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(Folder);
+        string[] start = ["-hide_banner", "-loglevel", "error", "-y", "-i", job.Source!, "-an", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=rgba"];
+        try
+        {
+            await RunToFileAsync(job.Key, ".webm",
+                [.. start, "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-b:v", "0", "-crf", "32", "-deadline", "realtime", "-cpu-used", "8",
+                    "-row-mt", "1", "-auto-alt-ref", "0", "-f", "webm"], cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException) when (!cancellationToken.IsCancellationRequested)
+        {
+            await RunToFileAsync(job.Key, ".mov", [.. start, "-c:v", "prores_ks", "-profile:v", "4444", "-pix_fmt", "yuva444p10le", "-f", "mov"],
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task RunToFileAsync(string key, string extension, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
+    {
+        string final = Path.Combine(Folder, key + extension);
+        string temp = Path.Combine(Folder, $"{key}.{Guid.NewGuid():N}.part");
+        var start = new ProcessStartInfo(_ffmpeg()) { UseShellExecute = false, RedirectStandardError = true, CreateNoWindow = true };
+        foreach (string argument in arguments)
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        start.ArgumentList.Add(temp);
+        using Process ffmpeg = Process.Start(start) ?? throw new InvalidOperationException("ffmpeg couldn't be started.");
+        Task<string> errors = ffmpeg.StandardError.ReadToEndAsync(cancellationToken);
+        try
+        {
+            await ffmpeg.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!ffmpeg.HasExited) ffmpeg.Kill(entireProcessTree: true);
+            TryDelete(temp);
+            throw;
+        }
+
+        string log = (await errors.ConfigureAwait(false)).Trim();
+        if (ffmpeg.ExitCode != 0 || !File.Exists(temp))
+        {
+            TryDelete(temp);
+            throw new InvalidOperationException($"ffmpeg exited with code {ffmpeg.ExitCode}: {log}");
+        }
+
+        File.Move(temp, final, overwrite: true);
+    }
 
     /// <summary>
     /// The finished video of one appearance of <paramref name="design"/>, or null while there isn't one (it's queued to
@@ -106,7 +192,7 @@ public sealed class OverlayAnimations : IDisposable
                 {
                     try
                     {
-                        await RenderAsync(job, token).ConfigureAwait(false);
+                        await (job.Source is null ? RenderAsync(job, token) : ConvertAsync(job, token)).ConfigureAwait(false);
                         _failed.TryRemove(job.Key, out _);
                         Rendered?.Invoke();
                     }

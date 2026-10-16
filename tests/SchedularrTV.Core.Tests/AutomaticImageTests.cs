@@ -148,6 +148,38 @@ public sealed class AutomaticImageTests : IDisposable
     }
 
     [Fact]
+    public void An_animated_picture_shows_each_frame_for_its_time_and_loops()
+    {
+        SKImage Frame(SKColor colour)
+        {
+            using var bitmap = new SKBitmap(new SKImageInfo(4, 4));
+            bitmap.Erase(colour);
+            return SKImage.FromBitmap(bitmap);
+        }
+
+        var gif = new AnimatedImage([Frame(SKColors.Red), Frame(SKColors.Green), Frame(SKColors.Blue)], [0.1, 0.2, 0.1]);
+
+        Assert.Equal(0.4, gif.Duration, 6);
+        SKColor At(double seconds)
+        {
+            using var bitmap = SKBitmap.FromImage(gif.FrameAt(seconds));
+            return bitmap.GetPixel(1, 1);
+        }
+
+        Assert.Equal(SKColors.Red, At(-1));
+        Assert.Equal(SKColors.Red, At(0.05));
+        Assert.Equal(SKColors.Green, At(0.15));
+        Assert.Equal(SKColors.Green, At(0.29));
+        Assert.Equal(SKColors.Blue, At(0.35));
+        Assert.Equal(SKColors.Green, At(0.55)); // the second time round
+
+        Assert.Null(AutomaticImages.AnimatedFormat(Png(transparent: true)));
+        Assert.False(AnimatedImages.IsAnimated("missing.gif"));
+        Assert.Contains("image_type=animated",
+            SerpApiImageSearch.Url(new ImageSearchRequest("dancing banana") { AnimatedOnly = true }, "key", safe: true, country: null));
+    }
+
+    [Fact]
     public void Ffprobe_frame_rates_are_read_as_frames_a_second()
     {
         Assert.Equal(29.97, OverlayVideos.Rate("30000/1001"));

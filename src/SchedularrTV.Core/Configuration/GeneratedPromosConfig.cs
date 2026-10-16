@@ -1007,6 +1007,11 @@ public sealed class AutomaticImageConfig
     /// <summary>Only pictures with a transparent background.</summary>
     public bool Transparent { get; set; }
 
+    /// <summary>Only animated pictures (GIFs), which play in promos and overlays.</summary>
+    [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)]
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Animated { get; set; }
+
     /// <summary>The picture search's id; null uses the first one set up.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? Provider { get; set; }

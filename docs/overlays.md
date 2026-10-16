@@ -31,6 +31,8 @@ The canvas editor works like the [Generated promos](generated-promos.md) one:
 - A shape or picture can be a **mask** instead of artwork: under **Use as**, choose **Add mask — reveal inside** or **Subtract mask — hide inside**, then the **Mask target** beneath it. Picture masks use the picture's transparency. Masks can't target groups, videos or other masks.
 
 
+- **Animated GIFs** (and animated WebP) play in picture layers, variable images and file overlays. In a design, a GIF plays from when its layer comes in, looping, and makes the design animated: it airs as a transparent video of each appearance, like a keyframed one (a whole-programme overlay plays it for its **Animation length**, then holds). A file overlay's GIF is turned into a transparent video once, in the background, and shows as its still picture until then.
+
 ### Timeline and keyframes
 
 Drag along the timeline under the canvas to scrub through one appearance: layers coming in late or going early fade as they will on air. For a whole-programme overlay, the timeline is its **Animation length** (10 seconds unless set under Timing). The **« ‹ › »** buttons and **← / →** (Shift for a second), **Home / End**, **[ / ]**, **K** and **Delete** work as in Generated promos.

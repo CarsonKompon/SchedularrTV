@@ -359,6 +359,10 @@ variable_images:
 
 An image layer references it with `variable_image: variable_image_01` instead of `path`. Other contexts are `promoted_show` and `currently_watching`.
 
+### Animated GIFs
+
+Animated GIFs (and animated WebP) play wherever a picture can go: image layers, variable and shared images, and picture backgrounds. A layer's GIF plays from when the layer appears, looping, and moves, fades, keyframes and masks like any picture; a GIF background plays from the start of the promo. The editor shows each GIF's frame at the playhead, and the render draws every frame.
+
 ### Automatic pictures for shared images
 
 A shared image can find a picture automatically for any show (or block) without an override of its own, so a variable image works for every show without adding each one. Wherever the variable image is used (an image layer, `{variable_image_01:next}` in generator arguments, an overlay), it resolves the same way: a **show override**, else a **block override**, else the **automatic picture**, else the **default**.
@@ -366,7 +370,7 @@ A shared image can find a picture automatically for any show (or block) without 
 1. Install a picture search plugin, such as **SerpApi image search** (Google Images results), and enter its API key under **Plugins › Settings**. Google's own search API is closed to new users, so a service like SerpApi is needed.
 2. In **Edit shared images…**, open the shared image and tick **Find a picture automatically for shows and blocks without one**.
 3. Write the query, such as `{show} main character png`. `{show}` is the title of the show the variable is resolved for, and `{block}` the block it airs in.
-4. Choose which result to **Use** (1st, 2nd…), whether only pictures with a **transparent background** will do, and, with several picture searches installed, which one to **Search with**. SerpApi asks Google for transparent pictures only, and each picture is checked after download as well.
+4. Choose which result to **Use** (1st, 2nd…), whether only pictures with a **transparent background** or only **animated pictures (GIFs)** will do, and, with several picture searches installed, which one to **Search with**. SerpApi asks Google for just those kinds of picture, and each picture is checked after download as well. Animated pictures are kept as they came, so they keep playing.
 
 Results are counted after leaving out pictures that can't be downloaded or decoded, or (with transparency on) have no clear background. When nothing usable is found, the default is used.
 
@@ -387,6 +391,7 @@ settings:
             query: '{show} main character png'
             result: 1 # 1 is the first result
             transparent: true
+            # animated: true # only animated pictures (GIFs)
             # provider: serpapi # optional; the first picture search set up otherwise
 ```
 

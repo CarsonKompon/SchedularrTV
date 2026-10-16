@@ -368,6 +368,12 @@ public sealed class OverlayProcessor : IPlayoutProcessor
                 return null;
             }
 
+            // An animated picture (a GIF) goes as a video made from it, once made (its still picture until then).
+            if (SchedularrTV.Service.Images.AnimatedImages.IsAnimated(file) && animations?.Converted(file, queue: true) is { } video)
+            {
+                file = video;
+            }
+
             layer = new JsonObject
             {
                 ["source"] = new JsonObject { ["source_type"] = "local", ["path"] = file },

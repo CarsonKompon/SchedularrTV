@@ -338,11 +338,23 @@ public sealed class OverlayRenderer(Func<string> folder)
                 DrawShape(canvas, layer, bounds);
                 break;
             case OverlayLayerKinds.Image when layer.Path is { Length: > 0 } path && File.Exists(path):
-                using (SKImage? picture = SKImage.FromEncodedData(path))
                 {
-                    if (picture is not null)
+                    // An animated picture (a GIF) plays from when its layer comes in, looping; drawn still, its first frame.
+                    double playing = clock is null ? 0 : clock.Seconds - OverlayHierarchy.EffectiveTiming(overlay, layer).InSeconds;
+                    SKImage? picture = SchedularrTV.Service.Images.AnimatedImages.FrameAt(path, playing, out bool owned);
+                    try
                     {
-                        DrawContained(canvas, picture, bounds);
+                        if (picture is not null)
+                        {
+                            DrawContained(canvas, picture, bounds);
+                        }
+                    }
+                    finally
+                    {
+                        if (owned)
+                        {
+                            picture?.Dispose();
+                        }
                     }
                 }
 

@@ -7,6 +7,9 @@ public sealed record ImageSearchRequest(string Query)
     /// <summary>Only pictures with a transparent background, where the service can tell.</summary>
     public bool TransparentOnly { get; init; }
 
+    /// <summary>Only animated pictures (GIFs), where the service can tell.</summary>
+    public bool AnimatedOnly { get; init; }
+
     /// <summary>Leaves out explicit results, where the service can.</summary>
     public bool SafeSearch { get; init; } = true;
 

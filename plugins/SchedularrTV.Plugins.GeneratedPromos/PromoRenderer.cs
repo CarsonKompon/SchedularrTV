@@ -145,6 +145,10 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             using var videos = new PromoVideoStreams(ffmpegPath, composition.Fps, decoders);
             PromoVideoLayer[] videoLayers = [.. composition.Layers.OfType<PromoVideoLayer>()];
 
+            // Animated pictures (GIFs) change from frame to frame by themselves, so frames aren't reused while one shows.
+            bool animatedPictures = composition.Layers.OfType<PromoImageLayer>().Any(picture => images.IsAnimated(picture.Path))
+                                    || (!videoBackground && images.IsAnimated(composition.BackgroundPath));
+
             for (int index = 0; index < composition.FrameCount; index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -153,7 +157,7 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
                 bool videoShowing = videoLayers.Any(video => PromoAnimation.EvaluateInGroups(video, time, composition.Duration, composition.Height) is not null);
 
                 // Held poses between transitions are identical, so resend the last frame unchanged (not while a video plays).
-                if (previous is null || videoShowing || !states.SequenceEqual(previous))
+                if (previous is null || videoShowing || animatedPictures || !states.SequenceEqual(previous))
                 {
                     DrawFrame(surface.Canvas, composition, time, images, !videoBackground, videos);
                     if (!surface.ReadPixels(output, pixels.GetPixels(), pixels.RowBytes, 0, 0))
@@ -196,7 +200,8 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         canvas.Clear(drawBackground ? composition.BackgroundColor : SKColors.Transparent);
         var frame = SKRect.Create(composition.Width, composition.Height);
 
-        if (drawBackground && composition.BackgroundPath is { } background && images.Get(background) is { } image)
+        // An animated picture background (a GIF) plays from the start of the promo.
+        if (drawBackground && composition.BackgroundPath is { } background && images.GetAt(background, time) is { } image)
         {
             DrawImage(canvas, image, frame, cover: true, paint: null);
         }
@@ -276,7 +281,8 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             case PromoTextLayer text:
                 DrawText(canvas, text, bounds, images);
                 break;
-            case PromoImageLayer picture when images.Get(picture.Path) is { } bitmap:
+            // An animated picture (a GIF) plays from when its layer appears, looping.
+            case PromoImageLayer picture when images.GetAt(picture.Path, time - layer.Start) is { } bitmap:
                 DrawImage(canvas, bitmap, bounds, cover: false, paint: null);
                 break;
             // Its frames come already fitted to (or filling) a box of its shape, so they're drawn to fill the box.
@@ -605,6 +611,16 @@ public sealed class PromoImageCache : IDisposable
 
         return typeface;
     }
+
+    /// <summary>Whether <paramref name="path"/> is an animated picture (a GIF or WebP with several frames).</summary>
+    public bool IsAnimated(string? path) => SchedularrTV.Service.Images.AnimatedImages.IsAnimated(path);
+
+    /// <summary>
+    /// The picture at <paramref name="path"/> as it shows <paramref name="playing"/> into its playing: an animated one's
+    /// frame then (looping), else the picture.
+    /// </summary>
+    public SKImage? GetAt(string path, TimeSpan playing) =>
+        SchedularrTV.Service.Images.AnimatedImages.Load(path) is { } animated ? animated.FrameAt(playing.TotalSeconds) : Get(path);
 
     public SKImage? Get(string path)
     {

@@ -11,17 +11,19 @@ namespace SchedularrTV.Service.Images;
 /// <summary>One automatic image to find: a query with its tokens filled in, which result, and whether it must be transparent.</summary>
 /// <param name="Result">1 is the first usable result.</param>
 /// <param name="Provider">The picture search's id; null uses the first one set up.</param>
-public sealed record AutomaticImageRequest(string Query, int Result, bool Transparent, string? Provider)
+/// <param name="Animated">Only animated pictures (GIFs).</param>
+public sealed record AutomaticImageRequest(string Query, int Result, bool Transparent, string? Provider, bool Animated = false)
 {
     /// <summary>What the request is kept under: two requests with the same key always get the same picture.</summary>
-    public string Key => AutomaticImages.Hash($"{Query.Trim().ToLowerInvariant()}|{Math.Max(1, Result)}|{Transparent}|{Provider}");
+    public string Key => AutomaticImages.Hash($"{Query.Trim().ToLowerInvariant()}|{Math.Max(1, Result)}|{Transparent}|{Provider}"
+        + (Animated ? "|animated" : string.Empty));
 
     /// <summary>A request for <paramref name="config"/> with its query filled in; null when there's nothing to search for.</summary>
     public static AutomaticImageRequest? For(AutomaticImageConfig? config, string filledQuery) =>
         config is null || string.IsNullOrWhiteSpace(filledQuery)
             ? null
             : new AutomaticImageRequest(filledQuery.Trim(), Math.Clamp(config.Result, 1, 50), config.Transparent,
-                string.IsNullOrWhiteSpace(config.Provider) ? null : config.Provider);
+                string.IsNullOrWhiteSpace(config.Provider) ? null : config.Provider, config.Animated);
 }
 
 /// <summary>Variable images' automatic pictures, as found so far; see <see cref="AutomaticImages.Lookup"/>.</summary>
@@ -237,6 +239,11 @@ public sealed class AutomaticImages
                 continue;
             }
 
+            if (request.Animated && !AnimatedImages.IsAnimated(picture))
+            {
+                continue;
+            }
+
             if (++usable < wanted)
             {
                 continue;
@@ -250,7 +257,7 @@ public sealed class AutomaticImages
 
         Fail(request, urls.Count == 0
             ? $"{provider.DisplayName} found nothing for “{request.Query}”."
-            : $"Only {usable} usable{(request.Transparent ? " transparent" : "")} picture{(usable == 1 ? "" : "s")} found for “{request.Query}”, so there's no result {wanted}.");
+            : $"Only {usable} usable{(request.Transparent ? " transparent" : "")}{(request.Animated ? " animated" : "")} picture{(usable == 1 ? "" : "s")} found for “{request.Query}”, so there's no result {wanted}.");
         return null;
     }
 
@@ -259,7 +266,8 @@ public sealed class AutomaticImages
     /// <summary>The search's results (picture addresses, best first), kept so the same search isn't made twice.</summary>
     private async Task<IReadOnlyList<string>> SearchAsync(IImageSearchProvider provider, AutomaticImageRequest request, CancellationToken cancellationToken)
     {
-        string file = Path.Combine(_folder, "searches", Hash($"{provider.Id}|{request.Query.Trim().ToLowerInvariant()}|{request.Transparent}") + ".json");
+        string file = Path.Combine(_folder, "searches", Hash($"{provider.Id}|{request.Query.Trim().ToLowerInvariant()}|{request.Transparent}"
+            + (request.Animated ? "|animated" : string.Empty)) + ".json");
         try
         {
             if (File.Exists(file) && JsonSerializer.Deserialize<SearchFile>(await File.ReadAllTextAsync(file, cancellationToken).ConfigureAwait(false)) is { } kept
@@ -273,7 +281,7 @@ public sealed class AutomaticImages
         }
 
         IReadOnlyList<ImageSearchResult> results = await provider.SearchAsync(
-            new ImageSearchRequest(request.Query) { TransparentOnly = request.Transparent, Count = Candidates + request.Result },
+            new ImageSearchRequest(request.Query) { TransparentOnly = request.Transparent, AnimatedOnly = request.Animated, Count = Candidates + request.Result },
             cancellationToken).ConfigureAwait(false);
         List<string> urls = [.. results.Select(result => result.Url).Where(url => Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
             && uri.Scheme is "http" or "https").Distinct(StringComparer.Ordinal)];
@@ -282,16 +290,23 @@ public sealed class AutomaticImages
         return urls;
     }
 
-    /// <summary>The picture at <paramref name="url"/>, downloaded, checked and saved as a PNG (at most 2048 pixels on a side); null when it can't be.</summary>
+    /// <summary>
+    /// The picture at <paramref name="url"/>, downloaded, checked and saved: as a PNG (at most 2048 pixels on a side), or
+    /// an animated one (a GIF or WebP) as it came, so it keeps playing. Null when it can't be.
+    /// </summary>
     private async Task<string?> DownloadAsync(string url, CancellationToken cancellationToken)
     {
-        string picture = Path.Combine(_folder, "pictures", Hash(url) + ".png");
-        if (File.Exists(picture))
+        string stem = Path.Combine(_folder, "pictures", Hash(url));
+        foreach (string extension in (string[])[".png", ".gif", ".webp"])
         {
-            return picture;
+            if (File.Exists(stem + extension))
+            {
+                return stem + extension;
+            }
         }
 
-        string bad = Path.ChangeExtension(picture, ".bad");
+        string picture = stem + ".png";
+        string bad = stem + ".bad";
         if (File.Exists(bad) || _http is null)
         {
             return null;
@@ -326,7 +341,19 @@ public sealed class AutomaticImages
                 }
             }
 
-            byte[]? png = Normalise(buffer.ToArray());
+            byte[] downloaded = buffer.ToArray();
+            byte[]? png;
+            if (AnimatedFormat(downloaded) is { } animated)
+            {
+                // Kept as it came (re-encoding would keep only its first frame).
+                png = downloaded;
+                picture = stem + animated;
+            }
+            else
+            {
+                png = Normalise(downloaded);
+            }
+
             if (png is null)
             {
                 MarkBad(bad);
@@ -355,6 +382,31 @@ public sealed class AutomaticImages
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+        }
+    }
+
+    /// <summary>".gif" or ".webp" for an animated picture with several frames Skia can read; null for anything else.</summary>
+    public static string? AnimatedFormat(byte[] data)
+    {
+        try
+        {
+            // The codec takes the stream over, and lets it go with itself.
+            using SKCodec? codec = SKCodec.Create(new SKMemoryStream(data));
+            if (codec is null || codec.FrameCount < 2)
+            {
+                return null;
+            }
+
+            return codec.EncodedFormat switch
+            {
+                SKEncodedImageFormat.Gif => ".gif",
+                SKEncodedImageFormat.Webp => ".webp",
+                _ => null
+            };
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 

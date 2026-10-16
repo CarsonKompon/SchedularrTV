@@ -70,6 +70,11 @@ public sealed class SerpApiImageSearch(IHttpClientFactory http, Func<string?> ap
             query.Add("image_color=trans");
         }
 
+        if (request.AnimatedOnly)
+        {
+            query.Add("image_type=animated");
+        }
+
         if (country is { Length: 2 } gl)
         {
             query.Add($"gl={Uri.EscapeDataString(gl.ToLowerInvariant())}");
