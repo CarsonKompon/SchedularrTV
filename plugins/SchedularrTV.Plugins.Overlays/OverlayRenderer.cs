@@ -28,6 +28,15 @@ public sealed class OverlayRenderer(Func<string> folder)
     /// <summary>Read on each use, so a changed setting applies straight away.</summary>
     public string Folder => folder();
 
+    /// <summary>A previously drawn design, without starting any new rendering.</summary>
+    public string? Cached(Overlay overlay, IReadOnlyDictionary<string, string> tokens)
+    {
+        string path = Path.Combine(Folder, Key(overlay, tokens) + ".png");
+        if (!File.Exists(path)) return null;
+        Touch(path);
+        return path;
+    }
+
     /// <summary>The PNG for a design with these tokens filled in, drawn if it isn't already.</summary>
     public string Render(Overlay overlay, IReadOnlyDictionary<string, string> tokens)
     {

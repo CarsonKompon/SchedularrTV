@@ -264,7 +264,8 @@
             {
                 <p class="hint">
                     Animated: on air it's sent to ErsatzTV as a transparent video of each appearance, made in the background with ffmpeg
-                    (for programmes in the next @((int)OverlayProcessor.AnimationLookahead.TotalHours) hours). Until a video is made, the design shows standing still.
+                    when eligible under Plugins → Overlays → Settings (watched channels and a 60-minute lead time by default).
+                    Until a video is made, an available still is used.
                     @(TimingSchedule.Always ? "Shown all the way through, it animates as each part of the programme starts, then stays as it ends up." : "")
                 </p>
             }

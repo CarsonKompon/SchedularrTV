@@ -8,9 +8,6 @@ public static class OverlayWriting
 {
     public const string Source = "overlays";
 
-    /// <summary>Only programmes starting this soon are queued for writing; later ones are written as they get closer.</summary>
-    public static readonly TimeSpan Lookahead = TimeSpan.FromHours(36);
-
     private const int OverviewLength = 320;
 
     /// <summary>A description for the editor's "Try it", in place of a real episode's.</summary>

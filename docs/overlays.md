@@ -14,6 +14,21 @@
 
 Presets include logo and text screen bugs, lower thirds, coming-up graphics, rating badges, and a blank design. Lower entries in the list draw above earlier entries.
 
+## When overlays are prepared
+
+Under **Plugins → Overlays → Settings**:
+
+| Setting | Default | Behavior |
+| --- | --- | --- |
+| **Only prepare for channels someone is watching** | On | Uses ErsatzTV's stream activity to gate new background work. |
+| **Start preparing when an overlay appears within (minutes)** | 60 | Prepares overlays appearing within the next hour. Set 0 to allow the whole future playout. |
+
+Both conditions apply to **new automatic-image searches, AI captions, PNG rendering, animation rendering, and GIF-to-video conversion**. The time check uses the overlay's next actual appearance, including late-programme and repeating slots. Past appearances don't queue work. Deferred overlays are rechecked about every 30 seconds so tuning in or entering the lead window starts preparation without waiting for a schedule rebuild. Changes to these settings apply on subsequent checks without a restart.
+
+Cached assets and existing static files remain reusable. A design without a prepared asset may be absent until it is prepared. Work already started can finish. Like Generated Promos, **unknown viewer status is treated as potentially watched** so targets that can't report viewers still work. Opening an editor preview, rendering a preview video, trying AI text, or loading a cache preview is an explicit request and can still perform the necessary work while nobody watches the channel.
+
+An overlay showing three variable images prepares all three when **that overlay** is due—even if “Up next 2” refers to a programme outside the lead window, because its image is needed by the overlay that is appearing now. Identical cached queries are reused.
+
 ## Design graphics
 
 - Add **text**, **pictures**, **shapes**, or **video layers**
@@ -58,7 +73,7 @@ Select a layer or group and choose **◆ Animate with keyframes**. Its position,
 
 **Ctrl/⌘-click** toggles individual keyframes in the selected layer's timeline, and **Shift-click** selects a range from the last clicked keyframe. Drag any selected diamond to move them together, preserving their spacing and stopping as a group at the timeline edges. With several selected, **Then (all)** changes all their easing types (or shows **Mixed easing**), and **Delete selected** or **Delete / Backspace** removes them together. **Clear selection**, **Escape**, or scrubbing empty timeline space clears the selection. With none selected, Delete removes the keyframe at the playhead. These controls match the Generated Promos editor.
 
-On air, an animated design is sent as a transparent video (VP9 WebM, or ProRes 4444 if ffmpeg lacks VP9) of each appearance, made in the background with the ffmpeg set for Generated promos, for programmes in the next 12 hours; the schedule is published again as each is ready. Until then the design shows standing still. A whole-programme animated overlay plays its animation as each part of the programme starts, then stays as it ends up. In YAML:
+On air, an animated design is sent as a transparent video (VP9 WebM, or ProRes 4444 if ffmpeg lacks VP9) of each appearance, made in the background with the ffmpeg set for Generated promos when the [preparation conditions](#when-overlays-are-prepared) allow it; the schedule is published again as each is ready. Until then an available still is used. A whole-programme animated overlay plays its animation as each part of the programme starts, then stays as it ends up. In YAML:
 
 ```yaml
 layers:
@@ -119,7 +134,7 @@ A **file overlay** places an existing image or video at a preset position with p
 
 Use **Variable images → + Variable image** to create an image slot, then choose its **Shared image**, or **New shared image…**. Shared images are the same ones [Generated promos](generated-promos.md#shared-images) use, kept once for the whole schedule: **Edit shared images…** sets each one's **default image**, **per-show and per-block overrides**, and an optional [automatic picture](generated-promos.md#automatic-pictures-for-shared-images) found with a picture search (such as `{show} main character png`) for shows without an override. Show titles match loosely. A variable from before shared images keeps its own pictures until **Move to a shared image**.
 
-Automatic pictures for programmes in the next 36 hours are looked for in the background, and the schedule is published again as they're found; until then the shared image's default shows. Exported overlay packages carry the shared images they use, merged by id on import.
+Automatic pictures are looked for in the background when the overlay meets the [preparation conditions](#when-overlays-are-prepared)—a watched channel and an appearance within 60 minutes by default. The schedule is published again as they're found; until then an available shared-image default is used. Exported overlay packages carry the shared images they use, merged by id on import.
 
 - **Currently watching / before the break** uses the programme being shown. During an ad break it uses the preceding programme, when the overlay is set to appear during breaks.
 - **Up next** selects the next show, two shows ahead, or up to ten shows ahead. Continuation segments, intros/outros, and stacked episodes are skipped; consecutive listings of the same show count once.

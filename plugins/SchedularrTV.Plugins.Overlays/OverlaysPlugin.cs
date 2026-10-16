@@ -7,10 +7,13 @@ using Microsoft.AspNetCore.Routing;
 namespace SchedularrTV.Overlays;
 
 /// <summary>Screen bugs, lower thirds and other graphics over channels and blocks, drawn by ErsatzTV's graphics engine.</summary>
-public sealed class OverlaysPlugin : IPlugin
+public sealed class OverlaysPlugin : IPlugin, IPluginEndpoints
 {
     public void ConfigureServices(IServiceCollection services, IPluginContext context)
     {
+        services.AddSingleton(new OverlayPreparationSettings(key => context.Configuration[key]));
+        services.AddSingleton<OverlayPreparationMonitor>();
+        services.AddHostedService(provider => provider.GetRequiredService<OverlayPreparationMonitor>());
         services.AddSingleton(provider =>
         {
             var renderer = new OverlayRenderer(() => context.Configuration["RenderFolder"]?.Trim().Trim('"') is { Length: > 0 } configured

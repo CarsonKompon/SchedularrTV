@@ -9,6 +9,21 @@
   "lowPowerNotice": "drawing overlays is cheap, but ErsatzTV always re-encodes items that carry them, even on channels set to pass video through, and does it in software on a Pi. Use them on channels that are re-encoded anyway, rather than adding them to passed-through ones.",
   "settings": [
     {
+      "key": "LeadTimeMinutes",
+      "label": "Start preparing when an overlay appears within (minutes)",
+      "type": "Number",
+      "default": "60",
+      "placeholder": "60",
+      "description": "Applies to new automatic-image queries, AI captions, drawn images, animated renders and GIF conversions. 0 prepares the whole playout ahead. Cached assets can still be reused outside this window. Uses the overlay's next appearance, not just the programme's start."
+    },
+    {
+      "key": "WatchedOnly",
+      "label": "Only prepare for channels someone is watching",
+      "type": "Boolean",
+      "default": "true",
+      "description": "Uses ErsatzTV stream activity. Tuning in is checked about every 30 seconds. Unknown viewer status is treated as potentially watched, as with Generated Promos. Explicit editor previews and Load preview actions can still generate or download assets."
+    },
+    {
       "key": "RenderFolder",
       "label": "Folder for drawn overlays",
       "type": "Folder",

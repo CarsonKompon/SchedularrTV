@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using SchedularrTV.Core.Configuration;
 using SchedularrTV.Core.Media;
+using SchedularrTV.Core.Publishing;
 using SchedularrTV.Core.Scheduling;
 using SchedularrTV.Plugins.Playout;
 using SchedularrTV.Service.Writing;
@@ -24,21 +25,28 @@ public sealed class OverlayProcessor : IPlayoutProcessor
     private readonly OverlayAnimations? animations;
     private readonly SchedularrTV.Service.Images.AutomaticImages? automaticImages;
 
-    /// <summary>Animated designs are made into videos for programmes starting this soon; later ones as they get closer.</summary>
-    public static readonly TimeSpan AnimationLookahead = TimeSpan.FromHours(12);
+    private readonly OverlayPreparationSettings? preparation;
+    private readonly OverlayPreparationMonitor? preparationMonitor;
+    private readonly IChannelViewers? viewers;
+    private readonly TimeProvider time;
 
     /// <param name="writer">Writes AI-written text layers; without it they show their usual text.</param>
     /// <param name="republisher">Publishes again when AI-written captions (or animated designs' videos) are ready, so they're used.</param>
     /// <param name="animations">Makes animated designs into videos; without it they show standing still.</param>
     public OverlayProcessor(OverlayRenderer renderer, ILogger<OverlayProcessor> logger, AiTextWriter? writer = null,
         IScheduleRepublisher? republisher = null, OverlayAnimations? animations = null,
-        SchedularrTV.Service.Images.AutomaticImages? automaticImages = null)
+        SchedularrTV.Service.Images.AutomaticImages? automaticImages = null, OverlayPreparationSettings? preparation = null,
+        OverlayPreparationMonitor? preparationMonitor = null, IChannelViewers? viewers = null, TimeProvider? timeProvider = null)
     {
         this.renderer = renderer;
         this.logger = logger;
         this.writer = writer;
         this.animations = animations;
         this.automaticImages = automaticImages;
+        this.preparation = preparation;
+        this.preparationMonitor = preparationMonitor;
+        this.viewers = viewers;
+        time = timeProvider ?? TimeProvider.System;
         if (animations is not null && republisher is not null)
         {
             animations.Rendered += republisher.RequestRepublish;
@@ -92,8 +100,11 @@ public sealed class OverlayProcessor : IPlayoutProcessor
         List<ScheduleEntry> ordered = [.. context.Schedule.Entries.OrderBy(entry => entry.Start)];
         List<ScheduleEntry> result = new(ordered.Count);
         bool changed = false;
+        DateTimeOffset now = time.GetUtcNow();
+        List<DeferredOverlay> deferred = [];
         for (int index = 0; index < ordered.Count; index++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             ScheduleEntry entry = ordered[index];
             if (For(entry.BlockName) is not { } resolved)
             {
@@ -114,6 +125,9 @@ public sealed class OverlayProcessor : IPlayoutProcessor
 
                 try
                 {
+                    bool prepare = preparation?.MayPrepare(channel.Number, entry, showing, now, viewers) ?? true;
+                    if (!prepare && OverlayPreparationSettings.NextAppearance(entry, showing, now) is not null)
+                        deferred.Add(new(entry, showing));
                     // A file with variants shows whichever picture this entry calls for (or nothing, when none does and it has no default).
                     Overlay shown = overlay;
                     if (overlay.VariableImages.Count > 0 || !string.IsNullOrWhiteSpace(overlay.VariableImage)
@@ -121,10 +135,9 @@ public sealed class OverlayProcessor : IPlayoutProcessor
                     {
                         // Variable images' automatic pictures show once found; programmes coming up soon have theirs looked
                         // for in the background, and the schedule is published again when they're found.
-                        bool soon = entry.Start - DateTimeOffset.UtcNow < OverlayWriting.Lookahead;
                         imageSubjects ??= OverlayImages.Programmes(ordered, index);
                         shown = OverlayImages.ResolveFor(overlay, imageSubjects.Value.Current, imageSubjects.Value.Upcoming,
-                            context.Config.Settings.GeneratedPromosSharedImages, automaticImages?.Lookup(queue: soon));
+                            context.Config.Settings.GeneratedPromosSharedImages, automaticImages?.Lookup(queue: prepare));
                     }
                     if (overlay.Kind == OverlayKinds.File && overlay.Variants.Count > 0)
                     {
@@ -143,7 +156,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
                     }
 
                     tokens ??= Tokens(entry, Next(ordered, index), resolved.Owner);
-                    foreach (JsonObject layer in Layers(Written(shown, entry, tokens), entry, showing, tokens))
+                    foreach (JsonObject layer in Layers(Written(shown, entry, tokens, prepare), entry, showing, tokens, prepare: prepare))
                     {
                         layers.Add(layer);
                     }
@@ -164,6 +177,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
             changed = true;
         }
 
+        preparationMonitor?.Track(channel.Number, deferred);
         return ValueTask.FromResult(changed ? context.Schedule with { Entries = result } : context.Schedule);
     }
 
@@ -173,11 +187,11 @@ public sealed class OverlayProcessor : IPlayoutProcessor
     /// layer, and the drawn parts between them as full-frame PNGs, each timed within the overlay's appearance.
     /// </summary>
     internal IEnumerable<JsonObject> Layers(Overlay overlay, ScheduleEntry entry, OverlayShowing showing, IReadOnlyDictionary<string, string> tokens,
-        bool allowAnimation = true)
+        bool allowAnimation = true, bool prepare = true)
     {
         if (overlay.Kind == OverlayKinds.File)
         {
-            if (Layer(overlay, showing, tokens) is { } file)
+            if (Layer(overlay, showing, tokens, prepare) is { } file)
             {
                 yield return file;
             }
@@ -187,7 +201,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
 
         if (allowAnimation && OverlayAnimation.IsAnimated(overlay))
         {
-            foreach (JsonObject animated in Animated(overlay, entry, showing, tokens))
+            foreach (JsonObject animated in Animated(overlay, entry, showing, tokens, prepare))
             {
                 yield return animated;
             }
@@ -198,7 +212,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
         IReadOnlyList<(LayerTiming Timing, IReadOnlyList<OverlayLayer> Layers)> groups = OverlayRenderer.Groups(overlay);
         if (groups.Count == 1 && groups[0].Timing.IsWhole && groups[0].Layers.All(layer => layer.Kind != OverlayLayerKinds.Video))
         {
-            if (Layer(overlay, showing, tokens) is { } whole)
+            if (Layer(overlay, showing, tokens, prepare) is { } whole)
             {
                 yield return whole;
             }
@@ -216,7 +230,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
 
             JsonObject? layer = parts.Count == 1 && parts[0].Kind == OverlayLayerKinds.Video
                 ? VideoLayer(overlay, parts[0], own)
-                : Layer(OverlayRenderer.Part(overlay, parts), own, tokens);
+                : Layer(OverlayRenderer.Part(overlay, parts), own, tokens, prepare);
             if (layer is not null)
             {
                 yield return layer;
@@ -229,11 +243,10 @@ public sealed class OverlayProcessor : IPlayoutProcessor
     /// one appearance, timed as the overlay is; a whole-programme one plays its animation as each part of the programme
     /// starts and then stays as it ends up. Until a video is made, the design shows standing still.
     /// </summary>
-    private IEnumerable<JsonObject> Animated(Overlay overlay, ScheduleEntry entry, OverlayShowing showing, IReadOnlyDictionary<string, string> tokens)
+    private IEnumerable<JsonObject> Animated(Overlay overlay, ScheduleEntry entry, OverlayShowing showing, IReadOnlyDictionary<string, string> tokens, bool prepare)
     {
         bool whole = overlay.When == OverlayWhen.Always;
         double length = OverlayAnimation.Length(overlay);
-        bool soon = entry.Start - DateTimeOffset.UtcNow < AnimationLookahead;
         foreach (var (_, parts) in OverlayRenderer.Groups(overlay, byTiming: false))
         {
             if (parts.Count == 1 && parts[0].Kind == OverlayLayerKinds.Video)
@@ -247,13 +260,13 @@ public sealed class OverlayProcessor : IPlayoutProcessor
             }
 
             Overlay part = OverlayRenderer.Part(overlay, parts);
-            string? clip = animations?.Find(part, tokens, length, whole, queue: soon);
+            string? clip = animations?.Find(part, tokens, length, whole, queue: prepare);
             if (!whole)
             {
                 JsonObject? layer = clip is not null
                     ? Placed(overlay, clip, showing)
                     // Standing still, as it is half way through, until its video is made.
-                    : Layer(OverlayAnimation.Freeze(part, length / 2), showing, tokens);
+                    : Layer(OverlayAnimation.Freeze(part, length / 2), showing, tokens, prepare);
                 if (layer is not null)
                 {
                     yield return layer;
@@ -279,7 +292,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
                 }
             }
 
-            foreach (JsonObject still in Layers(held, entry, showing, tokens, allowAnimation: false))
+            foreach (JsonObject still in Layers(held, entry, showing, tokens, allowAnimation: false, prepare: prepare))
             {
                 yield return still;
             }
@@ -359,7 +372,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
     private static double Round(double value) => Math.Round(value, 3);
 
     /// <summary>One graphics layer in ErsatzTV's format: a design as a full-frame PNG, a file where it's anchored.</summary>
-    internal JsonObject? Layer(Overlay overlay, OverlayShowing showing, IReadOnlyDictionary<string, string> tokens)
+    internal JsonObject? Layer(Overlay overlay, OverlayShowing showing, IReadOnlyDictionary<string, string> tokens, bool prepare = true)
     {
         JsonObject layer;
         if (overlay.Kind == OverlayKinds.File)
@@ -370,7 +383,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
             }
 
             // An animated picture (a GIF) goes as a video made from it, once made (its still picture until then).
-            if (SchedularrTV.Service.Images.AnimatedImages.IsAnimated(file) && animations?.Converted(file, queue: true) is { } video)
+            if (SchedularrTV.Service.Images.AnimatedImages.IsAnimated(file) && animations?.Converted(file, queue: prepare) is { } video)
             {
                 file = video;
             }
@@ -393,9 +406,11 @@ public sealed class OverlayProcessor : IPlayoutProcessor
             }
 
             // Drawn on a frame-sized canvas, so it covers the frame exactly and everything sits where it was placed.
+            string? picture = prepare ? renderer.Render(overlay, tokens) : renderer.Cached(overlay, tokens);
+            if (picture is null) return null;
             layer = new JsonObject
             {
-                ["source"] = new JsonObject { ["source_type"] = "local", ["path"] = renderer.Render(overlay, tokens) },
+                ["source"] = new JsonObject { ["source_type"] = "local", ["path"] = picture },
                 ["location"] = "top_left",
                 ["width_percent"] = 100,
                 ["horizontal_margin_percent"] = 0,
@@ -420,7 +435,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
     /// The overlay with its AI-written text layers filled in where they're written; the rest keep their usual text
     /// (and are queued, for programmes coming up soon).
     /// </summary>
-    private Overlay Written(Overlay overlay, ScheduleEntry entry, IReadOnlyDictionary<string, string> tokens)
+    private Overlay Written(Overlay overlay, ScheduleEntry entry, IReadOnlyDictionary<string, string> tokens, bool prepare)
     {
         if (writer is null || overlay.Kind == OverlayKinds.File || !overlay.Layers.Any(OverlayWriting.Writes))
         {
@@ -428,12 +443,11 @@ public sealed class OverlayProcessor : IPlayoutProcessor
         }
 
         Overlay copy = overlay.Copy();
-        bool soon = entry.Start - DateTimeOffset.UtcNow < OverlayWriting.Lookahead;
         string identity = entry.Item?.Id ?? tokens.GetValueOrDefault("title") ?? string.Empty;
         foreach (OverlayLayer layer in copy.Layers.Where(OverlayWriting.Writes))
         {
             AiTextJob job = OverlayWriting.Job(overlay, layer, tokens, entry.Item?.Overview, identity, entry.Start);
-            AiTextResult result = writer.Peek(job, queue: soon);
+            AiTextResult result = writer.Peek(job, queue: prepare);
 
             // Written text has no {tokens} left in it; the usual text is filled in as the renderer would.
             layer.Text = result.Text;
