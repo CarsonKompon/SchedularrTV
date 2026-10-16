@@ -156,6 +156,9 @@ public sealed class Overlay
     /// <summary>Named variable image used instead of File for a screenbug.</summary>
     public string? VariableImage { get; set; }
 
+    /// <summary>Show selector: watching, next, next2…next10. Null uses the variable's usual context.</summary>
+    public string? VariableImageShow { get; set; }
+
     /// <summary>
     /// Show-dependent images used by the file screenbug and design image layers. Each picks one of the schedule's shared
     /// images (<c>settings.plugins.generated-promos.shared_images</c>), the same ones generated promos use.
@@ -409,6 +412,9 @@ public sealed class OverlayLayer
 
     /// <summary>For an image: a named variable image instead of Path.</summary>
     public string? VariableImage { get; set; }
+
+    /// <summary>Show selector for this layer: watching, next, next2…next10. Null uses the variable's usual context.</summary>
+    public string? VariableImageShow { get; set; }
     /// <summary>
     /// Comes in this long after the overlay does (fading in then), so text can wait for a video's design to animate in.
     /// </summary>

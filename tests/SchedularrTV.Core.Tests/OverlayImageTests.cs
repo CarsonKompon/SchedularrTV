@@ -89,6 +89,65 @@ public sealed class OverlayImageTests : IDisposable
     }
 
     [Fact]
+    public void Each_use_of_one_variable_can_choose_its_own_show_and_fall_back_independently()
+    {
+        Overlay overlay = Bug();
+        overlay.VariableImageShow = "next2";
+        overlay.VariableImages[0].Shows.Add(new() { Show = "Next", Path = "next.png" });
+        overlay.Layers = [.. new string?[] { "watching", "next", "next2", "next10", null, "invalid" }.Select(selector =>
+            new OverlayLayer { Kind = OverlayLayerKinds.Image, VariableImage = "VARIABLE_IMAGE_01", VariableImageShow = selector, Path = "saved.png" })];
+
+        Overlay result = OverlayImages.Resolve(overlay, "Current", ["Next", "Later"]);
+        Assert.Equal("later.png", result.File);
+        Assert.Equal(["current.png", "next.png", "later.png", "default.png", "current.png", "current.png"], result.Layers.Select(layer => layer.Path));
+        Assert.All(overlay.Layers, layer => Assert.Equal("saved.png", layer.Path));
+        Assert.Equal(GeneratedImageContext.CurrentlyWatching, overlay.VariableImages[0].Context);
+
+        overlay.VariableImages[0].Context = GeneratedImageContext.UpNext;
+        overlay.VariableImages[0].Offset = 1;
+        result = OverlayImages.Resolve(overlay, "Current", ["Next", "Later"]);
+        Assert.Equal("current.png", result.Layers[0].Path);
+        Assert.Equal("later.png", result.Layers[4].Path);
+        overlay.VariableImages[0].DefaultPath = null;
+        Assert.Null(OverlayImages.Resolve(overlay, "Current", []).File);
+    }
+
+    [Fact]
+    public void Per_use_selection_passes_the_selected_show_and_block_to_automatic_images()
+    {
+        Overlay overlay = Bug();
+        var shared = new GeneratedSharedImage { DefaultPath = "fallback.png", Automatic = new() { Query = "{show} {block}" } };
+        overlay.VariableImages[0].Shared = shared.Id;
+        overlay.VariableImageShow = "next2";
+        overlay.Layers = [new() { Kind = OverlayLayerKinds.Image, VariableImage = "variable_image_01", VariableImageShow = "watching" }];
+        var lookup = new RecordingImages();
+        Overlay result = OverlayImages.ResolveFor(overlay, new("Current", "Morning"), [new("Next", "Afternoon"), new("Later", "Evening")], [shared], lookup);
+        Assert.Equal("Later Evening.png", result.File);
+        Assert.Equal("Current Morning.png", result.Layers[0].Path);
+        Assert.Equal(["Later Evening", "Current Morning"], lookup.Queries);
+    }
+
+    private sealed class RecordingImages : IAutomaticImageLookup
+    {
+        public List<string> Queries { get; } = [];
+        public string? Find(AutomaticImageConfig config, string query)
+        {
+            Queries.Add(query);
+            return query + ".png";
+        }
+    }
+
+    [Fact]
+    public async Task Screenbug_show_selector_is_used_on_air()
+    {
+        Overlay overlay = Bug();
+        overlay.VariableImageShow = "next2";
+        ChannelSchedule result = await Process(overlay, Entries());
+        Assert.Equal("later.png", PathOf(result.Entries[0]));
+        Assert.Equal("default.png", PathOf(result.Entries[3]));
+    }
+
+    [Fact]
     public async Task Screenbug_resolves_on_air_with_variant_priority_and_no_default_hides_it()
     {
         Overlay bug = Bug();
@@ -135,6 +194,8 @@ public sealed class OverlayImageTests : IDisposable
     public async Task Copies_and_yaml_preserve_variables_and_packages_map_all_images_independently()
     {
         Overlay original = Bug();
+        original.VariableImageShow = "next2";
+        original.Layers = [new() { Kind = OverlayLayerKinds.Image, VariableImage = "variable_image_01", VariableImageShow = "watching" }];
         Overlay copy = original.Copy();
         await OverlayPackages.MapPathsAsync(copy, path => Task.FromResult(path is null ? null : "mapped/" + path));
         Assert.Equal("mapped/default.png", copy.VariableImages[0].DefaultPath);
@@ -144,6 +205,8 @@ public sealed class OverlayImageTests : IDisposable
         SchedulerConfig parsed = SchedulerConfigLoader.Parse(SchedulerConfigLoader.Serialize(config));
         Overlay roundtrip = OverlayResolver.Read(parsed.Channels[0].Plugins)!.Overlays[0];
         Assert.Equal("variable_image_01", roundtrip.VariableImage);
+        Assert.Equal("next2", roundtrip.VariableImageShow);
+        Assert.Equal("watching", roundtrip.Layers[0].VariableImageShow);
         Assert.Equal(GeneratedImageContext.CurrentlyWatching, roundtrip.VariableImages[0].Context);
         Assert.Equal("mapped/current.png", roundtrip.VariableImages[0].Shows[0].Path);
     }

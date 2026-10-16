@@ -150,8 +150,10 @@ public sealed class HeadlessBrowser : IAsyncDisposable
     /// what they need.
     /// </param>
     /// <param name="captureSound">Taps the page's audio and video elements and raises <see cref="Sound"/> with what they play.</param>
+    /// <param name="captureFrames">False for page searches that only evaluate scripts and need no screencast.</param>
     public static async Task<HeadlessBrowser> StartAsync(string browser, string url, int width, int height, CancellationToken cancellationToken,
-        bool transparent = false, int maxFrameRate = 0, bool paceAnimations = false, IReadOnlyList<string>? scripts = null, bool captureSound = false)
+        bool transparent = false, int maxFrameRate = 0, bool paceAnimations = false, IReadOnlyList<string>? scripts = null, bool captureSound = false,
+        bool captureFrames = true)
     {
         List<string> problems = [];
         foreach (string[] mode in Modes)
@@ -159,7 +161,7 @@ public sealed class HeadlessBrowser : IAsyncDisposable
             try
             {
                 HeadlessBrowser started = await StartAsync(browser, mode, url, width, height, transparent, maxFrameRate,
-                    paceAnimations && maxFrameRate > 0, scripts ?? [], captureSound, cancellationToken).ConfigureAwait(false);
+                    paceAnimations && maxFrameRate > 0, scripts ?? [], captureSound, captureFrames, cancellationToken).ConfigureAwait(false);
                 return started;
             }
             catch (BrowserClosedException ex)
@@ -173,7 +175,7 @@ public sealed class HeadlessBrowser : IAsyncDisposable
     }
 
     private static async Task<HeadlessBrowser> StartAsync(string browser, string[] mode, string url, int width, int height, bool transparent,
-        int maxFrameRate, bool paceAnimations, IReadOnlyList<string> scripts, bool captureSound, CancellationToken cancellationToken)
+        int maxFrameRate, bool paceAnimations, IReadOnlyList<string> scripts, bool captureSound, bool captureFrames, CancellationToken cancellationToken)
     {
         string profile = Path.Combine(BrowserProcesses.ProfilesRoot, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(profile);
@@ -257,6 +259,9 @@ public sealed class HeadlessBrowser : IAsyncDisposable
             {
                 await browserProcess.AddScriptsAsync(scripts, captureSound, cancellationToken).ConfigureAwait(false);
             }
+
+            // Search-only browser sessions don't need to encode and send frames.
+            if (!captureFrames) return browserProcess;
 
             // Without a screencast the stream takes a picture every second instead, so this isn't fatal either.
             try
@@ -887,6 +892,23 @@ public sealed class HeadlessBrowser : IAsyncDisposable
             ? new JsonObject { ["format"] = "png", ["fromSurface"] = true, ["optimizeForSpeed"] = true }
             : new JsonObject { ["format"] = "jpeg", ["quality"] = 85, ["fromSurface"] = true, ["optimizeForSpeed"] = true }, cancellationToken).ConfigureAwait(false);
         return (string?)result?["data"] is { Length: > 0 } data ? Convert.FromBase64String(data) : null;
+    }
+
+    /// <summary>Evaluates a script in the page and returns its JSON value (including awaited promises).</summary>
+    public async Task<JsonNode?> EvaluateAsync(string expression, CancellationToken cancellationToken)
+    {
+        JsonNode? response = await RetryAsync("Runtime.evaluate", new JsonObject
+        {
+            ["expression"] = expression,
+            ["returnByValue"] = true,
+            ["awaitPromise"] = true
+        }, cancellationToken).ConfigureAwait(false);
+        if (response?["exceptionDetails"] is not null)
+        {
+            throw new InvalidOperationException("The browser couldn't evaluate the page script.");
+        }
+
+        return response?["result"]?["value"]?.DeepClone();
     }
 
     private int _disposed;

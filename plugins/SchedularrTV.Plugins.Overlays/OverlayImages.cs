@@ -62,6 +62,11 @@ public static class OverlayImages
     /// <summary>Whether any of the overlay's variable images finds pictures automatically (once linked).</summary>
     public static bool HasAutomatic(Overlay overlay) => overlay.VariableImages.Any(image => image.Choices.Automatic is not null);
 
+    /// <summary>A use may override the variable's usual show without changing other layers that use it.</summary>
+    public static (GeneratedImageContext Context, int Offset) ContextFor(GeneratedVariableImage image, string? selector) =>
+        GeneratedImageSelectors.TryParse(selector, out GeneratedImageContext context, out int offset)
+            ? (context, offset) : (image.Context, Math.Clamp(image.Offset, 0, GeneratedImageSelectors.MaxAhead - 1));
+
     /// <summary>
     /// A copy of the overlay with its variable images' pictures in place for these shows: each variable's shared image
     /// (from <paramref name="library"/>) picks one by show or block, else finds one automatically with
@@ -73,7 +78,7 @@ public static class OverlayImages
         if (overlay.VariableImages.Count == 0 && string.IsNullOrWhiteSpace(overlay.VariableImage)
             && !overlay.Layers.Any(layer => !string.IsNullOrWhiteSpace(layer.VariableImage))) return overlay;
 
-        Dictionary<string, string?> paths = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, GeneratedVariableImage> images = new(StringComparer.OrdinalIgnoreCase);
         foreach (GeneratedVariableImage original in overlay.VariableImages)
         {
             GeneratedVariableImage image = original;
@@ -83,15 +88,25 @@ public static class OverlayImages
                 image.Linked = GeneratedSharedImages.Find(library, image.Shared);
             }
 
-            OverlayImageSubject? show = image.Context == GeneratedImageContext.UpNext ? upcoming.ElementAtOrDefault(Math.Clamp(image.Offset, 0, 9)) : current;
+            images[image.Name] = image;
+        }
+
+        Dictionary<(string Name, GeneratedImageContext Context, int Offset), string?> paths = [];
+        string? PathFor(string name, string? selector)
+        {
+            if (!images.TryGetValue(name, out GeneratedVariableImage? image)) return null;
+            var (context, offset) = ContextFor(image, selector);
+            var key = (image.Name, context, offset);
+            if (paths.TryGetValue(key, out string? cached)) return cached;
+            OverlayImageSubject? show = context == GeneratedImageContext.UpNext ? upcoming.ElementAtOrDefault(offset) : current;
             string path = image.PathFor(show?.Title, show?.Block, automatic);
-            paths[image.Name] = path.Length == 0 ? null : path;
+            return paths[key] = path.Length == 0 ? null : path;
         }
 
         Overlay copy = overlay.Copy();
-        if (!string.IsNullOrWhiteSpace(copy.VariableImage)) copy.File = paths.GetValueOrDefault(copy.VariableImage);
+        if (!string.IsNullOrWhiteSpace(copy.VariableImage)) copy.File = PathFor(copy.VariableImage, copy.VariableImageShow);
         foreach (OverlayLayer layer in copy.Layers.Where(layer => layer.Kind == OverlayLayerKinds.Image && !string.IsNullOrWhiteSpace(layer.VariableImage)))
-            layer.Path = paths.GetValueOrDefault(layer.VariableImage!);
+            layer.Path = PathFor(layer.VariableImage!, layer.VariableImageShow);
         return copy;
     }
 }

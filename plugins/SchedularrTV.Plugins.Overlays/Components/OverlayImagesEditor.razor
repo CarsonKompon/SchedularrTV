@@ -7,7 +7,8 @@
     <p class="hint">Each variable shows one of the <strong>shared images</strong>, picking its picture by show (or finding one automatically). Shared
         images are kept once for every overlay and generated promo template, so they're edited in one place:
         <button class="btn btn-sm" type="button" @onclick="() => OpenDialog(null)">Edit shared images…</button></p>
-    <p class="hint">Select a variable as a picture layer's image source, or as the screenbug's file source.</p>
+    <p class="hint">Select a variable as a picture layer's image source, or as the screenbug's file source.
+        Use <strong>For which show</strong> there to show the current programme, up next, up next 2, and so on with the same variable.</p>
     @foreach (GeneratedVariableImage image in Overlay.VariableImages)
     {
         GeneratedSharedImage? shared = image.IsShared ? GeneratedSharedImages.Find(Library, image.Shared) : null;
@@ -41,7 +42,7 @@
                         }
                     </div>
                 </div>
-                <label class="field"><span>Show</span>
+                <label class="field"><span>Usual show</span>
                     <select @bind="image.Context" @bind:after="Notify">
                         <option value="@GeneratedImageContext.CurrentlyWatching">Currently watching / before the break</option>
                         @if (image.Context == GeneratedImageContext.PromotedShow)
@@ -136,12 +137,14 @@
         if (string.Equals(Overlay.VariableImage, image.Name, StringComparison.OrdinalIgnoreCase))
         {
             Overlay.VariableImage = null;
+            Overlay.VariableImageShow = null;
             Overlay.File = fallback;
         }
 
         foreach (OverlayLayer layer in Overlay.Layers.Where(layer => string.Equals(layer.VariableImage, image.Name, StringComparison.OrdinalIgnoreCase)))
         {
             layer.VariableImage = null;
+            layer.VariableImageShow = null;
             layer.Path = fallback;
         }
     });

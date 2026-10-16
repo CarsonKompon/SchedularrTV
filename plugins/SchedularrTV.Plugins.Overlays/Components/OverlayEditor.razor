@@ -2,7 +2,7 @@
    Generated promos template editor: the canvas fills the width with its layers on the right, and the rest under it.
    Its layer list, groups, locking, shapes, masks, timeline and keyframes work as the template editor's do: keep the two in step. *@
 @using Microsoft.JSInterop
-@implements IDisposable
+@implements IAsyncDisposable
 @inject IJSRuntime JS
 @inject IServiceProvider Services
 @inject ConfigEditor Editor
@@ -53,6 +53,8 @@
                     <span class="ed-meta">@Overlay.Width × @Overlay.Height</span>
                 </div>
             }
+            <div class="ed-viewport" id="@_viewportId">
+            <span class="ed-zoom-badge" aria-hidden="true"></span>
             <div class="ed-canvas" id="@_canvasId" role="group" aria-label="Overlay canvas" @onpointerenter="MeasureCanvas"
                  style="aspect-ratio:@(CanvasWidth) / @(CanvasHeight);">
                 @* The preview. Script swaps each new picture in once it has decoded, so it never blanks while scrubbing. *@
@@ -97,6 +99,13 @@
                         <div class="snap-guide snap-guide-y" aria-hidden="true"></div>
                     }
                 }
+            </div>
+
+            </div>
+            <div class="ed-viewport-bar">
+                <span class="hint" style="margin:0;">Ctrl/⌘ + scroll to zoom in for precise edits, middle-drag to pan.</span>
+                <div class="spacer"></div>
+                <button class="btn btn-sm" type="button" title="Show the whole frame again (Ctrl/⌘ + 0)" @onclick="ResetZoom">Fit</button>
             </div>
 
             @if (IsDesign)
@@ -473,7 +482,12 @@
                                     }
                                 </select>
                             </label>
-                            @if (!string.IsNullOrWhiteSpace(selected.VariableImage) && VariableStatus(selected.VariableImage) is { } variableStatus)
+                            @if (Overlay.VariableImages.FirstOrDefault(image => string.Equals(image.Name, selected.VariableImage, StringComparison.OrdinalIgnoreCase)) is { } selectedVariable)
+                            {
+                                <OverlayImageShowSelect Image="selectedVariable" Value="@selected.VariableImageShow"
+                                                        ValueChanged="value => Set(() => selected.VariableImageShow = value)" />
+                            }
+                            @if (!string.IsNullOrWhiteSpace(selected.VariableImage) && VariableStatus(selected.VariableImage, selected.VariableImageShow) is { } variableStatus)
                             {
                                 <p class="hint">@variableStatus</p>
                             }
@@ -626,6 +640,15 @@
                         }
                     </select>
                 </label>
+                @if (Overlay.VariableImages.FirstOrDefault(image => string.Equals(image.Name, Overlay.VariableImage, StringComparison.OrdinalIgnoreCase)) is { } fileVariable)
+                {
+                    <OverlayImageShowSelect Image="fileVariable" Value="@Overlay.VariableImageShow"
+                                            ValueChanged="value => Set(() => Overlay.VariableImageShow = value)" />
+                    @if (VariableStatus(fileVariable.Name, Overlay.VariableImageShow) is { } fileStatus)
+                    {
+                        <p class="hint">@fileStatus</p>
+                    }
+                }
                 @if (string.IsNullOrWhiteSpace(Overlay.VariableImage))
                 {
                     <div class="field"><span>@(Overlay.Variants.Count > 0 ? "Default picture or video" : "Picture or video")</span>
@@ -749,6 +772,8 @@
 
     private readonly CancellationTokenSource _life = new();
     private readonly string _canvasId = $"overlay-canvas-{Guid.NewGuid():N}";
+    private readonly string _viewportId = $"overlay-viewport-{Guid.NewGuid():N}";
+    private IJSObjectReference? _zoom;
     private readonly string _stillId = $"overlay-still-{Guid.NewGuid():N}";
     private readonly string _rulerId = $"overlay-ruler-{Guid.NewGuid():N}";
     private double _canvasPixels;
@@ -823,6 +848,19 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_zoom is null)
+        {
+            try
+            {
+                await using IJSObjectReference module = await JS.InvokeAsync<IJSObjectReference>("import", "./plugins/overlays/zoom.js");
+                _zoom = await module.InvokeAsync<IJSObjectReference>("create", _viewportId, _canvasId);
+            }
+            catch (Exception ex) when (ex is JSException or InvalidOperationException)
+            {
+                // Disconnected or still prerendering: try again after the next render.
+            }
+        }
+
         // Once, as soon as the canvas is on the page.
         if (_canvasPixels <= 0)
         {
@@ -836,7 +874,13 @@
         }
     }
 
-    public void Dispose()
+    private async Task ResetZoom()
+    {
+        if (_zoom is not null) await _zoom.InvokeVoidAsync("reset");
+        await MeasureCanvas();
+    }
+
+    public async ValueTask DisposeAsync()
     {
         if (_automatic is not null)
         {
@@ -845,6 +889,17 @@
 
         _life.Cancel();
         _life.Dispose();
+        if (_zoom is not null)
+        {
+            try
+            {
+                await _zoom.InvokeVoidAsync("dispose");
+                await _zoom.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
     }
 
     /// <summary>Reads how wide the canvas is drawn, for turning pointer movement into canvas pixels.</summary>
@@ -1572,7 +1627,7 @@
     /// For a picture layer showing a variable image whose shared image finds pictures automatically: what the preview's
     /// show got (found, being searched for, or why not). Null otherwise.
     /// </summary>
-    private string? VariableStatus(string name)
+    private string? VariableStatus(string name, string? selector)
     {
         if (_automatic is null
             || Overlay.VariableImages.FirstOrDefault(image => string.Equals(image.Name, name, StringComparison.OrdinalIgnoreCase)) is not { } variable
@@ -1582,7 +1637,8 @@
         }
 
         string[] upcoming = _previewUpcoming.Replace("\r", "").Split('\n').Select(title => title.Trim()).ToArray();
-        string? show = variable.Context == GeneratedImageContext.UpNext ? upcoming.ElementAtOrDefault(Math.Clamp(variable.Offset, 0, 9)) : _previewCurrent;
+        var (context, offset) = OverlayImages.ContextFor(variable, selector);
+        string? show = context == GeneratedImageContext.UpNext ? upcoming.ElementAtOrDefault(offset) : _previewCurrent;
         if (string.IsNullOrWhiteSpace(show))
         {
             return null;

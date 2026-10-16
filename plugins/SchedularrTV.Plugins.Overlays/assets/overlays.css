@@ -77,6 +77,30 @@
 .ov-scope .snap-guide-x { left: 50%; top: 0; bottom: 0; border-left-width: 1px; }
 .ov-scope .snap-guide-y { top: 50%; left: 0; right: 0; border-top-width: 1px; }
 
+/* Zoom/pan stays inside the preview frame; editing handles remain a constant screen size. */
+.ov-scope .ed-viewport { position: relative; overflow: hidden; border-radius: 8px; }
+.ov-scope .ed-viewport.zoomed .ed-canvas { border-radius: 0; }
+.ov-scope .ed-viewport.panning, .ov-scope .ed-viewport.panning * { cursor: grabbing !important; }
+.ov-scope .ed-zoom-badge {
+    position: absolute; right: 8px; top: 8px; z-index: 10; padding: 1px 7px; border-radius: 10px; font-size: 11px;
+    background: rgba(0,0,0,.65); color: #fff; pointer-events: none;
+}
+.ov-scope .ed-zoom-badge:empty { display: none; }
+.ov-scope .ed-canvas .handle {
+    width: calc(12px / var(--zoom, 1)); height: calc(12px / var(--zoom, 1));
+    margin: calc(-6px / var(--zoom, 1)) 0 0 calc(-6px / var(--zoom, 1)); border-width: calc(2px / var(--zoom, 1));
+}
+.ov-scope .ed-canvas .handle-rotate { top: calc(-22px / var(--zoom, 1)); }
+.ov-scope .ed-canvas .handle-rotate::after {
+    left: calc(3px / var(--zoom, 1)); top: calc(10px / var(--zoom, 1));
+    width: calc(2px / var(--zoom, 1)); height: calc(12px / var(--zoom, 1));
+}
+.ov-scope .ed-canvas .layer-tag { font-size: calc(10px / var(--zoom, 1)); line-height: calc(16px / var(--zoom, 1)); padding: 0 calc(5px / var(--zoom, 1)); }
+.ov-scope .ed-canvas .layer-box { border-width: calc(1px / var(--zoom, 1)); }
+.ov-scope .ed-canvas .layer-box.selected, .ov-scope .ed-canvas .layer-box.chosen { border-width: calc(2px / var(--zoom, 1)); }
+.ov-scope .ed-viewport-bar { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.ov-scope .ed-viewport-bar .spacer { flex: 1; }
+
 /* The preview picture, swapped in by script once decoded so the canvas never blanks while scrubbing. */
 .ov-scope .ed-still { position: absolute; inset: 0; background-size: 100% 100%; background-repeat: no-repeat; pointer-events: none; }
 

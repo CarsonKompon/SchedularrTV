@@ -1,0 +1,27 @@
+@* Per-use context, shared by design image layers and file screenbugs. *@
+<label class="field">
+    <span>For which show</span>
+    <select value="@(Value ?? "")" @onchange="Choose">
+        <option value="">Its usual one (@Label(Image.Context, Image.Offset))</option>
+        <option value="watching">Currently watching / before the break</option>
+        @for (int offset = 0; offset < GeneratedImageSelectors.MaxAhead; offset++)
+        {
+            <option value="@GeneratedImageSelectors.Format(GeneratedImageContext.UpNext, offset)">@Label(GeneratedImageContext.UpNext, offset)</option>
+        }
+    </select>
+</label>
+<p class="hint">The same variable can be used in several places, each for a different show.</p>
+
+@code {
+    [Parameter, EditorRequired] public GeneratedVariableImage Image { get; set; } = new();
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+
+    private static string Label(GeneratedImageContext context, int offset) => context == GeneratedImageContext.UpNext
+        ? offset == 0 ? "Up next" : $"Up next {offset + 1}"
+        : "Currently watching / before the break";
+
+    private Task Choose(ChangeEventArgs e) => ValueChanged.InvokeAsync(
+        GeneratedImageSelectors.TryParse(e.Value?.ToString(), out var context, out int offset)
+            ? GeneratedImageSelectors.Format(context, offset) : null);
+}

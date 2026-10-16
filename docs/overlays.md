@@ -111,6 +111,8 @@ Automatic pictures for programmes in the next 36 hours are looked for in the bac
 
 For a canvas design, add/select a **Picture** layer and choose the variable under **Image source**. The image keeps the layer's position, size, opacity, and timing. For a file-based screenbug, choose the variable under **File source**; placement, sizing, margins, and fades work as usual.
 
+Each use has a **For which show** selector: **Its usual one**, **Currently watching / before the break**, **Up next**, **Up next 2**, through **Up next 10**. This lets several layers use the same variable for different shows at once. Leaving it at **Its usual one** uses the variable's **Usual show** setting. The preview and live output both honor this choice. In YAML, set `variable_image_show: watching`, `next`, `next2` … `next10` beside `variable_image` on the image layer or file overlay.
+
 Shows without an override (or automatic picture) and unavailable schedule contexts use the default image. With no default, that image is hidden. Matching **Other pictures** variants (such as holiday or rating badges) take priority over a screenbug's variable image.
 
 Use **Preview show contexts** to enter a current show and upcoming titles and see their images on the canvas; a picture layer showing a variable with an automatic picture says what was found for the preview's show. These fields only affect the preview; the live overlay uses the actual schedule.
