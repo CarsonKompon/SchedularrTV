@@ -88,6 +88,34 @@ public sealed class GeneratedPromoAvailabilityTests
     }
 
     [Fact]
+    public void A_programme_query_limits_a_template_to_the_programmes_it_matches()
+    {
+        GeneratedPromoTemplate action = new()
+        {
+            Name = "Action", Type = GeneratedPromoType.UpNext, Duration = TimeSpan.FromSeconds(10),
+            Availability = new() { Query = "genre:'Action'" }
+        };
+        ChannelConfig channel = Channel(action);
+        SchedulerConfig config = new() { Channels = [channel] };
+        DateTimeOffset at = DateTimeOffset.Parse("2026-06-01T12:00:00Z");
+        MediaItem explosions = new() { Id = "1", Title = "Explosions", Kind = MediaKind.Movie, Genres = ["Action"] };
+        MediaItem feelings = new() { Id = "2", Title = "Feelings", Kind = MediaKind.Movie, Genres = ["Drama"] };
+
+        GeneratedPromoTemplate? Pick(MediaItem? subject, bool defer = false) => GeneratedPromoPlanner.Choose(config, channel, null,
+            GeneratedPromoType.UpNext, false, TimeSpan.FromMinutes(1), at, subject: subject, deferSubject: defer);
+
+        Assert.Same(action, Pick(explosions));
+        Assert.Null(Pick(feelings));
+        // Unknown programme: left out, unless the schedule gets to say when the promo is made.
+        Assert.Null(Pick(null));
+        Assert.Same(action, Pick(null, defer: true));
+
+        Assert.True(GeneratedPromoEligibility.SuitsProgramme(action, explosions));
+        Assert.False(GeneratedPromoEligibility.SuitsProgramme(action, feelings));
+        Assert.True(GeneratedPromoEligibility.SuitsProgramme(new GeneratedPromoTemplate(), null));
+    }
+
+    [Fact]
     public void A_tail_promo_is_checked_at_its_start_not_the_following_programmes_start()
     {
         var template = Christmas();

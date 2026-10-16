@@ -191,7 +191,12 @@ public sealed partial class GeneratedPromoService(
                 {
                     int needed = GeneratedPromoResolver.ListingsNeeded(template);
                     IReadOnlyList<UpNextListing> listings = Subject(template.Type, schedule, entry, needed, template.UpcomingGrouping);
-                    if (listings.Count >= needed || (listings.Count > 0 && entry.Start - now < PartialListingWindow))
+
+                    // A template for some programmes only: the one the promo turned out to be about has to match too
+                    // (when it couldn't be known at planning, or the prediction was wrong); otherwise the stand-in airs.
+                    bool suits = !GeneratedPromoEligibility.HasProgrammeQuery(template) || (listings.Count > 0
+                        && GeneratedPromoEligibility.SuitsProgramme(template, UpNextPromo.ItemFor(schedule, listings[0])));
+                    if (suits && (listings.Count >= needed || (listings.Count > 0 && entry.Start - now < PartialListingWindow)))
                     {
                         // Variable images' automatic pictures are looked for (in the background) for promos about to be made.
                         bool making = watched && WithinLead(config.Settings, entry.Start, now);

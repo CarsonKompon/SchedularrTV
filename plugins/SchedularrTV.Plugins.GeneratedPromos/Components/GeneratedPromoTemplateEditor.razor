@@ -101,8 +101,8 @@
     <p class="hint">Shared by Up Next text, variable images, voice-over, external generators, and background rules. Timeslot / episode counts episodes packed into one channel slot together; when packing is disabled, each episode counts separately. Mid-roll segments never count as new programmes.</p>
 
     <details class="ed-plain">
-        <summary>Promo availability · @(Template.Availability?.TimeRange is { } summaryHours ? $"{BackgroundTime(summaryHours.Start)}–{BackgroundTime(summaryHours.End)}" : "any time") · @(Template.Availability?.DateRange is { } summaryDates ? $"{summaryDates.Start} through {summaryDates.End} each year" : "all year")</summary>
-        <p class="hint">Controls whether this entire template can be selected, using the promo's scheduled start in @Zone.Id. When both restrictions are enabled, both must match. Previewing remains available outside these ranges.</p>
+        <summary>Promo availability · @(Template.Availability?.TimeRange is { } summaryHours ? $"{BackgroundTime(summaryHours.Start)}–{BackgroundTime(summaryHours.End)}" : "any time") · @(Template.Availability?.DateRange is { } summaryDates ? $"{summaryDates.Start} through {summaryDates.End} each year" : "all year")@(string.IsNullOrWhiteSpace(Template.Availability?.Query) ? "" : " · some programmes")</summary>
+        <p class="hint">Controls whether this entire template can be selected, using the promo's scheduled start in @Zone.Id. When several restrictions are enabled, all must match. Previewing remains available outside these ranges.</p>
         <label class="check">
             <input type="checkbox" checked="@(Template.Availability?.TimeRange is not null)" @onchange="e => TogglePromoAvailability(time: true, e.Value is true)" />
             <span>Only use this promo during a daily time range</span>
@@ -149,6 +149,23 @@
             </div>
             <p class="hint">Repeats every year. December 1–31 covers Christmas season; December 20–January 5 crosses New Year. Use the same date at both ends for a single day. February 29 is eligible only in leap years.</p>
         }
+        <label class="field">
+            <span>Only when the programme matches <span class="muted">(library query, optional)</span></span>
+            <input type="text" value="@Template.Availability?.Query" spellcheck="false"
+                   placeholder="genre:'Action'  ·  kind == 'Movie' AND year >= 1990"
+                   @onchange="SetProgrammeQuery" />
+        </label>
+        @if (Template.Availability?.Query is { Length: > 0 } programmeQuery
+             && !SchedularrTV.Core.Query.QueryParser.TryParse(programmeQuery, out _, out string? programmeQueryError))
+        {
+            <p class="hint warn">That query doesn't read: @programmeQueryError</p>
+        }
+        <p class="hint">
+            The programme is the one the promo is about: the show up next for @TypeName(GeneratedPromoType.UpNext) and
+            @TypeName(GeneratedPromoType.NowPlaying), the one being watched for This Has Been, You're Watching, Back to the Show
+            and We'll Be Right Back, and the promoted one for Coming Up, Eventually and New Episode. When a promo turns out to be
+            about a programme that doesn't match, its stand-in ads air instead.
+        </p>
         @if (Template.Availability is not null && !GeneratedPromoEligibility.IsAvailable(Template, Preview.Now, Zone))
         {
             <p class="hint warn">Outside this template's availability right now. It can still be previewed, but won't be selected for airings outside its ranges.</p>
@@ -3183,8 +3200,23 @@
         Template.Availability ??= new GeneratedPromoAvailability();
         if (time) Template.Availability.TimeRange = enabled ? Template.Availability.TimeRange ?? new GeneratedBackgroundTimeRange() : null;
         else Template.Availability.DateRange = enabled ? Template.Availability.DateRange ?? new GeneratedAnnualDateRange() : null;
-        if (Template.Availability.TimeRange is null && Template.Availability.DateRange is null) Template.Availability = null;
+        DropEmptyAvailability();
     });
+
+    /// <summary>The programme the promo is about has to match this library query; blank allows any programme.</summary>
+    private Task SetProgrammeQuery(ChangeEventArgs e) => Set(() =>
+    {
+        string? query = e.Value?.ToString()?.Trim();
+        Template.Availability ??= new GeneratedPromoAvailability();
+        Template.Availability.Query = string.IsNullOrWhiteSpace(query) ? null : query;
+        DropEmptyAvailability();
+    });
+
+    // Nothing restricted: no availability block in the YAML (and the render key it always had).
+    private void DropEmptyAvailability()
+    {
+        if (Template.Availability is { TimeRange: null, DateRange: null, Query: null }) Template.Availability = null;
+    }
 
     private static int AvailabilityDatePart(string date, bool month)
     {

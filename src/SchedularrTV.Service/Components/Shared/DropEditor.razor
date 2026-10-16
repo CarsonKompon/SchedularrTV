@@ -12,7 +12,7 @@
             @foreach (DayOfWeek day in Week)
             {
                 <label class="check" style="margin:0;">
-                    <input type="checkbox" checked="@Drop.Days.Contains(day)" @onchange="e => ToggleDay(day, e)" />
+                    <input type="checkbox" checked="@Drop.DropDays.Contains(day)" @onchange="e => ToggleDay(day, e)" />
                     <span>@(day.ToString()[..3])</span>
                 </label>
             }
@@ -20,15 +20,18 @@
     </div>
 
     <div class="grid grid-2">
-        @if (Drop.Days.Count == 0)
+        @if (Drop.DropDays.Count == 0)
         {
             <DurationInput Label="Or every" Placeholder="7d" Value="Drop.Every"
-                           ValueChanged="v => Set(() => Drop.Every = v)" />
+                           ValueChanged="v => Set(() => Drop.Every = v ?? TimeSpan.FromDays(7))" />
         }
-        <label class="field">
-            <span>At (time of day)</span>
-            <input type="text" placeholder="00:00" value="@TimeText" @onchange="OnTimeChanged" />
-        </label>
+        @if (ShowTime)
+        {
+            <label class="field">
+                <span>At (time of day) <span class="muted">(optional)</span></span>
+                <input type="text" placeholder="Normal air times" value="@TimeText" @onchange="OnTimeChanged" />
+            </label>
+        }
         <label class="field">
             <span>Episodes per drop</span>
             <input type="number" min="1" value="@Drop.Count" @onchange="e => Set(() => Drop.Count = Math.Max(1, Int(e, 1)))" />
@@ -59,9 +62,10 @@
         </label>
     </div>
     <p class="hint">
-        @(Drop.Describe()). A new episode airs at the first chance after it drops; until the next drop only episodes
-        that have already dropped play, as repeats. Leave <em>First drop</em> empty to start from the next build
-        (the latest drop time counts, so one is out straight away).
+        @(Drop.Describe()). From each drop day, the show's first airings (at its normal times) are the new
+        episodes@(ShowTime ? "; set a time to air them then instead, ahead of whatever else is due." : ".")
+        Until the next drop only episodes that have already dropped play, as repeats. Leave <em>First drop</em>
+        empty to start from the next build (the latest drop counts, so one is out straight away).
     </p>
 </div>
 
@@ -69,6 +73,9 @@
     [Parameter, EditorRequired] public DropConfig Drop { get; set; } = new();
     [Parameter] public string? Title { get; set; }
     [Parameter] public EventCallback Changed { get; set; }
+
+    /// <summary>Offers a set air time, which only an individual show has; a collection's shows keep their own airings.</summary>
+    [Parameter] public bool ShowTime { get; set; }
 
     private static readonly DayOfWeek[] Week =
         [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday];
@@ -83,6 +90,12 @@
 
     private Task ToggleDay(DayOfWeek day, ChangeEventArgs e) => Set(() =>
     {
+        // The Friday shown by default becomes a real choice once a day is changed.
+        if (Drop.Days.Count == 0 && Drop.Every is null)
+        {
+            Drop.Days = [.. DropConfig.DefaultDays];
+        }
+
         if ((bool)(e.Value ?? false))
         {
             if (!Drop.Days.Contains(day)) Drop.Days.Add(day);
@@ -91,6 +104,18 @@
         else
         {
             Drop.Days.Remove(day);
+
+            // No days ticked: drops go by interval instead (a week, until changed), rather than back to Fridays.
+            if (Drop.Days.Count == 0)
+            {
+                Drop.Every ??= TimeSpan.FromDays(7);
+            }
+        }
+
+        // Ticking a day after an interval goes back to weekdays.
+        if (Drop.Days.Count > 0)
+        {
+            Drop.Every = null;
         }
     });
 

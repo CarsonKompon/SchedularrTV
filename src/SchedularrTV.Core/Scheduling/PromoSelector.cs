@@ -14,6 +14,9 @@ public sealed record PromoTarget(DateTimeOffset At, IReadOnlyList<string> ShowId
 {
     /// <summary>The episode expected to air is a new one (a drop's first airing).</summary>
     public bool IsNew { get; init; }
+
+    /// <summary>The programme predicted to air, for templates limited to some programmes; null when there's no prediction.</summary>
+    public MediaItem? Sample { get; init; }
 }
 
 /// <summary>

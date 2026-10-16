@@ -12,10 +12,11 @@ internal sealed class GeneratedPromoSubstitute : IPromoSpotSubstitute
     public bool Has(BreakContext context, GeneratedPromoType type) =>
         GeneratedPromoPlanner.Has(context.Config, context.Channel, context.Block, type);
 
-    public GeneratedPromoTemplate? Choose(BreakContext context, GeneratedPromoType type, bool clipAvailable, TimeSpan available, DateTimeOffset at, bool isNew = false) =>
+    public GeneratedPromoTemplate? Choose(BreakContext context, GeneratedPromoType type, bool clipAvailable, TimeSpan available, DateTimeOffset at,
+        bool isNew = false, MediaItem? subject = null, bool deferSubject = false) =>
         GeneratedPromoPlanner.Choose(context.Config, context.Channel, context.Block, type, clipAvailable, available, at,
             endsAt: type is GeneratedPromoType.UpNext or GeneratedPromoType.NowPlaying or GeneratedPromoType.BackToTheShow,
-            isNew: isNew);
+            isNew: isNew, subject: subject, deferSubject: deferSubject);
 
     /// <summary>
     /// A New Episode promo, when the channel has shows that drop. It names whichever new episode the built schedule
@@ -71,7 +72,7 @@ internal sealed class GeneratedPromoSubstitute : IPromoSpotSubstitute
 
         List<DropPlan> drops = cache.Plans;
         if (drops.Count == 0
-            || Choose(context, GeneratedPromoType.NewEpisode, clipAvailable: false, available, context.From, isNew: true) is not { } template)
+            || Choose(context, GeneratedPromoType.NewEpisode, clipAvailable: false, available, context.From, isNew: true, deferSubject: true) is not { } template)
         {
             return null;
         }
@@ -173,7 +174,7 @@ internal sealed class GeneratedPromoSubstitute : IPromoSpotSubstitute
         }
 
         if (airings.Count > 0
-            && Choose(context, GeneratedPromoType.Eventually, clipAvailable, available, context.From) is { } trailer)
+            && Choose(context, GeneratedPromoType.Eventually, clipAvailable, available, context.From, deferSubject: true) is { } trailer)
         {
             return (trailer, airings[DeterministicRandom.FromSeedText(context.BreakSeed, "generated-eventually-airing").Next(airings.Count)]);
         }

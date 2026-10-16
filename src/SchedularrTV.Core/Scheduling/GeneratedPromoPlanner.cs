@@ -68,7 +68,9 @@ public static class GeneratedPromoPlanner
         TimeSpan available,
         DateTimeOffset at,
         bool endsAt = false,
-        bool isNew = false)
+        bool isNew = false,
+        MediaItem? subject = null,
+        bool deferSubject = false)
     {
         if (Source(config, channel, block) is not { } source)
         {
@@ -81,6 +83,10 @@ public static class GeneratedPromoPlanner
             && template.Duration > TimeSpan.Zero
             && template.Duration <= available
             && GeneratedPromoKinds.Suits(template.Episodes, isNew)
+            // A programme query is checked against the programme when it's known; when only the built schedule can say
+            // (an open Coming Up, Eventually, New Episode), it's checked again as the promo is made.
+            && (subject is not null ? GeneratedPromoEligibility.SuitsProgramme(template, subject)
+                : deferSubject || !GeneratedPromoEligibility.HasProgrammeQuery(template))
             && GeneratedPromoEligibility.IsAvailable(template, endsAt ? at - template.Duration : at, zone)
             && (!clipAvailable || template.Usage == GeneratedPromoUsage.Mixed))];
 

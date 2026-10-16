@@ -43,15 +43,15 @@ Choose **Drop** as the collection's **Order** to give every show in it the same 
 
 | Drop control | Effect |
 | --- | --- |
-| **Drop on** | Weekdays new episodes come out; leave them all unticked to use **Or every** (`3d`, `12h`) |
-| **At (time of day)** | When each drop happens, in the channel's time zone |
+| **Drop on** | Weekdays new episodes come out (Friday to start with); untick them all to use **Or every** (`3d`, `12h`) |
+| **At (time of day)** | Individual shows only, optional: when their new episodes air, ahead of whatever else is due. Empty uses the show's normal airings |
 | **Episodes per drop** | How many come out at once |
 | **Next episode by** | Episode order, or air date |
 | **Between drops, repeats play** | Shuffled, at random, or in order |
 | **First drop** | The first drop's date; empty starts with the next build, with one episode out straight away |
 | **Already out before the first drop** | Episodes that count as released (repeats only) from the start |
 
-A new episode airs at the first chance after it drops, ahead of whatever else was due. Its first airing counts as a **new episode** for promos and overlays. See [Drop new episodes on a schedule](scheduling.md#drop-new-episodes-on-a-schedule).
+From each drop day, the show's first airings at its normal times are the new episodes (or, with an air time, the first slot at or after it). A new episode's first airing counts as a **new episode** for promos and overlays. See [Drop new episodes on a schedule](scheduling.md#drop-new-episodes-on-a-schedule).
 
 ### Tune individual titles
 

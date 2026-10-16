@@ -25,7 +25,7 @@ public sealed class DropPlan
         Zone = zone;
         Origin = origin;
         Now = now;
-        _days = [.. config.Days];
+        _days = [.. config.DropDays];
     }
 
     public DropConfig Config { get; }
@@ -138,7 +138,7 @@ public sealed class DropPlan
     public static DateTimeOffset LatestAtOrBefore(DropConfig config, TimeZoneInfo zone, DateTimeOffset at)
     {
         DateOnly day = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(at, zone).DateTime);
-        HashSet<DayOfWeek> days = [.. config.Days];
+        HashSet<DayOfWeek> days = [.. config.DropDays];
 
         for (int i = 0; i <= 8; i++, day = day.AddDays(-1))
         {

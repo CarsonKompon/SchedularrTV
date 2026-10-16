@@ -16,7 +16,49 @@ public class DropOrderTests
     private static List<MediaItem> Show(string name, int episodes) =>
         [.. Enumerable.Range(1, episodes).Select(e => TestMedia.Episode(name, 1, e, TimeSpan.FromMinutes(22)))];
 
-    private static DropConfig Mondays(int count = 1) => new() { Days = [DayOfWeek.Monday], Count = count, Start = "2026-01-12" };
+    private static DropConfig Mondays(int count = 1, TimeSpan? airTime = null) =>
+        new() { Days = [DayOfWeek.Monday], Count = count, Start = "2026-01-12", Time = airTime };
+
+    [Fact]
+    public void Drops_are_on_fridays_unless_days_or_an_interval_are_set()
+    {
+        Assert.Equal(new[] { DayOfWeek.Friday }, new DropConfig().DropDays);
+        Assert.Empty(new DropConfig { Every = TimeSpan.FromDays(3) }.DropDays);
+        Assert.Equal(new[] { DayOfWeek.Monday }, Mondays().DropDays);
+
+        DropPlan plan = DropPlan.Create(new DropConfig { Start = "2026-01-12" }, At(Monday), null);
+        Assert.Equal(0, plan.ReleasedAt(Monday.AddDays(3)));
+        Assert.Equal(1, plan.ReleasedAt(Monday.AddDays(4)));
+    }
+
+    [Fact]
+    public void Without_an_air_time_new_episodes_take_the_shows_normal_turns()
+    {
+        List<MediaItem> items = [.. Show("Drop", 5), .. Show("Other", 30)];
+        Dictionary<string, TitleRotation.TitleRule> rules = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Drop"] = new(PlaybackOrder.Drop, 1, Mondays())
+        };
+        MediaSequence sequence = MediaSequence.CreateMixed("k", items, PlaybackOrder.Shuffle, rules, null, At(Monday), null);
+        sequence.At = Monday.AddHours(1);
+
+        // Whenever the show first comes up, it's with the new episode; nothing jumps the queue for it.
+        MediaItem? firstDrop = null;
+        bool firstWasPremiere = false;
+        for (int i = 0; i < 200 && firstDrop is null; i++)
+        {
+            Assert.True(sequence.TryTake(null, out MediaItem item));
+            if (item.SeriesName == "Drop")
+            {
+                firstDrop = item;
+                firstWasPremiere = sequence.LastTakeWasPremiere;
+            }
+        }
+
+        Assert.NotNull(firstDrop);
+        Assert.Equal("Drop-s01e01", firstDrop!.Id);
+        Assert.True(firstWasPremiere);
+    }
 
     [Fact]
     public void Weekly_drops_count_each_monday_from_the_start()
@@ -120,12 +162,12 @@ public class DropOrderTests
     }
 
     [Fact]
-    public void A_shuffled_collection_puts_a_fresh_drop_first()
+    public void A_show_with_an_air_time_puts_its_fresh_drop_first()
     {
         List<MediaItem> items = [.. Show("Drop", 5), .. Show("Other", 30)];
         Dictionary<string, TitleRotation.TitleRule> rules = new(StringComparer.OrdinalIgnoreCase)
         {
-            ["Drop"] = new(PlaybackOrder.Drop, 1, Mondays())
+            ["Drop"] = new(PlaybackOrder.Drop, 1, Mondays(airTime: TimeSpan.Zero))
         };
         MediaSequence sequence = MediaSequence.CreateMixed("k", items, PlaybackOrder.Shuffle, rules, null, At(Monday), null);
 
@@ -160,7 +202,7 @@ public class DropOrderTests
                 Order = PlaybackOrder.Shuffle,
                 Include =
                 [
-                    new ContentInclude { Show = "Drop", Order = PlaybackOrder.Drop, Drop = Mondays() },
+                    new ContentInclude { Show = "Drop", Order = PlaybackOrder.Drop, Drop = Mondays(airTime: TimeSpan.Zero) },
                     new ContentInclude { Show = "Other" }
                 ]
             }

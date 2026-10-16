@@ -32,7 +32,7 @@ public sealed class ContentSelector
 
     /// <summary>
     /// Drop cadence for every show here that uses <see cref="PlaybackOrder.Drop"/>, unless a title sets its
-    /// own on its include. Null inherits from the referenced global collection, else one episode a week.
+    /// own on its include. Null inherits from the referenced global collection, else one episode every Friday.
     /// </summary>
     public DropConfig? Drop { get; set; }
 

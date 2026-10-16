@@ -46,7 +46,10 @@ Expand **Promo availability** in a template's main settings to restrict when the
 
 - **Daily time range:** start is inclusive and end is exclusive. `06:00–12:00` is mornings; `22:00–06:00` crosses midnight. Start and end must differ.
 - **Recurring date range:** choose a month and day at each end, with **no year**. Both days are included, every year. December 1–31 gives a Christmas season; December 25–25 gives Christmas Day only; December 20–January 5 crosses New Year. February 29 is supported and only occurs in leap years.
-- With both enabled, **both must match**. The date is the actual local calendar date of the promo's start, including the early-morning part of an overnight time range.
+- **Only when the programme matches:** a [library query](scheduling.md#query-language) the programme the promo is about must match, such as `genre:'Action'` for action shows or `kind == 'Movie' AND year >= 1990 AND year < 2000` for 90s films. The programme is the show up next for Up Next and Now Playing; the one being watched for This Has Been, You're Watching, Back to the Show and We'll Be Right Back; and the promoted one for Coming Up, Eventually and New Episode.
+- With several enabled, **all must match**. The date is the actual local calendar date of the promo's start, including the early-morning part of an overnight time range.
+
+The programme query is checked against the predicted programme while the break is planned, and again against the programme the built schedule actually has when the promo is made. Where they differ (or only the schedule can say, as for Eventually), a promo whose programme doesn't match airs its stand-in ads instead.
 
 Availability uses the promo's **scheduled start in the airing channel's timezone**, including daylight saving—not the day/time it is rendered or the timezone of a channel it borrows templates from. The scheduler checks eligibility while choosing templates and again after packing them into the break. Existing cached renders don't make an out-of-range template eligible.
 
@@ -65,6 +68,15 @@ availability:
   date_range:
     start: '12-01'
     end: '12-31'
+```
+
+For Up Next cards used only before action films:
+
+```yaml
+name: Action movie up next
+type: up_next
+availability:
+  query: kind == 'Movie' AND genre:'Action'
 ```
 
 Omit either range to allow all times or all dates. Templates with no availability settings remain eligible year-round. These settings are saved and exported with the template.

@@ -359,6 +359,15 @@ public sealed class GeneratedPromoAvailability
 {
     public GeneratedBackgroundTimeRange? TimeRange { get; set; }
     public GeneratedAnnualDateRange? DateRange { get; set; }
+
+    /// <summary>
+    /// The programme the promo is about must match this library query (<c>genre:'Action'</c>,
+    /// <c>kind == 'Movie' AND year &gt;= 1990 AND year &lt; 2000</c>): the show up next for Up Next and Now Playing, the one
+    /// being watched for This Has Been, You're Watching, Back to the Show and We'll Be Right Back, and the promoted one for
+    /// Coming Up, Eventually and New Episode. Null when any programme will do.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Query { get; set; }
 }
 
 /// <summary>Inclusive month/day endpoints, repeated each year; an earlier end crosses New Year.</summary>

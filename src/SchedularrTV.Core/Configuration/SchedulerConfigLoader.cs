@@ -404,6 +404,9 @@ public static class SchedulerConfigLoader
                 && (!Scheduling.GeneratedPromoEligibility.TryMonthDay(availableDates.Start, out _)
                     || !Scheduling.GeneratedPromoEligibility.TryMonthDay(availableDates.End, out _)))
                 errors.Add($"{templateScope}.availability.date_range: use valid month/day dates as MM-DD (no year), for example 12-01 through 12-31.");
+            if (template.Availability?.Query is { Length: > 0 } programmeQuery && !string.IsNullOrWhiteSpace(programmeQuery)
+                && !Query.QueryParser.TryParse(programmeQuery, out _, out string? programmeQueryError))
+                errors.Add($"{templateScope}.availability.query: {programmeQueryError}");
 
             if (!IsColor(template.BackgroundColor))
             {

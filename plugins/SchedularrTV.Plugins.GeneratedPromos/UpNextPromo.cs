@@ -85,6 +85,18 @@ public static class UpNextPromo
     }
 
     /// <summary>
+    /// The library item behind a listing, found again in the schedule (the programme starting then, or within a few
+    /// minutes, under that title), for templates limited to some programmes. Null when the schedule doesn't have it.
+    /// </summary>
+    public static MediaItem? ItemFor(ChannelSchedule schedule, UpNextListing listing) =>
+        schedule.Entries
+            .Where(entry => entry.Kind == ScheduleEntryKind.Program && !entry.IsSlotIntro && !entry.IsSlotOutro && entry.Item is { } item
+                && string.Equals(TitleOf(item), listing.Title, StringComparison.OrdinalIgnoreCase)
+                && (entry.Start - listing.Start).Duration() <= TimeSpan.FromMinutes(5))
+            .MinBy(entry => (entry.Start - listing.Start).Duration())
+            ?.Item;
+
+    /// <summary>
     /// The next new episode (a drop's first airing) the schedule airs after <paramref name="after"/>, skipping
     /// <paramref name="skip"/> (what's on either side of the promo, which other promos cover).
     /// </summary>

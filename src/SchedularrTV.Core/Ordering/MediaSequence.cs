@@ -324,8 +324,10 @@ public sealed class MediaSequence
     {
         var eligible = _titles!.Where(title => predicate is null || title.Sequence.Pool.Any(predicate)).ToArray();
 
-        // A freshly dropped episode airs at the first chance it gets, ahead of whoever's turn it is.
-        var premiering = eligible.FirstOrDefault(title => title.Sequence.PendingPremiere(predicate) is not null);
+        // A show whose new episodes have a set air time gets the first chance at or after it, ahead of whoever's turn it
+        // is. Otherwise its new episodes simply take its next normal turns.
+        var premiering = eligible.FirstOrDefault(title => title.Sequence.Drop is { Config.HasAirTime: true }
+            && title.Sequence.PendingPremiere(predicate) is not null);
 
         if (_mixed)
         {

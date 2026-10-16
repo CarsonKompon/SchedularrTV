@@ -19,20 +19,26 @@ public enum DropReleaseOrder
 /// </summary>
 /// <remarks>
 /// Applies per show. On a collection it gives every show in it the same cadence; on an include it
-/// gives that one show its own. Whether an episode has dropped is worked out from the airing's time,
-/// so rebuilding the schedule never releases episodes early.
+/// gives that one show its own. New episodes take the show's normal airings from the drop day on, unless
+/// the show sets an air <see cref="Time"/>. Whether an episode has dropped is worked out from the airing's
+/// time, so rebuilding the schedule never releases episodes early.
 /// </remarks>
 public sealed class DropConfig
 {
     /// <summary>
-    /// Weekdays episodes drop on, in the channel's time zone. When empty, <see cref="Every"/> is used instead.
+    /// Weekdays episodes drop on, in the channel's time zone. When empty, <see cref="Every"/> is used instead; with
+    /// neither, Fridays.
     /// </summary>
     public List<DayOfWeek> Days { get; set; } = [];
 
-    /// <summary>Interval between drops when no <see cref="Days"/> are given, e.g. <c>3d</c>. Defaults to a week.</summary>
+    /// <summary>Interval between drops when no <see cref="Days"/> are given, e.g. <c>3d</c>.</summary>
     public TimeSpan? Every { get; set; }
 
-    /// <summary>Time of day a drop happens, in the channel's time zone (e.g. <c>20:00</c>). Defaults to midnight.</summary>
+    /// <summary>
+    /// For one show: the time of day its new episodes air, in the channel's time zone (e.g. <c>20:00</c>); the first
+    /// chance at or after it goes to the new episode, ahead of whatever else was due. Null (the usual) leaves the show
+    /// to its normal airings: on a drop day, its first airings are the new episodes.
+    /// </summary>
     public TimeSpan? Time { get; set; }
 
     /// <summary>How many episodes drop at a time.</summary>
@@ -62,6 +68,17 @@ public sealed class DropConfig
     [YamlIgnore]
     public TimeSpan TimeOfDay => Time is { } time && time >= TimeSpan.Zero && time < TimeSpan.FromDays(1) ? time : TimeSpan.Zero;
 
+    /// <summary>The weekdays drops happen on: <see cref="Days"/>, else none when <see cref="Every"/> is set, else Fridays.</summary>
+    [YamlIgnore]
+    public IReadOnlyList<DayOfWeek> DropDays => Days.Count > 0 ? Days : Every is null ? DefaultDays : [];
+
+    /// <summary>Drops happen on Fridays unless days or an interval are set.</summary>
+    public static readonly IReadOnlyList<DayOfWeek> DefaultDays = [DayOfWeek.Friday];
+
+    /// <summary>New episodes air at a set time, ahead of whatever else is due, rather than at the show's normal airings.</summary>
+    [YamlIgnore]
+    public bool HasAirTime => Time is not null;
+
     public DropConfig Copy() => new()
     {
         Days = [.. Days],
@@ -79,10 +96,10 @@ public sealed class DropConfig
     {
         int count = Math.Max(1, Count);
         string what = count == 1 ? "1 episode" : $"{count} episodes";
-        string when = Days.Count > 0
-            ? string.Join(", ", Days.Distinct().OrderBy(d => ((int)d + 6) % 7).Select(d => d + "s"))
+        string when = DropDays.Count > 0
+            ? string.Join(", ", DropDays.Distinct().OrderBy(d => ((int)d + 6) % 7).Select(d => d + "s"))
             : EveryText(Interval);
-        string at = TimeOfDay == TimeSpan.Zero ? string.Empty : $" at {TimeOfDay:hh\\:mm}";
+        string at = HasAirTime ? $" at {TimeOfDay:hh\\:mm}" : string.Empty;
         return $"{what} {when}{at}";
     }
 

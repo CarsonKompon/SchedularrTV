@@ -15,8 +15,8 @@ public enum PlaybackOrder
     SeasonEpisode,
 
     /// <summary>
-    /// New episodes drop on a cadence (e.g. one every Monday) and air as soon as they're out; between
-    /// drops only episodes that already dropped play, as repeats. Applies per show; see <c>DropConfig</c>.
+    /// New episodes drop on a cadence (e.g. one every Friday): the show's first airings after a drop are the new
+    /// episodes, and otherwise only episodes that already dropped play, as repeats. Applies per show; see <c>DropConfig</c>.
     /// </summary>
     Drop
 }

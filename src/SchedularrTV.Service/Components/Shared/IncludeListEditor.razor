@@ -158,11 +158,11 @@
             </label>
             @if (_dropFor.Drop is { } ownDrop)
             {
-                <DropEditor Drop="ownDrop" Changed="Changed" />
+                <DropEditor Drop="ownDrop" ShowTime="true" Changed="Changed" />
             }
             else
             {
-                <p class="hint">Uses the collection's drop schedule (one episode a week when the collection sets none).</p>
+                <p class="hint">Uses the collection's drop schedule (one episode every Friday when the collection sets none), at the show's normal airings.</p>
             }
             <div class="row" style="margin-top:16px;">
                 <div class="spacer"></div>

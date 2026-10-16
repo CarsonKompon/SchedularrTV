@@ -49,7 +49,7 @@
         }
         else if (!Inherits)
         {
-            <p class="hint">One episode a week. <button type="button" class="btn btn-sm" @onclick="OnCustomiseDrop">Change the schedule…</button></p>
+            <p class="hint">One episode every Friday. <button type="button" class="btn btn-sm" @onclick="OnCustomiseDrop">Change the schedule…</button></p>
         }
     }
     else if (Selector.Include.Any(include => include.Order == PlaybackOrder.Drop))
@@ -316,7 +316,7 @@
     private string TitleOrderHint() => Selector.TitleOrder is not null
         ? "Titles take turns; the order above applies within each title."
         : Selector.Order == PlaybackOrder.Drop || Selector.Include.Any(include => include.Order == PlaybackOrder.Drop)
-            ? "Without rotation, shows come up in proportion to how many episodes each has out; a freshly dropped episode always goes first."
+            ? "Without rotation, shows come up in proportion to how many episodes each has out, and a show's first airings after a drop are its new episodes."
         : Inherits
             ? "Taken from the collection. Set it here to override that for this channel or block."
             : "Without rotation, \"chronological\" sorts every episode of every show together, so the oldest show plays for hours before the next one starts.";

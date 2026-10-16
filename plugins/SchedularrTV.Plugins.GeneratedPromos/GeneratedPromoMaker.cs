@@ -42,7 +42,9 @@ public sealed class GeneratedPromoMaker(GeneratedPromoService promos, Schedularr
             GeneratedPromoType.Eventually => UpNextPromo.Listings(schedule, airsAt + TimeSpan.FromHours(6), 1, grouping: template.UpcomingGrouping),
             _ => UpNextPromo.Listings(schedule, airsAt, needed, grouping: template.UpcomingGrouping)
         };
-        if (listings.Count == 0)
+        if (listings.Count == 0
+            || (GeneratedPromoEligibility.HasProgrammeQuery(template)
+                && !GeneratedPromoEligibility.SuitsProgramme(template, UpNextPromo.ItemFor(schedule, listings[0]))))
         {
             return null;
         }

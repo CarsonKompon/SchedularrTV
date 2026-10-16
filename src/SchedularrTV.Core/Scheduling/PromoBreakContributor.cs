@@ -90,7 +90,7 @@ internal sealed class PromoBreakContributor(IPromoSpotSubstitute? generated) : I
 
             if (ids.Count > 0)
             {
-                return new PromoTarget(at, ids, sample.SeriesName ?? fallbackName) { IsNew = isNew };
+                return new PromoTarget(at, ids, sample.SeriesName ?? fallbackName) { IsNew = isNew, Sample = sample };
             }
         }
 
@@ -172,7 +172,7 @@ internal sealed class PromoBreakPlan(
 
             // "We'll be right back" (generated only) opens the break; You're Watching then waits for the return.
             if (promoConfig.Enabled && showIds.Count > 0
-                && generated?.Choose(context, GeneratedPromoType.RightBack, false, free, from, watchingNew) is { } rightBackTemplate)
+                && generated?.Choose(context, GeneratedPromoType.RightBack, false, free, from, watchingNew, playing?.Item) is { } rightBackTemplate)
             {
                 _rightBack = generated.Placeholder(rightBackTemplate);
                 _generatedRightBack = rightBackTemplate.Name;
@@ -184,7 +184,7 @@ internal sealed class PromoBreakPlan(
 
             // A generated one can stand in for (or mix with) the library clip, like the other spots.
             if (promoConfig.Enabled && promoConfig.YoureWatching.Enabled && showIds.Count > 0
-                && generated?.Choose(context, GeneratedPromoType.YoureWatching, _youreWatching is not null, free, from, watchingNew) is { } watchingTemplate)
+                && generated?.Choose(context, GeneratedPromoType.YoureWatching, _youreWatching is not null, free, from, watchingNew, playing?.Item) is { } watchingTemplate)
             {
                 _youreWatching = generated.Placeholder(watchingTemplate);
                 _generatedYoureWatching = watchingTemplate.Name;
@@ -196,7 +196,7 @@ internal sealed class PromoBreakPlan(
                 .ConfigureAwait(false);
 
             if (promoConfig.Enabled && promoConfig.BackToTheShow.Enabled && showIds.Count > 0
-                && generated?.Choose(context, GeneratedPromoType.BackToTheShow, _backToTheShow is not null, free, to, watchingNew) is { } backTemplate)
+                && generated?.Choose(context, GeneratedPromoType.BackToTheShow, _backToTheShow is not null, free, to, watchingNew, playing?.Item) is { } backTemplate)
             {
                 _backToTheShow = generated.Placeholder(backTemplate);
                 _generatedBackToTheShow = backTemplate.Name;
@@ -227,7 +227,7 @@ internal sealed class PromoBreakPlan(
 
             if (promoConfig.NowPlaying.Enabled && _upcoming is not null
                 && !(promoConfig.NowPlaying.SkipWhenSameSeries && ContinuesSameSeries(_upcoming.ShowIds))
-                && generated?.Choose(context, GeneratedPromoType.NowPlaying, _nowPlaying is not null, free, to, _upcoming.IsNew) is { } identTemplate)
+                && generated?.Choose(context, GeneratedPromoType.NowPlaying, _nowPlaying is not null, free, to, _upcoming.IsNew, _upcoming.Sample, deferSubject: _upcoming.Sample is null) is { } identTemplate)
             {
                 _nowPlaying = generated.Placeholder(identTemplate);
                 _generatedNowPlaying = identTemplate.Name;
@@ -246,7 +246,7 @@ internal sealed class PromoBreakPlan(
                 bool sameShow = promoConfig.ThisHasBeen.SkipWhenSameSeries && _upcoming is not null
                     && _upcoming.ShowIds.Intersect(finishedIds, StringComparer.OrdinalIgnoreCase).Any();
                 if (promoConfig.ThisHasBeen.Enabled && finishedIds.Count > 0 && !sameShow
-                    && generated?.Choose(context, GeneratedPromoType.ThisHasBeen, _thisHasBeen is not null, free, from, finishedShow?.IsPremiere == true) is { } signOffTemplate)
+                    && generated?.Choose(context, GeneratedPromoType.ThisHasBeen, _thisHasBeen is not null, free, from, finishedShow?.IsPremiere == true, finishedShow?.Item) is { } signOffTemplate)
                 {
                     _thisHasBeen = generated.Placeholder(signOffTemplate);
                     _generatedThisHasBeen = signOffTemplate.Name;
@@ -488,7 +488,7 @@ internal sealed class PromoBreakPlan(
 
         return promoConfig.UpNext.Enabled && _upcoming is not null
             && !(promoConfig.UpNext.SkipWhenSameSeries && ContinuesSameSeries(_upcoming.ShowIds))
-            && generated?.Choose(context, GeneratedPromoType.UpNext, clip is not null, free, context.To, _upcoming.IsNew) is { } template
+            && generated?.Choose(context, GeneratedPromoType.UpNext, clip is not null, free, context.To, _upcoming.IsNew, _upcoming.Sample, deferSubject: _upcoming.Sample is null) is { } template
             ? (generated.Placeholder(template), template.Name)
             : (clip, null);
     }
@@ -526,7 +526,8 @@ internal sealed class PromoBreakPlan(
                 continue;
             }
 
-            if (generated.Choose(context, GeneratedPromoType.ComingUp, promos.Count > 0, remaining, cursor) is { } template)
+            if (generated.Choose(context, GeneratedPromoType.ComingUp, promos.Count > 0, remaining, cursor,
+                    target.IsNew, target.Sample, deferSubject: target.Sample is null) is { } template)
             {
                 yield return (generated.Placeholder(template), target, template.Name);
             }

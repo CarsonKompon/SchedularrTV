@@ -268,7 +268,10 @@ internal interface IPromoSpotSubstitute
 {
     bool Has(BreakContext context, GeneratedPromoType type);
 
-    GeneratedPromoTemplate? Choose(BreakContext context, GeneratedPromoType type, bool clipAvailable, TimeSpan available, DateTimeOffset at, bool isNew = false);
+    /// <param name="subject">The programme the promo is about, when known, for templates limited to some programmes.</param>
+    /// <param name="deferSubject">Only the built schedule can say what the promo is about; such templates are checked when it's made.</param>
+    GeneratedPromoTemplate? Choose(BreakContext context, GeneratedPromoType type, bool clipAvailable, TimeSpan available, DateTimeOffset at,
+        bool isNew = false, MediaItem? subject = null, bool deferSubject = false);
 
     /// <summary>A New Episode promo and when the new episode it advertises is expected; null when none applies.</summary>
     ValueTask<(GeneratedPromoTemplate Template, DateTimeOffset? Expected)?> NewEpisodeAsync(
