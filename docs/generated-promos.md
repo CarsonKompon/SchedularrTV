@@ -37,7 +37,8 @@ The **« ‹ › »** buttons step a frame or a second. After clicking the timel
 | **Home** / **End** | First / last frame |
 | **[** / **]** | Selected layer's previous / next keyframe |
 | **K** | Add a keyframe at the playhead |
-| **Delete** | Remove the keyframe at the playhead |
+| **Delete / Backspace** | Remove selected keyframes, or the keyframe at the playhead when none are selected |
+| **Escape** | Clear the keyframe selection |
 
 ### Whole-promo availability
 
@@ -99,12 +100,12 @@ In YAML a pin is `corners:` on a layer or keyframe, with `top_left_x`, `top_left
 
 ### Shape and image masks (foreground cutouts)
 
-A shape or image layer can mask a specific layer beneath it instead of appearing as artwork. Select the shape/image and change **Use as**:
+A shape or image layer can mask a specific layer or group beneath it instead of appearing as artwork. Select the shape/image and change **Use as**:
 
 - **Subtract mask — hide inside** cuts the mask's area out of the target, revealing the footage or other layers underneath. Use this to make text pass behind an object in the background.
 - **Add mask — reveal inside** shows the target only inside the mask. Several add masks reveal their combined area; subtract masks then cut holes in that area. Without any add masks, the target starts fully visible.
 
-Choose **Mask target** to identify the text, shape, image, or video layer to affect. The editor initially chooses the nearest eligible layer beneath the mask. Targets are linked by stable ids, so renaming a target keeps the link. Keep the mask above its target in the layer list. Masks don't target groups or other masks.
+Choose **Mask target** to identify the text, shape, image, video layer, or **group** to affect. A group target masks its combined contents, including nested groups, after their own masks have been applied. The mask's opacity is applied once to the combined image, so overlapping children don't leak through one another. The editor initially chooses the nearest eligible layer or group beneath the mask. Targets are linked by stable ids, so renaming a target keeps the link. Keep the mask above its target in the layer list; a mask inside a group can target that containing group too. Masks cannot target other masks.
 
 For a foreground object in footage:
 
@@ -278,7 +279,9 @@ backgrounds:
 Select a layer and choose **◆ Animate with keyframes** under the timeline. Its position, size and opacity then come from keyframes, shown as diamonds on the timeline while the layer is selected:
 
 - Move the playhead and drag or resize the box (or change its numbers) to set a keyframe at that time; one is added if there isn't one there yet. **◆ Add keyframe** adds one without changing anything.
-- Drag a diamond to retime it; keyframes snap to whole frames. Clicking one jumps to it; **◀ / ▶** (or **[ / ]**) step between them, **K** adds one and **Delete** removes the one under the playhead.
+- Drag a diamond to retime it; keyframes snap to whole frames. Clicking one jumps to it; **◀ / ▶** (or **[ / ]**) step between them and **K** adds one.
+- **Ctrl/⌘-click** toggles individual keyframes in the selected layer's timeline; **Shift-click** selects a range from the last clicked keyframe. Drag any selected diamond to move the whole selection, preserving its spacing and stopping as a group at the timeline edges.
+- With several selected, **Then (all)** changes all their easing types (showing **Mixed easing** when they differ), and **Delete selected** or **Delete / Backspace** removes them together. **Clear selection**, **Escape**, or scrubbing empty timeline space clears the selection. With none selected, Delete removes the keyframe at the playhead. These actions also work on a background's own placements.
 - **Then** sets how the layer moves on to the next keyframe: **Linear**, **Ease in**, **Ease out**, **Ease in and out**, or **Hold, then jump**.
 - **Stop animating** removes every keyframe and leaves the layer where it is at the playhead.
 

@@ -172,7 +172,8 @@ public sealed class OverlayProcessor : IPlayoutProcessor
     /// and goes as a whole. A design with videos, or with parts timed on their own, is split: each video goes as its own
     /// layer, and the drawn parts between them as full-frame PNGs, each timed within the overlay's appearance.
     /// </summary>
-    internal IEnumerable<JsonObject> Layers(Overlay overlay, ScheduleEntry entry, OverlayShowing showing, IReadOnlyDictionary<string, string> tokens)
+    internal IEnumerable<JsonObject> Layers(Overlay overlay, ScheduleEntry entry, OverlayShowing showing, IReadOnlyDictionary<string, string> tokens,
+        bool allowAnimation = true)
     {
         if (overlay.Kind == OverlayKinds.File)
         {
@@ -184,7 +185,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
             yield break;
         }
 
-        if (OverlayAnimation.IsAnimated(overlay))
+        if (allowAnimation && OverlayAnimation.IsAnimated(overlay))
         {
             foreach (JsonObject animated in Animated(overlay, entry, showing, tokens))
             {
@@ -278,7 +279,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
                 }
             }
 
-            foreach (JsonObject still in Layers(held, entry, showing, tokens))
+            foreach (JsonObject still in Layers(held, entry, showing, tokens, allowAnimation: false))
             {
                 yield return still;
             }

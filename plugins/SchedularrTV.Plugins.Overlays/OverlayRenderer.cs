@@ -115,7 +115,8 @@ public sealed class OverlayRenderer(Func<string> folder)
     /// </summary>
     public static Overlay Part(Overlay overlay, IReadOnlyCollection<OverlayLayer> layers)
     {
-        HashSet<string> targets = [.. layers.Select(layer => layer.Id).OfType<string>()];
+        HashSet<string> targets = [.. layers.SelectMany(layer => OverlayHierarchy.Ancestors(overlay, layer).Prepend(layer))
+            .Select(layer => layer.Id).OfType<string>()];
         Overlay part = overlay.Copy();
         part.Layers = [.. overlay.Layers
             .Where(layer => layers.Contains(layer) || OverlayHierarchy.IsGroup(layer)
@@ -228,26 +229,38 @@ public sealed class OverlayRenderer(Func<string> folder)
             .Where(layer => OverlayHierarchy.CanMask(layer) && layer.Mask?.Target is { Length: > 0 })
             .ToLookup(layer => layer.Mask!.Target!, StringComparer.Ordinal);
 
-        foreach (OverlayLayer layer in overlay.Layers)
+        HashSet<OverlayLayer> visited = [];
+        foreach (OverlayLayer layer in OverlayHierarchy.Children(overlay, null)) DrawNode(layer);
+
+        void DrawNode(OverlayLayer layer)
         {
-            if (!IsDrawn(layer) || (layer.Kind == OverlayLayerKinds.Video && posters is null))
+            if (layer.Mask is not null || !visited.Add(layer) || (layer.Kind == OverlayLayerKinds.Video && posters is null))
             {
-                continue;
+                return;
             }
 
             OverlayLayer[] applied = layer.Id is { } id && layer.Kind != OverlayLayerKinds.Video ? [.. masks[id]] : [];
             if (applied.Length == 0)
             {
-                DrawPlaced(canvas, overlay, layer, tokens, posters, clock, envelope);
-                continue;
+                DrawContents();
+                return;
             }
 
             // The target on its own first, so a cutout shows what's under it rather than erasing it.
             canvas.SaveLayer(frame, null);
-            DrawPlaced(canvas, overlay, layer, tokens, posters, clock, envelope);
+            DrawContents();
             ApplyMasks(GeneratedMaskMode.Add, SKBlendMode.DstIn);
             ApplyMasks(GeneratedMaskMode.Subtract, SKBlendMode.DstOut);
             canvas.Restore();
+
+            void DrawContents()
+            {
+                if (OverlayHierarchy.IsGroup(layer))
+                {
+                    foreach (OverlayLayer child in OverlayHierarchy.Children(overlay, layer)) DrawNode(child);
+                }
+                else DrawPlaced(canvas, overlay, layer, tokens, posters, clock, envelope);
+            }
 
             void ApplyMasks(GeneratedMaskMode mode, SKBlendMode blend)
             {

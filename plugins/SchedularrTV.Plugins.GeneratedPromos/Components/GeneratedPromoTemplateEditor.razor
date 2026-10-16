@@ -601,10 +601,10 @@
                                 <span>Mask target</span>
                                 <select value="@(MaskTargets(selected).FirstOrDefault(target => target.Id is not null && target.Id == mask.Target) is { } selectedTarget ? Template.Layers.IndexOf(selectedTarget).ToString() : "")"
                                         @onchange="e => SetMaskTarget(selected, Text(e))">
-                                    <option value="">Choose a layer beneath this mask…</option>
+                                    <option value="">Choose a layer or group beneath this mask…</option>
                                     @foreach (GeneratedLayer target in MaskTargets(selected))
                                     {
-                                        <option value="@Template.Layers.IndexOf(target)">@Label(target)</option>
+                                        <option value="@Template.Layers.IndexOf(target)">@(target.Kind == GeneratedLayerKind.Group ? "▣ " : "")@Label(target)</option>
                                     }
                                 </select>
                             </label>
@@ -612,7 +612,7 @@
                             {
                                 <p class="hint warn">Choose a target beneath this mask. Move the mask above its target in the layer list if needed.</p>
                             }
-                            <p class="hint">The mask itself is invisible. Its alpha and opacity control the strength; use 100% for a full cutout. Image masks use transparency, not brightness.</p>
+                            <p class="hint">The mask itself is invisible. Its alpha and opacity control the strength; use 100% for a full cutout. Image masks use transparency, not brightness. Targeting a group masks its combined contents, including nested groups.</p>
                             <p class="hint">Animate the mask's position and perspective corners to follow an object in the footage. Add masks reveal their combined area; subtract masks then cut holes in it.</p>
                         }
                     }
@@ -2632,7 +2632,7 @@
     }
 
     private IEnumerable<GeneratedLayer> MaskTargets(GeneratedLayer mask) => Template.Layers
-        .Take(Template.Layers.IndexOf(mask)).Where(layer => layer.Kind != GeneratedLayerKind.Group && layer.Mask is null).Reverse();
+        .Take(Template.Layers.IndexOf(mask)).Where(layer => layer.Mask is null).Reverse();
 
     private Task SetLayerMask(GeneratedLayer layer, string mode) => Set(() =>
     {

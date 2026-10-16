@@ -41,8 +41,14 @@ public static class OverlayAnimation
     /// layer shows an animated picture (a GIF).
     /// </summary>
     public static bool IsAnimated(Overlay overlay) =>
-        overlay.Kind != OverlayKinds.File && overlay.Layers.Any(layer => layer.Kind != OverlayLayerKinds.Video
-            && (HasKeyframes(layer) || (layer.Kind == OverlayLayerKinds.Image && SchedularrTV.Service.Images.AnimatedImages.IsAnimated(layer.Path))));
+        overlay.Kind != OverlayKinds.File && (HasTimedGroupMask(overlay) || overlay.Layers.Any(layer => layer.Kind != OverlayLayerKinds.Video
+            && (HasKeyframes(layer) || (layer.Kind == OverlayLayerKinds.Image && SchedularrTV.Service.Images.AnimatedImages.IsAnimated(layer.Path)))));
+
+    /// <summary>Timed contents of a masked group must be composited together, not split into separately faded pictures.</summary>
+    public static bool HasTimedGroupMask(Overlay overlay) => overlay.Layers.Any(mask => mask.Mask?.Target is { } id
+        && overlay.Layers.FirstOrDefault(group => OverlayHierarchy.IsGroup(group) && group.Id == id) is { } target
+        && OverlayHierarchy.Subtree(overlay, target).Append(mask)
+            .Any(layer => !OverlayHierarchy.EffectiveTiming(overlay, layer).IsWhole));
 
     /// <summary>How long a whole-programme overlay's animation runs.</summary>
     public static double AnimationSeconds(Overlay overlay) => Math.Clamp(overlay.AnimationSeconds ?? Overlay.DefaultAnimationSeconds, 1, 120);
@@ -195,6 +201,7 @@ public static class OverlayAnimation
     /// <summary>A copy of the design standing still as it is at <paramref name="seconds"/>: every keyframed layer put there, its keyframes gone.</summary>
     public static Overlay Freeze(Overlay overlay, double seconds)
     {
+        bool freezeTiming = HasTimedGroupMask(overlay);
         Overlay frozen = overlay.Copy();
         foreach (OverlayLayer layer in frozen.Layers.Where(HasKeyframes))
         {
@@ -202,6 +209,16 @@ public static class OverlayAnimation
             (layer.X, layer.Y, layer.Width, layer.Height, layer.Opacity) = (pose.X, pose.Y, pose.Width, pose.Height, pose.Opacity);
             layer.Rotation = pose.Rotation is { } turn && Math.Abs(turn) >= 0.0005f ? turn : null;
             layer.Keyframes = null;
+        }
+
+        if (freezeTiming)
+        {
+            var clock = new OverlayClock(seconds, Length(overlay), overlay.FadeSeconds, LayerOuts: overlay.When != OverlayWhen.Always);
+            foreach (OverlayLayer layer in frozen.Layers.Where(layer => layer.Kind != OverlayLayerKinds.Video))
+            {
+                layer.Opacity *= Visibility(layer, clock);
+                layer.InSeconds = layer.OutSeconds = 0;
+            }
         }
 
         return frozen;

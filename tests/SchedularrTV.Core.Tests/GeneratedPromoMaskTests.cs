@@ -209,6 +209,30 @@ public sealed class GeneratedPromoMaskTests
     }
 
     [Fact]
+    public void Group_targets_validate_round_trip_and_resolve_with_nested_children()
+    {
+        var template = Template();
+        template.Layers[0].Kind = GeneratedLayerKind.Group;
+        template.Layers.InsertRange(1,
+        [
+            new() { Id = "nested", Parent = "title", Kind = GeneratedLayerKind.Group, Width = 200, Height = 100 },
+            new() { Parent = "nested", Kind = GeneratedLayerKind.Rect, Width = 200, Height = 100, Color = "#ff0000" }
+        ]);
+        Assert.Empty(SchedulerConfigLoader.Validate(Config(template)).Errors);
+        var loaded = SchedulerConfigLoader.Parse(SchedulerConfigLoader.Serialize(Config(template))).Channels[0].GeneratedPromos!.Templates[0];
+        using SKBitmap result = Draw(GeneratedPromoResolver.Compose(Resolve(loaded)), 2);
+        Assert.Equal(SKColors.Red, result.GetPixel(20, 50));
+        Assert.Equal(SKColors.Blue, result.GetPixel(100, 50));
+
+        // A mask inside the target group follows its duplicate's new id, not the original group.
+        template.Layers[^1].Parent = "title";
+        GeneratedLayer copy = GeneratedPromoHierarchy.Duplicate(template, template.Layers[0]);
+        GeneratedLayer copiedMask = GeneratedPromoHierarchy.Children(template, copy).Single(layer => layer.Mask is not null);
+        Assert.Equal(copy.Id, copiedMask.Mask!.Target);
+        Assert.Empty(SchedulerConfigLoader.Validate(Config(template)).Errors);
+    }
+
+    [Fact]
     public void Duplicate_groups_remap_mask_targets_and_deleted_targets_leave_masks_invisible()
     {
         var template = Template();
@@ -229,7 +253,6 @@ public sealed class GeneratedPromoMaskTests
     [InlineData("missing")]
     [InlineData("self")]
     [InlineData("above")]
-    [InlineData("group")]
     [InlineData("mask")]
     [InlineData("wrong-kind")]
     [InlineData("wrong-mode")]
@@ -244,7 +267,6 @@ public sealed class GeneratedPromoMaskTests
             case "missing": mask.Mask!.Target = "gone"; break;
             case "self": mask.Id = "self"; mask.Mask!.Target = "self"; break;
             case "above": template.Layers.Reverse(); break;
-            case "group": target.Kind = GeneratedLayerKind.Group; break;
             case "mask": target.Mask = new() { Target = "title" }; break;
             case "wrong-kind": mask.Kind = GeneratedLayerKind.Text; break;
             case "wrong-mode": mask.Mask!.Mode = (GeneratedMaskMode)99; break;

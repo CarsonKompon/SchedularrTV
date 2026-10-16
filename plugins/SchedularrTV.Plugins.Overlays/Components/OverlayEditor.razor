@@ -427,10 +427,10 @@
                                 <label class="field"><span>Mask target</span>
                                     <select value="@(chosenTarget is null ? "" : Overlay.Layers.IndexOf(chosenTarget).ToString(CultureInfo.InvariantCulture))"
                                             @onchange="e => SetMaskTarget(selected, e.Value?.ToString() ?? string.Empty)">
-                                        <option value="">Choose a layer beneath this mask…</option>
+                                        <option value="">Choose a layer or group beneath this mask…</option>
                                         @foreach (OverlayLayer target in targets)
                                         {
-                                            <option value="@Overlay.Layers.IndexOf(target)">@Label(target)</option>
+                                            <option value="@Overlay.Layers.IndexOf(target)">@(OverlayHierarchy.IsGroup(target) ? "▣ " : "")@Label(target)</option>
                                         }
                                     </select></label>
                                 @if (chosenTarget is null)
@@ -439,6 +439,7 @@
                                 }
                                 <p class="hint">The mask itself isn't drawn; its opacity sets how strongly it cuts. Picture masks use the picture's transparency, not its
                                     brightness. Add masks reveal the target only inside them; subtract masks cut holes in it. Keyframe the mask to follow something as it moves.</p>
+                                <p class="hint">A group target masks its combined contents, including nested groups. Groups containing video layers can't be masked because ErsatzTV plays those videos separately.</p>
                             }
                         }
 

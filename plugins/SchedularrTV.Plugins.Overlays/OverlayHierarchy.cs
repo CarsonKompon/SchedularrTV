@@ -473,10 +473,11 @@ public static class OverlayHierarchy
         }
     }
 
-    /// <summary>The layers a mask can cut: drawn ones beneath it that aren't groups, videos or masks, nearest first.</summary>
+    /// <summary>Layers and groups beneath the mask, nearest first. Native video overlays cannot be masked.</summary>
     public static IEnumerable<OverlayLayer> MaskTargets(Overlay overlay, OverlayLayer mask) => overlay.Layers
         .Take(Math.Max(0, overlay.Layers.IndexOf(mask)))
-        .Where(layer => layer.Kind is OverlayLayerKinds.Text or OverlayLayerKinds.Image or OverlayLayerKinds.Rect && layer.Mask is null)
+        .Where(layer => layer.Mask is null && (layer.Kind is OverlayLayerKinds.Text or OverlayLayerKinds.Image or OverlayLayerKinds.Rect
+            || IsGroup(layer) && !Subtree(overlay, layer).Any(child => child.Kind == OverlayLayerKinds.Video)))
         .Reverse();
 
     public static bool CanMask(OverlayLayer layer) => layer.Kind is OverlayLayerKinds.Rect or OverlayLayerKinds.Image;

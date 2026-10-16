@@ -211,21 +211,38 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         var masks = composition.Layers
             .Where(layer => layer is PromoRectLayer or PromoImageLayer && layer.Mask?.Target is { Length: > 0 })
             .ToLookup(layer => layer.Mask!.Target!, StringComparer.Ordinal);
-        foreach (PromoLayer layer in composition.Layers)
+        var members = new HashSet<PromoLayer>(composition.Layers, ReferenceEqualityComparer.Instance);
+        var visited = new HashSet<PromoLayer>(ReferenceEqualityComparer.Instance);
+        foreach (PromoLayer layer in composition.Layers.Where(layer => layer.Parent is null || !members.Contains(layer.Parent)))
+            DrawNode(layer);
+
+        void DrawNode(PromoLayer layer)
         {
-            if (layer is PromoGroupLayer || layer.Mask is not null) continue;
+            if (layer.Mask is not null || !visited.Add(layer)) return;
             PromoLayer[] applied = layer.Id is { } id ? [.. masks[id]] : [];
             if (applied.Length == 0)
             {
-                DrawLayer(canvas, layer, composition, time, images, videos);
-                continue;
+                DrawContents();
+                return;
             }
 
             canvas.SaveLayer(frame, null);
-            DrawLayer(canvas, layer, composition, time, images, videos);
+            DrawContents();
             ApplyMasks(SchedularrTV.Core.Configuration.GeneratedMaskMode.Add, SKBlendMode.DstIn);
             ApplyMasks(SchedularrTV.Core.Configuration.GeneratedMaskMode.Subtract, SKBlendMode.DstOut);
             canvas.Restore();
+
+            void DrawContents()
+            {
+                // Each leaf already applies its ancestors' transforms. Composite the subtree in world space,
+                // then mask that finished image once (including any masks on nested groups or individual layers).
+                if (layer is PromoGroupLayer group)
+                {
+                    foreach (PromoLayer child in composition.Layers.Where(child => ReferenceEquals(child.Parent, group)))
+                        DrawNode(child);
+                }
+                else DrawLayer(canvas, layer, composition, time, images, videos);
+            }
 
             void ApplyMasks(SchedularrTV.Core.Configuration.GeneratedMaskMode mode, SKBlendMode blend)
             {
