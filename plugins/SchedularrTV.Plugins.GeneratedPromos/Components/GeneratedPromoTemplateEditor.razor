@@ -882,31 +882,12 @@
                             </label>
                             <div class="field">
                                 <span>Align in its box</span>
-                                <div class="align-grid" role="group" aria-label="Text alignment">
-                                    @foreach (GeneratedVerticalAlign vertical in Enum.GetValues<GeneratedVerticalAlign>())
-                                    {
-                                        @foreach (GeneratedTextAlign horizontal in Enum.GetValues<GeneratedTextAlign>())
-                                        {
-                                            bool chosen = selected.Align == horizontal && (selected.VerticalAlign ?? GeneratedVerticalAlign.Top) == vertical;
-                                            string name = AlignName(vertical, horizontal);
-                                            <button type="button" class="align-cell @(chosen ? "selected" : "")" title="@name" aria-label="@name"
-                                                    aria-pressed="@(chosen ? "true" : "false")" @onclick="() => SetAlign(selected, vertical, horizontal)">
-                                                <span class="align-lines @($"h-{horizontal.ToString().ToLowerInvariant()} v-{vertical.ToString().ToLowerInvariant()}")" aria-hidden="true">
-                                                    <i></i><i></i><i></i>
-                                                </span>
-                                            </button>
-                                        }
-                                    }
-                                </div>
+                                <TextAlignPad Horizontal="selected.Align" Vertical="@(selected.VerticalAlign ?? GeneratedVerticalAlign.Top)"
+                                              Changed="cell => SetAlign(selected, cell.Vertical, cell.Horizontal)" />
                             </div>
                             <label class="field">
                                 <span>Letters</span>
-                                <select value="@(selected.TextCase ?? GeneratedTextCase.AsWritten)"
-                                        @onchange="e => SetTextCase(selected, Enum.Parse<GeneratedTextCase>(Text(e)))">
-                                    <option value="@GeneratedTextCase.AsWritten">As written</option>
-                                    <option value="@GeneratedTextCase.Upper">ALL UPPERCASE</option>
-                                    <option value="@GeneratedTextCase.Lower">all lowercase</option>
-                                </select>
+                                <TextCaseSelect Value="selected.TextCase" ValueChanged="textCase => Set(() => selected.TextCase = textCase)" />
                             </label>
                             <div class="check-stack">
                                 <label class="check">
@@ -2463,17 +2444,6 @@
         layer.VerticalAlign = vertical == GeneratedVerticalAlign.Top ? null : vertical;
     });
 
-    // As written is stored as nothing, for the same reason.
-    private Task SetTextCase(GeneratedLayer layer, GeneratedTextCase textCase) =>
-        Set(() => layer.TextCase = textCase == GeneratedTextCase.AsWritten ? null : textCase);
-
-    private static string AlignName(GeneratedVerticalAlign vertical, GeneratedTextAlign horizontal) =>
-        (vertical, horizontal) switch
-        {
-            (GeneratedVerticalAlign.Middle, GeneratedTextAlign.Center) => "Centre",
-            _ => $"{vertical} {(horizontal == GeneratedTextAlign.Center ? "centre" : horizontal.ToString().ToLowerInvariant())}"
-        };
-
     private static string EasingName(GeneratedEasing easing) => easing switch
     {
         GeneratedEasing.EaseIn => "Ease in",
@@ -3559,6 +3529,12 @@
 
     private Task SetType(GeneratedPromoType type) => Set(() =>
     {
+        // New Episode promos are always about a new episode, so they can't be limited to one kind.
+        if (type == GeneratedPromoType.NewEpisode)
+        {
+            Template.Episodes = null;
+        }
+
         // An opener that was only the old type's usual one follows the type; an empty list already does.
         if (Template.Voice is { } voice && PreMessages(voice) is [var only] && only == GeneratedPromoResolver.DefaultPreMessage(Template.Type))
         {

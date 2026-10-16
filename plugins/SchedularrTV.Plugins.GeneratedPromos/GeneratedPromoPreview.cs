@@ -91,7 +91,7 @@ public sealed class GeneratedPromoPreview(
 
         // The promoted show is a real file when one was found, so episode clips work before the first build.
         return _standIns.GetValueOrDefault(channel.Id) is { } standIn
-            ? [UpNextPromo.Listing(standIn, samples[0].Start), .. samples.Skip(1)]
+            ? [UpNextPromo.Listing(standIn, samples[0].Start) with { IsNew = samples[0].IsNew }, .. samples.Skip(1)]
             : samples;
     }
 

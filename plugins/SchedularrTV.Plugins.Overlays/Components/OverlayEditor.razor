@@ -480,12 +480,12 @@
                                     </select></label>
                                 <label class="field"><span>Largest size</span>
                                     <input type="number" min="6" max="400" value="@Number(selected.FontSize)" @onchange="e => Set(() => selected.FontSize = (float)Math.Clamp(Number(e, selected.FontSize), 6, 400))" /></label>
-                                <label class="field"><span>Align</span>
-                                    <select value="@selected.Align" @onchange="e => Set(() => selected.Align = Text(e, DefaultAlign))">
-                                        <option value="left">Left</option>
-                                        <option value="center">Centre</option>
-                                        <option value="right">Right</option>
-                                    </select></label>
+                                <div class="field"><span>Align in its box</span>
+                                    @* Shared with the generated promo editor. Overlay text has always sat in the middle, so that's what null means here. *@
+                                    <TextAlignPad Horizontal="selected.HorizontalAlign" Vertical="@(selected.VerticalAlign ?? GeneratedVerticalAlign.Middle)"
+                                                  Changed="cell => SetAlign(selected, cell.Vertical, cell.Horizontal)" /></div>
+                                <label class="field"><span>Letters</span>
+                                    <TextCaseSelect Value="selected.TextCase" ValueChanged="textCase => Set(() => selected.TextCase = textCase)" /></label>
                                 <div class="check-stack">
                                     <label class="check"><input type="checkbox" checked="@selected.Bold" @onchange="e => Set(() => selected.Bold = e.Value is true)" /><span>Bold</span></label>
                                     <label class="check"><input type="checkbox" checked="@selected.Shadow" @onchange="e => Set(() => selected.Shadow = e.Value is true)" /><span>Drop shadow</span></label>
@@ -783,7 +783,12 @@
 
     // Named rather than written into the markup: a quoted string inside an attribute's own quotes ends the attribute.
     private const string DefaultFont = "Arial";
-    private const string DefaultAlign = "left";
+    /// <summary>Sets both alignments; the middle (where overlay text always sat) is stored as nothing, so older designs keep their drawings.</summary>
+    private Task SetAlign(OverlayLayer layer, GeneratedVerticalAlign vertical, GeneratedTextAlign horizontal) => Set(() =>
+    {
+        layer.HorizontalAlign = horizontal;
+        layer.VerticalAlign = vertical == GeneratedVerticalAlign.Middle ? null : vertical;
+    });
     private const string White = "#ffffff";
     private const string LayerPromptPlaceholder = "A cheeky one-liner about the episode";
     private const string LayerStylePlaceholder = "Short and punchy";
@@ -1027,9 +1032,9 @@
         RequestPreview();
     }
 
-    // Changing when it shows can change the timeline's length.
     private Task ConditionsChanged() => Changed.InvokeAsync();
 
+    // Changing when it shows can change the timeline's length.
     private Task TimingChanged()
     {
         _time = SnapToFrame(Math.Min(_time, TimelineLength));

@@ -257,21 +257,6 @@ internal sealed class PromoBreakPlan(
         Opener = BuildOpener();
 
         List<ScheduleEntry> tail = [];
-        if (_rightBack is not null && _youreWatching is not null)
-        {
-            // The break opened with "we'll be right back", so You're Watching greets the return instead.
-            tail.Add(new ScheduleEntry
-            {
-                Start = to,
-                Duration = _youreWatching.Duration,
-                Kind = ScheduleEntryKind.YoureWatchingPromo,
-                Item = _youreWatching,
-                Source = _generatedYoureWatching is null ? "youre watching" : "generated youre watching",
-                BlockName = Block?.Name,
-                PromoTargetId = _youreWatching.Attributes.TryGetValue("show_id", out string? watching) ? watching : _youreWatching.SeriesId,
-                GeneratedTemplate = _generatedYoureWatching
-            });
-        }
 
         if (_upNext is not null)
         {
@@ -298,6 +283,22 @@ internal sealed class PromoBreakPlan(
                 BlockName = Block?.Name,
                 PromoTargetId = _nowPlaying.Attributes.TryGetValue("show_id", out string? ident) ? ident : _nowPlaying.SeriesId,
                 GeneratedTemplate = _generatedNowPlaying
+            });
+        }
+
+        if (_rightBack is not null && _youreWatching is not null)
+        {
+            // The break opened with "we'll be right back", so You're Watching greets the return instead.
+            tail.Add(new ScheduleEntry
+            {
+                Start = to,
+                Duration = _youreWatching.Duration,
+                Kind = ScheduleEntryKind.YoureWatchingPromo,
+                Item = _youreWatching,
+                Source = _generatedYoureWatching is null ? "youre watching" : "generated youre watching",
+                BlockName = Block?.Name,
+                PromoTargetId = _youreWatching.Attributes.TryGetValue("show_id", out string? watching) ? watching : _youreWatching.SeriesId,
+                GeneratedTemplate = _generatedYoureWatching
             });
         }
 
@@ -369,8 +370,11 @@ internal sealed class PromoBreakPlan(
             return null;
         }
 
-        // Shows that drop new episodes get their own trailer: "an all-new episode, Monday at 8".
-        if (generated is not null
+        // Shows that drop new episodes get their own trailer: "an all-new episode, Monday at 8". When this break would
+        // carry an Eventually trailer as well, a coin decides, so neither crowds the other out.
+        bool trailerTurn = PromoSelector.EventuallyRolls(promoConfig, context.BreakSeed)
+            && DeterministicRandom.FromSeedText(context.BreakSeed, "new-episode-or-eventually").Next(2) == 0;
+        if (generated is not null && !trailerTurn
             && await generated.NewEpisodeAsync(context, promoConfig, cursor, fillTo - cursor, cancellationToken).ConfigureAwait(false)
                 is { } fresh)
         {

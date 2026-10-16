@@ -124,6 +124,8 @@ Keyframe times are from the start of each appearance and opacity is 0–100, lik
 | **`{new}`** | `NEW` when this programme is a new episode, else blank |
 | **`{next_new}`** | `NEW` when the next programme is a new episode, else blank |
 
+Text layers share the generated promo editor's text controls: **Align in its box** is a 3 × 3 pad placing the text left, centre or right and top, middle or bottom (middle by default), and **Letters** can force ALL UPPERCASE or all lowercase, filled-in tokens and AI-written text included. In YAML: `vertical_align: bottom`, `text_case: upper`.
+
 ### Video and file overlays
 
 Transparent **ProRes 4444 MOV** or **VP9 WebM** supports animated graphics over the programme. **Fit box to its shape** preserves video proportions.

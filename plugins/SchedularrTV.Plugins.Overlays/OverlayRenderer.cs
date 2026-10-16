@@ -193,12 +193,18 @@ public sealed class OverlayRenderer(Func<string> folder)
         {
             overlay.Width,
             overlay.Height,
-            Layers = overlay.Layers.Select(layer => Look(layer, tokens))
+            Layers = overlay.Layers.Select(layer => Styled(layer, Look(layer, tokens)))
         };
 
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(look, HashJson)));
         return Convert.ToHexString(hash, 0, 12).ToLowerInvariant();
     }
+
+    // Text cased or placed up and down its box: only then are those part of the hash, so other drawings are kept.
+    private static object Styled(OverlayLayer layer, object look) =>
+        layer.VerticalAlign is null && layer.TextCase is null
+            ? look
+            : new { Look = look, VerticalAlign = layer.VerticalAlign?.ToString(), TextCase = layer.TextCase?.ToString() };
 
     // A layer as its drawing depends on it. Layers using none of the newer settings hash as they always have, so their
     // drawings are kept.
@@ -495,6 +501,9 @@ public sealed class OverlayRenderer(Func<string> folder)
             return;
         }
 
+        // Cased as it's drawn, so filled-in tokens and AI-written text are cased too.
+        text = GeneratedTextStyle.Cased(text, layer.TextCase);
+
         SKTypeface typeface = Typefaces.GetOrAdd((layer.FontFamily ?? "Arial", layer.Bold),
             key => SKTypeface.FromFamilyName(key.Family, key.Bold ? SKFontStyle.Bold : SKFontStyle.Normal) ?? SKTypeface.Default);
         using var font = new SKFont(typeface, Math.Clamp(layer.FontSize, 6, 400)) { Edging = SKFontEdging.Antialias, Subpixel = true };
@@ -523,9 +532,14 @@ public sealed class OverlayRenderer(Func<string> folder)
             _ => bounds.Left
         };
 
-        // Centred in the box's height.
+        // Centred in the box's height unless set to its top or bottom.
         SKFontMetrics metrics = font.Metrics;
-        float y = bounds.MidY - (metrics.Ascent + metrics.Descent) / 2;
+        float y = layer.VerticalAlign switch
+        {
+            GeneratedVerticalAlign.Top => bounds.Top - metrics.Ascent,
+            GeneratedVerticalAlign.Bottom => bounds.Bottom - metrics.Descent,
+            _ => bounds.MidY - (metrics.Ascent + metrics.Descent) / 2
+        };
         canvas.DrawText(text, x, y, align, font, paint);
     }
 

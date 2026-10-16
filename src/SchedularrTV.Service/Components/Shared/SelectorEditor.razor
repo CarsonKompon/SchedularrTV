@@ -36,7 +36,21 @@
 
     @if (Selector.Order == PlaybackOrder.Drop)
     {
-        <DropEditor Drop="DropSettings" Title="New episodes drop for every show here (a title can set its own below)" Changed="OnDropChanged" />
+        if (Inherits)
+        {
+            <label class="check">
+                <input type="checkbox" checked="@(Selector.Drop is not null)" @onchange="OnOwnDropChanged" />
+                <span>Give this its own drop schedule (otherwise the collection's)</span>
+            </label>
+        }
+        if (Selector.Drop is { } drop)
+        {
+            <DropEditor Drop="drop" Title="New episodes drop for every show here (a title can set its own below)" Changed="OnDropChanged" />
+        }
+        else if (!Inherits)
+        {
+            <p class="hint">One episode a week. <button type="button" class="btn btn-sm" @onclick="OnCustomiseDrop">Change the schedule…</button></p>
+        }
     }
     else if (Selector.Include.Any(include => include.Order == PlaybackOrder.Drop))
     {
@@ -258,9 +272,19 @@
         await Changed.InvokeAsync();
     }
 
-    private DropConfig DropSettings => Selector.Drop ??= new DropConfig();
-
     private Task OnDropChanged() => Changed.InvokeAsync();
+
+    private Task OnCustomiseDrop()
+    {
+        Selector.Drop = new DropConfig();
+        return Changed.InvokeAsync();
+    }
+
+    private Task OnOwnDropChanged(ChangeEventArgs e)
+    {
+        Selector.Drop = (bool)(e.Value ?? false) ? Selector.Drop ?? new DropConfig() : null;
+        return Changed.InvokeAsync();
+    }
 
     private async Task OnTitleOrderChanged(ChangeEventArgs e)
     {

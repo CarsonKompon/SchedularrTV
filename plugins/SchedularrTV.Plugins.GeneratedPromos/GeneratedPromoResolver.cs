@@ -799,12 +799,9 @@ public static partial class GeneratedPromoResolver
             {
                 Bounds = bounds,
                 // Cased here rather than when the lines are worked out, so AI-written text is cased too.
-                Lines = layer.TextCase switch
-                {
-                    GeneratedTextCase.Upper => lines.Select(line => line.ToUpperInvariant()).ToList(),
-                    GeneratedTextCase.Lower => lines.Select(line => line.ToLowerInvariant()).ToList(),
-                    _ => lines
-                },
+                Lines = layer.TextCase is null or GeneratedTextCase.AsWritten
+                    ? lines
+                    : lines.Select(line => GeneratedTextStyle.Cased(line, layer.TextCase)).ToList(),
                 VerticalAlign = layer.VerticalAlign switch
                 {
                     GeneratedVerticalAlign.Middle => PromoVerticalAlign.Middle,

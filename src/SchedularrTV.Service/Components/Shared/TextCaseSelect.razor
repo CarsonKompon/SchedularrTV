@@ -1,0 +1,18 @@
+@* How a text layer's letters are cased. Shared by the generated promo and overlay editors; as written is passed on as null. *@
+
+<select value="@(Value ?? GeneratedTextCase.AsWritten)" aria-label="Letters"
+        @onchange="e => ValueChanged.InvokeAsync(Parse(e.Value?.ToString()))">
+    <option value="@GeneratedTextCase.AsWritten">As written</option>
+    <option value="@GeneratedTextCase.Upper">ALL UPPERCASE</option>
+    <option value="@GeneratedTextCase.Lower">all lowercase</option>
+</select>
+
+@code {
+    [Parameter] public GeneratedTextCase? Value { get; set; }
+
+    /// <summary>Null for as written, so a layer that never changed it keeps its saved form (and render key).</summary>
+    [Parameter] public EventCallback<GeneratedTextCase?> ValueChanged { get; set; }
+
+    private static GeneratedTextCase? Parse(string? text) =>
+        Enum.TryParse(text, out GeneratedTextCase parsed) && parsed != GeneratedTextCase.AsWritten ? parsed : null;
+}

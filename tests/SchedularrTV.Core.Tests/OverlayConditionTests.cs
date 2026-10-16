@@ -91,6 +91,30 @@ public class OverlayConditionTests
     }
 
     [Fact]
+    public void Overlay_text_shares_the_promo_editors_case_and_alignment()
+    {
+        Assert.Equal("NEW TONIGHT", SchedularrTV.Core.Configuration.GeneratedTextStyle.Cased("New tonight", SchedularrTV.Core.Configuration.GeneratedTextCase.Upper));
+        Assert.Equal("new tonight", SchedularrTV.Core.Configuration.GeneratedTextStyle.Cased("New tonight", SchedularrTV.Core.Configuration.GeneratedTextCase.Lower));
+        Assert.Equal("New tonight", SchedularrTV.Core.Configuration.GeneratedTextStyle.Cased("New tonight", null));
+
+        OverlayLayer text = new() { Kind = OverlayLayerKinds.Text, Text = "{title}", Align = "center" };
+        Assert.Equal(SchedularrTV.Core.Configuration.GeneratedTextAlign.Center, text.HorizontalAlign);
+        text.HorizontalAlign = SchedularrTV.Core.Configuration.GeneratedTextAlign.Right;
+        Assert.Equal("right", text.Align);
+
+        // A design that uses neither keeps its drawing; casing or moving the text draws it again.
+        Overlay design = new() { Layers = [text] };
+        Dictionary<string, string> tokens = new() { ["title"] = "Toons" };
+        string before = OverlayRenderer.Key(design, tokens);
+        Assert.Equal(before, OverlayRenderer.Key(design.Copy(), tokens));
+        text.TextCase = SchedularrTV.Core.Configuration.GeneratedTextCase.Upper;
+        string cased = OverlayRenderer.Key(design, tokens);
+        Assert.NotEqual(before, cased);
+        text.VerticalAlign = SchedularrTV.Core.Configuration.GeneratedVerticalAlign.Bottom;
+        Assert.NotEqual(cased, OverlayRenderer.Key(design, tokens));
+    }
+
+    [Fact]
     public void Either_choice_comes_up_across_airings()
     {
         Overlay first = new() { Name = "A", When = OverlayWhen.Always, Additive = false };

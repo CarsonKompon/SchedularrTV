@@ -447,6 +447,28 @@ public sealed class OverlayLayer
     /// <summary>left, center or right.</summary>
     public string Align { get; set; } = "left";
 
+    /// <summary>
+    /// Where the text sits up and down its box; null is the middle (where overlay text always sat), so older designs
+    /// keep their look and their drawings.
+    /// </summary>
+    public GeneratedVerticalAlign? VerticalAlign { get; set; }
+
+    /// <summary>Upper or lower cases every letter (filled-in tokens and AI-written text too); null keeps it as written.</summary>
+    public GeneratedTextCase? TextCase { get; set; }
+
+    /// <summary><see cref="Align"/> as the shared alignment pad reads it.</summary>
+    [YamlDotNet.Serialization.YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public GeneratedTextAlign HorizontalAlign
+    {
+        get => Align switch
+        {
+            "center" => GeneratedTextAlign.Center,
+            "right" => GeneratedTextAlign.Right,
+            _ => GeneratedTextAlign.Left
+        };
+        set => Align = value.ToString().ToLowerInvariant();
+    }
+
     public bool Shadow { get; set; } = true;
 
     public float CornerRadius { get; set; }

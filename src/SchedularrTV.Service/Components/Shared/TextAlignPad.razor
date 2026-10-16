@@ -1,0 +1,35 @@
+@* Where a text layer's lines sit in their box: a 3 × 3 pad, each cell drawing three lines where the text would go.
+   Shared by the generated promo and overlay editors. *@
+
+<div class="align-grid" role="group" aria-label="Text alignment">
+    @foreach (GeneratedVerticalAlign vertical in Enum.GetValues<GeneratedVerticalAlign>())
+    {
+        @foreach (GeneratedTextAlign horizontal in Enum.GetValues<GeneratedTextAlign>())
+        {
+            bool chosen = Horizontal == horizontal && Vertical == vertical;
+            string name = Name(vertical, horizontal);
+            <button type="button" class="align-cell @(chosen ? "selected" : "")" title="@name" aria-label="@name"
+                    aria-pressed="@(chosen ? "true" : "false")" @onclick="() => Changed.InvokeAsync((vertical, horizontal))">
+                <span class="align-lines @($"h-{horizontal.ToString().ToLowerInvariant()} v-{vertical.ToString().ToLowerInvariant()}")" aria-hidden="true">
+                    <i></i><i></i><i></i>
+                </span>
+            </button>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public GeneratedTextAlign Horizontal { get; set; }
+
+    [Parameter] public GeneratedVerticalAlign Vertical { get; set; }
+
+    /// <summary>The cell picked: both alignments together.</summary>
+    [Parameter] public EventCallback<(GeneratedVerticalAlign Vertical, GeneratedTextAlign Horizontal)> Changed { get; set; }
+
+    public static string Name(GeneratedVerticalAlign vertical, GeneratedTextAlign horizontal) =>
+        (vertical, horizontal) switch
+        {
+            (GeneratedVerticalAlign.Middle, GeneratedTextAlign.Center) => "Centre",
+            _ => $"{vertical} {(horizontal == GeneratedTextAlign.Center ? "centre" : horizontal.ToString().ToLowerInvariant())}"
+        };
+}

@@ -354,13 +354,6 @@ public static class AdBreakCompiler
             [PathMatches(AdBreakPaths.Inside(folder.Folder)),
              .. folder.Excluded.Select(excluded => (QueryExpression)new NotExpression(PathMatches(AdBreakPaths.Inside(excluded))))])));
 
-    /// <summary>
-    /// Reads what a promo clip's folders say about it (the show it's for, and the day and start time when the promo
-    /// folder uses them) into the attributes promo matching already reads: <c>show_id</c>, <c>promo_day</c>,
-    /// <c>promo_clock</c>. Null when it isn't in any of the folders, or has no show and no "any show" fallback. For a
-    /// folder sorted by type, also null unless the clip is under a folder named for that type; for a seasonal one,
-    /// null when it's under a month, season, holiday or date folder that isn't <paramref name="seasonAt"/>'s.
-    /// </summary>
     /// <summary>Set to <c>true</c> on promo clips filed for new episodes (a <c>New</c> folder, or a <c>new_episode</c> tag).</summary>
     public const string NewEpisodeAttribute = "promo_new";
 
@@ -376,6 +369,13 @@ public static class AdBreakCompiler
         (clip.Attributes.TryGetValue(NewEpisodeAttribute, out string? flag) && string.Equals(flag, "true", StringComparison.OrdinalIgnoreCase))
         || clip.Tags.Any(tag => string.Equals(tag, "new_episode", StringComparison.OrdinalIgnoreCase) || string.Equals(tag, "new episode", StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// Reads what a promo clip's folders say about it (the show it's for, the day and start time when the promo
+    /// folder uses them, and whether it's filed for new episodes) into the attributes promo matching already reads:
+    /// <c>show_id</c>, <c>promo_day</c>, <c>promo_clock</c>, <c>promo_new</c>. Null when it isn't in any of the folders, or has no show and no "any show" fallback. For a
+    /// folder sorted by type, also null unless the clip is under a folder named for that type; for a seasonal one,
+    /// null when it's under a month, season, holiday or date folder that isn't <paramref name="seasonAt"/>'s.
+    /// </summary>
     public static MediaItem? Describe(MediaItem item, IReadOnlyList<PromoFolderSource> folders, DateTimeOffset? seasonAt = null)
     {
         if (item.Path is not { } path)

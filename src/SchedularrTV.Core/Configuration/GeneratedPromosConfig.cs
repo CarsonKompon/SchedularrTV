@@ -224,6 +224,18 @@ public enum GeneratedTextCase
     Lower
 }
 
+/// <summary>Text styling shared by generated promos and overlays.</summary>
+public static class GeneratedTextStyle
+{
+    /// <summary><paramref name="text"/> cased as <paramref name="textCase"/> asks; null (or as written) leaves it alone.</summary>
+    public static string Cased(string text, GeneratedTextCase? textCase) => textCase switch
+    {
+        GeneratedTextCase.Upper => text.ToUpperInvariant(),
+        GeneratedTextCase.Lower => text.ToLowerInvariant(),
+        _ => text
+    };
+}
+
 public sealed class GeneratedPromosConfig
 {
     public bool Enabled { get; set; } = true;

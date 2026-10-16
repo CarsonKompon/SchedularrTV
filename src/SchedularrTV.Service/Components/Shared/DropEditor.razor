@@ -45,7 +45,8 @@
             <select value="@Drop.Repeats" @onchange="e => Set(() => Drop.Repeats = Enum.Parse<PlaybackOrder>(e.Value?.ToString() ?? nameof(PlaybackOrder.Shuffle)))">
                 <option value="@PlaybackOrder.Shuffle">Shuffled (no repeats until all have played)</option>
                 <option value="@PlaybackOrder.Random">At random</option>
-                <option value="@PlaybackOrder.SeasonEpisode">In order</option>
+                <option value="@PlaybackOrder.SeasonEpisode">In episode order</option>
+                <option value="@PlaybackOrder.Chronological">In air-date order</option>
             </select>
         </label>
         <label class="field">
@@ -96,10 +97,16 @@
     private Task OnTimeChanged(ChangeEventArgs e) => Set(() =>
     {
         string text = e.Value?.ToString()?.Trim() ?? "";
-        Drop.Time = TimeSpan.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out TimeSpan time)
-            && time >= TimeSpan.Zero && time < TimeSpan.FromDays(1)
-                ? time
-                : null;
+        if (text.Length == 0)
+        {
+            Drop.Time = null;
+        }
+        else if (TimeSpan.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out TimeSpan time)
+            && time >= TimeSpan.Zero && time < TimeSpan.FromDays(1))
+        {
+            Drop.Time = time;
+        }
+        // Anything else (8pm, say) keeps the time it had; the box shows it again as hh:mm.
     });
 
     private static int Int(ChangeEventArgs e, int fallback) =>

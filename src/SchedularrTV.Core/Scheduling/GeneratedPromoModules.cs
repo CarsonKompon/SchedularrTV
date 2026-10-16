@@ -36,32 +36,40 @@ internal sealed class GeneratedPromoSubstitute : IPromoSpotSubstitute
             return null;
         }
 
-        List<DropPlan> drops = [];
-        IEnumerable<ContentSelector> selectors = context.Build.Blocks.SelectMany(block => block.Block.Shows)
-            .Concat(context.Build.Anchors.SelectMany(anchor => anchor.Anchor.AllSelectors()));
-        if (context.Channel.BaseRotation is { } rotation)
+        DropPlanCache cache = context.Build.State<DropPlanCache>();
+        if (cache.Plans is null)
         {
-            selectors = selectors.Append(rotation);
+            // Worked out once per build: every drop cadence on the channel's programming.
+            List<DropPlan> found = [];
+            IEnumerable<ContentSelector> selectors = context.Build.Blocks.SelectMany(block => block.Block.Shows)
+                .Concat(context.Build.Anchors.SelectMany(anchor => anchor.Anchor.AllSelectors()));
+            if (context.Channel.BaseRotation is { } rotation)
+            {
+                selectors = selectors.Append(rotation);
+            }
+
+            foreach (ContentSelector selector in selectors.Distinct())
+            {
+                MediaSequence? sequence;
+                try
+                {
+                    sequence = await context.Session.GetSequenceAsync(selector, "shared", cancellationToken).ConfigureAwait(false);
+                }
+                catch (SchedulerConfigurationException)
+                {
+                    continue;
+                }
+
+                if (sequence is not null)
+                {
+                    found.AddRange(sequence.DropPlans);
+                }
+            }
+
+            cache.Plans = found;
         }
 
-        foreach (ContentSelector selector in selectors.Distinct())
-        {
-            MediaSequence? sequence;
-            try
-            {
-                sequence = await context.Session.GetSequenceAsync(selector, "shared", cancellationToken).ConfigureAwait(false);
-            }
-            catch (SchedulerConfigurationException)
-            {
-                continue;
-            }
-
-            if (sequence is not null)
-            {
-                drops.AddRange(sequence.DropPlans);
-            }
-        }
-
+        List<DropPlan> drops = cache.Plans;
         if (drops.Count == 0
             || Choose(context, GeneratedPromoType.NewEpisode, clipAvailable: false, available, context.From, isNew: true) is not { } template)
         {
@@ -172,6 +180,12 @@ internal sealed class GeneratedPromoSubstitute : IPromoSpotSubstitute
 
         return null;
     }
+}
+
+/// <summary>The drop cadences on a channel's programming, found once per build.</summary>
+internal sealed class DropPlanCache
+{
+    public List<DropPlan>? Plans { get; set; }
 }
 
 /// <summary>

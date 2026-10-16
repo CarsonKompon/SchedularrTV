@@ -66,7 +66,8 @@ public sealed class EngineSnapshotTests : IDisposable
     private static readonly ScheduleEntryKind[] PromoKinds =
     [
         ScheduleEntryKind.Promo, ScheduleEntryKind.UpNextPromo, ScheduleEntryKind.NowPlayingPromo, ScheduleEntryKind.ThisHasBeenPromo,
-        ScheduleEntryKind.YoureWatchingPromo, ScheduleEntryKind.BackToTheShowPromo, ScheduleEntryKind.EventuallyPromo
+        ScheduleEntryKind.YoureWatchingPromo, ScheduleEntryKind.BackToTheShowPromo, ScheduleEntryKind.EventuallyPromo,
+        ScheduleEntryKind.NewEpisodePromo, ScheduleEntryKind.RightBackPromo
     ];
 
     [Theory]
@@ -231,7 +232,10 @@ public sealed class EngineSnapshotTests : IDisposable
         ChannelConfig channel = config.Channels[0];
         if (scenario is "generated-fallback" or "generated-mixed" or "archive-follow")
         {
-            GeneratedPromoTemplate[] templates = [.. Enum.GetValues<GeneratedPromoType>().Select(type => GeneratedPromoTemplates.ForType(type))];
+            // The snapshots predate We'll Be Right Back and New Episode, which have tests of their own.
+            GeneratedPromoTemplate[] templates = [.. Enum.GetValues<GeneratedPromoType>()
+                .Where(type => type is not (GeneratedPromoType.RightBack or GeneratedPromoType.NewEpisode))
+                .Select(type => GeneratedPromoTemplates.ForType(type))];
             if (scenario == "generated-mixed")
             {
                 foreach (GeneratedPromoTemplate template in templates)

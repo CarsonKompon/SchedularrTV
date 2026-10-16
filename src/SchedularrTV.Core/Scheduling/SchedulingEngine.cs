@@ -235,6 +235,7 @@ public sealed class SchedulingEngine(
 
                 int slotEntryStart = entries.Count;
                 build.AnchorIndex = anchorIndex;
+                build.Premieres = pick.Premieres;
                 cursor = await ScheduleStackAsync(
                         build, config, channel, activeBlock, stack, bumpers, cursor, slotEnd, cancellationToken)
                     .ConfigureAwait(false);
@@ -250,18 +251,7 @@ public sealed class SchedulingEngine(
                     }
                 }
 
-                if (pick.Premieres.Count > 0)
-                {
-                    for (int entryIndex = slotEntryStart; entryIndex < entries.Count; entryIndex++)
-                    {
-                        ScheduleEntry entry = entries[entryIndex];
-                        if (entry is { Kind: ScheduleEntryKind.Program, IsSlotIntro: false, IsSlotOutro: false, Item: { } aired }
-                            && pick.Premieres.Contains(aired.Id))
-                        {
-                            entries[entryIndex] = entry with { IsPremiere = true };
-                        }
-                    }
-                }
+                build.Premieres = NoPremieres;
 
                 continue;
             }
@@ -756,6 +746,8 @@ public sealed class SchedulingEngine(
         return null;
     }
 
+    private static readonly HashSet<string> NoPremieres = [];
+
     /// <summary>A pick that remembers whether its programme is a new episode (a drop's first airing).</summary>
     private static ProgramPick Picked(MediaItem chosen, MediaSequence sequence, ContentSelector selector)
     {
@@ -1186,7 +1178,9 @@ public sealed class SchedulingEngine(
                         SegmentCount = partCount > 1 ? partCount : 0,
                         Source = source,
                         BlockName = block?.Name,
-                        ContinuesSlot = continuesSlot || programmeIndex > 0
+                        ContinuesSlot = continuesSlot || programmeIndex > 0,
+                        // Stamped here, not afterwards, so the breaks inside this slot already know.
+                        IsPremiere = build.Premieres.Contains(programme.Id)
                     });
                     cursor += overlapEnd - overlapStart;
                 }

@@ -155,6 +155,9 @@ internal sealed class BuildContext(
 
     public List<ScheduleEntry> Entries => entries;
 
+    /// <summary>Ids of the new episodes (drop premieres) in the slot being laid out; the engine keeps it current.</summary>
+    public IReadOnlySet<string> Premieres { get; set; } = new HashSet<string>();
+
     /// <summary>Per-build scratch state for a module, created on first use.</summary>
     public T State<T>() where T : class, new()
     {

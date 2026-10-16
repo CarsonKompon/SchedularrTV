@@ -100,25 +100,7 @@
 .gp-scope .ed-keyfield input { width: 76px; }
 .gp-scope .drag-overlay.drag-time { cursor: ew-resize; }
 .gp-scope .layer-box.keyed .layer-tag { font-weight: 600; }
-/* Text alignment: a 3 × 3 pad, each cell drawing three lines where the text would sit. */
-.gp-scope .align-grid { display: grid; grid-template-columns: repeat(3, 34px); grid-auto-rows: 28px; gap: 3px; }
-.gp-scope .align-cell {
-    display: flex; padding: 4px 5px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); cursor: pointer;
-}
-.gp-scope .align-cell:hover { border-color: var(--muted); }
-.gp-scope .align-cell.selected { border-color: var(--accent); background: var(--accent); }
-.gp-scope .align-lines { display: flex; flex-direction: column; gap: 2px; width: 100%; height: 100%; }
-.gp-scope .align-lines i { display: block; height: 2px; border-radius: 1px; background: var(--muted); }
-.gp-scope .align-cell.selected .align-lines i { background: #fff; }
-.gp-scope .align-lines i:nth-child(1) { width: 75%; }
-.gp-scope .align-lines i:nth-child(2) { width: 45%; }
-.gp-scope .align-lines i:nth-child(3) { width: 60%; }
-.gp-scope .align-lines.h-left { align-items: flex-start; }
-.gp-scope .align-lines.h-center { align-items: center; }
-.gp-scope .align-lines.h-right { align-items: flex-end; }
-.gp-scope .align-lines.v-top { justify-content: flex-start; }
-.gp-scope .align-lines.v-middle { justify-content: center; }
-.gp-scope .align-lines.v-bottom { justify-content: flex-end; }
+/* The text alignment pad (TextAlignPad) is styled in the app's app.css, shared with the overlay editor. */
 .gp-scope .ed-colour { width: 56px; height: 34px; padding: 2px; }
 .gp-scope .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .gp-scope .check-stack { display: grid; gap: 6px; align-content: end; padding-bottom: 10px; }

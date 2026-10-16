@@ -941,6 +941,27 @@ dialog.modal::backdrop { background: rgba(4, 5, 9, .75); }
 .seg-EventuallyPromo, .seg-NewEpisodePromo { background: #9a63d6; }
 .seg-Padding { background: #3a4050; }
 
+/* Text alignment pad (TextAlignPad): a 3 × 3 grid, each cell drawing three lines where the text would sit.
+   Used by the generated promo and overlay editors. */
+.align-grid { display: grid; grid-template-columns: repeat(3, 34px); grid-auto-rows: 28px; gap: 3px; }
+.align-cell {
+    display: flex; padding: 4px 5px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); cursor: pointer;
+}
+.align-cell:hover { border-color: var(--muted); }
+.align-cell.selected { border-color: var(--accent); background: var(--accent); }
+.align-lines { display: flex; flex-direction: column; gap: 2px; width: 100%; height: 100%; }
+.align-lines i { display: block; height: 2px; border-radius: 1px; background: var(--muted); }
+.align-cell.selected .align-lines i { background: #fff; }
+.align-lines i:nth-child(1) { width: 75%; }
+.align-lines i:nth-child(2) { width: 45%; }
+.align-lines i:nth-child(3) { width: 60%; }
+.align-lines.h-left { align-items: flex-start; }
+.align-lines.h-center { align-items: center; }
+.align-lines.h-right { align-items: flex-end; }
+.align-lines.v-top { justify-content: flex-start; }
+.align-lines.v-middle { justify-content: center; }
+.align-lines.v-bottom { justify-content: flex-end; }
+
 .legend { display: flex; gap: 14px; font-size: 11.5px; color: var(--muted); margin-top: 10px; flex-wrap: wrap; }
 .legend > span { display: inline-flex; align-items: center; gap: 6px; }
 .legend > span > span { display: inline-block; width: 9px; height: 9px; border-radius: 3px; }
