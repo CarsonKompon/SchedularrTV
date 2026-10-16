@@ -374,6 +374,9 @@ public static class GeneratedPromoEditing
     {
         if (layer.Id is { Length: > 0 } id)
         {
+            // Keep the mask editable and invisible until the user chooses a new target.
+            foreach (GeneratedLayer mask in template.Layers.Where(candidate => candidate.Mask?.Target == id))
+                mask.Mask!.Target = null;
             foreach (GeneratedBackgroundOverride tracked in template.BackgroundOverrides ?? [])
             {
                 tracked.Layers.RemoveAll(placed => string.Equals(placed.Layer, id, StringComparison.Ordinal));

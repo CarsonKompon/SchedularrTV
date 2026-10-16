@@ -549,6 +549,9 @@ public static class SchedulerConfigLoader
             // A template doesn't have to name the show in text: it can show it with variable images alone.
 
             // Groups: each needs an id for its layers to name, and a layer can't end up inside itself.
+            foreach (var duplicate in template.Layers.Where(layer => !string.IsNullOrWhiteSpace(layer.Id))
+                         .GroupBy(layer => layer.Id, StringComparer.Ordinal).Where(group => group.Count() > 1))
+                errors.Add($"{templateScope}.layers: layer id '{duplicate.Key}' must be unique.");
             Dictionary<string, GeneratedLayer> groups = new(StringComparer.Ordinal);
             foreach (GeneratedLayer group in template.Layers.Where(layer => layer.Kind == GeneratedLayerKind.Group))
             {
@@ -583,6 +586,18 @@ public static class SchedulerConfigLoader
             foreach (GeneratedLayer layer in template.Layers)
             {
                 string layerScope = $"{templateScope}.layers.{(string.IsNullOrWhiteSpace(layer.Name) ? layer.Kind.ToString() : layer.Name)}";
+                if (layer.Mask is { } mask)
+                {
+                    if (layer.Kind is not (GeneratedLayerKind.Rect or GeneratedLayerKind.Image))
+                        errors.Add($"{layerScope}: only shape and image layers can be masks.");
+                    if (!Enum.IsDefined(mask.Mode))
+                        errors.Add($"{layerScope}: mask.mode must be add or subtract.");
+                    GeneratedLayer? target = string.IsNullOrWhiteSpace(mask.Target) ? null
+                        : template.Layers.FirstOrDefault(candidate => candidate.Id == mask.Target);
+                    if (target is null || target.Kind == GeneratedLayerKind.Group || target.Mask is not null
+                        || template.Layers.IndexOf(target) >= template.Layers.IndexOf(layer))
+                        errors.Add($"{layerScope}: mask.target must name the id of a non-mask, non-group layer beneath this mask.");
+                }
                 if (layer.Width <= 0 || layer.Height <= 0 || layer.Opacity is < 0 or > 1)
                 {
                     errors.Add($"{layerScope}: needs a positive size and an opacity between 0 and 1.");

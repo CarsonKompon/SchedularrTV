@@ -462,7 +462,7 @@ public static class GeneratedPromoHierarchy
         foreach (GeneratedLayer copy in copies)
         {
             string? old = copy.Id;
-            copy.Id = IsGroup(copy) ? NewId(template, ids.Values) : null;
+            copy.Id = IsGroup(copy) || old is not null ? NewId(template, ids.Values) : null;
             if (old is not null && copy.Id is not null) ids[old] = copy.Id;
             copy.Name = GeneratedPromoEditing.UniqueName(names, copy.Name);
             names.Add(copy.Name);
@@ -471,6 +471,11 @@ public static class GeneratedPromoHierarchy
         foreach (GeneratedLayer copy in copies.Skip(1))
         {
             copy.Parent = copy.Parent is { } parent && ids.TryGetValue(parent, out string? moved) ? moved : copy.Parent;
+        }
+
+        foreach (GeneratedLayer copy in copies)
+        {
+            if (copy.Mask?.Target is { } target && ids.TryGetValue(target, out string? moved)) copy.Mask.Target = moved;
         }
 
         GeneratedPromoEditing.Offset(copies[0], 20, 20);

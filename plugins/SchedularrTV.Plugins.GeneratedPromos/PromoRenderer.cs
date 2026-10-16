@@ -201,61 +201,92 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             DrawImage(canvas, image, frame, cover: true, paint: null);
         }
 
+        // A target is isolated before masking, so a cutout reveals (and never erases) the footage below it.
+        // Mask sources stay in the composition for animation/frame-change detection and editor selection.
+        var masks = composition.Layers
+            .Where(layer => layer is PromoRectLayer or PromoImageLayer && layer.Mask?.Target is { Length: > 0 })
+            .ToLookup(layer => layer.Mask!.Target!, StringComparer.Ordinal);
         foreach (PromoLayer layer in composition.Layers)
         {
-            // Groups draw nothing; their layers draw inside them. A layer shows only while every group it's in does.
-            if (layer is PromoGroupLayer
-                || PromoAnimation.EvaluateInGroups(layer, time, composition.Duration, composition.Height) is not { } state || state.Opacity <= 0)
+            if (layer is PromoGroupLayer || layer.Mask is not null) continue;
+            PromoLayer[] applied = layer.Id is { } id ? [.. masks[id]] : [];
+            if (applied.Length == 0)
             {
+                DrawLayer(canvas, layer, composition, time, images, videos);
                 continue;
             }
 
-            SKRect bounds = state.Bounds;
-            canvas.Save();
-            // Into the space of the groups it's in, outermost first: each moves its contents to its corner and turns them about its middle.
-            foreach (PromoGroupLayer group in Groups(layer))
-            {
-                if (PromoAnimation.Evaluate(group, time, composition.Duration, composition.Height) is { } around)
-                {
-                    Place(canvas, around, around.Bounds);
-                    Pin(canvas, around);
-                    canvas.Translate(around.Bounds.Left, around.Bounds.Top);
-                }
-            }
-
-            Place(canvas, state, bounds);
-            Pin(canvas, state);
-            bool translucent = state.Opacity < 0.999f;
-            if (translucent)
-            {
-                // Shadows spill past the text box, so leave headroom around the offscreen layer.
-                SKRect area = bounds;
-                area.Inflate(bounds.Height * 0.25f + 8, bounds.Height * 0.25f + 8);
-                if (layer is PromoRectLayer soft) area.Inflate(soft.SoftEdges * 4, soft.SoftEdges * 4);
-                using var alpha = new SKPaint { Color = SKColors.Black.WithAlpha((byte)Math.Round(Math.Clamp(state.Opacity, 0, 1) * 255)) };
-                canvas.SaveLayer(area, alpha);
-            }
-
-            switch (layer)
-            {
-                case PromoRectLayer rect:
-                    DrawShape(canvas, rect, bounds);
-                    break;
-                case PromoTextLayer text:
-                    DrawText(canvas, text, bounds, images);
-                    break;
-                case PromoImageLayer picture when images.Get(picture.Path) is { } bitmap:
-                    DrawImage(canvas, bitmap, bounds, cover: false, paint: null);
-                    break;
-                // Its frames come already fitted to (or filling) a box of its shape, so they're drawn to fill the box.
-                case PromoVideoLayer video when videos?.Frame(video, video.PlaybackAt(time)) is { } still:
-                    canvas.DrawImage(still, bounds, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None), null);
-                    break;
-            }
-
-            if (translucent) canvas.Restore();
+            canvas.SaveLayer(frame, null);
+            DrawLayer(canvas, layer, composition, time, images, videos);
+            ApplyMasks(SchedularrTV.Core.Configuration.GeneratedMaskMode.Add, SKBlendMode.DstIn);
+            ApplyMasks(SchedularrTV.Core.Configuration.GeneratedMaskMode.Subtract, SKBlendMode.DstOut);
             canvas.Restore();
+
+            void ApplyMasks(SchedularrTV.Core.Configuration.GeneratedMaskMode mode, SKBlendMode blend)
+            {
+                if (!applied.Any(mask => mask.Mask!.Mode == mode)) return;
+                using var paint = new SKPaint { BlendMode = blend };
+                // A full-frame transparent layer is essential for DstIn: outside the drawn masks is zero alpha.
+                canvas.SaveLayer(frame, paint);
+                foreach (PromoLayer mask in applied.Where(mask => mask.Mask!.Mode == mode))
+                    DrawLayer(canvas, mask, composition, time, images, videos);
+                canvas.Restore();
+            }
         }
+    }
+
+    private static void DrawLayer(SKCanvas canvas, PromoLayer layer, PromoComposition composition, TimeSpan time,
+        PromoImageCache images, IPromoVideoFrames? videos)
+    {
+        // Groups draw nothing; their layers draw inside them. A layer shows only while every group it's in does.
+        if (PromoAnimation.EvaluateInGroups(layer, time, composition.Duration, composition.Height) is not { } state || state.Opacity <= 0)
+            return;
+
+        SKRect bounds = state.Bounds;
+        canvas.Save();
+        // Into the space of the groups it's in, outermost first: each moves its contents to its corner and turns them about its middle.
+        foreach (PromoGroupLayer group in Groups(layer))
+        {
+            if (PromoAnimation.Evaluate(group, time, composition.Duration, composition.Height) is { } around)
+            {
+                Place(canvas, around, around.Bounds);
+                Pin(canvas, around);
+                canvas.Translate(around.Bounds.Left, around.Bounds.Top);
+            }
+        }
+
+        Place(canvas, state, bounds);
+        Pin(canvas, state);
+        bool translucent = state.Opacity < 0.999f;
+        if (translucent)
+        {
+            // Shadows spill past the text box, so leave headroom around the offscreen layer.
+            SKRect area = bounds;
+            area.Inflate(bounds.Height * 0.25f + 8, bounds.Height * 0.25f + 8);
+            if (layer is PromoRectLayer soft) area.Inflate(soft.SoftEdges * 4, soft.SoftEdges * 4);
+            using var alpha = new SKPaint { Color = SKColors.Black.WithAlpha((byte)Math.Round(Math.Clamp(state.Opacity, 0, 1) * 255)) };
+            canvas.SaveLayer(area, alpha);
+        }
+
+        switch (layer)
+        {
+            case PromoRectLayer rect:
+                DrawShape(canvas, rect, bounds);
+                break;
+            case PromoTextLayer text:
+                DrawText(canvas, text, bounds, images);
+                break;
+            case PromoImageLayer picture when images.Get(picture.Path) is { } bitmap:
+                DrawImage(canvas, bitmap, bounds, cover: false, paint: null);
+                break;
+            // Its frames come already fitted to (or filling) a box of its shape, so they're drawn to fill the box.
+            case PromoVideoLayer video when videos?.Frame(video, video.PlaybackAt(time)) is { } still:
+                canvas.DrawImage(still, bounds, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None), null);
+                break;
+        }
+
+        if (translucent) canvas.Restore();
+        canvas.Restore();
     }
 
     private static void DrawShape(SKCanvas canvas, PromoRectLayer layer, SKRect bounds)

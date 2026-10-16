@@ -97,6 +97,51 @@ The **⬚ Perspective** tool (or **P** after clicking the timeline or a box) swa
 
 In YAML a pin is `corners:` on a layer or keyframe, with `top_left_x`, `top_left_y`, `top_right_x` … `bottom_left_y`, each how many pixels that corner is pulled.
 
+### Shape and image masks (foreground cutouts)
+
+A shape or image layer can mask a specific layer beneath it instead of appearing as artwork. Select the shape/image and change **Use as**:
+
+- **Subtract mask — hide inside** cuts the mask's area out of the target, revealing the footage or other layers underneath. Use this to make text pass behind an object in the background.
+- **Add mask — reveal inside** shows the target only inside the mask. Several add masks reveal their combined area; subtract masks then cut holes in that area. Without any add masks, the target starts fully visible.
+
+Choose **Mask target** to identify the text, shape, image, or video layer to affect. The editor initially chooses the nearest eligible layer beneath the mask. Targets are linked by stable ids, so renaming a target keeps the link. Keep the mask above its target in the layer list. Masks don't target groups or other masks.
+
+For a foreground object in footage:
+
+1. Place the text over the footage, then add a shape above the text.
+2. Set the shape to **Subtract mask — hide inside** and choose the text as its target.
+3. Set the shape's fill alpha and layer opacity to **100%** for a complete cutout. Add **Soft edges** if the outline needs feathering.
+4. Enable keyframes on the mask. Scrub through the footage and move/resize the mask to follow the object.
+5. Use **Perspective** (**P**) to pull its corners around the object at each keyframe. The existing easing and per-background placements work for masks too.
+
+Only the target is cut out; the footage and other layers are untouched. Mask shapes use their fill alpha, soft edges, and animated opacity. Image masks use the image's **alpha channel**, not its brightness: opaque black and opaque white both mask fully. Use transparent PNGs for irregular outlines. A mask's timing, transitions, rotation, perspective, and parent-group transforms apply just as they do for visible layers. An additive mask outside its active time reveals nothing; an inactive subtract mask removes nothing.
+
+Masks remain selectable through the layer list and their canvas outlines. Deleting a target leaves its masks invisible and asks you to choose a new target. Duplicating a group containing both a target and its masks links the copies to each other.
+
+In YAML, layers are ordered bottom to top and masks reference a target's `id`:
+
+```yaml
+layers:
+  - id: title
+    name: Title
+    kind: text
+    text: "Coming up next"
+    x: 100
+    y: 200
+    width: 800
+    height: 160
+  - name: Foreground object
+    kind: rect
+    x: 400
+    y: 100
+    width: 200
+    height: 400
+    color: "#FFFFFF"
+    mask:
+      mode: subtract # or add
+      target: title
+```
+
 ### Video layers
 
 **+ Video** adds a box that plays a video. Under **Plays**, choose a video file, or a clip of an episode: the one the promo is for, what's on now (or before the break), the next episode, or one 2 to 10 shows ahead. An episode clip starts where you set it, or, left blank, somewhere in the middle that changes each airing. If there's no such show, or its file can't be read, the layer is left out.

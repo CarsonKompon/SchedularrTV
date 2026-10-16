@@ -358,6 +358,46 @@ public sealed class GeneratedPromoEditorTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task Animated_masks_match_in_scaled_previews_and_rendered_frames()
+    {
+        using ServiceProvider services = Services();
+        var preview = services.GetRequiredService<GeneratedPromoPreview>();
+        var template = new GeneratedPromoTemplate
+        {
+            Name = "Moving mask", Width = 200, Height = 100, Fps = 10, Duration = TimeSpan.FromSeconds(2), BackgroundColor = "#0000FF",
+            Layers =
+            [
+                new() { Id = "target", Kind = GeneratedLayerKind.Rect, Width = 200, Height = 100, Color = "#FF0000",
+                    TransitionIn = GeneratedTransition.None, TransitionOut = GeneratedTransition.None },
+                new() { Kind = GeneratedLayerKind.Rect, Width = 60, Height = 100, Color = "#FFFFFF",
+                    TransitionIn = GeneratedTransition.None, TransitionOut = GeneratedTransition.None,
+                    Mask = new() { Mode = GeneratedMaskMode.Subtract, Target = "target" }, Keyframes =
+                    [
+                        new() { At = TimeSpan.Zero, Width = 60, Height = 100 },
+                        new() { At = TimeSpan.FromSeconds(2), X = 120, Width = 60, Height = 100 }
+                    ] }
+            ]
+        };
+        UpNextListing[] listings = [new("Show", Noon)];
+        GeneratedPromoRender render = await preview.RenderVideoAsync(template, "Channel", listings, TimeZoneInfo.Utc);
+        foreach (double second in new[] { 0.5, 1.5 })
+        {
+            using SKBitmap still = SKBitmap.Decode(await preview.RenderStillAsync(template, "Channel", listings, TimeZoneInfo.Utc,
+                TimeSpan.FromSeconds(second), 100));
+            string frame = Path.Combine(_directory, $"mask-{second}.png");
+            await Run("ffmpeg", "-hide_banner", "-loglevel", "error", "-ss", second.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                "-i", render.Path, "-frames:v", "1", frame);
+            using SKBitmap final = SKBitmap.Decode(frame);
+            int cut = second < 1 ? 50 : 120;
+            int kept = second < 1 ? 150 : 50;
+            Assert.True(still.GetPixel(cut / 2, 25).Blue > 200);
+            Assert.True(still.GetPixel(kept / 2, 25).Red > 200);
+            Assert.True(final.GetPixel(cut, 50).Blue > 200);
+            Assert.True(final.GetPixel(kept, 50).Red > 200);
+        }
+    }
+
     private ServiceProvider Services()
     {
         var services = new ServiceCollection();

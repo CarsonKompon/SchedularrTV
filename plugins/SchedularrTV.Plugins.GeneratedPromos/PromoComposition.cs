@@ -16,6 +16,11 @@ public enum PromoTransition
 /// <summary>One drawable layer. Layers draw in list order, so later layers sit on top.</summary>
 public abstract record PromoLayer
 {
+    public string? Id { get; init; }
+
+    /// <summary>A mask is drawn only into its target's alpha, never onto the background.</summary>
+    public PromoLayerMask? Mask { get; init; }
+
     public required SKRect Bounds { get; init; }
 
     public TimeSpan Start { get; init; }
@@ -49,6 +54,8 @@ public abstract record PromoLayer
 
 /// <summary>Draws nothing: places the layers inside it (see <see cref="PromoLayer.Parent"/>).</summary>
 public sealed record PromoGroupLayer : PromoLayer;
+
+public sealed record PromoLayerMask(SchedularrTV.Core.Configuration.GeneratedMaskMode Mode, string? Target);
 
 public enum PromoVerticalAlign
 {

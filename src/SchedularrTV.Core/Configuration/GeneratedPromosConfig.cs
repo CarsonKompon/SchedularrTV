@@ -866,11 +866,23 @@ public sealed class GeneratedLayerOverride : IGeneratedPose
     public List<GeneratedKeyframe>? Keyframes { get; set; }
 }
 
+/// <summary>Add reveals inside the combined masks; subtract hides inside them, after any add masks.</summary>
+public enum GeneratedMaskMode { Add, Subtract }
+
+/// <summary>A shape or image used only as an alpha mask for a drawable layer below it.</summary>
+public sealed class GeneratedLayerMask
+{
+    public GeneratedMaskMode Mode { get; set; } = GeneratedMaskMode.Subtract;
+
+    /// <summary>The target layer's stable id.</summary>
+    public string? Target { get; set; }
+}
+
 public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
 {
     /// <summary>
-    /// Stable identity for per-background placements (<see cref="GeneratedPromoTemplate.BackgroundOverrides"/>), given
-    /// when the first one is made; null until then, so templates without them keep their render keys.
+    /// Stable identity for per-background placements (<see cref="GeneratedPromoTemplate.BackgroundOverrides"/>), groups,
+    /// and mask targets; assigned when needed, so templates without them keep their render keys.
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? Id { get; set; }
@@ -884,6 +896,10 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? Parent { get; set; }
+
+    /// <summary>When set, this shape or image masks its target instead of drawing as visible artwork.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedLayerMask? Mask { get; set; }
 
     /// <summary>
     /// Locked in the editor: it can't be picked or moved on the canvas (a locked group locks what's inside it). Only

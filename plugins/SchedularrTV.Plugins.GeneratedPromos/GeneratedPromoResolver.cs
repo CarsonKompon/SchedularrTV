@@ -741,7 +741,9 @@ public static partial class GeneratedPromoResolver
             },
             // Always drawn (as nothing), so the layers inside it have it to be placed in.
             GeneratedLayerKind.Group => new PromoGroupLayer { Bounds = bounds },
-            GeneratedLayerKind.Image when !string.IsNullOrWhiteSpace(imagePath) => new PromoImageLayer { Bounds = bounds, Path = imagePath },
+            // A missing additive mask must remain an empty matte, not disappear and reveal the whole target.
+            GeneratedLayerKind.Image when !string.IsNullOrWhiteSpace(imagePath) || layer.Mask is not null =>
+                new PromoImageLayer { Bounds = bounds, Path = imagePath ?? string.Empty },
             GeneratedLayerKind.Video when video is not null => new PromoVideoLayer
             {
                 Bounds = bounds,
@@ -789,6 +791,8 @@ public static partial class GeneratedPromoResolver
 
         return drawn is null ? null : drawn with
         {
+            Id = layer.Id,
+            Mask = layer.Mask is { } mask ? new PromoLayerMask(mask.Mode, mask.Target) : null,
             Start = timing.Start,
             End = timing.End,
             In = Enum.Parse<PromoTransition>(timing.TransitionIn.ToString()),
