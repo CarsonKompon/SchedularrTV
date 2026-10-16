@@ -346,7 +346,7 @@ public sealed partial class GeneratedPromoService(
                 composition = composition with { Music = await LibraryMusicAsync(fromLibrary, promo.Key, cancellationToken).ConfigureAwait(false) };
             }
 
-            await new PromoRenderer(_options.FfmpegPath)
+            await new PromoRenderer(_options.FfmpegPath) { FfprobePath = _options.FfprobePath }
                 .RenderAsync(composition, partial, cancellationToken)
                 .ConfigureAwait(false);
             try

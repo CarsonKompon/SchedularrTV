@@ -26,6 +26,7 @@ public static class PromoFonts
 /// <summary>Draws composition frames with SkiaSharp and streams them to ffmpeg as raw video.</summary>
 public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
 {
+    public string FfprobePath { get; init; } = "ffprobe";
     private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif"
@@ -138,7 +139,10 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             Stream input = ffmpeg.StandardInput.BaseStream;
             PromoLayerFrame?[]? previous = null;
             // Video layers' frames, each video decoded straight through by an ffmpeg of its own as the frames are drawn.
-            using var videos = new PromoVideoStreams(ffmpegPath, composition.Fps);
+            Dictionary<string, string?> decoders = [];
+            foreach (string path in composition.Layers.OfType<PromoVideoLayer>().Select(layer => layer.Path).Distinct())
+                decoders[path] = await PromoVideoDecoder.FindAsync(FfprobePath, path, cancellationToken).ConfigureAwait(false);
+            using var videos = new PromoVideoStreams(ffmpegPath, composition.Fps, decoders);
             PromoVideoLayer[] videoLayers = [.. composition.Layers.OfType<PromoVideoLayer>()];
 
             for (int index = 0; index < composition.FrameCount; index++)

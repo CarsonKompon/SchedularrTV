@@ -626,6 +626,15 @@ public static class SchedulerConfigLoader
                     {
                         errors.Add($"{layerScope}: video volume must be between 0 and 1, and its start points zero or more.");
                     }
+                    if (layer.Video is { ChromaKey: true } key)
+                    {
+                        if (key.KeyColor is not { Length: 7 } || !IsColor(key.KeyColor))
+                            errors.Add($"{layerScope}: video.key_color must be a six-digit hex colour such as #00FF00.");
+                        if (!double.IsFinite(key.KeyTolerance) || key.KeyTolerance is < 0.01 or > 1)
+                            errors.Add($"{layerScope}: video.key_tolerance must be between 0.01 and 1.");
+                        if (!double.IsFinite(key.KeySoftness) || key.KeySoftness is < 0 or > 1)
+                            errors.Add($"{layerScope}: video.key_softness must be between 0 and 1.");
+                    }
                 }
 
                 if (layer.VariableImageShow is { } selector && !GeneratedImageSelectors.TryParse(selector, out _, out _))

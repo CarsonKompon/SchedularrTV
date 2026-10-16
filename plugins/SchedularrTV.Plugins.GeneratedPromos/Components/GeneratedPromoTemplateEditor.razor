@@ -755,6 +755,31 @@
                             <input type="checkbox" checked="@video.IncludeAudio" @onchange="e => Set(() => video.IncludeAudio = e.Value is true)" />
                             <span>Play its sound</span>
                         </label>
+                        <p class="hint">Transparency is automatic for alpha-capable videos, including ProRes 4444 MOV and VP8/VP9 WebM.</p>
+                        <label class="check">
+                            <input type="checkbox" checked="@video.ChromaKey" @onchange="e => Set(() => video.ChromaKey = e.Value is true)" />
+                            <span>Chroma key (remove a background colour)</span>
+                        </label>
+                        @if (video.ChromaKey)
+                        {
+                            <label class="field">
+                                <span>Key colour</span>
+                                <input type="color" value="@video.KeyColor" @onchange="e => Set(() => video.KeyColor = Text(e))" />
+                            </label>
+                            <div class="grid grid-2">
+                                <label class="field">
+                                    <span>Tolerance: @($"{video.KeyTolerance:P0}")</span>
+                                    <input type="range" min="1" max="100" value="@Number(video.KeyTolerance * 100)"
+                                           @onchange="e => SetNumber(e, value => video.KeyTolerance = Math.Clamp(value / 100, 0.01, 1))" />
+                                </label>
+                                <label class="field">
+                                    <span>Edge softness: @($"{video.KeySoftness:P0}")</span>
+                                    <input type="range" min="0" max="100" value="@Number(video.KeySoftness * 100)"
+                                           @onchange="e => SetNumber(e, value => video.KeySoftness = Math.Clamp(value / 100, 0, 1))" />
+                                </label>
+                            </div>
+                            <p class="hint">Increase tolerance to remove more of the background; edge softness blends the cutout into layers underneath.</p>
+                        }
                         @if (video.IncludeAudio)
                         {
                             <div class="grid grid-2">

@@ -749,7 +749,11 @@ public static partial class GeneratedPromoResolver
                 SourceStart = video.Start,
                 StartsWithLayer = (layer.Video?.Playback ?? GeneratedVideoPlayback.WithLayer) == GeneratedVideoPlayback.WithLayer,
                 Loop = layer.Video?.Loop == true,
-                Fill = layer.Video?.Fill == true
+                Fill = layer.Video?.Fill == true,
+                ChromaKey = layer.Video?.ChromaKey == true,
+                KeyColor = layer.Video?.KeyColor ?? "#00FF00",
+                KeyTolerance = layer.Video?.KeyTolerance ?? 0.2,
+                KeySoftness = layer.Video?.KeySoftness ?? 0.1
             },
             var kind when (kind is GeneratedLayerKind.Text or GeneratedLayerKind.UpNext || GeneratedPromoKinds.IsShowLayer(kind))
                 && lines.Any(line => line.Length > 0) => new PromoTextLayer

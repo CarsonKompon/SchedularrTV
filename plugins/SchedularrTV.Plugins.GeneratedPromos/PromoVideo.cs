@@ -21,6 +21,11 @@ public sealed record PromoVideoLayer : PromoLayer
     /// <summary>Fills the box, cropping the video; otherwise the whole video fits inside it.</summary>
     public bool Fill { get; init; }
 
+    public bool ChromaKey { get; init; }
+    public string KeyColor { get; init; } = "#00FF00";
+    public double KeyTolerance { get; init; } = 0.2;
+    public double KeySoftness { get; init; } = 0.1;
+
     /// <summary>How big its frames are decoded: the largest the box gets (through its keyframes), in whole even pixels.</summary>
     public (int Width, int Height) FrameSize
     {
@@ -50,9 +55,19 @@ public sealed record PromoVideoLayer : PromoLayer
     {
         (int width, int height) = FrameSize;
         string size = $"{width}:{height}";
-        return Fill
-            ? $"fps={fps},scale={size}:force_original_aspect_ratio=increase,crop={size},format=bgra"
-            : $"fps={fps},scale={size}:force_original_aspect_ratio=decrease,pad={size}:(ow-iw)/2:(oh-ih)/2:color=black@0,format=bgra";
+        // Key at source resolution, before scaling mixes the background into foreground edges.
+        // An alpha-capable format must also be selected BEFORE padding, even for opaque sources.
+        string filter = $"fps={fps},format=rgba";
+        if (ChromaKey)
+        {
+            SKColor color = SKColor.TryParse(KeyColor, out SKColor parsed) ? parsed : SKColors.Lime;
+            double tolerance = double.IsFinite(KeyTolerance) ? Math.Clamp(KeyTolerance, 0.01, 1) : 0.2;
+            double softness = double.IsFinite(KeySoftness) ? Math.Clamp(KeySoftness, 0, 1) : 0.1;
+            filter += FormattableString.Invariant($",colorkey=0x{color.Red:X2}{color.Green:X2}{color.Blue:X2}:{tolerance:0.######}:{softness:0.######}");
+        }
+        return filter + (Fill
+            ? $",scale={size}:force_original_aspect_ratio=increase,crop={size},format=bgra"
+            : $",scale={size}:force_original_aspect_ratio=decrease,pad={size}:(ow-iw)/2:(oh-ih)/2:color=black@0,format=bgra");
     }
 }
 
@@ -74,7 +89,7 @@ public sealed class FixedVideoFrames(IReadOnlyDictionary<PromoVideoLayer, SKImag
 /// Video layers' frames for a render, read in order from one ffmpeg per layer: the renderer asks for frames forwards
 /// only, so each video is decoded once, straight through. A video that runs out holds its last frame.
 /// </summary>
-public sealed class PromoVideoStreams(string ffmpegPath, int fps) : IPromoVideoFrames, IDisposable
+public sealed class PromoVideoStreams(string ffmpegPath, int fps, IReadOnlyDictionary<string, string?>? decoders = null) : IPromoVideoFrames, IDisposable
 {
     private sealed class Reader(Process process, SKImageInfo info) : IDisposable
     {
@@ -168,6 +183,7 @@ public sealed class PromoVideoStreams(string ffmpegPath, int fps) : IPromoVideoF
         };
         List<string> arguments = ["-hide_banner", "-loglevel", "error"];
         if (layer.Loop) arguments.AddRange(["-stream_loop", "-1"]);
+        if (decoders?.GetValueOrDefault(layer.Path) is { } decoder) arguments.AddRange(["-c:v", decoder]);
         arguments.AddRange(["-ss", Seconds(layer.SourceStart), "-i", layer.Path, "-an", "-vf", layer.SizeFilter(fps),
             "-f", "rawvideo", "-pix_fmt", "bgra", "-"]);
         foreach (string argument in arguments)

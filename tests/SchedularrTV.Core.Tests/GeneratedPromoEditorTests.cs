@@ -290,6 +290,74 @@ public sealed class GeneratedPromoEditorTests : IDisposable
             return output.ToHtmlString();
         });
 
+    [Theory]
+    [InlineData("prores_ks", "yuva444p10le", ".mov", false)]
+    [InlineData("qtrle", "argb", ".mov", false)]
+    [InlineData("libvpx-vp9", "yuva420p", ".webm", false)]
+    [InlineData("libvpx", "yuva420p", ".webm", false)]
+    [InlineData("libx264", "yuv420p", ".mp4", true)]
+    public async Task Video_layer_alpha_and_keying_match_in_preview_and_render(string codec, string pixelFormat, string extension, bool key)
+    {
+        Directory.CreateDirectory(_directory);
+        string source = Path.Combine(_directory, "source.png");
+        using (var bitmap = new SKBitmap(160, 90))
+        {
+            bitmap.Erase(key ? SKColors.Lime : SKColors.Transparent);
+            using (var canvas = new SKCanvas(bitmap))
+            using (var paint = new SKPaint { Color = SKColors.Red })
+                canvas.DrawRect(60, 25, 40, 40, paint);
+            using SKData png = bitmap.Encode(SKEncodedImageFormat.Png, 100);
+            using Stream file = File.Create(source);
+            png.SaveTo(file);
+        }
+        string video = Path.Combine(_directory, "source" + extension);
+        List<string> arguments = ["-hide_banner", "-loglevel", "error", "-loop", "1", "-i", source, "-t", "1", "-r", "10", "-c:v", codec, "-pix_fmt", pixelFormat];
+        if (codec == "prores_ks") arguments.AddRange(["-profile:v", "4"]);
+        if (codec == "libvpx") arguments.AddRange(["-auto-alt-ref", "0"]);
+        arguments.Add(video);
+        await Run("ffmpeg", arguments.ToArray());
+
+        using ServiceProvider services = Services();
+        var preview = services.GetRequiredService<GeneratedPromoPreview>();
+        var layer = new GeneratedLayer
+        {
+            Kind = GeneratedLayerKind.Video, Path = video, Width = 160, Height = 120,
+            TransitionIn = GeneratedTransition.None, TransitionOut = GeneratedTransition.None,
+            Video = new() { ChromaKey = key }
+        };
+        var template = new GeneratedPromoTemplate
+        {
+            Name = "Alpha", Width = 160, Height = 120, Fps = 10, Duration = TimeSpan.FromSeconds(1), BackgroundColor = "#0000FF",
+            Layers = [new() { Kind = GeneratedLayerKind.UpNext, Opacity = 0 }, layer]
+        };
+        UpNextListing[] listings = [new("Show", Noon)];
+        using SKBitmap still = SKBitmap.Decode(await preview.RenderStillAsync(template, "Channel", listings, TimeZoneInfo.Utc, TimeSpan.FromSeconds(0.5), 160));
+        AssertComposite(still);
+
+        GeneratedPromoRender render = await preview.RenderVideoAsync(template, "Channel", listings, TimeZoneInfo.Utc);
+        string renderedFrame = Path.Combine(_directory, "rendered.png");
+        await Run("ffmpeg", "-hide_banner", "-loglevel", "error", "-ss", "0.5", "-i", render.Path, "-frames:v", "1", renderedFrame);
+        using SKBitmap final = SKBitmap.Decode(renderedFrame);
+        AssertComposite(final);
+
+        if (key)
+        {
+            layer.Video!.ChromaKey = false;
+            using SKBitmap unkeyed = SKBitmap.Decode(await preview.RenderStillAsync(template, "Channel", listings, TimeZoneInfo.Utc, TimeSpan.FromSeconds(0.5), 160));
+            Assert.True(unkeyed.GetPixel(20, 60).Green > 200, "Changing key settings must invalidate cached preview frames.");
+        }
+
+        static void AssertComposite(SKBitmap image)
+        {
+            SKColor background = image.GetPixel(20, 60);
+            SKColor foreground = image.GetPixel(80, 60);
+            SKColor padding = image.GetPixel(80, 5);
+            Assert.True(background.Blue > 200 && background.Green < 50, $"Background should show through: {background}");
+            Assert.True(foreground.Red > 200 && foreground.Blue < 50, $"Foreground should remain: {foreground}");
+            Assert.True(padding.Blue > 200 && padding.Red < 50, $"Fit padding should be transparent: {padding}");
+        }
+    }
+
     private ServiceProvider Services()
     {
         var services = new ServiceCollection();

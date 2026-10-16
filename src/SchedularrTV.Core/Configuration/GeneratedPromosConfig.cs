@@ -109,6 +109,17 @@ public sealed class GeneratedVideoOptions
     /// <summary>Fills the box (cropping the video) rather than fitting inside it.</summary>
     public bool Fill { get; set; }
 
+    /// <summary>Removes a solid background colour from this video.</summary>
+    public bool ChromaKey { get; set; }
+
+    public string KeyColor { get; set; } = "#00FF00";
+
+    /// <summary>Colour matching distance, from 0.01 to 1.</summary>
+    public double KeyTolerance { get; set; } = 0.2;
+
+    /// <summary>Softness of the cutout edges, from 0 to 1.</summary>
+    public double KeySoftness { get; set; } = 0.1;
+
     /// <summary>Plays the video's sound while the layer shows, as loud as the layer is opaque.</summary>
     public bool IncludeAudio { get; set; }
 

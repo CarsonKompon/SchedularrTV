@@ -145,9 +145,25 @@ public sealed class GeneratedPromoVideoTests : IDisposable
         Assert.Contains(SchedulerConfigLoader.Validate(config).Errors, error => error.Contains("video.episode"));
 
         layer.Video.Episode = "next";
+        layer.Video.ChromaKey = true;
+        layer.Video.KeyColor = "#123456";
+        layer.Video.KeyTolerance = 0.35;
+        layer.Video.KeySoftness = 0.25;
         Assert.DoesNotContain(SchedulerConfigLoader.Validate(config).Errors, error => error.Contains("Empty"));
         GeneratedLayer loaded = SchedulerConfigLoader.Parse(SchedulerConfigLoader.Serialize(config)).Channels[0].GeneratedPromos!.Templates[0].Layers[1];
         Assert.Equal(GeneratedLayerKind.Video, loaded.Kind);
         Assert.Equal("next", loaded.Video!.Episode);
+        Assert.True(loaded.Video.ChromaKey);
+        Assert.Equal("#123456", loaded.Video.KeyColor);
+        Assert.Equal(0.35, loaded.Video.KeyTolerance);
+        Assert.Equal(0.25, loaded.Video.KeySoftness);
+
+        layer.Video.KeyColor = "green,invalid";
+        layer.Video.KeyTolerance = double.NaN;
+        layer.Video.KeySoftness = -1;
+        var errors = SchedulerConfigLoader.Validate(config).Errors;
+        Assert.Contains(errors, error => error.Contains("video.key_color"));
+        Assert.Contains(errors, error => error.Contains("video.key_tolerance"));
+        Assert.Contains(errors, error => error.Contains("video.key_softness"));
     }
 }

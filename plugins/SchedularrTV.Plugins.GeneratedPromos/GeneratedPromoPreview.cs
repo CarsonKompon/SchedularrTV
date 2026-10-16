@@ -197,7 +197,8 @@ public sealed class GeneratedPromoPreview(
         int frame = (int)Math.Round(playback.TotalSeconds * Math.Max(1, fps));
         double second = (video.SourceStart + TimeSpan.FromSeconds(frame / (double)Math.Max(1, fps))).TotalSeconds;
         (int width, int height) = video.FrameSize;
-        string key = $"{Path.GetFullPath(video.Path)}|{File.GetLastWriteTimeUtc(video.Path).Ticks}|{second.ToString("0.###", CultureInfo.InvariantCulture)}|{width}x{height}|{video.Fill}|layer";
+        string filter = video.SizeFilter(Math.Max(1, fps));
+        string key = $"{Path.GetFullPath(video.Path)}|{File.GetLastWriteTimeUtc(video.Path).Ticks}|{second.ToString("0.###", CultureInfo.InvariantCulture)}|{width}x{height}|{filter}|layer-alpha-v2";
         if (_frames.TryGetValue(key, out string? cached) && (cached is null || File.Exists(cached)))
         {
             if (cached is not null) Used(cached);
@@ -208,15 +209,15 @@ public sealed class GeneratedPromoPreview(
         Directory.CreateDirectory(directory);
         string output = Path.Combine(directory, Hash(key) + ".png");
         TrimSoon();
-        string filter = video.SizeFilter(Math.Max(1, fps));
+        string? decoder = await PromoVideoDecoder.FindAsync(options.Value.FfprobePath, video.Path, cancellationToken).ConfigureAwait(false);
         // Past the end of the video (it would hold its last frame), its opening frame stands in.
-        string? result = await ExtractFilteredAsync(video.Path, second, filter, output, cancellationToken).ConfigureAwait(false)
-            ?? await ExtractFilteredAsync(video.Path, video.SourceStart.TotalSeconds, filter, output, cancellationToken).ConfigureAwait(false);
+        string? result = await ExtractFilteredAsync(video.Path, second, filter, output, cancellationToken, decoder).ConfigureAwait(false)
+            ?? await ExtractFilteredAsync(video.Path, video.SourceStart.TotalSeconds, filter, output, cancellationToken, decoder).ConfigureAwait(false);
         _frames[key] = result;
         return result;
     }
 
-    private async Task<string?> ExtractFilteredAsync(string video, double second, string filter, string output, CancellationToken cancellationToken)
+    private async Task<string?> ExtractFilteredAsync(string video, double second, string filter, string output, CancellationToken cancellationToken, string? decoder = null)
     {
         var info = new ProcessStartInfo(options.Value.FfmpegPath)
         {
@@ -224,6 +225,11 @@ public sealed class GeneratedPromoPreview(
             UseShellExecute = false,
             CreateNoWindow = true
         };
+        if (decoder is not null)
+        {
+            info.ArgumentList.Add("-c:v");
+            info.ArgumentList.Add(decoder);
+        }
         foreach (string argument in (string[])["-hide_banner", "-loglevel", "error", "-y",
                      "-ss", Math.Max(0, second).ToString("0.###", CultureInfo.InvariantCulture), "-i", video, "-frames:v", "1", "-an", "-vf", filter, output])
         {

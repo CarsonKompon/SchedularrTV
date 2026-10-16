@@ -103,6 +103,18 @@ In YAML a pin is `corners:` on a layer or keyframe, with `top_left_x`, `top_left
 
 Video layers move, resize, turn, fade, group and keyframe like any other layer, and can be placed and timed per background.
 
+**Transparent video** works automatically: use MOV with ProRes 4444 or QuickTime Animation (QTRLE), or WebM with VP8/VP9 alpha. The file must actually contain an alpha channel; an ordinary MOV is not necessarily transparent. WebM decoding uses FFmpeg's `libvpx` / `libvpx-vp9` decoders, which must be included in the installed FFmpeg build. Transparent areas reveal the background and layers underneath in both the canvas preview and rendered promo.
+
+For greenscreen footage, enable **Chroma key (remove a background colour)** on the video layer. Choose the **Key colour** (green by default), increase **Tolerance** to remove more of the background, and adjust **Edge softness** to blend the cutout's edges. Keying happens before resizing. These settings are saved under the layer's `video` section:
+
+```yaml
+video:
+  chroma_key: true
+  key_color: "#00FF00"
+  key_tolerance: 0.2 # 0.01–1
+  key_softness: 0.1 # 0–1
+```
+
 - **Starts playing**: when the layer appears (it waits for its entrance), or with the promo (so it's already playing when it appears).
 - **Fill the box** crops the video to fill its box; otherwise the whole video fits inside, with clear space around it.
 - **Loop** starts it over when it runs out; otherwise it stays on its last frame.
