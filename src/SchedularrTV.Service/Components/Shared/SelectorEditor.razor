@@ -34,6 +34,15 @@
         </label>
     </div>
 
+    @if (Selector.Order == PlaybackOrder.Drop)
+    {
+        <DropEditor Drop="DropSettings" Title="New episodes drop for every show here (a title can set its own below)" Changed="OnDropChanged" />
+    }
+    else if (Selector.Include.Any(include => include.Order == PlaybackOrder.Drop))
+    {
+        <p class="hint">Some titles drop new episodes on their own schedule; the rest play in this order.</p>
+    }
+
     <label class="field">
         <span>How titles take turns</span>
         <select value="@(Selector.TitleOrder?.ToString() ?? "")" @onchange="OnTitleOrderChanged">
@@ -241,8 +250,17 @@
     {
         string value = e.Value?.ToString() ?? "";
         Selector.Order = string.IsNullOrEmpty(value) ? null : Enum.Parse<PlaybackOrder>(value);
+        if (Selector.Order != PlaybackOrder.Drop && !Selector.Include.Any(include => include.Order == PlaybackOrder.Drop && include.Drop is null))
+        {
+            // Nothing uses the collection's cadence any more; don't leave it behind in the YAML.
+            Selector.Drop = null;
+        }
         await Changed.InvokeAsync();
     }
+
+    private DropConfig DropSettings => Selector.Drop ??= new DropConfig();
+
+    private Task OnDropChanged() => Changed.InvokeAsync();
 
     private async Task OnTitleOrderChanged(ChangeEventArgs e)
     {
@@ -273,6 +291,8 @@
 
     private string TitleOrderHint() => Selector.TitleOrder is not null
         ? "Titles take turns; the order above applies within each title."
+        : Selector.Order == PlaybackOrder.Drop || Selector.Include.Any(include => include.Order == PlaybackOrder.Drop)
+            ? "Without rotation, shows come up in proportion to how many episodes each has out; a freshly dropped episode always goes first."
         : Inherits
             ? "Taken from the collection. Set it here to override that for this channel or block."
             : "Without rotation, \"chronological\" sorts every episode of every show together, so the oldest show plays for hours before the next one starts.";
@@ -285,6 +305,7 @@
         PlaybackOrder.Random => "Random (repeats allowed)",
         PlaybackOrder.Shuffle => "Shuffle (no repeats until exhausted)",
         PlaybackOrder.SeasonEpisode => "Season, Episode",
+        PlaybackOrder.Drop => "Drop (new episodes on a schedule, repeats between)",
         _ => order.ToString()
     };
 }

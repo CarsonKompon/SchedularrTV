@@ -31,8 +31,20 @@ public sealed class PlaybackState
 
     public Dictionary<string, long>? TitleCredits { get; set; }
 
+    /// <summary>For <see cref="PlaybackOrder.Drop"/>: how many episodes, in release order, have had their first (new) airing.</summary>
+    public int? Premiered { get; set; }
+
+    /// <summary>For <see cref="PlaybackOrder.Drop"/>: the last episode that premiered, so a changed pool resumes after it.</summary>
+    public string? LastPremieredId { get; set; }
+
+    /// <summary>For <see cref="PlaybackOrder.Drop"/> without a configured start: when drops began.</summary>
+    public DateTimeOffset? DropOrigin { get; set; }
+
     public PlaybackState Clone() => new()
     {
+        Premiered = Premiered,
+        LastPremieredId = LastPremieredId,
+        DropOrigin = DropOrigin,
         Key = Key,
         Cursor = Cursor,
         Bag = [.. Bag],

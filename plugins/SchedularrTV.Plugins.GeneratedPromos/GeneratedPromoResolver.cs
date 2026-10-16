@@ -83,6 +83,8 @@ public static partial class GeneratedPromoResolver
         GeneratedPromoType.Eventually => "Don't miss",
         GeneratedPromoType.YoureWatching => "You're watching",
         GeneratedPromoType.BackToTheShow => "Now, back to",
+        GeneratedPromoType.NewEpisode => "Don't miss an all-new",
+        GeneratedPromoType.RightBack => "We'll be right back with more",
         _ => "Coming up next..."
     };
 
@@ -341,6 +343,7 @@ public static partial class GeneratedPromoResolver
         ("{day}", "Today, Tonight, Tomorrow or the weekday"),
         ("{when}", "day and time, e.g. Tonight at 8:30"),
         ("{index}", "1 for the first show, 2 for the next…"),
+        ("{new}", "NEW for a new episode (a drop's first airing), else blank"),
         ("{channel}", "channel name"),
         ("{type}", "up_next, now_playing…"),
         ("{duration}", "promo length in seconds"),
@@ -361,6 +364,7 @@ public static partial class GeneratedPromoResolver
         yield return ("day", UpNextPromo.When(show.Start, airsAt, zone, day: true, time: false));
         yield return ("when", UpNextPromo.When(show.Start, airsAt, zone, day: true, time: true));
         yield return ("index", Invariant(index + 1));
+        yield return ("new", show.IsNew ? "NEW" : string.Empty);
     }
 
     private static string Fill(string text, IReadOnlyDictionary<string, string> values) =>
@@ -649,11 +653,15 @@ public static partial class GeneratedPromoResolver
         UpNextListing show = listings[0];
         string pre = preMessage is null ? DefaultPreMessage(type) : preMessage.Trim();
         string when = UpNextPromo.When(show.Start, airsAt, zone, day: true, time: true);
+        // A new episode is said to be one, unless the opener already says so (New Episode's does).
+        string title = show.IsNew && type != GeneratedPromoType.NewEpisode && !pre.Contains("new", StringComparison.OrdinalIgnoreCase)
+            ? $"{SpokenNew} {UpNextPromo.SpokenTitle(show.Title)}"
+            : UpNextPromo.SpokenTitle(show.Title);
         string body = (type switch
         {
-            GeneratedPromoType.ComingUp => $"{pre} {(pre.Length == 0 ? when : when.ToLowerInvariant())}, {UpNextPromo.SpokenTitle(show.Title)}",
-            GeneratedPromoType.Eventually => $"{pre} {UpNextPromo.SpokenTitle(show.Title)}, {when}",
-            _ => $"{pre} {UpNextPromo.SpokenTitle(show.Title)}"
+            GeneratedPromoType.ComingUp => $"{pre} {(pre.Length == 0 ? when : when.ToLowerInvariant())}, {title}",
+            GeneratedPromoType.Eventually or GeneratedPromoType.NewEpisode => $"{pre} {title}, {when}",
+            _ => $"{pre} {title}"
         }).Trim();
         return string.Join(' ', new[] { UpNextPromo.Sentence(body, '!'), postMessage }.Where(part => !string.IsNullOrWhiteSpace(part)));
     }
@@ -678,7 +686,7 @@ public static partial class GeneratedPromoResolver
             GeneratedLayerKind.UpNext => UpNextLines([.. listings
                 .Skip(layer.UpNext?.Offset ?? 0)
                 .Take(layer.UpNext?.ShowsAhead ?? 1)], layer.UpNext, zone, channelName),
-            GeneratedLayerKind.Text => (Tokens(layer.Text, channelName) ?? string.Empty).Replace("\r\n", "\n").Split('\n'),
+            GeneratedLayerKind.Text => NewTokens(Tokens(layer.Text, channelName) ?? string.Empty, listings).Replace("\r\n", "\n").Split('\n'),
             _ when GeneratedPromoKinds.IsShowLayer(layer.Kind) => ShowLines(layer, listings[0], zone, airsAt),
             _ => []
         };
@@ -721,12 +729,32 @@ public static partial class GeneratedPromoResolver
     public static GeneratedShowOptions DefaultShowOptions(GeneratedLayerKind kind) => kind switch
     {
         GeneratedLayerKind.ComingUp => new GeneratedShowOptions { Time = true },
-        GeneratedLayerKind.Eventually => new GeneratedShowOptions { Day = true, Time = true },
+        GeneratedLayerKind.Eventually or GeneratedLayerKind.NewEpisode => new GeneratedShowOptions { Day = true, Time = true },
         _ => new GeneratedShowOptions()
     };
 
     private static string? Tokens(string? text, string channelName) =>
         text?.Replace("{channel}", channelName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// <c>{new}</c> reads "NEW" and <c>{new_episode}</c> "NEW EPISODE" when the promoted episode is a new one (a drop's
+    /// first airing), and nothing otherwise, so one template can flag new episodes.
+    /// </summary>
+    public static string NewTokens(string text, IReadOnlyList<UpNextListing> listings)
+    {
+        if (!text.Contains("{new", StringComparison.OrdinalIgnoreCase))
+        {
+            return text;
+        }
+
+        bool fresh = listings.Count > 0 && listings[0].IsNew;
+        return text
+            .Replace("{new_episode}", fresh ? "NEW EPISODE" : string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("{new}", fresh ? "NEW" : string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>How a new episode is introduced when a promo names it aloud.</summary>
+    internal const string SpokenNew = "an all-new";
 
     /// <param name="pose">Where it's placed: the layer itself, or the chosen background's placement of it.</param>
     /// <param name="colour">Its colour: the layer's, or the chosen background's for it.</param>
@@ -873,6 +901,8 @@ public static class GeneratedPromoTemplates
             GeneratedPromoType.ComingUp => ("Coming Up", "COMING UP", 8, new GeneratedShowOptions { Day = true, Time = true }),
             GeneratedPromoType.YoureWatching => ("You're Watching", "YOU'RE WATCHING", 5, new GeneratedShowOptions()),
             GeneratedPromoType.BackToTheShow => ("Back to the Show", "NOW, BACK TO", 5, new GeneratedShowOptions()),
+            GeneratedPromoType.NewEpisode => ("New Episode", "ALL-NEW EPISODE", 10, new GeneratedShowOptions { Day = true, Time = true }),
+            GeneratedPromoType.RightBack => ("We'll Be Right Back", "WE'LL BE RIGHT BACK", 5, new GeneratedShowOptions()),
             _ => ("Eventually", "DON'T MISS", 10, new GeneratedShowOptions { Day = true, Time = true })
         };
         TimeSpan leave = TimeSpan.FromSeconds(seconds - 0.6);
@@ -887,7 +917,7 @@ public static class GeneratedPromoTemplates
             {
                 Provider = DefaultVoiceProvider,
                 Voice = voice,
-                PostMessages = type is GeneratedPromoType.ComingUp or GeneratedPromoType.Eventually ? ["Only on {channel}!"] : []
+                PostMessages = type is GeneratedPromoType.ComingUp or GeneratedPromoType.Eventually or GeneratedPromoType.NewEpisode ? ["Only on {channel}!"] : []
             },
             Layers =
             [

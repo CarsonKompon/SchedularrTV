@@ -56,7 +56,17 @@ internal sealed class PromoBreakContributor(IPromoSpotSubstitute? generated) : I
         foreach (ContentSelector selector in selectors)
         {
             MediaSequence? sequence = await session.GetSequenceAsync(selector, "shared", cancellationToken).ConfigureAwait(false);
-            MediaItem? sample = sequence?.PreviewOrder(1).FirstOrDefault();
+            if (sequence is null)
+            {
+                continue;
+            }
+
+            // Drops are judged at the moment the predicted programme would start.
+            DateTimeOffset? taking = sequence.At;
+            sequence.At = at;
+            MediaItem? sample = sequence.PreviewOrder(1).FirstOrDefault();
+            bool isNew = sample is not null && sequence.WouldPremiere(sample);
+            sequence.At = taking;
             if (sample is null)
             {
                 continue;
@@ -80,7 +90,7 @@ internal sealed class PromoBreakContributor(IPromoSpotSubstitute? generated) : I
 
             if (ids.Count > 0)
             {
-                return new PromoTarget(at, ids, sample.SeriesName ?? fallbackName);
+                return new PromoTarget(at, ids, sample.SeriesName ?? fallbackName) { IsNew = isNew };
             }
         }
 
@@ -116,6 +126,8 @@ internal sealed class PromoBreakPlan(
     private string? _generatedYoureWatching;
     private MediaItem? _backToTheShow;
     private string? _generatedBackToTheShow;
+    private MediaItem? _rightBack;
+    private string? _generatedRightBack;
     private PromoTarget? _upcoming;
 
     private ScheduleBuildSession Session => context.Session;
@@ -155,14 +167,24 @@ internal sealed class PromoBreakPlan(
             // The same show is on either side, so the break is bookended rather than handed over.
             ScheduleEntry? playing = Entries.LastOrDefault(IsShow);
             List<string> showIds = ShowIdsOf(playing?.Item);
+            bool watchingNew = playing?.IsPremiere == true;
             TimeSpan free = to - from;
 
-            _youreWatching = await ReserveForShowAsync(promoConfig.YoureWatching, showIds, playing?.Start, free, cancellationToken)
+            // "We'll be right back" (generated only) opens the break; You're Watching then waits for the return.
+            if (promoConfig.Enabled && showIds.Count > 0
+                && generated?.Choose(context, GeneratedPromoType.RightBack, false, free, from, watchingNew) is { } rightBackTemplate)
+            {
+                _rightBack = generated.Placeholder(rightBackTemplate);
+                _generatedRightBack = rightBackTemplate.Name;
+                free -= _rightBack.Duration;
+            }
+
+            _youreWatching = await ReserveForShowAsync(promoConfig.YoureWatching, showIds, playing?.Start, free, cancellationToken, watchingNew)
                 .ConfigureAwait(false);
 
             // A generated one can stand in for (or mix with) the library clip, like the other spots.
             if (promoConfig.Enabled && promoConfig.YoureWatching.Enabled && showIds.Count > 0
-                && generated?.Choose(context, GeneratedPromoType.YoureWatching, _youreWatching is not null, free, from) is { } watchingTemplate)
+                && generated?.Choose(context, GeneratedPromoType.YoureWatching, _youreWatching is not null, free, from, watchingNew) is { } watchingTemplate)
             {
                 _youreWatching = generated.Placeholder(watchingTemplate);
                 _generatedYoureWatching = watchingTemplate.Name;
@@ -170,11 +192,11 @@ internal sealed class PromoBreakPlan(
 
             free -= _youreWatching?.Duration ?? TimeSpan.Zero;
 
-            _backToTheShow = await ReserveForShowAsync(promoConfig.BackToTheShow, showIds, playing?.Start, free, cancellationToken)
+            _backToTheShow = await ReserveForShowAsync(promoConfig.BackToTheShow, showIds, playing?.Start, free, cancellationToken, watchingNew)
                 .ConfigureAwait(false);
 
             if (promoConfig.Enabled && promoConfig.BackToTheShow.Enabled && showIds.Count > 0
-                && generated?.Choose(context, GeneratedPromoType.BackToTheShow, _backToTheShow is not null, free, to) is { } backTemplate)
+                && generated?.Choose(context, GeneratedPromoType.BackToTheShow, _backToTheShow is not null, free, to, watchingNew) is { } backTemplate)
             {
                 _backToTheShow = generated.Placeholder(backTemplate);
                 _generatedBackToTheShow = backTemplate.Name;
@@ -205,7 +227,7 @@ internal sealed class PromoBreakPlan(
 
             if (promoConfig.NowPlaying.Enabled && _upcoming is not null
                 && !(promoConfig.NowPlaying.SkipWhenSameSeries && ContinuesSameSeries(_upcoming.ShowIds))
-                && generated?.Choose(context, GeneratedPromoType.NowPlaying, _nowPlaying is not null, free, to) is { } identTemplate)
+                && generated?.Choose(context, GeneratedPromoType.NowPlaying, _nowPlaying is not null, free, to, _upcoming.IsNew) is { } identTemplate)
             {
                 _nowPlaying = generated.Placeholder(identTemplate);
                 _generatedNowPlaying = identTemplate.Name;
@@ -219,11 +241,12 @@ internal sealed class PromoBreakPlan(
             {
                 _thisHasBeen = await ReserveSignOffAsync(free, cancellationToken).ConfigureAwait(false);
 
-                List<string> finishedIds = ShowIdsOf(Entries.LastOrDefault(IsShow)?.Item);
+                ScheduleEntry? finishedShow = Entries.LastOrDefault(IsShow);
+                List<string> finishedIds = ShowIdsOf(finishedShow?.Item);
                 bool sameShow = promoConfig.ThisHasBeen.SkipWhenSameSeries && _upcoming is not null
                     && _upcoming.ShowIds.Intersect(finishedIds, StringComparer.OrdinalIgnoreCase).Any();
                 if (promoConfig.ThisHasBeen.Enabled && finishedIds.Count > 0 && !sameShow
-                    && generated?.Choose(context, GeneratedPromoType.ThisHasBeen, _thisHasBeen is not null, free, from) is { } signOffTemplate)
+                    && generated?.Choose(context, GeneratedPromoType.ThisHasBeen, _thisHasBeen is not null, free, from, finishedShow?.IsPremiere == true) is { } signOffTemplate)
                 {
                     _thisHasBeen = generated.Placeholder(signOffTemplate);
                     _generatedThisHasBeen = signOffTemplate.Name;
@@ -234,6 +257,22 @@ internal sealed class PromoBreakPlan(
         Opener = BuildOpener();
 
         List<ScheduleEntry> tail = [];
+        if (_rightBack is not null && _youreWatching is not null)
+        {
+            // The break opened with "we'll be right back", so You're Watching greets the return instead.
+            tail.Add(new ScheduleEntry
+            {
+                Start = to,
+                Duration = _youreWatching.Duration,
+                Kind = ScheduleEntryKind.YoureWatchingPromo,
+                Item = _youreWatching,
+                Source = _generatedYoureWatching is null ? "youre watching" : "generated youre watching",
+                BlockName = Block?.Name,
+                PromoTargetId = _youreWatching.Attributes.TryGetValue("show_id", out string? watching) ? watching : _youreWatching.SeriesId,
+                GeneratedTemplate = _generatedYoureWatching
+            });
+        }
+
         if (_upNext is not null)
         {
             if (_mixUpNext)
@@ -330,6 +369,25 @@ internal sealed class PromoBreakPlan(
             return null;
         }
 
+        // Shows that drop new episodes get their own trailer: "an all-new episode, Monday at 8".
+        if (generated is not null
+            && await generated.NewEpisodeAsync(context, promoConfig, cursor, fillTo - cursor, cancellationToken).ConfigureAwait(false)
+                is { } fresh)
+        {
+            MediaItem placeholder = generated.Placeholder(fresh.Template);
+            return (new ScheduleEntry
+            {
+                Start = cursor,
+                Duration = placeholder.Duration,
+                Kind = ScheduleEntryKind.NewEpisodePromo,
+                Item = placeholder,
+                Source = "generated new episode",
+                BlockName = Block?.Name,
+                GeneratedTemplate = fresh.Template.Name,
+                GeneratedTargetAt = fresh.Expected
+            }, "new-episode-slot");
+        }
+
         MediaItem? eventually = await new PromoSelector(Session, promoConfig, promoBaseTags)
             .SelectEventuallyAsync(cursor, fillTo - cursor, context.BreakSeed, cancellationToken)
             .ConfigureAwait(false);
@@ -369,6 +427,21 @@ internal sealed class PromoBreakPlan(
 
     private ScheduleEntry? BuildOpener()
     {
+        if (_rightBack is not null)
+        {
+            return new ScheduleEntry
+            {
+                Start = context.From,
+                Duration = _rightBack.Duration,
+                Kind = ScheduleEntryKind.RightBackPromo,
+                Item = _rightBack,
+                Source = "generated right back",
+                BlockName = Block?.Name,
+                PromoTargetId = Entries.LastOrDefault(IsShow)?.Item?.SeriesName,
+                GeneratedTemplate = _generatedRightBack
+            };
+        }
+
         MediaItem? opener = _thisHasBeen ?? _youreWatching;
         if (opener is null)
         {
@@ -411,7 +484,7 @@ internal sealed class PromoBreakPlan(
 
         return promoConfig.UpNext.Enabled && _upcoming is not null
             && !(promoConfig.UpNext.SkipWhenSameSeries && ContinuesSameSeries(_upcoming.ShowIds))
-            && generated?.Choose(context, GeneratedPromoType.UpNext, clip is not null, free, context.To) is { } template
+            && generated?.Choose(context, GeneratedPromoType.UpNext, clip is not null, free, context.To, _upcoming.IsNew) is { } template
             ? (generated.Placeholder(template), template.Name)
             : (clip, null);
     }
@@ -475,7 +548,7 @@ internal sealed class PromoBreakPlan(
         }
 
         return await new PromoSelector(Session, promoConfig, promoBaseTags)
-            .SelectSpotAsync(spot, target.ShowIds, target.At, available, cancellationToken)
+            .SelectSpotAsync(spot, target.ShowIds, target.At, available, cancellationToken, target.IsNew)
             .ConfigureAwait(false);
     }
 
@@ -485,7 +558,8 @@ internal sealed class PromoBreakPlan(
         IReadOnlyList<string> showIds,
         DateTimeOffset? at,
         TimeSpan available,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool isNew = false)
     {
         if (!promoConfig.Enabled || !spot.Enabled || showIds.Count == 0 || at is null || available <= TimeSpan.Zero)
         {
@@ -493,7 +567,7 @@ internal sealed class PromoBreakPlan(
         }
 
         return await new PromoSelector(Session, promoConfig, promoBaseTags)
-            .SelectSpotAsync(spot, showIds, at.Value, available, cancellationToken)
+            .SelectSpotAsync(spot, showIds, at.Value, available, cancellationToken, isNew)
             .ConfigureAwait(false);
     }
 
@@ -524,7 +598,7 @@ internal sealed class PromoBreakPlan(
         }
 
         return await new PromoSelector(Session, promoConfig, promoBaseTags)
-            .SelectSpotAsync(spot, showIds, finished!.Start, available, cancellationToken)
+            .SelectSpotAsync(spot, showIds, finished!.Start, available, cancellationToken, finished.IsPremiere)
             .ConfigureAwait(false);
     }
 

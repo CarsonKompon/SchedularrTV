@@ -316,6 +316,28 @@ keyframes:
 | **Eventually** | Announcement for a later airing | `eventually` |
 | **You're Watching** | Start of a mid-roll break | `youre_watching` |
 | **Back to the Show** | End of a mid-roll break | `back_to_the_show` |
+| **We'll Be Right Back** | Opens a mid-roll break; You're Watching then greets the return | `right_back` |
+| **New Episode** | Mixed in among the ads like Eventually: the next new episode the schedule airs | `new_episode` |
+
+### Promote new episodes
+
+A **new episode** is the first airing of an episode released by a [Drop order](scheduling.md#drop-new-episodes-on-a-schedule).
+
+- **New Episode** templates ("Don't miss an all-new Bluey, Monday at 8:00!") are used only on channels with shows that drop, and name whichever new episode the built schedule airs next. They roll for a place in a break at the Eventually chance, and go first when they win one.
+- **For episodes** limits any other template to **Only new episodes** or **Only repeats**. When the show a promo is about is new, a template made for new episodes is preferred over the others, so an "All-new episode up next" card replaces the usual one.
+- Without a dedicated template, voice-overs still say so: "Coming up next… an all-new Bluey." AI-written scripts are told the episode is airing for the first time.
+- In text layers, **`{new}`** reads `NEW` and **`{new_episode}`** `NEW EPISODE` when the promoted episode is new, and nothing otherwise. External generators get `{new}` too.
+- Library promo clips filed in a folder named **New** (or New Episodes, Premieres, All New) inside a promo folder are used only for new episodes, and win over the others then.
+
+```yaml
+templates:
+  - name: All-new up next
+    type: up_next
+    episodes: new        # any (default), new or repeats
+    usage: mixed
+  - name: New this week
+    type: new_episode
+```
 
 The matching layer writes the show's name and is optional: a template can show the shows with [variable images](#variable-images) alone, for example title cards for what's on now, next and after that.
 

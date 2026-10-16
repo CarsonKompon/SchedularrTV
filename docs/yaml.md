@@ -96,14 +96,15 @@ channels:
 | **`filter`** | Additional query |
 | **`filter_scope: collection`** | Filter within the selected pool; default |
 | **`filter_scope: library`** | Search the full library instead of the selected pool |
-| **`order`** | `chronological`, `random`, `shuffle`, or `season_episode` |
+| **`order`** | `chronological`, `random`, `shuffle`, `season_episode`, or `drop` |
+| **`drop`** | Drop cadence for `order: drop` (days or every, time, count, release order, repeats); see [Drop new episodes](scheduling.md#drop-new-episodes-on-a-schedule) |
 | **`title_order`** | Separate title rotation from episode ordering |
 | **`min_duration`**, **`max_duration`** | Runtime limits |
 | **`exclude_seasons`** | Seasons excluded unless explicitly selected |
 | **`versions`** | Alternate-version selection |
 | **`state_key`** | Explicit identity for persisted playback state |
 
-An omitted **`order`** inherits from a referenced collection, otherwise defaults to shuffle. See [Query language](scheduling.md#query-language) for fields and operators.
+An omitted **`order`** inherits from a referenced collection, otherwise defaults to shuffle. Each **`include`** entry can set its own **`order`**, **`weight`** and **`drop`**, so one show can drop new episodes inside a shuffled collection. See [Query language](scheduling.md#query-language) for fields and operators.
 
 ## Blocks and anchors
 

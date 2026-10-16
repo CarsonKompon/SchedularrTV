@@ -12,9 +12,65 @@ internal sealed class GeneratedPromoSubstitute : IPromoSpotSubstitute
     public bool Has(BreakContext context, GeneratedPromoType type) =>
         GeneratedPromoPlanner.Has(context.Config, context.Channel, context.Block, type);
 
-    public GeneratedPromoTemplate? Choose(BreakContext context, GeneratedPromoType type, bool clipAvailable, TimeSpan available, DateTimeOffset at) =>
+    public GeneratedPromoTemplate? Choose(BreakContext context, GeneratedPromoType type, bool clipAvailable, TimeSpan available, DateTimeOffset at, bool isNew = false) =>
         GeneratedPromoPlanner.Choose(context.Config, context.Channel, context.Block, type, clipAvailable, available, at,
-            endsAt: type is GeneratedPromoType.UpNext or GeneratedPromoType.NowPlaying or GeneratedPromoType.BackToTheShow);
+            endsAt: type is GeneratedPromoType.UpNext or GeneratedPromoType.NowPlaying or GeneratedPromoType.BackToTheShow,
+            isNew: isNew);
+
+    /// <summary>
+    /// A New Episode promo, when the channel has shows that drop. It names whichever new episode the built schedule
+    /// airs next; the next drop time is recorded as a stand-in for when the schedule doesn't reach that far.
+    /// </summary>
+    public async ValueTask<(GeneratedPromoTemplate Template, DateTimeOffset? Expected)?> NewEpisodeAsync(
+        BreakContext context, PromoConfig promos, DateTimeOffset cursor, TimeSpan available, CancellationToken cancellationToken)
+    {
+        if (!Has(context, GeneratedPromoType.NewEpisode) || !promos.Enabled)
+        {
+            return null;
+        }
+
+        // Rolls like a trailer, with its own salt so it doesn't always land in the same breaks as one.
+        double chance = Math.Clamp(promos.Eventually.Chance, 0, 1);
+        if (DeterministicRandom.FromSeedText(context.BreakSeed, "generated-new-episode").Next(1_000) >= (int)Math.Round(chance * 1_000))
+        {
+            return null;
+        }
+
+        List<DropPlan> drops = [];
+        IEnumerable<ContentSelector> selectors = context.Build.Blocks.SelectMany(block => block.Block.Shows)
+            .Concat(context.Build.Anchors.SelectMany(anchor => anchor.Anchor.AllSelectors()));
+        if (context.Channel.BaseRotation is { } rotation)
+        {
+            selectors = selectors.Append(rotation);
+        }
+
+        foreach (ContentSelector selector in selectors.Distinct())
+        {
+            MediaSequence? sequence;
+            try
+            {
+                sequence = await context.Session.GetSequenceAsync(selector, "shared", cancellationToken).ConfigureAwait(false);
+            }
+            catch (SchedulerConfigurationException)
+            {
+                continue;
+            }
+
+            if (sequence is not null)
+            {
+                drops.AddRange(sequence.DropPlans);
+            }
+        }
+
+        if (drops.Count == 0
+            || Choose(context, GeneratedPromoType.NewEpisode, clipAvailable: false, available, context.From, isNew: true) is not { } template)
+        {
+            return null;
+        }
+
+        DateTimeOffset expected = drops.Min(plan => plan.NextDropAfter(cursor));
+        return (template, expected - cursor <= promos.Eventually.Horizon ? expected : null);
+    }
 
     public MediaItem Placeholder(GeneratedPromoTemplate template) => GeneratedPromoPlanner.Placeholder(template);
 

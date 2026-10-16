@@ -16,6 +16,10 @@ public sealed record UpNextListing(string Title, DateTimeOffset Start, string? E
     /// <summary>Scheduled end of the listed show, including its later segments and stacked episodes.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public DateTimeOffset? End { get; init; }
+
+    /// <summary>A new episode: the first airing of an episode a <c>drop</c> order released.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IsNew { get; init; }
 }
 
 /// <summary>Reads programmes from a schedule and phrases them for a voice-over.</summary>
@@ -57,7 +61,7 @@ public static class UpNextPromo
                 if (!merge)
                 {
                     if (listings.Count >= count || before is { } until && entry.Start > until) break;
-                    listings.Add(Listing(item, entry.Start, entry.BlockName) with { End = entry.End });
+                    listings.Add(Listing(item, entry.Start, entry.BlockName) with { End = entry.End, IsNew = entry.IsPremiere });
                 }
             }
             // Later mid-roll segments and episodes packed into this slot extend it; they don't increment lookahead.
@@ -77,7 +81,23 @@ public static class UpNextPromo
             .Where(entry => entry.Start < before && entry.Kind == ScheduleEntryKind.Program && entry.Item is not null
                 && !entry.IsSlotIntro && !entry.IsSlotOutro)
             .MaxBy(entry => entry.Start);
-        return last?.Item is { } item ? Listing(item, last.Start, last.BlockName) : null;
+        return last?.Item is { } item ? Listing(item, last.Start, last.BlockName) with { IsNew = last.IsPremiere } : null;
+    }
+
+    /// <summary>
+    /// The next new episode (a drop's first airing) the schedule airs after <paramref name="after"/>, skipping
+    /// <paramref name="skip"/> (what's on either side of the promo, which other promos cover).
+    /// </summary>
+    public static UpNextListing? NextNew(ChannelSchedule schedule, DateTimeOffset after, IReadOnlyCollection<string> skip)
+    {
+        ScheduleEntry? scheduled = schedule.Entries
+            .Where(entry => entry.Start >= after && entry.IsPremiere && IsListing(entry)
+                && entry.Item is { } item && !skip.Contains(TitleOf(item), StringComparer.OrdinalIgnoreCase))
+            .MinBy(entry => entry.Start);
+        scheduled ??= schedule.Entries
+            .Where(entry => entry.Start >= after && entry.IsPremiere && IsListing(entry))
+            .MinBy(entry => entry.Start);
+        return scheduled?.Item is { } found ? Listing(found, scheduled.Start, scheduled.BlockName) with { IsNew = true } : null;
     }
 
     /// <summary>
@@ -91,7 +111,7 @@ public static class UpNextPromo
             .MinBy(entry => entry.Start);
         if (scheduled?.Item is { } item)
         {
-            return Listing(item, at, scheduled.BlockName);
+            return Listing(item, at, scheduled.BlockName) with { IsNew = scheduled.IsPremiere };
         }
 
         return string.IsNullOrWhiteSpace(predicted) ? null : new UpNextListing(predicted, at);
@@ -107,7 +127,7 @@ public static class UpNextPromo
             .Where(entry => entry.Start >= at - TimeSpan.FromSeconds(1) && entry.Start <= at + within && IsListing(entry)
                 && entry.Item is { } item && !skip.Contains(TitleOf(item), StringComparer.OrdinalIgnoreCase))
             .MinBy(entry => entry.Start);
-        return scheduled?.Item is { } found ? Listing(found, scheduled.Start, scheduled.BlockName) : null;
+        return scheduled?.Item is { } found ? Listing(found, scheduled.Start, scheduled.BlockName) with { IsNew = scheduled.IsPremiere } : null;
     }
 
     /// <summary>
@@ -126,7 +146,8 @@ public static class UpNextPromo
             throw new ArgumentException("An Up Next promo needs at least one listing.", nameof(listings));
         }
 
-        List<string> parts = [preMessage ?? "Coming up next...", Sentence(SpokenTitle(listings[0].Title), '.')];
+        string headline = listings[0].IsNew ? $"{GeneratedPromoResolver.SpokenNew} {SpokenTitle(listings[0].Title)}" : SpokenTitle(listings[0].Title);
+        List<string> parts = [preMessage ?? "Coming up next...", Sentence(headline, '.')];
         if (variety is null)
         {
             parts.AddRange(listings.Skip(1).Select(listing => $"Then {SpokenTitle(listing.Title)} at {Clock(listing.Start, zone)}!"));

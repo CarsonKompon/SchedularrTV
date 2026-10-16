@@ -31,6 +31,12 @@ public sealed class ContentSelector
     public PlaybackOrder? Order { get; set; }
 
     /// <summary>
+    /// Drop cadence for every show here that uses <see cref="PlaybackOrder.Drop"/>, unless a title sets its
+    /// own on its include. Null inherits from the referenced global collection, else one episode a week.
+    /// </summary>
+    public DropConfig? Drop { get; set; }
+
+    /// <summary>
     /// How whole titles take turns. Without this the pool is flat, so <c>chronological</c> sorts every
     /// episode of every show by air date and the oldest series monopolises the channel. Setting it
     /// makes <see cref="Order"/> apply <em>within</em> each title while titles rotate.

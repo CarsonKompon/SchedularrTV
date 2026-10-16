@@ -149,6 +149,8 @@ public static class GeneratedPromoWriting
         GeneratedPromoType.Eventually => "a promo for a show coming up later this week",
         GeneratedPromoType.YoureWatching => "the start of an ad break in the middle of the show (it carries on afterwards)",
         GeneratedPromoType.BackToTheShow => "the end of an ad break, just before the show carries on",
+        GeneratedPromoType.NewEpisode => "a promo for an all-new episode of a show airing soon",
+        GeneratedPromoType.RightBack => "\"we'll be right back\" as the show breaks for adverts (it carries on afterwards)",
         _ => "an \"Up Next\" promo just before the next shows"
     };
 
@@ -170,15 +172,16 @@ public static class GeneratedPromoWriting
             {
                 GeneratedPromoType.UpNext when index == 0 => "right after this break",
                 GeneratedPromoType.UpNext => $"at {UpNextPromo.SpokenClock(listing.Start, zone)}",
-                GeneratedPromoType.ComingUp or GeneratedPromoType.Eventually =>
+                GeneratedPromoType.ComingUp or GeneratedPromoType.Eventually or GeneratedPromoType.NewEpisode =>
                     UpNextPromo.When(listing.Start, airsAt, zone, day: true, time: true).ToLowerInvariant(),
                 GeneratedPromoType.ThisHasBeen => "just finished",
-                GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow => "being watched now",
+                GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow or GeneratedPromoType.RightBack => "being watched now",
                 _ => "starting now"
             };
             string episode = string.IsNullOrWhiteSpace(listing.Episode) ? string.Empty : $", episode \"{listing.Episode}\"";
             string again = index > 0 && Repeat(listings, listing) ? " (the same show again)" : string.Empty;
-            facts.Add(new AiTextFact(label, $"{listing.Title}{episode}, {when}{again}"));
+            string fresh = listing.IsNew ? " (a brand-new episode, airing for the first time)" : string.Empty;
+            facts.Add(new AiTextFact(label, $"{listing.Title}{episode}, {when}{again}{fresh}"));
 
             if (descriptions && index == 0 && listing.Overview is { Length: > 0 } overview)
             {

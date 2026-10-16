@@ -87,9 +87,21 @@ internal sealed class ScheduleBuildSession(
         items = VersionCollapser.Collapse(items, ResolveVersions(selector, 0));
 
         PlaybackState? state = await stateStore.GetAsync(key, cancellationToken).ConfigureAwait(false);
-        MediaSequence sequence = titleOrder is { } rotation
-            ? BuildRotation(selector, items, rotation, order, key, state)
-            : MediaSequence.Create(key, order, items, state);
+        MediaSequence sequence;
+        if (titleOrder is { } rotation)
+        {
+            sequence = BuildRotation(selector, items, rotation, order, key, state);
+        }
+        else if (order == PlaybackOrder.Drop || ResolveIncludes(selector, 0).Any(include => include.Order == PlaybackOrder.Drop))
+        {
+            // Drops are per show, so a collection with any drop show has to keep its shows apart.
+            (Dictionary<string, TitleRotation.TitleRule> rules, _) = TitleRotation.RulesFrom(ResolveIncludes(selector, 0));
+            sequence = MediaSequence.CreateMixed(key, items, order, rules, ResolveDrop(selector, 0), Drops, state);
+        }
+        else
+        {
+            sequence = MediaSequence.Create(key, order, items, state);
+        }
 
         _sequences[key] = sequence;
         CacheSelector(sequence);
@@ -126,7 +138,7 @@ internal sealed class ScheduleBuildSession(
             foreach (string title in titles)
             {
                 rules.TryGetValue(title, out TitleRotation.TitleRule? rule);
-                rules[title] = new TitleRotation.TitleRule(rule?.Order, ViewerWeights.Weight(rule?.Weight ?? 1, ViewerWeights.Of(TitleFactors, title)));
+                rules[title] = new TitleRotation.TitleRule(rule?.Order, ViewerWeights.Weight(rule?.Weight ?? 1, ViewerWeights.Of(TitleFactors, title)), rule?.Drop);
             }
         }
 
@@ -137,7 +149,31 @@ internal sealed class ScheduleBuildSession(
             episodeOrder,
             rules,
             order,
-            $"{config.Settings.Seed}|{key}", state);
+            $"{config.Settings.Seed}|{key}", state,
+            ResolveDrop(selector, 0),
+            Drops);
+    }
+
+    /// <summary>Where and when this build happens, for working out which drop episodes are out.</summary>
+    public DropContext Drops => _drops ??= new DropContext(timeZone, planStart);
+
+    private DropContext? _drops;
+
+    private DropConfig? ResolveDrop(ContentSelector selector, int depth)
+    {
+        if (selector.Drop is { } drop)
+        {
+            return drop;
+        }
+
+        if (depth <= MaxCollectionDepth
+            && !string.IsNullOrWhiteSpace(selector.Collection)
+            && config.GlobalCollections.TryGetValue(selector.Collection, out ContentSelector? global))
+        {
+            return ResolveDrop(global, depth + 1);
+        }
+
+        return null;
     }
 
     /// <summary>Ad-hoc pool lookup that bypasses sequencing (promos, one-off queries).</summary>

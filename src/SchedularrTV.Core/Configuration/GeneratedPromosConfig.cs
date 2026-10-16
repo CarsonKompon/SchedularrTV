@@ -24,7 +24,29 @@ public enum GeneratedPromoType
     YoureWatching,
 
     /// <summary>Closes a mid-show break, just before the show carries on.</summary>
-    BackToTheShow
+    BackToTheShow,
+
+    /// <summary>
+    /// The next new episode (a drop's first airing) the channel airs, mixed in among the ads like Eventually:
+    /// "an all-new episode, Monday at 8".
+    /// </summary>
+    NewEpisode,
+
+    /// <summary>Opens a mid-show break, before the ads: "we'll be right back" to the show being watched.</summary>
+    RightBack
+}
+
+/// <summary>Which airings of its show a generated template is for.</summary>
+public enum GeneratedEpisodeFilter
+{
+    /// <summary>New episodes and repeats alike.</summary>
+    Any,
+
+    /// <summary>Only new episodes (a drop's first airing). Preferred over others when the episode is new.</summary>
+    New,
+
+    /// <summary>Only repeats: anything that isn't a new episode.</summary>
+    Repeats
 }
 
 /// <summary>When a template is used relative to real promo clips.</summary>
@@ -70,7 +92,13 @@ public enum GeneratedLayerKind
     Group,
 
     /// <summary>A video playing in a box: a file, or a clip of an episode (see <see cref="GeneratedLayer.Video"/>).</summary>
-    Video
+    Video,
+
+    /// <summary>The new episode being promoted.</summary>
+    NewEpisode,
+
+    /// <summary>The show being watched, as a mid-show break opens with "we'll be right back".</summary>
+    RightBack
 }
 
 /// <summary>When a video layer's video starts playing.</summary>
@@ -141,12 +169,23 @@ public static class GeneratedPromoKinds
         GeneratedPromoType.Eventually => GeneratedLayerKind.Eventually,
         GeneratedPromoType.YoureWatching => GeneratedLayerKind.YoureWatching,
         GeneratedPromoType.BackToTheShow => GeneratedLayerKind.BackToTheShow,
+        GeneratedPromoType.NewEpisode => GeneratedLayerKind.NewEpisode,
+        GeneratedPromoType.RightBack => GeneratedLayerKind.RightBack,
         _ => GeneratedLayerKind.UpNext
     };
 
     public static bool IsShowLayer(GeneratedLayerKind kind) =>
         kind is GeneratedLayerKind.NowPlaying or GeneratedLayerKind.ThisHasBeen or GeneratedLayerKind.ComingUp or GeneratedLayerKind.Eventually
-            or GeneratedLayerKind.YoureWatching or GeneratedLayerKind.BackToTheShow;
+            or GeneratedLayerKind.YoureWatching or GeneratedLayerKind.BackToTheShow or GeneratedLayerKind.NewEpisode
+            or GeneratedLayerKind.RightBack;
+
+    /// <summary>Whether a template with <paramref name="filter"/> suits an airing that is (or isn't) a new episode.</summary>
+    public static bool Suits(GeneratedEpisodeFilter? filter, bool isNew) => filter switch
+    {
+        GeneratedEpisodeFilter.New => isNew,
+        GeneratedEpisodeFilter.Repeats => !isNew,
+        _ => true
+    };
 }
 
 public enum GeneratedShape { Rectangle, Ellipse, Triangle, Diamond, Star }
@@ -222,6 +261,13 @@ public sealed class GeneratedPromoTemplate
     public GeneratedPromoAvailability? Availability { get; set; }
 
     public GeneratedPromoUsage Usage { get; set; } = GeneratedPromoUsage.Fallback;
+
+    /// <summary>
+    /// Limits the template to new episodes (a drop's first airing) or to repeats of the show it names. Null (the
+    /// default) suits both, and keeps render keys of templates without it unchanged.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedEpisodeFilter? Episodes { get; set; }
 
     /// <summary>For <see cref="GeneratedPromoUsage.Mixed"/>: odds of choosing this over an available clip.</summary>
     public double MixChance { get; set; } = 0.5;

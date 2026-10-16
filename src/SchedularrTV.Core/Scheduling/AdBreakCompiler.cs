@@ -361,6 +361,21 @@ public static class AdBreakCompiler
     /// folder sorted by type, also null unless the clip is under a folder named for that type; for a seasonal one,
     /// null when it's under a month, season, holiday or date folder that isn't <paramref name="seasonAt"/>'s.
     /// </summary>
+    /// <summary>Set to <c>true</c> on promo clips filed for new episodes (a <c>New</c> folder, or a <c>new_episode</c> tag).</summary>
+    public const string NewEpisodeAttribute = "promo_new";
+
+    /// <summary>Folder names that file a promo as being for new episodes: New, New Episode(s), Premiere(s), All New.</summary>
+    public static bool IsNewEpisodeFolder(string segment)
+    {
+        string name = new(segment.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+        return name is "new" or "newepisode" or "newepisodes" or "allnew" or "premiere" or "premieres";
+    }
+
+    /// <summary>Whether a promo clip was made for a new episode rather than a repeat.</summary>
+    public static bool IsNewEpisodeClip(MediaItem clip) =>
+        (clip.Attributes.TryGetValue(NewEpisodeAttribute, out string? flag) && string.Equals(flag, "true", StringComparison.OrdinalIgnoreCase))
+        || clip.Tags.Any(tag => string.Equals(tag, "new_episode", StringComparison.OrdinalIgnoreCase) || string.Equals(tag, "new episode", StringComparison.OrdinalIgnoreCase));
+
     public static MediaItem? Describe(MediaItem item, IReadOnlyList<PromoFolderSource> folders, DateTimeOffset? seasonAt = null)
     {
         if (item.Path is not { } path)
@@ -381,9 +396,17 @@ public static class AdBreakCompiler
         string? show = null;
         string? day = null;
         string? clock = null;
+        bool fresh = false;
         bool typed = source.Type is null;
         foreach (string segment in AdBreakPaths.FoldersBetween(source.Folder, path))
         {
+            // A "New" folder holds the versions made for a new episode (a drop's first airing).
+            if (IsNewEpisodeFolder(segment))
+            {
+                fresh = true;
+                continue;
+            }
+
             // In a folder sorted by type, the type's folder is the one named for it; another type's means another spot.
             if (source.Type is { } wanted && AdBreakPromo.FromFolderName(segment) is { } found)
             {
@@ -448,7 +471,8 @@ public static class AdBreakCompiler
         {
             ["show_id"] = show,
             ["promo_day"] = day ?? string.Empty,
-            ["promo_clock"] = clock ?? string.Empty
+            ["promo_clock"] = clock ?? string.Empty,
+            [NewEpisodeAttribute] = fresh ? "true" : string.Empty
         };
 
         return item.WithChapters(item.Chapters, attributes);

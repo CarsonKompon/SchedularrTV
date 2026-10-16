@@ -1,0 +1,107 @@
+@* Edits a DropConfig: when new episodes drop, how many at a time, and how dropped episodes repeat in between. *@
+
+<div class="drop-editor" style="border-left:3px solid var(--accent, #6aa0ff);padding-left:10px;margin:6px 0;">
+    @if (!string.IsNullOrEmpty(Title))
+    {
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">@Title</div>
+    }
+
+    <div class="field">
+        <span>Drop on</span>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            @foreach (DayOfWeek day in Week)
+            {
+                <label class="check" style="margin:0;">
+                    <input type="checkbox" checked="@Drop.Days.Contains(day)" @onchange="e => ToggleDay(day, e)" />
+                    <span>@(day.ToString()[..3])</span>
+                </label>
+            }
+        </div>
+    </div>
+
+    <div class="grid grid-2">
+        @if (Drop.Days.Count == 0)
+        {
+            <DurationInput Label="Or every" Placeholder="7d" Value="Drop.Every"
+                           ValueChanged="v => Set(() => Drop.Every = v)" />
+        }
+        <label class="field">
+            <span>At (time of day)</span>
+            <input type="text" placeholder="00:00" value="@TimeText" @onchange="OnTimeChanged" />
+        </label>
+        <label class="field">
+            <span>Episodes per drop</span>
+            <input type="number" min="1" value="@Drop.Count" @onchange="e => Set(() => Drop.Count = Math.Max(1, Int(e, 1)))" />
+        </label>
+        <label class="field">
+            <span>Next episode by</span>
+            <select value="@Drop.ReleaseOrder" @onchange="e => Set(() => Drop.ReleaseOrder = Enum.Parse<DropReleaseOrder>(e.Value?.ToString() ?? nameof(DropReleaseOrder.EpisodeOrder)))">
+                <option value="@DropReleaseOrder.EpisodeOrder">Episode order (season, episode)</option>
+                <option value="@DropReleaseOrder.AirDate">Air date</option>
+            </select>
+        </label>
+        <label class="field">
+            <span>Between drops, repeats play</span>
+            <select value="@Drop.Repeats" @onchange="e => Set(() => Drop.Repeats = Enum.Parse<PlaybackOrder>(e.Value?.ToString() ?? nameof(PlaybackOrder.Shuffle)))">
+                <option value="@PlaybackOrder.Shuffle">Shuffled (no repeats until all have played)</option>
+                <option value="@PlaybackOrder.Random">At random</option>
+                <option value="@PlaybackOrder.SeasonEpisode">In order</option>
+            </select>
+        </label>
+        <label class="field">
+            <span>First drop</span>
+            <input type="date" value="@Drop.Start" @onchange="e => Set(() => Drop.Start = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString())" />
+        </label>
+        <label class="field">
+            <span>Already out before the first drop</span>
+            <input type="number" min="0" value="@Drop.AlreadyOut" @onchange="e => Set(() => Drop.AlreadyOut = Math.Max(0, Int(e, 0)))" />
+        </label>
+    </div>
+    <p class="hint">
+        @(Drop.Describe()). A new episode airs at the first chance after it drops; until the next drop only episodes
+        that have already dropped play, as repeats. Leave <em>First drop</em> empty to start from the next build
+        (the latest drop time counts, so one is out straight away).
+    </p>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public DropConfig Drop { get; set; } = new();
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private static readonly DayOfWeek[] Week =
+        [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday];
+
+    private string TimeText => Drop.Time is { } time ? time.ToString(@"hh\:mm") : "";
+
+    private async Task Set(Action change)
+    {
+        change();
+        await Changed.InvokeAsync();
+    }
+
+    private Task ToggleDay(DayOfWeek day, ChangeEventArgs e) => Set(() =>
+    {
+        if ((bool)(e.Value ?? false))
+        {
+            if (!Drop.Days.Contains(day)) Drop.Days.Add(day);
+            Drop.Days.Sort((a, b) => (((int)a + 6) % 7).CompareTo(((int)b + 6) % 7));
+        }
+        else
+        {
+            Drop.Days.Remove(day);
+        }
+    });
+
+    private Task OnTimeChanged(ChangeEventArgs e) => Set(() =>
+    {
+        string text = e.Value?.ToString()?.Trim() ?? "";
+        Drop.Time = TimeSpan.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, out TimeSpan time)
+            && time >= TimeSpan.Zero && time < TimeSpan.FromDays(1)
+                ? time
+                : null;
+    });
+
+    private static int Int(ChangeEventArgs e, int fallback) =>
+        int.TryParse(e.Value?.ToString(), out int value) ? value : fallback;
+}

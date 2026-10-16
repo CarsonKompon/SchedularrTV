@@ -226,6 +226,8 @@ public static class PlayoutListing
             ScheduleEntryKind.YoureWatchingPromo => "Promo · You're watching",
             ScheduleEntryKind.BackToTheShowPromo => "Promo · Back to the show",
             ScheduleEntryKind.EventuallyPromo => "Promo · Later this week",
+            ScheduleEntryKind.NewEpisodePromo => "Promo · New episode",
+            ScheduleEntryKind.RightBackPromo => "Promo · We'll be right back",
             ScheduleEntryKind.Padding => "Padding",
             _ => entry.Kind.ToString()
         };
@@ -239,7 +241,7 @@ public static class PlayoutListing
             ScheduleEntryKind.Interstitial => "interstitial",
             ScheduleEntryKind.Commercial => "commercial",
             ScheduleEntryKind.Filler => "filler",
-            ScheduleEntryKind.EventuallyPromo => "eventually",
+            ScheduleEntryKind.EventuallyPromo or ScheduleEntryKind.NewEpisodePromo => "eventually",
             ScheduleEntryKind.Padding => "padding",
             _ => "promo"
         };

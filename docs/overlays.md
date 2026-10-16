@@ -121,6 +121,8 @@ Keyframe times are from the start of each appearance and opacity is 0–100, lik
 | **`{channel}`** | Channel name, or referenced channel's name |
 | **`{next}`** | Next programme |
 | **`{next_time}`** | Next start time |
+| **`{new}`** | `NEW` when this programme is a new episode, else blank |
+| **`{next_new}`** | `NEW` when the next programme is a new episode, else blank |
 
 ### Video and file overlays
 
@@ -178,6 +180,45 @@ For an upcoming show, use `context: up_next` and `offset: 0` for next or `offset
 Programme timing spans all mid-roll segments. Choose **programmes only** or **everything, breaks too** for scope.
 
 Test animated video on the installed ErsatzTV version; repeated graphics-video timing depends on its playback behavior.
+
+## Show overlays only when conditions hold
+
+Open **Conditions and sharing the screen** under the overlay's timing.
+
+| Condition | Shows only when |
+| --- | --- |
+| **Only on** | What's airing is one of these: episodes, movies, any programme, Up Next promos, any promo, commercials, filler and bumpers, interstitials, or anything in a break |
+| **The programme is** | The programme is a new episode, or isn't. In a break, the programme is the one the break interrupts or follows |
+| **What's on next is** | The next programme is a new episode, not one, an episode, or a movie |
+| **The programme matches** | The programme matches a library query |
+
+Every condition set must hold. A new episode is the first airing of one released by a [Drop order](scheduling.md#drop-new-episodes-on-a-schedule). Naming something in a break under **Only on** (an Up Next promo, say) reaches it even when the overlay is set to programmes only. The **New episode up next** and **New episode badge** presets start from these.
+
+## Share the screen or take turns
+
+**Additive** overlays always show, alongside anything else. Overlays that aren't additive take turns: where several would be on screen at the same time on an entry, one of them is picked at random and the others stand down. The pick is the same every time that airing is published, and holds across a programme's parts. Conditions are checked first, so only overlays that could show take part. Use this for variations of one graphic: three lower-third designs at the same time pick one per airing.
+
+Screen bugs are usually additive; lower thirds and Up Next cards usually aren't. Overlays saved before this setting existed count as additive and keep stacking until you change them.
+
+```yaml
+overlays:
+  - name: Bug
+    kind: file
+    file: D:\Media\Logos\bug.png
+    additive: true
+  - name: New episode up next
+    additive: false
+    when: end
+    offset_seconds: 45
+    conditions:
+      next: new            # new, repeat, episode or movie
+  - name: Movie lower third
+    additive: false
+    conditions:
+      on: [movie]          # episode, movie, programme, up_next, promo, commercial, filler, interstitial, break
+      episodes: repeat     # new or repeat
+      query: genre:'Comedy'
+```
 
 ## Share or override designs
 

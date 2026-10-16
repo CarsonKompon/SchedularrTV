@@ -17,7 +17,8 @@ public static class OverlayPresets
             MarginYPercent = 4,
             Opacity = 70,
             When = OverlayWhen.Always,
-            FadeSeconds = 1
+            FadeSeconds = 1,
+            Additive = true
         }),
         new("rating", "Rating badge", "The programme's rating (TV-Y, TV-PG…) in the top corner as it starts: choose a picture for each rating.", () => new Overlay
         {
@@ -31,6 +32,7 @@ public static class OverlayPresets
             OffsetSeconds = 2,
             DurationSeconds = 15,
             FadeSeconds = 0.6,
+            Additive = true,
             Variants =
             [
                 .. new[] { "TV-Y", "TV-Y7", "TV-G", "TV-PG", "TV-14", "TV-MA" }
@@ -43,6 +45,7 @@ public static class OverlayPresets
             Opacity = 75,
             When = OverlayWhen.Always,
             FadeSeconds = 1,
+            Additive = true,
             Layers =
             [
                 new OverlayLayer
@@ -55,6 +58,7 @@ public static class OverlayPresets
         new("lower-third", "Lower third", "The show's name and episode across the bottom left, a few seconds after it starts.", () => new Overlay
         {
             Name = "Lower third",
+            Additive = false,
             When = OverlayWhen.Start,
             OffsetSeconds = 10,
             DurationSeconds = 8,
@@ -77,6 +81,7 @@ public static class OverlayPresets
         new("up-next", "Coming up next", "What's on next, near the end of each programme.", () => new Overlay
         {
             Name = "Up next",
+            Additive = false,
             When = OverlayWhen.End,
             OffsetSeconds = 45,
             DurationSeconds = 10,
@@ -95,6 +100,47 @@ public static class OverlayPresets
                 }
             ]
         }),
-        new("blank", "Blank design", "An empty canvas to design on.", () => new Overlay { Name = "Overlay" })
+        new("new-up-next", "New episode up next", "\"All-new\" and the show's name near the end of the programme before a new episode.", () => new Overlay
+        {
+            Name = "New episode up next",
+            Additive = false,
+            When = OverlayWhen.End,
+            OffsetSeconds = 45,
+            DurationSeconds = 10,
+            FadeSeconds = 0.6,
+            Conditions = new OverlayConditions { Next = OverlayAiring.New },
+            Layers =
+            [
+                new OverlayLayer { Name = "Bar", Kind = OverlayLayerKinds.Rect, X = 1180, Y = 860, Width = 660, Height = 120, Color = "#000000", CornerRadius = 12, Opacity = 70 },
+                new OverlayLayer
+                {
+                    Name = "Label", Kind = OverlayLayerKinds.Text, Text = "ALL-NEW · UP NEXT · {next_time}", X = 1210, Y = 872, Width = 600, Height = 40,
+                    FontSize = 28, Color = "#ff3d6e", Shadow = false
+                },
+                new OverlayLayer
+                {
+                    Name = "Next", Kind = OverlayLayerKinds.Text, Text = "{next}", X = 1210, Y = 912, Width = 600, Height = 56, FontSize = 46, Bold = true
+                }
+            ]
+        }),
+        new("new-bug", "New episode badge", "\"NEW\" in a corner for the first minute of a new episode.", () => new Overlay
+        {
+            Name = "New episode",
+            Additive = true,
+            When = OverlayWhen.Start,
+            OffsetSeconds = 0,
+            DurationSeconds = 60,
+            FadeSeconds = 0.6,
+            Conditions = new OverlayConditions { Episodes = OverlayAiring.New },
+            Layers =
+            [
+                new OverlayLayer { Name = "Badge", Kind = OverlayLayerKinds.Rect, X = 80, Y = 60, Width = 180, Height = 70, Color = "#ff3d6e", CornerRadius = 10 },
+                new OverlayLayer
+                {
+                    Name = "Label", Kind = OverlayLayerKinds.Text, Text = "NEW", X = 80, Y = 66, Width = 180, Height = 60, FontSize = 44, Bold = true, Align = "center"
+                }
+            ]
+        }),
+        new("blank", "Blank design", "An empty canvas to design on.", () => new Overlay { Name = "Overlay", Additive = false })
     ];
 }

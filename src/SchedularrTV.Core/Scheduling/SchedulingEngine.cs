@@ -177,7 +177,7 @@ public sealed class SchedulingEngine(
             TimeSpan gap = boundary - cursor;
 
             // 3. Main programming from the active block pool or the base rotation.
-            ProgramPick? pick = await TakeProgramAsync(session, channel, activeBlock, rotationIndex, gap, cancellationToken)
+            ProgramPick? pick = await TakeProgramAsync(session, channel, activeBlock, rotationIndex, cursor, gap, cancellationToken)
                 .ConfigureAwait(false);
 
             if (pick is not null)
@@ -246,6 +246,19 @@ public sealed class SchedulingEngine(
                         if (entries[entryIndex].Kind == ScheduleEntryKind.Program)
                         {
                             entries[entryIndex] = entries[entryIndex] with { ProgramOrigin = originOf(entries[entryIndex].Item) };
+                        }
+                    }
+                }
+
+                if (pick.Premieres.Count > 0)
+                {
+                    for (int entryIndex = slotEntryStart; entryIndex < entries.Count; entryIndex++)
+                    {
+                        ScheduleEntry entry = entries[entryIndex];
+                        if (entry is { Kind: ScheduleEntryKind.Program, IsSlotIntro: false, IsSlotOutro: false, Item: { } aired }
+                            && pick.Premieres.Contains(aired.Id))
+                        {
+                            entries[entryIndex] = entry with { IsPremiere = true };
                         }
                     }
                 }
@@ -380,6 +393,11 @@ public sealed class SchedulingEngine(
             ContentSelector selector = selectors[i % selectors.Count];
             MediaSequence? sequence = await session.GetSequenceAsync(selector, "shared", cancellationToken).ConfigureAwait(false);
 
+            if (sequence is not null)
+            {
+                sequence.At = cursor;
+            }
+
             if (sequence is null || sequence.IsEmpty || !sequence.TryTake(null, out MediaItem item))
             {
                 diagnostics.Add(new ScheduleDiagnostic(
@@ -407,6 +425,7 @@ public sealed class SchedulingEngine(
                 Kind = ScheduleEntryKind.Program,
                 Item = item,
                 ProgramOrigin = ProgramOrigin.Anchor,
+                IsPremiere = sequence.LastTakeWasPremiere,
                 Source = anchor.Name,
                 BlockName = anchor.Block?.Name
             });
@@ -446,6 +465,7 @@ public sealed class SchedulingEngine(
         while (true)
         {
             TimeSpan room = slotEnd - (start + media);
+            pick.Sequence.At = start + media;
 
             if (!pick.Sequence.TryTakeSameTitle(title,
                     candidate => candidate.Duration > TimeSpan.Zero
@@ -460,6 +480,7 @@ public sealed class SchedulingEngine(
 
             stack.Add(extra);
             used.Add(extra.Id);
+            if (pick.Sequence.LastTakeWasPremiere) pick.Premieres.Add(extra.Id);
             media += extra.Duration;
         }
     }
@@ -610,6 +631,7 @@ public sealed class SchedulingEngine(
         ChannelConfig channel,
         BlockOccurrence? activeBlock,
         Dictionary<string, int> rotationIndex,
+        DateTimeOffset at,
         TimeSpan gap,
         CancellationToken cancellationToken)
     {
@@ -638,7 +660,7 @@ public sealed class SchedulingEngine(
 
         if (selectors.Count > 1 && session.TitleFactors is { Count: > 0 })
         {
-            ProgramPick? weighted = await TakeWeightedAsync(session, selectors, rotationKey, offset, gap, cancellationToken).ConfigureAwait(false);
+            ProgramPick? weighted = await TakeWeightedAsync(session, selectors, rotationKey, offset, at, gap, cancellationToken).ConfigureAwait(false);
             if (weighted is not null)
             {
                 return weighted;
@@ -657,10 +679,11 @@ public sealed class SchedulingEngine(
                 continue;
             }
 
+            sequence.At = at;
             if (sequence.TryTake(item => item.Duration > TimeSpan.Zero && item.Duration <= gap, out MediaItem chosen))
             {
                 rotationIndex[rotationKey] = (offset + i + 1) % selectors.Count;
-                return new ProgramPick(chosen, sequence, selector);
+                return Picked(chosen, sequence, selector);
             }
         }
 
@@ -678,6 +701,7 @@ public sealed class SchedulingEngine(
         IReadOnlyList<ContentSelector> selectors,
         string rotationKey,
         int offset,
+        DateTimeOffset at,
         TimeSpan gap,
         CancellationToken cancellationToken)
     {
@@ -713,6 +737,11 @@ public sealed class SchedulingEngine(
         {
             ContentSelector selector = selectors[i];
             MediaSequence? sequence = await session.GetSequenceAsync(selector, "shared", cancellationToken).ConfigureAwait(false);
+            if (sequence is not null)
+            {
+                sequence.At = at;
+            }
+
             if (sequence is null || sequence.IsEmpty
                 || !sequence.TryTake(item => item.Duration > TimeSpan.Zero && item.Duration <= gap, out MediaItem chosen))
             {
@@ -721,10 +750,22 @@ public sealed class SchedulingEngine(
 
             Array.Copy(earned, credits, credits.Length);
             credits[i] -= total;
-            return new ProgramPick(chosen, sequence, selector);
+            return Picked(chosen, sequence, selector);
         }
 
         return null;
+    }
+
+    /// <summary>A pick that remembers whether its programme is a new episode (a drop's first airing).</summary>
+    private static ProgramPick Picked(MediaItem chosen, MediaSequence sequence, ContentSelector selector)
+    {
+        ProgramPick pick = new(chosen, sequence, selector);
+        if (sequence.LastTakeWasPremiere)
+        {
+            pick.Premieres.Add(chosen.Id);
+        }
+
+        return pick;
     }
 
     /// <summary>Whether a break's <paramref name="roll"/>th short programme is used, at <paramref name="chance"/> percent.</summary>

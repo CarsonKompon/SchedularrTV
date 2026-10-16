@@ -10,7 +10,11 @@ namespace SchedularrTV.Core.Scheduling;
 /// No particular show: a generated promo names whatever the built schedule airs from <paramref name="At"/> on.
 /// Used where the channel's rotation, rather than an anchor or block opening, decides what plays.
 /// </param>
-public sealed record PromoTarget(DateTimeOffset At, IReadOnlyList<string> ShowIds, string DisplayName, bool Open = false);
+public sealed record PromoTarget(DateTimeOffset At, IReadOnlyList<string> ShowIds, string DisplayName, bool Open = false)
+{
+    /// <summary>The episode expected to air is a new one (a drop's first airing).</summary>
+    public bool IsNew { get; init; }
+}
 
 /// <summary>
 /// Lookahead promo matching (spec 3.2). Inspects upcoming anchors and finds promo assets whose
@@ -100,7 +104,8 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
         IReadOnlyList<string> showIds,
         DateTimeOffset at,
         TimeSpan available,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool isNew = false)
     {
         if (!config.Enabled || !spot.Enabled || available <= TimeSpan.Zero || showIds.Count == 0)
         {
@@ -120,8 +125,14 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
             matches.AddRange(Unseen(matches, await session.SearchAsync(expression, cancellationToken).ConfigureAwait(false)));
         }
 
-        return ClockMatches(matches, at, honourClock: true)
-            .Where(m => m.Duration > TimeSpan.Zero && m.Duration <= available)
+        List<MediaItem> fitting = [.. ClockMatches(matches, at, honourClock: true)
+            .Where(m => m.Duration > TimeSpan.Zero && m.Duration <= available)];
+
+        // Clips made for new episodes only play for one, and win when it is.
+        List<MediaItem> fresh = [.. fitting.Where(AdBreakCompiler.IsNewEpisodeClip)];
+        IEnumerable<MediaItem> eligible = isNew && fresh.Count > 0 ? fresh : fitting.Where(m => !AdBreakCompiler.IsNewEpisodeClip(m));
+
+        return eligible
             .OrderByDescending(m => m.Duration)
             .ThenBy(m => m.SortKey, StringComparer.Ordinal)
             .FirstOrDefault();

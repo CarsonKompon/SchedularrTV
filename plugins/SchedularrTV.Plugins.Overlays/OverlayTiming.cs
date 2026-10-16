@@ -166,6 +166,8 @@ public static class OverlayTiming
     public static bool AppliesTo(Overlay overlay, ScheduleEntry entry) =>
         entry.Kind != ScheduleEntryKind.Padding && entry.Item is not null
         && (overlay.AppliesTo == OverlayAppliesTo.Everything
+            // Conditions that name something in a break (an Up Next promo, say) reach it whatever this says.
+            || overlay.Conditions is { TargetsBreaks: true }
             || (entry.Kind == ScheduleEntryKind.Program && !entry.IsSlotIntro && !entry.IsSlotOutro));
 
     /// <summary>One appearance at <paramref name="start"/> (programme time), cut to the part of the programme this entry plays.</summary>

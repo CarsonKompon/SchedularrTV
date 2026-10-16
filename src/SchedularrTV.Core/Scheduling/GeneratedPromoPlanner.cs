@@ -67,7 +67,8 @@ public static class GeneratedPromoPlanner
         bool clipAvailable,
         TimeSpan available,
         DateTimeOffset at,
-        bool endsAt = false)
+        bool endsAt = false,
+        bool isNew = false)
     {
         if (Source(config, channel, block) is not { } source)
         {
@@ -79,12 +80,19 @@ public static class GeneratedPromoPlanner
             template.Enabled && template.Type == type
             && template.Duration > TimeSpan.Zero
             && template.Duration <= available
+            && GeneratedPromoKinds.Suits(template.Episodes, isNew)
             && GeneratedPromoEligibility.IsAvailable(template, endsAt ? at - template.Duration : at, zone)
             && (!clipAvailable || template.Usage == GeneratedPromoUsage.Mixed))];
 
         if (candidates.Count == 0)
         {
             return null;
+        }
+
+        // A template made for new episodes wins when the episode is new.
+        if (isNew && candidates.Any(template => template.Episodes == GeneratedEpisodeFilter.New))
+        {
+            candidates = [.. candidates.Where(template => template.Episodes == GeneratedEpisodeFilter.New)];
         }
 
         // Up Next keeps its original seed so existing schedules do not reshuffle.

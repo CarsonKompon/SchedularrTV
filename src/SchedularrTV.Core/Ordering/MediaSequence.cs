@@ -20,6 +20,20 @@ public sealed class MediaSequence
     private List<(string Title, int Weight, MediaSequence Sequence)>? _titles;
     private Dictionary<string, long> _titleCredits = new(StringComparer.OrdinalIgnoreCase);
 
+    // Drop: the cadence, and how many episodes (in release order) have had their new airing.
+    private DropPlan? _drop;
+    private int _premiered;
+    private string? _lastPremieredId;
+    private Dictionary<string, int>? _releaseIndex;
+
+    // A collection mixing drop shows with ordinary ones (no title rotation): shows are picked in
+    // proportion to how much each has available, and everything not on a drop shares one child.
+    private bool _mixed;
+    private DateTimeOffset? _at;
+
+    /// <summary>Title key of the child holding a mixed collection's non-drop items.</summary>
+    internal const string RestTitle = "\u0000rest";
+
     private MediaSequence(string key, PlaybackOrder order, List<MediaItem> pool, DeterministicRandom random, List<string> bag, int cursor, bool preordered)
     {
         Key = key;
@@ -43,8 +57,126 @@ public sealed class MediaSequence
 
     public bool IsEmpty => _pool.Count == 0;
 
+    /// <summary>
+    /// When the next take airs. Only <see cref="PlaybackOrder.Drop"/> uses it, to know which episodes are out;
+    /// set by the scheduler before each take (it is passed down to every show's own sequence).
+    /// </summary>
+    public DateTimeOffset? At
+    {
+        get => _at;
+        set
+        {
+            _at = value;
+            if (_titles is not null)
+            {
+                foreach (var title in _titles) title.Sequence.At = value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// True when the last item taken (by <see cref="TryTake"/> or <see cref="TryTakeSameTitle"/>) was a dropped
+    /// episode's first airing, i.e. a new episode rather than a repeat.
+    /// </summary>
+    public bool LastTakeWasPremiere { get; private set; }
+
+    /// <summary>The drop cadence, for a single show's <see cref="PlaybackOrder.Drop"/> sequence.</summary>
+    public DropPlan? Drop => _drop;
+
+    /// <summary>Every drop cadence in this sequence: its own, or its shows'.</summary>
+    public IEnumerable<DropPlan> DropPlans
+    {
+        get
+        {
+            if (_drop is not null)
+            {
+                return new[] { _drop };
+            }
+
+            return _titles is null ? Array.Empty<DropPlan>() : _titles.SelectMany(title => title.Sequence.DropPlans);
+        }
+    }
+
+    private string FingerprintOf() => Fingerprint(_pool);
+
     public static MediaSequence Create(string key, PlaybackOrder order, IEnumerable<MediaItem> items, PlaybackState? state) =>
         Create(key, order, Sort(items, order), state, preordered: false);
+
+    /// <summary>
+    /// One show's <see cref="PlaybackOrder.Drop"/> sequence: episodes are released in
+    /// <see cref="DropConfig.ReleaseOrder"/> on <paramref name="config"/>'s cadence, each airs once as new as
+    /// soon as it's out, and otherwise released episodes repeat in <see cref="DropConfig.Repeats"/> order.
+    /// </summary>
+    public static MediaSequence CreateDrop(string key, IEnumerable<MediaItem> items, DropConfig config, DropContext context, PlaybackState? state)
+    {
+        List<MediaItem> pool = Sort(items, config.ReleaseOrder == DropReleaseOrder.AirDate ? PlaybackOrder.Chronological : PlaybackOrder.SeasonEpisode);
+        DropPlan plan = DropPlan.Create(config, context, state?.DropOrigin);
+        return CreateDrop(key, pool, plan, state);
+    }
+
+    private static MediaSequence CreateDrop(string key, List<MediaItem> pool, DropPlan plan, PlaybackState? state)
+    {
+        MediaSequence sequence = Create(key, PlaybackOrder.Drop, pool, state, preordered: false);
+        sequence._drop = plan;
+
+        int premiered;
+        if (state?.Premiered is not { } saved)
+        {
+            // First time on a drop: everything out before the latest drop counts as already aired, and the
+            // latest drop's episodes are new.
+            int released = Math.Min(pool.Count, plan.ReleasedAt(plan.Now));
+            premiered = Math.Max(Math.Min(released, Math.Max(0, plan.Config.AlreadyOut)), released - plan.PerDrop);
+        }
+        else if (state.PoolFingerprint == sequence.FingerprintOf() || string.IsNullOrEmpty(state.LastPremieredId))
+        {
+            premiered = saved;
+        }
+        else
+        {
+            int index = pool.FindIndex(item => item.Id == state.LastPremieredId);
+            premiered = index >= 0 ? index + 1 : saved;
+        }
+
+        sequence._premiered = Math.Clamp(premiered, 0, pool.Count);
+        sequence._lastPremieredId = state?.LastPremieredId;
+        return sequence;
+    }
+
+    /// <summary>
+    /// A collection without title rotation where some (or all) shows drop. Each drop show gets its own
+    /// sequence; everything else keeps <paramref name="order"/> together, as it would in a flat pool.
+    /// </summary>
+    public static MediaSequence CreateMixed(string key, IReadOnlyList<MediaItem> items, PlaybackOrder order,
+        IReadOnlyDictionary<string, TitleRotation.TitleRule> rules, DropConfig? collectionDrop, DropContext context, PlaybackState? state)
+    {
+        MediaSequence mixed = Create(key, PlaybackOrder.Chronological, Sort(items, PlaybackOrder.SeasonEpisode), state, preordered: true);
+        mixed._mixed = true;
+        mixed._titles = [];
+
+        List<MediaItem> rest = [];
+        foreach (var group in items.GroupBy(TitleRotation.TitleOf, StringComparer.OrdinalIgnoreCase)
+                     .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            rules.TryGetValue(group.Key, out var rule);
+            if ((rule?.Order ?? order) != PlaybackOrder.Drop)
+            {
+                rest.AddRange(group);
+                continue;
+            }
+
+            PlaybackState? titleState = state?.Titles?.GetValueOrDefault(group.Key);
+            mixed._titles.Add((group.Key, Math.Max(1, rule?.Weight ?? 1),
+                CreateDrop($"{key}|title|{group.Key}", group, rule?.Drop ?? collectionDrop ?? new DropConfig(), context, titleState)));
+        }
+
+        if (rest.Count > 0)
+        {
+            PlaybackOrder restOrder = order == PlaybackOrder.Drop ? PlaybackOrder.Shuffle : order;
+            mixed._titles.Add((RestTitle, 1, Create($"{key}|rest", restOrder, rest, state?.Titles?.GetValueOrDefault(RestTitle))));
+        }
+
+        return mixed;
+    }
 
     /// <summary>
     /// Wraps a running order the caller has already decided, e.g. one produced by
@@ -55,7 +187,8 @@ public sealed class MediaSequence
 
     public static MediaSequence CreateRotation(string key, IReadOnlyList<MediaItem> items, TitleOrder titleOrder,
         PlaybackOrder episodeOrder, IReadOnlyDictionary<string, TitleRotation.TitleRule> rules,
-        IReadOnlyList<string> preferredOrder, string seed, PlaybackState? state)
+        IReadOnlyList<string> preferredOrder, string seed, PlaybackState? state,
+        DropConfig? collectionDrop = null, DropContext? dropContext = null)
     {
         var legacy = TitleRotation.Build(items, titleOrder, episodeOrder, rules, preferredOrder, seed);
         var rotation = CreatePreordered(key, legacy, state);
@@ -77,7 +210,11 @@ public sealed class MediaSequence
         {
             rules.TryGetValue(group.Key, out var rule);
             previous.TryGetValue(group.Key, out var titleState);
-            var sequence = Create($"{key}|title|{group.Key}", rule?.Order ?? episodeOrder, group, titleState);
+            PlaybackOrder titleOrderOf = rule?.Order ?? episodeOrder;
+            var sequence = titleOrderOf == PlaybackOrder.Drop
+                ? CreateDrop($"{key}|title|{group.Key}", group, rule?.Drop ?? collectionDrop ?? new DropConfig(),
+                    dropContext ?? DropContext.Utc(DateTimeOffset.UtcNow), titleState)
+                : Create($"{key}|title|{group.Key}", titleOrderOf, group, titleState);
             rotation._titles.Add((group.Key, Math.Max(1, rule?.Weight ?? 1), sequence));
             rotation._titleCredits[group.Key] = state?.TitleCredits?.GetValueOrDefault(group.Key) ?? 0;
         }
@@ -137,6 +274,7 @@ public sealed class MediaSequence
     public bool TryTake(Func<MediaItem, bool>? predicate, out MediaItem item)
     {
         item = null!;
+        LastTakeWasPremiere = false;
         if (_pool.Count == 0)
         {
             return false;
@@ -144,6 +282,7 @@ public sealed class MediaSequence
 
         bool taken = _titles is not null ? TryTakeTitle(predicate, out item) : Order switch
         {
+            PlaybackOrder.Drop when _drop is not null => TryTakeDrop(predicate, out item),
             PlaybackOrder.Random when !IsPreordered => TryTakeRandom(predicate, out item),
             PlaybackOrder.Shuffle when !IsPreordered => TryTakeFromBag(predicate, out item),
             _ => TryTakeOrdered(predicate, out item)
@@ -159,6 +298,7 @@ public sealed class MediaSequence
 
     public bool TryTakeSameTitle(string title, Func<MediaItem, bool> predicate, out MediaItem item)
     {
+        LastTakeWasPremiere = false;
         if (_titles is null)
         {
             return TryTake(candidate => string.Equals(TitleRotation.TitleOf(candidate), title, StringComparison.OrdinalIgnoreCase)
@@ -166,7 +306,16 @@ public sealed class MediaSequence
         }
         var selected = _titles.FirstOrDefault(candidate => string.Equals(candidate.Title, title, StringComparison.OrdinalIgnoreCase));
         item = null!;
-        if (selected.Sequence is null || !selected.Sequence.TryTake(predicate, out item)) return false;
+        if (selected.Sequence is null)
+        {
+            // A mixed collection keeps its non-drop shows together.
+            var rest = _titles.FirstOrDefault(candidate => candidate.Title == RestTitle);
+            if (rest.Sequence is null || !rest.Sequence.TryTakeSameTitle(title, predicate, out item)) return false;
+            _lastItemId = item.Id;
+            return true;
+        }
+        if (!selected.Sequence.TryTake(predicate, out item)) return false;
+        LastTakeWasPremiere = selected.Sequence.LastTakeWasPremiere;
         _lastItemId = item.Id;
         return true;
     }
@@ -174,17 +323,189 @@ public sealed class MediaSequence
     private bool TryTakeTitle(Func<MediaItem, bool>? predicate, out MediaItem item)
     {
         var eligible = _titles!.Where(title => predicate is null || title.Sequence.Pool.Any(predicate)).ToArray();
+
+        // A freshly dropped episode airs at the first chance it gets, ahead of whoever's turn it is.
+        var premiering = eligible.FirstOrDefault(title => title.Sequence.PendingPremiere(predicate) is not null);
+
+        if (_mixed)
+        {
+            if (premiering.Sequence is not null && premiering.Sequence.TryTake(predicate, out item))
+            {
+                LastTakeWasPremiere = premiering.Sequence.LastTakeWasPremiere;
+                return true;
+            }
+
+            return TryTakeProportional(eligible, predicate, out item);
+        }
+
         var credits = eligible.ToDictionary(title => title.Title,
             title => _titleCredits[title.Title] + title.Weight, StringComparer.OrdinalIgnoreCase);
-        foreach (var title in eligible.OrderByDescending(title => credits[title.Title]))
+        var turns = eligible.OrderByDescending(title => credits[title.Title]);
+        foreach (var title in premiering.Sequence is null ? turns : turns.OrderByDescending(title => title.Title == premiering.Title))
         {
             if (!title.Sequence.TryTake(predicate, out item)) continue;
+            LastTakeWasPremiere = title.Sequence.LastTakeWasPremiere;
             foreach (var candidate in eligible) _titleCredits[candidate.Title] = credits[candidate.Title];
             _titleCredits[title.Title] -= eligible.Sum(candidate => (long)candidate.Weight);
             return true;
         }
         item = null!;
         return false;
+    }
+
+    /// <summary>
+    /// Picks a show at random in proportion to how much it has to offer (a drop show counts only what's out),
+    /// so a mixed collection plays like the flat pool it would otherwise be.
+    /// </summary>
+    private bool TryTakeProportional((string Title, int Weight, MediaSequence Sequence)[] eligible, Func<MediaItem, bool>? predicate, out MediaItem item)
+    {
+        List<(string Title, int Weight, MediaSequence Sequence)> left = [.. eligible];
+        while (left.Count > 0)
+        {
+            long total = left.Sum(title => (long)title.Sequence.Available * title.Weight);
+            if (total <= 0)
+            {
+                break;
+            }
+
+            long roll = (long)(_random.Next(int.MaxValue) / (double)int.MaxValue * total);
+            int pick = 0;
+            for (long seen = 0; pick < left.Count; pick++)
+            {
+                seen += (long)left[pick].Sequence.Available * left[pick].Weight;
+                if (roll < seen) break;
+            }
+
+            var chosen = left[Math.Min(pick, left.Count - 1)];
+            if (chosen.Sequence.TryTake(predicate, out item))
+            {
+                LastTakeWasPremiere = chosen.Sequence.LastTakeWasPremiere;
+                return true;
+            }
+
+            left.Remove(chosen);
+        }
+
+        item = null!;
+        return false;
+    }
+
+    /// <summary>How many items this sequence can play right now: a drop show counts only episodes that are out.</summary>
+    internal int Available => _drop is not null
+        ? Math.Min(_pool.Count, Math.Max(_premiered, Released()))
+        : _titles is not null ? _titles.Sum(title => title.Sequence.Available) : _pool.Count;
+
+    private int Released() => _drop is null ? _pool.Count : Math.Min(_pool.Count, _drop.ReleasedAt(_at ?? _drop.Now));
+
+    /// <summary>The dropped episode waiting for its new airing (and fitting <paramref name="predicate"/>), if any.</summary>
+    internal MediaItem? PendingPremiere(Func<MediaItem, bool>? predicate)
+    {
+        if (_titles is not null)
+        {
+            return _titles.Select(title => title.Sequence.PendingPremiere(predicate)).FirstOrDefault(item => item is not null);
+        }
+
+        if (_drop is null || _premiered >= Released())
+        {
+            return null;
+        }
+
+        MediaItem next = _pool[_premiered];
+        return predicate is null || predicate(next) ? next : null;
+    }
+
+    /// <summary>
+    /// The next item would be a dropped episode's new airing. Used by promos to know whether what's up next is new.
+    /// </summary>
+    public bool WouldPremiere(MediaItem item) =>
+        _titles is not null
+            ? _titles.Any(title => title.Sequence.WouldPremiere(item))
+            : _drop is not null && _premiered < Released() && _pool[_premiered].Id == item.Id;
+
+    private bool TryTakeDrop(Func<MediaItem, bool>? predicate, out MediaItem item)
+    {
+        if (PendingPremiere(predicate) is { } premiere)
+        {
+            _premiered++;
+            _lastPremieredId = premiere.Id;
+            LastTakeWasPremiere = true;
+            item = premiere;
+            return true;
+        }
+
+        int aired = Math.Min(_premiered, _pool.Count);
+        if (aired == 0)
+        {
+            // Nothing has dropped yet; let the rest of the collection have the slot.
+            item = null!;
+            return false;
+        }
+
+        switch (_drop!.Config.Repeats)
+        {
+            case PlaybackOrder.Random:
+            {
+                List<MediaItem> candidates = [.. _pool.Take(aired).Where(candidate => predicate is null || predicate(candidate))];
+                if (candidates.Count == 0) break;
+                item = candidates[_random.Next(candidates.Count)];
+                return true;
+            }
+
+            case PlaybackOrder.Shuffle or PlaybackOrder.Drop:
+            {
+                if (!_bag.Any(id => Aired(id, aired)))
+                {
+                    _bag.Clear();
+                    _bag.AddRange(_pool.Take(aired).Select(candidate => candidate.Id));
+                    _random.Shuffle(_bag);
+                }
+
+                for (int i = 0; i < _bag.Count; i++)
+                {
+                    if (!Aired(_bag[i], aired))
+                    {
+                        _bag.RemoveAt(i--);
+                        continue;
+                    }
+
+                    MediaItem candidate = _byId[_bag[i]];
+                    if (predicate is null || predicate(candidate))
+                    {
+                        _bag.RemoveAt(i);
+                        item = candidate;
+                        return true;
+                    }
+                }
+
+                break;
+            }
+
+            default:
+                for (int probe = 0; probe < aired; probe++)
+                {
+                    int index = (_cursor + probe) % aired;
+                    MediaItem candidate = _pool[index];
+                    if (predicate is null || predicate(candidate))
+                    {
+                        _cursor = (index + 1) % aired;
+                        item = candidate;
+                        return true;
+                    }
+                }
+
+                break;
+        }
+
+        item = null!;
+        return false;
+    }
+
+    private bool Aired(string id, int aired)
+    {
+        _releaseIndex ??= _pool.Select((candidate, index) => (candidate.Id, index))
+            .GroupBy(pair => pair.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First().index, StringComparer.Ordinal);
+        return _releaseIndex.TryGetValue(id, out int index) && index < aired;
     }
 
     public PlaybackState ToState() => new()
@@ -196,8 +517,35 @@ public sealed class MediaSequence
         PoolFingerprint = Fingerprint(_pool),
         LastItemId = _lastItemId,
         Titles = _titles?.ToDictionary(title => title.Title, title => title.Sequence.ToState(), StringComparer.OrdinalIgnoreCase),
-        TitleCredits = _titles is null ? null : new(_titleCredits, StringComparer.OrdinalIgnoreCase)
+        TitleCredits = _titles is null ? null : new(_titleCredits, StringComparer.OrdinalIgnoreCase),
+        Premiered = _drop is null ? null : _premiered,
+        LastPremieredId = _drop is null ? null : _lastPremieredId,
+        DropOrigin = _drop is { HasConfiguredStart: false } ? _drop.Origin : null
     };
+
+    /// <summary>An independent copy at the same place, for looking ahead without consuming anything.</summary>
+    private MediaSequence Clone()
+    {
+        MediaSequence copy;
+        if (_titles is not null)
+        {
+            copy = Create(Key, Order, _pool, ToState(), IsPreordered);
+            copy._titles = _titles.Select(title => (title.Title, title.Weight, title.Sequence.Clone())).ToList();
+            copy._titleCredits = new(_titleCredits, StringComparer.OrdinalIgnoreCase);
+            copy._mixed = _mixed;
+        }
+        else if (_drop is not null)
+        {
+            copy = CreateDrop(Key, _pool, _drop, ToState());
+        }
+        else
+        {
+            copy = Create(Key, Order, _pool, ToState(), IsPreordered);
+        }
+
+        copy._at = _at;
+        return copy;
+    }
 
     /// <summary>
     /// The next <paramref name="max"/> items in play order without consuming them. Used by the knapsack
@@ -210,12 +558,9 @@ public sealed class MediaSequence
             return [];
         }
 
-        if (_titles is not null)
+        if (_titles is not null || _drop is not null)
         {
-            var previewSequence = CreatePreordered(Key, _pool, ToState());
-            previewSequence._titles = _titles.Select(title => (title.Title, title.Weight,
-                Create(title.Sequence.Key, title.Sequence.Order, title.Sequence.Pool, title.Sequence.ToState()))).ToList();
-            previewSequence._titleCredits = new(_titleCredits, StringComparer.OrdinalIgnoreCase);
+            var previewSequence = Clone();
             List<MediaItem> upcoming = [];
             for (int count = 0; count < Math.Min(max, _pool.Count) && previewSequence.TryTake(null, out var item); count++) upcoming.Add(item);
             return upcoming;
@@ -265,7 +610,9 @@ public sealed class MediaSequence
     public IReadOnlyList<MediaItem> PreviewForGap(int max, Func<MediaItem, bool> predicate)
     {
         if (max <= 0) return [];
-        if (_titles is null && Order != PlaybackOrder.Shuffle)
+        if (_titles is not null || _drop is not null)
+            return PreviewOrder(_pool.Count).Where(predicate).Take(max).ToArray();
+        if (Order != PlaybackOrder.Shuffle)
         {
             // Walk only as far as the requested window needs, without copying the entire library.
             List<MediaItem> preview = new(Math.Min(max, _pool.Count));
@@ -310,10 +657,33 @@ public sealed class MediaSequence
 
         if (_titles is not null && _byId.TryGetValue(id, out var consumed))
         {
-            var selected = _titles.First(title => string.Equals(title.Title, TitleRotation.TitleOf(consumed), StringComparison.OrdinalIgnoreCase));
+            var selected = _titles.FirstOrDefault(title => string.Equals(title.Title, TitleRotation.TitleOf(consumed), StringComparison.OrdinalIgnoreCase));
+            if (selected.Sequence is null)
+            {
+                selected = _titles.FirstOrDefault(title => title.Title == RestTitle);
+            }
+            if (selected.Sequence is null) return;
             selected.Sequence.Consume(id);
+            if (_mixed) return;
             foreach (var title in _titles) _titleCredits[title.Title] += title.Weight;
             _titleCredits[selected.Title] -= _titles.Sum(title => (long)title.Weight);
+            return;
+        }
+
+        if (_drop is not null)
+        {
+            if (_premiered < _pool.Count && _pool[_premiered].Id == id)
+            {
+                _premiered++;
+                _lastPremieredId = id;
+            }
+            else
+            {
+                _bag.Remove(id);
+                int index = _pool.FindIndex(p => p.Id == id);
+                if (index >= 0 && _premiered > 0) _cursor = (index + 1) % _premiered;
+            }
+
             return;
         }
 
@@ -422,7 +792,7 @@ public sealed class MediaSequence
                 .ThenBy(i => i.SeasonNumber ?? int.MaxValue)
                 .ThenBy(i => i.EpisodeNumber ?? int.MaxValue)
                 .ThenBy(i => i.SortKey, StringComparer.Ordinal),
-            PlaybackOrder.SeasonEpisode => items
+            PlaybackOrder.SeasonEpisode or PlaybackOrder.Drop => items
                 .OrderBy(i => i.SeriesName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(i => i.SeasonNumber ?? int.MaxValue)
                 .ThenBy(i => i.EpisodeNumber ?? int.MaxValue)

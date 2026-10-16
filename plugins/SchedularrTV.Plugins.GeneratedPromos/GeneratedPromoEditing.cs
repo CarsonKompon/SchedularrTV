@@ -118,6 +118,8 @@ public static class GeneratedPromoEditing
                 GeneratedLayerKind.Eventually => "Eventually",
                 GeneratedLayerKind.YoureWatching => "You're Watching",
                 GeneratedLayerKind.BackToTheShow => "Back to the Show",
+                GeneratedLayerKind.NewEpisode => "New Episode",
+                GeneratedLayerKind.RightBack => "Right Back",
                 GeneratedLayerKind.Rect => "Shape",
                 GeneratedLayerKind.Image => "Image",
                 GeneratedLayerKind.Video => "Video",

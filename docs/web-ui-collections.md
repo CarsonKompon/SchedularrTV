@@ -33,8 +33,25 @@ For example, **`kind == 'Movie' AND year < 1990`** selects older movies. Switchi
 | **Order** | Season/episode or chronological | Advance through each title when title rotation is enabled |
 | **Order** | Shuffle | Avoid repeats until the pool is exhausted |
 | **Order** | Random | Allow repeated selections |
+| **Order** | Drop | Release new episodes on a schedule; repeat the ones already out in between |
 
 To alternate shows while keeping episodes sequential, choose a title-rotation mode and season/episode order. Referenced collections can supply both settings through **Inherit from collection**.
+
+### Drop new episodes
+
+Choose **Drop** as the collection's **Order** to give every show in it the same release schedule, or choose it for one title in **Tune individual titles** and open **Drops…** to give that show its own.
+
+| Drop control | Effect |
+| --- | --- |
+| **Drop on** | Weekdays new episodes come out; leave them all unticked to use **Or every** (`3d`, `12h`) |
+| **At (time of day)** | When each drop happens, in the channel's time zone |
+| **Episodes per drop** | How many come out at once |
+| **Next episode by** | Episode order, or air date |
+| **Between drops, repeats play** | Shuffled, at random, or in order |
+| **First drop** | The first drop's date; empty starts with the next build, with one episode out straight away |
+| **Already out before the first drop** | Episodes that count as released (repeats only) from the start |
+
+A new episode airs at the first chance after it drops, ahead of whatever else was due. Its first airing counts as a **new episode** for promos and overlays. See [Drop new episodes on a schedule](scheduling.md#drop-new-episodes-on-a-schedule).
 
 ### Tune individual titles
 
@@ -42,6 +59,7 @@ To alternate shows while keeping episodes sequential, choose a title-rotation mo
 | --- | --- |
 | **Order** | Override the collection's episode order for one title |
 | **Weight** | Adjust turns per rotation; `2` plays twice as often as `1` |
+| **Drops…** | For a title on **Drop**: use the collection's schedule or give it its own |
 | **Seasons…** | Restrict a show to selected seasons or individual episodes |
 | **Collection from your library** | Add an existing media-library collection when the source provides one |
 

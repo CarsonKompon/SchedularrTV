@@ -65,6 +65,11 @@
                        @onchange="e => SetWeight(include, e)" />
             </label>
 
+            @if (include.Order == PlaybackOrder.Drop || include.Drop is not null)
+            {
+                <button class="btn btn-sm" title="@(include.Drop?.Describe() ?? "Uses the collection's drop schedule")"
+                        @onclick="() => _dropFor = include">Drops…</button>
+            }
             @if (!string.IsNullOrWhiteSpace(include.Show))
             {
                 <button class="btn btn-sm" @onclick="() => EditBumpers(include)">Intros/outros…</button>
@@ -142,6 +147,31 @@
     </div>
 }
 
+@if (_dropFor is not null)
+{
+    <div class="modal-backdrop" @onclick="() => _dropFor = null">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h2 style="margin-top:0;">@_dropFor.Describe() &mdash; drops</h2>
+            <label class="check">
+                <input type="checkbox" checked="@(_dropFor.Drop is not null)" @onchange="OnOwnDropChanged" />
+                <span>Give this title its own drop schedule</span>
+            </label>
+            @if (_dropFor.Drop is { } ownDrop)
+            {
+                <DropEditor Drop="ownDrop" Changed="Changed" />
+            }
+            else
+            {
+                <p class="hint">Uses the collection's drop schedule (one episode a week when the collection sets none).</p>
+            }
+            <div class="row" style="margin-top:16px;">
+                <div class="spacer"></div>
+                <button class="btn btn-primary" @onclick="() => _dropFor = null">Done</button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (_bumpersFor is not null)
 {
     <BumperEditor Include="_bumpersFor" Changed="Changed" OnClose="() => _bumpersFor = null" />
@@ -175,6 +205,15 @@
     private ContentInclude? _bumpersFor;
 
     private void EditBumpers(ContentInclude include) => _bumpersFor = include;
+
+    private ContentInclude? _dropFor;
+
+    private async Task OnOwnDropChanged(ChangeEventArgs e)
+    {
+        if (_dropFor is null) return;
+        _dropFor.Drop = (bool)(e.Value ?? false) ? _dropFor.Drop ?? new DropConfig() : null;
+        await Changed.InvokeAsync();
+    }
 
     private int BlockCount(ContentInclude include) =>
         include.Bumpers.Count > 0
@@ -266,6 +305,10 @@
     {
         string value = e.Value?.ToString() ?? "";
         include.Order = value.Length == 0 ? null : Enum.Parse<PlaybackOrder>(value);
+        if (include.Order == PlaybackOrder.Drop && include.Drop is null)
+        {
+            _dropFor = include;
+        }
         await Changed.InvokeAsync();
     }
 

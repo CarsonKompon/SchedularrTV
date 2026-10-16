@@ -44,6 +44,12 @@ public sealed class ContentInclude
     public PlaybackOrder? Order { get; set; }
 
     /// <summary>
+    /// This title's own drop cadence when it uses <see cref="PlaybackOrder.Drop"/> (its own
+    /// <see cref="Order"/>, or the collection's). Null uses the collection's cadence.
+    /// </summary>
+    public DropConfig? Drop { get; set; }
+
+    /// <summary>
     /// How many turns this title takes per rotation. 2 means it comes up twice as often as a title
     /// with the default weight of 1.
     /// </summary>

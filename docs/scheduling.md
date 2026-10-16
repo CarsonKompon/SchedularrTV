@@ -25,8 +25,47 @@ Overlapping windows use priority: specific-date rules default to `100`, anchor s
 | **`season_episode`** | Season and episode ordering |
 | **`shuffle`** | Shuffled pool without repeats until exhausted |
 | **`random`** | Random selection with possible repeats |
+| **`drop`** | New episodes drop on a schedule; between drops only episodes that already dropped play, as repeats |
 
 **`title_order`** rotates titles separately, while **`order`** controls episodes within each title. Each title retains its own position and wraps independently.
+
+### Drop new episodes on a schedule
+
+With **`order: drop`**, each show releases episodes on a cadence, like a network airing a new episode every Monday. A freshly dropped episode airs at the first chance after its drop time, ahead of whatever else was due; until the next drop, only episodes that have already dropped play, as repeats.
+
+```yaml
+global_collections:
+  saturday-morning:
+    order: shuffle                 # most shows shuffle as usual
+    include:
+      - show: Bluey
+        order: drop
+        drop: { days: [monday], time: "20:00", count: 1 }
+      - show: Bob's Burgers
+        order: drop
+        drop: { every: 3d, count: 2, release_order: air_date }
+      - show: Rugrats
+  cartoon-premieres:
+    order: drop                    # every show here drops on the same cadence
+    drop:
+      days: [monday]
+      time: "08:00"
+```
+
+| Field | Meaning |
+| --- | --- |
+| **`days`** | Weekdays drops happen, in the channel's time zone |
+| **`every`** | Interval between drops when no days are listed (`3d`, `12h`); a week by default |
+| **`time`** | Time of day of each drop; midnight by default |
+| **`count`** | Episodes per drop; `1` by default |
+| **`release_order`** | `episode_order` (season, episode) or `air_date` |
+| **`repeats`** | How dropped episodes repeat between drops: `shuffle` (default), `random`, `season_episode` or `chronological` |
+| **`start`** | First drop date, `yyyy-MM-dd`. Without it, drops begin with the first build, and the latest drop time counts, so one episode is out straight away |
+| **`already_out`** | Episodes treated as already released (repeats only) before the first drop |
+
+Drops apply to each show on its own. A collection's **`drop`** settings are the default for every show in it on `drop`; a title's own **`drop`** overrides them. In a collection without **`title_order`**, shows not on `drop` keep the collection's order together, and shows come up in proportion to how many episodes each has out. With **`title_order`**, drop shows take their turns like any other title, but a freshly dropped episode still goes first.
+
+Whether an episode is out is worked out from the time it would air, so rebuilding the schedule never releases one early. The first airing of a dropped episode is marked as a **new episode**: generated promos, promo clips in a `New` folder, and overlay conditions can all react to it.
 
 ## Query language
 

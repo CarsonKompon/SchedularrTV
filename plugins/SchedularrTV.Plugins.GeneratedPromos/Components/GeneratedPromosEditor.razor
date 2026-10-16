@@ -8,7 +8,8 @@
         <div class="card-head"><h2>Templates</h2></div>
         <p class="hint">
             Render promos from the schedule, with a voice-over and background music: Up Next,
-            Now Playing, This Has Been, Coming Up, Eventually, and You're Watching and Back to the Show for mid-show breaks.
+            Now Playing, This Has Been, Coming Up, Eventually, New Episode (for shows that drop new episodes), and
+            We'll Be Right Back, You're Watching and Back to the Show for mid-show breaks.
             They fill in when a show has no promo clip,
             or mix in with the clips it has.
         </p>
@@ -99,6 +100,8 @@ else
         GeneratedPromoType.ComingUp => "Coming Up",
         GeneratedPromoType.YoureWatching => "You're Watching",
         GeneratedPromoType.BackToTheShow => "Back to the Show",
+        GeneratedPromoType.NewEpisode => "New Episode",
+        GeneratedPromoType.RightBack => "We'll Be Right Back",
         _ => "Eventually"
     };
 
@@ -113,6 +116,7 @@ else
 
     private static string Summary(GeneratedPromoTemplate template) =>
         $"{TypeName(template.Type)} · {(template.Usage == GeneratedPromoUsage.Mixed ? $"Mixed {template.MixChance:P0}" : "Fallback")} · {template.Duration.TotalSeconds:0.#}s"
+        + (template.Episodes switch { GeneratedEpisodeFilter.New => " · new episodes", GeneratedEpisodeFilter.Repeats => " · repeats", _ => "" })
         + (template.Generator is null ? "" : " · external")
         + (template.Enabled ? "" : " · off");
 

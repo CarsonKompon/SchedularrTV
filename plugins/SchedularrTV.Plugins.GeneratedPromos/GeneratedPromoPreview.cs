@@ -57,10 +57,12 @@ public sealed class GeneratedPromoPreview(
         int needed = GeneratedPromoResolver.ListingsNeeded(template);
         IReadOnlyList<UpNextListing> real = schedule is null ? [] : template.Type switch
         {
-            GeneratedPromoType.ThisHasBeen or GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow =>
+            GeneratedPromoType.ThisHasBeen or GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow
+                or GeneratedPromoType.RightBack =>
                 UpNextPromo.Previous(schedule, now) is { } previous ? [previous] : [],
             GeneratedPromoType.ComingUp => UpNextPromo.Listings(schedule, now, 3, grouping: template.UpcomingGrouping) is { Count: > 1 } upcoming ? [upcoming[^1]] : [],
             GeneratedPromoType.Eventually => [],
+            GeneratedPromoType.NewEpisode => UpNextPromo.NextNew(schedule, now, Array.Empty<string>()) is { } fresh ? [fresh] : [],
             _ => UpNextPromo.Listings(schedule, now, needed, grouping: template.UpcomingGrouping)
         };
         sample = real.Count == 0;
@@ -77,9 +79,11 @@ public sealed class GeneratedPromoPreview(
 
         IReadOnlyList<UpNextListing> samples = template.Type switch
         {
-            GeneratedPromoType.ThisHasBeen or GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow =>
-                [new UpNextListing(SampleTitles[0], next.AddMinutes(-30), "Help Wanted")],
+            GeneratedPromoType.ThisHasBeen or GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow
+                or GeneratedPromoType.RightBack =>
+                [new UpNextListing(SampleTitles[0], next.AddMinutes(-30), "Help Wanted") { IsNew = template.Episodes == GeneratedEpisodeFilter.New }],
             GeneratedPromoType.ComingUp => [new UpNextListing(SampleTitles[1], next.AddHours(2), "The Big Problem")],
+            GeneratedPromoType.NewEpisode => [new UpNextListing(SampleTitles[1], new DateTimeOffset(next.Date, next.Offset).AddDays(2).AddHours(20), "The Big Problem") { IsNew = true }],
             GeneratedPromoType.Eventually => [new UpNextListing(SampleTitles[2], new DateTimeOffset(next.Date, next.Offset).AddDays(3).AddHours(16), "Downtown Cityscape")],
             _ => [.. Enumerable.Range(0, Math.Max(1, needed)).Select(index =>
                 new UpNextListing(SampleTitles[index % SampleTitles.Length], next.AddMinutes(30 * index), index == 0 ? "Help Wanted" : null))]

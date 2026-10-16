@@ -55,6 +55,7 @@ Pick a promo choice for a folder in the tree, then adjust it under **Promos**:
 | **Other clips suit any show** | Clips loose in the folder, or in `Any Show/`, play for any show |
 | **Start time folders** | `Up Next/Top Cat/8pm/` plays only for an 8pm start (also `8:30pm`, `830pm`, `20:30`) |
 | **Weekday folders** | `Eventually/Top Cat/Saturday/` plays only for a Saturday airing |
+| **New episode folders** | `Up Next/Top Cat/New/` plays only before a new episode (a [Drop](scheduling.md#drop-new-episodes-on-a-schedule) premiere), and wins over the others then; it works for Up Next, Now Playing, This Has Been, You're Watching and Back to the Show |
 
 With seasonal folders on, a promo under a month, season, holiday or date folder (`Promos/Christmas/Top Cat/Up Next/`) only plays then, and that folder isn't taken for a show. The tree shows greyed-out examples of the show, time and day folders each promo looks for. Clips made for the show win over clips for any show. Generated promos can still fill a spot no ad break has a folder for.
 

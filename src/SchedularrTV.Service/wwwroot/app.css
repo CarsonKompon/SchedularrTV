@@ -937,8 +937,8 @@ dialog.modal::backdrop { background: rgba(4, 5, 9, .75); }
 .seg-Commercial { background: var(--commercial); }
 .seg-Filler { background: var(--filler); }
 .seg-Promo, .seg-UpNextPromo, .seg-NowPlayingPromo, .seg-ThisHasBeenPromo,
-.seg-YoureWatchingPromo, .seg-BackToTheShowPromo { background: var(--promo); }
-.seg-EventuallyPromo { background: #9a63d6; }
+.seg-YoureWatchingPromo, .seg-BackToTheShowPromo, .seg-RightBackPromo { background: var(--promo); }
+.seg-EventuallyPromo, .seg-NewEpisodePromo { background: #9a63d6; }
 .seg-Padding { background: #3a4050; }
 
 .legend { display: flex; gap: 14px; font-size: 11.5px; color: var(--muted); margin-top: 10px; flex-wrap: wrap; }

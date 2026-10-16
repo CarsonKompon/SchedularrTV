@@ -66,6 +66,18 @@
                        @onchange="e => SetNumber(e, value => Template.MixChance = Math.Clamp(value, 0, 100) / 100)" />
             </label>
         }
+        @if (Template.Type is not GeneratedPromoType.NewEpisode)
+        {
+            <label class="field" title="New episodes are the first airing of an episode released by a Drop order">
+                <span>For episodes</span>
+                <select value="@(Template.Episodes?.ToString() ?? "")"
+                        @onchange="e => Set(() => Template.Episodes = Text(e) is { Length: > 0 } value && value != nameof(GeneratedEpisodeFilter.Any) ? Enum.Parse<GeneratedEpisodeFilter>(value) : null)">
+                    <option value="">New and repeats</option>
+                    <option value="@GeneratedEpisodeFilter.New">Only new episodes (preferred for them)</option>
+                    <option value="@GeneratedEpisodeFilter.Repeats">Only repeats</option>
+                </select>
+            </label>
+        }
         <label class="field">
             <span>Video made with</span>
             <select value="@(Template.Generator is null ? CanvasMode : GeneratorMode)" @onchange="SetMadeWith">
@@ -3580,6 +3592,8 @@
         GeneratedPromoType.ComingUp => "Coming Up",
         GeneratedPromoType.YoureWatching => "You're Watching",
         GeneratedPromoType.BackToTheShow => "Back to the Show",
+        GeneratedPromoType.NewEpisode => "New Episode",
+        GeneratedPromoType.RightBack => "We'll Be Right Back",
         _ => "Eventually"
     };
 
@@ -3606,6 +3620,8 @@
         GeneratedLayerKind.Eventually => "Eventually text",
         GeneratedLayerKind.YoureWatching => "You're Watching text",
         GeneratedLayerKind.BackToTheShow => "Back to the Show text",
+        GeneratedLayerKind.NewEpisode => "New Episode text",
+        GeneratedLayerKind.RightBack => "Right Back text",
         GeneratedLayerKind.Rect => "Shape",
         _ => kind.ToString()
     };

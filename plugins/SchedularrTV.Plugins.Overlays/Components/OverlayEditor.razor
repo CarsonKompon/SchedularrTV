@@ -295,6 +295,9 @@
                 out over the same time.
                 @(IsDesign && TimingSchedule.Always ? "The animation length is the timeline above: keyframed layers move over it as each part of the programme starts." : "")</p>
 
+            <h3 class="ed-section">Conditions and sharing the screen</h3>
+            <OverlayConditionsEditor Overlay="Overlay" Changed="ConditionsChanged" />
+
             <h3 class="ed-section">Canvas</h3>
             <div class="grid grid-3">
                 @if (IsDesign)
@@ -1025,6 +1028,8 @@
     }
 
     // Changing when it shows can change the timeline's length.
+    private Task ConditionsChanged() => Changed.InvokeAsync();
+
     private Task TimingChanged()
     {
         _time = SnapToFrame(Math.Min(_time, TimelineLength));

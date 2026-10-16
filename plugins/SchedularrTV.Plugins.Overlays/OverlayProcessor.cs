@@ -116,13 +116,49 @@ public sealed class OverlayProcessor : IPlayoutProcessor
             Dictionary<string, string>? tokens = null;
             OverlayMoment? moment = null;
             (OverlayImageSubject? Current, IReadOnlyList<OverlayImageSubject> Upcoming)? imageSubjects = null;
-            foreach (Overlay overlay in resolved.Overlays.SelectMany(OverlayTiming.Rules))
+            ScheduleEntry? next = Next(ordered, index);
+            ScheduleEntry? programme = Programme(ordered, index);
+
+            // Each overlay whose conditions hold and that shows on this entry, with its rules' appearances…
+            List<OverlayContention.Candidate> candidates = [];
+            foreach (Overlay candidate in resolved.Overlays)
             {
-                if (OverlayTiming.For(overlay, entry) is not { } showing)
+                if (!OverlayConditionMatcher.Matches(candidate, entry, programme, next))
                 {
                     continue;
                 }
 
+                // A file none of whose pictures suits this entry shows nothing, so it can't win a turn either.
+                if (candidate.Kind == OverlayKinds.File && candidate.Variants.Count > 0 && string.IsNullOrWhiteSpace(candidate.VariableImage)
+                    && candidate.VariableImages.Count == 0)
+                {
+                    moment ??= OverlayMoment.At(entry.Start, context.Config, channel);
+                    if (OverlayVariants.FileFor(candidate, entry.Item, moment) is null)
+                    {
+                        continue;
+                    }
+                }
+
+                List<(Overlay Rule, OverlayShowing Showing)> rules = [];
+                foreach (Overlay rule in OverlayTiming.Rules(candidate))
+                {
+                    if (OverlayTiming.For(rule, entry) is { } appearance)
+                    {
+                        rules.Add((rule, appearance));
+                    }
+                }
+
+                if (rules.Count > 0)
+                {
+                    candidates.Add(new OverlayContention.Candidate(candidate, rules));
+                }
+            }
+
+            // …then the ones that aren't additive take turns where they'd be on screen together.
+            string contentionSeed = $"{context.Config.Settings.Seed}|{channel.Id}|{ProgrammeKey(ordered, index)}";
+            foreach ((Overlay overlay, OverlayShowing showing) in OverlayContention.Resolve(candidates, entry, contentionSeed)
+                         .SelectMany(candidate => candidate.Rules))
+            {
                 try
                 {
                     bool prepare = preparation?.MayPrepare(channel.Number, entry, showing, now, viewers) ?? true;
@@ -155,7 +191,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
                         }
                     }
 
-                    tokens ??= Tokens(entry, Next(ordered, index), resolved.Owner);
+                    tokens ??= Tokens(entry, next, resolved.Owner);
                     foreach (JsonObject layer in Layers(Written(shown, entry, tokens, prepare), entry, showing, tokens, prepare: prepare))
                     {
                         layers.Add(layer);
@@ -492,6 +528,56 @@ public sealed class OverlayProcessor : IPlayoutProcessor
         return null;
     }
 
+    /// <summary>The programme on now: this entry if it is one, else the one the break interrupts or follows.</summary>
+    private static ScheduleEntry? Programme(List<ScheduleEntry> ordered, int index)
+    {
+        for (int at = index; at >= 0; at--)
+        {
+            ScheduleEntry candidate = ordered[at];
+            if (candidate.Kind == ScheduleEntryKind.Program && candidate.Item is not null && !candidate.IsSlotIntro && !candidate.IsSlotOutro)
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Identifies the airing an entry belongs to, the same for every part of a programme split by breaks (and for the
+    /// breaks between them), so a random pick between overlays holds for the whole programme.
+    /// </summary>
+    private static string ProgrammeKey(List<ScheduleEntry> ordered, int index)
+    {
+        ScheduleEntry entry = ordered[index];
+        if (entry.Kind != ScheduleEntryKind.Program || entry.IsSlotIntro || entry.IsSlotOutro)
+        {
+            return entry.Start.UtcDateTime.ToString("O", CultureInfo.InvariantCulture);
+        }
+
+        // Walk back to the programme's first part.
+        DateTimeOffset start = entry.Start;
+        for (int at = index - 1; at >= 0 && entry.SegmentNumber > 1; at--)
+        {
+            ScheduleEntry earlier = ordered[at];
+            if (earlier.Kind == ScheduleEntryKind.Program && !earlier.IsSlotIntro && !earlier.IsSlotOutro)
+            {
+                if (earlier.Item?.Id != entry.Item?.Id)
+                {
+                    break;
+                }
+
+                start = earlier.Start;
+                if (earlier.SegmentNumber <= 1)
+                {
+                    break;
+                }
+            }
+        }
+
+        return $"{entry.Item?.Id}|{start.UtcDateTime.ToString("O", CultureInfo.InvariantCulture)}";
+    }
+
     /// <summary>What {tokens} read as on this entry.</summary>
     public static Dictionary<string, string> Tokens(ScheduleEntry entry, ScheduleEntry? next, ChannelConfig owner)
     {
@@ -504,7 +590,9 @@ public sealed class OverlayProcessor : IPlayoutProcessor
             ["year"] = (item?.PremiereDate?.Year ?? item?.SeriesYear)?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
             ["channel"] = owner.Name,
             ["next"] = Title(next?.Item),
-            ["next_time"] = next is null ? string.Empty : OverlayRenderer.ClockTime(next.Start)
+            ["next_time"] = next is null ? string.Empty : OverlayRenderer.ClockTime(next.Start),
+            ["new"] = entry.IsPremiere ? "NEW" : string.Empty,
+            ["next_new"] = next?.IsPremiere == true ? "NEW" : string.Empty
         };
     }
 
@@ -519,6 +607,8 @@ public sealed class OverlayProcessor : IPlayoutProcessor
         ["year"] = "1998",
         ["channel"] = "Channel",
         ["next"] = "Another Show",
-        ["next_time"] = "8:30 PM"
+        ["next_time"] = "8:30 PM",
+        ["new"] = "NEW",
+        ["next_new"] = "NEW"
     };
 }

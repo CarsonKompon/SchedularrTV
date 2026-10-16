@@ -246,8 +246,11 @@ public sealed partial class GeneratedPromoService(
         GeneratedUpcomingGrouping grouping = GeneratedUpcomingGrouping.Timeslot) =>
         type switch
         {
-            GeneratedPromoType.ThisHasBeen or GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow =>
+            GeneratedPromoType.ThisHasBeen or GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow
+                or GeneratedPromoType.RightBack =>
                 UpNextPromo.Previous(schedule, entry.Start) is { } previous ? [previous] : [],
+            GeneratedPromoType.NewEpisode =>
+                UpNextPromo.NextNew(schedule, entry.End, Around(schedule, entry)) is { } fresh ? [fresh] : [],
             GeneratedPromoType.ComingUp or GeneratedPromoType.Eventually when entry.GeneratedTargetAt is { } at =>
                 (string.IsNullOrWhiteSpace(entry.GeneratedSubject)
                     ? UpNextPromo.FirstFrom(schedule, at, OpenTargetReach, type == GeneratedPromoType.ComingUp ? Around(schedule, entry) : Array.Empty<string>())

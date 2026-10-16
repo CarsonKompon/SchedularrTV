@@ -842,6 +842,44 @@ public static class SchedulerConfigLoader
         }
     }
 
+    private static void ValidateDrop(DropConfig? drop, string scope, List<string> errors)
+    {
+        if (drop is null)
+        {
+            return;
+        }
+
+        if (drop.Count < 1)
+        {
+            errors.Add($"{scope}.count must be at least 1.");
+        }
+
+        if (drop.AlreadyOut < 0)
+        {
+            errors.Add($"{scope}.already_out cannot be negative.");
+        }
+
+        if (drop.Days.Count == 0 && drop.Every is { } every && every < TimeSpan.FromMinutes(1))
+        {
+            errors.Add($"{scope}.every must be at least a minute.");
+        }
+
+        if (drop.Time is { } time && (time < TimeSpan.Zero || time >= TimeSpan.FromDays(1)))
+        {
+            errors.Add($"{scope}.time must be a time of day, e.g. 20:00.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(drop.Start) && Ordering.DropPlan.ParseStart(drop.Start) is null)
+        {
+            errors.Add($"{scope}.start '{drop.Start}' is not a date (use yyyy-MM-dd).");
+        }
+
+        if (drop.Repeats == Ordering.PlaybackOrder.Drop)
+        {
+            errors.Add($"{scope}.repeats can't be drop; use shuffle, random, season_episode or chronological.");
+        }
+    }
+
     private static void ValidateSelector(ContentSelector selector, string scope, SchedulerConfig config, List<string> errors)
     {
         bool hasCollection = !string.IsNullOrWhiteSpace(selector.Collection);
@@ -866,7 +904,10 @@ public static class SchedulerConfigLoader
             }
 
             ValidateQuery(include.Query, $"{scope}.include.query", errors);
+            ValidateDrop(include.Drop, $"{scope}.include.drop", errors);
         }
+
+        ValidateDrop(selector.Drop, $"{scope}.drop", errors);
 
         if (hasQuery && !Query.QueryParser.TryParse(selector.Query, out _, out string? queryError))
         {

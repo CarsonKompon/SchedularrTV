@@ -38,7 +38,13 @@ public enum ScheduleEntryKind
     EventuallyPromo,
 
     /// <summary>Unfillable residual. ErsatzTV is expected to pad this.</summary>
-    Padding
+    Padding,
+
+    /// <summary>Promo for the next new episode (a drop's first airing), mixed in among the ads.</summary>
+    NewEpisodePromo,
+
+    /// <summary>"We'll be right back", opening a break the same programme returns from.</summary>
+    RightBackPromo
 }
 
 public enum ProgramOrigin
@@ -104,6 +110,12 @@ public sealed record ScheduleEntry
     /// Folded into the listing the same way as <see cref="IsSlotIntro"/>.
     /// </summary>
     public bool IsSlotOutro { get; init; }
+
+    /// <summary>
+    /// True for a programme that is a new episode: the first airing of an episode released by a
+    /// <c>drop</c> order. Every part of a split programme carries it.
+    /// </summary>
+    public bool IsPremiere { get; init; }
 
     /// <summary>For promos: the show this promo advertises.</summary>
     public string? PromoTargetId { get; init; }

@@ -1,0 +1,87 @@
+@* When an overlay may show (new episodes, films, Up Next promos…) and whether it shares the screen or takes turns. *@
+
+<label class="check">
+    <input type="checkbox" checked="@OverlayContention.IsAdditive(Overlay)" @onchange="e => Set(() => Overlay.Additive = e.Value is true)" />
+    <span>Additive: always show, alongside any other overlay</span>
+</label>
+<p class="hint" style="margin-top:0;">
+    Overlays that aren't additive take turns: where several would be on screen at the same time, one of them is picked at
+    random (the same one every time that airing is published) and the others stand down. Screen bugs are usually additive;
+    lower thirds and Up Next cards usually aren't, so variations of one can share its spot.
+</p>
+
+<div class="field">
+    <span>Only on <span class="muted">(any of; none ticked means wherever “On” above allows)</span></span>
+    <div class="row row-wrap" style="gap:6px;">
+        @foreach (string value in OverlayOn.All)
+        {
+            bool on = Conditions?.On.Contains(value) == true;
+            <button type="button" class="btn btn-sm @(on ? "btn-primary" : "btn-ghost")" aria-pressed="@(on ? "true" : "false")"
+                    @onclick="() => Set(() => Toggle(value, !on))">@OverlayOn.Label(value)</button>
+        }
+    </div>
+</div>
+
+<div class="grid grid-3">
+    <label class="field"><span>The programme is</span>
+        <select value="@(Conditions?.Episodes ?? "")" @onchange="e => Set(() => Edit().Episodes = Empty(e))">
+            <option value="">Anything</option>
+            <option value="@OverlayAiring.New">A new episode</option>
+            <option value="@OverlayAiring.Repeat">Not a new episode</option>
+        </select></label>
+    <label class="field"><span>What's on next is</span>
+        <select value="@(Conditions?.Next ?? "")" @onchange="e => Set(() => Edit().Next = Empty(e))">
+            <option value="">Anything</option>
+            <option value="@OverlayAiring.New">A new episode</option>
+            <option value="@OverlayAiring.Repeat">Not a new episode</option>
+            <option value="@OverlayAiring.Episode">An episode</option>
+            <option value="@OverlayAiring.Movie">A movie</option>
+        </select></label>
+    <label class="field"><span>The programme matches <span class="muted">(library query, optional)</span></span>
+        <input type="text" value="@Conditions?.Query" placeholder="genre:'Comedy'" spellcheck="false"
+               @onchange="e => Set(() => Edit().Query = Empty(e))" /></label>
+</div>
+@if (Conditions?.Query is { Length: > 0 } conditionQuery && !SchedularrTV.Core.Query.QueryParser.TryParse(conditionQuery, out _, out string? queryError))
+{
+    <p class="hint warn">That query doesn't read: @queryError</p>
+}
+<p class="hint">
+    A new episode is the first airing of one released by a Drop order. In a break, “the programme” is the one the break
+    interrupts or follows. Tokens <code>{new}</code> and <code>{next_new}</code> read NEW for a new episode (now, or next).
+</p>
+
+@code {
+    [Parameter, EditorRequired] public Overlay Overlay { get; set; } = new();
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private OverlayConditions? Conditions => Overlay.Conditions;
+
+    private OverlayConditions Edit() => Overlay.Conditions ??= new OverlayConditions();
+
+    private async Task Set(Action change)
+    {
+        change();
+        // Nothing set: don't leave an empty block in the YAML.
+        if (Overlay.Conditions is { HasConditions: false })
+        {
+            Overlay.Conditions = null;
+        }
+
+        await Changed.InvokeAsync();
+    }
+
+    private void Toggle(string value, bool on)
+    {
+        List<string> values = Edit().On;
+        if (on && !values.Contains(value))
+        {
+            values.Add(value);
+        }
+        else if (!on)
+        {
+            values.Remove(value);
+        }
+    }
+
+    private static string? Empty(ChangeEventArgs e) => e.Value?.ToString() is { Length: > 0 } value && !string.IsNullOrWhiteSpace(value) ? value.Trim() : null;
+}

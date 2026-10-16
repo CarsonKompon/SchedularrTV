@@ -15,7 +15,7 @@ namespace SchedularrTV.Core.Ordering;
 public static class TitleRotation
 {
     /// <summary>Per-title overrides, keyed by the title as the library reports it.</summary>
-    public sealed record TitleRule(PlaybackOrder? Order, int Weight);
+    public sealed record TitleRule(PlaybackOrder? Order, int Weight, DropConfig? Drop = null);
 
     public static List<MediaItem> Build(
         IEnumerable<MediaItem> items,
@@ -149,7 +149,7 @@ public static class TitleRotation
             }
 
             order.Add(title);
-            rules[title] = new TitleRule(include.Order, include.Weight ?? 1);
+            rules[title] = new TitleRule(include.Order, include.Weight ?? 1, include.Drop);
         }
 
         return (rules, order);

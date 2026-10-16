@@ -231,9 +231,20 @@ public sealed class Overlay
     /// </summary>
     public List<OverlayVariant> Variants { get; set; } = [];
 
+    /// <summary>When the overlay may show at all: new episodes only, films, Up Next promos… Null shows it wherever its timing does.</summary>
+    public OverlayConditions? Conditions { get; set; }
+
+    /// <summary>
+    /// True: always shows, alongside whatever else is on screen. False: where it would be on screen at the same time as
+    /// other non-additive overlays, one of them is picked at random and the rest stand down. Null (overlays saved before
+    /// this setting) counts as additive, so they keep stacking as they did.
+    /// </summary>
+    public bool? Additive { get; set; }
+
     public Overlay Copy()
     {
         var copy = (Overlay)MemberwiseClone();
+        copy.Conditions = Conditions?.Copy();
         copy.Layers = [.. Layers.Select(layer => layer.Copy())];
         copy.Variants = [.. Variants.Select(variant => variant.Copy())];
         copy.Schedule = Schedule?.Copy();

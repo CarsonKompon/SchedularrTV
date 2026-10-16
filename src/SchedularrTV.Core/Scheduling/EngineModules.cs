@@ -127,7 +127,11 @@ internal sealed record ProgramPick(
     MediaSequence Sequence,
     ContentSelector Selector,
     IReadOnlyList<MediaItem>? FixedStack = null,
-    Func<MediaItem?, ProgramOrigin>? OriginOf = null);
+    Func<MediaItem?, ProgramOrigin>? OriginOf = null)
+{
+    /// <summary>Ids of the programmes in this pick that are new episodes (a drop's first airing).</summary>
+    public HashSet<string> Premieres { get; } = new(StringComparer.Ordinal);
+}
 
 // --- Breaks -----------------------------------------------------------------------------------------------------
 
@@ -261,7 +265,11 @@ internal interface IPromoSpotSubstitute
 {
     bool Has(BreakContext context, GeneratedPromoType type);
 
-    GeneratedPromoTemplate? Choose(BreakContext context, GeneratedPromoType type, bool clipAvailable, TimeSpan available, DateTimeOffset at);
+    GeneratedPromoTemplate? Choose(BreakContext context, GeneratedPromoType type, bool clipAvailable, TimeSpan available, DateTimeOffset at, bool isNew = false);
+
+    /// <summary>A New Episode promo and when the new episode it advertises is expected; null when none applies.</summary>
+    ValueTask<(GeneratedPromoTemplate Template, DateTimeOffset? Expected)?> NewEpisodeAsync(
+        BreakContext context, PromoConfig promos, DateTimeOffset cursor, TimeSpan available, CancellationToken cancellationToken);
 
     /// <summary>The stand-in media item scheduled for a template until it's rendered.</summary>
     MediaItem Placeholder(GeneratedPromoTemplate template);

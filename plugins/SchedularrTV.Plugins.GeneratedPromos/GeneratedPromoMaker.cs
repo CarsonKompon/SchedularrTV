@@ -28,8 +28,12 @@ public sealed class GeneratedPromoMaker(GeneratedPromoService promos, Schedularr
         int needed = GeneratedPromoResolver.ListingsNeeded(template);
         IReadOnlyList<UpNextListing> listings = type switch
         {
-            GeneratedPromoType.ThisHasBeen or GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow =>
+            GeneratedPromoType.ThisHasBeen or GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow
+                or GeneratedPromoType.RightBack =>
                 UpNextPromo.Previous(schedule, airsAt) is { } previous ? [previous] : [],
+
+            // The next new episode the schedule airs.
+            GeneratedPromoType.NewEpisode => UpNextPromo.NextNew(schedule, airsAt, Array.Empty<string>()) is { } fresh ? [fresh] : [],
 
             // Something later today that isn't the next programme.
             GeneratedPromoType.ComingUp => UpNextPromo.Listings(schedule, airsAt, 4, grouping: template.UpcomingGrouping) is { Count: > 1 } upcoming ? [upcoming[^1]] : [],

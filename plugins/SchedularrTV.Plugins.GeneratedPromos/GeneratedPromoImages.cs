@@ -127,6 +127,7 @@ public static class GeneratedPromoImages
     {
         GeneratedImageContext.CurrentlyWatching => subjects is not null ? subjects.Current
             : template.Type is GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow or GeneratedPromoType.ThisHasBeen
+                or GeneratedPromoType.RightBack
                 ? promoted.FirstOrDefault() : null,
         GeneratedImageContext.UpNext => (subjects?.Upcoming
             ?? (template.Type is GeneratedPromoType.UpNext or GeneratedPromoType.NowPlaying ? promoted : []))
