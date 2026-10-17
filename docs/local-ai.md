@@ -18,6 +18,19 @@
 
 The model loads on demand and unloads after **Free memory after** minutes. **Your own model file** accepts instruction-tuned GGUF models.
 
+## Use the graphics card
+
+On Windows and Linux (64-bit Intel or AMD processors), the built-in writer and Whisper can run on an NVIDIA, AMD or Intel graphics card through Vulkan. It's usually many times faster, and leaves the processor to the channels on air. Only the graphics driver is needed.
+
+1. Open **Plugins → Local AI writer → Settings**.
+2. Download **Graphics card add-on** under **Built-in AI**, and **Graphics card add-on for speech recognition** under **Speech recognition (Whisper)**. The processor engines are still needed.
+3. Leave **Graphics card** on **Automatic**.
+4. Restart SchedularrTV if the writer or Whisper had already been used since it started.
+
+Each add-on row says whether it's in use and on which card, or why not: no Vulkan driver found, a restart needed, or the model didn't fit in the card's memory (it then runs on the processor). The Performance page shows the work as **(graphics card)**. Qwen3.5 2B takes about 1.5–2 GB of the card's memory, 4B about 3–3.5 GB, and Whisper base under 0.5 GB.
+
+**Graphics card → Off** keeps both on the processor; it applies fully after a restart. On a Mac with Apple silicon, the usual engine already uses the graphics (Metal), so there's no add-on.
+
 ## Use Ollama or LM Studio
 
 1. Set **Server type** and **Server address** in plugin settings.

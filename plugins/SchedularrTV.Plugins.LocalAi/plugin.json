@@ -19,6 +19,14 @@
       "lowPowerNote": "Half (2 on a Pi) keeps the channels on air smooth; 3 writes faster if nothing is being encoded."
     },
     {
+      "key": "Gpu",
+      "label": "Graphics card",
+      "type": "Choice",
+      "options": [ "Automatic", "Off" ],
+      "default": "Automatic",
+      "description": "Automatic runs the built-in model and Whisper on the graphics card (NVIDIA, AMD or Intel, through Vulkan) once its add-on is downloaded below, and on the processor otherwise. Off keeps them on the processor. A change applies after SchedularrTV restarts."
+    },
+    {
       "key": "UnloadAfterMinutes",
       "label": "Free memory after (minutes)",
       "type": "Number",

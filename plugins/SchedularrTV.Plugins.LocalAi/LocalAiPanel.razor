@@ -39,6 +39,41 @@
         {
             <p class="hint warn">Couldn't download the engine: @engineError</p>
         }
+        @if (LocalAiGpu.Supported)
+        {
+            <div class="local-ai-row" style="border:1px solid var(--line);border-radius:8px;margin-top:8px;">
+                <div class="local-ai-text">
+                    <strong>Graphics card add-on</strong>
+                    <span class="hint">Runs the model on an NVIDIA, AMD or Intel graphics card (Vulkan): many times faster, and it leaves the processor free. Tens of MB, from NuGet; the engine above is still needed.</span>
+                    @if (LlamaGpuStatus() is { } llamaStatus)
+                    {
+                        <span class="hint @(llamaStatus.Warn ? "warn" : string.Empty)">@llamaStatus.Text</span>
+                    }
+                </div>
+                @if (downloads.IsFinishing(LocalAiDownloads.GpuEngineKey))
+                {
+                    <span class="hint">Unpacking…</span>
+                }
+                else if (downloads.Progress(LocalAiDownloads.GpuEngineKey) is { } gpuDone)
+                {
+                    <progress max="1" value="@Fraction(gpuDone)"></progress>
+                    <span class="hint">@Percent(gpuDone)</span>
+                    <button class="btn btn-sm" type="button" @onclick="() => downloads.Cancel(LocalAiDownloads.GpuEngineKey)">Stop</button>
+                }
+                else if (downloads.GpuEngineInstalled)
+                {
+                    <span class="pill pill-ok">@(downloads.JustFinished(LocalAiDownloads.GpuEngineKey) ? JustInstalled : Installed)</span>
+                }
+                else
+                {
+                    <button class="btn btn-sm @(LocalAiGpu.DriverFound ? "btn-primary" : string.Empty)" type="button" @onclick="downloads.StartGpuEngine">Download</button>
+                }
+            </div>
+            @if (downloads.Error(LocalAiDownloads.GpuEngineKey) is { } gpuError)
+            {
+                <p class="hint warn">Couldn't download the graphics card add-on: @gpuError</p>
+            }
+        }
 
         <LowPowerNotice Title="@($"The built-in AI on {HardwareProfile.DeviceName}")" Advice="LowPowerAdvice">
             It runs on the processor only, so expect roughly 10 to 40 seconds per voice-over or caption, and it shares the
@@ -147,6 +182,41 @@
         @if (whisperDownloads.Error(LocalAiDownloads.WhisperEngineKey) is { } whisperError)
         {
             <p class="hint warn">Couldn't download the speech recognition engine: @whisperError</p>
+        }
+        @if (LocalAiGpu.Supported)
+        {
+            <div class="local-ai-row" style="border:1px solid var(--line);border-radius:8px;margin-top:8px;">
+                <div class="local-ai-text">
+                    <strong>Graphics card add-on for speech recognition</strong>
+                    <span class="hint">Transcribes on the graphics card (Vulkan): an episode in well under a minute on most cards. Tens of MB, from NuGet.</span>
+                    @if (WhisperGpuStatus() is { } whisperStatus)
+                    {
+                        <span class="hint @(whisperStatus.Warn ? "warn" : string.Empty)">@whisperStatus.Text</span>
+                    }
+                </div>
+                @if (whisperDownloads.IsFinishing(LocalAiDownloads.WhisperGpuKey))
+                {
+                    <span class="hint">Unpacking…</span>
+                }
+                else if (whisperDownloads.Progress(LocalAiDownloads.WhisperGpuKey) is { } whisperGpuDone)
+                {
+                    <progress max="1" value="@Fraction(whisperGpuDone)"></progress>
+                    <span class="hint">@Percent(whisperGpuDone)</span>
+                    <button class="btn btn-sm" type="button" @onclick="() => whisperDownloads.Cancel(LocalAiDownloads.WhisperGpuKey)">Stop</button>
+                }
+                else if (whisperDownloads.WhisperGpuInstalled)
+                {
+                    <span class="pill pill-ok">@(whisperDownloads.JustFinished(LocalAiDownloads.WhisperGpuKey) ? JustInstalled : Installed)</span>
+                }
+                else
+                {
+                    <button class="btn btn-sm @(LocalAiGpu.DriverFound ? "btn-primary" : string.Empty)" type="button" @onclick="whisperDownloads.StartWhisperGpu">Download</button>
+                }
+            </div>
+            @if (whisperDownloads.Error(LocalAiDownloads.WhisperGpuKey) is { } whisperGpuError)
+            {
+                <p class="hint warn">Couldn't download the speech recognition graphics card add-on: @whisperGpuError</p>
+            }
         }
 
         <div class="local-ai-list" style="margin-top:8px;">
@@ -471,6 +541,59 @@
         {
             _trying = false;
         }
+    }
+
+    private const string GpuKey = "Gpu";
+
+    private bool GpuWanted => !string.Equals((Editor.Get(GpuKey) ?? Saved.Gpu)?.Trim(), LocalAiGpu.Off, StringComparison.OrdinalIgnoreCase);
+
+    private sealed record GpuStatus(string Text, bool Warn);
+
+    /// <summary>Whether the graphics card is used for the model, and if not, why; null when there's nothing to say.</summary>
+    private GpuStatus? LlamaGpuStatus()
+    {
+        bool installed = Downloads?.GpuEngineInstalled == true;
+        LlamaEngine? engine = Services.GetService<LlamaEngine>();
+        return CommonGpuStatus(installed, LlamaEngine.EngineChosen, LlamaEngine.GpuOffered)
+            ?? (engine?.GpuProblem is { } problem ? new GpuStatus(problem, true)
+                : engine?.Device is { } device ? new GpuStatus($"In use: {device}.", false)
+                : new GpuStatus("Used the next time the model is loaded.", false));
+    }
+
+    /// <summary>Whether the graphics card is used for Whisper, and if not, why; null when there's nothing to say.</summary>
+    private GpuStatus? WhisperGpuStatus()
+    {
+        bool installed = Downloads?.WhisperGpuInstalled == true;
+        WhisperEngine? engine = Services.GetService<WhisperEngine>();
+        return CommonGpuStatus(installed, WhisperEngine.EngineChosen, WhisperEngine.GpuOffered)
+            ?? (engine?.GpuProblem is { } problem ? new GpuStatus(problem, true)
+                : engine?.UsedGpu == true ? new GpuStatus("In use: the last episode was transcribed on the graphics card.", false)
+                : new GpuStatus("Used for the next episode transcribed.", false));
+    }
+
+    private GpuStatus? CommonGpuStatus(bool installed, bool engineChosen, bool gpuOffered)
+    {
+        if (!installed)
+        {
+            return LocalAiGpu.DriverFound ? null
+                : new GpuStatus("No Vulkan graphics driver was found on this computer; install or update the graphics card's driver first.", true);
+        }
+
+        if (!GpuWanted)
+        {
+            return engineChosen && gpuOffered
+                ? new GpuStatus("Switched off in the Graphics card setting above: restart SchedularrTV to keep it off the graphics card.", true)
+                : new GpuStatus("Switched off in the Graphics card setting above, so the processor is used.", false);
+        }
+
+        if (!LocalAiGpu.DriverFound)
+        {
+            return new GpuStatus("No Vulkan graphics driver was found on this computer, so the processor is used. Install or update the graphics card's driver.", true);
+        }
+
+        return engineChosen && !gpuOffered
+            ? new GpuStatus("Restart SchedularrTV to start using it: the engine was started on the processor before this was downloaded (or switched on).", true)
+            : null;
     }
 
     private const string Installed = "Installed";

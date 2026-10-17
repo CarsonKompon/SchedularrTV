@@ -50,10 +50,10 @@ public sealed class LlamaTextGenerator(IOptions<LocalAiOptions> options, LocalAi
             throw new InvalidOperationException(problem);
         }
 
-        LlamaEngine.UseEngine(paths.Engine);
         LocalAiOptions settings = Options;
+        LlamaEngine.UseEngine(paths.Engine, settings.UseGpu ? paths.GpuEngine : null);
         return await engine.GenerateAsync(paths.ModelPath(settings)!, settings.Threads, TimeSpan.FromMinutes(Math.Max(1, settings.UnloadAfterMinutes)),
-            request, cancellationToken).ConfigureAwait(false);
+            request, cancellationToken, settings.UseGpu).ConfigureAwait(false);
     }
 }
 

@@ -95,14 +95,15 @@ public sealed class LocalAiDownloads(LocalAiPaths paths, ILogger<LocalAiDownload
                 throw new InvalidDataException($"The speech recognition download had nothing for {runtime}.");
             }
 
-            string target = paths.WhisperEngine;
+            // Only the processor build's folder is replaced, so a graphics card add-on beside it is kept.
+            string target = WhisperEngine.LibraryFolder(paths.WhisperEngine);
             if (Directory.Exists(target))
             {
                 Directory.Delete(target, recursive: true);
             }
 
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            CopyFolder(unpacked, target);
+            Directory.CreateDirectory(paths.WhisperEngine);
+            CopyFolder(unpacked, paths.WhisperEngine);
         }
         finally
         {
@@ -156,6 +157,94 @@ public sealed class LocalAiDownloads(LocalAiPaths paths, ILogger<LocalAiDownload
         }
 
         return count;
+    }
+
+    public const string GpuEngineKey = "engine-gpu";
+    public const string WhisperGpuKey = "whisper-engine-gpu";
+
+    public bool GpuEngineInstalled => LlamaEngine.IsGpuInstalled(paths.GpuEngine);
+
+    public bool WhisperGpuInstalled => WhisperEngine.IsGpuInstalled(paths.WhisperEngine);
+
+    public void StartGpuEngine() => Start(GpuEngineKey, InstallGpuEngineAsync);
+
+    public void StartWhisperGpu() => Start(WhisperGpuKey, InstallWhisperGpuAsync);
+
+    /// <summary>
+    /// Downloads llama.cpp's Vulkan build and unpacks this computer's part of it into its own folder, laid out like the
+    /// processor engine (<c>runtimes/&lt;system&gt;/native/vulkan/…</c>); the processor engine supplies the rest.
+    /// </summary>
+    private async Task InstallGpuEngineAsync(IProgress<double> progress, CancellationToken cancellationToken)
+    {
+        string runtime = (LocalAiGpu.Supported ? LocalAiPaths.RuntimeId() : null)
+            ?? throw new PlatformNotSupportedException("There's no graphics card build of the AI engine for this kind of computer.");
+        string staging = Path.Combine(Path.GetTempPath(), $"schedularrtv-local-ai-gpu-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(staging);
+        try
+        {
+            string package = Path.Combine(staging, "backend.nupkg");
+            await DownloadAsync(LocalAiGpu.LlamaPackageUrl, package, progress, cancellationToken).ConfigureAwait(false);
+
+            string unpacked = Path.Combine(staging, "engine");
+            if (Unpack(package, runtime, unpacked) == 0 || !LlamaEngine.IsGpuInstalled(unpacked))
+            {
+                throw new InvalidDataException($"The graphics card download had nothing for {runtime}.");
+            }
+
+            ReplaceFolder(unpacked, paths.GpuEngine);
+        }
+        finally
+        {
+            DeleteQuietly(staging);
+        }
+    }
+
+    /// <summary>Downloads whisper.cpp's Vulkan builds and unpacks this computer's into <c>runtimes/vulkan/&lt;system&gt;/</c>.</summary>
+    private async Task InstallWhisperGpuAsync(IProgress<double> progress, CancellationToken cancellationToken)
+    {
+        string runtime = (LocalAiGpu.Supported ? WhisperEngine.RuntimeFolder() : null)
+            ?? throw new PlatformNotSupportedException("There's no graphics card build of speech recognition for this kind of computer.");
+        string staging = Path.Combine(Path.GetTempPath(), $"schedularrtv-whisper-gpu-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(staging);
+        try
+        {
+            string package = Path.Combine(staging, "runtime.nupkg");
+            await DownloadAsync(LocalAiGpu.WhisperPackageUrl, package, progress, cancellationToken).ConfigureAwait(false);
+
+            string unpacked = Path.Combine(staging, "vulkan");
+            if (UnpackWhisper(package, runtime, unpacked) == 0 || !File.Exists(Path.Combine(unpacked, WhisperEngine.LibraryName)))
+            {
+                throw new InvalidDataException($"The speech recognition graphics card download had nothing for {runtime}.");
+            }
+
+            ReplaceFolder(unpacked, WhisperEngine.GpuLibraryFolder(paths.WhisperEngine));
+        }
+        finally
+        {
+            DeleteQuietly(staging);
+        }
+    }
+
+    private static void ReplaceFolder(string source, string target)
+    {
+        if (Directory.Exists(target))
+        {
+            Directory.Delete(target, recursive: true);
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        CopyFolder(source, target);
+    }
+
+    private static void DeleteQuietly(string folder)
+    {
+        try
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 
     public void StartModel(LocalAiModel model, string folder) =>

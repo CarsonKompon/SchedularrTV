@@ -20,6 +20,14 @@ public sealed class LocalAiOptions
 
     public int UnloadAfterMinutes { get; set; } = 10;
 
+    /// <summary>
+    /// <see cref="LocalAiGpu.Automatic"/> runs the built-in model and Whisper on the graphics card when its add-on is
+    /// downloaded and a Vulkan driver is found; <see cref="LocalAiGpu.Off"/> keeps them on the processor.
+    /// </summary>
+    public string Gpu { get; set; } = LocalAiGpu.Automatic;
+
+    public bool UseGpu => !string.Equals(Gpu?.Trim(), LocalAiGpu.Off, StringComparison.OrdinalIgnoreCase);
+
     public string ServerKind { get; set; } = Ollama;
 
     public string? ServerUrl { get; set; }
@@ -113,6 +121,12 @@ public sealed class LocalAiPaths(string dataDirectory)
 
     /// <summary>The native engine for this computer, kept apart per engine version so an update downloads its own.</summary>
     public string Engine => Path.Combine(DataDirectory, "engine", LlamaEngine.BackendVersion);
+
+    /// <summary>
+    /// The engine's graphics card (Vulkan) add-on, kept apart from <see cref="Engine"/> so downloading either again
+    /// leaves the other alone. Laid out the same way (<c>runtimes/&lt;system&gt;/native/vulkan/…</c>).
+    /// </summary>
+    public string GpuEngine => Path.Combine(DataDirectory, "engine-gpu", LlamaEngine.BackendVersion);
 
     public string ModelsFolder(string? setting) => Resolve(setting) ?? Path.Combine(DataDirectory, "models");
 
