@@ -56,17 +56,37 @@
       "key": "DecodeThreads",
       "label": "Decoder threads",
       "type": "Number",
-      "placeholder": "All of them",
-      "lowPowerPlaceholder": "2",
-      "description": "Processor threads each analysis may use. Fewer is slower but leaves the rest for the channels on air. Leave empty for the default."
+      "placeholder": "2",
+      "description": "Processor threads each analysis may use (0 for all of them). Fewer is slower but leaves the rest for the channels on air. Leave empty for the default."
+    },
+    {
+      "key": "MaxSpeed",
+      "label": "Fastest analysis speed (× real time)",
+      "type": "Number",
+      "placeholder": "20",
+      "description": "Caps how fast a programme is read: at 20×, a half-hour episode takes about a minute and a half. Lower is gentler on the processor but takes longer; 0 reads as fast as the computer can. Needs ffmpeg 5.1 or later (older ones aren't capped)."
+    },
+    {
+      "key": "FastDecode",
+      "label": "Decode only what's needed",
+      "type": "Boolean",
+      "default": "true",
+      "description": "Skips decoding frames black detection doesn't need, for well under half the processor. Turn off only if fades are being missed."
     },
     {
       "key": "HardwareDecode",
       "label": "Hardware decoding",
       "type": "Choice",
-      "options": [ "off", "auto", "drm", "cuda", "qsv", "vaapi", "videotoolbox", "d3d11va" ],
-      "description": "Let the graphics or video chip decode instead of the processor (ffmpeg's -hwaccel). auto picks one if there is one; drm is the Raspberry Pi's. A file it can't decode is read in software instead. Leave empty for the default: off, or auto on a Raspberry Pi.",
+      "options": [ "match", "off", "auto", "cuda", "qsv", "vaapi", "d3d11va", "videotoolbox", "drm" ],
+      "description": "Let the graphics or video chip decode instead of the processor (ffmpeg's -hwaccel): cuda for NVIDIA, qsv for Intel, d3d11va (Windows) or vaapi (Linux) for AMD and Intel, videotoolbox on a Mac, drm on a Raspberry Pi; auto picks one if there is one. match (the default when empty) uses the graphics card chosen for encoding under App settings › Hardware and video encoding, and the processor when none is. A file it can't decode is read in software instead.",
       "lowPowerNote": "auto (the default here) lets the Pi's chip decode HEVC, much faster than the processor."
+    },
+    {
+      "key": "GpuScale",
+      "label": "Keep frames on the graphics card",
+      "type": "Boolean",
+      "default": "true",
+      "description": "With cuda, qsv or vaapi decoding, frames are shrunk on the card and only a tiny picture comes back to the processor, which saves most of the copying. If this ffmpeg can't, full-size frames come back instead."
     },
     {
       "key": "FfmpegPath",

@@ -429,7 +429,6 @@ public sealed class ResourceMonitor(
         }
 
         // This process: what's above its usual, shared by how long each piece of work ran in it since the last sample.
-        // Work that's waiting on a process of its own is mostly waiting, so it only shares when nothing else is running.
         double appCpu = 0;
         long appMemory = 0;
         foreach (ProcessUsage process in setup.Processes)
@@ -465,11 +464,10 @@ public sealed class ResourceMonitor(
             _ownTime.Remove(gone);
         }
 
+        // Work with a process of its own running is waiting on it (Auto Chapters on its ffmpeg, say): that process is its
+        // cost, measured exactly, so it takes no share of the app's. Work that draws frames in the app while ffmpeg
+        // encodes them names the drawing as a narrower scope of its own, which does.
         Dictionary<long, double> weights = ran.Where(pair => !withProcesses.Contains(pair.Key)).ToDictionary(pair => pair.Key, pair => pair.Value);
-        if (weights.Count == 0)
-        {
-            weights = ran;
-        }
 
         double totalWeight = weights.Values.Sum();
         double cpuLeft = appCpu;

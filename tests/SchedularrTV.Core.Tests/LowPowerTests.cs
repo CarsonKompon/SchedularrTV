@@ -133,6 +133,43 @@ public class LowPowerTests
     }
 
     [Fact]
+    public void Black_detection_can_keep_frames_on_the_graphics_card()
+    {
+        DetectionOptions nvidia = DetectionOptions.Default with { HardwareDecode = "cuda", GpuScale = true };
+        List<string> arguments = [.. BlackDetector.Arguments("file.mkv", nvidia)];
+
+        Assert.Equal("cuda", arguments[arguments.IndexOf("-hwaccel_output_format") + 1]);
+        Assert.StartsWith("scale_cuda=320:180,hwdownload,", arguments[arguments.IndexOf("-vf") + 1], StringComparison.Ordinal);
+
+        // A decoder without a scaler on the card, or the setting off, brings the frames back to shrink.
+        Assert.DoesNotContain("-hwaccel_output_format", BlackDetector.Arguments("file.mkv", nvidia with { HardwareDecode = "d3d11va" }));
+        Assert.DoesNotContain("-hwaccel_output_format", BlackDetector.Arguments("file.mkv", nvidia with { GpuScale = false }));
+        Assert.DoesNotContain("-hwaccel", BlackDetector.Arguments("file.mkv", nvidia.InSoftware()));
+
+        Assert.Equal("cuda", AutoChaptersSettings.MatchingDecoder("h264_nvenc"));
+        Assert.Null(AutoChaptersSettings.MatchingDecoder("libx264"));
+    }
+
+    [Fact]
+    public void Black_detection_can_skip_unneeded_decoding_and_cap_its_speed()
+    {
+        List<string> arguments = [.. BlackDetector.Arguments("file.mkv", DetectionOptions.Default with { FastDecode = true, MaxSpeed = 20 })];
+        int input = arguments.IndexOf("-i");
+
+        Assert.Equal("nonref", arguments[arguments.IndexOf("-skip_frame") + 1]);
+        Assert.True(arguments.IndexOf("-skip_frame") < input);
+        if (BlackDetector.ReadRateSupported)
+        {
+            Assert.Equal("20", arguments[arguments.IndexOf("-readrate") + 1]);
+            Assert.True(arguments.IndexOf("-readrate") < input);
+        }
+
+        List<string> flatOut = [.. BlackDetector.Arguments("file.mkv", DetectionOptions.Default)];
+        Assert.DoesNotContain("-skip_frame", flatOut);
+        Assert.DoesNotContain("-readrate", flatOut);
+    }
+
+    [Fact]
     public async Task Saving_a_build_writes_the_state_file_once_with_every_sequence()
     {
         string path = Path.Combine(Path.GetTempPath(), $"state-{Guid.NewGuid():N}.json");
