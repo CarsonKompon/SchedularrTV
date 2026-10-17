@@ -191,7 +191,7 @@ public sealed class PromoVideoStreams(string ffmpegPath, int fps, IReadOnlyDicti
             info.ArgumentList.Add(argument);
         }
 
-        Process? process = Process.Start(info);
+        Process? process = Work.Track(Process.Start(info), "Generated Promos", "Decoding promo video");
         if (process is null)
         {
             return null;

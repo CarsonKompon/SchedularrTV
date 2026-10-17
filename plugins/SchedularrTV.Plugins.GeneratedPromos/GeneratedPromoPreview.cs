@@ -149,6 +149,8 @@ public sealed class GeneratedPromoPreview(
         DateTimeOffset? airsAt = null,
         GeneratedImageSubjects? imageSubjects = null)
     {
+        using WorkScope work = Work.Begin("Generated Promos", "Generating preview frame", template.Name);
+
         // Variable images' automatic pictures show once found (looked for in the background; the editor redraws when they are).
         ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(template, channelName, listings, zone, airsAt ?? clock.GetUtcNow(), imageSubjects,
                 AutomaticImages?.Lookup(queue: true))
@@ -258,6 +260,7 @@ public sealed class GeneratedPromoPreview(
         }
 
         using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffmpeg could not be started.");
+        Work.Track(process, "Generated Promos", "Extracting preview frame");
         await process.StandardError.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
         await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
         return process.ExitCode == 0 && File.Exists(output) ? output : null;
@@ -274,6 +277,7 @@ public sealed class GeneratedPromoPreview(
         string? song = null,
         GeneratedImageSubjects? imageSubjects = null)
     {
+        using WorkScope work = Work.Begin("Generated Promos", "Generating preview", template.Name);
         GeneratedPromoTemplate rendered = WithSong(template, song);
         DateTimeOffset now = clock.GetUtcNow();
 
@@ -330,6 +334,7 @@ public sealed class GeneratedPromoPreview(
         }
 
         Directory.CreateDirectory(directory);
+        using WorkScope work = Work.Begin("Generated Promos", "Cutting song preview", Path.GetFileName(song));
         string partial = clip + ".partial.mp4";
         var info = new ProcessStartInfo(options.Value.FfmpegPath)
         {
@@ -349,6 +354,7 @@ public sealed class GeneratedPromoPreview(
         try
         {
             using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffmpeg could not be started.");
+            Work.Track(process);
             Task<string> error = process.StandardError.ReadToEndAsync(cancellationToken);
             try
             {
@@ -523,6 +529,7 @@ public sealed class GeneratedPromoPreview(
             }
 
             using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffmpeg could not be started.");
+            Work.Track(process, "Generated Promos", "Extracting preview frames");
             await process.StandardError.ReadToEndAsync().ConfigureAwait(false);
             await process.WaitForExitAsync().ConfigureAwait(false);
             if (process.ExitCode != 0 || !File.Exists(Path.Combine(partial, FrameName(0))))
@@ -575,6 +582,7 @@ public sealed class GeneratedPromoPreview(
         }
 
         using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffmpeg could not be started.");
+        Work.Track(process, "Generated Promos", "Extracting preview frame");
         await process.StandardError.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
         await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
         return process.ExitCode == 0 && File.Exists(frame) ? frame : null;

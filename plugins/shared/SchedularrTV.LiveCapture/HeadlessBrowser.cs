@@ -208,6 +208,7 @@ public sealed class HeadlessBrowser : IAsyncDisposable
         }
 
         Process process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start {browser}.");
+        SchedularrTV.Plugins.Performance.Work.Track(process, "Live capture", "Hidden browser");
 
         // Ended with the scheduler, however it stops (and swept up at the next start if it somehow isn't).
         BrowserProcesses.Adopt(process, profile);

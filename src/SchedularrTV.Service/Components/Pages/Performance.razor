@@ -8,7 +8,7 @@
 <PageHeader Title="Performance" Eyebrow="System">
     <ChildContent>
         Last @((int)ResourceMonitor.HistoryLength.TotalMinutes) minutes · updated every @((int)ResourceMonitor.Interval.TotalSeconds)s.
-        CPU is measured across all cores.
+        CPU is measured across all cores, and put down to the plugin and job that used it.
     </ChildContent>
 </PageHeader>
 
@@ -20,14 +20,29 @@ else
 {
     UsageGroup? ersatz = latest.Group(ResourceMonitor.ErsatzKey);
     GpuUsage? gpu = latest.Gpus.FirstOrDefault();
+    SourceStats? busiest = _sources.Where(source => source.Source != ResourceMonitor.AppSource || source.Action != ResourceMonitor.AppAction)
+        .OrderByDescending(source => source.Now).FirstOrDefault();
 
-    <div class="stat-grid">
+    <div class="stat-grid dash-stats">
         <div class="stat @(latest.SetupCpuPercent > 70 ? "warn" : "")">
             <div class="stat-label"><Icon Name="activity" Size="14" />CPU, this setup</div>
             <div class="stat-value">@Pct(latest.SetupCpuPercent)</div>
             <div class="stat-sub">
                 @(latest.SystemCpuPercent is not null ? $"{Maybe(latest.SystemCpuPercent)} for the whole computer · " : "")@latest.Cores cores
             </div>
+        </div>
+        <div class="stat">
+            <div class="stat-label"><Icon Name="layers" Size="14" />Busiest right now</div>
+            @if (busiest is { Now: >= 0.5 })
+            {
+                <div class="stat-value">@Pct(busiest.Now)</div>
+                <div class="stat-sub perf-ellipsis" title="@busiest.Key">@busiest.Key</div>
+            }
+            else
+            {
+                <div class="stat-value">–</div>
+                <div class="stat-sub">Nothing's working hard</div>
+            }
         </div>
         <div class="stat">
             <div class="stat-label"><Icon Name="layers" Size="14" />Memory, this setup</div>
@@ -85,10 +100,16 @@ else
         <div class="card">
             <div class="card-head">
                 <h2>CPU</h2>
-                <span class="muted">% of the whole computer</span>
+                <div class="segmented perf-toggle" role="group" aria-label="Lines by">
+                    <button type="button" class="@(_byGroup ? "" : "on")" @onclick="() => _byGroup = false">By source</button>
+                    <button type="button" class="@(_byGroup ? "on" : "")" @onclick="() => _byGroup = true">By group</button>
+                </div>
             </div>
-            @Chart(_history, 100, "%", CpuSeries())
-            @LegendFor(CpuSeries())
+            @{
+                IReadOnlyList<Series> cpu = _byGroup ? GroupCpuSeries() : SourceCpuSeries();
+            }
+            @Chart(_history, 100, "%", cpu)
+            @LegendFor(cpu)
         </div>
 
         <div class="card">
@@ -98,14 +119,161 @@ else
             </div>
             @{
                 double memoryMax = Math.Max(256L << 20, _history.Count == 0 ? 0 : _history.Max(sample => (double)sample.SetupMemoryBytes)) * 1.15;
+                IReadOnlyList<Series> memory = _byGroup ? GroupMemorySeries() : SourceMemorySeries();
             }
-            @Chart(_history, memoryMax / (1 << 30), "GB", MemorySeries())
-            @LegendFor(MemorySeries())
+            @Chart(_history, memoryMax / (1 << 30), "GB", memory)
+            @LegendFor(memory)
         </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head">
+            <h2>Where it's going</h2>
+            <div class="segmented perf-toggle" role="group" aria-label="Sort by">
+                <button type="button" class="@(_sourcesByPeak ? "on" : "")" @onclick="() => _sourcesByPeak = true">Biggest spikes</button>
+                <button type="button" class="@(_sourcesByPeak ? "" : "on")" @onclick="() => _sourcesByPeak = false">Right now</button>
+            </div>
+        </div>
+        <p class="hint" style="margin-top:0;">
+            Each plugin and what it was doing. Processes it started (ffmpeg, browsers, Piper) are measured exactly; work done inside
+            SchedularrTV itself (Whisper, the AI writer, drawing promo frames) is its share of the app's CPU above its usual idle level, so it's an estimate.
+        </p>
+        @{
+            List<SourceStats> shown = [.. (_sourcesByPeak
+                    ? _sources.OrderByDescending(source => source.Peak).ThenByDescending(source => source.Average)
+                    : _sources.OrderByDescending(source => source.Now).ThenByDescending(source => source.Peak))
+                .Where(source => source.Peak >= 0.05 || source.Memory > 0 || source.Running > 0)];
+            const string sourcesKey = "sources";
+        }
+        @if (shown.Count == 0)
+        {
+            <p class="muted" style="margin:0;">Nothing measured yet.</p>
+        }
+        else
+        {
+            <table class="perf-table">
+                <thead>
+                    <tr>
+                        <th>Source</th>
+                        <th class="num">Now</th>
+                        <th class="num">Average</th>
+                        <th class="num">Peak</th>
+                        <th class="num">Memory</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (SourceStats source in shown.Take(_expanded.Contains(sourcesKey) ? int.MaxValue : 12))
+                    {
+                        <tr>
+                            <td>
+                                <span class="perf-swatch" style="background:@ColourFor(source.Key)"></span><strong>@source.Source</strong> – @source.Action
+                                @if (source.Running > 1)
+                                {
+                                    <span class="muted" title="Running at once"> × @source.Running</span>
+                                }
+                                @if (source.Via is not null || source.Processes > 0 || source.InApp)
+                                {
+                                    <div class="muted" style="font-size:12px;margin-left:18px;">
+                                        @Detail(source)
+                                    </div>
+                                }
+                            </td>
+                            <td class="num">@Pct(source.Now)</td>
+                            <td class="num">@Pct(source.Average)</td>
+                            <td class="num" title="@(source.Peak > 0 ? $"Peaked at {Clock(source.PeakAt)}" : null)">
+                                @Pct(source.Peak)
+                                @if (source.Peak >= 1)
+                                {
+                                    <div class="muted" style="font-size:12px;">@Ago(source.PeakAt)</div>
+                                }
+                            </td>
+                            <td class="num">@(source.Memory > 0 ? ResourceMonitor.Bytes(source.Memory) : "–")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (shown.Count > 12)
+            {
+                <button class="btn btn-sm btn-ghost" type="button" style="margin-top:8px;" @onclick="() => Toggle(sourcesKey)">
+                    @(_expanded.Contains(sourcesKey) ? "Show fewer" : $"Show all {shown.Count}")
+                </button>
+            }
+        }
+    </div>
+
+    <div class="card">
+        <div class="card-head">
+            <h2>Recent work</h2>
+            <div class="segmented perf-toggle" role="group" aria-label="Sort by">
+                <button type="button" class="@(_workByPeak ? "" : "on")" @onclick="() => _workByPeak = false">Newest</button>
+                <button type="button" class="@(_workByPeak ? "on" : "")" @onclick="() => _workByPeak = true">Heaviest</button>
+            </div>
+        </div>
+        <p class="hint" style="margin-top:0;">Every job plugins have run in the last @((int)ResourceMonitor.HistoryLength.TotalMinutes) minutes, with what it cost while it ran: find a hitch's time here.</p>
+        @{
+            List<WorkUsage> work = [.. (_workByPeak
+                ? _work.OrderByDescending(item => item.PeakCpuPercent).ThenByDescending(item => item.AverageCpuPercent)
+                : _work.OrderByDescending(item => item.Ended is null).ThenByDescending(item => item.Started))];
+            const string workKey = "work";
+        }
+        @if (work.Count == 0)
+        {
+            <p class="muted" style="margin:0;">Nothing's run yet.</p>
+        }
+        else
+        {
+            <table class="perf-table">
+                <thead>
+                    <tr>
+                        <th>Job</th>
+                        <th class="num">Started</th>
+                        <th class="num">Took</th>
+                        <th class="num">Average</th>
+                        <th class="num">Peak</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (WorkUsage item in work.Take(_expanded.Contains(workKey) ? int.MaxValue : 15))
+                    {
+                        <tr>
+                            <td>
+                                <span class="perf-swatch" style="background:@ColourFor(item.Label)"></span><strong>@item.Source</strong> – @item.Action
+                                @if (item.Subject is not null || item.Via is not null)
+                                {
+                                    <div class="muted" style="font-size:12px;margin-left:18px;">
+                                        @WorkDetail(item)
+                                    </div>
+                                }
+                            </td>
+                            <td class="num muted" title="@Clock(item.Started)">@Ago(item.Started)</td>
+                            <td class="num">
+                                @if (item.Ended is null)
+                                {
+                                    <span class="pill pill-ok">Running</span> <span>@Duration(item.Duration)</span>
+                                }
+                                else
+                                {
+                                    @Duration(item.Duration)
+                                }
+                            </td>
+                            <td class="num">@Pct(item.AverageCpuPercent)</td>
+                            <td class="num">@Pct(item.PeakCpuPercent)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (work.Count > 15)
+            {
+                <button class="btn btn-sm btn-ghost" type="button" style="margin-top:8px;" @onclick="() => Toggle(workKey)">
+                    @(_expanded.Contains(workKey) ? "Show fewer" : $"Show all {work.Count}")
+                </button>
+            }
+        }
     </div>
 
     @foreach (UsageGroup group in latest.Groups)
     {
+        bool showSource = group.Key == ResourceMonitor.HelpersKey;
         <div class="card">
             <div class="card-head">
                 <h2><span class="perf-swatch" style="background:@Colour(group.Key)"></span>@group.Name</h2>
@@ -120,7 +288,14 @@ else
             {
                 <table class="perf-table">
                     <thead>
-                        <tr><th>Process</th><th>What it is</th><th class="num">PID</th><th class="num">CPU</th><th class="num">Memory</th></tr>
+                        <tr>
+                            <th>Process</th><th>What it is</th>
+                            @if (showSource)
+                            {
+                                <th>Started for</th>
+                            }
+                            <th class="num">PID</th><th class="num">CPU</th><th class="num">Memory</th>
+                        </tr>
                     </thead>
                     <tbody>
                         @foreach (ProcessUsage process in group.Processes.Take(_expanded.Contains(group.Key) ? int.MaxValue : 8))
@@ -128,6 +303,10 @@ else
                             <tr>
                                 <td>@process.Name</td>
                                 <td class="muted">@process.Role</td>
+                                @if (showSource)
+                                {
+                                    <td>@(process.Source ?? "Not named")</td>
+                                }
                                 <td class="num muted">@process.Pid</td>
                                 <td class="num">@Pct(process.CpuPercent)</td>
                                 <td class="num">@ResourceMonitor.Bytes(process.MemoryBytes)</td>
@@ -206,13 +385,42 @@ else
     private const double Height = 160;
     private const double Gutter = 40;
 
+    /// <summary>How many sources get a line of their own on the charts.</summary>
+    private const int ChartLines = 6;
+
+    // Distinct in both themes; handed out in order as sources first appear, so a source keeps its colour.
+    private static readonly string[] Palette =
+        ["#5b8def", "#f28e2b", "#e15759", "#4fb6ac", "#59a14f", "#e0b93a", "#b07aa1", "#ff9da7", "#a0785a", "#8cc2e8", "#9c9ede", "#c7c95b"];
+
     private ResourceSample? _latest;
     private IReadOnlyList<ResourceSample> _history = [];
     private IReadOnlyList<PerformanceAdvice> _advice = [];
+    private IReadOnlyList<SourceStats> _sources = [];
+    private IReadOnlyList<WorkUsage> _work = [];
     private readonly HashSet<string> _expanded = [];
+    private readonly Dictionary<string, string> _colours = new(StringComparer.Ordinal);
+    private bool _byGroup;
+    private bool _sourcesByPeak = true;
+    private bool _workByPeak;
 
     /// <summary>One line on a chart: its name, colour, dashed or not, and its value at a sample (null leaves a gap).</summary>
     public sealed record Series(string Name, string Colour, bool Dashed, Func<ResourceSample, double?> Value);
+
+    /// <summary>A source over the whole history: now, on average, at its peak.</summary>
+    public sealed record SourceStats(
+        string Key,
+        string Source,
+        string Action,
+        string? Via,
+        double Now,
+        double Average,
+        double Peak,
+        DateTimeOffset PeakAt,
+        long Memory,
+        long PeakMemory,
+        int Processes,
+        int Running,
+        bool InApp);
 
     protected override void OnInitialized()
     {
@@ -233,6 +441,48 @@ else
         _history = Monitor.History;
         _latest = _history.Count > 0 ? _history[^1] : null;
         _advice = Monitor.Advice();
+        _work = Monitor.RecentWork;
+        _sources = Summarise(_history);
+    }
+
+    /// <summary>Each source's numbers across the history; a sample it's missing from counts as nothing.</summary>
+    private static List<SourceStats> Summarise(IReadOnlyList<ResourceSample> history)
+    {
+        if (history.Count == 0)
+        {
+            return [];
+        }
+
+        ResourceSample latest = history[^1];
+        Dictionary<string, (SourceUsage Last, double Sum, double Peak, DateTimeOffset PeakAt, long PeakMemory, bool InApp)> seen = new(StringComparer.Ordinal);
+        foreach (ResourceSample sample in history)
+        {
+            foreach (SourceUsage source in sample.Sources)
+            {
+                (SourceUsage Last, double Sum, double Peak, DateTimeOffset PeakAt, long PeakMemory, bool InApp) known =
+                    seen.TryGetValue(source.Key, out var found) ? found : (source, 0d, -1d, sample.At, 0L, false);
+                known.Last = source;
+                known.Sum += source.CpuPercent;
+                if (source.CpuPercent > known.Peak)
+                {
+                    known.Peak = source.CpuPercent;
+                    known.PeakAt = sample.At;
+                }
+
+                known.PeakMemory = Math.Max(known.PeakMemory, source.MemoryBytes);
+                known.InApp |= source.InAppCpuPercent > 0.05;
+                seen[source.Key] = known;
+            }
+        }
+
+        return [.. seen.Select(pair =>
+        {
+            SourceUsage? now = latest.Source(pair.Key);
+            SourceUsage last = pair.Value.Last;
+            return new SourceStats(pair.Key, last.Source, last.Action, now?.Via ?? last.Via,
+                now?.CpuPercent ?? 0, pair.Value.Sum / history.Count, Math.Max(0, pair.Value.Peak), pair.Value.PeakAt,
+                now?.MemoryBytes ?? 0, pair.Value.PeakMemory, now?.Processes ?? 0, now?.Running ?? 0, pair.Value.InApp);
+        })];
     }
 
     private void Toggle(string key)
@@ -251,7 +501,69 @@ else
         _ => "var(--muted)"
     };
 
-    private static IReadOnlyList<Series> CpuSeries() =>
+    /// <summary>A source's colour: SchedularrTV's own and ErsatzTV's keep their usual ones, the rest come from the palette.</summary>
+    private string ColourFor(string key)
+    {
+        if (key == $"{ResourceMonitor.AppSource} – {ResourceMonitor.AppAction}")
+        {
+            return "var(--accent)";
+        }
+
+        if (!_colours.TryGetValue(key, out string? colour))
+        {
+            _colours[key] = colour = Palette[_colours.Count % Palette.Length];
+        }
+
+        return colour;
+    }
+
+    private static string Detail(SourceStats source)
+    {
+        List<string> parts = [];
+        if (source.Via is not null)
+        {
+            parts.Add($"for {source.Via}");
+        }
+
+        if (source.Processes > 0 && source.Source != ResourceMonitor.AppSource)
+        {
+            parts.Add($"{source.Processes} process{(source.Processes == 1 ? "" : "es")}");
+        }
+
+        if (source.InApp)
+        {
+            parts.Add("inside the app (estimated)");
+        }
+
+        return string.Join(" · ", parts);
+    }
+
+    private IReadOnlyList<Series> SourceCpuSeries()
+    {
+        List<Series> series = [new("Whole computer", "var(--muted)", true, sample => sample.SystemCpuPercent)];
+        foreach (SourceStats source in _sources.Where(source => source.Peak >= 0.5).OrderByDescending(source => source.Peak).Take(ChartLines))
+        {
+            string key = source.Key;
+            series.Add(new Series(key, ColourFor(key), false, sample => sample.Source(key)?.CpuPercent ?? 0));
+        }
+
+        series.Add(new Series("GPU encoder", "#b07ad0", true, sample => sample.Gpus.FirstOrDefault()?.Encoder));
+        return series;
+    }
+
+    private IReadOnlyList<Series> SourceMemorySeries()
+    {
+        List<Series> series = [];
+        foreach (SourceStats source in _sources.Where(source => source.PeakMemory > 0).OrderByDescending(source => source.PeakMemory).Take(ChartLines))
+        {
+            string key = source.Key;
+            series.Add(new Series(key, ColourFor(key), false, sample => Gigabytes(sample.Source(key)?.MemoryBytes ?? 0)));
+        }
+
+        return series;
+    }
+
+    private static IReadOnlyList<Series> GroupCpuSeries() =>
     [
         new("Whole computer", "var(--muted)", true, sample => sample.SystemCpuPercent),
         new("SchedularrTV", Colour(ResourceMonitor.SetupKey), false, sample => sample.Group(ResourceMonitor.SetupKey)?.CpuPercent),
@@ -262,7 +574,7 @@ else
 
     private static double? Gigabytes(long? bytes) => bytes is { } value ? value / (double)(1 << 30) : null;
 
-    private static IReadOnlyList<Series> MemorySeries() =>
+    private static IReadOnlyList<Series> GroupMemorySeries() =>
     [
         new("SchedularrTV", Colour(ResourceMonitor.SetupKey), false, sample => Gigabytes(sample.Group(ResourceMonitor.SetupKey)?.MemoryBytes)),
         new("ErsatzTV", Colour(ResourceMonitor.ErsatzKey), false, sample => Gigabytes(sample.Group(ResourceMonitor.ErsatzKey)?.MemoryBytes)),
@@ -295,6 +607,27 @@ else
     private static string Pct(double value) => value < 10 ? $"{value.ToString("0.0", CultureInfo.CurrentCulture)}%" : $"{value.ToString("0", CultureInfo.CurrentCulture)}%";
 
     private static string F(double value) => value.ToString("0.#", CultureInfo.InvariantCulture);
+
+    private static string Clock(DateTimeOffset at) => at.ToLocalTime().ToString("T", CultureInfo.CurrentCulture);
+
+    private static string WorkDetail(WorkUsage item) =>
+        string.Join(" · ", new[] { item.Subject, item.Via is null ? null : $"for {item.Via}" }.OfType<string>());
+
+    private static string Ago(DateTimeOffset at)
+    {
+        TimeSpan ago = DateTimeOffset.UtcNow - at;
+        return ago < TimeSpan.FromMinutes(1) ? "just now"
+            : ago < TimeSpan.FromHours(1) ? $"{(int)ago.TotalMinutes} min ago"
+            : $"{(int)ago.TotalHours} h ago";
+    }
+
+    private static string Duration(TimeSpan span) => span switch
+    {
+        { TotalSeconds: < 1 } => "<1s",
+        { TotalMinutes: < 1 } => $"{(int)span.TotalSeconds}s",
+        { TotalHours: < 1 } => $"{(int)span.TotalMinutes}m {span.Seconds:00}s",
+        _ => $"{(int)span.TotalHours}h {span.Minutes:00}m"
+    };
 
     /// <summary>A line chart of <paramref name="series"/> over the history, from 0 to <paramref name="max"/>, across the whole window.</summary>
     private static RenderFragment Chart(IReadOnlyList<ResourceSample> history, double max, string unit, IReadOnlyList<Series> series) => builder =>
@@ -363,6 +696,10 @@ else
                 builder.AddAttribute(seq++, "class", line.Dashed ? "line dashed" : "line");
                 builder.AddAttribute(seq++, "style", $"stroke:{line.Colour}");
                 builder.AddAttribute(seq++, "points", string.Join(' ', run));
+                // Hovering a line names it.
+                builder.OpenElement(seq++, "title");
+                builder.AddContent(seq++, line.Name);
+                builder.CloseElement();
                 builder.CloseElement();
             }
         }

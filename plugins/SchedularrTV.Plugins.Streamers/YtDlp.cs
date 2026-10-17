@@ -183,6 +183,7 @@ public sealed class YtDlp(StreamerSettings settings, ILogger<YtDlp> logger)
         }
 
         using Process process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start {program}.");
+        SchedularrTV.Plugins.Performance.Work.Track(process, "Streamers", "Resolving stream (yt-dlp)");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(limit);
         try

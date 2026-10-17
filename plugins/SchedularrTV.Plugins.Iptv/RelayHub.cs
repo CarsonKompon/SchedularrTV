@@ -291,6 +291,7 @@ public sealed class RelayHub(IptvSettings settings, ILogger<RelayHub> logger, Pi
             }
 
             Process process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start ffmpeg ({ffmpeg}).");
+            SchedularrTV.Plugins.Performance.Work.TrackAs(process, "IPTV", $"Relaying {target.Name}");
             var relay = new Relay(target, process, logger);
             var watcher = new OutputSizeWatcher();
             process.ErrorDataReceived += (_, line) =>

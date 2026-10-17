@@ -133,6 +133,7 @@ public static partial class BlackDetector
         }
 
         using Process process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start ffmpeg ({ffmpeg}).");
+        SchedularrTV.Plugins.Performance.Work.Track(process, "Auto Chapters", "Chapter detection");
         try
         {
             // Analysis runs flat out in the background; it shouldn't make the rest of the computer stutter.

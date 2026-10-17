@@ -174,6 +174,7 @@ public sealed class WindowFeed(GuideStore store, GuideSettings settings, GuideDa
             }
 
             using Process process = Process.Start(start) ?? throw new InvalidOperationException("ffprobe didn't start.");
+            SchedularrTV.Plugins.Performance.Work.Track(process, "TV Guide", "Probing window video");
             Task<string> errors = process.StandardError.ReadToEndAsync(cancellationToken);
             string output = await process.StandardOutput.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
             await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);

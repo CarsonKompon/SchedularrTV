@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Threading.Channels;
 using SchedularrTV.Core.Media;
 using SchedularrTV.Plugins;
+using SchedularrTV.Plugins.Performance;
 
 namespace SchedularrTV.LiveCapture;
 
@@ -292,6 +293,7 @@ public sealed class LiveStream : IAsyncDisposable
         }
 
         _ffmpeg = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start ffmpeg ({Spec.Ffmpeg}).");
+        Work.TrackAs(_ffmpeg, $"Live channel {Spec.Name}", "Encoding stream (ffmpeg)");
         _ffmpeg.ErrorDataReceived += (_, line) =>
         {
             if (!string.IsNullOrWhiteSpace(line.Data))
@@ -518,6 +520,7 @@ public sealed class LiveStream : IAsyncDisposable
         }
 
         using Process process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start ffmpeg ({ffmpeg}).");
+        Work.Track(process, "Live channels", "Drawing placeholder frame");
         Task<string> errors = process.StandardError.ReadToEndAsync(cancellationToken);
         using var image = new MemoryStream();
         await process.StandardOutput.BaseStream.CopyToAsync(image, cancellationToken).ConfigureAwait(false);
@@ -686,10 +689,15 @@ public sealed class LiveStream : IAsyncDisposable
                     try
                     {
                         // Frames beyond the capture rate would only be thrown away, so the browser isn't asked for them.
-                        _browser = await HeadlessBrowser.StartAsync(browser, Spec.PageUrl, Width, Height, cancellationToken, transparent: Spec.PageOnTop,
-                                maxFrameRate: Math.Clamp(Spec.CaptureFrameRate, 5, 30), paceAnimations: Spec.PaceAnimations,
-                                scripts: Spec.PageScripts, captureSound: Spec.Audio == LiveAudio.Page)
-                            .ConfigureAwait(false);
+                        // Named for the channel, so the Performance page shows which channel's browser it is.
+                        using (Work.Begin($"Live channel {Spec.Name}", "Page browser"))
+                        {
+                            _browser = await HeadlessBrowser.StartAsync(browser, Spec.PageUrl, Width, Height, cancellationToken, transparent: Spec.PageOnTop,
+                                    maxFrameRate: Math.Clamp(Spec.CaptureFrameRate, 5, 30), paceAnimations: Spec.PaceAnimations,
+                                    scripts: Spec.PageScripts, captureSound: Spec.Audio == LiveAudio.Page)
+                                .ConfigureAwait(false);
+                        }
+
                         if (Spec.Audio == LiveAudio.Page && _bed is { } pageSound)
                         {
                             _browser.Sound += pcm => pageSound.Write(pcm);

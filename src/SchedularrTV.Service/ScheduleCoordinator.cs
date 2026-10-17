@@ -452,6 +452,8 @@ public sealed class ScheduleCoordinator(
 
     private async Task PublishAsync(IReadOnlyList<ChannelSchedule> schedules, CancellationToken cancellationToken)
     {
+        using SchedularrTV.Plugins.Performance.WorkScope work = SchedularrTV.Plugins.Performance.Work.Begin("SchedularrTV", "Publishing schedules");
+
         // From the schedule as it is now, so a republish (not only a rebuild) carries a channel's latest encoding.
         schedules = WithEncoding(configProvider.Current, schedules);
         schedules = await ProcessAsync(schedules, cancellationToken).ConfigureAwait(false);
@@ -648,6 +650,7 @@ public sealed class ScheduleCoordinator(
         bool replan,
         CancellationToken cancellationToken)
     {
+        using SchedularrTV.Plugins.Performance.WorkScope work = SchedularrTV.Plugins.Performance.Work.Begin("SchedularrTV", "Building schedule", channel.Name);
         ChannelSchedule? previous = _latest
             .FirstOrDefault(s => string.Equals(s.ChannelId, channel.Id, StringComparison.OrdinalIgnoreCase));
 

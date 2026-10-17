@@ -20,6 +20,7 @@ internal static class PromoVideoDecoder
             info.ArgumentList.Add(argument);
 
         using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffprobe could not be started.");
+        Work.Track(process, "Generated Promos", "Probing media");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(15));
         try

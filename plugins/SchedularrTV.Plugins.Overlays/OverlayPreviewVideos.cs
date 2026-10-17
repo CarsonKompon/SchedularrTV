@@ -73,6 +73,11 @@ public sealed class OverlayPreviewVideos(string folder, Func<string> ffmpeg, Ove
             start.ArgumentList.Add(argument);
 
         using Process process = Process.Start(start) ?? throw new InvalidOperationException("ffmpeg couldn't be started.");
+        SchedularrTV.Plugins.Performance.Work.Track(process, "Overlays", "Encoding preview video");
+
+        // The frames are drawn here, in the app, while ffmpeg encodes them.
+        using SchedularrTV.Plugins.Performance.WorkScope drawing =
+            SchedularrTV.Plugins.Performance.Work.Begin("Overlays", "Generating preview video");
         Task<string> errors = process.StandardError.ReadToEndAsync();
         try
         {

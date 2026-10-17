@@ -109,6 +109,8 @@ The migration also changes legacy **`"format": null`** to **`"mode": "copy"`**. 
 
 ## Performance
 
-Open **Performance** to inspect **SchedularrTV**, **ErsatzTV**, and **Helpers**, with CPU and memory samples every five seconds over fifteen minutes. Supported NVIDIA metrics use **nvidia-smi**.
+Open **Performance** to see where CPU and memory go, sampled every five seconds over fifteen minutes. The charts and the **Where it's going** table break usage down by plugin and job (**Auto Chapters – Chapter detection**, **Generated Promos – Generating promo**, **Local AI – Whisper transcribing**, a live channel's browser or encoder), with each one's peak and when it happened; work one plugin does for another shows what it was for. **Recent work** lists every job of the last fifteen minutes with how long it took and its average and peak CPU, so a hitch can be matched to what ran at the time. **By group** switches the charts back to **SchedularrTV**, **ErsatzTV**, and **Helpers**. Supported NVIDIA metrics use **nvidia-smi**.
 
-**`GET /api/performance`** exposes the same current measurements and advice. See [Troubleshooting](troubleshooting.md#reduce-cpu-usage) for encoding adjustments.
+Programs a plugin starts are measured exactly. Work done inside SchedularrTV itself (Whisper, the built-in AI writer, drawing promo frames) can't be measured on its own, so it's estimated as the app's CPU above its usual idle level, shared between the jobs running at the time.
+
+**`GET /api/performance`** exposes the same current measurements (each sample's **`sources`**), the **`recentWork`** list, and advice. See [Troubleshooting](troubleshooting.md#reduce-cpu-usage) for encoding adjustments.

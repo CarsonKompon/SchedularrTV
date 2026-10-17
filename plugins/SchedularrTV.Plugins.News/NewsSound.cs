@@ -182,6 +182,7 @@ public sealed class NewsSound(
         }
 
         Process process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start ffmpeg ({settings.Ffmpeg}).");
+        SchedularrTV.Plugins.Performance.Work.TrackAs(process, "News", "Encoding news sound");
         process.ErrorDataReceived += (_, line) =>
         {
             if (!string.IsNullOrWhiteSpace(line.Data))

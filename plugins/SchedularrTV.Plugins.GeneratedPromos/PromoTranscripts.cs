@@ -123,6 +123,7 @@ public sealed class PromoTranscripts(
     {
         string directory = folder();
         string wave = Path.Combine(directory, $"{key}.{Guid.NewGuid():N}.partial.wav");
+        using WorkScope work = Work.Begin("Generated Promos", "Transcribing episode", Path.GetFileName(mediaPath));
         try
         {
             Directory.CreateDirectory(directory);
@@ -178,6 +179,7 @@ public sealed class PromoTranscripts(
         }
 
         using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffmpeg could not be started.");
+        Work.Track(process, "Generated Promos", "Extracting episode sound");
         Task<string> error = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync().ConfigureAwait(false);
         if (process.ExitCode != 0 || !File.Exists(wave) || new FileInfo(wave).Length < 1024)

@@ -109,6 +109,7 @@ public sealed class OverlayAnimations : IDisposable
 
         start.ArgumentList.Add(temp);
         using Process ffmpeg = Process.Start(start) ?? throw new InvalidOperationException("ffmpeg couldn't be started.");
+        SchedularrTV.Plugins.Performance.Work.Track(ffmpeg, "Overlays", "Rendering overlay animation");
         Task<string> errors = ffmpeg.StandardError.ReadToEndAsync(cancellationToken);
         try
         {
@@ -264,6 +265,11 @@ public sealed class OverlayAnimations : IDisposable
         start.ArgumentList.Add(temp);
 
         using Process ffmpeg = Process.Start(start) ?? throw new InvalidOperationException("ffmpeg couldn't be started.");
+        SchedularrTV.Plugins.Performance.Work.Track(ffmpeg, "Overlays", "Encoding overlay animation");
+
+        // The frames are drawn here, in the app, while ffmpeg encodes them.
+        using SchedularrTV.Plugins.Performance.WorkScope drawing =
+            SchedularrTV.Plugins.Performance.Work.Begin("Overlays", "Drawing overlay animation", job.Key);
         var errors = new StringBuilder();
         Task drain = Task.Run(async () =>
         {

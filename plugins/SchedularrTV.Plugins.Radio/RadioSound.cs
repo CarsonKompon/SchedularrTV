@@ -277,6 +277,7 @@ public sealed class RadioSound(
         }
 
         using Process ffmpeg = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start ffmpeg ({settings.Ffmpeg}).");
+        SchedularrTV.Plugins.Performance.Work.TrackAs(ffmpeg, "Radio", $"Playing {station.Name}");
         ffmpeg.ErrorDataReceived += (_, line) =>
         {
             if (!string.IsNullOrWhiteSpace(line.Data))
@@ -391,6 +392,7 @@ public sealed class RadioSound(
 
         TimeSpan began = clock.Elapsed;
         using Process process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start ffmpeg ({settings.Ffmpeg}).");
+        SchedularrTV.Plugins.Performance.Work.Track(process, "Radio", "Playing music (ffmpeg)");
         process.ErrorDataReceived += (_, line) =>
         {
             if (!string.IsNullOrWhiteSpace(line.Data))

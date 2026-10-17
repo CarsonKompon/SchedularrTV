@@ -202,6 +202,7 @@ public static class SourcePlugins
         try
         {
             using Process process = Process.Start(info) ?? throw new InvalidOperationException("dotnet could not be started.");
+            SchedularrTV.Plugins.Performance.Work.TrackAs(process, "SchedularrTV", $"Building plugin {name}");
             Task<string> output = process.StandardOutput.ReadToEndAsync();
             Task<string> error = process.StandardError.ReadToEndAsync();
             if (!process.WaitForExit(BuildTimeout))

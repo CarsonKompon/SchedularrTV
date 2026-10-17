@@ -352,6 +352,7 @@ public sealed class OverlayVideos(Func<string> ffmpeg, string folder)
         }
 
         using Process process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start {program}.");
+        SchedularrTV.Plugins.Performance.Work.Track(process, "Overlays", $"Preparing overlay video ({Path.GetFileNameWithoutExtension(program)})");
         Task<string> errors = process.StandardError.ReadToEndAsync(cancellationToken);
         Task<string> output = process.StandardOutput.ReadToEndAsync(cancellationToken);
         using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

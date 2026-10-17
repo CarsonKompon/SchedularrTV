@@ -50,6 +50,7 @@ public static class MusicFiles
         try
         {
             using Process process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start ffmpeg ({ffmpeg}).");
+            SchedularrTV.Plugins.Performance.Work.Track(process, "Music", "Caching a song");
             Task<string> errors = process.StandardError.ReadToEndAsync(cancellationToken);
             try
             {

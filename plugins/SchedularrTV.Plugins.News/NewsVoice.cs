@@ -121,6 +121,7 @@ public sealed class NewsVoice(IEnumerable<ITextToSpeechProvider> providers, News
         }
 
         using Process process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start ffmpeg ({settings.Ffmpeg}).");
+        SchedularrTV.Plugins.Performance.Work.Track(process, "News", "Converting voice-over");
         Task<string> errors = process.StandardError.ReadToEndAsync(cancellationToken);
         await process.StandardOutput.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
         await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);

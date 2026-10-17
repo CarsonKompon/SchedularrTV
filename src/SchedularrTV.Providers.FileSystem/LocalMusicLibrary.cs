@@ -512,6 +512,7 @@ public sealed partial class LocalMusicLibrary(
                 return null;
             }
 
+            SchedularrTV.Plugins.Performance.Work.Track(process, "Music library", "Probing songs");
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(Options.ProbeTimeout);
             Task<string> errors = process.StandardError.ReadToEndAsync(timeout.Token);

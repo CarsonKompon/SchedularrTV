@@ -166,6 +166,7 @@ public sealed class PiperTextToSpeech(IOptions<PiperOptions> options) : ITextToS
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(_options.Timeout);
         using Process process = Process.Start(info) ?? throw new InvalidOperationException("Piper could not be started.");
+        SchedularrTV.Plugins.Performance.Work.TrackAs(process, "Piper", "Speaking a voice-over");
         Task<string> error = process.StandardError.ReadToEndAsync(CancellationToken.None);
         Task<string> output = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
 

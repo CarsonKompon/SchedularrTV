@@ -24,7 +24,7 @@ Start with the channel's live preview, **App settings → ErsatzTV Next → Chec
 ## Reduce CPU usage
 
 1. Open **Performance** while the affected channel plays.
-2. Identify whether **SchedularrTV**, **ErsatzTV**, or **Helpers** consumes resources.
+2. Find the plugin and job using it under **Where it's going** (sorted by **Biggest spikes**), or match a hitch's time in **Recent work**.
 3. Select supported hardware encoding under **App settings → Hardware and video encoding**.
 4. Lower live-page resolution or the plugin's capture rate.
 5. Disable unnecessary **Play around the clock (24/7)** channels.

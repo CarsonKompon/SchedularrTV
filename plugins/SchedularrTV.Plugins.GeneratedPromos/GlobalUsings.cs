@@ -9,6 +9,7 @@ global using Microsoft.Extensions.Logging;
 global using SchedularrTV.Core.Platform;
 global using SchedularrTV.Hosting;
 global using SchedularrTV.Plugins;
+global using SchedularrTV.Plugins.Performance;
 global using SchedularrTV.Plugins.Speech;
 global using SchedularrTV.Service;
 global using SchedularrTV.Service.Editor;

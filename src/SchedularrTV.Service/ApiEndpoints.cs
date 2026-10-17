@@ -133,6 +133,7 @@ public static partial class ApiEndpoints
         api.MapGet("/performance", (Performance.ResourceMonitor monitor, AlwaysOnKeeper alwaysOn) => Results.Ok(new
         {
             latest = monitor.Latest,
+            recentWork = monitor.RecentWork,
             advice = monitor.Advice(),
             gpuProblem = monitor.GpuProblem,
             alwaysOn = alwaysOn.Statuses

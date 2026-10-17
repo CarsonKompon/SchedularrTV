@@ -1271,6 +1271,10 @@ dialog.modal::backdrop { background: rgba(4, 5, 9, .75); }
 .perf-table th { text-align: left; font-size: 12px; font-weight: 500; color: var(--muted); padding: 0 8px 8px 0; }
 .perf-table td { padding: 7px 8px 7px 0; border-top: 1px solid var(--line); border-bottom: 0; }
 .perf-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.perf-table td .muted { font-weight: 400; }
+.card-head > .perf-toggle { margin-left: auto; }
+.perf-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.perf-chart polyline.line { pointer-events: stroke; }
 
 /* ==========================================================================
    Documentation

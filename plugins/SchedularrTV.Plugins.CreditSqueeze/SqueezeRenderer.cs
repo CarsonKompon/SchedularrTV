@@ -184,7 +184,11 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
             TryDelete(old);
         }
 
-        await RenderAsync(job, Path.Combine(PreviewFolder, name), cancellationToken).ConfigureAwait(false);
+        using (SchedularrTV.Plugins.Performance.Work.Begin("Credit Squeeze", "Generating preview"))
+        {
+            await RenderAsync(job, Path.Combine(PreviewFolder, name), cancellationToken).ConfigureAwait(false);
+        }
+
         return name;
     }
 
@@ -201,6 +205,8 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
     /// <summary>Makes a squeeze into <paramref name="output"/>: animated in, or (if this ffmpeg can't) starting in its box.</summary>
     public async Task RenderAsync(SqueezeJob job, string output, CancellationToken cancellationToken)
     {
+        using SchedularrTV.Plugins.Performance.WorkScope? work =
+            SchedularrTV.Plugins.Performance.Work.BeginUnlessWithin("Credit Squeeze", "Rendering credits", Path.GetFileName(output));
         Directory.CreateDirectory(Path.GetDirectoryName(output)!);
         job = await WithMadePromoAsync(job, cancellationToken).ConfigureAwait(false);
 
@@ -1248,6 +1254,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         }
 
         using Process process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start ffmpeg ({program}).");
+        SchedularrTV.Plugins.Performance.Work.Track(process, "Credit Squeeze", "Rendering credits");
         Task<string> errors = process.StandardError.ReadToEndAsync(cancellationToken);
         Task<string> output = process.StandardOutput.ReadToEndAsync(cancellationToken);
         using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

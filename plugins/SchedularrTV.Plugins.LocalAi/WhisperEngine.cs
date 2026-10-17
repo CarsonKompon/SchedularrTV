@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics.X86;
 using Microsoft.Extensions.Options;
+using SchedularrTV.Plugins.Performance;
 using SchedularrTV.Plugins.Speech;
 using Whisper.net;
 using Whisper.net.LibraryLoader;
@@ -87,6 +88,8 @@ public sealed class WhisperEngine(ILogger<WhisperEngine> logger)
     public async Task<Transcript> TranscribeAsync(string modelPath, int threads, string? language, string wavePath, CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        // Named once it has the engine, so time spent waiting its turn isn't counted as working.
+        using WorkScope work = Work.Begin("Local AI", "Whisper transcribing", Path.GetFileName(wavePath));
         try
         {
             int useThreads = threads > 0 ? threads : Math.Max(1, Environment.ProcessorCount / 2);

@@ -176,6 +176,7 @@ internal sealed class MediaProbe(FileSystemLibraryOptions options, ILogger logge
                 return null;
             }
 
+            SchedularrTV.Plugins.Performance.Work.Track(process, "Media library", "Probing media files");
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(options.ProbeTimeout);
 
@@ -232,6 +233,7 @@ internal sealed class MediaProbe(FileSystemLibraryOptions options, ILogger logge
                 return null;
             }
 
+            SchedularrTV.Plugins.Performance.Work.Track(process, "Media library", "Probing media files");
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(options.ProbeTimeout);
 

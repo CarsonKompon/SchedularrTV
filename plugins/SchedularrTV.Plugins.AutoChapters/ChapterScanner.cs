@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using SchedularrTV.Core.Publishing;
 using SchedularrTV.Core.Query;
+using SchedularrTV.Plugins.Performance;
 
 namespace SchedularrTV.AutoChapters;
 
@@ -268,6 +269,7 @@ public sealed class ChapterScanner(
         }
 
         DateTimeOffset started = DateTimeOffset.UtcNow;
+        using WorkScope work = Work.Begin("Auto Chapters", "Chapter detection", request.Title);
         try
         {
             DetectionOptions options = settings.Detection;

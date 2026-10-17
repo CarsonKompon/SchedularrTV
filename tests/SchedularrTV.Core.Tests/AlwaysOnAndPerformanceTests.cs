@@ -459,4 +459,28 @@ public sealed class AlwaysOnAndPerformanceTests
     [InlineData("something", "something")]
     public void Processes_are_described_by_their_part_in_the_setup(string name, string role) =>
         Assert.Equal(role, ResourceMonitor.Role(name));
+
+    [Fact]
+    public async Task Named_work_nests_through_awaits_and_says_what_it_was_done_for()
+    {
+        using SchedularrTV.Plugins.Performance.WorkScope promo = SchedularrTV.Plugins.Performance.Work.Begin("Generated Promos", "Generating promo", "Up Next");
+        SchedularrTV.Plugins.Performance.WorkScope? inner = null;
+        await Task.Run(async () =>
+        {
+            await Task.Yield();
+            using SchedularrTV.Plugins.Performance.WorkScope text = SchedularrTV.Plugins.Performance.Work.Begin("Local AI", "Generating text");
+            inner = text;
+            Assert.Same(text, SchedularrTV.Plugins.Performance.Work.Current);
+
+            // The same plugin's work inside its own isn't named again.
+            Assert.Null(SchedularrTV.Plugins.Performance.Work.BeginUnlessWithin("Generated Promos", "Generating preview"));
+        });
+
+        Assert.Same(promo, SchedularrTV.Plugins.Performance.Work.Current);
+        SchedularrTV.Plugins.Performance.WorkInfo info = SchedularrTV.Plugins.Performance.Work.Snapshot(DateTimeOffset.UtcNow.AddMinutes(-1)).Items
+            .Single(item => item.Id == inner!.Id);
+        Assert.Equal("Local AI – Generating text", info.Label);
+        Assert.Equal("Generated Promos – Generating promo", info.Via);
+        Assert.NotNull(info.Ended);
+    }
 }

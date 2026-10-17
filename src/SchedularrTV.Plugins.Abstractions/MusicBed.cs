@@ -264,6 +264,7 @@ public sealed class MusicBed : IDisposable
         try
         {
             process = Process.Start(start) ?? throw new InvalidOperationException("ffmpeg didn't start.");
+            SchedularrTV.Plugins.Performance.Work.Track(process, "Music", "Decoding background music");
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
         {

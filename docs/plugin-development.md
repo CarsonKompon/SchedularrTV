@@ -161,6 +161,26 @@ A failing processor is logged and skipped for that channel; publication continue
 
 Read hardware defaults at use time and preserve explicit user choices. Manifest fields support **`lowPowerNote`**, **`lowPowerPlaceholder`**, and **`lowPowerDefault`**.
 
+## Show up on the Performance page
+
+The **Performance** page puts CPU and memory down to the plugin and the job that used it. Name your work so it shows as yours rather than as SchedularrTV's:
+
+```csharp
+using SchedularrTV.Plugins.Performance;
+
+// Around a piece of work: flows through awaits, and nests (work another plugin does for it shows "for" it).
+using WorkScope work = Work.Begin("Screen bug", "Rendering logo", channel.Name);
+
+// Straight after starting a program for that work (ffmpeg and so on); what it starts is counted with it.
+using Process ffmpeg = Process.Start(info)!;
+Work.Track(ffmpeg, "Screen bug", "Encoding logo"); // the names apply only outside any scope
+
+// A long-lived process that outlasts the work that started it (a stream's encoder): named for as long as it runs.
+Work.TrackAs(encoder, "Screen bug", $"Streaming {channel.Name}");
+```
+
+Begin a scope only once the work actually starts (after waiting for a lock or a queue), and keep it to discrete jobs: work done inside the app is estimated by sharing its CPU above idle between the scopes running at the time, so an idle loop wrapped in a scope would soak some of it up. **`Work.BeginUnlessWithin`** skips a nested scope when your plugin's own work is already named.
+
 ## Serve files and load assemblies
 
 Files under the installed **`wwwroot/`** are served at **`/plugins/<id>/`**. Razor class-library **`_content/`** assets and scoped CSS are not served through this mechanism.

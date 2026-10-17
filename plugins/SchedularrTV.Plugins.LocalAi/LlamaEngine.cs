@@ -5,6 +5,7 @@ using LLama.Common;
 using LLama.Native;
 using LLama.Sampling;
 using LLama.Transformers;
+using SchedularrTV.Plugins.Performance;
 
 namespace SchedularrTV.Writing.LocalAi;
 
@@ -81,6 +82,8 @@ public sealed class LlamaEngine : IDisposable
         CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        // Named once it has the engine, so time spent waiting its turn isn't counted as working.
+        using WorkScope work = Work.Begin("Local AI", "Generating text", Path.GetFileName(modelPath));
         try
         {
             _unloadAfter = unloadAfter <= TimeSpan.Zero ? TimeSpan.FromMinutes(10) : unloadAfter;
@@ -145,6 +148,7 @@ public sealed class LlamaEngine : IDisposable
         };
 
         _logger.LogInformation("Loading AI model {Model}.", Path.GetFileName(modelPath));
+        using WorkScope loading = Work.Begin("Local AI", "Loading AI model", Path.GetFileName(modelPath));
         LLamaWeights weights = await LLamaWeights.LoadFromFileAsync(parameters, cancellationToken).ConfigureAwait(false);
         _weights = weights;
         _parameters = parameters;

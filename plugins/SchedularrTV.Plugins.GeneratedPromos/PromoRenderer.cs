@@ -114,6 +114,11 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             CreateNoWindow = true
         }.WithArguments(Arguments(composition, outputPath, videoBackground, mixedAudio, encoding, hardwareBitrateKbps)))
             ?? throw new InvalidOperationException("ffmpeg could not be started.");
+        Work.Track(ffmpeg, "Generated Promos", "Encoding promo");
+
+        // The frames are drawn here, in the app, while ffmpeg encodes them: named on their own so that drawing's CPU is
+        // put down to the promo rather than to the app.
+        using WorkScope drawing = Work.Begin("Generated Promos", "Drawing promo frames");
 
         var errors = new StringBuilder();
         Task drain = Task.Run(async () =>
@@ -582,6 +587,7 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             UseShellExecute = false,
             CreateNoWindow = true
         }.WithArguments(arguments)) ?? throw new InvalidOperationException("ffmpeg could not be started.");
+        Work.Track(process, "Generated Promos", "Mixing promo audio");
 
         Task<string> error = process.StandardError.ReadToEndAsync(cancellationToken);
         try

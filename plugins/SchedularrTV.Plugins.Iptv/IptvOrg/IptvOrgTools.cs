@@ -317,6 +317,7 @@ public sealed class IptvOrgTools(IHttpClientFactory http, IptvSettings settings,
         }
 
         using Process process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start {program}.");
+        SchedularrTV.Plugins.Performance.Work.Track(process, "IPTV", $"iptv-org tools ({Path.GetFileNameWithoutExtension(program)})");
         var output = new System.Text.StringBuilder();
         var errors = new System.Text.StringBuilder();
         process.OutputDataReceived += (_, line) =>

@@ -173,6 +173,7 @@ public sealed partial class GeneratedPromoService
             return new AiTextResult(request.Fallback, false, setup);
         }
 
+        using WorkScope work = Work.Begin("Generated Promos", "Trying clip curation", promo?.Template.Name);
         Transcript? transcript = await Transcripts.GetAsync(request.EpisodePath, request.Config.Transcriber, cancellationToken).ConfigureAwait(false);
         if (transcript is null)
         {
@@ -325,6 +326,7 @@ public sealed partial class GeneratedPromoService
         try
         {
             using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffmpeg could not be started.");
+            Work.Track(process, "Generated Promos", "Mixing curated voice-over");
             Task<string> error = process.StandardError.ReadToEndAsync(cancellationToken);
             try
             {

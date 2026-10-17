@@ -101,6 +101,7 @@ public sealed class LocalArtworkSource(
             }
 
             using Process process = Process.Start(start) ?? throw new InvalidOperationException("ffmpeg didn't start.");
+            SchedularrTV.Plugins.Performance.Work.Track(process, "Media library", "Grabbing artwork frames");
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             Task<string> errors = process.StandardError.ReadToEndAsync(timeout.Token);
             await process.StandardOutput.ReadToEndAsync(timeout.Token).ConfigureAwait(false);

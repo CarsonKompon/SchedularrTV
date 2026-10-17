@@ -123,7 +123,8 @@ public static class ExternalPromoGenerator
     {
         try
         {
-            return Process.Start(info) ?? throw new InvalidOperationException($"'{info.FileName}' could not be started.");
+            return Work.Track(Process.Start(info), "Generated Promos", "Running promo generator")
+                ?? throw new InvalidOperationException($"'{info.FileName}' could not be started.");
         }
         catch (System.ComponentModel.Win32Exception ex)
         {

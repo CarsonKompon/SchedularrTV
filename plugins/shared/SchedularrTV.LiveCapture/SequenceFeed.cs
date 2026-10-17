@@ -141,6 +141,7 @@ public static class SequenceFeed
         try
         {
             process = Process.Start(start) ?? throw new InvalidOperationException($"Couldn't start ffmpeg ({ffmpeg}).");
+            SchedularrTV.Plugins.Performance.Work.TrackAs(process, "Live channels", "Playing window video (ffmpeg)");
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
         {

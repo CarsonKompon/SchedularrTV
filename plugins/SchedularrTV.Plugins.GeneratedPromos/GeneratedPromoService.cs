@@ -312,6 +312,7 @@ public sealed partial class GeneratedPromoService(
     /// <summary>Renders one promo, falling back to a silent file when the voice cannot be produced.</summary>
     public async Task<GeneratedPromoRender> RenderAsync(ResolvedGeneratedPromo promo, CancellationToken cancellationToken = default)
     {
+        using WorkScope? work = Work.BeginUnlessWithin("Generated Promos", "Generating promo", promo.Template.Name);
         Directory.CreateDirectory(Root);
 
         // An AI-written voice-over or caption is written now (or taken from what was written before); the usual words
@@ -488,6 +489,7 @@ public sealed partial class GeneratedPromoService(
         }
 
         using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffprobe could not be started.");
+        Work.Track(process, "Generated Promos", "Probing media");
         Task<string> error = process.StandardError.ReadToEndAsync(cancellationToken);
         string output = await process.StandardOutput.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
         await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
@@ -709,6 +711,7 @@ public sealed partial class GeneratedPromoService(
         }
 
         using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffprobe could not be started.");
+        Work.Track(process, "Generated Promos", "Probing media");
         Task<string> error = process.StandardError.ReadToEndAsync(cancellationToken);
         string output = await process.StandardOutput.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
         await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
