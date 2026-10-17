@@ -49,6 +49,7 @@ public static class SchedulerConfigLoader
             .WithAttributeOverride<BlockConfig>(block => block.Promos!, new YamlIgnoreAttribute())
             .WithAttributeOverride<BlockConfig>(block => block.GeneratedPromos!, new YamlIgnoreAttribute())
             .WithAttributeOverride<BlockConfig>(block => block.FollowOnly, new YamlIgnoreAttribute())
+            .WithAttributeOverride<BlockConfig>(block => block.KeepsHoursOverArchive, new YamlIgnoreAttribute())
             .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull | DefaultValuesHandling.OmitEmptyCollections)
             .Build();
 
@@ -333,6 +334,11 @@ public static class SchedulerConfigLoader
                 if (!block.FollowOnly && block.EndTime is not null && block.Time is not null && block.EndTime == block.Time)
                 {
                     errors.Add($"{blockScope}: 'end_time' must differ from 'time'.");
+                }
+
+                if (block.HoldsArchiveToHours && (block.Time is null || block.EndTime is null))
+                {
+                    warnings.Add($"{blockScope}: 'keep_hours' needs both 'time' and 'end_time'; archived slots mapped to this block won't follow the archive.");
                 }
             }
         }

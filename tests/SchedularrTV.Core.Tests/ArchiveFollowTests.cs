@@ -645,6 +645,101 @@ public sealed class ArchiveFollowTests : IDisposable
         Assert.DoesNotContain(schedule.Entries, entry => entry.BlockName == "Archive settings");
     }
 
+    [Theory]
+    [InlineData(true)]    // the block's hours (noon to 1pm) don't cover the archived midnight slot: normal programming
+    [InlineData(false)]   // without keep hours the archive plays whenever it aired
+    public async Task A_block_that_keeps_its_hours_follows_the_archive_only_inside_them(bool keepHours)
+    {
+        const string archived = "exact";
+        bool keepHoursOff = !keepHours;
+        WriteDay(2002, "09-15");
+        var follow = Follow();
+        follow.Blocks["Toonami '00"] = "Toonami";
+        ChannelConfig channel = new()
+        {
+            Id = "test",
+            Name = "Test",
+            Follow = follow,
+            BaseRotation = new ContentSelector { Include = [new ContentInclude { Show = "Base" }] },
+            Blocks = [new BlockConfig
+            {
+                Name = "Toonami", KeepsHoursOverArchive = !keepHoursOff,
+                Time = TimeSpan.FromHours(12), EndTime = TimeSpan.FromHours(13),
+                Shows = [new ContentSelector { Include = [new ContentInclude { Show = "Block fallback" }] }]
+            }]
+        };
+        MediaItem exact = new() { Id = "exact", Title = "Final Atonement", SeriesName = "Dragon Ball Z", Kind = MediaKind.Episode, Duration = TimeSpan.FromMinutes(22) };
+        var engine = new SchedulingEngine(new FakeMediaLibrary([
+            exact,
+            TestMedia.Episode("Base", 1, 1, TimeSpan.FromMinutes(30)),
+            TestMedia.Episode("Block fallback", 1, 1, TimeSpan.FromMinutes(22))]), new InMemoryPlaybackStateStore());
+        var start = new DateTimeOffset(2026, 9, 15, 0, 0, 0, TimeSpan.Zero);
+        ChannelSchedule schedule = await engine.BuildAsync(new SchedulerConfig(), channel, start, start.AddMinutes(30));
+
+        if (keepHoursOff)
+        {
+            Assert.Equal(archived, schedule.Entries.First().Item?.Id);
+        }
+        else
+        {
+            Assert.Equal("Base", schedule.Entries.First().Item?.SeriesName);
+            Assert.DoesNotContain(schedule.Entries, entry => entry.BlockName == "Toonami");
+            Assert.DoesNotContain(schedule.Entries, entry => entry.Item?.Id == archived);
+        }
+    }
+
+    [Fact]
+    public async Task A_block_that_keeps_its_hours_still_follows_the_archive_within_them()
+    {
+        WriteDay(2002, "09-15");
+        var follow = Follow();
+        follow.Blocks["Toonami '00"] = "Toonami";
+        ChannelConfig channel = new()
+        {
+            Id = "test",
+            Name = "Test",
+            Follow = follow,
+            BaseRotation = new ContentSelector { Include = [new ContentInclude { Show = "Base" }] },
+            Blocks = [new BlockConfig
+            {
+                Name = "Toonami", KeepsHoursOverArchive = true,
+                Time = TimeSpan.Zero, EndTime = TimeSpan.FromHours(1),
+                Shows = [new ContentSelector { Include = [new ContentInclude { Show = "Block fallback" }] }]
+            }]
+        };
+        MediaItem exact = new() { Id = "exact", Title = "Final Atonement", SeriesName = "Dragon Ball Z", Kind = MediaKind.Episode, Duration = TimeSpan.FromMinutes(22) };
+        var engine = new SchedulingEngine(new FakeMediaLibrary([
+            exact, TestMedia.Episode("Base", 1, 1, TimeSpan.FromMinutes(30))]), new InMemoryPlaybackStateStore());
+        var start = new DateTimeOffset(2026, 9, 15, 0, 0, 0, TimeSpan.Zero);
+        ChannelSchedule schedule = await engine.BuildAsync(new SchedulerConfig(), channel, start, start.AddMinutes(30));
+
+        Assert.Equal("exact", schedule.Entries.First().Item?.Id);
+        Assert.Equal("Toonami", schedule.Entries.First().BlockName);
+    }
+
+    [Fact]
+    public void Archived_slots_are_cut_to_the_blocks_own_windows()
+    {
+        var block = new BlockConfig { Name = "Toonami", KeepsHoursOverArchive = true, Time = TimeSpan.FromHours(17), EndTime = TimeSpan.FromHours(19) };
+        var other = new BlockConfig { Name = "Other", Time = TimeSpan.FromHours(16), EndTime = TimeSpan.FromHours(20) };
+        var day = new DateTimeOffset(2026, 9, 15, 0, 0, 0, TimeSpan.Zero);
+        BlockOccurrence[] regular =
+        [
+            new(other, day.AddHours(16), day.AddHours(17), 10),
+            new(block, day.AddHours(17), day.AddHours(19), 10),
+            new(other, day.AddHours(19), day.AddHours(20), 10)
+        ];
+
+        // A slot crossing the block's start is cut to begin there; one crossing both edges keeps only the middle.
+        Assert.Equal(new[] { (day.AddHours(17), day.AddHours(17.5)) },
+            ArchiveFollowTimeline.WithinHours(block, day.AddHours(16.5), day.AddHours(17.5), regular));
+        Assert.Equal(new[] { (day.AddHours(17), day.AddHours(19)) },
+            ArchiveFollowTimeline.WithinHours(block, day.AddHours(16), day.AddHours(20), regular));
+        Assert.Empty(ArchiveFollowTimeline.WithinHours(block, day.AddHours(19), day.AddHours(19.5), regular));
+        Assert.True(block.HoldsArchiveToHours);
+        Assert.False(new BlockConfig { Name = "F", FollowOnly = true, KeepsHoursOverArchive = true }.HoldsArchiveToHours);
+    }
+
     private void WriteDay(int year, string monthDay)
     {
         string directory = Path.Combine(_directory, year.ToString(), monthDay[..2]);

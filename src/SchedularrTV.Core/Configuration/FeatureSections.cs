@@ -49,7 +49,10 @@ public sealed class GeneratedPromoGlobalSection
 public sealed class ArchiveFollowBlockSection
 {
     /// <summary>The block only exists for Archive Follow to map archived slots onto.</summary>
-    public bool FollowOnly { get; set; }
+    public bool? FollowOnly { get; set; }
+
+    /// <summary>Archived slots mapped onto the block play only within its hours; see <see cref="BlockConfig.KeepsHoursOverArchive"/>.</summary>
+    public bool? KeepHours { get; set; }
 }
 
 /// <summary>
@@ -93,7 +96,13 @@ internal static class FeatureSections
         Merge(block.Plugins,
             (BuiltInPluginIds.Promos, PromoSection(block.PromoBaseTags, block.Promos)),
             (BuiltInPluginIds.GeneratedPromos, block.GeneratedPromos),
-            (BuiltInPluginIds.ArchiveFollow, block.FollowOnly ? new ArchiveFollowBlockSection { FollowOnly = true } : null));
+            (BuiltInPluginIds.ArchiveFollow, block.FollowOnly || block.KeepsHoursOverArchive
+                ? new ArchiveFollowBlockSection
+                {
+                    FollowOnly = block.FollowOnly ? true : null,
+                    KeepHours = block.KeepsHoursOverArchive ? true : null
+                }
+                : null));
 
     private static PromoPluginSection? PromoSection(List<string>? baseTags, PromoConfig? promos) =>
         baseTags is null && promos is null ? null : new PromoPluginSection { BaseTags = baseTags, Override = promos };
@@ -185,7 +194,9 @@ internal static class FeatureSections
 
         if (Take(block.Plugins, BuiltInPluginIds.ArchiveFollow, out object? follow))
         {
-            block.FollowOnly = Convert<ArchiveFollowBlockSection>(follow)?.FollowOnly ?? false;
+            ArchiveFollowBlockSection? section = Convert<ArchiveFollowBlockSection>(follow);
+            block.FollowOnly = section?.FollowOnly ?? false;
+            block.KeepsHoursOverArchive = section?.KeepHours ?? false;
         }
 
         block.Plugins = Empty(block.Plugins);

@@ -91,6 +91,34 @@ public class FeatureSectionTests
         Assert.Equal("acme.screen-bug", key);
     }
 
+    [Fact]
+    public void A_blocks_keep_hours_setting_is_written_under_archive_follow_and_read_back()
+    {
+        SchedulerConfig config = SchedulerConfigLoader.Parse("""
+            channels:
+              - id: cn
+                name: Cartoon Network
+                number: 2
+                blocks:
+                  - name: Toonami
+                    time: '17:00'
+                    end_time: '19:00'
+                    shows: [{ include: [{ show: Dragon Ball Z }] }]
+                    plugins:
+                      archive-follow:
+                        keep_hours: true
+            """);
+        BlockConfig block = Assert.Single(config.Channels[0].Blocks);
+        Assert.True(block.KeepsHoursOverArchive);
+        Assert.False(block.FollowOnly);
+
+        string saved = SchedulerConfigLoader.Serialize(config);
+        Assert.Contains("keep_hours: true", saved);
+        Assert.DoesNotContain("follow_only", saved);
+        Assert.DoesNotContain("keeps_hours_over_archive", saved);
+        Assert.True(Assert.Single(SchedulerConfigLoader.Parse(saved).Channels[0].Blocks).KeepsHoursOverArchive);
+    }
+
     private static void AssertFeatures(SchedulerConfig config)
     {
         Assert.Equal(@"D:\Promos", config.Settings.GeneratedPromosPath);

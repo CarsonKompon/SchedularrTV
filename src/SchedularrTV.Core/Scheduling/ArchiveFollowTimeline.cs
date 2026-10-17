@@ -150,19 +150,53 @@ internal sealed class ArchiveFollowTimeline : ITimelineContributor
                     // choose from the same templates; without them it used the channel's and the render missed.
                     GeneratedPromos = source?.GeneratedPromos
                 };
-                slots[block] = new FollowedSlot(slot, selector, fallback);
-                followed.Add(new BlockOccurrence(block, slotStart, slotEnd, int.MaxValue)
+                // Consecutive archived shows in one mapped block share its bookends, not one pair per show.
+                bool startsBlock = source is not null && !archive.Slots.Any(other => other.End == slot.Start && ReferenceEquals(SourceFor(other), source));
+                bool endsBlock = source is not null && !archive.Slots.Any(other => other.Start == slot.End && ReferenceEquals(SourceFor(other), source));
+
+                // A block that keeps its own hours takes archived slots only inside its windows, cut to them; the rest
+                // of the slot is left to the channel's normal programming.
+                IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> pieces = source is { HoldsArchiveToHours: true }
+                    ? WithinHours(source, slotStart, slotEnd, regular)
+                    : [(slotStart, slotEnd)];
+                if (pieces.Count == 0)
                 {
-                    // Consecutive archived shows in one mapped block share its bookends, not one pair per show.
-                    StartsBlock = source is not null && !archive.Slots.Any(other => other.End == slot.Start && ReferenceEquals(SourceFor(other), source)),
-                    EndsBlock = source is not null && !archive.Slots.Any(other => other.Start == slot.End && ReferenceEquals(SourceFor(other), source))
-                });
+                    continue;
+                }
+
+                slots[block] = new FollowedSlot(slot, selector, fallback);
+                foreach ((DateTimeOffset pieceStart, DateTimeOffset pieceEnd) in pieces)
+                {
+                    // Where a piece meets the edge of the block's window, the block itself starts or ends there.
+                    bool atWindowStart = source is { HoldsArchiveToHours: true } && regular.Any(o => ReferenceEquals(o.Block, source) && o.Start == pieceStart && o.StartsBlock);
+                    bool atWindowEnd = source is { HoldsArchiveToHours: true } && regular.Any(o => ReferenceEquals(o.Block, source) && o.End == pieceEnd && o.EndsBlock);
+                    followed.Add(new BlockOccurrence(block, pieceStart, pieceEnd, int.MaxValue)
+                    {
+                        StartsBlock = atWindowStart || (pieceStart == slotStart && startsBlock),
+                        EndsBlock = atWindowEnd || (pieceEnd == slotEnd && endsBlock)
+                    });
+                }
             }
         }
 
         // Returned even when no day matched, so the timeline is still flattened as it always was for this channel.
         return new TimelineOverlay(followed, slots, diagnostics, ArchiveGuideDay.Clip(archiveDays, start, end));
     }
+
+    /// <summary>
+    /// The parts of an archived slot inside the block's own windows (its occurrences on the regular timeline, so a
+    /// higher-priority block that takes part of its window keeps that part too), in time order.
+    /// </summary>
+    internal static IReadOnlyList<(DateTimeOffset Start, DateTimeOffset End)> WithinHours(
+        BlockConfig block, DateTimeOffset slotStart, DateTimeOffset slotEnd, IReadOnlyList<BlockOccurrence> regular) =>
+    [
+        .. regular
+            .Where(occurrence => ReferenceEquals(occurrence.Block, block) && occurrence.End > slotStart && occurrence.Start < slotEnd)
+            .Select(occurrence => (Start: occurrence.Start > slotStart ? occurrence.Start : slotStart,
+                End: occurrence.End < slotEnd ? occurrence.End : slotEnd))
+            .Where(piece => piece.End > piece.Start)
+            .OrderBy(piece => piece.Start)
+    ];
 }
 
 /// <summary>One archived slot: airs the archived episode(s) when the library has them, otherwise the source block's shows.</summary>

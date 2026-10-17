@@ -10,6 +10,10 @@
         {
             <span class="pill pill-muted">Follow Only</span>
         }
+        else if (Block.KeepsHoursOverArchive)
+        {
+            <span class="pill pill-muted">Keeps its hours</span>
+        }
         else if (Block.IsAnchorSlot)
         {
             <span class="pill pill-muted">anchor slot</span>
@@ -22,12 +26,31 @@
     </div>
 
     @* Archive Follow maps archived slots onto blocks like this one; off without the plugin unless already set. *@
-    @if (Block.FollowOnly || Registry.IsActive(BuiltInPluginIds.ArchiveFollow))
+    @if (Block.FollowOnly || Block.KeepsHoursOverArchive || Registry.IsActive(BuiltInPluginIds.ArchiveFollow))
     {
         <label class="check">
             <input type="checkbox" checked="@Block.FollowOnly" @onchange="OnFollowOnlyChanged" />
             Follow Only
         </label>
+        @if (!Block.FollowOnly)
+        {
+            <label class="check">
+                <input type="checkbox" checked="@Block.KeepsHoursOverArchive"
+                       @onchange="e => { Block.KeepsHoursOverArchive = e.Value is true; Changed.InvokeAsync(); }" />
+                Keep to this block's hours when following the archive
+            </label>
+            @if (Block.KeepsHoursOverArchive)
+            {
+                <p class="hint">
+                    Archived slots mapped to this block play only between its start and end times, cut to fit where they cross
+                    them. Outside those hours the channel's normal shows and ads play instead of the archive.
+                    @if (Block.Time is null || Block.EndTime is null)
+                    {
+                        <strong>Give the block a start and end time, or nothing mapped to it will follow the archive.</strong>
+                    }
+                </p>
+            }
+        }
     }
 
     <div class="grid grid-3">
@@ -223,6 +246,7 @@
         {
             Block.Time = null;
             Block.EndTime = null;
+            Block.KeepsHoursOverArchive = false; // a Follow Only block has no hours to keep
         }
         await Changed.InvokeAsync();
     }

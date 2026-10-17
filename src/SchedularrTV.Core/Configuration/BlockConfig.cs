@@ -12,6 +12,13 @@ public sealed class BlockConfig
 
     public bool FollowOnly { get; set; }
 
+    /// <summary>
+    /// Archive Follow keeps to this block's own hours: archived slots mapped onto it play only inside the block's window
+    /// (cut to it where they cross its edges), and outside it the channel's normal programming plays instead. Needs a
+    /// start and end time; ignored on a <see cref="FollowOnly"/> block, which has none.
+    /// </summary>
+    public bool KeepsHoursOverArchive { get; set; }
+
     public TimeSpan? Time { get; set; }
 
     /// <summary>May be earlier than <see cref="Time"/>, in which case the block crosses midnight.</summary>
@@ -78,6 +85,11 @@ public sealed class BlockConfig
     }
 
     /// <summary>True when this block is really a fixed-time anchor rather than a window.</summary>
+    /// <summary>Whether Archive Follow is held to this block's hours (<see cref="KeepsHoursOverArchive"/> on a block that has hours).</summary>
+    [YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HoldsArchiveToHours => KeepsHoursOverArchive && !FollowOnly;
+
     [YamlIgnore]
     public bool IsAnchorSlot => !FollowOnly && EndTime is null && Time is not null;
 

@@ -57,6 +57,8 @@ Selection is seeded by channel, playback date, and **`settings.seed`**. **Archiv
 
 Mapped blocks supply ads, promos, bumpers, and mid-roll settings at archived times, regardless of their usual hours. Highest block priority wins when multiple mappings apply; unmapped labels use normal active-block or channel settings.
 
+To hold a block to its own hours instead, tick **Keep to this block's hours when following the archive** (YAML: `plugins: { archive-follow: { keep_hours: true } }`). Archived slots mapped to it then play only between the block's start and end times on its days, cut to fit where they cross those edges. Outside them, the channel's normal shows and ads play and nothing follows the archive. Inside them, the archive is followed as usual. The block needs a start and end time; a **Follow Only** block can't keep hours.
+
 ## Mapping shows
 
 Unambiguous normalized titles match automatically, followed by conservative fuzzy matching. Batch assignments can map several archive names to one library show.
