@@ -523,7 +523,8 @@ public static class SchedulerConfigLoader
                 foreach (GeneratedLayerTiming timed in tracked.Timings ?? [])
                 {
                     if (string.IsNullOrWhiteSpace(timed.Layer) || timed.Start < TimeSpan.Zero || timed.End <= timed.Start
-                        || timed.TransitionDuration < TimeSpan.Zero || !Enum.IsDefined(timed.TransitionIn) || !Enum.IsDefined(timed.TransitionOut))
+                        || timed.TransitionDuration < TimeSpan.Zero || timed.TransitionOutDuration < TimeSpan.Zero
+                        || !Enum.IsDefined(timed.TransitionIn) || !Enum.IsDefined(timed.TransitionOut))
                     {
                         errors.Add($"{trackedScope}: each timing needs its layer's id, a start of zero or more before its end, and valid transitions.");
                     }
@@ -609,9 +610,10 @@ public static class SchedulerConfigLoader
                     errors.Add($"{layerScope}: needs a positive size and an opacity between 0 and 1.");
                 }
 
-                if (layer.Start < TimeSpan.Zero || layer.End <= layer.Start || layer.TransitionDuration < TimeSpan.Zero)
+                if (layer.Start < TimeSpan.Zero || layer.End <= layer.Start || layer.TransitionDuration < TimeSpan.Zero
+                    || layer.TransitionOutDuration < TimeSpan.Zero)
                 {
-                    errors.Add($"{layerScope}: start must be non-negative and before end.");
+                    errors.Add($"{layerScope}: start must be non-negative and before end, and transitions can't take less than no time.");
                 }
 
                 if (!IsColor(layer.Color))

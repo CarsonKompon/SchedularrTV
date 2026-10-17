@@ -662,6 +662,7 @@ public static partial class GeneratedPromoResolver
                 In = Enum.Parse<PromoTransition>(layer.TransitionIn.ToString()),
                 Out = Enum.Parse<PromoTransition>(layer.TransitionOut.ToString()),
                 TransitionDuration = layer.TransitionDuration,
+                TransitionOutDuration = layer.TransitionOutDuration,
                 Opacity = layer.Opacity,
                 Keyframes = Keyframes(layer)
             })];
@@ -964,6 +965,7 @@ public static partial class GeneratedPromoResolver
             In = Enum.Parse<PromoTransition>(timing.TransitionIn.ToString()),
             Out = Enum.Parse<PromoTransition>(timing.TransitionOut.ToString()),
             TransitionDuration = timing.TransitionDuration,
+            TransitionOutDuration = timing.TransitionOutDuration,
             Opacity = pose.Opacity,
             Rotation = Degrees(pose.Rotation),
             Corners = PromoCorners.From(pose.Corners),

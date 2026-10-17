@@ -32,7 +32,14 @@ public abstract record PromoLayer
 
     public PromoTransition Out { get; init; } = PromoTransition.Fade;
 
+    /// <summary>How long the enter transition takes (and the exit, unless <see cref="TransitionOutDuration"/> is set).</summary>
     public TimeSpan TransitionDuration { get; init; } = TimeSpan.FromMilliseconds(400);
+
+    /// <summary>How long the exit transition takes; null takes as long as the enter.</summary>
+    public TimeSpan? TransitionOutDuration { get; init; }
+
+    /// <summary>The exit transition's length: its own, else the enter's.</summary>
+    public TimeSpan OutDuration => TransitionOutDuration ?? TransitionDuration;
 
     public float Opacity { get; init; } = 1;
 
@@ -215,17 +222,18 @@ public static class PromoAudioEnvelope
         {
             double start = layer.Start.TotalSeconds;
             double end = (layer.End ?? duration).TotalSeconds;
-            double length = Math.Min(layer.TransitionDuration.TotalSeconds, Math.Max(0, end - start));
+            double entering = Math.Min(layer.TransitionDuration.TotalSeconds, Math.Max(0, end - start));
+            double leaving = Math.Min(layer.OutDuration.TotalSeconds, Math.Max(0, end - start));
             foreach (double edge in (double[])[start, end])
             {
                 Add(edge - Step);
                 Add(edge);
             }
 
-            for (int sample = 1; sample <= Samples && length > 0; sample++)
+            for (int sample = 1; sample <= Samples; sample++)
             {
-                Add(start + length * sample / Samples);
-                Add(end - length * sample / Samples);
+                if (entering > 0) Add(start + entering * sample / Samples);
+                if (leaving > 0) Add(end - leaving * sample / Samples);
             }
         }
 
@@ -327,9 +335,10 @@ public static class PromoAnimation
             return null;
         }
 
-        double length = layer.TransitionDuration.TotalSeconds;
-        float entering = Ease(length <= 0 ? 1 : (time - layer.Start).TotalSeconds / length);
-        float leaving = Ease(length <= 0 ? 1 : (end - time).TotalSeconds / length);
+        double inLength = layer.TransitionDuration.TotalSeconds;
+        double outLength = layer.OutDuration.TotalSeconds;
+        float entering = Ease(inLength <= 0 ? 1 : (time - layer.Start).TotalSeconds / inLength);
+        float leaving = Ease(outLength <= 0 ? 1 : (end - time).TotalSeconds / outLength);
         float distance = canvasHeight * 0.12f;
 
         (SKRect bounds, float opacity) = Pose(layer.Bounds, layer.Opacity, layer.Keyframes, time);

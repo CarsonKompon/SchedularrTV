@@ -302,7 +302,8 @@ public static class GeneratedPromoEditing
             End = layer.End,
             TransitionIn = layer.TransitionIn,
             TransitionOut = layer.TransitionOut,
-            TransitionDuration = layer.TransitionDuration
+            TransitionDuration = layer.TransitionDuration,
+            TransitionOutDuration = layer.TransitionOutDuration
         };
         (tracked.Timings ??= []).Add(timed);
         return timed;

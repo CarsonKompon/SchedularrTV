@@ -1101,7 +1101,11 @@ public interface IGeneratedTiming
 
     GeneratedTransition TransitionOut { get; set; }
 
+    /// <summary>How long the enter transition takes (and the exit, unless <see cref="TransitionOutDuration"/> says otherwise).</summary>
     TimeSpan TransitionDuration { get; set; }
+
+    /// <summary>How long the exit transition takes; null takes as long as the enter (<see cref="TransitionDuration"/>).</summary>
+    TimeSpan? TransitionOutDuration { get; set; }
 }
 
 /// <summary>A layer's whole timing over one background, replacing the layer's own for it.</summary>
@@ -1119,6 +1123,9 @@ public sealed class GeneratedLayerTiming : IGeneratedTiming
     public GeneratedTransition TransitionOut { get; set; } = GeneratedTransition.Fade;
 
     public TimeSpan TransitionDuration { get; set; } = TimeSpan.FromMilliseconds(400);
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public TimeSpan? TransitionOutDuration { get; set; }
 }
 
 /// <summary>A layer's colour over one background, replacing <see cref="GeneratedLayer.Color"/> for it.</summary>
@@ -1247,7 +1254,14 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
 
     public GeneratedTransition TransitionOut { get; set; } = GeneratedTransition.Fade;
 
+    /// <summary>How long the enter transition takes (and the exit, unless <see cref="TransitionOutDuration"/> is set).</summary>
     public TimeSpan TransitionDuration { get; set; } = TimeSpan.FromMilliseconds(400);
+
+    /// <summary>
+    /// How long the exit transition takes; null takes as long as the enter. Null keeps render keys of older templates.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public TimeSpan? TransitionOutDuration { get; set; }
 
     public float Opacity { get; set; } = 1;
 

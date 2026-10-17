@@ -1124,9 +1124,15 @@
                             </select>
                         </label>
                         <label class="field">
-                            <span>Transition length (s)</span>
+                            <span>Enter length (s)</span>
                             <input type="number" min="0" max="5" step="0.05" value="@Number(timing.TransitionDuration.TotalSeconds)"
                                    @onchange="e => SetSeconds(e, value => EditableTiming(selected).TransitionDuration = value)" />
+                        </label>
+                        <label class="field">
+                            <span>Exit length (s, blank = same as enter)</span>
+                            <input type="number" min="0" max="5" step="0.05" value="@OptionalSeconds(timing.TransitionOutDuration)"
+                                   placeholder="@Number(timing.TransitionDuration.TotalSeconds)"
+                                   @onchange="e => SetOptionalSeconds(e, value => EditableTiming(selected).TransitionOutDuration = value)" />
                         </label>
                     </div>
                 </div>
@@ -1777,6 +1783,8 @@
             : Task.CompletedTask;
 
     private static string OptionalNumber(float? value) => value is { } set ? Number(set) : string.Empty;
+
+    private static string OptionalSeconds(TimeSpan? value) => value is { } set ? Number(set.TotalSeconds) : string.Empty;
 
     private Task SetOptionalSeconds(ChangeEventArgs e, Action<TimeSpan?> apply) =>
         string.IsNullOrWhiteSpace(Text(e)) ? Set(() => apply(null)) : SetSeconds(e, value => apply(value));

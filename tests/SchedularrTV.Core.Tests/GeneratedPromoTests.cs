@@ -97,6 +97,29 @@ public sealed class GeneratedPromoTests
             PromoAnimation.Evaluate(layer, TimeSpan.FromSeconds(3 - mirrored), TimeSpan.FromSeconds(5), 1000)!.Value.Opacity, 3);
     }
 
+    [Fact]
+    public void Enter_and_exit_transitions_can_take_different_lengths()
+    {
+        var layer = new PromoRectLayer
+        {
+            Bounds = SKRect.Create(0, 0, 10, 10), In = PromoTransition.Fade, Out = PromoTransition.Fade,
+            Start = TimeSpan.FromSeconds(1), End = TimeSpan.FromSeconds(5),
+            TransitionDuration = TimeSpan.FromSeconds(0.2), TransitionOutDuration = TimeSpan.FromSeconds(1.6)
+        };
+        float At(double seconds) => PromoAnimation.Evaluate(layer, TimeSpan.FromSeconds(seconds), TimeSpan.FromSeconds(6), 1000)!.Value.Opacity;
+
+        // In by 0.2s, still fully in 1.5s before the end, fading through the last 1.6s.
+        Assert.Equal(1f, At(1.2), 3);
+        Assert.Equal(1f, At(3.4), 3);
+        Assert.True(At(4.2) < 1f);
+        Assert.True(At(4.2) > At(4.8));
+
+        // Without an exit length of its own, the exit takes as long as the enter.
+        PromoRectLayer same = layer with { TransitionOutDuration = null };
+        Assert.Equal(TimeSpan.FromSeconds(0.2), same.OutDuration);
+        Assert.Equal(1f, PromoAnimation.Evaluate(same, TimeSpan.FromSeconds(4.7), TimeSpan.FromSeconds(6), 1000)!.Value.Opacity, 3);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
