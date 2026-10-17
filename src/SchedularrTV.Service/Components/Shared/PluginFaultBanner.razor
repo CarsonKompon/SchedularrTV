@@ -1,0 +1,77 @@
+@* Plugin parts that failed while building or publishing and were skipped (the schedules went out without them), on the
+   dashboard and the Channels page. Says which plugin, where, and what to do: usually install this release's plugins. *@
+
+@if (Faults.Count > 0)
+{
+    <div class="banner banner-error plugin-faults" role="alert">
+        <Icon Name="alert" Size="18" />
+        <div class="plugin-faults-body">
+            <strong>@Title</strong>
+            @if (Faults.Any(fault => fault.Outdated))
+            {
+                <span>
+                    @Outdated built for a different version of SchedularrTV. Download this release's all-plugins zip and
+                    install it on the <a href="plugins">Plugins page</a>, then restart.
+                </span>
+            }
+            else
+            {
+                <span>The schedules still went out, without what @(Plugins.Count == 1 ? "it" : "they") add. Check the log for details, or switch @(Plugins.Count == 1 ? "it" : "them") off on the <a href="plugins">Plugins page</a>.</span>
+            }
+            <details>
+                <summary>Details</summary>
+                <ul>
+                    @foreach (PluginFault fault in Faults)
+                    {
+                        <li>
+                            <strong>@fault.Plugin</strong> failed while @fault.Stage@(fault.ChannelName is { } channel ? $" on {channel}" : " (every channel)"):
+                            <code>@fault.Message</code>
+                            <span class="muted">· @fault.At.ToLocalTime().ToString("ddd HH:mm")</span>
+                        </li>
+                    }
+                </ul>
+            </details>
+        </div>
+    </div>
+}
+
+<style>
+    .plugin-faults { display: flex; gap: 10px; align-items: flex-start; }
+    .plugin-faults-body { display: grid; gap: 4px; min-width: 0; }
+    .plugin-faults-body details { margin-top: 2px; }
+    .plugin-faults-body ul { margin: 6px 0 0 18px; padding: 0; }
+    .plugin-faults-body code { white-space: normal; word-break: break-word; }
+</style>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<PluginFault> Faults { get; set; } = [];
+
+    /// <summary>For one channel: says so in the title.</summary>
+    [Parameter] public string? ChannelName { get; set; }
+
+    private IReadOnlyList<string> Plugins => [.. Faults.Select(fault => fault.Plugin).Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    private string Names(IEnumerable<string> names)
+    {
+        List<string> list = [.. names];
+        return list.Count switch
+        {
+            0 => string.Empty,
+            1 => list[0],
+            _ => $"{string.Join(", ", list.Take(list.Count - 1))} and {list[^1]}"
+        };
+    }
+
+    private string Title => ChannelName is { } channel
+        ? $"{Names(Plugins)} {(Plugins.Count == 1 ? "isn't" : "aren't")} working on {channel}"
+        : $"{Names(Plugins)} {(Plugins.Count == 1 ? "isn't" : "aren't")} working, so {(Plugins.Count == 1 ? "it was" : "they were")} skipped";
+
+    private string Outdated
+    {
+        get
+        {
+            List<string> outdated = [.. Faults.Where(fault => fault.Outdated).Select(fault => fault.Plugin).Distinct(StringComparer.OrdinalIgnoreCase)];
+            return outdated.Count == 1 ? $"{outdated[0]} looks" : $"{Names(outdated)} look";
+        }
+    }
+}

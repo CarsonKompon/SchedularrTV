@@ -12,6 +12,18 @@ namespace SchedularrTV.Service;
 /// <summary>Why a channel's last build failed, so the UI can say so and offer a retry.</summary>
 public sealed record ChannelBuildFailure(string ChannelId, string ChannelName, string Message, DateTimeOffset At);
 
+/// <summary>
+/// A plugin's part of building or publishing that failed and was skipped, so the schedules still went out without it.
+/// <see cref="ChannelId"/> is the channel it failed on, or null when it failed for every channel at once.
+/// </summary>
+/// <param name="Plugin">The plugin's name, as the Plugins page shows it.</param>
+/// <param name="Stage">What it was doing, e.g. "finishing the schedules".</param>
+/// <param name="Outdated">
+/// It looks built for another version of the app (a method or type it uses isn't there any more): installing this
+/// release's plugins fixes it.
+/// </param>
+public sealed record PluginFault(string Plugin, string Stage, string? ChannelId, string? ChannelName, string Message, bool Outdated, DateTimeOffset At);
+
 public sealed record ScheduleRebuildProgress(int CompletedChannels, int TotalChannels, string? ChannelName, string Stage, int ChannelPercent)
 {
     public double Percent => TotalChannels == 0 ? 0 : Math.Clamp((CompletedChannels + ChannelPercent / 100.0) / TotalChannels * 100, 0, 100);
@@ -31,14 +43,79 @@ public sealed class ScheduleCoordinator(
     TimeProvider timeProvider,
     IEnumerable<IScheduleFinisher>? finishers = null,
     IEnumerable<IPlayoutProcessor>? processors = null,
-    IEnumerable<IExternalChannelSource>? externalSources = null)
+    IEnumerable<IExternalChannelSource>? externalSources = null,
+    Plugins.PluginRegistry? plugins = null)
 {
     // Read on each use, not kept from the constructor: the lists leave out plugins switched off while running.
     private IReadOnlyList<IScheduleFinisher> _finishers => [.. finishers ?? []];
 
-    // Each finisher sees the previous one's result; unchanged schedules keep their identity throughout.
-    private IReadOnlyList<ChannelSchedule> Finish(SchedulerConfig config, IReadOnlyList<ChannelSchedule> schedules, DateTimeOffset now) =>
-        _finishers.Aggregate(schedules, (current, finisher) => finisher.Prepare(config, current, now));
+    private const string FinishingStage = "finishing the schedules";
+    private const string PublishingStage = "preparing the playout";
+
+    // Plugin parts that failed, by what failed where (plugin part, and the channel for per-channel ones).
+    private readonly ConcurrentDictionary<string, PluginFault> _pluginFaults = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Plugin parts whose last run failed and was skipped (the schedules went out without them), newest first. A part
+    /// that works again drops off.
+    /// </summary>
+    public IReadOnlyList<PluginFault> PluginFaults => [.. _pluginFaults.Values.OrderByDescending(fault => fault.At)];
+
+    /// <summary>The plugin faults that hit this channel: its own, and those that hit every channel.</summary>
+    public IReadOnlyList<PluginFault> PluginFaultsFor(string channelId) =>
+        [.. PluginFaults.Where(fault => fault.ChannelId is null || string.Equals(fault.ChannelId, channelId, StringComparison.OrdinalIgnoreCase))];
+
+    // Each finisher sees the previous one's result; unchanged schedules keep their identity throughout. One that fails
+    // (a plugin built for another version of the app, say) is skipped, so every channel still gets its schedule.
+    private IReadOnlyList<ChannelSchedule> Finish(SchedulerConfig config, IReadOnlyList<ChannelSchedule> schedules, DateTimeOffset now)
+    {
+        IReadOnlyList<ChannelSchedule> current = schedules;
+        foreach (IScheduleFinisher finisher in _finishers)
+        {
+            try
+            {
+                current = finisher.Prepare(config, current, now) ?? current;
+                ClearFault(finisher, FinishingStage, null);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "{Plugin} failed while {Stage}; the schedules went out without it.", PluginName(finisher), FinishingStage);
+                ReportFault(finisher, FinishingStage, null, null, ex, now);
+            }
+        }
+
+        return current;
+    }
+
+    /// <summary>The plugin a part comes from, by name; the part's own type for one built into the app.</summary>
+    private string PluginName(object part) =>
+        plugins?.OwnerOf(part.GetType())?.Manifest.Name is { Length: > 0 } name ? name : part.GetType().Name;
+
+    private static string FaultKey(object part, string stage, string? channelId) => $"{part.GetType().FullName}|{stage}|{channelId}";
+
+    private void ReportFault(object part, string stage, string? channelId, string? channelName, Exception ex, DateTimeOffset at)
+    {
+        Exception root = ex is System.Reflection.TargetInvocationException { InnerException: { } inner } ? inner : ex;
+        // What a plugin built against an older (or newer) app hits: something it calls isn't there any more.
+        bool outdated = root is MissingMethodException or MissingFieldException or MissingMemberException or TypeLoadException
+            or BadImageFormatException or FileLoadException
+            || (root is FileNotFoundException && root.Message.Contains("assembly", StringComparison.OrdinalIgnoreCase));
+        string key = FaultKey(part, stage, channelId);
+        bool added = !_pluginFaults.ContainsKey(key);
+        _pluginFaults[key] = new PluginFault(PluginName(part), stage, channelId, channelName, root.Message, outdated, at);
+        if (added)
+        {
+            StateChanged?.Invoke();
+        }
+    }
+
+    private void ClearFault(object part, string stage, string? channelId)
+    {
+        if (_pluginFaults.TryRemove(FaultKey(part, stage, channelId), out _))
+        {
+            StateChanged?.Invoke();
+        }
+    }
 
     private IReadOnlyList<IPlayoutProcessor> _processors =>
         [.. (processors ?? []).OrderBy(processor => processor.Order).ThenBy(processor => processor.Name, StringComparer.Ordinal)];
@@ -619,10 +696,12 @@ public sealed class ScheduleCoordinator(
                 try
                 {
                     current = await processor.ProcessAsync(new PlayoutContext(config, channel, current), cancellationToken).ConfigureAwait(false) ?? current;
+                    ClearFault(processor, PublishingStage, schedule.ChannelId);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     logger.LogError(ex, "Playout processor {Processor} failed on {Channel}; its changes were skipped.", processor.Name, schedule.ChannelName);
+                    ReportFault(processor, PublishingStage, schedule.ChannelId, schedule.ChannelName, ex, timeProvider.GetUtcNow());
                 }
             }
 

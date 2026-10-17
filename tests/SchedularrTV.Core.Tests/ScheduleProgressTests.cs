@@ -356,6 +356,39 @@ public sealed class ScheduleProgressTests
         Assert.Equal(schedule.End, schedule.Entries[^1].End);
     }
 
+    [Fact]
+    public async Task A_failing_schedule_finisher_is_skipped_and_reported_so_channels_still_publish()
+    {
+        var broken = new BrokenFinisher { Failure = new MissingMethodException("Void Old.Method()") };
+        using var fixture = new Fixture(new FakeMediaLibrary([
+            TestMedia.Episode("First", 1, 1, TimeSpan.FromMinutes(22)),
+            TestMedia.Episode("Second", 1, 1, TimeSpan.FromMinutes(22))]), finishers: [broken]);
+
+        IReadOnlyList<ChannelSchedule> schedules = await fixture.Coordinator.RebuildAsync(true, true, CancellationToken.None);
+
+        // Every channel still has its schedule, and it was published.
+        Assert.Equal(2, schedules.Count);
+        Assert.True(fixture.Publisher.Calls > 0);
+        PluginFault fault = Assert.Single(fixture.Coordinator.PluginFaults);
+        Assert.Equal(nameof(BrokenFinisher), fault.Plugin);
+        Assert.Null(fault.ChannelId);
+        Assert.True(fault.Outdated);
+        Assert.Single(fixture.Coordinator.PluginFaultsFor("first"));
+
+        // Once it works again, the fault goes.
+        broken.Failure = null;
+        await fixture.Coordinator.RebuildAsync(true, true, CancellationToken.None);
+        Assert.Empty(fixture.Coordinator.PluginFaults);
+    }
+
+    private sealed class BrokenFinisher : IScheduleFinisher
+    {
+        public Exception? Failure { get; set; }
+
+        public IReadOnlyList<ChannelSchedule> Prepare(SchedulerConfig config, IReadOnlyList<ChannelSchedule> schedules, DateTimeOffset now) =>
+            Failure is { } failure ? throw failure : schedules;
+    }
+
     private sealed class TestClock(DateTimeOffset now) : TimeProvider
     {
         public DateTimeOffset Now { get; set; } = now;
@@ -379,7 +412,8 @@ public sealed class ScheduleProgressTests
             Assert.True(_provider.Save(SchedulerConfigLoader.Serialize(config)).IsValid);
         }
 
-        public Fixture(IMediaLibrary library, SchedulerConfig? configuration = null, TimeProvider? clock = null)
+        public Fixture(IMediaLibrary library, SchedulerConfig? configuration = null, TimeProvider? clock = null,
+            IEnumerable<IScheduleFinisher>? finishers = null)
         {
             _provider = new SchedulerConfigProvider(Options.Create(new SchedulerServiceOptions
             {
@@ -397,7 +431,7 @@ public sealed class ScheduleProgressTests
             }
             Coordinator = new ScheduleCoordinator(_provider, new ScheduleBuilder(library, new InMemoryPlaybackStateStore()),
                 library, [Publisher], NullLogger<ScheduleCoordinator>.Instance,
-                NullLoggerFactory.Instance, clock ?? TimeProvider.System);
+                NullLoggerFactory.Instance, clock ?? TimeProvider.System, finishers);
         }
 
         private static ChannelConfig Channel(string id, string name, int number) => new()

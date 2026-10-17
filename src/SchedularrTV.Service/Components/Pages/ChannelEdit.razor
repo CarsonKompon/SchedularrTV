@@ -5,6 +5,7 @@
 @inject LogoStore Logos
 @inject IEnumerable<PluginEditorSection> EditorSections
 @inject AlwaysOnKeeper AlwaysOn
+@inject ScheduleCoordinator Coordinator
 @inject Microsoft.Extensions.Options.IOptions<SchedularrTV.Providers.ErsatzTv.ErsatzTvOptions> ErsatzOptions
 @using SchedularrTV.Providers.ErsatzTv
 
@@ -49,6 +50,8 @@ else
                     aria-expanded="@(_copyOpen ? "true" : "false")" @onclick="OpenCopy"><Icon Name="copy" Size="15" />Copy From</button>
         </Actions>
     </PageHeader>
+
+    <PluginFaultBanner Faults="Coordinator.PluginFaultsFor(_channel.Id)" ChannelName="@_channel.Name" />
 
     @if (_copyOpen)
     {
