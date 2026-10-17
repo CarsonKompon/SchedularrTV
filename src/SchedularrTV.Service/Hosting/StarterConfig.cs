@@ -19,6 +19,8 @@ public static class StarterConfig
               horizon: 48h
               rebuild_interval: 1h
               seed: "{Guid.NewGuid():N}"
+              # A new schedule starts on ad breaks: there are no older break settings to move into them.
+              ad_breaks_migrated: true
 
             channels: []
             """);
