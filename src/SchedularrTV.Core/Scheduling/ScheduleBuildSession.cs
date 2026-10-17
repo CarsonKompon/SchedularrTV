@@ -322,61 +322,8 @@ internal sealed class ScheduleBuildSession(
         await stateStore.SaveAllAsync([.. _sequences.Values.Select(sequence => sequence.ToState())], cancellationToken).ConfigureAwait(false);
     }
 
-    public QueryExpression ResolveExpression(ContentSelector selector, int depth)
-    {
-        if (depth > MaxCollectionDepth)
-        {
-            throw new SchedulerConfigurationException($"Global collection reference cycle detected at '{selector.Collection}'.");
-        }
-
-        List<QueryExpression> pool = [];
-
-        if (!string.IsNullOrWhiteSpace(selector.Collection))
-        {
-            if (!config.GlobalCollections.TryGetValue(selector.Collection, out ContentSelector? global))
-            {
-                throw new SchedulerConfigurationException($"Unknown global collection '{selector.Collection}'.");
-            }
-
-            pool.Add(ResolveExpression(global, depth + 1));
-        }
-
-        if (!string.IsNullOrWhiteSpace(selector.Query))
-        {
-            QueryExpression parsed = QueryParser.Parse(selector.Query);
-
-            // A raw query names no titles, so the exclusion simply narrows the whole thing.
-            pool.Add(selector.ExcludeSeasons.Count > 0
-                ? QueryExpression.And([parsed, ContentIncludeCompiler.ExcludingSeasons(selector.ExcludeSeasons)])
-                : parsed);
-        }
-
-        if (selector.Include.Count > 0)
-        {
-            pool.Add(ContentIncludeCompiler.Compile(selector.Include, selector.ExcludeSeasons));
-        }
-
-        if (pool.Count == 0)
-        {
-            throw new SchedulerConfigurationException("A content selector requires 'collection', 'query' or 'include'.");
-        }
-
-        // Several sources union together: a collection is everything it names plus anything it matches.
-        QueryExpression baseExpression = QueryExpression.Or(pool);
-
-        if (!string.IsNullOrWhiteSpace(selector.Filter))
-        {
-            QueryExpression filter = QueryParser.Parse(selector.Filter);
-
-            // Library scope deliberately discards the collection so smart searches can reach
-            // outside the block's own shows (spec 2.2 scoped layering).
-            baseExpression = selector.FilterScope == FilterScope.Library
-                ? filter
-                : QueryExpression.And([baseExpression, filter]);
-        }
-
-        return baseExpression;
-    }
+    // Shared with the editors (ContentSelectorQuery), so what they list is what a build plays.
+    public QueryExpression ResolveExpression(ContentSelector selector, int depth) => ContentSelectorQuery.Expression(config, selector, depth);
 
     private PlaybackOrder ResolveOrder(ContentSelector selector, int depth)
     {

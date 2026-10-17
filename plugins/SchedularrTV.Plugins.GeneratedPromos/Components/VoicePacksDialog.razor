@@ -296,7 +296,8 @@
         string typed = _newShow.GetValueOrDefault(phrase.Id, string.Empty);
         IReadOnlyList<string> all = ScheduledShows(null);
         IReadOnlyList<string> unrecorded = all.Where(title => ShowTitleMatcher.Find(title, phrase.Entries, entry => entry.Key) is null).ToList();
-        IReadOnlyList<string> fromSource = ScheduledShows(ShowSource);
+        IReadOnlyList<string> fromSource = SourceShows(ShowSource);
+        bool loadingSource = _loadingShows || !string.Equals(_loadedSource, ShowSource, StringComparison.Ordinal);
         IReadOnlyList<string> sourceMissing = fromSource.Where(title => ShowTitleMatcher.Find(title, phrase.Entries, entry => entry.Key) is null).ToList();
         string sourceName = SourceName(ShowSource);
         <p class="hint">Show names are matched loosely (case, punctuation, a missing “The” and small typos are forgiven). A promo about a show with
@@ -334,7 +335,7 @@
             <button class="btn btn-sm" type="button" disabled="@string.IsNullOrWhiteSpace(typed)" @onclick="() => AddShow(phrase, typed)">Add show</button>
         </div>
         <div class="row row-wrap voice-show-source">
-            <select value="@ShowSource" aria-label="Channel or block to add shows from" @onchange="e => _showSource = e.Value?.ToString() ?? AllChannels">
+            <select value="@ShowSource" aria-label="Channel or block to add shows from" @onchange="e => ChooseSource(e.Value?.ToString())">
                 <option value="@AllChannels">All channels</option>
                 @foreach (ChannelConfig channel in Editor.Working.Channels)
                 {
@@ -345,9 +346,13 @@
                     }
                 }
             </select>
-            @if (fromSource.Count == 0)
+            @if (fromSource.Count == 0 && loadingSource)
             {
-                <button class="btn btn-sm" type="button" disabled title="Nothing from here is on the current schedule">No scheduled shows in @sourceName</button>
+                <button class="btn btn-sm" type="button" disabled>Finding the shows in @sourceName…</button>
+            }
+            else if (fromSource.Count == 0)
+            {
+                <button class="btn btn-sm" type="button" disabled title="Its rotation, blocks and anchors match nothing in the library, and nothing from it is scheduled">No shows in @sourceName</button>
             }
             else if (sourceMissing.Count == fromSource.Count)
             {
@@ -364,6 +369,14 @@
                 <button class="btn btn-sm" type="button" disabled>All @fromSource.Count @(fromSource.Count == 1 ? "show" : "shows") from @sourceName are here</button>
             }
         </div>
+        <p class="hint">
+            Shows come from the channel's or block's own programming (its base rotation, block shows and anchors, matched against the library)
+            plus anything already on the schedule there.@(loadingSource && fromSource.Count > 0 ? " Still reading the library…" : "")
+            @if (_showsProblem is not null)
+            {
+                <span class="warn"> @_showsProblem</span>
+            }
+        </p>
         @if (unrecorded.Count > 0 && phrase.Entries.Count > 0)
         {
             <p class="hint">@unrecorded.Count scheduled @(unrecorded.Count == 1 ? "show has" : "shows have") no recording here across all channels.</p>
@@ -552,6 +565,75 @@
         if (source?.StartsWith("block:", StringComparison.Ordinal) == true && source.IndexOf('|') is var split and > 0)
             return (source["block:".Length..split], source[(split + 1)..]);
         return (null, null);
+    }
+
+    // The library titles the chosen source programmes, read in the background (the library can be large).
+    private string? _loadedSource;
+    private IReadOnlyList<string> _rotationShows = [];
+    private bool _loadingShows;
+    private string? _showsProblem;
+
+    protected override Task OnInitializedAsync() => LoadRotationShows(ShowSource);
+
+    private async Task ChooseSource(string? source)
+    {
+        _showSource = string.IsNullOrWhiteSpace(source) ? AllChannels : source;
+        await LoadRotationShows(_showSource);
+    }
+
+    /// <summary>
+    /// What <paramref name="source"/> could play, from its programming rather than the built schedule: its base rotation,
+    /// block shows and anchors (just the block's, for a block), matched against the library the way a build matches them.
+    /// </summary>
+    private async Task LoadRotationShows(string source)
+    {
+        if (string.Equals(_loadedSource, source, StringComparison.Ordinal) || Services.GetService<LibraryBrowser>() is not { } library)
+        {
+            _loadedSource = source;
+            return;
+        }
+
+        _loadingShows = true;
+        _showsProblem = null;
+        try
+        {
+            (string? channelId, string? blockName) = ParseSource(source);
+            List<ContentSelector> selectors = [];
+            foreach (ChannelConfig channel in Editor.Working.Channels.Where(channel =>
+                         channelId is null || string.Equals(channel.Id, channelId, StringComparison.OrdinalIgnoreCase)))
+            {
+                BlockConfig? block = blockName is null ? null
+                    : channel.Blocks.FirstOrDefault(candidate => string.Equals(candidate.Name, blockName, StringComparison.OrdinalIgnoreCase));
+                selectors.AddRange(blockName is null ? ContentSelectorQuery.Of(channel)
+                    : block is null ? Enumerable.Empty<ContentSelector>() : ContentSelectorQuery.Of(block));
+            }
+
+            IReadOnlyList<MediaItem> programmes = await library.GetProgrammesAsync();
+            SchedulerConfig config = Editor.Working;
+            IReadOnlyList<string> titles = await Task.Run(() => ContentSelectorQuery.Titles(config, selectors, programmes));
+            if (string.Equals(ShowSource, source, StringComparison.Ordinal))
+            {
+                _rotationShows = titles;
+                _loadedSource = source;
+            }
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+        {
+            _showsProblem = $"Couldn't read the library ({ex.GetBaseException().Message}), so only scheduled shows are listed.";
+            _rotationShows = [];
+            _loadedSource = source;
+        }
+        finally
+        {
+            _loadingShows = false;
+        }
+    }
+
+    /// <summary>The shows <paramref name="source"/> programmes (once read from the library) and has on the schedule, together.</summary>
+    private IReadOnlyList<string> SourceShows(string source)
+    {
+        IEnumerable<string> rotation = string.Equals(_loadedSource, source, StringComparison.Ordinal) ? _rotationShows : Array.Empty<string>();
+        return [.. rotation.Concat(ScheduledShows(source)).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
     }
 
     /// <summary>

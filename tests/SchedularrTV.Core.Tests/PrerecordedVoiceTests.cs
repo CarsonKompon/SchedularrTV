@@ -203,6 +203,22 @@ public sealed class PrerecordedVoiceTests : IDisposable
     }
 
     [Fact]
+    public void A_channels_shows_come_from_its_rotation_blocks_and_collections()
+    {
+        SchedularrTV.Core.Media.MediaItem Episode(string id, string show) =>
+            new() { Id = id, Title = $"{show} {id}", Kind = SchedularrTV.Core.Media.MediaKind.Episode, SeriesId = show, SeriesName = show };
+
+        SchedulerConfig config = new();
+        config.GlobalCollections["toons"] = new ContentSelector { Query = "show:'Doug'" };
+        BlockConfig block = new() { Name = "Morning", Shows = [new ContentSelector { Collection = "toons" }, new ContentSelector { Collection = "missing" }] };
+        ChannelConfig channel = new() { Id = "nick", Name = "Nick", BaseRotation = new ContentSelector { Query = "show:'Rugrats'" }, Blocks = [block] };
+        List<SchedularrTV.Core.Media.MediaItem> library = [Episode("1", "Rugrats"), Episode("2", "Doug"), Episode("3", "Hey Arnold!")];
+
+        Assert.Equal(new[] { "Doug", "Rugrats" }, SchedularrTV.Core.Scheduling.ContentSelectorQuery.Titles(config, SchedularrTV.Core.Scheduling.ContentSelectorQuery.Of(channel), library));
+        Assert.Equal(new[] { "Doug" }, SchedularrTV.Core.Scheduling.ContentSelectorQuery.Titles(config, SchedularrTV.Core.Scheduling.ContentSelectorQuery.Of(block), library));
+    }
+
+    [Fact]
     public void Voice_packs_round_trip_through_the_schedule_file()
     {
         (GeneratedVoicePack pack, _) = Pack();
