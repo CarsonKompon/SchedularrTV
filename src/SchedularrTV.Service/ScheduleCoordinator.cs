@@ -565,16 +565,26 @@ public sealed class ScheduleCoordinator(
     /// </summary>
     public static IReadOnlyList<ChannelSchedule> WithEncoding(SchedulerConfig config, IReadOnlyList<ChannelSchedule> schedules)
     {
+        // The audio and subtitle choices travel the same way.
+        schedules = WithAnnotation(config, schedules, SchedularrTV.Providers.ErsatzTv.ErsatzTvEncoding.Annotation,
+            channel => SchedularrTV.Providers.ErsatzTv.ErsatzTvEncoding.ToAnnotation(channel.Encoding));
+        return WithAnnotation(config, schedules, SchedularrTV.Providers.ErsatzTv.ErsatzTvTracks.Annotation,
+            channel => SchedularrTV.Providers.ErsatzTv.ErsatzTvTracks.ToAnnotation(channel.Tracks));
+    }
+
+    /// <summary>Each channel's <paramref name="key"/> annotation as <paramref name="value"/> says, removed where it says none.</summary>
+    private static IReadOnlyList<ChannelSchedule> WithAnnotation(SchedulerConfig config, IReadOnlyList<ChannelSchedule> schedules,
+        string key, Func<ChannelConfig, string?> value)
+    {
         Dictionary<string, string> own = new(StringComparer.OrdinalIgnoreCase);
         foreach (ChannelConfig channel in config.Channels)
         {
-            if (SchedularrTV.Providers.ErsatzTv.ErsatzTvEncoding.ToAnnotation(channel.Encoding) is { } annotation)
+            if (value(channel) is { } annotation)
             {
                 own[channel.Id] = annotation;
             }
         }
 
-        const string key = SchedularrTV.Providers.ErsatzTv.ErsatzTvEncoding.Annotation;
         return [.. schedules.Select(schedule =>
         {
             bool had = schedule.Annotations?.ContainsKey(key) == true;

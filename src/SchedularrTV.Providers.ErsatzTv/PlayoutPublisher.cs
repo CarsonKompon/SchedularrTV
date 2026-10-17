@@ -20,7 +20,8 @@ namespace SchedularrTV.Providers.ErsatzTv;
 /// </remarks>
 public sealed class PlayoutPublisher(
     IOptions<ErsatzTvOptions> options,
-    ILogger<PlayoutPublisher> logger) : IPlayoutPublisher
+    ILogger<PlayoutPublisher> logger,
+    MediaTrackProbe? trackProbe = null) : IPlayoutPublisher
 {
     internal static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -40,12 +41,14 @@ public sealed class PlayoutPublisher(
             return;
         }
 
+        IReadOnlyDictionary<string, IReadOnlyList<MediaStream>> streams = await TrackStreamsAsync(schedules, cancellationToken).ConfigureAwait(false);
+
         foreach (ChannelSchedule schedule in schedules)
         {
             string folder = ResolvePlayoutFolder(_options, schedule.ChannelNumber);
             Directory.CreateDirectory(folder);
 
-            PlayoutDocument document = Build(schedule, _options);
+            PlayoutDocument document = Build(schedule, _options, streams);
             string fileName = $"{FormatFileTimestamp(schedule.Start)}_{FormatFileTimestamp(schedule.End)}.json";
             string path = Path.Combine(folder, fileName);
             string temp = path + ".tmp";
@@ -74,8 +77,48 @@ public sealed class PlayoutPublisher(
                 channelNumber.ToString(CultureInfo.InvariantCulture),
                 StringComparison.Ordinal)));
 
-    internal static PlayoutDocument Build(ChannelSchedule schedule, ErsatzTvOptions options)
+    /// <summary>
+    /// The streams of every local file the channels with track preferences will play, read once for all of them.
+    /// Channels without preferences need nothing read.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, IReadOnlyList<MediaStream>>> TrackStreamsAsync(
+        IReadOnlyList<ChannelSchedule> schedules, CancellationToken cancellationToken)
     {
+        if (trackProbe is null)
+        {
+            return EmptyStreams;
+        }
+
+        List<string> paths = [.. schedules
+            .Where(schedule => ErsatzTvTracks.For(schedule) is not null)
+            .SelectMany(schedule => schedule.Entries.SelectMany(Playable))
+            .Select(entry => entry.Item?.Path)
+            .OfType<string>()
+            .Where(path => path.Length > 0 && !IsHttp(path))];
+        if (paths.Count == 0)
+        {
+            return EmptyStreams;
+        }
+
+        try
+        {
+            return await trackProbe.ProbeAsync(paths, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Programmes then play their default tracks, as they would without preferences.
+            logger.LogWarning(ex, "Couldn't read the programmes' audio and subtitle tracks.");
+            return EmptyStreams;
+        }
+    }
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<MediaStream>> EmptyStreams =
+        new Dictionary<string, IReadOnlyList<MediaStream>>();
+
+    internal static PlayoutDocument Build(ChannelSchedule schedule, ErsatzTvOptions options,
+        IReadOnlyDictionary<string, IReadOnlyList<MediaStream>>? streams = null)
+    {
+        SchedularrTV.Core.Configuration.ChannelTracksConfig? tracks = ErsatzTvTracks.For(schedule);
         var document = new PlayoutDocument
         {
             GeneratedAt = schedule.Start.ToString("O", CultureInfo.InvariantCulture),
@@ -107,12 +150,18 @@ public sealed class PlayoutPublisher(
                 // programme needs no points at all.
                 bool partial = entry.InPoint > TimeSpan.Zero || entry.IsTrimmed;
 
-                item.Source = new LocalSource
+                var local = new LocalSource
                 {
                     Path = MapPath(path, options.PathMappings),
                     InPointMs = entry.InPoint > TimeSpan.Zero ? (long)entry.InPoint.TotalMilliseconds : null,
                     OutPointMs = partial ? (long)(entry.InPoint + entry.Duration).TotalMilliseconds : null
                 };
+                item.Source = local;
+
+                if (tracks is not null && streams is not null && streams.TryGetValue(path, out IReadOnlyList<MediaStream>? found))
+                {
+                    item.Tracks = TracksFor(TrackChooser.Choose(found, tracks), local, options);
+                }
             }
             else
             {
@@ -129,6 +178,39 @@ public sealed class PlayoutPublisher(
         }
 
         return document;
+    }
+
+    /// <summary>
+    /// The chosen streams as the item's tracks; null when nothing was chosen, which leaves ErsatzTV's defaults (the first
+    /// video and audio, no subtitles). A subtitle file beside the video is its own source, cut to the same part.
+    /// </summary>
+    internal static PlayoutTracks? TracksFor(TrackChoice choice, LocalSource video, ErsatzTvOptions options)
+    {
+        if (choice.Audio is null && choice.Subtitle is null)
+        {
+            return null;
+        }
+
+        PlayoutTrack? subtitle = choice.Subtitle switch
+        {
+            null => null,
+            { ExternalPath: { } sidecar } => new PlayoutTrack
+            {
+                Source = new LocalSource
+                {
+                    Path = MapPath(sidecar, options.PathMappings),
+                    InPointMs = video.InPointMs,
+                    OutPointMs = video.OutPointMs
+                }
+            },
+            { Index: var index } => new PlayoutTrack { StreamIndex = index }
+        };
+
+        return new PlayoutTracks
+        {
+            Audio = choice.Audio is { } audio ? new PlayoutTrack { StreamIndex = audio.Index } : null,
+            Subtitle = subtitle
+        };
     }
 
     /// <summary>

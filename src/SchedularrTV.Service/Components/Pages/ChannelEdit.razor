@@ -253,6 +253,72 @@ else
             </p>
         </div>;
 
+        RenderFragment tracks = @<div class="card">
+            <div class="card-head"><h2>Audio and subtitles</h2></div>
+            <div class="grid grid-2">
+                <label class="field">
+                    <span>Preferred audio languages</span>
+                    <input type="text" list="track-languages" value="@LanguageText(_channel.Tracks?.AudioLanguages)"
+                           placeholder="Each file's default audio" @onchange="SetAudioLanguages" />
+                </label>
+                <label class="field">
+                    <span>Subtitles</span>
+                    <select value="@(_channel.Tracks?.EffectiveSubtitles ?? SubtitleMode.Off)" @onchange="SetSubtitleMode">
+                        <option value="@SubtitleMode.Off">Off</option>
+                        <option value="@SubtitleMode.Selectable">Include as a track viewers can turn on</option>
+                        <option value="@SubtitleMode.BurnIn">Burn into the picture</option>
+                    </select>
+                </label>
+            </div>
+            <p class="hint">
+                Languages in order of preference, separated by commas: names or codes (English, Japanese or en, ja).
+                A programme without any of them plays its default audio.
+            </p>
+            @if ((_channel.Tracks?.EffectiveSubtitles ?? SubtitleMode.Off) != SubtitleMode.Off)
+            {
+                <label class="field" style="max-width:420px;">
+                    <span>Subtitle languages</span>
+                    <input type="text" list="track-languages" value="@LanguageText(_channel.Tracks?.SubtitleLanguages)"
+                           placeholder="@SubtitleLanguagePlaceholder" @onchange="SetSubtitleLanguages" />
+                </label>
+                <label class="check">
+                    <input type="checkbox" checked="@(_channel.Tracks?.OnlyForForeignAudio ?? false)"
+                           @onchange="e => EditTracks(t => t.OnlyForForeignAudio = (bool)(e.Value ?? false) ? true : null)" />
+                    <span>Only when the audio is in another language</span>
+                </label>
+                <p class="hint">
+                    Programmes already in a subtitle language then get only a forced track (signs and foreign dialogue), if they have one.
+                </p>
+                <label class="check">
+                    <input type="checkbox" checked="@(_channel.Tracks?.AvoidHearingImpaired ?? false)"
+                           @onchange="e => EditTracks(t => t.AvoidHearingImpaired = (bool)(e.Value ?? false) ? true : null)" />
+                    <span>Prefer subtitles without sound descriptions (non-SDH)</span>
+                </label>
+                <p class="hint">
+                    @if (_channel.Tracks?.EffectiveSubtitles == SubtitleMode.Selectable)
+                    {
+                        <text>Viewers switch the track on in their player. Only text subtitles (SRT, ASS, WebVTT) can be a track;
+                            programmes with only picture subtitles (PGS, DVD) go without. </text>
+                    }
+                    else
+                    {
+                        <text>Every viewer sees them. Burning in re-encodes the video, including on passthrough channels. </text>
+                    }
+                    Subtitles inside the file and subtitle files beside it (<code>Episode.en.srt</code>, <code>Episode.en.forced.srt</code>) are both used.
+                </p>
+            }
+            <datalist id="track-languages">
+                @foreach ((string code, string name) in LanguageCodes.Common)
+                {
+                    <option value="@name">@code</option>
+                }
+            </datalist>
+            <p class="hint">
+                Tracks are read from each file before it airs, so the files must be reachable from this computer.
+                Changing the subtitle setting restarts ErsatzTV and briefly interrupts viewers.
+            </p>
+        </div>;
+
         RenderFragment grid = @<div class="card">
             <div class="card-head"><h2>Scheduling grid</h2></div>
             <div class="grid grid-2">
@@ -315,6 +381,7 @@ else
         @rotation
         @grid
         @encoding
+        @tracks
         @playback
     }
     else if (_tab == "schedule")
@@ -542,6 +609,34 @@ else
         ChannelEncodingConfig encoding = _channel!.Encoding ?? new ChannelEncodingConfig();
         edit(encoding);
         _channel.Encoding = encoding.IsEmpty ? null : encoding;
+        Editor.MarkDirty();
+    }
+
+    // Languages are kept as the user's codes, normalized (en -> eng) so files' tags match; shown by name.
+    private static string LanguageText(IEnumerable<string>? languages) =>
+        string.Join(", ", (languages ?? Enumerable.Empty<string>()).Select(LanguageCodes.Name));
+
+    private static List<string> ParseLanguages(ChangeEventArgs e) =>
+        [.. (e.Value?.ToString() ?? string.Empty)
+            .Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(LanguageCodes.Normalize).OfType<string>().Distinct(StringComparer.Ordinal)];
+
+    private string SubtitleLanguagePlaceholder =>
+        _channel?.Tracks?.AudioLanguages is { Count: > 0 } audio ? $"Same as audio ({LanguageText(audio)})" : "Each file's default subtitles";
+
+    private void SetAudioLanguages(ChangeEventArgs e) => EditTracks(tracks => tracks.AudioLanguages = ParseLanguages(e));
+
+    private void SetSubtitleLanguages(ChangeEventArgs e) => EditTracks(tracks => tracks.SubtitleLanguages = ParseLanguages(e));
+
+    private void SetSubtitleMode(ChangeEventArgs e) => EditTracks(tracks =>
+        tracks.Subtitles = Enum.TryParse(e.Value?.ToString(), out SubtitleMode mode) && mode != SubtitleMode.Off ? mode : null);
+
+    // Like encoding, an empty section is removed so a channel on the defaults has no tracks: key in the YAML.
+    private void EditTracks(Action<ChannelTracksConfig> edit)
+    {
+        ChannelTracksConfig tracks = _channel!.Tracks ?? new ChannelTracksConfig();
+        edit(tracks);
+        _channel.Tracks = tracks.IsEmpty ? null : tracks;
         Editor.MarkDirty();
     }
 

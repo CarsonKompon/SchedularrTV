@@ -191,7 +191,12 @@ public static class ErsatzTvEncoding
     /// The filters the channel's own channel.json disables. An overlay replaces the list rather than adding to it, so
     /// they're carried over whenever the overlay sets one.
     /// </param>
-    public static string Overlay(EffectiveEncoding encoding, bool copyVideo = false, IEnumerable<string>? channelDisabledFilters = null)
+    /// <param name="subtitleMode">
+    /// ErsatzTV's subtitle mode for the channel (<c>burn</c> or <c>convert</c>, from <see cref="ErsatzTvTracks.SubtitleMode"/>);
+    /// null leaves channel.json's.
+    /// </param>
+    public static string Overlay(EffectiveEncoding encoding, bool copyVideo = false, IEnumerable<string>? channelDisabledFilters = null,
+        string? subtitleMode = null)
     {
         var video = new JsonObject
         {
@@ -221,6 +226,11 @@ public static class ErsatzTvEncoding
             ["version"] = OverlayVersion,
             ["normalization"] = new JsonObject { ["video"] = video }
         };
+
+        if (subtitleMode is not null)
+        {
+            overlay["normalization"]!["subtitle"] = new JsonObject { ["mode"] = subtitleMode };
+        }
 
         IReadOnlyList<string> disabled = DisabledFilters(encoding.Hardware);
         if (disabled.Count > 0)

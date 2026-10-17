@@ -72,6 +72,15 @@ public sealed class ErsatzTvOptions
     public string[] LiveStreamArguments { get; set; } = ["--silent", "--show-error", "--fail", "--no-buffer"];
 
     /// <summary>
+    /// ffprobe, for reading which audio and subtitle streams a programme has when a channel picks them (its
+    /// <c>tracks:</c> settings). Unset uses the media library's ffprobe.
+    /// </summary>
+    public string? FfprobePath { get; set; }
+
+    /// <summary>The streams read from each file, kept until the file changes.</summary>
+    public string TrackProbeCachePath { get; set; } = "state/track-probe-cache.json";
+
+    /// <summary>
     /// <see cref="GuideMode.Programs"/> lists only real programmes and stretches each one over the
     /// following ad break, which is what a viewer expects to see in a guide.
     /// </summary>

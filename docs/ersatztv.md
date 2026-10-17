@@ -59,6 +59,28 @@ SchedularrTV writes generated encoding overlays referenced by the lineup. They o
 
 Changing these overlays restarts managed ErsatzTV and briefly interrupts viewers. IPTV preserves source dimensions where known; streamer output follows the live-page encoding dimensions.
 
+On NVIDIA (`cuda`) channels the overlay also disables ErsatzTV's `pad_cuda` filter, which left a green line under letterboxed programmes; padding is done in software instead. Filters a channel's own `channel.json` disables are kept.
+
+## Audio and subtitles
+
+Channel **General → Audio and subtitles** picks each programme's audio track and adds subtitles:
+
+```yaml
+tracks:
+  audio_languages: [ja, en]      # first one the file has; otherwise the file's default audio
+  subtitles: selectable          # off, selectable (a track viewers turn on), or burn_in
+  subtitle_languages: [en]       # blank: the audio languages
+  only_for_foreign_audio: true   # programmes already in English get only a forced (signs) track
+  avoid_hearing_impaired: true   # prefer non-SDH subtitles
+```
+
+Languages can be names or ISO 639 codes (`English`, `en`, `eng`). Both subtitles inside the file and subtitle files beside it (`Episode.en.srt`, `Episode.en.forced.srt`, `Episode.en.sdh.srt`) are used.
+
+- **Selectable** carries subtitles as a WebVTT track in the HLS stream (ErsatzTV's `convert` mode). Only text subtitles (SRT, ASS, WebVTT) can be carried; programmes with only picture subtitles (PGS, DVD) go without.
+- **Burn in** draws them into the picture for every viewer, text or picture subtitles alike, and re-encodes video even on passthrough channels.
+
+Tracks are read with ffprobe from the files SchedularrTV can see, just before a schedule is published, and kept in `state/track-probe-cache.json` until a file changes. Files only ErsatzTV can reach (another machine, without a shared path) play their default tracks. Changing the subtitle setting rewrites the channel's encoding overlay, which restarts ErsatzTV.
+
 ## Path mappings and guide options
 
 Merge required options into **`settings.json`**:

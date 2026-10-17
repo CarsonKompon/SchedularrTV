@@ -204,6 +204,9 @@ public sealed class ChannelConfig
     /// </summary>
     public ChannelEncodingConfig? Encoding { get; set; }
 
+    /// <summary>Which audio track plays and whether subtitles are included (and how). Null plays each file's defaults.</summary>
+    public ChannelTracksConfig? Tracks { get; set; }
+
     /// <summary>Places breaks inside a programme rather than only after it.</summary>
     public MidRollConfig? MidRoll { get; set; }
 

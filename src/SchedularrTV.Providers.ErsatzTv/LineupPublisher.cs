@@ -86,7 +86,8 @@ public sealed class LineupPublisher(
 
             string encoding = ErsatzTvEncoding.Overlay(ErsatzTvEncoding.Resolve(_options.Encoding, schedule),
                 copyVideo: IsPassthrough(schedule) && !ErsatzTvEncoding.HasOverrides(schedule),
-                channelDisabledFilters: await ReadDisabledFiltersAsync(channelConfigPath, cancellationToken).ConfigureAwait(false));
+                channelDisabledFilters: await ReadDisabledFiltersAsync(channelConfigPath, cancellationToken).ConfigureAwait(false),
+                subtitleMode: ErsatzTvTracks.SubtitleMode(ErsatzTvTracks.For(schedule)));
             string encodingPath = await EnsureOverlayAsync(root, ErsatzTvEncoding.FileName(encoding), encoding, cancellationToken).ConfigureAwait(false);
             encodingOverlays.Add(encodingPath);
             overlays.Add(encodingPath);

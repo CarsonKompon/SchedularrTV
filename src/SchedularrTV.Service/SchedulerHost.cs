@@ -325,9 +325,15 @@ public static class SchedulerHost
                 options.Folders = ReadFolders(folders);
             }
         });
-        services.PostConfigure<ErsatzTvOptions>(options =>
+        services.AddOptions<ErsatzTvOptions>().PostConfigure<IOptions<FileSystemLibraryOptions>>((options, library) =>
         {
             options.ConfigRoot = AppPaths.Rooted(data, options.ConfigRoot);
+            options.TrackProbeCachePath = AppPaths.Rooted(data, options.TrackProbeCachePath);
+
+            // The same ffprobe the media library reads files with, unless one is set for ErsatzTV.
+            options.FfprobePath = string.IsNullOrWhiteSpace(options.FfprobePath)
+                ? library.Value.FfprobePath
+                : ToolLocator.Resolve(options.FfprobePath, "ffprobe", data);
         });
     }
 

@@ -51,12 +51,23 @@ internal sealed class PlayoutTracks
 
     [JsonPropertyName("audio")]
     public PlayoutTrack? Audio { get; set; }
+
+    /// <summary>The subtitles to include; how they're shown (burnt in or a track) is the channel's subtitle mode.</summary>
+    [JsonPropertyName("subtitle")]
+    public PlayoutTrack? Subtitle { get; set; }
 }
 
+/// <summary>
+/// One track of an item: from <see cref="Source"/>, else the item's own source; the stream at
+/// <see cref="StreamIndex"/>, else the first of its kind.
+/// </summary>
 internal sealed class PlayoutTrack
 {
     [JsonPropertyName("source")]
     public PlayoutSource? Source { get; set; }
+
+    [JsonPropertyName("stream_index")]
+    public int? StreamIndex { get; set; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "source_type")]
