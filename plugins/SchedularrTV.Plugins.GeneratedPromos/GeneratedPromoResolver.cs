@@ -107,6 +107,7 @@ public static partial class GeneratedPromoResolver
     /// Null when there is nothing to promote. <paramref name="listings"/> are the upcoming programmes
     /// for Up Next; for every other type the first listing is the promoted show.
     /// </summary>
+    /// <param name="where">The channel and block the promo airs in, for pre-recorded voice-overs that name them.</param>
     public static ResolvedGeneratedPromo? Resolve(
         GeneratedPromoTemplate template,
         string channelName,
@@ -114,7 +115,8 @@ public static partial class GeneratedPromoResolver
         TimeZoneInfo zone,
         DateTimeOffset? airsAt = null,
         GeneratedImageSubjects? imageSubjects = null,
-        IAutomaticImageLookup? automaticImages = null)
+        IAutomaticImageLookup? automaticImages = null,
+        GeneratedVoiceContext? where = null)
     {
         if (listings.Count == 0)
         {
@@ -136,7 +138,7 @@ public static partial class GeneratedPromoResolver
         // A pre-recorded voice-over: the voice pack templates that can say it for these shows (one is chosen, with its
         // takes, when the promo is made). Its read-out is only for the editor.
         PrerecordedVoiceRequest? prerecorded = template.Voice is { Enabled: true, IsPrerecorded: true } recordedVoice
-            ? PrerecordedVoice.Plan(recordedVoice, template.Type == GeneratedPromoType.UpNext && upcoming.Count > 0 ? upcoming : used, zone, promoTime, variety)
+            ? PrerecordedVoice.Plan(recordedVoice, template.Type == GeneratedPromoType.UpNext && upcoming.Count > 0 ? upcoming : used, zone, promoTime, variety, where)
             : null;
         string? script = template.Voice is { Enabled: true, IsPrerecorded: true }
             ? prerecorded is null ? null : PrerecordedVoice.Describe(prerecorded)

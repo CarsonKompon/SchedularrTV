@@ -226,7 +226,8 @@ public sealed partial class GeneratedPromoService(
                         // Variable images' automatic pictures are looked for (in the background) for promos about to be made.
                         bool making = watched && WithinLead(config.Settings, entry.Start, now);
                         ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, entry.Start,
-                            GeneratedImageSubjects.FromSchedule(schedule, entry.Start, entry.End, template), automaticImages?.Lookup(queue: making))!
+                            GeneratedImageSubjects.FromSchedule(schedule, entry.Start, entry.End, template), automaticImages?.Lookup(queue: making),
+                            new GeneratedVoiceContext(channel!.Id, entry.BlockName, channel.Name))!
                             with { Folder = Folder(source, template) };
                         path = Existing(promo);
                         if (path is not null)

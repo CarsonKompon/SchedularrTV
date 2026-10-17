@@ -50,16 +50,17 @@ public sealed class GeneratedPromoMaker(GeneratedPromoService promos, Schedularr
         }
 
         GeneratedImageSubjects subjects = GeneratedImageSubjects.FromSchedule(schedule, airsAt, template: template);
+        var where = new GeneratedVoiceContext(channel.Id, blockName, channel.Name);
 
         // Made now, so variable images' automatic pictures are waited for first.
         if (automaticImages?.Lookup(queue: true) is { } lookup)
         {
-            _ = GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, airsAt, subjects, lookup);
+            _ = GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, airsAt, subjects, lookup, where);
             await lookup.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         if (GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, airsAt, subjects,
-                automaticImages?.Lookup(queue: false)) is not { } promo)
+                automaticImages?.Lookup(queue: false), where) is not { } promo)
         {
             return null;
         }

@@ -926,7 +926,14 @@ public enum GeneratedVoicePhraseKind
     Time,
 
     /// <summary>When the show airs, day and time in one take: "Monday at 11:30", "tonight at 8:00 PM".</summary>
-    DayTime
+    DayTime,
+
+    /// <summary>
+    /// The channel the promo airs on, with takes per channel; with <see cref="GeneratedVoicePhrase.UseBlockNames"/>, a
+    /// block's own takes are said instead while the promo airs in it. Keys: <see cref="GeneratedVoiceKeys.Channel"/> and
+    /// <see cref="GeneratedVoiceKeys.Block"/>.
+    /// </summary>
+    ChannelName
 }
 
 /// <summary>
@@ -1001,6 +1008,12 @@ public sealed class GeneratedVoicePhrase
 
     /// <summary>Whole times and day-and-time takes: how often in the hour there's a time to record (5 to 60 minutes).</summary>
     public int MinuteStep { get; set; } = 15;
+
+    /// <summary>
+    /// Channel name phrases: while a promo airs in a block that has takes of its own, the block's name is said instead
+    /// of the channel's ("Saturday Morning Cartoons" rather than "Nick").
+    /// </summary>
+    public bool UseBlockNames { get; set; }
 }
 
 /// <summary>One value of a show name, day or time phrase, and its takes.</summary>
@@ -1142,6 +1155,15 @@ public static class GeneratedVoiceKeys
         times.Add(Midnight);
         return times;
     }
+
+    /// <summary>A channel name phrase's key for a channel: <c>channel:&lt;id&gt;</c>, so renaming the channel keeps its takes.</summary>
+    public static string Channel(string channelId) => $"channel:{channelId}";
+
+    /// <summary>
+    /// A channel name phrase's key for one of a channel's blocks: <c>block:&lt;channel id&gt;|&lt;block name&gt;</c>
+    /// (blocks are known by their names).
+    /// </summary>
+    public static string Block(string channelId, string block) => $"block:{channelId}|{block}";
 
     /// <summary>A day-and-time key: <c>monday at 11:30</c>, <c>tonight at 8:00 pm</c>, <c>tomorrow at noon</c>.</summary>
     public static string DayTime(string day, string time) => $"{day} at {time}";

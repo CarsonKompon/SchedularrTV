@@ -105,7 +105,28 @@ public static class ContentSelectorQuery
     /// </summary>
     public static IReadOnlyList<string> Titles(SchedulerConfig config, IEnumerable<ContentSelector> selectors, IReadOnlyList<MediaItem> items)
     {
-        HashSet<string> titles = new(StringComparer.OrdinalIgnoreCase);
+        (IReadOnlyList<string> shows, IReadOnlyList<string> movies) = ShowsAndMovies(config, selectors, items);
+        return [.. shows.Concat(movies).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
+    }
+
+    /// <summary>
+    /// A film rather than an episode of a show: a movie, or anything that isn't an episode and has no series.
+    /// </summary>
+    public static bool IsMovie(MediaItem item) =>
+        item.Kind == MediaKind.Movie || (item.Kind != MediaKind.Episode && string.IsNullOrWhiteSpace(item.SeriesName));
+
+    /// <summary>The title a show is known by (its series), or a movie's own.</summary>
+    public static string TitleOf(MediaItem item) => (string.IsNullOrWhiteSpace(item.SeriesName) ? item.Title : item.SeriesName)?.Trim() ?? string.Empty;
+
+    /// <summary>
+    /// The show (series) titles and the movie titles <paramref name="selectors"/> match among <paramref name="items"/>,
+    /// each sorted. Selectors that can't be resolved (a missing collection, a query with a typo) are skipped.
+    /// </summary>
+    public static (IReadOnlyList<string> Shows, IReadOnlyList<string> Movies) ShowsAndMovies(SchedulerConfig config,
+        IEnumerable<ContentSelector> selectors, IReadOnlyList<MediaItem> items)
+    {
+        HashSet<string> shows = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> movies = new(StringComparer.OrdinalIgnoreCase);
         foreach (ContentSelector selector in selectors.Distinct())
         {
             QueryExpression expression;
@@ -125,14 +146,14 @@ public static class ContentSelectorQuery
                     continue;
                 }
 
-                string title = string.IsNullOrWhiteSpace(item.SeriesName) ? item.Title : item.SeriesName;
-                if (!string.IsNullOrWhiteSpace(title))
+                string title = TitleOf(item);
+                if (title.Length > 0)
                 {
-                    titles.Add(title.Trim());
+                    (IsMovie(item) ? movies : shows).Add(title);
                 }
             }
         }
 
-        return [.. titles.Order(StringComparer.OrdinalIgnoreCase)];
+        return (shows.Order(StringComparer.OrdinalIgnoreCase).ToList(), movies.Order(StringComparer.OrdinalIgnoreCase).ToList());
     }
 }

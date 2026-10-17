@@ -1317,7 +1317,7 @@
     @if (_voicePacksOpen)
     {
         <VoicePacksDialog Focus="@Template.Voice?.Prerecorded?.Pack" Changed="VoicePacksChanged" OnClose="() => _voicePacksOpen = false"
-                          PackChosen="PackCreated" Shows="@VoiceShows()" ChannelId="@Channel.Id" Zone="@Zone" AirsAt="@Preview.Now" Room="@VoiceRoom" />
+                          PackChosen="PackCreated" Shows="@VoiceShows()" ChannelId="@Channel.Id" Where="@Preview.VoiceContext(Channel)" Zone="@Zone" AirsAt="@Preview.Now" Room="@VoiceRoom" />
     }
 
     <h3 class="ed-section">Background music</h3>
@@ -3570,7 +3570,8 @@
     private string Script()
     {
         IReadOnlyList<UpNextListing> listings = PreviewListings(out _);
-        return GeneratedPromoResolver.Resolve(Template, Channel.Name, listings, Zone, Preview.Now, Preview.ImageSubjects(Channel, Template))?.Script ?? string.Empty;
+        return GeneratedPromoResolver.Resolve(Template, Channel.Name, listings, Zone, Preview.Now, Preview.ImageSubjects(Channel, Template),
+            where: Preview.VoiceContext(Channel))?.Script ?? string.Empty;
     }
 
     private string DefaultVoiceTemplate => Template.Type == GeneratedPromoType.UpNext ? "Now, it's {up_next}." : "It's {show} on {channel}!";
@@ -3624,10 +3625,12 @@
             ? ChooseVoicePack(id)
             : Task.CompletedTask;
 
+    // A voice pack changes nothing on screen, so the preview frame isn't drawn again (Commit would), only the edit recorded.
     private Task VoicePacksChanged()
     {
         GeneratedVoicePacks.Link(Template, VoicePacks);
-        return Commit();
+        ClearSay();
+        return Changed.InvokeAsync();
     }
 
     private Task SetPackTemplate(GeneratedPrerecordedVoiceConfig recorded, GeneratedVoicePack pack, string id, bool use) => Set(() =>
@@ -3721,6 +3724,7 @@
         {
             IReadOnlyList<UpNextListing> shows = VoiceShows();
             DateTimeOffset now = Preview.Now;
+            GeneratedVoiceContext voiceWhere = Preview.VoiceContext(Channel);
             <div class="field">
                 <span>Templates this promo may use (one that suits the shows is picked for each promo)</span>
                 @if (pack.Templates.Count == 0)
@@ -3730,7 +3734,7 @@
                 @foreach (GeneratedVoicePackTemplate option in pack.Templates)
                 {
                     bool used = recorded.Templates is not { Count: > 0 } || recorded.Templates.Contains(option.Id, StringComparer.OrdinalIgnoreCase);
-                    IReadOnlyList<string> missing = PrerecordedVoice.Missing(pack, option, shows, Zone, now);
+                    IReadOnlyList<string> missing = PrerecordedVoice.Missing(pack, option, shows, Zone, now, voiceWhere);
                     <label class="check" @key="option">
                         <input type="checkbox" checked="@used" @onchange="e => SetPackTemplate(recorded, pack, option.Id, e.Value is true)" />
                         <span>
@@ -3775,6 +3779,7 @@
         template.Parts.Count == 0 ? "no parts yet"
             : string.Join(" + ", template.Parts.Select(part => pack.Phrases.FirstOrDefault(phrase => phrase.Id == part.Phrase) is { } phrase
                 ? phrase.Kind == GeneratedVoicePhraseKind.Text ? $"“{phrase.Name}”"
+                : phrase.Kind == GeneratedVoicePhraseKind.ChannelName ? $"[{phrase.Name}]"
                 : part.Show == 0 ? $"[{phrase.Name}]" : $"[{phrase.Name} of show {part.Show + 1}]"
                 : "[deleted]"));
 
@@ -3853,7 +3858,7 @@
 
             IReadOnlyList<UpNextListing> listings = PreviewListings(out _sample);
             GeneratedPromoRender render = await Preview.RenderVideoAsync(GeneratedPromoEditing.Copy(Template), Channel.Name, listings, Zone, _life.Token, song,
-                Preview.ImageSubjects(Channel, Template));
+                Preview.ImageSubjects(Channel, Template), Preview.VoiceContext(Channel));
             _videoUrl = $"{Preview.FileUrl(render.Path)}?v={DateTime.UtcNow.Ticks}";
             _curationReport = render.Curation;
             _videoMessage = render.VoiceError is { } error

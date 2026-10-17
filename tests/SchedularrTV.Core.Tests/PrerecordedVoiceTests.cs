@@ -122,6 +122,34 @@ public sealed class PrerecordedVoiceTests : IDisposable
     }
 
     [Fact]
+    public void Channel_names_say_the_block_while_in_one_and_the_channel_otherwise()
+    {
+        GeneratedVoicePhrase channel = new()
+        {
+            Name = "Channel", Kind = GeneratedVoicePhraseKind.ChannelName,
+            Entries =
+            [
+                new() { Key = GeneratedVoiceKeys.Channel("nick"), Takes = [Take("nick")] },
+                new() { Key = GeneratedVoiceKeys.Block("nick", "Saturday Morning"), Takes = [Take("saturday")] }
+            ]
+        };
+        List<UpNextListing> shows = [new("Rugrats", At.AddHours(1))];
+
+        Assert.EndsWith("nick.wav", Assert.Single(PrerecordedVoice.Parts(channel, 0, shows, TimeZoneInfo.Utc, At,
+            new GeneratedVoiceContext("nick", "Saturday Morning"))!).Takes[0]);
+
+        channel.UseBlockNames = true;
+        Assert.EndsWith("saturday.wav", Assert.Single(PrerecordedVoice.Parts(channel, 0, shows, TimeZoneInfo.Utc, At,
+            new GeneratedVoiceContext("nick", "Saturday Morning"))!).Takes[0]);
+
+        // A block without its own recording, or no block, says the channel.
+        Assert.EndsWith("nick.wav", Assert.Single(PrerecordedVoice.Parts(channel, 0, shows, TimeZoneInfo.Utc, At,
+            new GeneratedVoiceContext("nick", "Primetime"))!).Takes[0]);
+        Assert.Null(PrerecordedVoice.Parts(channel, 0, shows, TimeZoneInfo.Utc, At, new GeneratedVoiceContext("cartoon-network")));
+        Assert.Null(PrerecordedVoice.Parts(channel, 0, shows, TimeZoneInfo.Utc, At));
+    }
+
+    [Fact]
     public void Days_fall_back_to_the_weekday()
     {
         Assert.Equal(new[] { "tonight", "today", "monday" }, PrerecordedVoice.DayKeys(At.AddHours(5), At, TimeZoneInfo.Utc));
@@ -216,6 +244,14 @@ public sealed class PrerecordedVoiceTests : IDisposable
 
         Assert.Equal(new[] { "Doug", "Rugrats" }, SchedularrTV.Core.Scheduling.ContentSelectorQuery.Titles(config, SchedularrTV.Core.Scheduling.ContentSelectorQuery.Of(channel), library));
         Assert.Equal(new[] { "Doug" }, SchedularrTV.Core.Scheduling.ContentSelectorQuery.Titles(config, SchedularrTV.Core.Scheduling.ContentSelectorQuery.Of(block), library));
+
+        // Movies are listed apart from shows.
+        channel.BaseRotation = new ContentSelector { Query = "show:'Rugrats' OR title:'The Lion King'" };
+        library.Add(new() { Id = "4", Title = "The Lion King", Kind = SchedularrTV.Core.Media.MediaKind.Movie });
+        (IReadOnlyList<string> shows, IReadOnlyList<string> movies) = SchedularrTV.Core.Scheduling.ContentSelectorQuery.ShowsAndMovies(
+            config, SchedularrTV.Core.Scheduling.ContentSelectorQuery.Of(channel), library);
+        Assert.Equal(new[] { "Doug", "Rugrats" }, shows);
+        Assert.Equal(new[] { "The Lion King" }, movies);
     }
 
     [Fact]

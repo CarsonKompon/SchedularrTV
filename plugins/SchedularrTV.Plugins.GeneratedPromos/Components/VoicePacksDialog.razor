@@ -1,6 +1,7 @@
 @* Voice packs: pre-recorded phrases (fixed lines, show names, days, times, each with several takes) and the templates
    that put them together into a promo's voice-over. Kept once for every generated promo template. *@
 @using Microsoft.Extensions.DependencyInjection
+@implements IDisposable
 @inject ConfigEditor Editor
 @inject GeneratedPromoPreview Preview
 @inject IServiceProvider Services
@@ -82,6 +83,9 @@
     /// <summary>The channel of the template the dialog was opened from, which "add shows" starts on.</summary>
     [Parameter] public string? ChannelId { get; set; }
 
+    /// <summary>Where a promo of that template would air right now (channel and block), for trying channel name phrases.</summary>
+    [Parameter] public GeneratedVoiceContext? Where { get; set; }
+
     /// <summary>How much time the voice-over has, for trying templates.</summary>
     [Parameter] public TimeSpan Room { get; set; } = TimeSpan.FromSeconds(9);
 
@@ -123,7 +127,59 @@
         _packId = GeneratedVoicePacks.Find(Library, Focus)?.Id ?? Library.FirstOrDefault()?.Id;
     }
 
-    private Task Notify() => Changed.InvokeAsync();
+    // Edits change the pack straight away, but are reported (marking the schedule unsaved, redrawing the template
+    // editor) once things settle, so removing many shows one after another doesn't redraw everything each time.
+    private CancellationTokenSource? _notifySoon;
+    private const int NotifyDelayMs = 400;
+
+    private Task Notify()
+    {
+        _notifySoon?.Cancel();
+        var soon = new CancellationTokenSource();
+        _notifySoon = soon;
+        _ = NotifyLaterAsync(soon);
+        return Task.CompletedTask;
+    }
+
+    private async Task NotifyLaterAsync(CancellationTokenSource soon)
+    {
+        try
+        {
+            await Task.Delay(NotifyDelayMs, soon.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(_notifySoon, soon))
+        {
+            _notifySoon = null;
+            await InvokeAsync(() => Changed.InvokeAsync());
+        }
+    }
+
+    /// <summary>Reports an edit still waiting to be, now.</summary>
+    private async Task FlushAsync()
+    {
+        if (_notifySoon is { } pending)
+        {
+            pending.Cancel();
+            _notifySoon = null;
+            await Changed.InvokeAsync();
+        }
+    }
+
+    public void Dispose()
+    {
+        // Closed some other way (the page left): the edit still counts as unsaved.
+        if (_notifySoon is { } pending)
+        {
+            pending.Cancel();
+            _notifySoon = null;
+            Editor.MarkDirty();
+        }
+    }
 
     private Task Set(Action change)
     {
@@ -131,7 +187,11 @@
         return Notify();
     }
 
-    private Task Close() => OnClose.InvokeAsync();
+    private async Task Close()
+    {
+        await FlushAsync();
+        await OnClose.InvokeAsync();
+    }
 
     private void SelectPack(string? id)
     {
@@ -184,6 +244,7 @@
         GeneratedVoicePhraseKind.Day => "Day",
         GeneratedVoicePhraseKind.Time => "Time",
         GeneratedVoicePhraseKind.DayTime => "Day & time",
+        GeneratedVoicePhraseKind.ChannelName => "Channel name",
         _ => "Text"
     };
 
@@ -201,6 +262,7 @@
             GeneratedVoicePhraseKind.ShowName => values == 1 ? "show" : "shows",
             GeneratedVoicePhraseKind.Day => values == 1 ? "day" : "days",
             GeneratedVoicePhraseKind.DayTime => values == 1 ? "day & time" : "days & times",
+            GeneratedVoicePhraseKind.ChannelName => values == 1 ? "channel or block" : "channels & blocks",
             GeneratedVoicePhraseKind.Time when phrase.Combined => values == 1 ? "time or part" : "times & parts",
             _ => values == 1 ? "part" : "parts"
         };
@@ -230,6 +292,11 @@
                     <strong style="cursor: pointer;" @onclick="() => Toggle(key)">@(string.IsNullOrWhiteSpace(phrase.Name) ? "Untitled" : phrase.Name)</strong>
                     <span class="hint">@Summary(phrase)@(uses == 0 ? " · not in a template" : uses == 1 ? " · in 1 template" : $" · in {uses} templates")</span>
                     <div class="spacer"></div>
+                    <button class="btn btn-sm" type="button" title="Make a copy of this phrase, recordings and all"
+                            @onclick="() => DuplicatePhrase(pack, phrase, keepTakes: true)">Duplicate</button>
+                    <button class="btn btn-sm" type="button"
+                            title="@(phrase.Kind == GeneratedVoicePhraseKind.Text ? "Make a copy with no recordings, to record again" : "Make a copy with the same shows, days, times or channels but no recordings, to record again")"
+                            @onclick="() => DuplicatePhrase(pack, phrase, keepTakes: false)">Duplicate without takes</button>
                     <button class="btn btn-sm btn-danger" type="button" title="Delete this phrase (and its parts in templates)"
                             @onclick="() => RemovePhrase(pack, phrase)">Delete</button>
                 </div>
@@ -271,6 +338,9 @@
                             @(TimeSettings(phrase))
                             @(DayTimeEntries(phrase))
                             break;
+                        case GeneratedVoicePhraseKind.ChannelName:
+                            @(ChannelEntries(phrase))
+                            break;
                     }
                 }
             </div>
@@ -294,34 +364,84 @@
     private RenderFragment ShowEntries(GeneratedVoicePhrase phrase) => __builder =>
     {
         string typed = _newShow.GetValueOrDefault(phrase.Id, string.Empty);
-        IReadOnlyList<string> all = ScheduledShows(null);
-        IReadOnlyList<string> unrecorded = all.Where(title => ShowTitleMatcher.Find(title, phrase.Entries, entry => entry.Key) is null).ToList();
-        IReadOnlyList<string> fromSource = SourceShows(ShowSource);
+
+        // The shows already here by their normalised words, so checking lists of hundreds against them is quick.
+        HashSet<string> here = new(phrase.Entries.Select(entry => ShowTitleMatcher.Words(entry.Key)), StringComparer.Ordinal);
+        bool Here(string title) => here.Contains(ShowTitleMatcher.Words(title));
+        SourceTitles scheduledEverywhere = ScheduledShows(null);
+        List<string> unrecorded = [.. scheduledEverywhere.Shows.Concat(scheduledEverywhere.Movies).Where(title => !Here(title))];
+        SourceTitles source = SourceShows(ShowSource);
+        IReadOnlyList<string> fromSource = source.Shows;
+        IReadOnlyList<string> sourceMovies = source.Movies;
         bool loadingSource = _loadingShows || !string.Equals(_loadedSource, ShowSource, StringComparison.Ordinal);
-        IReadOnlyList<string> sourceMissing = fromSource.Where(title => ShowTitleMatcher.Find(title, phrase.Entries, entry => entry.Key) is null).ToList();
+        List<string> sourceMissing = [.. fromSource.Where(title => !Here(title))];
+        List<string> moviesMissing = [.. sourceMovies.Where(title => !Here(title))];
         string sourceName = SourceName(ShowSource);
+
+        // Only a page of shows is drawn at a time, narrowed by the search box; several can be ticked and removed at once.
+        string filter = _showFilter.GetValueOrDefault(phrase.Id, string.Empty).Trim();
+        List<GeneratedVoiceEntry> matching = filter.Length == 0 ? phrase.Entries
+            : [.. phrase.Entries.Where(entry => entry.Key.Contains(filter, StringComparison.OrdinalIgnoreCase))];
+        int limit = _showLimit.GetValueOrDefault(phrase.Id, ShowPage);
+        HashSet<GeneratedVoiceEntry> selected = SelectedShows(phrase);
+        int withoutTakes = phrase.Entries.Count(entry => entry.Takes.Count == 0);
         <p class="hint">Show names are matched loosely (case, punctuation, a missing “The” and small typos are forgiven). A promo about a show with
             no recording here skips the templates that say its name.</p>
-        @foreach (GeneratedVoiceEntry entry in phrase.Entries)
+        @if (phrase.Entries.Count > 0)
+        {
+            <div class="row row-wrap voice-entry-tools">
+                <input type="search" value="@filter" placeholder="@($"Find among {phrase.Entries.Count} shows…")" aria-label="Find a show"
+                       @oninput="e => FilterShows(phrase, e.Value?.ToString())" />
+                <label class="check" style="margin: 0;">
+                    <input type="checkbox" checked="@(matching.Count > 0 && matching.All(selected.Contains))"
+                           @onchange="e => SelectShows(phrase, matching, e.Value is true)" />
+                    <span>Select @(filter.Length == 0 ? "all" : "matching") (@matching.Count)</span>
+                </label>
+                <button class="btn btn-sm btn-danger" type="button" disabled="@(selected.Count == 0)"
+                        title="Removes the shows from this phrase; their recordings stay on disk" @onclick="() => RemoveSelectedShows(phrase)">
+                    Remove selected (@selected.Count)
+                </button>
+                @if (withoutTakes > 0)
+                {
+                    <button class="btn btn-sm" type="button" title="Removes every show here that hasn't been recorded yet"
+                            @onclick="() => RemoveShowsWithoutTakes(phrase)">Remove the @withoutTakes without takes</button>
+                }
+            </div>
+        }
+        @foreach (GeneratedVoiceEntry entry in matching.Take(limit))
         {
             string key = $"entry:{phrase.Id}:{entry.Key}";
             bool open = _open.Contains(key);
             <div class="voice-entry" @key="entry">
                 <div class="voice-entry-head">
+                    <input type="checkbox" checked="@selected.Contains(entry)" aria-label="@($"Select {entry.Key}")"
+                           @onchange="e => { if (e.Value is true) selected.Add(entry); else selected.Remove(entry); }" />
                     <button class="btn btn-ghost btn-icon btn-sm" type="button" aria-label="@(open ? "Collapse" : "Expand")" @onclick="() => Toggle(key)">
                         <Icon Name="@(open ? "chevron-down" : "chevron-right")" Size="14" />
                     </button>
                     <input type="text" value="@entry.Key" aria-label="Show title" @onchange="e => Rename(phrase, entry, e.Value?.ToString())" />
-                    <span class="hint">@(entry.Takes.Count == 1 ? "1 take" : $"{entry.Takes.Count} takes")</span>
+                    <span class="hint">@(entry.Takes.Count == 0 ? "not recorded" : entry.Takes.Count == 1 ? "1 take" : $"{entry.Takes.Count} takes")</span>
                     <div class="spacer"></div>
                     <button class="btn btn-ghost btn-icon btn-sm" type="button" title="Remove this show" aria-label="@($"Remove {entry.Key}")"
-                            @onclick="() => Set(() => phrase.Entries.Remove(entry))"><Icon Name="x" Size="14" /></button>
+                            @onclick="() => Set(() => { phrase.Entries.Remove(entry); selected.Remove(entry); })"><Icon Name="x" Size="14" /></button>
                 </div>
                 @if (open)
                 {
                     <VoiceTakesEditor Takes="entry.Takes" Changed="Notify" Prompt="@entry.Key" TrimSilence="_trimSilence" />
                 }
             </div>
+        }
+        @if (matching.Count > limit)
+        {
+            <div class="row">
+                <button class="btn btn-sm" type="button" @onclick="() => _showLimit[phrase.Id] = limit + ShowPage">
+                    Show @Math.Min(ShowPage, matching.Count - limit) more (@(matching.Count - limit) not shown)
+                </button>
+            </div>
+        }
+        else if (filter.Length > 0 && matching.Count == 0)
+        {
+            <p class="hint">No show here matches “@filter”.</p>
         }
         <div class="row row-wrap">
             <input type="text" value="@typed" placeholder="Show title" aria-label="Show title to add" list="@($"voice-shows-{phrase.Id}")"
@@ -352,7 +472,10 @@
             }
             else if (fromSource.Count == 0)
             {
-                <button class="btn btn-sm" type="button" disabled title="Its rotation, blocks and anchors match nothing in the library, and nothing from it is scheduled">No shows in @sourceName</button>
+                @if (sourceMovies.Count == 0)
+                {
+                    <button class="btn btn-sm" type="button" disabled title="Its rotation, blocks and anchors match nothing in the library, and nothing from it is scheduled">No shows in @sourceName</button>
+                }
             }
             else if (sourceMissing.Count == fromSource.Count)
             {
@@ -368,10 +491,29 @@
             {
                 <button class="btn btn-sm" type="button" disabled>All @fromSource.Count @(fromSource.Count == 1 ? "show" : "shows") from @sourceName are here</button>
             }
+
+            @* Movies are kept apart, as a channel can have hundreds that a voice-over would rarely name. *@
+            @if (sourceMovies.Count > 0)
+            {
+                @if (moviesMissing.Count == sourceMovies.Count)
+                {
+                    <button class="btn btn-sm" type="button" title="@(string.Join(", ", sourceMovies.Take(30)))"
+                            @onclick="() => AddShows(phrase, sourceMovies)">Add all @sourceMovies.Count @(sourceMovies.Count == 1 ? "movie" : "movies") from @sourceName</button>
+                }
+                else if (moviesMissing.Count > 0)
+                {
+                    <button class="btn btn-sm" type="button" title="@(string.Join(", ", moviesMissing.Take(30)))"
+                            @onclick="() => AddShows(phrase, moviesMissing)">Add the remaining @moviesMissing.Count @(moviesMissing.Count == 1 ? "movie" : "movies") not here yet</button>
+                }
+                else
+                {
+                    <button class="btn btn-sm" type="button" disabled>All @sourceMovies.Count @(sourceMovies.Count == 1 ? "movie" : "movies") from @sourceName are here</button>
+                }
+            }
         </div>
         <p class="hint">
-            Shows come from the channel's or block's own programming (its base rotation, block shows and anchors, matched against the library)
-            plus anything already on the schedule there.@(loadingSource && fromSource.Count > 0 ? " Still reading the library…" : "")
+            Shows and movies come from the channel's or block's own programming (its base rotation, block shows and anchors, matched against the library)
+            plus anything already on the schedule there. Movies have a button of their own, so a channel full of them doesn't crowd out its shows.@(loadingSource && fromSource.Count > 0 ? " Still reading the library…" : "")
             @if (_showsProblem is not null)
             {
                 <span class="warn"> @_showsProblem</span>
@@ -467,6 +609,37 @@
         return recorded == 0 ? "none recorded" : $"{recorded} recorded";
     }
 
+    private RenderFragment ChannelEntries(GeneratedVoicePhrase phrase) => __builder =>
+    {
+        // Every channel's key, then (with block names on) each of its named blocks, labelled for the list.
+        Dictionary<string, string> labels = new(StringComparer.OrdinalIgnoreCase);
+        foreach (ChannelConfig channel in Editor.Working.Channels)
+        {
+            labels[GeneratedVoiceKeys.Channel(channel.Id)] = ChannelLabel(channel);
+            if (!phrase.UseBlockNames) continue;
+            foreach (BlockConfig block in channel.Blocks.Where(block => !string.IsNullOrWhiteSpace(block.Name)))
+            {
+                labels.TryAdd(GeneratedVoiceKeys.Block(channel.Id, block.Name), $"{ChannelLabel(channel)} › {block.Name}");
+            }
+        }
+
+        <label class="check">
+            <input type="checkbox" checked="@phrase.UseBlockNames" @onchange="e => Set(() => phrase.UseBlockNames = e.Value is true)" />
+            <span>Say the block's name instead while a promo airs in a block (when that block is recorded)</span>
+        </label>
+        @if (Editor.Working.Channels.Count == 0)
+        {
+            <p class="hint warn">There are no channels yet.</p>
+        }
+        else
+        {
+            @(KeyedEntries(phrase, [.. labels.Keys], key => labels.GetValueOrDefault(key, key),
+                phrase.UseBlockNames
+                    ? "Record each channel's name, and the name of any block that should be said instead while it's on (“Saturday Morning Cartoons”). A block without a recording says its channel's name."
+                    : "Record each channel's name as it should be said (“Nick”, “Nickelodeon”). A promo says the name of the channel it airs on; a channel without a recording skips templates that say it."))
+        }
+    };
+
     // The day whose times the day-and-time phrase is showing, by phrase.
     private readonly Dictionary<string, string> _dayTimeDay = new(StringComparer.Ordinal);
 
@@ -527,13 +700,67 @@
 
     private Task AddShows(GeneratedVoicePhrase phrase, IEnumerable<string> titles) => Set(() =>
     {
+        HashSet<string> existing = new(phrase.Entries.Select(entry => entry.Key), StringComparer.OrdinalIgnoreCase);
         foreach (string title in titles)
         {
-            if (!phrase.Entries.Any(entry => string.Equals(entry.Key, title, StringComparison.OrdinalIgnoreCase)))
-                phrase.Entries.Add(new GeneratedVoiceEntry { Key = title });
+            if (existing.Add(title)) phrase.Entries.Add(new GeneratedVoiceEntry { Key = title });
         }
 
         phrase.Entries.Sort((a, b) => string.Compare(a.Key, b.Key, StringComparison.OrdinalIgnoreCase));
+    });
+
+    // How many shows are drawn at a time; more come with "Show more".
+    private const int ShowPage = 50;
+    private readonly Dictionary<string, string> _showFilter = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _showLimit = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HashSet<GeneratedVoiceEntry>> _selectedShows = new(StringComparer.Ordinal);
+
+    /// <summary>The shows ticked in a show name phrase, less any that have since gone.</summary>
+    private HashSet<GeneratedVoiceEntry> SelectedShows(GeneratedVoicePhrase phrase)
+    {
+        if (!_selectedShows.TryGetValue(phrase.Id, out HashSet<GeneratedVoiceEntry>? selected))
+        {
+            selected = new HashSet<GeneratedVoiceEntry>(ReferenceEqualityComparer.Instance);
+            _selectedShows[phrase.Id] = selected;
+        }
+        else if (selected.Count > 0)
+        {
+            HashSet<GeneratedVoiceEntry> present = new(phrase.Entries, ReferenceEqualityComparer.Instance);
+            selected.RemoveWhere(entry => !present.Contains(entry));
+        }
+
+        return selected;
+    }
+
+    private void FilterShows(GeneratedVoicePhrase phrase, string? filter)
+    {
+        _showFilter[phrase.Id] = filter ?? string.Empty;
+        _showLimit.Remove(phrase.Id);
+    }
+
+    private void SelectShows(GeneratedVoicePhrase phrase, IEnumerable<GeneratedVoiceEntry> shows, bool select)
+    {
+        HashSet<GeneratedVoiceEntry> selected = SelectedShows(phrase);
+        if (select) selected.UnionWith(shows);
+        else selected.ExceptWith(shows);
+    }
+
+    private Task RemoveSelectedShows(GeneratedVoicePhrase phrase)
+    {
+        HashSet<GeneratedVoiceEntry> selected = SelectedShows(phrase);
+        if (selected.Count == 0) return Task.CompletedTask;
+        return Set(() =>
+        {
+            phrase.Entries.RemoveAll(selected.Contains);
+            selected.Clear();
+            _showLimit.Remove(phrase.Id);
+        });
+    }
+
+    private Task RemoveShowsWithoutTakes(GeneratedVoicePhrase phrase) => Set(() =>
+    {
+        phrase.Entries.RemoveAll(entry => entry.Takes.Count == 0);
+        _showLimit.Remove(phrase.Id);
     });
 
     // Where "add shows" takes them from: every channel, one channel ("channel:<id>") or one of its blocks ("block:<id>|<name>";
@@ -569,8 +796,14 @@
 
     // The library titles the chosen source programmes, read in the background (the library can be large).
     private string? _loadedSource;
-    private IReadOnlyList<string> _rotationShows = [];
+    private SourceTitles _rotation = SourceTitles.None;
     private bool _loadingShows;
+
+    /// <summary>A source's show (series) titles and movie titles, each sorted.</summary>
+    private sealed record SourceTitles(IReadOnlyList<string> Shows, IReadOnlyList<string> Movies)
+    {
+        public static readonly SourceTitles None = new(Array.Empty<string>(), Array.Empty<string>());
+    }
     private string? _showsProblem;
 
     protected override Task OnInitializedAsync() => LoadRotationShows(ShowSource);
@@ -610,17 +843,17 @@
 
             IReadOnlyList<MediaItem> programmes = await library.GetProgrammesAsync();
             SchedulerConfig config = Editor.Working;
-            IReadOnlyList<string> titles = await Task.Run(() => ContentSelectorQuery.Titles(config, selectors, programmes));
+            (IReadOnlyList<string> shows, IReadOnlyList<string> movies) = await Task.Run(() => ContentSelectorQuery.ShowsAndMovies(config, selectors, programmes));
             if (string.Equals(ShowSource, source, StringComparison.Ordinal))
             {
-                _rotationShows = titles;
+                _rotation = new SourceTitles(shows, movies);
                 _loadedSource = source;
             }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
         {
             _showsProblem = $"Couldn't read the library ({ex.GetBaseException().Message}), so only scheduled shows are listed.";
-            _rotationShows = [];
+            _rotation = SourceTitles.None;
             _loadedSource = source;
         }
         finally
@@ -629,32 +862,80 @@
         }
     }
 
-    /// <summary>The shows <paramref name="source"/> programmes (once read from the library) and has on the schedule, together.</summary>
-    private IReadOnlyList<string> SourceShows(string source)
+    /// <summary>
+    /// The shows and movies <paramref name="source"/> programmes (once read from the library) and has on the schedule,
+    /// together. Remembered until either changes.
+    /// </summary>
+    private SourceTitles SourceShows(string source)
     {
-        IEnumerable<string> rotation = string.Equals(_loadedSource, source, StringComparison.Ordinal) ? _rotationShows : Array.Empty<string>();
-        return [.. rotation.Concat(ScheduledShows(source)).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
+        SourceTitles rotation = string.Equals(_loadedSource, source, StringComparison.Ordinal) ? _rotation : SourceTitles.None;
+        SourceTitles scheduled = ScheduledShows(source);
+        if (_merged is { } merged && ReferenceEquals(merged.Rotation, rotation) && ReferenceEquals(merged.Scheduled, scheduled))
+        {
+            return merged.Titles;
+        }
+
+        static IReadOnlyList<string> Merge(IEnumerable<string> first, IEnumerable<string> second) =>
+            first.Concat(second).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+
+        // A title can't be both: one the library calls a movie isn't also listed as a show.
+        IReadOnlyList<string> movies = Merge(rotation.Movies, scheduled.Movies);
+        HashSet<string> movieTitles = new(movies, StringComparer.OrdinalIgnoreCase);
+        SourceTitles titles = new([.. Merge(rotation.Shows, scheduled.Shows).Where(title => !movieTitles.Contains(title))], movies);
+        _merged = (rotation, scheduled, titles);
+        return titles;
     }
+
+    private (SourceTitles Rotation, SourceTitles Scheduled, SourceTitles Titles)? _merged;
 
     /// <summary>
     /// The shows the current schedule airs on <paramref name="source"/> (a channel, one of its blocks, or every channel when
     /// null or "all"), for adding show names quickly.
     /// </summary>
-    private IReadOnlyList<string> ScheduledShows(string? source)
+    private SourceTitles ScheduledShows(string? source)
     {
-        if (Services.GetService<ScheduleCoordinator>() is not { } coordinator) return [];
+        if (Services.GetService<ScheduleCoordinator>() is not { } coordinator) return SourceTitles.None;
+
+        // Worked out once per source until the schedule is rebuilt, rather than on every redraw.
+        IReadOnlyList<ChannelSchedule> latest = coordinator.Latest;
+        if (!ReferenceEquals(latest, _scheduledFor))
+        {
+            _scheduledFor = latest;
+            _scheduled.Clear();
+        }
+
+        string cacheKey = source ?? AllChannels;
+        if (!_scheduled.TryGetValue(cacheKey, out SourceTitles? titles))
+        {
+            titles = ScheduledShowsIn(latest, source);
+            _scheduled[cacheKey] = titles;
+        }
+
+        return titles;
+    }
+
+    private IReadOnlyList<ChannelSchedule>? _scheduledFor;
+    private readonly Dictionary<string, SourceTitles> _scheduled = new(StringComparer.Ordinal);
+
+    private static SourceTitles ScheduledShowsIn(IReadOnlyList<ChannelSchedule> latest, string? source)
+    {
         (string? channelId, string? block) = ParseSource(source);
-        return coordinator.Latest
+        List<MediaItem> items = [.. latest
             .Where(schedule => channelId is null || string.Equals(schedule.ChannelId, channelId, StringComparison.OrdinalIgnoreCase))
             .SelectMany(schedule => schedule.Entries)
             .Where(entry => entry.Kind == ScheduleEntryKind.Program && entry.Item is not null && !entry.IsSlotIntro && !entry.IsSlotOutro)
             .Where(entry => block is null || string.Equals(entry.BlockName, block, StringComparison.OrdinalIgnoreCase))
-            .Select(entry => string.IsNullOrWhiteSpace(entry.Item!.SeriesName) ? entry.Item.Title : entry.Item.SeriesName)
-            .Where(title => !string.IsNullOrWhiteSpace(title))
-            .Select(title => title.Trim())
+            .Select(entry => entry.Item!)];
+
+        IReadOnlyList<string> Titles(bool movies) => items
+            .Where(item => ContentSelectorQuery.IsMovie(item) == movies)
+            .Select(ContentSelectorQuery.TitleOf)
+            .Where(title => title.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Order(StringComparer.OrdinalIgnoreCase)
             .ToList();
+
+        return new SourceTitles(Titles(movies: false), Titles(movies: true));
     }
 
     private Task AddPhrase(GeneratedVoicePack pack)
@@ -667,6 +948,41 @@
         _newText = string.Empty;
         return Notify();
     }
+
+    /// <summary>
+    /// A copy of the phrase just after it, opened out: the same kind, settings and values (show names, days, times,
+    /// channels), with its recordings too, or with none so it can be recorded again (another voice, say). Templates keep
+    /// using the original.
+    /// </summary>
+    private Task DuplicatePhrase(GeneratedVoicePack pack, GeneratedVoicePhrase phrase, bool keepTakes)
+    {
+        static List<GeneratedVoiceTake> Takes(IEnumerable<GeneratedVoiceTake> takes, bool keep) =>
+            keep ? takes.Select(take => new GeneratedVoiceTake { Path = take.Path, Length = take.Length }).ToList() : new List<GeneratedVoiceTake>();
+
+        GeneratedVoicePhrase copy = new()
+        {
+            Name = UniquePhraseName(pack, phrase.Name),
+            Kind = phrase.Kind,
+            Takes = Takes(phrase.Takes, keepTakes),
+            Entries = [.. phrase.Entries.Select(entry => new GeneratedVoiceEntry { Key = entry.Key, Takes = Takes(entry.Takes, keepTakes) })],
+            TwentyFourHour = phrase.TwentyFourHour,
+            SayAmPm = phrase.SayAmPm,
+            Combined = phrase.Combined,
+            AmPmInTake = phrase.AmPmInTake,
+            MinuteStep = phrase.MinuteStep,
+            UseBlockNames = phrase.UseBlockNames
+        };
+
+        int at = pack.Phrases.IndexOf(phrase);
+        pack.Phrases.Insert(at < 0 ? pack.Phrases.Count : at + 1, copy);
+        _open.Add($"phrase:{copy.Id}");
+        if (_dayTimeDay.TryGetValue(phrase.Id, out string? day)) _dayTimeDay[copy.Id] = day;
+        return Notify();
+    }
+
+    /// <summary><paramref name="name"/> with " (copy)", numbered when that's taken too.</summary>
+    private static string UniquePhraseName(GeneratedVoicePack pack, string name) =>
+        GeneratedPromoEditing.UniqueName(pack.Phrases.Select(existing => existing.Name), $"{(string.IsNullOrWhiteSpace(name) ? "Phrase" : name.Trim())} (copy)");
 
     private Task RemovePhrase(GeneratedVoicePack pack, GeneratedVoicePhrase phrase) => Set(() =>
     {
@@ -706,7 +1022,7 @@
             before it instead; leave it empty to use this one.</p>
         @foreach (GeneratedVoicePackTemplate template in pack.Templates)
         {
-            IReadOnlyList<string> missing = Shows.Count == 0 ? Array.Empty<string>() : PrerecordedVoice.Missing(pack, template, Shows, Zone, AirsAt);
+            IReadOnlyList<string> missing = Shows.Count == 0 ? Array.Empty<string>() : PrerecordedVoice.Missing(pack, template, Shows, Zone, AirsAt, Where);
             <div class="card voice-template" @key="template">
                 <div class="card-head">
                     <input type="text" class="voice-template-name" value="@template.Name" aria-label="Template name"
@@ -741,7 +1057,7 @@
                                     <option value="@option.Id">@PhraseLabel(option)</option>
                                 }
                             </select>
-                            @if (phrase is not null && phrase.Kind != GeneratedVoicePhraseKind.Text)
+                            @if (phrase is not null && phrase.Kind is not (GeneratedVoicePhraseKind.Text or GeneratedVoicePhraseKind.ChannelName))
                             {
                                 <select value="@part.Show" aria-label="@($"Which show part {position + 1} is about")"
                                         @onchange="e => Set(() => part.Show = int.TryParse(e.Value?.ToString(), out int which) ? Math.Clamp(which, 0, 9) : 0)">
@@ -874,9 +1190,9 @@
             Mode = GeneratedVoiceMode.Prerecorded,
             Prerecorded = new GeneratedPrerecordedVoiceConfig { Pack = pack.Id, Templates = [template.Id], Linked = pack }
         };
-        if (PrerecordedVoice.Plan(voice, Shows, Zone, AirsAt, $"try|{++_tries}|{DateTime.UtcNow.Ticks}") is not { } request)
+        if (PrerecordedVoice.Plan(voice, Shows, Zone, AirsAt, $"try|{++_tries}|{DateTime.UtcNow.Ticks}", Where) is not { } request)
         {
-            _tryNote = $"It can't be said for these shows: {string.Join("; ", PrerecordedVoice.Missing(pack, template, Shows, Zone, AirsAt))}.";
+            _tryNote = $"It can't be said for these shows: {string.Join("; ", PrerecordedVoice.Missing(pack, template, Shows, Zone, AirsAt, Where))}.";
             return;
         }
 

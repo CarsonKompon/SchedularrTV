@@ -25,6 +25,10 @@ public sealed record PrerecordedCandidate(string Template, string Name, IReadOnl
 public sealed record PrerecordedVoiceRequest(IReadOnlyList<PrerecordedCandidate> Candidates, TimeSpan Gap, GeneratedVoiceFit Fit, bool SpeedUp, string Seed,
     bool TrimSilence = false);
 
+/// <summary>Where a promo airs, for voice-overs that name it: the channel's id, and the block it airs in (if any).</summary>
+/// <param name="ChannelName">The channel's name, for the editor's read-out.</param>
+public sealed record GeneratedVoiceContext(string ChannelId, string? Block = null, string? ChannelName = null);
+
 /// <summary>The template and takes chosen for a promo, and how long they are said one after another.</summary>
 /// <param name="Joints">The pause before each take after the first (negative overlaps), already kept within what the takes allow.</param>
 public sealed record PrerecordedChoice(PrerecordedCandidate Candidate, IReadOnlyList<string> Takes, TimeSpan Length, IReadOnlyList<TimeSpan> Joints);
@@ -37,8 +41,9 @@ public static class PrerecordedVoice
     /// voice-over isn't pre-recorded, its pack is missing, or no template has recordings for everything it would say.
     /// </summary>
     /// <param name="shows">The shows a part can be about: the promo's own first (for Up Next, the upcoming ones in order).</param>
+    /// <param name="where">The channel (and block) the promo airs on, for channel name phrases; without it they can't be said.</param>
     public static PrerecordedVoiceRequest? Plan(GeneratedVoiceConfig voice, IReadOnlyList<UpNextListing> shows, TimeZoneInfo zone,
-        DateTimeOffset airsAt, string seed)
+        DateTimeOffset airsAt, string seed, GeneratedVoiceContext? where = null)
     {
         if (!voice.IsPrerecorded || voice.Prerecorded!.Linked is not { } pack || shows.Count == 0)
         {
@@ -60,7 +65,7 @@ public static class PrerecordedVoice
             foreach (GeneratedVoicePart part in template.Parts)
             {
                 GeneratedVoicePhrase? phrase = pack.Phrases.FirstOrDefault(candidate => string.Equals(candidate.Id, part.Phrase, StringComparison.OrdinalIgnoreCase));
-                IReadOnlyList<PrerecordedPart>? said = phrase is null ? null : Parts(phrase, part.Show, shows, zone, airsAt);
+                IReadOnlyList<PrerecordedPart>? said = phrase is null ? null : Parts(phrase, part.Show, shows, zone, airsAt, where);
                 if (said is null)
                 {
                     parts = null;
@@ -87,7 +92,7 @@ public static class PrerecordedVoice
     /// when it can.
     /// </summary>
     public static IReadOnlyList<string> Missing(GeneratedVoicePack pack, GeneratedVoicePackTemplate template, IReadOnlyList<UpNextListing> shows,
-        TimeZoneInfo zone, DateTimeOffset airsAt)
+        TimeZoneInfo zone, DateTimeOffset airsAt, GeneratedVoiceContext? where = null)
     {
         List<string> missing = [];
         if (template.Parts.Count == 0)
@@ -104,7 +109,7 @@ public static class PrerecordedVoice
                 continue;
             }
 
-            if (Parts(phrase, part.Show, shows, zone, airsAt) is not null)
+            if (Parts(phrase, part.Show, shows, zone, airsAt, where) is not null)
             {
                 continue;
             }
@@ -113,6 +118,11 @@ public static class PrerecordedVoice
             if (phrase.Kind == GeneratedVoicePhraseKind.Text)
             {
                 missing.Add($"{name} has no recordings");
+            }
+            else if (phrase.Kind == GeneratedVoicePhraseKind.ChannelName)
+            {
+                missing.Add(where is null ? $"{name} needs to know the channel"
+                    : $"{name} has no recording for this channel{(phrase.UseBlockNames && where.Block is { } inBlock ? $" (or its block “{inBlock}”)" : "")}");
             }
             else if (part.Show < 0 || part.Show >= shows.Count)
             {
@@ -146,12 +156,31 @@ public static class PrerecordedVoice
     /// minutes, am/pm). Null when that show isn't there or the phrase has no recording for what it would say.
     /// </summary>
     public static IReadOnlyList<PrerecordedPart>? Parts(GeneratedVoicePhrase phrase, int show, IReadOnlyList<UpNextListing> shows,
-        TimeZoneInfo zone, DateTimeOffset airsAt)
+        TimeZoneInfo zone, DateTimeOffset airsAt, GeneratedVoiceContext? where = null)
     {
         if (phrase.Kind == GeneratedVoicePhraseKind.Text)
         {
             List<string> said = Usable(phrase.Takes);
             return said.Count > 0 ? new[] { new PrerecordedPart(phrase.Name, said) } : null;
+        }
+
+        if (phrase.Kind == GeneratedVoicePhraseKind.ChannelName)
+        {
+            // The block's own name while the promo airs in it (when it's recorded), otherwise the channel's.
+            if (where is null || string.IsNullOrWhiteSpace(where.ChannelId))
+            {
+                return null;
+            }
+
+            if (phrase.UseBlockNames && !string.IsNullOrWhiteSpace(where.Block)
+                && Entry(phrase, GeneratedVoiceKeys.Block(where.ChannelId, where.Block)) is { } blockTakes)
+            {
+                return new[] { new PrerecordedPart(where.Block, blockTakes) };
+            }
+
+            return Entry(phrase, GeneratedVoiceKeys.Channel(where.ChannelId)) is { } channelTakes
+                ? new[] { new PrerecordedPart(string.IsNullOrWhiteSpace(where.ChannelName) ? phrase.Name : where.ChannelName, channelTakes) }
+                : null;
         }
 
         if (show < 0 || show >= shows.Count)
@@ -163,8 +192,10 @@ public static class PrerecordedVoice
         switch (phrase.Kind)
         {
             case GeneratedVoicePhraseKind.ShowName:
-                GeneratedVoiceEntry? entry = ShowTitleMatcher.Find(listing.Title, phrase.Entries.Where(candidate => Usable(candidate.Takes).Count > 0), candidate => candidate.Key);
-                return entry is null ? null : new[] { new PrerecordedPart(UpNextPromo.SpokenTitle(listing.Title), Usable(entry.Takes)) };
+                // Matched among shows with takes first; only the match's files are checked (a pack can hold hundreds of shows).
+                GeneratedVoiceEntry? entry = ShowTitleMatcher.Find(listing.Title, phrase.Entries.Where(candidate => candidate.Takes.Count > 0), candidate => candidate.Key);
+                List<string> showTakes = entry is null ? [] : Usable(entry.Takes);
+                return showTakes.Count == 0 ? null : new[] { new PrerecordedPart(UpNextPromo.SpokenTitle(listing.Title), showTakes) };
 
             case GeneratedVoicePhraseKind.Day:
                 foreach (string key in DayKeys(listing.Start, airsAt, zone))

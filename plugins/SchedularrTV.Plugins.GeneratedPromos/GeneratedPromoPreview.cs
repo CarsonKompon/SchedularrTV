@@ -132,7 +132,20 @@ public sealed class GeneratedPromoPreview(
     /// <summary>The template's AI jobs for the editor's "Try it", with what it would air with right now.</summary>
     public ResolvedGeneratedPromo? Resolve(GeneratedPromoTemplate template, ChannelConfig channel, TimeZoneInfo zone) =>
         GeneratedPromoResolver.Resolve(template, channel.Name, Listings(channel, template, out _), zone, clock.GetUtcNow(), ImageSubjects(channel, template),
-            AutomaticImages?.Lookup(queue: true));
+            AutomaticImages?.Lookup(queue: true), VoiceContext(channel));
+
+    /// <summary>
+    /// Where a promo previewed now airs, for voice-overs that name the channel or block: the channel, and the block on air
+    /// right now in its schedule (none before it has one).
+    /// </summary>
+    public GeneratedVoiceContext VoiceContext(ChannelConfig channel)
+    {
+        DateTimeOffset now = clock.GetUtcNow();
+        ChannelSchedule? schedule = services.GetService<ScheduleCoordinator>()?.Latest
+            .FirstOrDefault(candidate => string.Equals(candidate.ChannelId, channel.Id, StringComparison.OrdinalIgnoreCase));
+        string? block = schedule?.Entries.FirstOrDefault(entry => entry.Start <= now && entry.End > now)?.BlockName;
+        return new GeneratedVoiceContext(channel.Id, string.IsNullOrWhiteSpace(block) ? null : block, channel.Name);
+    }
 
     public static TimeZoneInfo Zone(SchedulerConfig config, ChannelConfig channel) =>
         SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(channel.TimeZone) ? config.Settings.TimeZone : channel.TimeZone);
@@ -275,7 +288,8 @@ public sealed class GeneratedPromoPreview(
         TimeZoneInfo zone,
         CancellationToken cancellationToken = default,
         string? song = null,
-        GeneratedImageSubjects? imageSubjects = null)
+        GeneratedImageSubjects? imageSubjects = null,
+        GeneratedVoiceContext? where = null)
     {
         using WorkScope work = Work.Begin("Generated Promos", "Generating preview", template.Name);
         GeneratedPromoTemplate rendered = WithSong(template, song);
@@ -284,11 +298,11 @@ public sealed class GeneratedPromoPreview(
         // Made exactly as it will air, so variable images' automatic pictures are waited for.
         if (AutomaticImages?.Lookup(queue: true) is { } lookup)
         {
-            _ = GeneratedPromoResolver.Resolve(rendered, channelName, listings, zone, now, imageSubjects, lookup);
+            _ = GeneratedPromoResolver.Resolve(rendered, channelName, listings, zone, now, imageSubjects, lookup, where);
             await lookup.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(rendered, channelName, listings, zone, now, imageSubjects, AutomaticImages?.Lookup(queue: false))
+        ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(rendered, channelName, listings, zone, now, imageSubjects, AutomaticImages?.Lookup(queue: false), where)
             ?? throw new InvalidOperationException("The preview needs at least one upcoming programme.");
         return await promos.RenderAsync(promo with { Folder = GeneratedPromoService.PreviewFolder }, cancellationToken).ConfigureAwait(false);
     }

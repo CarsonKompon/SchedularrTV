@@ -36,6 +36,7 @@
 /* ---- Pre-recorded voice-overs: voice packs, their phrases' takes and templates. ---- */
 .gp-scope .voice-mode { margin-bottom: 10px; }
 .gp-scope .voice-packs .card { margin: 8px 0; }
+.gp-scope .voice-phrase > .card-head { flex-wrap: wrap; row-gap: 6px; }
 .gp-scope .voice-takes { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
 .gp-scope .voice-take { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 2px; border: 1px solid var(--line); border-radius: 999px; font-size: 12.5px; }
 .gp-scope .voice-take-missing { border-color: var(--warn); }
@@ -62,6 +63,8 @@
 .gp-scope .voice-part-gap input { width: 72px; }
 .gp-scope .voice-gap-row { align-items: flex-end; margin-bottom: 4px; }
 .gp-scope .voice-show-source select { max-width: 320px; }
+.gp-scope .voice-entry-tools { align-items: center; margin-bottom: 4px; }
+.gp-scope .voice-entry-tools input[type="search"] { flex: 1 1 220px; }
 .gp-scope .voice-step { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; }
 .gp-scope .voice-parts-fallback { margin-top: 8px; }
 .gp-scope .voice-parts-fallback > summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
