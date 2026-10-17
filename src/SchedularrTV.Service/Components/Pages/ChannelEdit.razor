@@ -308,9 +308,9 @@ else
                 </p>
             }
             <datalist id="track-languages">
-                @foreach ((string code, string name) in LanguageCodes.Common)
+                @foreach ((string languageCode, string languageName) in LanguageCodes.Common)
                 {
-                    <option value="@name">@code</option>
+                    <option value="@languageName">@languageCode</option>
                 }
             </datalist>
             <p class="hint">
