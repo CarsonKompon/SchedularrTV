@@ -937,8 +937,21 @@ public sealed class GeneratedVoicePack
 
     public List<GeneratedVoicePackTemplate> Templates { get; set; } = [];
 
-    /// <summary>Silence between the parts of a template, so takes recorded separately don't run into each other.</summary>
+    /// <summary>
+    /// The pause between the parts of a template. Negative overlaps them by that much (crossfaded), so a sentence put
+    /// together from separate takes runs on naturally. A template part can set its own (<see cref="GeneratedVoicePart.Gap"/>).
+    /// </summary>
     public TimeSpan Gap { get; set; } = TimeSpan.FromMilliseconds(60);
+
+    /// <summary>Trims the silence at the start and end of every take before they're joined, so pauses are only what <see cref="Gap"/> says.</summary>
+    public bool TrimSilence { get; set; } = true;
+
+    /// <summary>The shortest and longest a pause may be: up to half a second of overlap, up to two seconds of silence.</summary>
+    public static readonly TimeSpan MinGap = TimeSpan.FromMilliseconds(-500);
+    public static readonly TimeSpan MaxGap = TimeSpan.FromSeconds(2);
+
+    /// <summary><paramref name="gap"/> within <see cref="MinGap"/> and <see cref="MaxGap"/>.</summary>
+    public static TimeSpan ClampGap(TimeSpan gap) => gap < MinGap ? MinGap : gap > MaxGap ? MaxGap : gap;
 
     public static string NewId() => Guid.NewGuid().ToString("N");
 }
@@ -1010,6 +1023,13 @@ public sealed class GeneratedVoicePart
     /// next show); 1 the show after it, and so on (Up Next only).
     /// </summary>
     public int Show { get; set; }
+
+    /// <summary>
+    /// The pause before this part, instead of the pack's (<see cref="GeneratedVoicePack.Gap"/>); negative overlaps it with
+    /// the part before. Null uses the pack's.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public TimeSpan? Gap { get; set; }
 }
 
 /// <summary>The values a day or time phrase can have recordings for.</summary>

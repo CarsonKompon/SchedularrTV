@@ -670,7 +670,7 @@
 
             // Logos replaced, removed or left by a deleted channel go now it's saved (not when the button was pressed, so
             // Discard could still bring them back), as do uploads that didn't end up on a channel.
-            RemoveUnused([.. before.Select(old => StoredKey(old.Logo)).OfType<string>(), .. _uploads]);
+            RemoveUnused([.. before.Select(old => old.Logo).OfType<string>(), .. _uploads]);
             _uploads.Clear();
 
             Load();
@@ -843,7 +843,7 @@
             // The address this browser reached the app on, so players on the same network can fetch it too.
             string key = $"streamers-{channel.Id}-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)}";
             channel.Logo = await Logos.SaveAsync(key, file.Name, content, Nav.BaseUri);
-            _uploads.Add(key);
+            if (StoredKey(channel.Logo) is not null) _uploads.Add(channel.Logo!);
             _dirty = true;
             await PushPreviewAsync();
         }
@@ -861,7 +861,7 @@
         _dirty = true;
     }
 
-    // Logos uploaded since the page last saved or discarded, which no saved channel may be using yet.
+    // Addresses of logos uploaded since the page last saved or discarded, which no saved channel may be using yet.
     private readonly List<string> _uploads = [];
 
     /// <summary>The stored file a logo address points at (its name without the extension); null for one hosted elsewhere.</summary>
@@ -878,15 +878,16 @@
         return key.StartsWith("streamers-", StringComparison.OrdinalIgnoreCase) ? key : null;
     }
 
-    /// <summary>Deletes the stored logos in <paramref name="keys"/> that no saved channel uses.</summary>
-    private void RemoveUnused(IEnumerable<string> keys)
+    /// <summary>Deletes this page's stored logos among <paramref name="logos"/> (addresses) that no saved channel uses.</summary>
+    private void RemoveUnused(IEnumerable<string> logos)
     {
-        HashSet<string> inUse = new(Store.Channels.Select(channel => StoredKey(channel.Logo)).OfType<string>(), StringComparer.OrdinalIgnoreCase);
-        foreach (string key in keys.Where(key => !inUse.Contains(key)).Distinct(StringComparer.OrdinalIgnoreCase).ToList())
+        List<string?> inUse = [.. Store.Channels.Select(channel => channel.Logo)];
+        foreach (string logo in logos.Where(logo => StoredKey(logo) is not null).DistinctBy(logo => StoredKey(logo), StringComparer.OrdinalIgnoreCase).ToList())
         {
             try
             {
-                Logos.Remove(key);
+                // Release leaves a file any of the saved channels still points at, and ignores one that's already gone.
+                Logos.Release(logo, inUse);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
             {

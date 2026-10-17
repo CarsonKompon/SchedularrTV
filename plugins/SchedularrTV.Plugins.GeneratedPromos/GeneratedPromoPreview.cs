@@ -477,15 +477,7 @@ public sealed class GeneratedPromoPreview(
     public async Task<(string Clip, PrerecordedChoice Choice, double Tempo)> SayAsync(PrerecordedVoiceRequest request, TimeSpan room,
         CancellationToken cancellationToken = default)
     {
-        Dictionary<string, TimeSpan> lengths = new(StringComparer.OrdinalIgnoreCase);
-        foreach (string take in request.Candidates.SelectMany(candidate => candidate.Parts).SelectMany(part => part.Takes).Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            lengths[take] = await promos.TakeLengthAsync(take, cancellationToken).ConfigureAwait(false);
-        }
-
-        PrerecordedChoice choice = PrerecordedVoice.Choose(request, take => lengths[take], room);
-        string joined = await promos.AssembleAsync(choice.Takes, request.Gap, cancellationToken).ConfigureAwait(false);
-        double tempo = request.SpeedUp && room > TimeSpan.Zero && choice.Length > room ? Math.Min(1.35, choice.Length / room) : 1;
+        (string joined, PrerecordedChoice choice, double tempo) = await promos.SayPrerecordedAsync(request, room, cancellationToken).ConfigureAwait(false);
         return (await AudioClipAsync(joined, cancellationToken).ConfigureAwait(false), choice, tempo);
     }
 

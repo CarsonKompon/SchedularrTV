@@ -3,7 +3,7 @@
 @inject CreditsMarkers Credits
 @inject ScheduleCoordinator Coordinator
 @inject CreditSqueezeSettings Settings
-@inject SchedularrTV.Service.Editor.TemplateAssets Assets
+@inject SchedularrTV.Service.Editor.TemplateAssets TemplateFiles
 @implements IDisposable
 
 @if (Context.Channel is { } channel)
@@ -1047,7 +1047,7 @@
     /// <summary>Adds a look from a template package as a new template, and selects it.</summary>
     private async Task<string> ImportLook(CreditSqueezeSection section, SchedularrTV.Service.Editor.TemplatePackageReader reader)
     {
-        SqueezeTemplate template = await SqueezePackages.ImportAsync(reader, Assets);
+        SqueezeTemplate template = await SqueezePackages.ImportAsync(reader, TemplateFiles);
         string name = string.IsNullOrWhiteSpace(template.Name) || template.Name == CreditSqueezeSection.MainLook ? reader.Manifest.Name : template.Name;
         name = string.IsNullOrWhiteSpace(name) || name == CreditSqueezeSection.MainLook ? "Imported look" : name;
         template.Name = name;

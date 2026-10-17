@@ -58,6 +58,9 @@
 .gp-scope .voice-part select { max-width: 280px; }
 .gp-scope .voice-part-missing .pill { border-color: var(--warn); color: var(--warn); }
 .gp-scope .voice-part-tools { display: inline-flex; gap: 2px; }
+.gp-scope .voice-part-gap { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+.gp-scope .voice-part-gap input { width: 72px; }
+.gp-scope .voice-gap-row { align-items: flex-end; margin-bottom: 4px; }
 .gp-scope .promo-video { width: 100%; max-width: 960px; margin-top: 12px; border-radius: 8px; background: #000; }
 
 /* ---- Visual editor. The same rules (under .ov-scope) style the Overlays editor: keep the two in step. ---- */

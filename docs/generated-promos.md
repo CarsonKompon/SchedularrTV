@@ -644,6 +644,8 @@ Each promo uses one of the templates you allow whose recordings cover what it mu
 
 The choice is fixed per promo, so a re-render sounds the same. Re-recording a take renders promos that use it again.
 
+**Pauses and overlaps.** By default, the silence at the start and end of every take is trimmed before joining (**Trim silence from takes**), so the only pause is **Pause between parts**. Set it below zero to start each part slightly before the previous one ends, crossfaded, so the sentence runs on as if said in one go; −40 to −80 ms usually sounds natural. An overlap never takes more than 40% of the shorter take. Any template part after the first can set its own **pause** (empty uses the pack's), e.g. a tight overlap into the show name and a longer beat before the closer. A time's hour, minutes and AM/PM use the pack's pause between them.
+
 ```yaml
 voice:
   mode: prerecorded
@@ -661,7 +663,8 @@ settings:
       voice_packs:
         - id: 3f0c…
           name: Nick announcer
-          gap: 00:00:00.0600000      # pause between parts
+          gap: -00:00:00.0600000     # pause between parts; negative overlaps them
+          trim_silence: true
           phrases:
             - id: p1
               name: Coming up next…
@@ -676,7 +679,7 @@ settings:
           templates:
             - id: 9a1b…
               name: Coming up next
-              parts: [{ phrase: p1 }, { phrase: p2, show: 0 }]
+              parts: [{ phrase: p1 }, { phrase: p2, show: 0, gap: -00:00:00.0800000 }]
 ```
 
 ### Piper

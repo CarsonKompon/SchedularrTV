@@ -63,7 +63,8 @@ internal sealed partial class FlexibleTimeSpanConverter : IYamlTypeConverter
         throw new SchedulerConfigException($"'{text}' is not a valid duration or time-of-day.");
     }
 
-    [GeneratedRegex(@"^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)$", RegexOptions.IgnoreCase)]
+    // A leading minus is a negative duration (a voice pack's overlapping pause, -80ms).
+    [GeneratedRegex(@"^(-?\d+(?:\.\d+)?)\s*(ms|s|m|h|d)$", RegexOptions.IgnoreCase)]
     private static partial Regex UnitPattern();
 }
 

@@ -173,9 +173,8 @@ public static class AnimatedImages
                     int required = frames.Length > index ? frames[index].RequiredFrame : -1;
                     if (required >= 0 && required < index && bitmaps[required] is { } prior)
                     {
-                        using var canvas = new SKCanvas(bitmap);
-                        using var copy = new SKPaint { BlendMode = SKBlendMode.Src };
-                        canvas.DrawBitmap(prior, 0, 0, copy);
+                        // Same size and format, so the earlier frame's pixels are copied over as they are.
+                        prior.GetPixelSpan().CopyTo(bitmap.GetPixelSpan());
                     }
                     else
                     {

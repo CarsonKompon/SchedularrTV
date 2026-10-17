@@ -113,6 +113,26 @@ public sealed class PrerecordedVoiceTests : IDisposable
     }
 
     [Fact]
+    public void Negative_pauses_overlap_parts_but_never_swallow_a_take()
+    {
+        (GeneratedVoicePack pack, GeneratedVoiceConfig voice) = Pack();
+        pack.Gap = TimeSpan.FromMilliseconds(-100);
+        voice.Prerecorded!.Templates = [pack.Templates[0].Id];
+        PrerecordedVoiceRequest request = PrerecordedVoice.Plan(voice, [new("Rugrats", At.AddHours(5))], TimeZoneInfo.Utc, At, "seed")!;
+        PrerecordedChoice choice = PrerecordedVoice.Choose(request, _ => TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(10));
+        Assert.Equal(TimeSpan.FromMilliseconds(1900), choice.Length);
+        Assert.Equal(TimeSpan.FromMilliseconds(-100), Assert.Single(choice.Joints));
+
+        // A part's own pause wins over the pack's.
+        pack.Templates[0].Parts[1].Gap = TimeSpan.FromMilliseconds(250);
+        request = PrerecordedVoice.Plan(voice, [new("Rugrats", At.AddHours(5))], TimeZoneInfo.Utc, At, "seed")!;
+        Assert.Equal(TimeSpan.FromMilliseconds(2250), PrerecordedVoice.Choose(request, _ => TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(10)).Length);
+
+        // An overlap is held to 40% of the shorter take.
+        Assert.Equal(TimeSpan.FromMilliseconds(-80), PrerecordedVoice.Joint(TimeSpan.FromMilliseconds(-300), TimeSpan.FromMilliseconds(200), TimeSpan.FromSeconds(2)));
+    }
+
+    [Fact]
     public void Choice_is_fixed_by_the_promo()
     {
         (_, GeneratedVoiceConfig voice) = Pack();
@@ -120,6 +140,25 @@ public sealed class PrerecordedVoiceTests : IDisposable
         PrerecordedChoice first = PrerecordedVoice.Choose(request, _ => TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(10));
         PrerecordedChoice again = PrerecordedVoice.Choose(request, _ => TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(10));
         Assert.Equal(first.Takes, again.Takes);
+    }
+
+    [Fact]
+    public void Negative_pauses_survive_saving_from_the_editor()
+    {
+        (GeneratedVoicePack pack, _) = Pack();
+        pack.Gap = TimeSpan.FromMilliseconds(-60);
+        pack.Templates[0].Parts[1].Gap = TimeSpan.FromMilliseconds(-80);
+        pack.Templates[0].Parts[0].Gap = TimeSpan.FromSeconds(-1.5);
+        SchedulerConfig config = new();
+        config.Settings.GeneratedPromosVoicePacks.Add(pack);
+
+        // The visual editor saves through the comment merger, which writes durations in their friendly form (-80ms).
+        string yaml = YamlCommentMerger.Merge(string.Empty, SchedulerConfigLoader.Serialize(config));
+        GeneratedVoicePack read = Assert.Single(SchedulerConfigLoader.Parse(yaml).Settings.GeneratedPromosVoicePacks);
+        Assert.Equal(TimeSpan.FromMilliseconds(-60), read.Gap);
+        Assert.Equal(TimeSpan.FromMilliseconds(-80), read.Templates[0].Parts[1].Gap);
+        Assert.Equal(TimeSpan.FromSeconds(-1.5), read.Templates[0].Parts[0].Gap);
+        Assert.Equal("-80ms", DurationText.Format(TimeSpan.FromMilliseconds(-80)));
     }
 
     [Fact]

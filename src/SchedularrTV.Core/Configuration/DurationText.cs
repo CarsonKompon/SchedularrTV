@@ -39,6 +39,12 @@ public static class DurationText
             return "0s";
         }
 
+        // Negative durations (an overlap) read back with the same leading minus.
+        if (v < TimeSpan.Zero)
+        {
+            return "-" + Format(-v);
+        }
+
         if (v.TotalSeconds < 1)
         {
             return $"{v.TotalMilliseconds:0}ms";

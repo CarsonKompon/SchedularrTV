@@ -448,6 +448,20 @@
         {
             <p class="hint warn">Add some phrases first.</p>
         }
+        <div class="row row-wrap voice-gap-row">
+            <label class="field" style="flex: 1 1 280px; margin: 0;">
+                <span>Pause between parts: @GapLabel(pack.Gap)</span>
+                <input type="range" min="-300" max="500" step="10" value="@Math.Round(pack.Gap.TotalMilliseconds)"
+                       aria-label="Pause between parts in milliseconds; negative overlaps them"
+                       @onchange="e => Set(() => pack.Gap = ParseGap(e.Value) ?? pack.Gap)" />
+            </label>
+            <label class="check" style="margin: 0;">
+                <input type="checkbox" checked="@pack.TrimSilence" @onchange="e => Set(() => pack.TrimSilence = e.Value is true)" />
+                <span>Trim silence from takes</span>
+            </label>
+        </div>
+        <p class="hint">Below zero overlaps the parts slightly (crossfaded) for a sentence that runs on naturally. Each part below can have its own pause
+            before it instead; leave it empty to use this one.</p>
         @foreach (GeneratedVoicePackTemplate template in pack.Templates)
         {
             IReadOnlyList<string> missing = Shows.Count == 0 ? Array.Empty<string>() : PrerecordedVoice.Missing(pack, template, Shows, Zone, AirsAt);
@@ -495,6 +509,17 @@
                                     }
                                 </select>
                             }
+                            @if (position > 0)
+                            {
+                                <label class="voice-part-gap" title="The pause before this part, in milliseconds (negative overlaps it with the part before). Empty uses the pack's.">
+                                    <span>pause</span>
+                                    <input type="number" min="-500" max="2000" step="10"
+                                           value="@(part.Gap is { } own ? Math.Round(own.TotalMilliseconds).ToString(System.Globalization.CultureInfo.InvariantCulture) : string.Empty)"
+                                           placeholder="@($"{pack.Gap.TotalMilliseconds:0}")" aria-label="@($"Pause before part {position + 1} in milliseconds")"
+                                           @onchange="e => Set(() => part.Gap = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : ParseGap(e.Value))" />
+                                    <span>ms</span>
+                                </label>
+                            }
                             <span class="voice-part-tools">
                                 <button class="btn btn-ghost btn-icon btn-sm" type="button" disabled="@(position == 0)" title="Earlier" aria-label="Move earlier"
                                         @onclick="() => Move(template, position, -1)">↑</button>
@@ -538,6 +563,15 @@
         <button class="btn btn-sm" type="button" @onclick="() => AddTemplate(pack)"><Icon Name="plus" Size="15" />New template</button>
     };
 
+    private static string GapLabel(TimeSpan gap) =>
+        gap < TimeSpan.Zero ? $"{-gap.TotalMilliseconds:0} ms overlap" : gap == TimeSpan.Zero ? "none" : $"{gap.TotalMilliseconds:0} ms";
+
+    /// <summary>A pause typed or slid in milliseconds, kept within what a pack allows; null when it isn't a number.</summary>
+    private static TimeSpan? ParseGap(object? value) =>
+        double.TryParse(value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double ms)
+            ? GeneratedVoicePack.ClampGap(TimeSpan.FromMilliseconds(ms))
+            : null;
+
     private static string PhraseLabel(GeneratedVoicePhrase phrase) =>
         phrase.Kind == GeneratedVoicePhraseKind.Text ? $"“{phrase.Name}”" : $"{phrase.Name} ({KindName(phrase.Kind).ToLowerInvariant()})";
 
@@ -559,7 +593,7 @@
         {
             Name = GeneratedPromoEditing.UniqueName(pack.Templates.Select(existing => existing.Name), template.Name),
             Enabled = template.Enabled,
-            Parts = [.. template.Parts.Select(part => new GeneratedVoicePart { Phrase = part.Phrase, Show = part.Show })]
+            Parts = [.. template.Parts.Select(part => new GeneratedVoicePart { Phrase = part.Phrase, Show = part.Show, Gap = part.Gap })]
         }));
 
     private Task AddPart(GeneratedVoicePackTemplate template, string? phrase)
@@ -633,14 +667,22 @@
                 <input type="text" value="@pack.Name" @onchange="e => Set(() => pack.Name = e.Value?.ToString() ?? string.Empty)" />
             </label>
             <label class="field">
-                <span>Pause between parts (ms)</span>
-                <input type="number" min="0" max="2000" step="10" value="@Math.Round(pack.Gap.TotalMilliseconds)"
-                       @onchange="e => Set(() => pack.Gap = TimeSpan.FromMilliseconds(Math.Clamp(double.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double ms) ? ms : 60, 0, 2000)))" />
+                <span>Pause between parts: @GapLabel(pack.Gap)</span>
+                <input type="range" min="-300" max="500" step="10" value="@Math.Round(pack.Gap.TotalMilliseconds)"
+                       aria-label="Pause between parts in milliseconds; negative overlaps them"
+                       @onchange="e => Set(() => pack.Gap = ParseGap(e.Value) ?? pack.Gap)" />
             </label>
         </div>
+        <p class="hint">Below zero, each part starts before the one before it finishes, crossfaded, so the sentence runs on like it was said in one go
+            (an overlap never takes more than 40% of the shorter take). Around −40 to −80 ms usually sounds natural once silence is trimmed.
+            A template part can have its own pause, in the Templates tab.</p>
+        <label class="check">
+            <input type="checkbox" checked="@pack.TrimSilence" @onchange="e => Set(() => pack.TrimSilence = e.Value is true)" />
+            <span>Trim the silence at the start and end of every take before joining them (recommended, so the only pause is the one set here)</span>
+        </label>
         <label class="check">
             <input type="checkbox" checked="@_trimSilence" @onchange="e => _trimSilence = e.Value is true" />
-            <span>Trim the silence at the start and end of new recordings</span>
+            <span>Also trim new microphone recordings when they're saved</span>
         </label>
         <p class="hint">Recording uses this computer's microphone through the browser, which only allows it on a secure page (https, or
             http://localhost on the computer running SchedularrTV). Takes can also be recorded elsewhere and added as files.</p>

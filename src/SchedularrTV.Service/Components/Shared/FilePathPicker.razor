@@ -73,9 +73,9 @@ else
     private bool CanBrowse => Local?.IsLocal ?? true;
 
     // A dropped file arrives as content, not a path, so it's saved into the data folder's assets.
-    private TemplateAssets? Assets => Services.GetService(typeof(TemplateAssets)) as TemplateAssets;
+    private TemplateAssets? KeptFiles => Services.GetService(typeof(TemplateAssets)) as TemplateAssets;
 
-    private bool CanDrop => !Multiple && !PickFolder && Assets is not null;
+    private bool CanDrop => !Multiple && !PickFolder && KeptFiles is not null;
 
     private string KindKey => PickFolder ? "folder" : string.Join(',', Extensions);
 
@@ -184,7 +184,7 @@ else
             return;
         }
 
-        if (Assets is not { } assets)
+        if (KeptFiles is not { } assets)
         {
             return;
         }

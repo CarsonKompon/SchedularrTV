@@ -6,7 +6,8 @@ namespace SchedularrTV.GeneratedPromos;
 
 /// <summary>One spoken part of a pre-recorded voice-over, and the takes it can be said with.</summary>
 /// <param name="Label">What it says ("Coming up next…", "SpongeBob SquarePants", "8", "pm"), for the editor.</param>
-public sealed record PrerecordedPart(string Label, IReadOnlyList<string> Takes);
+/// <param name="Before">The pause before it (ignored for the first part); negative overlaps it with the part before.</param>
+public sealed record PrerecordedPart(string Label, IReadOnlyList<string> Takes, TimeSpan Before = default);
 
 /// <summary>A voice pack template that can be used for a promo: its parts with the takes each can use.</summary>
 public sealed record PrerecordedCandidate(string Template, string Name, IReadOnlyList<PrerecordedPart> Parts)
@@ -19,10 +20,14 @@ public sealed record PrerecordedCandidate(string Template, string Name, IReadOnl
 /// What a promo's pre-recorded voice-over can be made from: every template of its voice pack that suits it, each with
 /// its takes. Which one (and which takes) is chosen when the promo is made, once the takes' lengths are known.
 /// </summary>
-public sealed record PrerecordedVoiceRequest(IReadOnlyList<PrerecordedCandidate> Candidates, TimeSpan Gap, GeneratedVoiceFit Fit, bool SpeedUp, string Seed);
+/// <param name="Gap">The pack's pause between parts, for parts without their own (each part's is in <see cref="PrerecordedPart.Before"/>).</param>
+/// <param name="TrimSilence">Whether takes have the silence at either end trimmed before they're measured and joined.</param>
+public sealed record PrerecordedVoiceRequest(IReadOnlyList<PrerecordedCandidate> Candidates, TimeSpan Gap, GeneratedVoiceFit Fit, bool SpeedUp, string Seed,
+    bool TrimSilence = false);
 
 /// <summary>The template and takes chosen for a promo, and how long they are said one after another.</summary>
-public sealed record PrerecordedChoice(PrerecordedCandidate Candidate, IReadOnlyList<string> Takes, TimeSpan Length);
+/// <param name="Joints">The pause before each take after the first (negative overlaps), already kept within what the takes allow.</param>
+public sealed record PrerecordedChoice(PrerecordedCandidate Candidate, IReadOnlyList<string> Takes, TimeSpan Length, IReadOnlyList<TimeSpan> Joints);
 
 /// <summary>Pre-recorded voice-overs: voice pack templates filled in for a promo's shows, and fitted to its length.</summary>
 public static class PrerecordedVoice
@@ -50,6 +55,7 @@ public static class PrerecordedVoice
                 continue;
             }
 
+            TimeSpan gap = GeneratedVoicePack.ClampGap(pack.Gap);
             List<PrerecordedPart>? parts = [];
             foreach (GeneratedVoicePart part in template.Parts)
             {
@@ -61,7 +67,9 @@ public static class PrerecordedVoice
                     break;
                 }
 
-                parts.AddRange(said);
+                // The part's own pause goes before it; a time's hour, minutes and am/pm keep the pack's between them.
+                TimeSpan before = part.Gap is { } own ? GeneratedVoicePack.ClampGap(own) : gap;
+                parts.AddRange(said.Select((piece, index) => piece with { Before = index == 0 ? before : gap }));
             }
 
             if (parts is { Count: > 0 })
@@ -71,7 +79,7 @@ public static class PrerecordedVoice
         }
 
         return candidates.Count == 0 ? null
-            : new PrerecordedVoiceRequest(candidates, pack.Gap < TimeSpan.Zero ? TimeSpan.Zero : pack.Gap, config.Fit, config.SpeedUp, $"{seed}|prerecorded");
+            : new PrerecordedVoiceRequest(candidates, GeneratedVoicePack.ClampGap(pack.Gap), config.Fit, config.SpeedUp, $"{seed}|prerecorded", pack.TrimSilence);
     }
 
     /// <summary>
@@ -254,8 +262,17 @@ public static class PrerecordedVoice
             TimeSpan[][] lengths = [.. candidate.Parts.Select(part => part.Takes.Select(length).ToArray())];
             int[] picks = [.. candidate.Parts.Select((part, index) =>
                 UpNextPromo.Pick($"{request.Seed}|{candidate.Template}|{index}", part.Takes.Count))];
-            TimeSpan gaps = request.Gap * Math.Max(0, candidate.Parts.Count - 1);
-            TimeSpan Total() => gaps + TimeSpan.FromTicks(picks.Select((pick, index) => lengths[index][pick].Ticks).Sum());
+            TimeSpan Total()
+            {
+                TimeSpan total = lengths[0][picks[0]];
+                for (int index = 1; index < picks.Length; index++)
+                {
+                    TimeSpan take = lengths[index][picks[index]];
+                    total += Joint(candidate.Parts[index].Before, lengths[index - 1][picks[index - 1]], take) + take;
+                }
+
+                return total;
+            }
 
             // Too long: the part that can save the most switches to its shortest take, until it fits or can't get shorter.
             while (Total() > room)
@@ -312,8 +329,29 @@ public static class PrerecordedVoice
                 ? fitting.MaxBy(index => options[index].Total)
                 : fitting[UpNextPromo.Pick($"{request.Seed}|template", fitting.Count)];
 
-        (PrerecordedCandidate winner, int[] winning, _, TimeSpan length2) = options[chosen];
-        return new PrerecordedChoice(winner, [.. winning.Select((pick, index) => winner.Parts[index].Takes[pick])], length2);
+        (PrerecordedCandidate winner, int[] winning, TimeSpan[][] winningLengths, TimeSpan length2) = options[chosen];
+        List<TimeSpan> joints = [];
+        for (int index = 1; index < winning.Length; index++)
+        {
+            joints.Add(Joint(winner.Parts[index].Before, winningLengths[index - 1][winning[index - 1]], winningLengths[index][winning[index]]));
+        }
+
+        return new PrerecordedChoice(winner, [.. winning.Select((pick, index) => winner.Parts[index].Takes[pick])], length2, joints);
+    }
+
+    /// <summary>
+    /// The pause between two takes: <paramref name="before"/>, or for an overlap at most 40% of the shorter take, so a
+    /// crossfade never swallows a word whole.
+    /// </summary>
+    public static TimeSpan Joint(TimeSpan before, TimeSpan previous, TimeSpan next)
+    {
+        if (before >= TimeSpan.Zero)
+        {
+            return before;
+        }
+
+        TimeSpan most = TimeSpan.FromTicks((long)(Math.Min(previous.Ticks, next.Ticks) * 0.4));
+        return -before > most ? -most : before;
     }
 
     private static List<string> Usable(IEnumerable<GeneratedVoiceTake> takes) =>
