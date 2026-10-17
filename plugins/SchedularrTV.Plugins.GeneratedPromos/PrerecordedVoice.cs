@@ -125,6 +125,10 @@ public static class PrerecordedVoice
                 {
                     GeneratedVoicePhraseKind.ShowName => $"{name} has no recording of “{listing.Title}”",
                     GeneratedVoicePhraseKind.Day => $"{name} has no recording of “{GeneratedVoiceKeys.DayLabel(DayKeys(listing.Start, airsAt, zone)[^1])}” (or today/tonight/tomorrow)",
+                    GeneratedVoicePhraseKind.DayTime => $"{name} has no recording of “{GeneratedVoiceKeys.DayTimeLabel(GeneratedVoiceKeys.DayTime(DayKeys(listing.Start, airsAt, zone)[^1], WholeTimeKeys(phrase, listing.Start, zone, phrase.AmPmInTake)[^1]))}” (or today/tonight/tomorrow at that time)",
+                    GeneratedVoicePhraseKind.Time when phrase.Combined =>
+                        $"{name} has no whole take of “{GeneratedVoiceKeys.TimeLabel(WholeTimeKeys(phrase, listing.Start, zone, phrase.AmPmInTake)[^1])}”"
+                        + $"{(!phrase.TwentyFourHour && !phrase.AmPmInTake && phrase.SayAmPm ? " (with AM/PM)" : "")}, and its parts aren't all recorded",
                     _ => $"{name} is missing {string.Join(", ", TimeKeys(phrase, listing.Start, zone).Where(key => Entry(phrase, key) is null).Select(key => $"“{GeneratedVoiceKeys.TimeLabel(key)}”"))}"
                 });
             }
@@ -173,7 +177,28 @@ public static class PrerecordedVoice
 
                 return null;
 
+            case GeneratedVoicePhraseKind.DayTime:
+                foreach (string day in DayKeys(listing.Start, airsAt, zone))
+                {
+                    foreach (string time in WholeTimeKeys(phrase, listing.Start, zone, phrase.AmPmInTake))
+                    {
+                        string key = GeneratedVoiceKeys.DayTime(day, time);
+                        if (Entry(phrase, key) is { } takes)
+                        {
+                            return new[] { new PrerecordedPart(GeneratedVoiceKeys.DayTimeLabel(key), takes) };
+                        }
+                    }
+                }
+
+                return null;
+
             case GeneratedVoicePhraseKind.Time:
+                // Said whole when that time is recorded ("2:45 PM", or "2:45" then a separate "PM"); otherwise from its parts.
+                if (phrase.Combined && Whole(phrase, listing.Start, zone) is { } whole)
+                {
+                    return whole;
+                }
+
                 List<PrerecordedPart> parts = [];
                 foreach (string key in TimeKeys(phrase, listing.Start, zone))
                 {
@@ -210,6 +235,52 @@ public static class PrerecordedVoice
         return days == 1
             ? evening ? new[] { "tomorrow night", "tomorrow", weekday } : new[] { "tomorrow", weekday }
             : new[] { weekday };
+    }
+
+    /// <summary>
+    /// The whole-time keys a start time can be said with, best first: noon or midnight (for 12 o'clock), then the time
+    /// itself (<see cref="GeneratedVoiceKeys.WholeTime"/>), with AM/PM in it when <paramref name="amPm"/> on a 12-hour clock.
+    /// </summary>
+    public static IReadOnlyList<string> WholeTimeKeys(GeneratedVoicePhrase phrase, DateTimeOffset start, TimeZoneInfo zone, bool amPm)
+    {
+        DateTimeOffset local = TimeZoneInfo.ConvertTime(start, zone);
+        string time = GeneratedVoiceKeys.WholeTime(local.Hour, local.Minute, phrase.TwentyFourHour, amPm && !phrase.TwentyFourHour);
+        return local.Minute != 0 ? new[] { time }
+            : local.Hour == 12 ? new[] { GeneratedVoiceKeys.Noon, time }
+            : local.Hour == 0 ? new[] { GeneratedVoiceKeys.Midnight, time }
+            : new[] { time };
+    }
+
+    /// <summary>
+    /// A time said whole: its whole take, then a separate AM/PM take when that isn't in the whole one (and is said). Null
+    /// when the whole time (or that AM/PM) isn't recorded.
+    /// </summary>
+    private static IReadOnlyList<PrerecordedPart>? Whole(GeneratedVoicePhrase phrase, DateTimeOffset start, TimeZoneInfo zone)
+    {
+        bool separateAmPm = !phrase.TwentyFourHour && !phrase.AmPmInTake && phrase.SayAmPm;
+        foreach (string key in WholeTimeKeys(phrase, start, zone, phrase.AmPmInTake))
+        {
+            if (Entry(phrase, key) is not { } takes)
+            {
+                continue;
+            }
+
+            List<PrerecordedPart> parts = [new PrerecordedPart(GeneratedVoiceKeys.TimeLabel(key), takes)];
+            if (separateAmPm && key is not (GeneratedVoiceKeys.Noon or GeneratedVoiceKeys.Midnight))
+            {
+                string half = TimeZoneInfo.ConvertTime(start, zone).Hour < 12 ? GeneratedVoiceKeys.Am : GeneratedVoiceKeys.Pm;
+                if (Entry(phrase, half) is not { } halfTakes)
+                {
+                    return null;
+                }
+
+                parts.Add(new PrerecordedPart(GeneratedVoiceKeys.TimeLabel(half), halfTakes));
+            }
+
+            return parts;
+        }
+
+        return null;
     }
 
     /// <summary>

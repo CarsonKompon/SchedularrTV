@@ -79,6 +79,9 @@
     [Parameter] public TimeZoneInfo Zone { get; set; } = TimeZoneInfo.Local;
     [Parameter] public DateTimeOffset AirsAt { get; set; } = DateTimeOffset.Now;
 
+    /// <summary>The channel of the template the dialog was opened from, which "add shows" starts on.</summary>
+    [Parameter] public string? ChannelId { get; set; }
+
     /// <summary>How much time the voice-over has, for trying templates.</summary>
     [Parameter] public TimeSpan Room { get; set; } = TimeSpan.FromSeconds(9);
 
@@ -180,6 +183,7 @@
         GeneratedVoicePhraseKind.ShowName => "Show name",
         GeneratedVoicePhraseKind.Day => "Day",
         GeneratedVoicePhraseKind.Time => "Time",
+        GeneratedVoicePhraseKind.DayTime => "Day & time",
         _ => "Text"
     };
 
@@ -196,6 +200,8 @@
         {
             GeneratedVoicePhraseKind.ShowName => values == 1 ? "show" : "shows",
             GeneratedVoicePhraseKind.Day => values == 1 ? "day" : "days",
+            GeneratedVoicePhraseKind.DayTime => values == 1 ? "day & time" : "days & times",
+            GeneratedVoicePhraseKind.Time when phrase.Combined => values == 1 ? "time or part" : "times & parts",
             _ => values == 1 ? "part" : "parts"
         };
         return $"{values} {noun} · {recorded}";
@@ -246,7 +252,24 @@
                             break;
                         case GeneratedVoicePhraseKind.Time:
                             @(TimeSettings(phrase))
-                            @(KeyedEntries(phrase, GeneratedVoiceKeys.TimeParts(phrase.TwentyFourHour, phrase.SayAmPm), GeneratedVoiceKeys.TimeLabel, TimeHelp))
+                            @if (phrase.Combined)
+                            {
+                                @(KeyedEntries(phrase, GeneratedVoiceKeys.WholeTimes(phrase.TwentyFourHour, phrase.AmPmInTake && !phrase.TwentyFourHour, phrase.MinuteStep),
+                                    GeneratedVoiceKeys.TimeLabel, WholeTimeHelp(phrase)))
+                                <details class="voice-parts-fallback">
+                                    <summary>Separate parts (@PartsSummary(phrase))</summary>
+                                    @(KeyedEntries(phrase, GeneratedVoiceKeys.TimeParts(phrase.TwentyFourHour, phrase.SayAmPm), GeneratedVoiceKeys.TimeLabel,
+                                        "Used for any time that isn't recorded whole above" + (!phrase.TwentyFourHour && !phrase.AmPmInTake && phrase.SayAmPm ? ", and AM/PM here is said after every whole time." : ".")))
+                                </details>
+                            }
+                            else
+                            {
+                                @(KeyedEntries(phrase, GeneratedVoiceKeys.TimeParts(phrase.TwentyFourHour, phrase.SayAmPm), GeneratedVoiceKeys.TimeLabel, TimeHelp))
+                            }
+                            break;
+                        case GeneratedVoicePhraseKind.DayTime:
+                            @(TimeSettings(phrase))
+                            @(DayTimeEntries(phrase))
                             break;
                     }
                 }
@@ -271,7 +294,11 @@
     private RenderFragment ShowEntries(GeneratedVoicePhrase phrase) => __builder =>
     {
         string typed = _newShow.GetValueOrDefault(phrase.Id, string.Empty);
-        IReadOnlyList<string> unrecorded = ScheduledShows().Where(title => ShowTitleMatcher.Find(title, phrase.Entries, entry => entry.Key) is null).ToList();
+        IReadOnlyList<string> all = ScheduledShows(null);
+        IReadOnlyList<string> unrecorded = all.Where(title => ShowTitleMatcher.Find(title, phrase.Entries, entry => entry.Key) is null).ToList();
+        IReadOnlyList<string> fromSource = ScheduledShows(ShowSource);
+        IReadOnlyList<string> sourceMissing = fromSource.Where(title => ShowTitleMatcher.Find(title, phrase.Entries, entry => entry.Key) is null).ToList();
+        string sourceName = SourceName(ShowSource);
         <p class="hint">Show names are matched loosely (case, punctuation, a missing “The” and small typos are forgiven). A promo about a show with
             no recording here skips the templates that say its name.</p>
         @foreach (GeneratedVoiceEntry entry in phrase.Entries)
@@ -305,12 +332,42 @@
                 }
             </datalist>
             <button class="btn btn-sm" type="button" disabled="@string.IsNullOrWhiteSpace(typed)" @onclick="() => AddShow(phrase, typed)">Add show</button>
-            @if (unrecorded.Count > 0)
+        </div>
+        <div class="row row-wrap voice-show-source">
+            <select value="@ShowSource" aria-label="Channel or block to add shows from" @onchange="e => _showSource = e.Value?.ToString() ?? AllChannels">
+                <option value="@AllChannels">All channels</option>
+                @foreach (ChannelConfig channel in Editor.Working.Channels)
+                {
+                    <option value="@ChannelSource(channel.Id)">@ChannelLabel(channel)</option>
+                    @foreach (BlockConfig block in channel.Blocks.Where(block => !string.IsNullOrWhiteSpace(block.Name)))
+                    {
+                        <option value="@BlockSource(channel.Id, block.Name)">&nbsp;&nbsp;› @block.Name</option>
+                    }
+                }
+            </select>
+            @if (fromSource.Count == 0)
             {
-                <button class="btn btn-sm" type="button" title="@(string.Join(", ", unrecorded.Take(30)))"
-                        @onclick="() => AddShows(phrase, unrecorded)">Add the @unrecorded.Count scheduled @(unrecorded.Count == 1 ? "show" : "shows") not here yet</button>
+                <button class="btn btn-sm" type="button" disabled title="Nothing from here is on the current schedule">No scheduled shows in @sourceName</button>
+            }
+            else if (sourceMissing.Count == fromSource.Count)
+            {
+                <button class="btn btn-sm" type="button" title="@(string.Join(", ", fromSource.Take(30)))"
+                        @onclick="() => AddShows(phrase, fromSource)">Add all @fromSource.Count @(fromSource.Count == 1 ? "show" : "shows") from @sourceName</button>
+            }
+            else if (sourceMissing.Count > 0)
+            {
+                <button class="btn btn-sm" type="button" title="@(string.Join(", ", sourceMissing.Take(30)))"
+                        @onclick="() => AddShows(phrase, sourceMissing)">Add the remaining @sourceMissing.Count @(sourceMissing.Count == 1 ? "show" : "shows") not here yet</button>
+            }
+            else
+            {
+                <button class="btn btn-sm" type="button" disabled>All @fromSource.Count @(fromSource.Count == 1 ? "show" : "shows") from @sourceName are here</button>
             }
         </div>
+        @if (unrecorded.Count > 0 && phrase.Entries.Count > 0)
+        {
+            <p class="hint">@unrecorded.Count scheduled @(unrecorded.Count == 1 ? "show has" : "shows have") no recording here across all channels.</p>
+        }
     };
 
     private RenderFragment KeyedEntries(GeneratedVoicePhrase phrase, IReadOnlyList<string> keys, Func<string, string> label, string help) => __builder =>
@@ -342,19 +399,85 @@
 
     private RenderFragment TimeSettings(GeneratedVoicePhrase phrase) => __builder =>
     {
+        bool dayTime = phrase.Kind == GeneratedVoicePhraseKind.DayTime;
+        bool whole = dayTime || phrase.Combined;
         <div class="row row-wrap">
+            @if (!dayTime)
+            {
+                <label class="check">
+                    <input type="checkbox" checked="@phrase.Combined" @onchange="e => Set(() => phrase.Combined = e.Value is true)" />
+                    <span>Say the whole time in one take (“2:45”): more to record, more natural</span>
+                </label>
+            }
             <label class="check">
                 <input type="checkbox" checked="@phrase.TwentyFourHour" @onchange="e => Set(() => phrase.TwentyFourHour = e.Value is true)" />
-                <span>24-hour clock (hours 0–23, no am/pm)</span>
+                <span>24-hour clock (no AM/PM)</span>
             </label>
-            @if (!phrase.TwentyFourHour)
+            @if (!phrase.TwentyFourHour && whole)
+            {
+                <label class="check">
+                    <input type="checkbox" checked="@phrase.AmPmInTake" @onchange="e => Set(() => phrase.AmPmInTake = e.Value is true)" />
+                    <span>Include AM/PM in the take (“@(dayTime ? "Monday at 2:45 PM" : "2:45 PM")”)</span>
+                </label>
+            }
+            @if (!phrase.TwentyFourHour && (!whole || (!dayTime && !phrase.AmPmInTake)))
             {
                 <label class="check">
                     <input type="checkbox" checked="@phrase.SayAmPm" @onchange="e => Set(() => phrase.SayAmPm = e.Value is true)" />
-                    <span>Say “AM” / “PM” after the time</span>
+                    <span>Say “AM” / “PM” after the time@(whole ? " (as a separate take)" : "")</span>
+                </label>
+            }
+            @if (whole)
+            {
+                <label class="field voice-step" style="margin: 0;">
+                    <span>Times every</span>
+                    <select value="@GeneratedVoiceKeys.Step(phrase.MinuteStep)" @onchange="e => Set(() => phrase.MinuteStep = GeneratedVoiceKeys.Step(int.TryParse(e.Value?.ToString(), out int every) ? every : 15))">
+                        @foreach (int step in GeneratedVoiceKeys.MinuteSteps)
+                        {
+                            <option value="@step">@(step == 60 ? "hour" : $"{step} minutes")</option>
+                        }
+                    </select>
                 </label>
             }
         </div>
+    };
+
+    private string WholeTimeHelp(GeneratedVoicePhrase phrase) =>
+        $"Record each time whole, e.g. “{GeneratedVoiceKeys.TimeLabel(GeneratedVoiceKeys.WholeTime(14, 45, phrase.TwentyFourHour, phrase.AmPmInTake && !phrase.TwentyFourHour))}”. "
+        + "Noon and midnight are said instead of 12:00 when recorded. A show at a time that isn't listed or recorded here is said from the separate parts below, "
+        + "if those are recorded; otherwise templates that say it are skipped for that promo. Times on other minutes than these can't be said whole.";
+
+    private static string PartsSummary(GeneratedVoicePhrase phrase)
+    {
+        int recorded = GeneratedVoiceKeys.TimeParts(phrase.TwentyFourHour, phrase.SayAmPm)
+            .Count(key => phrase.Entries.Any(entry => string.Equals(entry.Key, key, StringComparison.OrdinalIgnoreCase) && entry.Takes.Count > 0));
+        return recorded == 0 ? "none recorded" : $"{recorded} recorded";
+    }
+
+    // The day whose times the day-and-time phrase is showing, by phrase.
+    private readonly Dictionary<string, string> _dayTimeDay = new(StringComparer.Ordinal);
+
+    private RenderFragment DayTimeEntries(GeneratedVoicePhrase phrase) => __builder =>
+    {
+        IReadOnlyList<string> times = GeneratedVoiceKeys.WholeTimes(phrase.TwentyFourHour, phrase.AmPmInTake && !phrase.TwentyFourHour, phrase.MinuteStep);
+        string day = _dayTimeDay.GetValueOrDefault(phrase.Id, GeneratedVoiceKeys.Days[0]);
+        int Recorded(string candidate) => times.Count(time => phrase.Entries.Any(entry =>
+            string.Equals(entry.Key, GeneratedVoiceKeys.DayTime(candidate, time), StringComparison.OrdinalIgnoreCase) && entry.Takes.Count > 0));
+        <div class="row row-wrap">
+            <label class="field" style="margin: 0;">
+                <span>Day</span>
+                <select value="@day" @onchange="e => _dayTimeDay[phrase.Id] = e.Value?.ToString() ?? GeneratedVoiceKeys.Days[0]">
+                    @foreach (string option in GeneratedVoiceKeys.Days)
+                    {
+                        int count = Recorded(option);
+                        <option value="@option">@GeneratedVoiceKeys.DayLabel(option)@(count > 0 ? $" ({count} recorded)" : "")</option>
+                    }
+                </select>
+            </label>
+        </div>
+        @(KeyedEntries(phrase, [.. times.Select(time => GeneratedVoiceKeys.DayTime(day, time))], GeneratedVoiceKeys.DayTimeLabel,
+            "One take per day and time, e.g. “Monday at 11:30” or “tonight at 8:00 PM”. A show today says “tonight” from 5pm when that's recorded, else “today”; "
+            + "tomorrow likewise; otherwise its weekday, which also stands in when those aren't recorded at that time. Noon and midnight are said instead of 12:00 when recorded."))
     };
 
     private async Task Open(GeneratedVoicePhrase phrase, string value, string key)
@@ -400,13 +523,50 @@
         phrase.Entries.Sort((a, b) => string.Compare(a.Key, b.Key, StringComparison.OrdinalIgnoreCase));
     });
 
-    /// <summary>The shows every channel's current schedule airs, for adding show names quickly.</summary>
-    private IReadOnlyList<string> ScheduledShows()
+    // Where "add shows" takes them from: every channel, one channel ("channel:<id>") or one of its blocks ("block:<id>|<name>";
+    // the first bar ends the id, as channel ids don't normally contain one).
+    private const string AllChannels = "all";
+    private string? _showSource;
+
+    /// <summary>The chosen source, at first the channel of the template the dialog was opened from.</summary>
+    private string ShowSource => _showSource ?? (string.IsNullOrWhiteSpace(ChannelId) ? AllChannels : ChannelSource(ChannelId));
+
+    private static string ChannelSource(string channelId) => $"channel:{channelId}";
+
+    private static string BlockSource(string channelId, string block) => $"block:{channelId}|{block}";
+
+    private static string ChannelLabel(ChannelConfig channel) => string.IsNullOrWhiteSpace(channel.Name) ? channel.Id : channel.Name;
+
+    private string SourceName(string source)
+    {
+        (string? channelId, string? block) = ParseSource(source);
+        if (channelId is null) return "all channels";
+        ChannelConfig? channel = Editor.Working.Channels.FirstOrDefault(candidate => string.Equals(candidate.Id, channelId, StringComparison.OrdinalIgnoreCase));
+        string name = channel is null ? channelId : ChannelLabel(channel);
+        return block is null ? name : $"{name} › {block}";
+    }
+
+    private static (string? ChannelId, string? Block) ParseSource(string? source)
+    {
+        if (source?.StartsWith("channel:", StringComparison.Ordinal) == true) return (source["channel:".Length..], null);
+        if (source?.StartsWith("block:", StringComparison.Ordinal) == true && source.IndexOf('|') is var split and > 0)
+            return (source["block:".Length..split], source[(split + 1)..]);
+        return (null, null);
+    }
+
+    /// <summary>
+    /// The shows the current schedule airs on <paramref name="source"/> (a channel, one of its blocks, or every channel when
+    /// null or "all"), for adding show names quickly.
+    /// </summary>
+    private IReadOnlyList<string> ScheduledShows(string? source)
     {
         if (Services.GetService<ScheduleCoordinator>() is not { } coordinator) return [];
+        (string? channelId, string? block) = ParseSource(source);
         return coordinator.Latest
+            .Where(schedule => channelId is null || string.Equals(schedule.ChannelId, channelId, StringComparison.OrdinalIgnoreCase))
             .SelectMany(schedule => schedule.Entries)
             .Where(entry => entry.Kind == ScheduleEntryKind.Program && entry.Item is not null && !entry.IsSlotIntro && !entry.IsSlotOutro)
+            .Where(entry => block is null || string.Equals(entry.BlockName, block, StringComparison.OrdinalIgnoreCase))
             .Select(entry => string.IsNullOrWhiteSpace(entry.Item!.SeriesName) ? entry.Item.Title : entry.Item.SeriesName)
             .Where(title => !string.IsNullOrWhiteSpace(title))
             .Select(title => title.Trim())

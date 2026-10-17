@@ -919,8 +919,14 @@ public enum GeneratedVoicePhraseKind
     /// <summary>When the show airs: today, tonight, tomorrow or a weekday, each with its own takes.</summary>
     Day,
 
-    /// <summary>The show's start time, said from recorded hours, minutes and am/pm ("8" "30" "pm").</summary>
-    Time
+    /// <summary>
+    /// The show's start time: said whole ("2:45 PM") when <see cref="GeneratedVoicePhrase.Combined"/> and that time is
+    /// recorded, otherwise from recorded hours, minutes and am/pm ("8" "30" "pm").
+    /// </summary>
+    Time,
+
+    /// <summary>When the show airs, day and time in one take: "Monday at 11:30", "tonight at 8:00 PM".</summary>
+    DayTime
 }
 
 /// <summary>
@@ -980,6 +986,21 @@ public sealed class GeneratedVoicePhrase
 
     /// <summary>Time phrases on a 12-hour clock: whether "am" or "pm" is said after the time.</summary>
     public bool SayAmPm { get; set; } = true;
+
+    /// <summary>
+    /// Time phrases: each time is recorded whole ("2:45"), keyed by <see cref="GeneratedVoiceKeys.WholeTime"/>; a time
+    /// without a whole take is said from its parts instead, when those are recorded.
+    /// </summary>
+    public bool Combined { get; set; }
+
+    /// <summary>
+    /// Whole times and day-and-time takes on a 12-hour clock: AM/PM is said in the take itself ("2:45 PM"). Off, a whole
+    /// time is followed by a separate "am"/"pm" take (when <see cref="SayAmPm"/>), and a day-and-time take has none.
+    /// </summary>
+    public bool AmPmInTake { get; set; } = true;
+
+    /// <summary>Whole times and day-and-time takes: how often in the hour there's a time to record (5 to 60 minutes).</summary>
+    public int MinuteStep { get; set; } = 15;
 }
 
 /// <summary>One value of a show name, day or time phrase, and its takes.</summary>
@@ -1068,7 +1089,7 @@ public static class GeneratedVoiceKeys
         return parts;
     }
 
-    /// <summary>A time part's label, for the editor.</summary>
+    /// <summary>A time part's (or whole time's) label, for the editor.</summary>
     public static string TimeLabel(string key) => key switch
     {
         Am => "AM",
@@ -1076,8 +1097,63 @@ public static class GeneratedVoiceKeys
         Noon => "Noon (optional)",
         Midnight => "Midnight (optional)",
         ":05" => ":05 (\"oh-five\")",
+        _ when key.EndsWith(" " + Am, StringComparison.Ordinal) => key[..^3] + " AM",
+        _ when key.EndsWith(" " + Pm, StringComparison.Ordinal) => key[..^3] + " PM",
         _ => key
     };
+
+    /// <summary>The minute steps whole times can be listed at.</summary>
+    public static readonly IReadOnlyList<int> MinuteSteps = [5, 10, 15, 20, 30, 60];
+
+    /// <summary><paramref name="step"/> if it's one of <see cref="MinuteSteps"/>, else 15.</summary>
+    public static int Step(int step) => MinuteSteps.Contains(step) ? step : 15;
+
+    /// <summary>
+    /// A whole time's key: <c>2:45</c>, <c>2:45 pm</c> with AM/PM, or <c>14:45</c> on a 24-hour clock (on the hour,
+    /// <c>2:00</c>).
+    /// </summary>
+    public static string WholeTime(int hour, int minute, bool twentyFourHour, bool amPm)
+    {
+        string minutes = minute.ToString("00", System.Globalization.CultureInfo.InvariantCulture);
+        if (twentyFourHour)
+        {
+            return $"{Hour(hour)}:{minutes}";
+        }
+
+        int twelve = hour % 12 == 0 ? 12 : hour % 12;
+        return $"{Hour(twelve)}:{minutes}" + (amPm ? " " + (hour < 12 ? Am : Pm) : string.Empty);
+    }
+
+    /// <summary>
+    /// Every whole time through the day at <paramref name="step"/> minutes, in order from midnight (the same time in the
+    /// morning and evening is one key without AM/PM), then noon and midnight.
+    /// </summary>
+    public static IReadOnlyList<string> WholeTimes(bool twentyFourHour, bool amPm, int step)
+    {
+        int every = Step(step);
+        List<string> times = [];
+        for (int minute = 0; minute < 24 * 60; minute += every)
+        {
+            string key = WholeTime(minute / 60, minute % 60, twentyFourHour, amPm);
+            if (!times.Contains(key)) times.Add(key);
+        }
+
+        times.Add(Noon);
+        times.Add(Midnight);
+        return times;
+    }
+
+    /// <summary>A day-and-time key: <c>monday at 11:30</c>, <c>tonight at 8:00 pm</c>, <c>tomorrow at noon</c>.</summary>
+    public static string DayTime(string day, string time) => $"{day} at {time}";
+
+    /// <summary>A day-and-time key's label, for the editor: "Monday at 11:30 AM".</summary>
+    public static string DayTimeLabel(string key)
+    {
+        int at = key.IndexOf(" at ", StringComparison.Ordinal);
+        if (at < 0) return key;
+        string time = key[(at + 4)..];
+        return $"{DayLabel(key[..at])} at {(time is Noon ? "noon" : time is Midnight ? "midnight" : TimeLabel(time))}";
+    }
 
     /// <summary>A day key's label, for the editor.</summary>
     public static string DayLabel(string key) => System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(key);

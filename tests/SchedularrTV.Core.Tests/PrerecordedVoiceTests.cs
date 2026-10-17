@@ -81,6 +81,47 @@ public sealed class PrerecordedVoiceTests : IDisposable
     }
 
     [Fact]
+    public void Whole_times_are_said_in_one_take_and_fall_back_to_parts()
+    {
+        (GeneratedVoicePack pack, _) = Pack();
+        GeneratedVoicePhrase time = pack.Phrases[3];
+        time.Combined = true;
+        time.Entries.Add(new() { Key = "8:30 pm", Takes = [Take("eight-thirty-pm")] });
+
+        IReadOnlyList<PrerecordedPart>? whole = PrerecordedVoice.Parts(time, 0, [new("Rugrats", At.AddHours(5.5))], TimeZoneInfo.Utc, At);
+        Assert.Equal("8:30 PM", Assert.Single(whole!).Label);
+
+        // 8:00 PM has no whole take, so it's said from its parts ("8" "PM").
+        IReadOnlyList<PrerecordedPart>? parts = PrerecordedVoice.Parts(time, 0, [new("Rugrats", At.AddHours(5))], TimeZoneInfo.Utc, At);
+        Assert.Equal(new[] { "8", "PM" }, parts!.Select(part => part.Label));
+
+        // Without AM/PM in the take, the whole time is followed by the separate "pm" take.
+        time.AmPmInTake = false;
+        time.Entries.Add(new() { Key = "8:30", Takes = [Take("eight-thirty")] });
+        whole = PrerecordedVoice.Parts(time, 0, [new("Rugrats", At.AddHours(5.5))], TimeZoneInfo.Utc, At);
+        Assert.Equal(new[] { "8:30", "PM" }, whole!.Select(part => part.Label));
+    }
+
+    [Fact]
+    public void Day_and_time_takes_fall_back_from_tonight_to_the_weekday()
+    {
+        GeneratedVoicePhrase dayTime = new()
+        {
+            Name = "When", Kind = GeneratedVoicePhraseKind.DayTime,
+            Entries = [new() { Key = "monday at 8:30 pm", Takes = [Take("monday-830")] }, new() { Key = "thursday at noon", Takes = [Take("thursday-noon")] }]
+        };
+
+        IReadOnlyList<PrerecordedPart>? tonight = PrerecordedVoice.Parts(dayTime, 0, [new("Rugrats", At.AddHours(5.5))], TimeZoneInfo.Utc, At);
+        Assert.Equal("Monday at 8:30 PM", Assert.Single(tonight!).Label);
+
+        IReadOnlyList<PrerecordedPart>? noon = PrerecordedVoice.Parts(dayTime, 0, [new("Rugrats", At.AddDays(2).AddHours(21))], TimeZoneInfo.Utc, At);
+        Assert.Equal("Thursday at noon", Assert.Single(noon!).Label);
+
+        Assert.Null(PrerecordedVoice.Parts(dayTime, 0, [new("Rugrats", At.AddHours(5))], TimeZoneInfo.Utc, At));
+        Assert.Contains("monday at 2:45 pm", GeneratedVoiceKeys.WholeTimes(false, true, 15).Select(time => GeneratedVoiceKeys.DayTime("monday", time)));
+    }
+
+    [Fact]
     public void Days_fall_back_to_the_weekday()
     {
         Assert.Equal(new[] { "tonight", "today", "monday" }, PrerecordedVoice.DayKeys(At.AddHours(5), At, TimeZoneInfo.Utc));

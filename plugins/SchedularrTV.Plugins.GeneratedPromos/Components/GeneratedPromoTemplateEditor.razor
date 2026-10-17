@@ -1317,7 +1317,7 @@
     @if (_voicePacksOpen)
     {
         <VoicePacksDialog Focus="@Template.Voice?.Prerecorded?.Pack" Changed="VoicePacksChanged" OnClose="() => _voicePacksOpen = false"
-                          PackChosen="PackCreated" Shows="@VoiceShows()" Zone="@Zone" AirsAt="@Preview.Now" Room="@VoiceRoom" />
+                          PackChosen="PackCreated" Shows="@VoiceShows()" ChannelId="@Channel.Id" Zone="@Zone" AirsAt="@Preview.Now" Room="@VoiceRoom" />
     }
 
     <h3 class="ed-section">Background music</h3>
