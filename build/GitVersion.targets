@@ -1,0 +1,50 @@
+<Project>
+
+  <!--
+    The version of a local build (dotnet run, dotnet build, Visual Studio) when none is given with -p:Version: numbered
+    just past the latest v* tag, as CI numbers its nightlies, but marked "dev". With v0.2.0 the latest tag it's
+    0.2.1-dev: newer than the release it's built after (so the update check doesn't offer that release), older than the
+    next. CI and scripts/package.ps1 always pass -p:Version, so their builds are numbered as before.
+
+    Import it near the top of a project, before anything sets Version, so a version given on the command line can be
+    told apart from the SDK's own default.
+  -->
+  <PropertyGroup>
+    <SchedularrTVVersionGiven Condition="'$(Version)' != ''">true</SchedularrTVVersionGiven>
+  </PropertyGroup>
+
+  <Target Name="SchedularrTVGitVersion"
+          BeforeTargets="GetAssemblyVersion;AddSourceRevisionToInformationalVersion;GenerateAssemblyInfo"
+          Condition="'$(SchedularrTVVersionGiven)' != 'true'">
+    <!-- Every v* tag, highest version first (git's own version sort), as CI picks the latest release. -->
+    <Exec Command="git tag --list &quot;v[0-9]*&quot; --sort=-v:refname"
+          WorkingDirectory="$(MSBuildThisFileDirectory).."
+          ConsoleToMSBuild="true"
+          IgnoreExitCode="true"
+          IgnoreStandardErrorWarningFormat="true"
+          StandardOutputImportance="low"
+          StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_SchedularrTVTags" />
+    </Exec>
+
+    <PropertyGroup>
+      <_SchedularrTVTag>$([System.Text.RegularExpressions.Regex]::Match('$(_SchedularrTVTags)', 'v(\d+)\.(\d+)\.(\d+)'))</_SchedularrTVTag>
+      <_SchedularrTVMajor>0</_SchedularrTVMajor>
+      <_SchedularrTVMinor>0</_SchedularrTVMinor>
+      <_SchedularrTVPatch>0</_SchedularrTVPatch>
+      <_SchedularrTVMajor Condition="'$(_SchedularrTVTag)' != ''">$([System.Text.RegularExpressions.Regex]::Match('$(_SchedularrTVTag)', 'v(\d+)\.(\d+)\.(\d+)').Groups[1].Value)</_SchedularrTVMajor>
+      <_SchedularrTVMinor Condition="'$(_SchedularrTVTag)' != ''">$([System.Text.RegularExpressions.Regex]::Match('$(_SchedularrTVTag)', 'v(\d+)\.(\d+)\.(\d+)').Groups[2].Value)</_SchedularrTVMinor>
+      <_SchedularrTVPatch Condition="'$(_SchedularrTVTag)' != ''">$([MSBuild]::Add($([System.Text.RegularExpressions.Regex]::Match('$(_SchedularrTVTag)', 'v(\d+)\.(\d+)\.(\d+)').Groups[3].Value), 1))</_SchedularrTVPatch>
+
+      <VersionPrefix>$(_SchedularrTVMajor).$(_SchedularrTVMinor).$(_SchedularrTVPatch)</VersionPrefix>
+      <VersionSuffix>dev</VersionSuffix>
+      <Version>$(VersionPrefix)-$(VersionSuffix)</Version>
+      <AssemblyVersion>$(VersionPrefix).0</AssemblyVersion>
+      <FileVersion>$(VersionPrefix).0</FileVersion>
+      <InformationalVersion>$(Version)</InformationalVersion>
+    </PropertyGroup>
+
+    <Message Importance="low" Text="SchedularrTV local build version: $(Version) (latest tag: '$(_SchedularrTVTag)')" />
+  </Target>
+
+</Project>

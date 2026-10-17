@@ -12,8 +12,10 @@
     <RootNamespace>SchedularrTV.Tray</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
-    <Version Condition="'$(Version)' == ''">0.1.0-dev</Version>
   </PropertyGroup>
+
+  <!-- A local build is numbered from the latest v* tag (0.2.1-dev after v0.2.0); CI passes its own -p:Version. -->
+  <Import Project="..\..\build\GitVersion.targets" />
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.22" />
