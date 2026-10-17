@@ -20,10 +20,9 @@ public sealed class GeneratedPromoEditorTests : IDisposable
     private static readonly DateTimeOffset Noon = new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero);
     private readonly string _directory = Path.Combine(Path.GetTempPath(), $"generated-promo-editor-{Guid.NewGuid():N}");
 
-    public void Dispose()
-    {
-        if (Directory.Exists(_directory)) Directory.Delete(_directory, true);
-    }
+    // A still preview extracts a background video's frames in the background, so its ffmpeg can still hold the video
+    // for a moment; the shared helper waits for it rather than failing the test.
+    public void Dispose() => TestFolders.Delete(_directory);
 
     [Theory]
     [InlineData("#FFC400", "#ffc400", 100)]
@@ -274,12 +273,13 @@ public sealed class GeneratedPromoEditorTests : IDisposable
         Assert.Contains("(say nothing)", html);
         Assert.DoesNotContain("block to show the promoted show", html);
 
+        // The show's own text layer is optional (a template can show its shows with variable images alone), so a
+        // template without one is still valid and still opens in the editor.
         channel.GeneratedPromos.Templates[0].Layers.RemoveAll(layer => layer.Kind == GeneratedLayerKind.UpNext);
         editor.Validate();
-        string invalid = await Render(renderer, channel);
-        Assert.Contains("block to show the promoted show", invalid);
-        Assert.Contains("up_next", invalid);
-        Assert.Contains("text layer.", invalid);
+        string withoutText = await Render(renderer, channel);
+        Assert.Contains("Promo canvas", withoutText);
+        Assert.DoesNotContain("block to show the promoted show", withoutText);
     }
 
     private static async Task<string> Render(HtmlRenderer renderer, ChannelConfig channel) =>

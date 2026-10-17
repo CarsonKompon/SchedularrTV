@@ -12,10 +12,14 @@ public class AdBreakMigrationTests
 
     private static readonly TemporalTagOptions Temporal = new();
 
+    private static int _number;
+
+    // Each channel has its own number, so the schedule is valid (two channels can't share one).
     private static ChannelConfig Channel(string id, string name) => new()
     {
         Id = id,
         Name = name,
+        Number = Interlocked.Increment(ref _number),
         BaseRotation = new ContentSelector { Query = "kind == 'Episode'" }
     };
 
@@ -105,7 +109,7 @@ public class AdBreakMigrationTests
 
         SchedulerConfig reloaded = SchedulerConfigLoader.Parse(SchedulerConfigLoader.Serialize(config));
         Assert.False(AdBreakMigration.Migrate(reloaded));
-        Assert.True(SchedulerConfigLoader.Validate(reloaded).IsValid);
+        Assert.Empty(SchedulerConfigLoader.Validate(reloaded).Errors);
         Assert.Equal(Ads(config, config.Channels[0]), Ads(reloaded, reloaded.Channels[0]));
     }
 

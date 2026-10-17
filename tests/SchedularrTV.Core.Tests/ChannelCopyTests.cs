@@ -107,9 +107,8 @@ public sealed class ChannelCopyTests : IDisposable
         copied.Anchors[0].Show!.Collection = "Other";
         copied.Interstitials!.Shows!.Collection = "Other";
         copied.InterstitialShows!.Query = "kind == 'Movie'";
-        copied.CommercialBaseTags!.Add("Other");
-        copied.PromoBaseTags!.Clear();
-        copied.Promos!.Windows[0].PromoTypes.Add("later");
+        // The channel's tag-based break settings were moved into an ad break when the schedule was saved.
+        copied.AdBreaks!.Add("Other");
         copied.Follow!.Blocks["archived block"] = null;
         copied.Follow.Shows["archived show"] = "Other";
         copied.Follow.Episodes[0].MediaId = "other-episode";

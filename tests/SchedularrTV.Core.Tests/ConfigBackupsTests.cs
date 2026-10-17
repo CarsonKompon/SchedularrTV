@@ -19,7 +19,10 @@ public sealed class ConfigBackupsTests : IDisposable
             ConfigPath = Path.Combine(_directory, "schedule.yaml"), WatchConfig = false, AutoRebuild = false, ConfigBackups = keep
         }), NullLogger<SchedulerConfigProvider>.Instance);
 
-    private static string Yaml(string seed) => SchedulerConfigLoader.Serialize(new SchedulerConfig { Settings = { Seed = seed } });
+    // Already moved to ad breaks, so saving and reading it leave the YAML exactly as written (an older schedule would be
+    // migrated on the way in, adding a migration backup and changing the file).
+    private static string Yaml(string seed) =>
+        SchedulerConfigLoader.Serialize(new SchedulerConfig { Settings = { Seed = seed, AdBreaksMigrated = true } });
 
     [Fact]
     public void Every_save_keeps_what_the_file_held_before_and_a_backup_can_be_restored()
