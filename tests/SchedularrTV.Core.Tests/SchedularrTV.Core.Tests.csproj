@@ -29,7 +29,6 @@
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.News\SchedularrTV.Plugins.News.csproj" />
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.SerpApi\SchedularrTV.Plugins.SerpApi.csproj" />
     <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.Klipy\SchedularrTV.Plugins.Klipy.csproj" />
-    <ProjectReference Include="..\..\plugins\SchedularrTV.Plugins.GoogleImages\SchedularrTV.Plugins.GoogleImages.csproj" />
   </ItemGroup>
 
   <ItemGroup>
