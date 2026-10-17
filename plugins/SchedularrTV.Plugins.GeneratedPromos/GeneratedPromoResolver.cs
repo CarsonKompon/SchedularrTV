@@ -932,6 +932,8 @@ public static partial class GeneratedPromoResolver
                     ? lines
                     : lines.Select(line => GeneratedTextStyle.Cased(line, layer.TextCase)).ToList(),
                 WordWrap = layer.WordWrap == true,
+                LetterSpacing = SchedularrTV.Service.Rendering.TextFit.LetterSpacing(layer.LetterSpacing),
+                LineSpacing = SchedularrTV.Service.Rendering.TextFit.LineSpacing(layer.LineSpacing),
                 VerticalAlign = layer.VerticalAlign switch
                 {
                     GeneratedVerticalAlign.Middle => PromoVerticalAlign.Middle,

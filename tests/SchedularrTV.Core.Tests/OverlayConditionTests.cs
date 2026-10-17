@@ -138,6 +138,33 @@ public class OverlayConditionTests
     }
 
     [Fact]
+    public void Letter_and_line_spacing_are_measured_and_part_of_the_fit()
+    {
+        using var font = new SkiaSharp.SKFont(SkiaSharp.SKTypeface.Default, 20);
+        using var paint = new SkiaSharp.SKPaint();
+        float plain = SchedularrTV.Service.Rendering.TextFit.Measure("ABCDE", font, paint);
+
+        // 10% of a 20px font between each of the five letters' four gaps.
+        Assert.Equal(plain + 8, SchedularrTV.Service.Rendering.TextFit.Measure("ABCDE", font, paint, 0.1f), 2);
+        Assert.Equal(plain, SchedularrTV.Service.Rendering.TextFit.Measure("ABCDE", font, paint, 0f));
+        Assert.Equal(font.Spacing * 3, SchedularrTV.Service.Rendering.TextFit.Block(font, 3, 1), 2);
+        Assert.Equal(font.Spacing * 4, SchedularrTV.Service.Rendering.TextFit.Block(font, 3, 1.5f), 2);
+
+        // Spaced-out text shrinks further to fit the same box.
+        var box = new SkiaSharp.SKRect(0, 0, plain + 2, 100);
+        using var normal = new SkiaSharp.SKFont(SkiaSharp.SKTypeface.Default, 20);
+        using var spaced = new SkiaSharp.SKFont(SkiaSharp.SKTypeface.Default, 20);
+        SchedularrTV.Service.Rendering.TextFit.Fit(["ABCDE"], box, normal, paint, wrap: false);
+        SchedularrTV.Service.Rendering.TextFit.Fit(["ABCDE"], box, spaced, paint, wrap: false, letterSpacing: 0.5f);
+        Assert.True(spaced.Size < normal.Size);
+
+        // Settings: percent to fraction, nonsense to neutral.
+        Assert.Equal(0.1f, SchedularrTV.Service.Rendering.TextFit.LetterSpacing(10), 3);
+        Assert.Equal(0f, SchedularrTV.Service.Rendering.TextFit.LetterSpacing(null));
+        Assert.Equal(1f, SchedularrTV.Service.Rendering.TextFit.LineSpacing(float.NaN));
+    }
+
+    [Fact]
     public void Either_choice_comes_up_across_airings()
     {
         Overlay first = new() { Name = "A", When = OverlayWhen.Always, Additive = false };

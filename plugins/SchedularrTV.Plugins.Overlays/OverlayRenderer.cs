@@ -201,10 +201,16 @@ public sealed class OverlayRenderer(Func<string> folder)
     }
 
     // Text cased or placed up and down its box: only then are those part of the hash, so other drawings are kept.
-    private static object Styled(OverlayLayer layer, object look) =>
-        layer.VerticalAlign is null && layer.TextCase is null && layer.WordWrap is null
+    private static object Styled(OverlayLayer layer, object look)
+    {
+        object styled = layer.VerticalAlign is null && layer.TextCase is null && layer.WordWrap is null
             ? look
             : new { Look = look, VerticalAlign = layer.VerticalAlign?.ToString(), TextCase = layer.TextCase?.ToString(), layer.WordWrap };
+        // Spacing likewise: only spaced text hashes differently.
+        return layer.LetterSpacing is null && layer.LineSpacing is null
+            ? styled
+            : new { Styled = styled, layer.LetterSpacing, layer.LineSpacing };
+    }
 
     // A layer as its drawing depends on it. Layers using none of the newer settings hash as they always have, so their
     // drawings are kept.
@@ -516,8 +522,11 @@ public sealed class OverlayRenderer(Func<string> folder)
         // Long text shrinks to fit the box rather than run out of it (shared with generated promos); with word wrap it
         // breaks between words (and at new lines) first.
         bool wrap = layer.WordWrap == true;
+        float letterSpacing = SchedularrTV.Service.Rendering.TextFit.LetterSpacing(layer.LetterSpacing);
+        float lineSpacing = SchedularrTV.Service.Rendering.TextFit.LineSpacing(layer.LineSpacing);
         IReadOnlyList<string> lines = SchedularrTV.Service.Rendering.TextFit.Fit(
-            wrap ? text.Replace("\r\n", "\n").Split('\n') : [text], bounds, font, paint, wrap, heightAllowance: wrap ? 1f : 1.15f);
+            wrap ? text.Replace("\r\n", "\n").Split('\n') : [text], bounds, font, paint, wrap, heightAllowance: wrap ? 1f : 1.15f,
+            letterSpacing: letterSpacing, lineSpacing: lineSpacing);
 
         SKTextAlign align = layer.Align switch
         {
@@ -542,12 +551,13 @@ public sealed class OverlayRenderer(Func<string> folder)
                 GeneratedVerticalAlign.Bottom => bounds.Bottom - metrics.Descent,
                 _ => bounds.MidY - (metrics.Ascent + metrics.Descent) / 2
             };
-            canvas.DrawText(lines.Count == 0 ? text : lines[0], x, y, align, font, paint);
+            SchedularrTV.Service.Rendering.TextFit.Draw(canvas, lines.Count == 0 ? text : lines[0], x, y, align, font, paint, letterSpacing);
             return;
         }
 
         // Wrapped lines go as a block, placed like the generated promos' text.
-        float block = font.Spacing * lines.Count;
+        float block = SchedularrTV.Service.Rendering.TextFit.Block(font, lines.Count, lineSpacing);
+        float lineHeight = SchedularrTV.Service.Rendering.TextFit.LineHeight(font, lineSpacing);
         float top = layer.VerticalAlign switch
         {
             GeneratedVerticalAlign.Top => bounds.Top,
@@ -556,8 +566,8 @@ public sealed class OverlayRenderer(Func<string> folder)
         } - metrics.Ascent;
         foreach (string line in lines)
         {
-            canvas.DrawText(line, x, top, align, font, paint);
-            top += font.Spacing;
+            SchedularrTV.Service.Rendering.TextFit.Draw(canvas, line, x, top, align, font, paint, letterSpacing);
+            top += lineHeight;
         }
     }
 

@@ -109,6 +109,12 @@ public sealed record PromoTextLayer : PromoLayer
     /// <summary>Long lines break between words to fill the box's width before the text shrinks.</summary>
     public bool WordWrap { get; init; }
 
+    /// <summary>Extra space between letters, as a fraction of the font size (0 is the font's own).</summary>
+    public float LetterSpacing { get; init; }
+
+    /// <summary>The distance between lines, as a multiple of the font's own.</summary>
+    public float LineSpacing { get; init; } = 1;
+
     public SKColor? Shadow { get; init; } = new SKColor(0, 0, 0, 160);
 }
 

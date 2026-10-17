@@ -265,7 +265,7 @@ In YAML a group is a layer with `kind: group` and an `id`; layers inside it name
 
 ### Text style
 
-Text, show and Up Next layers shrink their text to fit the box. The **Align in its box** pad sets both directions at once: left, centre or right, and top, middle or bottom. **Letters** can make every letter uppercase or lowercase, including show titles and AI-written text. In YAML these are `align`, `vertical_align` (`top`, `middle`, `bottom`; top when left out) and `text_case` (`upper` or `lower`; as written when left out). **Word wrap** (`word_wrap: true`) breaks long lines between words to fill the box's width before the text shrinks. Overlays' text layers share these same controls.
+Text, show and Up Next layers shrink their text to fit the box. The **Align in its box** pad sets both directions at once: left, centre or right, and top, middle or bottom. **Letters** can make every letter uppercase or lowercase, including show titles and AI-written text. In YAML these are `align`, `vertical_align` (`top`, `middle`, `bottom`; top when left out) and `text_case` (`upper` or `lower`; as written when left out). **Word wrap** (`word_wrap: true`) breaks long lines between words to fill the box's width before the text shrinks. **Letter spacing** adds space between letters as a percentage of the text size (`letter_spacing: 10` spaces them out a little; negative values, down to -50, tighten them), and **Line spacing** sets the distance between lines as a multiple of the font's own (`line_spacing: 1.4`; 0.3 to 5). Both are part of the fit, so spaced-out text still shrinks to fit its box. Left empty, the font's own spacing is used. Overlays' text layers share these same controls.
 
 ### Backgrounds
 

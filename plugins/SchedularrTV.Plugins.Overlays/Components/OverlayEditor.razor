@@ -491,8 +491,14 @@
                                     <label class="check"><input type="checkbox" checked="@selected.Shadow" @onchange="e => Set(() => selected.Shadow = e.Value is true)" /><span>Drop shadow</span></label>
                                     <label class="check"><input type="checkbox" checked="@(selected.WordWrap == true)" @onchange="e => Set(() => selected.WordWrap = e.Value is true ? true : null)" /><span>Word wrap</span></label>
                                 </div>
+                                <label class="field"><span>Letter spacing (% of the size; negative is tighter)</span>
+                                    <input type="number" min="-50" max="200" step="1" value="@OptionalNumber(selected.LetterSpacing)" placeholder="0"
+                                           @onchange="e => SetOptionalNumber(e, value => selected.LetterSpacing = value, neutral: 0, min: -50, max: 200)" /></label>
+                                <label class="field"><span>Line spacing (× the font's own)</span>
+                                    <input type="number" min="0.3" max="5" step="0.05" value="@OptionalNumber(selected.LineSpacing)" placeholder="1"
+                                           @onchange="e => SetOptionalNumber(e, value => selected.LineSpacing = value, neutral: 1, min: 0.3f, max: 5)" /></label>
                             </div>
-                            <p class="hint">Text shrinks to fit its box@(selected.WordWrap == true ? ", after long lines wrap between words (and at new lines)" : "").</p>
+                            <p class="hint">Text shrinks to fit its box@(selected.WordWrap == true ? ", after long lines wrap between words (and at new lines)" : ""), spacing included. Line spacing applies to wrapped text.</p>
                         }
                         else if (selected.Kind == OverlayLayerKinds.Image)
                         {
@@ -2234,6 +2240,29 @@
     private static string Percent(TimeSpan value) => (value.TotalMilliseconds / SampleLength.TotalMilliseconds * 100).ToString("0.###", CultureInfo.InvariantCulture) + "%";
 
     private static string Number(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+
+    private static string OptionalNumber(float? value) => value is { } set ? Number(set) : string.Empty;
+
+    /// <summary>
+    /// A setting that's left out when blank or set to its <paramref name="neutral"/> value (so designs that don't use it
+    /// keep their drawings), else kept within its range.
+    /// </summary>
+    private Task SetOptionalNumber(ChangeEventArgs e, Action<float?> apply, float neutral, float min, float max)
+    {
+        string text = e.Value?.ToString()?.Trim() ?? string.Empty;
+        if (text.Length == 0)
+        {
+            return Set(() => apply(null));
+        }
+
+        if (!float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value) || !float.IsFinite(value))
+        {
+            return Task.CompletedTask;
+        }
+
+        float kept = Math.Clamp(value, min, max);
+        return Set(() => apply(Math.Abs(kept - neutral) < 0.0001f ? null : kept));
+    }
 
     private static string ColourValue(string? value) => value is { Length: 7 } && value[0] == '#' ? value.ToLowerInvariant() : White;
 

@@ -459,6 +459,15 @@ public sealed class OverlayLayer
     /// <summary>Breaks long text between words (and at new lines) to fill the box before it shrinks; null is off.</summary>
     public bool? WordWrap { get; set; }
 
+    /// <summary>
+    /// Extra space between letters, as a percentage of the font size (negative tightens, -50 to 200); null is the font's
+    /// own, so older designs keep their drawings.
+    /// </summary>
+    public float? LetterSpacing { get; set; }
+
+    /// <summary>The distance between lines, as a multiple of the font's own (0.3 to 5); null is the font's own.</summary>
+    public float? LineSpacing { get; set; }
+
     /// <summary><see cref="Align"/> as the shared alignment pad reads it.</summary>
     [YamlDotNet.Serialization.YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
     public GeneratedTextAlign HorizontalAlign

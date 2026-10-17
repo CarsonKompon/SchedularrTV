@@ -1318,6 +1318,20 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public bool? WordWrap { get; set; }
 
+    /// <summary>
+    /// Extra space between letters, as a percentage of the font size (10 spaces them out a little, negative tightens
+    /// them, -50 to 200). Null (the font's own spacing) keeps render keys of older templates.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public float? LetterSpacing { get; set; }
+
+    /// <summary>
+    /// The distance between lines, as a multiple of the font's own (1.5 is half as much again, 0.8 tighter; 0.3 to 5).
+    /// Null (the font's own) keeps render keys of older templates.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public float? LineSpacing { get; set; }
+
     public bool Shadow { get; set; } = true;
 
     public GeneratedUpNextOptions? UpNext { get; set; }

@@ -124,7 +124,7 @@ Keyframe times are from the start of each appearance and opacity is 0–100, lik
 | **`{new}`** | `NEW` when this programme is a new episode, else blank |
 | **`{next_new}`** | `NEW` when the next programme is a new episode, else blank |
 
-Text layers share the generated promo editor's text controls: **Align in its box** is a 3 × 3 pad placing the text left, centre or right and top, middle or bottom (middle by default), and **Letters** can force ALL UPPERCASE or all lowercase, filled-in tokens and AI-written text included. **Word wrap** breaks long text between words (and at new lines) to fill the box before it shrinks. In YAML: `vertical_align: bottom`, `text_case: upper`, `word_wrap: true`.
+Text layers share the generated promo editor's text controls: **Align in its box** is a 3 × 3 pad placing the text left, centre or right and top, middle or bottom (middle by default), and **Letters** can force ALL UPPERCASE or all lowercase, filled-in tokens and AI-written text included. **Word wrap** breaks long text between words (and at new lines) to fill the box before it shrinks. **Letter spacing** adds space between letters as a percentage of the text size (negative tightens), and **Line spacing** sets the distance between wrapped lines as a multiple of the font's own; both are part of the fit. In YAML: `vertical_align: bottom`, `text_case: upper`, `word_wrap: true`, `letter_spacing: 10`, `line_spacing: 1.3`.
 
 ### Video and file overlays
 

@@ -409,7 +409,9 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         paint.ImageFilter = shadow;
 
         // Shrinks to fit (shared with overlays), wrapping between words first when the layer asks to.
-        IReadOnlyList<string> lines = SchedularrTV.Service.Rendering.TextFit.Fit(layer.Lines, bounds, font, paint, layer.WordWrap);
+        // Letter and line spacing are part of the fit, so spaced-out text still fits its box.
+        IReadOnlyList<string> lines = SchedularrTV.Service.Rendering.TextFit.Fit(layer.Lines, bounds, font, paint, layer.WordWrap,
+            letterSpacing: layer.LetterSpacing, lineSpacing: layer.LineSpacing);
 
         float x = layer.Align switch
         {
@@ -417,7 +419,7 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             SKTextAlign.Right => bounds.Right,
             _ => bounds.Left
         };
-        float block = font.Spacing * lines.Count;
+        float block = SchedularrTV.Service.Rendering.TextFit.Block(font, lines.Count, layer.LineSpacing);
         float y = layer.VerticalAlign switch
         {
             PromoVerticalAlign.Middle => bounds.Top + (bounds.Height - block) / 2,
@@ -425,10 +427,11 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             _ => bounds.Top
         } - font.Metrics.Ascent;
 
+        float lineHeight = SchedularrTV.Service.Rendering.TextFit.LineHeight(font, layer.LineSpacing);
         foreach (string line in lines)
         {
-            canvas.DrawText(line, x, y, layer.Align, font, paint);
-            y += font.Spacing;
+            SchedularrTV.Service.Rendering.TextFit.Draw(canvas, line, x, y, layer.Align, font, paint, layer.LetterSpacing);
+            y += lineHeight;
         }
     }
 

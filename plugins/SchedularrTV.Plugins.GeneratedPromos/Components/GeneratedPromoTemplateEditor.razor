@@ -928,7 +928,19 @@
                                 </label>
                             </div>
                         </div>
-                        <p class="hint">Text shrinks to fit its box@(selected.WordWrap == true ? ", after long lines wrap between words" : "").</p>
+                        <div class="grid grid-2">
+                            <label class="field">
+                                <span>Letter spacing (% of the size; negative is tighter)</span>
+                                <input type="number" min="-50" max="200" step="1" value="@OptionalNumber(selected.LetterSpacing)" placeholder="0"
+                                       @onchange="e => SetOptionalNumber(e, value => selected.LetterSpacing = value, neutral: 0, min: -50, max: 200)" />
+                            </label>
+                            <label class="field">
+                                <span>Line spacing (× the font's own)</span>
+                                <input type="number" min="0.3" max="5" step="0.05" value="@OptionalNumber(selected.LineSpacing)" placeholder="1"
+                                       @onchange="e => SetOptionalNumber(e, value => selected.LineSpacing = value, neutral: 1, min: 0.3f, max: 5)" />
+                            </label>
+                        </div>
+                        <p class="hint">Text shrinks to fit its box@(selected.WordWrap == true ? ", after long lines wrap between words" : ""), spacing included.</p>
                     }
 
                     @if (selected.Kind == GeneratedLayerKind.Group)
@@ -1753,6 +1765,18 @@
 
     private Task SetSeconds(ChangeEventArgs e, Action<TimeSpan> apply, double min = 0) =>
         SetNumber(e, value => apply(TimeSpan.FromSeconds(Math.Round(Math.Max(min, value), 3))));
+
+    /// <summary>
+    /// A setting that's left out when blank or set to its <paramref name="neutral"/> value (so templates that don't use
+    /// it keep their render keys), else kept within its range.
+    /// </summary>
+    private Task SetOptionalNumber(ChangeEventArgs e, Action<float?> apply, float neutral, float min, float max) =>
+        string.IsNullOrWhiteSpace(Text(e)) ? Set(() => apply(null))
+        : float.TryParse(Text(e), NumberStyles.Float, CultureInfo.InvariantCulture, out float value) && float.IsFinite(value)
+            ? Set(() => apply(Math.Abs(Math.Clamp(value, min, max) - neutral) < 0.0001f ? null : Math.Clamp(value, min, max)))
+            : Task.CompletedTask;
+
+    private static string OptionalNumber(float? value) => value is { } set ? Number(set) : string.Empty;
 
     private Task SetOptionalSeconds(ChangeEventArgs e, Action<TimeSpan?> apply) =>
         string.IsNullOrWhiteSpace(Text(e)) ? Set(() => apply(null)) : SetSeconds(e, value => apply(value));
