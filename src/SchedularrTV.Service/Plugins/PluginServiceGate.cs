@@ -37,6 +37,7 @@ public static class PluginServiceGate
         typeof(ILiveViewerSource),
         typeof(IMusicLibrary),
         typeof(ITextToSpeechProvider),
+        typeof(ISpeechTranscriber),
         typeof(SchedularrTV.Plugins.Writing.ITextGenerator),
         typeof(PlannerFeature),
         typeof(IScheduleFinisher),

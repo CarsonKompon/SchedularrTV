@@ -1,0 +1,263 @@
+@* A video layer's clips curated by AI: which episode they come from, how the voice-over around them is written, and
+   how the clips play. Shown in the template editor under the layer's "Plays". *@
+@using System.Globalization
+
+<div class="curated-clips">
+    @if (VoiceOff)
+    {
+        <p class="hint warn">Switch the template's voice-over on: the curated clips are talked about in it. Until then the layer @FallbackText.</p>
+    }
+    @if (OtherCurated is { } other)
+    {
+        <p class="hint warn">Only one layer is curated per promo, and <strong>@other</strong> comes first, so this one @FallbackText.</p>
+    }
+    <label class="field">
+        <span>Clips from</span>
+        <select value="@(Video.Episode ?? Promoted)" @onchange="e => Set(() => Video.Episode = Value(e) ?? Promoted)">
+            @foreach (string selector in Selectors)
+            {
+                <option value="@selector">@(SourceName(selector).Replace("A clip of ", string.Empty, StringComparison.Ordinal))</option>
+            }
+        </select>
+    </label>
+
+    <h4>Voice-over</h4>
+    <p class="hint">
+        The voice-over section's <strong>Said first</strong> and <strong>Said last</strong> (one of each picked per promo) are said
+        exactly as written, over the usual background, with the AI's lines in between. There, <code>@ShowToken</code>,
+        <code>@EpisodeToken</code>, <code>@TimeToken</code> ("7", "7:30"), <code>@WhenToken</code> ("tonight at 7"),
+        <code>@DayToken</code> ("tonight") and <code>@ChannelToken</code> are filled in, e.g. <em>@CloserExample</em>. When one names
+        the show the AI doesn't have to, and with a closer it leaves the sign-off to you, so far fewer plans are set aside.
+        Left empty, nothing extra is said (the usual opener isn't added).
+    </p>
+    <details class="curated-help">
+        <summary>How to direct the AI</summary>
+        <p class="hint">
+            Small models do best with one clear idea, said the way you'd brief an announcer. The AI already knows the show,
+            when it's on, the channel and (if allowed) what the episode is about, and sees the moments it can pick from; you
+            don't need to repeat those. Tell it the angle, the mood, or the shape:
+        </p>
+        <ul class="hint">
+            <li><em>The theme: Mondays are all about mayhem. Pick the loudest arguments.</em></li>
+            <li><em>Ask the viewer a silly question, let a clip answer it, then reply to the clip.</em></li>
+            <li><em>Build up: calm, then chaos. Short punchy lines.</em></li>
+            <li><em>Tease the episode's big mystery without giving away the ending.</em></li>
+        </ul>
+        <p class="hint">
+            Put the voice and personality in <strong>How it should sound</strong> ("a deadpan movie-trailer announcer"),
+            and the fixed parts (the show's name, the time, the channel) in <strong>Said first</strong> / <strong>Said last</strong>,
+            not in the direction: the AI may reword or drop them, the fixed lines never do. Add several directions to vary
+            the promos: each one gets one of them. Use <strong>Try it</strong> a few times: each try is a fresh plan (with
+            one of the directions), and the hint under it says why one was set aside.
+        </p>
+    </details>
+    <AiTextSettings Config="Curated.Writer" Changed="Changed" ShowPrompt="false"
+                    StylePlaceholder="A playful late-90s kids' channel announcer" WordsPlaceholder="From the promo's length"
+                    Try="Try" TryHint="Transcribes the episode first if it hasn't been (a few minutes), then writes a plan for it.">
+        <div class="field">
+            <span>What the voice-over should do (one is picked for each promo; optional)</span>
+            @{ List<string> directions = Directions(); }
+            @for (int index = 0; index < directions.Count; index++)
+            {
+                int at = index;
+                <div class="curated-direction">
+                    <textarea rows="3" placeholder="@PromptPlaceholder" aria-label="@DirectionLabel(at)"
+                              @onchange="e => Set(() => directions[at] = e.Value?.ToString() ?? string.Empty)">@directions[at]</textarea>
+                    <button class="btn btn-sm btn-ghost" type="button" title="Remove this direction" @onclick="() => Set(() => directions.RemoveAt(at))">✕</button>
+                </div>
+            }
+            @if (directions.Count == 0)
+            {
+                <p class="hint" style="margin:0;">No direction: it just promotes the show with the moments it likes best.</p>
+            }
+            <div>
+                <button class="btn btn-sm" type="button" @onclick="() => Set(() => directions.Add(string.Empty))">+ Direction</button>
+            </div>
+        </div>
+    </AiTextSettings>
+    <div class="grid grid-2">
+        <label class="field">
+            <span>Talks about</span>
+            <select value="@Curated.About" @onchange="e => Set(() => Curated.About = Enum.Parse<GeneratedCurationFocus>(Value(e) ?? nameof(GeneratedCurationFocus.Episode)))">
+                <option value="@GeneratedCurationFocus.Episode">This episode</option>
+                <option value="@GeneratedCurationFocus.Show">The show in general</option>
+            </select>
+        </label>
+        <label class="field">
+            <span>At most (clips)</span>
+            <input type="number" min="1" max="8" step="1" value="@Curated.Clips.ToString(CultureInfo.InvariantCulture)"
+                   @onchange="e => SetNumber(e, value => Curated.Clips = (int)Math.Clamp(Math.Round(value), 1, 8))" />
+        </label>
+        <label class="field">
+            <span>Shortest clip (s)</span>
+            <input type="number" min="0.5" max="10" step="0.1" value="@Number(Curated.MinClip.TotalSeconds)"
+                   @onchange="e => SetNumber(e, value => Curated.MinClip = TimeSpan.FromSeconds(Math.Round(Math.Clamp(value, 0.5, 10), 2)))" />
+        </label>
+        <label class="field">
+            <span>Longest clip (s)</span>
+            <input type="number" min="1" max="15" step="0.1" value="@Number(Curated.MaxClip.TotalSeconds)"
+                   @onchange="e => SetNumber(e, value => Curated.MaxClip = TimeSpan.FromSeconds(Math.Round(Math.Clamp(value, 1, 15), 2)))" />
+        </label>
+    </div>
+    <div class="grid grid-2">
+        <label class="field">
+            <span>Clips from (% into the episode)</span>
+            <input type="number" min="0" max="100" step="1" value="@Number(Curated.FromPercent)"
+                   @onchange="e => SetNumber(e, value => Curated.FromPercent = Math.Clamp(Math.Round(value, 1), 0, 100))" />
+        </label>
+        <label class="field">
+            <span>Clips until (% into the episode)</span>
+            <input type="number" min="0" max="100" step="1" value="@Number(Curated.UntilPercent)"
+                   @onchange="e => SetNumber(e, value => Curated.UntilPercent = Math.Clamp(Math.Round(value, 1), 0, 100))" />
+        </label>
+    </div>
+    @if (Curated.UntilPercent <= Curated.FromPercent)
+    {
+        <p class="hint warn">"Until" has to be after "From"; until it is, clips can come from anywhere in the episode.</p>
+    }
+    else
+    {
+        <p class="hint">Leaves out the intro and credits: in a 22-minute episode, @Number(Curated.FromPercent)% is @Minutes(Curated.FromPercent) in and @Number(Curated.UntilPercent)% is @Minutes(Curated.UntilPercent).</p>
+    }
+    <label class="check">
+        <input type="checkbox" checked="@Curated.PickClipsFirst" @onchange="e => Set(() => Curated.PickClipsFirst = e.Value is true)" />
+        <span>Pick the clips first, then write around them (two requests to the AI; easier for small models)</span>
+    </label>
+    @if (Curated.MaxClip < Curated.MinClip)
+    {
+        <p class="hint warn">The longest clip is shorter than the shortest, so clips are only as long as the shortest.</p>
+    }
+
+    <h4>How the clips play</h4>
+    <label class="field">
+        <span>When a promo can't be curated</span>
+        <select value="@Curated.WhenNotCurated" @onchange="e => Set(() => Curated.WhenNotCurated = Enum.Parse<GeneratedCurationFallback>(Value(e) ?? nameof(GeneratedCurationFallback.Nothing)))">
+            <option value="@GeneratedCurationFallback.Nothing">Show no clip (the background and layers underneath show)</option>
+            <option value="@GeneratedCurationFallback.OneClip">Play one clip of the episode the whole time</option>
+        </select>
+    </label>
+    <label class="check">
+        <input type="checkbox" checked="@Curated.ClipUnderEveryLine" @onchange="e => Set(() => Curated.ClipUnderEveryLine = e.Value is true)" />
+        <span>Play a clip under every line (lines the AI left without one get a moment it didn't use, or another bit of the episode)</span>
+    </label>
+    <label class="check">
+        <input type="checkbox" checked="@Curated.LetClipsSpeak" @onchange="e => Set(() => Curated.LetClipsSpeak = e.Value is true)" />
+        <span>Let clips speak for themselves (the announcer waits, then can answer them)</span>
+    </label>
+    <div class="grid grid-2">
+        @if (Curated.LetClipsSpeak)
+        {
+            <label class="field">
+                <span>A speaking clip's volume: @($"{Curated.ClipVolume:P0}")</span>
+                <input type="range" min="0" max="100" value="@Number(Curated.ClipVolume * 100)"
+                       @onchange="e => SetNumber(e, value => Curated.ClipVolume = Math.Clamp(value / 100, 0, 1))" />
+            </label>
+        }
+        <label class="field">
+            <span>Clips under the announcer: @(Curated.UnderVoiceVolume <= 0 ? "silent" : $"{Curated.UnderVoiceVolume:P0}")</span>
+            <input type="range" min="0" max="100" value="@Number(Curated.UnderVoiceVolume * 100)"
+                   @onchange="e => SetNumber(e, value => Curated.UnderVoiceVolume = Math.Clamp(value / 100, 0, 1))" />
+        </label>
+    </div>
+
+    <label class="field">
+        <span>Transcribed by</span>
+        <select value="@(Curated.Transcriber ?? string.Empty)" @onchange="e => Set(() => Curated.Transcriber = Value(e))">
+            <option value="">The first speech recognition that's ready</option>
+            @foreach (ISpeechTranscriber transcriber in Transcripts.Available)
+            {
+                <option value="@transcriber.Id">@(transcriber.DisplayName + (transcriber.SetupProblem is null ? string.Empty : " (needs setting up)"))</option>
+            }
+        </select>
+    </label>
+    @if (Transcripts.Problem(Curated.Transcriber) is { } problem)
+    {
+        <p class="hint warn">Clips can't be curated yet: @problem. Until then the usual read-out is said, and the layer @FallbackText.</p>
+    }
+    <p class="hint">
+        Each episode is transcribed once, and the transcript kept. The AI picks moments from it and writes lines around
+        them: some over the template's usual background, some over a clip playing quietly underneath@(Curated.LetClipsSpeak ? ", and some clips are left to speak for themselves (the announcer never says a clip's line; if it tries, the clip plays instead)" : string.Empty).
+        Clips play in this layer's box, cut in and out; outside them the layers underneath (and the background) show.
+        Whenever it can't be curated, the usual read-out is said and the layer @FallbackText.
+    </p>
+</div>
+
+<style>
+    .curated-clips { border-left: 3px solid var(--accent); padding: 4px 0 2px 12px; margin: 6px 0 12px; }
+    .curated-clips h4 { margin: 12px 0 6px; }
+    .curated-help { margin: 0 0 10px; }
+    .curated-direction { display: flex; gap: 6px; align-items: flex-start; margin-bottom: 6px; }
+    .curated-direction textarea { flex: 1; min-width: 0; resize: vertical; }
+    .curated-help summary { cursor: pointer; font-size: 13px; }
+    .curated-help ul { margin: 4px 0 6px 18px; padding: 0; }
+</style>
+
+@code {
+    [Parameter, EditorRequired] public GeneratedVideoOptions Video { get; set; } = default!;
+
+    [Parameter, EditorRequired] public GeneratedCuratedClips Curated { get; set; } = default!;
+
+    [Parameter] public EventCallback Changed { get; set; }
+
+    /// <summary>The episode selectors to offer (<c>promoted</c>, <c>watching</c>, <c>next</c>…).</summary>
+    [Parameter] public IReadOnlyList<string> Selectors { get; set; } = ["promoted"];
+
+    /// <summary>How a selector reads in the list, e.g. "A clip of the next episode".</summary>
+    [Parameter] public Func<string, string> SourceName { get; set; } = selector => selector;
+
+    [Parameter, EditorRequired] public PromoTranscripts Transcripts { get; set; } = default!;
+
+    /// <summary>Writes a plan now; null hides the button.</summary>
+    [Parameter] public Func<CancellationToken, Task<AiTextResult>>? Try { get; set; }
+
+    /// <summary>The template's voice-over is off, so there's nothing to talk about the clips with.</summary>
+    [Parameter] public bool VoiceOff { get; set; }
+
+    /// <summary>An earlier layer that's curated too (and so is the one used), by name.</summary>
+    [Parameter] public string? OtherCurated { get; set; }
+
+    // A constant, as a quoted string can't sit inside a quoted attribute.
+    private const string Promoted = "promoted";
+
+    private string FallbackText => Curated.WhenNotCurated == GeneratedCurationFallback.OneClip ? "plays one clip" : "shows no clip";
+
+    private const string CloserExample = "{show}, coming up {when}, only on {channel}!";
+    private const string PromptPlaceholder = "The theme: Mondays are all about mayhem. Pick the loudest arguments.";
+    private const string ShowToken = "{show}";
+    private const string EpisodeToken = "{episode}";
+    private const string TimeToken = "{time}";
+    private const string WhenToken = "{when}";
+    private const string DayToken = "{day}";
+    private const string ChannelToken = "{channel}";
+
+    /// <summary>A percentage of a 22-minute episode as a time, e.g. 1:06.</summary>
+    private static string Minutes(double percent) =>
+        TimeSpan.FromSeconds(Math.Round(22 * 60 * Math.Clamp(percent, 0, 100) / 100)).ToString(@"m\:ss", CultureInfo.InvariantCulture);
+
+    private static string DirectionLabel(int index) => $"Direction {index + 1}";
+
+    /// <summary>The directions to edit; a single one from before there could be several is moved into the list.</summary>
+    private List<string> Directions()
+    {
+        if (Curated.Directions.Count == 0 && !string.IsNullOrWhiteSpace(Curated.Writer.Prompt))
+        {
+            Curated.Directions.Add(Curated.Writer.Prompt.Trim());
+            Curated.Writer.Prompt = null;
+        }
+
+        return Curated.Directions;
+    }
+
+    private async Task Set(Action change)
+    {
+        change();
+        await Changed.InvokeAsync();
+    }
+
+    private Task SetNumber(ChangeEventArgs e, Action<double> apply) =>
+        double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) ? Set(() => apply(value)) : Task.CompletedTask;
+
+    private static string? Value(ChangeEventArgs e) => e.Value?.ToString()?.Trim() is { Length: > 0 } text ? text : null;
+
+    private static string Number(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+}

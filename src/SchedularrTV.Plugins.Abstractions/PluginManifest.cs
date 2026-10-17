@@ -18,9 +18,10 @@ public static class PluginApi
     /// profile and encoding settings (<c>SchedularrTV.Core.Platform</c>: <c>HardwareProfile</c>, <c>LiveEncodingSettings</c>,
     /// <c>RenderEncodingSettings</c>), the <c>LowPowerNotice</c> component, and the manifest's <c>lowPowerNotice</c>
     /// and settings' <c>lowPowerNote</c>, <c>lowPowerPlaceholder</c> and <c>lowPowerDefault</c>. 1.9 added picture
-    /// search services (<c>AddImageSearchProvider</c>), for automatic image layers.
+    /// search services (<c>AddImageSearchProvider</c>), for automatic image layers. 1.10 added speech transcribers
+    /// (<c>AddSpeechTranscriber</c>), for promos whose clips are curated by AI.
     /// </remarks>
-    public static readonly Version Version = new(1, 9);
+    public static readonly Version Version = new(1, 10);
 
     public static bool IsCompatible(Version wanted) => wanted.Major == Version.Major && wanted.Minor <= Version.Minor;
 }

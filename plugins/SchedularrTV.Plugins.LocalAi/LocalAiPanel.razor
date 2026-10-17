@@ -109,6 +109,111 @@
         </p>
     }
 
+    <h3 style="margin-top:18px;">Speech recognition (Whisper)</h3>
+    <p class="hint" style="margin:0 0 8px;">
+        For promos whose clips are curated by AI: each episode is transcribed once, so the writer can pick its moments
+        and talk about them. Transcripts are kept, so an episode is only ever done once.
+    </p>
+    @if (WhisperEngine.RuntimeFolder() is null)
+    {
+        <p class="hint warn">Speech recognition can't run on this kind of computer.</p>
+    }
+    else if (Downloads is { } whisperDownloads)
+    {
+        <div class="local-ai-row" style="border:1px solid var(--line);border-radius:8px;">
+            <div class="local-ai-text">
+                <strong>Speech recognition engine</strong>
+                <span class="hint">whisper.cpp for this computer@(WhisperEngine.NeedsNoAvx ? " (the build for processors without AVX)" : string.Empty), about 5 to 40 MB, from NuGet.</span>
+            </div>
+            @if (whisperDownloads.IsFinishing(LocalAiDownloads.WhisperEngineKey))
+            {
+                <span class="hint">Unpacking…</span>
+            }
+            else if (whisperDownloads.Progress(LocalAiDownloads.WhisperEngineKey) is { } whisperDone)
+            {
+                <progress max="1" value="@Fraction(whisperDone)"></progress>
+                <span class="hint">@Percent(whisperDone)</span>
+                <button class="btn btn-sm" type="button" @onclick="() => whisperDownloads.Cancel(LocalAiDownloads.WhisperEngineKey)">Stop</button>
+            }
+            else if (whisperDownloads.WhisperEngineInstalled)
+            {
+                <span class="pill pill-ok">@(whisperDownloads.JustFinished(LocalAiDownloads.WhisperEngineKey) ? JustInstalled : Installed)</span>
+            }
+            else
+            {
+                <button class="btn btn-sm btn-primary" type="button" @onclick="whisperDownloads.StartWhisperEngine">Download</button>
+            }
+        </div>
+        @if (whisperDownloads.Error(LocalAiDownloads.WhisperEngineKey) is { } whisperError)
+        {
+            <p class="hint warn">Couldn't download the speech recognition engine: @whisperError</p>
+        }
+
+        <div class="local-ai-list" style="margin-top:8px;">
+            @foreach (LocalAiModel model in WhisperModels.All)
+            {
+                string file = Path.Combine(ModelsFolder, model.File);
+                bool have = File.Exists(file);
+                bool chosen = string.Equals(ChosenWhisperModel, model.Id, StringComparison.OrdinalIgnoreCase);
+                <div class="local-ai-row">
+                    <div class="local-ai-text">
+                        <strong>@model.Name</strong>
+                        <span class="hint">@model.Description @Size(model.Size).</span>
+                    </div>
+                    @if (whisperDownloads.IsFinishing(model.Id))
+                    {
+                        <span class="hint">Finishing…</span>
+                    }
+                    else if (whisperDownloads.Progress(model.Id) is { } done)
+                    {
+                        <progress max="1" value="@Fraction(done)"></progress>
+                        <span class="hint">@Percent(done)</span>
+                        <button class="btn btn-sm" type="button" @onclick="() => whisperDownloads.Cancel(model.Id)">Stop</button>
+                    }
+                    else if (!have)
+                    {
+                        <button class="btn btn-sm @(chosen ? "btn-primary" : string.Empty)" type="button" @onclick="() => whisperDownloads.StartModel(model, ModelsFolder)">Download</button>
+                    }
+                    else
+                    {
+                        <span class="pill pill-ok">@(whisperDownloads.JustFinished(model.Id) ? JustDownloaded : Downloaded)</span>
+                        @if (chosen)
+                        {
+                            <span class="pill pill-accent">In use</span>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm" type="button" @onclick="() => Editor.Set(WhisperModelKey, model.Id)">Use this</button>
+                            <button class="btn btn-sm btn-ghost" type="button" title="Delete the downloaded file" @onclick="() => Remove(file)">Delete</button>
+                        }
+                    }
+                </div>
+                @if (whisperDownloads.Error(model.Id) is { } modelError)
+                {
+                    <p class="hint warn">Couldn't download @model.Name: @modelError</p>
+                }
+            }
+            <div class="local-ai-row">
+                <div class="local-ai-text">
+                    <strong>Your own Whisper model</strong>
+                    <span class="hint">@(OwnWhisperFile is { } ownWhisper ? Path.GetFileName(ownWhisper) : ChooseWhisperFileFirst)</span>
+                </div>
+                @if (string.Equals(ChosenWhisperModel, WhisperModels.Custom, StringComparison.OrdinalIgnoreCase))
+                {
+                    <span class="pill pill-ok">In use</span>
+                }
+                else
+                {
+                    <button class="btn btn-sm" type="button" disabled="@(OwnWhisperFile is null)" @onclick="() => Editor.Set(WhisperModelKey, WhisperModels.Custom)">Use this</button>
+                }
+            </div>
+        </div>
+        <LowPowerNotice Title="@($"Speech recognition on {HardwareProfile.DeviceName}")" Advice="WhisperLowPowerAdvice">
+            Transcribing runs on the processor only: expect several minutes per episode with the base model. Each
+            episode is only transcribed once.
+        </LowPowerNotice>
+    }
+
     <h3 style="margin-top:18px;">Server</h3>
     <div class="row row-wrap" style="gap:8px;align-items:center;">
         <button class="btn btn-sm" type="button" disabled="@_finding" @onclick="FindModels">@(_finding ? "Looking…" : "Find models on the server")</button>
@@ -180,6 +285,19 @@
     private const string ModelFileKey = "ModelFile";
     private const string ModelsFolderKey = "ModelsFolder";
     private const string ServerModelKey = "ServerModel";
+    private const string WhisperModelKey = "WhisperModel";
+    private const string WhisperModelFileKey = "WhisperModelFile";
+    private const string ChooseWhisperFileFirst = "Choose a ggml file in Your own Whisper model file above first.";
+
+    private string ChosenWhisperModel => Editor.Get(WhisperModelKey) ?? Saved.WhisperModel;
+
+    private string? OwnWhisperFile => (Editor.Get(WhisperModelFileKey) ?? Saved.WhisperModelFile) is { Length: > 0 } own && own.Trim().Length > 0 ? own.Trim() : null;
+
+    private static IEnumerable<string?> WhisperLowPowerAdvice =>
+    [
+        "Use Whisper tiny or base here; small takes a long while per episode on a board's processor.",
+        "Transcribing shares the processor with the channels on air, so the first promos for a new episode may take a while to be ready."
+    ];
     private const string DefaultTry =
         "Write the announcer's voice-over for an Up Next promo on the channel \"The Zone\": SpongeBob SquarePants is next, then more SpongeBob SquarePants at 6:30, then Rugrats at 7. At most 25 words.";
 

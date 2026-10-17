@@ -1,0 +1,60 @@
+@* Under a preview video with clips curated by AI: how its plan came about, for troubleshooting. *@
+
+<details class="curation-report" open="@(Report.Problem is not null)">
+    <summary>
+        AI curation: @(Report.Problem is null ? "used" : "not used")
+    </summary>
+    @if (Report.Problem is { } problem)
+    {
+        <p class="hint warn">Not curated, so the usual read-out was said: @problem.</p>
+    }
+    <dl>
+        <dt>Direction</dt>
+        <dd>@(Report.Direction ?? "(none)")</dd>
+        <dt>Said first / last</dt>
+        <dd>@(Report.Opener ?? "(nothing)") / @(Report.Closer ?? "(nothing)")</dd>
+    </dl>
+
+    <h5>The AI's reply, as it came</h5>
+    @if (Report.Raw is { Length: > 0 } raw)
+    {
+        <pre>@raw</pre>
+    }
+    else
+    {
+        <p class="hint">@NoRaw</p>
+    }
+
+    @if (Report.Plan is { Length: > 0 } plan)
+    {
+        <h5>As laid out in the promo</h5>
+        <pre>@plan</pre>
+    }
+
+    @if (Report.Moments is { Length: > 0 } moments)
+    {
+        <details>
+            <summary>Moments it could pick from (number, where in the episode, length, what's said)</summary>
+            <pre>@moments</pre>
+        </details>
+    }
+</details>
+
+<style>
+    .curation-report { margin: 10px 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; }
+    .curation-report > summary { cursor: pointer; font-weight: 600; }
+    .curation-report h5 { margin: 10px 0 4px; font-size: 12px; }
+    .curation-report dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; margin: 8px 0 0; font-size: 12px; }
+    .curation-report dt { opacity: .7; }
+    .curation-report dd { margin: 0; }
+    .curation-report pre { margin: 0; padding: 8px 10px; border-radius: 6px; background: rgba(255,255,255,.05); white-space: pre-wrap;
+        word-break: break-word; font-size: 12px; max-height: 320px; overflow: auto; user-select: text; }
+</style>
+
+@code {
+    [Parameter, EditorRequired] public CurationReport Report { get; set; } = default!;
+
+    private string NoRaw => Report.Problem is not null && Report.Moments is null
+        ? "It wasn't asked (see above)."
+        : "Not kept: this plan was written before replies were kept, or the AI wasn't asked this time. Change a direction (or anything else the AI is told) to have it write a new one.";
+}

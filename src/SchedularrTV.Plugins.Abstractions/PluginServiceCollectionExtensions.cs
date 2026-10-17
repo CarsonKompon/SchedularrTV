@@ -50,6 +50,14 @@ public static class PluginServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>Speech recognition for episodes (what's said, and when); see <see cref="ISpeechTranscriber"/>.</summary>
+    public static IServiceCollection AddSpeechTranscriber<TTranscriber>(this IServiceCollection services)
+        where TTranscriber : class, ISpeechTranscriber
+    {
+        services.AddSingleton<ISpeechTranscriber, TTranscriber>();
+        return services;
+    }
+
     /// <summary>A language model that writes voice-overs and on-screen text; see <see cref="ITextGenerator"/>.</summary>
     public static IServiceCollection AddTextGenerator<TGenerator>(this IServiceCollection services)
         where TGenerator : class, ITextGenerator

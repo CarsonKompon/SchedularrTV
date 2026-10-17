@@ -30,6 +30,15 @@ public sealed class LocalAiOptions
 
     public int ServerTimeoutSeconds { get; set; } = 120;
 
+    /// <summary>A <see cref="WhisperModels"/> id, or <see cref="WhisperModels.Custom"/> for <see cref="WhisperModelFile"/>.</summary>
+    public string WhisperModel { get; set; } = WhisperModels.Default;
+
+    /// <summary>Your own ggml Whisper model, used when <see cref="WhisperModel"/> is <see cref="WhisperModels.Custom"/>.</summary>
+    public string? WhisperModelFile { get; set; }
+
+    /// <summary>Two-letter language the episodes speak (<c>en</c>), or empty to have Whisper work it out.</summary>
+    public string? WhisperLanguage { get; set; }
+
     public bool IsOllama => !string.Equals(ServerKind?.Trim(), OpenAiCompatible, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The server's address, or the usual one for its type.</summary>
@@ -74,6 +83,29 @@ public static class LocalAiModels
     public static string Url(LocalAiModel model) => $"https://huggingface.co/{model.Repository}/resolve/main/{model.File}";
 }
 
+/// <summary>
+/// Whisper models offered for download (MIT), whisper.cpp's ggml conversions on Hugging Face. They understand most
+/// languages; the transcripts only need to be good enough to find a promo's moments.
+/// </summary>
+public static class WhisperModels
+{
+    public const string Default = "whisper-base";
+    public const string Custom = "custom";
+
+    public static readonly IReadOnlyList<LocalAiModel> All =
+    [
+        new("whisper-tiny", "Whisper tiny", "The quickest: a 22-minute episode in a minute or two on an ordinary processor. Misses more words.",
+            "ggerganov/whisper.cpp", "ggml-tiny.bin", 77_691_713),
+        new(Default, "Whisper base", "The one to start with: a few minutes an episode, and good enough to find the funny lines.",
+            "ggerganov/whisper.cpp", "ggml-base.bin", 147_951_465),
+        new("whisper-small", "Whisper small", "Hears more clearly through music and shouting, but about three times as slow as base.",
+            "ggerganov/whisper.cpp", "ggml-small.bin", 487_601_967)
+    ];
+
+    public static LocalAiModel? Find(string? id) =>
+        All.FirstOrDefault(model => string.Equals(model.Id, id?.Trim(), StringComparison.OrdinalIgnoreCase));
+}
+
 /// <summary>Where the plugin keeps things: relative paths in settings are taken from its data folder.</summary>
 public sealed class LocalAiPaths(string dataDirectory)
 {
@@ -91,6 +123,17 @@ public sealed class LocalAiPaths(string dataDirectory)
             : Path.Combine(ModelsFolder(modelsFolder), (LocalAiModels.Find(model) ?? LocalAiModels.Find(LocalAiModels.ForThisComputer)!).File);
 
     public string? ModelPath(LocalAiOptions options) => ModelPath(options.Model, options.ModelFile, options.ModelsFolder);
+
+    /// <summary>Whisper's native library for this computer, kept apart per version like <see cref="Engine"/>.</summary>
+    public string WhisperEngine => Path.Combine(DataDirectory, "whisper-engine", LocalAi.WhisperEngine.RuntimeVersion);
+
+    /// <summary>The Whisper model file a choice means (kept in the models folder), or null when there's none.</summary>
+    public string? WhisperModelPath(string? model, string? modelFile, string? modelsFolder) =>
+        string.Equals(model?.Trim(), WhisperModels.Custom, StringComparison.OrdinalIgnoreCase)
+            ? Resolve(modelFile)
+            : Path.Combine(ModelsFolder(modelsFolder), (WhisperModels.Find(model) ?? WhisperModels.Find(WhisperModels.Default)!).File);
+
+    public string? WhisperModelPath(LocalAiOptions options) => WhisperModelPath(options.WhisperModel, options.WhisperModelFile, options.ModelsFolder);
 
     private string? Resolve(string? value)
     {

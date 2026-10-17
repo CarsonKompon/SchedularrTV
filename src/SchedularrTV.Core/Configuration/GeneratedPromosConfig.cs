@@ -156,6 +156,105 @@ public sealed class GeneratedVideoOptions
 
     /// <summary>Lowers its sound while the voice-over speaks.</summary>
     public bool DuckUnderVoice { get; set; } = true;
+
+    /// <summary>
+    /// Curated by AI: the episode (<see cref="Episode"/>) is transcribed, and a language model picks its moments and
+    /// writes the voice-over around them, so the layer cuts between those clips while the announcer talks about them
+    /// (or lets a clip speak for itself). Null plays one clip as usual, which is also what airs whenever it can't be
+    /// curated. Left out of render keys while null.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedCuratedClips? Curated { get; set; }
+}
+
+/// <summary>What an AI-curated promo talks about.</summary>
+public enum GeneratedCurationFocus
+{
+    /// <summary>This episode: its story and its moments.</summary>
+    Episode,
+
+    /// <summary>The show in general, with the episode's moments as examples of it.</summary>
+    Show
+}
+
+/// <summary>
+/// How a video layer's clips are curated by AI (see <see cref="GeneratedVideoOptions.Curated"/>): the voice-over is
+/// written with the episode's transcript to hand, as lines said over the template's usual background, lines said over
+/// a chosen clip, and clips left to speak for themselves.
+/// </summary>
+public sealed class GeneratedCuratedClips
+{
+    /// <summary>Who writes it and how: the writer, its style, extra direction ("Mondays are all about mayhem").</summary>
+    public AiTextConfig Writer { get; set; } = new();
+
+    public GeneratedCurationFocus About { get; set; } = GeneratedCurationFocus.Episode;
+
+    /// <summary>The most clips of the episode it may use, 1 to 8.</summary>
+    public int Clips { get; set; } = 3;
+
+    /// <summary>The shortest a moment of the episode may be to be picked.</summary>
+    public TimeSpan MinClip { get; set; } = TimeSpan.FromSeconds(1.2);
+
+    /// <summary>The longest a moment of the episode may be to be picked.</summary>
+    public TimeSpan MaxClip { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Clips only come from after this far into the episode (0 to 100%), to leave out its intro and theme song.
+    /// </summary>
+    public double FromPercent { get; set; } = 5;
+
+    /// <summary>
+    /// Clips only come from before this far into the episode (0 to 100%), to leave out its credits and outro.
+    /// </summary>
+    public double UntilPercent { get; set; } = 95;
+
+    /// <summary>
+    /// Lets a clip play with its own sound while the announcer waits, for a back-and-forth ("Did you know…?" "I didn't
+    /// know that…"). Off, every clip plays under the announcer.
+    /// </summary>
+    public bool LetClipsSpeak { get; set; } = true;
+
+    /// <summary>How loud a clip speaking for itself is, 0 to 1, relative to the episode.</summary>
+    public double ClipVolume { get; set; } = 1;
+
+    /// <summary>How loud a clip under the announcer is, 0 to 1 (0 is silent).</summary>
+    public double UnderVoiceVolume { get; set; } = 0.15;
+
+    /// <summary>The speech recognition plugin's id; null uses the first one that's ready.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Transcriber { get; set; }
+
+    /// <summary>
+    /// Directions for the voice-over ("Mondays are all about mayhem"), one picked for each promo so airings vary. Empty
+    /// uses <see cref="AiTextConfig.Prompt"/> of <see cref="Writer"/> (the single direction older files have), if any.
+    /// </summary>
+    public List<string> Directions { get; set; } = [];
+
+    /// <summary>
+    /// Plans in two steps, each its own request to the model: first it only picks the moments to use (and their order)
+    /// for the direction, then it writes the voice-over around just those. Easier for small models than doing both at
+    /// once. Off, one request does both.
+    /// </summary>
+    public bool PickClipsFirst { get; set; } = true;
+
+    /// <summary>
+    /// Plays a clip under every announcer line the plan leaves without one (Said first and Said last included): a moment
+    /// the plan didn't use, or else another stretch of the episode. Off, those lines are said over the usual background.
+    /// </summary>
+    public bool ClipUnderEveryLine { get; set; }
+
+    /// <summary>What the layer shows when the promo can't be curated (the usual read-out is said then).</summary>
+    public GeneratedCurationFallback WhenNotCurated { get; set; } = GeneratedCurationFallback.Nothing;
+}
+
+/// <summary>What a curated layer shows when its promo can't be curated.</summary>
+public enum GeneratedCurationFallback
+{
+    /// <summary>Nothing: the background and the layers underneath show, like an ordinary promo.</summary>
+    Nothing,
+
+    /// <summary>One clip of the episode, for as long as the layer's on screen.</summary>
+    OneClip
 }
 
 public static class GeneratedPromoKinds

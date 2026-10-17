@@ -772,14 +772,21 @@
                         GeneratedVideoOptions video = VideoOptions(selected);
                         <label class="field">
                             <span>Plays</span>
-                            <select value="@(video.Episode ?? VideoFile)" @onchange="e => Set(() => video.Episode = Text(e) == VideoFile ? null : Text(e))">
+                            <select value="@(video.Curated is not null ? CuratedChoice : video.Episode ?? VideoFile)" @onchange="e => SetPlays(video, Text(e))">
                                 <option value="@VideoFile">A video file</option>
                                 @foreach (string selector in ImageShowSelectors)
                                 {
                                     <option value="@selector">@VideoSourceName(selector)</option>
                                 }
+                                <option value="@CuratedChoice">Clips curated by AI (talked about in the voice-over)</option>
                             </select>
                         </label>
+                        @if (video.Curated is { } curated)
+                        {
+                            <CuratedClipsSettings Video="video" Curated="curated" Changed="Commit" Selectors="ImageShowSelectors"
+                                                  SourceName="VideoSourceName" Transcripts="Preview.Transcripts" Try="TryCuration"
+                                                  VoiceOff="@(Template.Voice is not { Enabled: true })" OtherCurated="@OtherCuratedLayer(selected)" />
+                        }
                         @if (video.Episode is null)
                         {
                             <div class="field">
@@ -1238,12 +1245,21 @@
             @if (!advancedVoice || voice.Advanced!.IncludePostMessages)
             {
             <div class="field">
-                <span>Said last ({channel} is the channel name)</span>
+                <span>Said last ({channel}, {show}, {time} and {when} are filled in)</span>
                 <PhraseListEditor Values="PostMessages(voice)" Changed="Commit" Label="Closer" Placeholder="Only on {channel}!"
                                   EmptyHint="Nothing is said after the shows." />
             </div>
             }
         </div>
+        @if (CuratedPromo.LayerIndex(Template) is { } curatedLayer)
+        {
+            <p class="hint">
+                The voice-over is written by the layer curated by AI (<strong>@(string.IsNullOrWhiteSpace(Template.Layers[curatedLayer].Name) ? $"layer {curatedLayer + 1}" : Template.Layers[curatedLayer].Name)</strong>),
+                in this voice, around the clips it picks, between the <strong>Said first</strong> and <strong>Said last</strong> picked
+                below (said as written; for curated promos they can also use @CuratedTokens, and empty says nothing extra).
+                The read-out below is said instead whenever it can't be curated.
+            </p>
+        }
         <p class="hint">@(advancedVoice ? "Template read-out:" : voice.Writer is null ? ReadOutLabel : UsualReadOutLabel) <em>@Script()</em></p>
         @if (advancedVoice && string.IsNullOrWhiteSpace(Script()))
         {
@@ -1351,6 +1367,10 @@
                             {
                                 <video class="promo-video" src="@_videoUrl" controls autoplay></video>
                             }
+                            @if (_curationReport is { } songCurationReport)
+                            {
+                                <CurationReportView Report="songCurationReport" />
+                            }
                         }
                     </li>
                 }
@@ -1414,6 +1434,10 @@
     @if (_videoSong is null && _videoUrl is not null)
     {
         <video class="promo-video" src="@_videoUrl" controls autoplay></video>
+    }
+    @if (_videoSong is null && _curationReport is { } curationReport)
+    {
+        <CurationReportView Report="curationReport" />
     }
 </div>
 
@@ -1574,6 +1598,7 @@
     private bool _rendering;
     private string? _videoUrl;
     private string? _videoMessage;
+    private CurationReport? _curationReport;
     private string? _videoSong;
     private string? _songPlaying;
     private string? _songCutting;
@@ -2435,6 +2460,35 @@
     // ---- Video layers ----
 
     private const string VideoFile = "file";
+    private const string CuratedChoice = "curated";
+    private const string CuratedTokens = "{show}, {episode}, {time}, {when} and {day}";
+
+    /// <summary>
+    /// What a video layer plays: a file, one clip of an episode, or clips curated by AI (from the episode it already
+    /// names, else the one the promo is for). Leaving curation drops its settings.
+    /// </summary>
+    private Task SetPlays(GeneratedVideoOptions video, string choice) => Set(() =>
+    {
+        if (choice == CuratedChoice)
+        {
+            video.Episode ??= "promoted";
+            video.Curated ??= new GeneratedCuratedClips();
+            return;
+        }
+
+        video.Curated = null;
+        video.Episode = choice == VideoFile ? null : choice;
+    });
+
+    /// <summary>Another layer that's curated by AI before this one, which is the one that's used; null when there's none.</summary>
+    private string? OtherCuratedLayer(GeneratedLayer layer) =>
+        CuratedPromo.LayerIndex(Template) is { } index && !ReferenceEquals(Template.Layers[index], layer)
+            ? string.IsNullOrWhiteSpace(Template.Layers[index].Name) ? $"layer {index + 1}" : Template.Layers[index].Name
+            : null;
+
+    // Each try gets its own seed, so a plan can be heard several ways; what airs is written per airing.
+    private Task<AiTextResult> TryCuration(CancellationToken token) =>
+        Preview.TryCurationAsync(Template, Channel, Zone, (++_tries).ToString(CultureInfo.InvariantCulture), token);
 
     private static GeneratedVideoOptions VideoOptions(GeneratedLayer layer) => layer.Video ??= new GeneratedVideoOptions();
 
@@ -3519,7 +3573,8 @@
 
     private void OnWritten(AiTextJob job, AiTextResult result)
     {
-        if (job.Source == GeneratedPromoWriting.Source && result.Written && Template.Layers.Any(layer => layer.Writer is not null))
+        if (job.Source == GeneratedPromoWriting.Source && result.Written
+            && (Template.Layers.Any(layer => layer.Writer is not null) || CuratedPromo.LayerIndex(Template) is not null))
         {
             _ = InvokeAsync(RefreshStill);
         }
@@ -3532,6 +3587,7 @@
         _rendering = true;
         _videoMessage = null;
         _videoUrl = null;
+        _curationReport = null;
         _videoSong = song;
         try
         {
@@ -3544,6 +3600,7 @@
             GeneratedPromoRender render = await Preview.RenderVideoAsync(GeneratedPromoEditing.Copy(Template), Channel.Name, listings, Zone, _life.Token, song,
                 Preview.ImageSubjects(Channel, Template));
             _videoUrl = $"{Preview.FileUrl(render.Path)}?v={DateTime.UtcNow.Ticks}";
+            _curationReport = render.Curation;
             _videoMessage = render.VoiceError is { } error
                 ? $"The voice-over failed, so this preview is silent: {error.GetBaseException().Message}"
                 : null;

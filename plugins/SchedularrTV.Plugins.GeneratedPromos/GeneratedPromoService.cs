@@ -12,7 +12,11 @@ using SchedularrTV.Core.Scheduling;
 
 namespace SchedularrTV.GeneratedPromos;
 
-public sealed record GeneratedPromoRender(string Path, Exception? VoiceError);
+public sealed record GeneratedPromoRender(string Path, Exception? VoiceError)
+{
+    /// <summary>For a promo with a layer curated by AI: how its plan came about (or why there wasn't one).</summary>
+    public CurationReport? Curation { get; init; }
+}
 
 /// <summary>A promo being rendered: where it's filed (channel › block › template) and when it airs.</summary>
 public sealed record GeneratedPromoJob(string Label, DateTimeOffset AirsAt, DateTimeOffset StartedAt);
@@ -39,7 +43,8 @@ public sealed partial class GeneratedPromoService(
     SchedularrTV.Service.Writing.AiTextWriter? writer = null,
     IEnumerable<IMusicLibrary>? musicLibraries = null,
     GeneratorSetup? generatorSetup = null,
-    SchedularrTV.Service.Images.AutomaticImages? automaticImages = null) : BackgroundService, IScheduleFinisher
+    SchedularrTV.Service.Images.AutomaticImages? automaticImages = null,
+    IEnumerable<ISpeechTranscriber>? transcribers = null) : BackgroundService, IScheduleFinisher
 {
     private const double MaxTempo = 1.35;
 
@@ -60,6 +65,26 @@ public sealed partial class GeneratedPromoService(
     private DateTimeOffset _cleanedAt = DateTimeOffset.MinValue;
     private readonly ConcurrentDictionary<string, Lazy<Task<string>>> _voiceCalls = new(StringComparer.Ordinal);
     private const string PartialPrefix = "partial-";
+    private PromoTranscripts? _transcripts;
+
+    /// <summary>Where episodes' transcripts are kept, for layers curated by AI.</summary>
+    public string TranscriptDirectory => Path.Combine(Root, "transcripts");
+
+    /// <summary>Episodes' transcripts, for layers curated by AI: made once each by a speech recognition plugin.</summary>
+    public PromoTranscripts Transcripts
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _transcripts ??= new PromoTranscripts(transcribers ?? [], () => _options.FfmpegPath, () => TranscriptDirectory, logger);
+            }
+        }
+    }
+
+    // For the curation part of this class (GeneratedPromoService.Curation.cs), which can't see the constructor's parameters.
+    private SchedularrTV.Service.Writing.AiTextWriter? Writer => writer;
+    private ILogger Log => logger;
 
     /// <summary>
     /// Where renders go: the folder chosen in the plugin's settings, else the older schedule-file setting
@@ -297,7 +322,30 @@ public sealed partial class GeneratedPromoService(
         Exception? voiceError = null;
         double tempo = 1;
 
-        if (promo.Script is { } script && template.Voice is { Enabled: true } voice)
+        // A layer curated by AI: its clips picked and its lines written and spoken now. Whenever that can't be done the
+        // promo is made the usual way: its read-out over the layer's one clip.
+        CuratedRender? curated = null;
+        CurationReport? report = null;
+        if (promo.Curation is not null && template.Voice is { Enabled: true } curatedVoice)
+        {
+            try
+            {
+                (curated, report) = await CurateAsync(promo, curatedVoice, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning("Generated promo '{Template}': couldn't curate its clips, so it's made the usual way: {Message}",
+                    template.Name, ex.GetBaseException().Message);
+                report = (report ?? new CurationReport()) with { Problem = $"it failed: {ex.GetBaseException().Message}" };
+            }
+        }
+
+        if (curated is not null)
+        {
+            audio = curated.VoicePath;
+            promo = promo with { CuratedClips = curated.Timeline.Clips };
+        }
+        else if (promo.Script is { } script && template.Voice is { Enabled: true } voice)
         {
             try
             {
@@ -341,6 +389,12 @@ public sealed partial class GeneratedPromoService(
             }
 
             PromoComposition composition = GeneratedPromoResolver.Compose(promo, audio, tempo, generated);
+            if (curated is not null)
+            {
+                // The curated voice-over is already placed (and paced) in the promo's time.
+                composition = composition with { AudioStart = TimeSpan.Zero, AudioTempo = 1 };
+            }
+
             composition = composition with
             {
                 BackgroundAudio = await AudibleAsync(composition.BackgroundAudio, cancellationToken).ConfigureAwait(false),
@@ -379,7 +433,7 @@ public sealed partial class GeneratedPromoService(
             if (source is not null) File.Delete(source);
         }
 
-        return new GeneratedPromoRender(target, voiceError);
+        return new GeneratedPromoRender(target, voiceError) { Curation = report };
     }
 
     /// <summary>Where songs from a music library are copied for rendering (those that aren't files already).</summary>
@@ -697,7 +751,9 @@ public sealed partial class GeneratedPromoService(
 
         foreach (string file in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories))
         {
-            if (file.StartsWith(previewFrames + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            // Transcripts take minutes to make and keep for months; they tidy themselves.
+            if (file.StartsWith(previewFrames + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                || file.StartsWith(TranscriptDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }

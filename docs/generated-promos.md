@@ -180,6 +180,75 @@ video:
 
 The editor shows each video's frame at the playhead. Before the channel's schedule is built, only the promo's own episode has a stand-in file for previews. In YAML, a video layer has `kind: video`, its file in `path`, and a `video` section with `episode` (`promoted`, `watching`, `next`, `next2`…), `clip_start`, `file_start`, `playback` (`with_layer` or `with_promo`), `loop`, `fill`, `include_audio`, `volume` and `duck_under_voice`.
 
+### Clips curated by AI
+
+A video layer can play **Clips curated by AI**: the episode is transcribed, and the [Local AI writer](local-ai.md) picks its moments and writes the voice-over around them. The layer then cuts between those clips while the announcer talks about them, or lets a clip speak for itself and answers it:
+
+> *(usual background)* "Mondays are all about mayhem!" *(clip: two characters yelling)* "And this family isn't going to let you forget it." *(clip: mischief)* "Things are going to get messy…" *(usual background)* "…in The Loud House! Only on Nick!"
+
+> *(usual background)* "Did you know SpongeBob has a new episode tonight?" *(clip, with its own sound: "I didn't know that…")* "Well, now you do! SpongeBob SquarePants, tonight at 7 on YTV!"
+
+To set one up:
+
+1. Install **Local AI writer**, and in its settings download a writer model and, under **Speech recognition (Whisper)**, the engine and a Whisper model.
+2. Switch the template's **Voice-over** on and choose a voice. The curated lines are spoken in it.
+3. Add a video layer (**+ Video**) and set **Plays** to **Clips curated by AI**. Choose which episode the clips come from (usually the one the promo is for), and size the box: full frame for cut-aways, or smaller for picture-in-picture.
+4. Guide the voice-over: **How it should sound**, one or more **What the voice-over should do** directions (one is picked for each promo, so airings vary; for example "The theme: Mondays are all about mayhem. Pick the loudest arguments."), whether it **Talks about** this episode or the show in general, how many clips it may use and how long they may be, and which stretch of the episode they may come from: **Clips from** and **Clips until** (5% and 95% by default) leave out the intro and the credits.
+5. Optionally give it fixed lines with the voice-over section's own **Said first** and **Said last** (one of each picked per promo, as usual). For a curated promo they're spoken exactly as written around the AI's lines, and an empty list says nothing (the type's usual opener isn't added). `{show}`, `{episode}`, `{time}` ("7", "7:30"), `{when}` ("tonight at 7"), `{day}` ("tonight") and `{channel}` are filled in, in the usual read-out too. A closer such as `{show}, coming up {when}, only on {channel}!` guarantees the sign-off: when a fixed line names the show, the AI doesn't have to, and with a closer it leaves the sign-off out, so far fewer plans are set aside.
+6. Under **How the clips play**, choose whether to **Play a clip under every line** (lines the AI left without a clip, Said first and Said last included, get a moment it didn't use, or another stretch of the episode, instead of the usual background), whether clips may **speak for themselves** (the announcer waits, then can reply), how loud they are, speaking and under the announcer, and what the layer shows **When a promo can't be curated**: no clip (the default, so it looks like an ordinary promo) or one clip of the episode the whole time.
+7. Select **Try it** to transcribe the episode (once, a few minutes) and see a plan, with what each clip says.
+
+**Pick the clips first, then write around them** (on by default) splits the planning into two requests to the AI. The first only chooses which moments to use, and in what order, for the direction; the second sees just those moments and writes the voice-over around them in that order. Each step is a much smaller job, which small models (such as Qwen3.5 2B) handle far more reliably than doing both at once. When the first step doesn't produce a usable choice, one request does both. Each step's reply shows in the preview's **AI curation** panel and under **Try it**.
+
+Directing it: the AI already knows the show, when it's on, the channel and (with **Tell it what the episode is about**) the episode's description, and sees the moments it can pick from, so the direction only needs the angle. Small models follow one clear idea best: a theme ("Mondays are all about mayhem"), a shape ("Ask the viewer a silly question, let a clip answer it, then reply to the clip"), or a mood ("Build up: calm, then chaos. Short punchy lines."). Put the announcer's personality in **How it should sound**, and anything that must be said word for word in **Said first** / **Said last** rather than the direction.
+
+Each line the announcer says is spoken separately and placed in the promo: a line over the usual background, a line over a clip (which starts with the line and runs until the next beat), or a clip speaking on its own. The promo's length stays fixed: a plan that runs long is read a little faster (up to 1.35×), then clips are dropped from the middle, keeping the opening and the sign-off. Outside its clips the layer shows nothing, so the background and the layers under it show through.
+
+Each moment is shown to the AI with what's said just before and after it (within a few seconds), so it can tell what a line answers or sets up. Speech recognition can't tell who's speaking, so the AI is told it doesn't know, and never to name or describe the speaker. A plan that uses a name it wasn't given (not in the show or episode title, the description, the moments or your own lines) is set aside, since that's almost always a guess at who's talking.
+
+The writer is held to the same checks as other AI writing: it must name the show (unless Said first or Said last does), use only moments from the list, and not make up times, days or numbers. The announcer only says words meant to be heard: stage directions the AI writes ("(laughs)", "The announcer pauses to let the silence hang.") aren't read out, and one about pausing becomes a real pause, as does a `PAUSE` line in the plan. The announcer never says a clip's own line: when the AI writes one for the announcer anyway, that moment plays instead (or, with clips not allowed to speak, the line is dropped). Whenever a promo can't be curated (no speech recognition or writer set up, nothing usable said in the episode, a plan that fails the checks, or the AI's chance setting says not to) the usual read-out (or AI-written one) is said, and the layer shows no clip or one clip, as set. Only the first curated layer in a template is used.
+
+Transcripts are kept in the save folder's `transcripts` folder, so an episode is only ever transcribed once; one unused for four months is removed. The editor's stills show the clips once the episode is transcribed and the plan written (in the background), placed for lines of about the length they'll be spoken; **Render preview video** makes the real thing.
+
+```yaml
+voice:
+  provider: piper
+  voice: en_US-ryan-high
+  pre_messages: []                                          # nothing said before the AI's lines
+  post_messages: ['{show}, coming up {when}, only on {channel}!']
+layers:
+  - name: Clips
+    kind: video
+    x: 0
+    y: 0
+    width: 1920
+    height: 1080
+    video:
+      episode: promoted
+      fill: true
+      curated:
+        writer:
+          generator: local-ai
+          style: An excitable late-90s cartoon channel announcer
+          use_descriptions: true
+        directions:           # one picked per promo
+          - 'The theme: Mondays are all about mayhem. Pick the loudest arguments.'
+          - Ask the viewer a silly question, let a clip answer it, then reply to the clip.
+        when_not_curated: nothing   # or one_clip
+        clip_under_every_line: false
+        pick_clips_first: true
+        about: episode        # or show
+        clips: 3              # 1 to 8
+        min_clip: 1.2s
+        max_clip: 5s
+        from_percent: 5       # clips only from this far into the episode…
+        until_percent: 95     # …to this far, leaving out the intro and credits
+        let_clips_speak: true
+        clip_volume: 1
+        under_voice_volume: 0.15
+        # transcriber: local-ai-whisper   # optional; the first one ready otherwise
+```
+
 ### Layers, groups and turning
 
 The **Layers** list shows the layers top first, with each group's layers indented under it (▸ folds a group shut).

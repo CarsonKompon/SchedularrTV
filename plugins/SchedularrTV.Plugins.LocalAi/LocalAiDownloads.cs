@@ -56,6 +56,108 @@ public sealed class LocalAiDownloads(LocalAiPaths paths, ILogger<LocalAiDownload
 
     public void StartEngine() => Start(EngineKey, InstallEngineAsync);
 
+    public const string WhisperEngineKey = "whisper-engine";
+
+    /// <summary>The NuGet package holding whisper.cpp built for every kind of computer (or without AVX, for older processors).</summary>
+    public static string WhisperEngineUrl
+    {
+        get
+        {
+            string package = WhisperEngine.NeedsNoAvx ? "whisper.net.runtime.noavx" : "whisper.net.runtime";
+            return $"https://api.nuget.org/v3-flatcontainer/{package}/{WhisperEngine.RuntimeVersion}/{package}.{WhisperEngine.RuntimeVersion}.nupkg";
+        }
+    }
+
+    public bool WhisperEngineInstalled => WhisperEngine.IsInstalled(paths.WhisperEngine);
+
+    public void StartWhisperEngine() => Start(WhisperEngineKey, InstallWhisperEngineAsync);
+
+    /// <summary>
+    /// Downloads Whisper.net's runtime package and unpacks this computer's libraries into the Whisper engine folder,
+    /// laid out as Whisper.net looks for them (<c>runtimes/&lt;system&gt;/…</c>, or <c>runtimes/noavx/&lt;system&gt;/…</c>).
+    /// </summary>
+    private async Task InstallWhisperEngineAsync(IProgress<double> progress, CancellationToken cancellationToken)
+    {
+        string runtime = WhisperEngine.RuntimeFolder()
+            ?? throw new PlatformNotSupportedException("There's no built-in speech recognition for this kind of computer.");
+        string staging = Path.Combine(Path.GetTempPath(), $"schedularrtv-whisper-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(staging);
+        try
+        {
+            string package = Path.Combine(staging, "runtime.nupkg");
+            await DownloadAsync(WhisperEngineUrl, package, progress, cancellationToken).ConfigureAwait(false);
+
+            string unpacked = Path.Combine(staging, "engine");
+            string folder = Path.Combine(unpacked, Path.GetRelativePath(paths.WhisperEngine, WhisperEngine.LibraryFolder(paths.WhisperEngine)));
+            int files = UnpackWhisper(package, runtime, folder);
+            if (files == 0 || !File.Exists(Path.Combine(folder, WhisperEngine.LibraryName)))
+            {
+                throw new InvalidDataException($"The speech recognition download had nothing for {runtime}.");
+            }
+
+            string target = paths.WhisperEngine;
+            if (Directory.Exists(target))
+            {
+                Directory.Delete(target, recursive: true);
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            CopyFolder(unpacked, target);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(staging, recursive: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    /// <summary>
+    /// Copies the libraries the package has for <paramref name="runtime"/> (<c>win-x64</c>, <c>macos-arm64</c>…) straight
+    /// into <paramref name="target"/>, wherever in the package they're kept (<c>build/win-x64/</c>,
+    /// <c>runtimes/win-x64/native/</c>…). Builds for graphics cards and other accelerators are left out.
+    /// </summary>
+    public static int UnpackWhisper(string package, string runtime, string target)
+    {
+        // NuGet names macOS "osx"; Whisper.net's own folders say "macos".
+        string[] names = runtime.StartsWith("macos-", StringComparison.Ordinal) ? [runtime, "osx-" + runtime["macos-".Length..]] : [runtime];
+        string[] skip = ["cuda", "cuda12", "vulkan", "coreml", "openvino"];
+        int count = 0;
+        using ZipArchive archive = ZipFile.OpenRead(package);
+        foreach (ZipArchiveEntry entry in archive.Entries)
+        {
+            string name = Uri.UnescapeDataString(entry.FullName.Replace('\\', '/'));
+            if (name.EndsWith('/') || name.Contains("..", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            string[] parts = name.Split('/');
+            int at = Array.FindIndex(parts, part => names.Contains(part, StringComparer.OrdinalIgnoreCase));
+            if (at < 0 || at >= parts.Length - 1 || parts.Take(at).Any(part => skip.Contains(part, StringComparer.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            string file = parts[^1];
+            if (!(file.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".so", StringComparison.OrdinalIgnoreCase)
+                  || file.EndsWith(".dylib", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".metal", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            Directory.CreateDirectory(target);
+            entry.ExtractToFile(Path.Combine(target, file), overwrite: true);
+            count++;
+        }
+
+        return count;
+    }
+
     public void StartModel(LocalAiModel model, string folder) =>
         Start(model.Id, (progress, token) => DownloadAsync(LocalAiModels.Url(model), Path.Combine(folder, model.File), progress, token));
 

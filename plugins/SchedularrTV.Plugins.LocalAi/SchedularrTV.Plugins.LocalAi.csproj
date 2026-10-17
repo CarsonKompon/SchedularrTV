@@ -23,6 +23,11 @@
   <ItemGroup>
     <!-- Keep in step with LlamaEngine.BackendVersion: the downloaded engine must match the managed library. -->
     <PackageReference Include="LLamaSharp" Version="0.27.0" />
+    <!--
+      Speech recognition for AI-curated promo clips. Only the managed library is bundled; its native runtime
+      (whisper.cpp) is downloaded for this computer from the settings. Keep in step with WhisperEngine.RuntimeVersion.
+    -->
+    <PackageReference Include="Whisper.net" Version="1.9.1" />
   </ItemGroup>
 
   <ItemGroup>

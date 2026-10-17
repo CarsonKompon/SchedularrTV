@@ -31,6 +31,8 @@ public sealed class AiTextWriter : IDisposable
     private readonly ILogger<AiTextWriter> _logger;
     private readonly SemaphoreSlim _model = new(1, 1);
     private readonly ConcurrentDictionary<string, string> _memory = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, string?> _raw = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, string> _failedRaw = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, (DateTimeOffset Until, string Problem)> _failed = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, Lazy<Task<AiTextResult>>> _calls = new(StringComparer.Ordinal);
     private readonly Lock _gate = new();
@@ -77,12 +79,12 @@ public sealed class AiTextWriter : IDisposable
 
         if (Cached(key) is { } text)
         {
-            return new AiTextResult(text, true);
+            return new AiTextResult(text, true) { Raw = RawFor(key) };
         }
 
         if (RecentFailure(key) is { } problem)
         {
-            return new AiTextResult(job.Fallback, false, problem);
+            return new AiTextResult(job.Fallback, false, problem) { Raw = _failedRaw.GetValueOrDefault(key) };
         }
 
         if (queue)
@@ -103,12 +105,12 @@ public sealed class AiTextWriter : IDisposable
 
         if (Cached(key) is { } text)
         {
-            return new AiTextResult(text, true);
+            return new AiTextResult(text, true) { Raw = RawFor(key) };
         }
 
         if (RecentFailure(key) is { } problem)
         {
-            return new AiTextResult(job.Fallback, false, problem);
+            return new AiTextResult(job.Fallback, false, problem) { Raw = _failedRaw.GetValueOrDefault(key) };
         }
 
         // The same piece asked for twice at once (two renders, a render and the queue) is written once.
@@ -182,10 +184,15 @@ public sealed class AiTextWriter : IDisposable
             AiTextResult result = await RunAsync(job, generator, _stopping.Token).ConfigureAwait(false);
             if (result.Written)
             {
-                Keep(key, result.Text);
+                Keep(key, result.Text, result.Raw);
             }
             else
             {
+                if (result.Raw is { } raw)
+                {
+                    _failedRaw[key] = raw;
+                }
+
                 _failed[key] = (_clock.GetUtcNow() + (result.Problem?.StartsWith("the AI writer failed", StringComparison.Ordinal) == true
                     ? RetryErrorsAfter
                     : RetryRejectedAfter), result.Problem ?? "it couldn't be written");
@@ -211,13 +218,28 @@ public sealed class AiTextWriter : IDisposable
     private async Task<AiTextResult> RunAsync(AiTextJob job, ITextGenerator generator, CancellationToken cancellationToken)
     {
         string? problem = null;
+        // Every try's reply, with why it was set aside, for troubleshooting.
+        var replies = new StringBuilder();
+        void Note(int attempt, string reply, string? why)
+        {
+            if (attempt > 0 || why is not null)
+            {
+                replies.AppendLine($"--- Try {attempt + 1}{(why is null ? string.Empty : $" (set aside: {why})")} ---");
+            }
+
+            replies.AppendLine(reply.Trim()).AppendLine();
+        }
+
+        string? Raw() => replies.Length == 0 ? null : replies.ToString().Trim();
+
         for (int attempt = 0; attempt < Attempts; attempt++)
         {
             string reply;
             await _model.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                reply = await generator.GenerateAsync(AiTextRules.Request(job, attempt), cancellationToken).ConfigureAwait(false);
+                reply = await generator.GenerateAsync(job.Format?.Request(job, attempt) ?? AiTextRules.Request(job, attempt), cancellationToken)
+                    .ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -226,24 +248,38 @@ public sealed class AiTextWriter : IDisposable
             catch (Exception ex)
             {
                 _logger.LogWarning("{Writer} couldn't write {Purpose}: {Message}", generator.DisplayName, job.Purpose, ex.GetBaseException().Message);
-                return new AiTextResult(job.Fallback, false, $"the AI writer failed: {ex.GetBaseException().Message}");
+                return new AiTextResult(job.Fallback, false, $"the AI writer failed: {ex.GetBaseException().Message}") { Raw = Raw() };
             }
             finally
             {
                 _model.Release();
             }
 
-            string text = AiTextRules.Clean(reply, job.Use);
-            problem = AiTextRules.Check(text, job);
-            if (problem is null)
+            string text;
+            if (job.Format is { } format)
             {
-                return new AiTextResult(AiTextRules.Tidy(text, job), true);
+                (text, problem) = format.Accept(reply, job);
+                Note(attempt, reply, problem);
+                if (problem is null)
+                {
+                    return new AiTextResult(text, true) { Raw = Raw() };
+                }
+            }
+            else
+            {
+                text = AiTextRules.Clean(reply, job.Use);
+                problem = AiTextRules.Check(text, job);
+                Note(attempt, reply, problem);
+                if (problem is null)
+                {
+                    return new AiTextResult(AiTextRules.Tidy(text, job), true) { Raw = Raw() };
+                }
             }
 
             _logger.LogDebug("{Writer}'s writing for {Purpose} was set aside ({Problem}): {Text}", generator.DisplayName, job.Purpose, problem, text);
         }
 
-        return new AiTextResult(job.Fallback, false, problem);
+        return new AiTextResult(job.Fallback, false, problem) { Raw = Raw() };
     }
 
     private void Enqueue(AiTextJob job, string key)
@@ -359,9 +395,32 @@ public sealed class AiTextWriter : IDisposable
         }
     }
 
-    private void Keep(string key, string text)
+    /// <summary>The model's reply for kept writing, as it came (kept beside it, for troubleshooting); null when there's none.</summary>
+    private string? RawFor(string key)
+    {
+        if (_raw.TryGetValue(key, out string? raw))
+        {
+            return raw;
+        }
+
+        try
+        {
+            string path = Path.Combine(_folder(), key + ".raw");
+            raw = File.Exists(path) ? File.ReadAllText(path) : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            raw = null;
+        }
+
+        _raw[key] = raw;
+        return raw;
+    }
+
+    private void Keep(string key, string text, string? raw = null)
     {
         _memory[key] = text;
+        _raw[key] = raw;
         try
         {
             string folder = _folder();
@@ -370,6 +429,12 @@ public sealed class AiTextWriter : IDisposable
             string partial = Path.Combine(folder, $"{key}.{Guid.NewGuid():N}.tmp");
             File.WriteAllText(partial, text);
             File.Move(partial, path, overwrite: true);
+            if (raw is not null)
+            {
+                string rawPartial = Path.Combine(folder, $"{key}.{Guid.NewGuid():N}.tmp");
+                File.WriteAllText(rawPartial, raw);
+                File.Move(rawPartial, Path.Combine(folder, key + ".raw"), overwrite: true);
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

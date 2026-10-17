@@ -21,5 +21,10 @@ public sealed class LocalAiPlugin : IPlugin
         services.AddSingleton<ServerTextGenerator>();
         services.AddSingleton<ITextGenerator>(provider => provider.GetRequiredService<LlamaTextGenerator>());
         services.AddSingleton<ITextGenerator>(provider => provider.GetRequiredService<ServerTextGenerator>());
+
+        // Speech recognition, for promos whose clips are curated from what's said in the episode.
+        services.AddSingleton<WhisperEngine>();
+        services.AddSingleton<WhisperTranscriber>();
+        services.AddSingleton<SchedularrTV.Plugins.Speech.ISpeechTranscriber>(provider => provider.GetRequiredService<WhisperTranscriber>());
     }
 }

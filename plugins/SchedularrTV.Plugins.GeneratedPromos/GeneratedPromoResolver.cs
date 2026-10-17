@@ -43,6 +43,15 @@ public sealed record ResolvedGeneratedPromo(
     public IReadOnlyDictionary<int, PromoVideoSource> LayerVideos { get; init; } = new Dictionary<int, PromoVideoSource>();
 
     /// <summary>
+    /// The video layer curated by AI, when the template has one: its episode and what the writer may say. The plan is
+    /// made with the render; until then (and whenever it can't be) the layer plays its one clip as usual.
+    /// </summary>
+    public CuratedPromoRequest? Curation { get; init; }
+
+    /// <summary>The curated layer's clips, once its plan is laid out; null plays the layer as usual.</summary>
+    public IReadOnlyList<CuratedClip>? CuratedClips { get; init; }
+
+    /// <summary>
     /// Whether a variable image's automatic picture was still being searched for, so the promo will look different once
     /// it's found (it isn't made until then).
     /// </summary>
@@ -121,8 +130,8 @@ public static partial class GeneratedPromoResolver
             ? voice.Advanced is { Enabled: true }
                 ? GeneratedPromoVoice.Script(voice, upcoming, used[0], channelName, zone, variety)
                 : Script(template.Type, used, zone, promoTime,
-                Tokens(Phrase(voice.PreMessages, voice.PreMessage, $"{variety}|pre"), channelName),
-                Tokens(Phrase(voice.PostMessages, voice.PostMessage, $"{variety}|post"), channelName),
+                SpokenTokens(Phrase(voice.PreMessages, voice.PreMessage, $"{variety}|pre"), used[0], zone, promoTime, channelName),
+                SpokenTokens(Phrase(voice.PostMessages, voice.PostMessage, $"{variety}|post"), used[0], zone, promoTime, channelName),
                 variety)
             : null;
 
@@ -178,6 +187,30 @@ public static partial class GeneratedPromoResolver
             }
         }
 
+        // A video layer curated by AI: its plan needs the episode's transcript, so it's written when the promo is made,
+        // keyed (like AI writing) by what's asked: the template, the episode, and the usual read-out it falls back on.
+        CuratedPromoRequest? curation = null;
+        if (script is not null && CuratedPromo.LayerIndex(template) is { } curatedIndex && videos.TryGetValue(curatedIndex, out PromoVideoSource? curatedVideo)
+            && template.Layers[curatedIndex].Video is { Curated: { } curated, Episode: { } curatedEpisode }
+            && GeneratedImageSelectors.TryParse(curatedEpisode, out GeneratedImageContext curatedContext, out int curatedOffset)
+            && GeneratedPromoImages.Show(template, listings, imageSubjects, curatedContext, curatedOffset) is { } curatedShow)
+        {
+            // The voice-over's own opener and closer (Said first / Said last) go around the AI's lines, picked with the
+            // same seeds as the usual read-out; with advanced voice-over, only when it includes them.
+            GeneratedVoiceConfig curatedVoice = template.Voice!;
+            bool advanced = curatedVoice.Advanced is { Enabled: true };
+            curation = new CuratedPromoRequest(curatedIndex, curated, curatedShow, curatedVideo.Path, channelName, template.Type, zone, promoTime,
+                template.Duration, curatedVoice.Start, script, variety)
+            {
+                Opener = advanced && !curatedVoice.Advanced!.IncludePreMessages ? null
+                    : Phrase(curatedVoice.PreMessages, curatedVoice.PreMessage, $"{variety}|pre"),
+                Closer = advanced && !curatedVoice.Advanced!.IncludePostMessages ? null
+                    : Phrase(curatedVoice.PostMessages, curatedVoice.PostMessage, $"{variety}|post"),
+                Direction = CuratedPromo.Direction(curated, $"{variety}|direction|{curatedIndex}")
+            };
+            identity += $"|curated|{curatedIndex}|{curatedShow.Title}|{curatedShow.Episode}|{curatedShow.IsNew}";
+        }
+
         // Background videos once played silently; promos that now play one's sound are rendered again.
         if (BackgroundSound(template).Enabled && template.BackgroundChoices.Any(path => !PromoRenderer.IsImage(path)))
         {
@@ -214,6 +247,7 @@ public static partial class GeneratedPromoResolver
             ScriptJob = scriptJob,
             LayerJobs = layerJobs,
             LayerVideos = videos,
+            Curation = curation,
             ImagesPending = automaticImages is SchedularrTV.Service.Images.AutomaticImageLookup { Pending: true }
         };
     }
@@ -433,10 +467,11 @@ public static partial class GeneratedPromoResolver
             ? promo.SelectedBackground : Background(template.BackgroundChoices, promo.Key));
         // Over an episode clip there's no chosen background, so layers sit where the template puts them.
         Dictionary<int, PromoLayer> drawnByIndex = [];
-        List<PromoLayer> layers = template.Generator is not null ? [] : DrawnLayers(promo, clipPath is null ? background : null, drawnByIndex);
+        List<(PromoVideoLayer Layer, CuratedClip Clip)> curatedDrawn = [];
+        List<PromoLayer> layers = template.Generator is not null ? [] : DrawnLayers(promo, clipPath is null ? background : null, drawnByIndex, curatedDrawn);
         return new PromoComposition
         {
-            LayerAudio = VideoAudio(template, drawnByIndex),
+            LayerAudio = [.. VideoAudio(template, drawnByIndex), .. CuratedAudio(curatedDrawn, template.Duration)],
             Width = template.Width,
             Height = template.Height,
             Fps = template.Fps,
@@ -500,11 +535,41 @@ public static partial class GeneratedPromoResolver
     }
 
     /// <summary>
+    /// The sound of a curated layer's clips: a clip speaking for itself as loud as it's set, a clip under the announcer
+    /// quietly (or not at all). Each plays in step with its picture and stops with it.
+    /// </summary>
+    private static List<PromoMusic> CuratedAudio(IReadOnlyList<(PromoVideoLayer Layer, CuratedClip Clip)> clips, TimeSpan duration)
+    {
+        List<PromoMusic> sounds = [];
+        foreach ((PromoVideoLayer layer, CuratedClip clip) in clips)
+        {
+            if (!clip.WithSound || clip.Volume <= 0)
+            {
+                continue;
+            }
+
+            sounds.Add(new PromoMusic(clip.Path, clip.Volume, clip.SourceStart, TimeSpan.FromMilliseconds(40), TimeSpan.FromMilliseconds(60),
+                DuckUnderVoice: false, Loop: false)
+            {
+                Delay = clip.At,
+                Levels = PromoAudioEnvelope.ForLayer(layer, duration)
+            });
+        }
+
+        return sounds;
+    }
+
+    /// <summary>
     /// The template's layers for drawing, in list order, each linked to the group it's inside. A layer inside a group
     /// that isn't in the template (or a group inside itself) is drawn at the top level instead.
     /// </summary>
     /// <param name="byIndex">Filled with each drawn layer by its index in the template.</param>
-    private static List<PromoLayer> DrawnLayers(ResolvedGeneratedPromo promo, string? background, Dictionary<int, PromoLayer> byIndex)
+    /// <param name="curated">
+    /// Filled with the clips a curated layer becomes (one video layer each, placed and timed as its plan says) when the
+    /// promo has them; that layer is then left out of <paramref name="byIndex"/>, as its sound is its clips'.
+    /// </param>
+    private static List<PromoLayer> DrawnLayers(ResolvedGeneratedPromo promo, string? background, Dictionary<int, PromoLayer> byIndex,
+        List<(PromoVideoLayer Layer, CuratedClip Clip)> curated)
     {
         GeneratedPromoTemplate template = promo.Template;
         Dictionary<string, int> groups = new(StringComparer.Ordinal);
@@ -543,11 +608,42 @@ public static partial class GeneratedPromoResolver
         List<PromoLayer> layers = [];
         for (int index = 0; index < template.Layers.Count; index++)
         {
-            if (Build(index) is { } drawn)
+            if (Build(index) is not { } drawn)
             {
-                layers.Add(drawn);
-                byIndex[index] = drawn;
+                continue;
             }
+
+            // A curated layer is its clips: each a cut of the episode where the plan puts it, in the layer's box.
+            if (drawn is PromoVideoLayer video && promo.Curation?.LayerIndex == index && promo.CuratedClips is { Count: > 0 } clips)
+            {
+                foreach (CuratedClip clip in clips)
+                {
+                    PromoVideoLayer cut = video with
+                    {
+                        Path = clip.Path,
+                        SourceStart = clip.SourceStart,
+                        Start = clip.At,
+                        End = clip.At + clip.Length,
+                        In = PromoTransition.None,
+                        Out = PromoTransition.None,
+                        StartsWithLayer = true,
+                        Loop = false
+                    };
+                    layers.Add(cut);
+                    curated.Add((cut, clip));
+                }
+
+                continue;
+            }
+
+            // A curated layer without its clips (not curated this time, or not yet) shows nothing, if it's set to.
+            if (drawn is PromoVideoLayer && template.Layers[index].Video is { Curated.WhenNotCurated: GeneratedCurationFallback.Nothing })
+            {
+                continue;
+            }
+
+            layers.Add(drawn);
+            byIndex[index] = drawn;
         }
 
         return layers;
@@ -735,6 +831,39 @@ public static partial class GeneratedPromoResolver
 
     private static string? Tokens(string? text, string channelName) =>
         text?.Replace("{channel}", channelName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// An opener or closer with its tokens filled in for <paramref name="show"/>: <c>{show}</c> (or <c>{show_name}</c>),
+    /// <c>{episode}</c>, <c>{time}</c> (or <c>{show_time}</c>, <c>{start_time}</c>: "7", "7:30"), <c>{when}</c> ("tonight
+    /// at 7"), <c>{day}</c> ("tonight") and <c>{channel}</c>. Unknown tokens are left as written; text without tokens is
+    /// returned as it is.
+    /// </summary>
+    public static string? SpokenTokens(string? text, UpNextListing show, TimeZoneInfo zone, DateTimeOffset airsAt, string channelName)
+    {
+        if (text is null || !text.Contains('{'))
+        {
+            return text;
+        }
+
+        string time = UpNextPromo.SpokenClock(show.Start, zone);
+        string title = UpNextPromo.SpokenTitle(show.Title);
+        var tokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["show"] = title,
+            ["show_name"] = title,
+            ["episode"] = show.Episode ?? string.Empty,
+            ["time"] = time,
+            ["show_time"] = time,
+            ["start_time"] = time,
+            ["when"] = UpNextPromo.When(show.Start, airsAt, zone, day: true, time: true).ToLowerInvariant(),
+            ["day"] = UpNextPromo.When(show.Start, airsAt, zone, day: true, time: false).ToLowerInvariant(),
+            ["channel"] = channelName
+        };
+        return SpokenTokenPattern().Replace(text, match => tokens.TryGetValue(match.Groups[1].Value, out string? value) ? value : match.Value);
+    }
+
+    [GeneratedRegex(@"\{([a-z_]+)\}", RegexOptions.IgnoreCase)]
+    private static partial Regex SpokenTokenPattern();
 
     /// <summary>
     /// <c>{new}</c> reads "NEW" and <c>{new_episode}</c> "NEW EPISODE" when the promoted episode is a new one (a drop's

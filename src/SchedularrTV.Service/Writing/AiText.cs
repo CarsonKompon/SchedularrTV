@@ -55,10 +55,39 @@ public sealed record AiTextJob
 
     /// <summary>When it's needed by (when it airs); sooner ones are written first.</summary>
     public DateTimeOffset Due { get; init; }
+
+    /// <summary>
+    /// For writing that isn't a plain line of words (a promo's plan of lines and clips, say): how it's asked for, cleaned
+    /// up and checked. Null uses the usual rules for <see cref="Use"/>.
+    /// </summary>
+    public AiTextFormat? Format { get; init; }
+}
+
+/// <summary>
+/// How a job with its own shape of reply is put to the model and checked, in place of <see cref="AiTextRules"/>'s
+/// usual request, clean-up and checks. What <see cref="Accept"/> returns is what's kept, and what callers get back.
+/// </summary>
+public abstract class AiTextFormat
+{
+    /// <summary>Part of the job's identity: change it whenever the way it's asked changes, so old writing isn't reused.</summary>
+    public abstract string Id { get; }
+
+    /// <summary>The request for one try; a second try should change the seed and calm the sampling.</summary>
+    public abstract TextGenerationRequest Request(AiTextJob job, int attempt);
+
+    /// <summary>The reply as it's to be kept, and why it can't be used (null when it can).</summary>
+    public abstract (string Text, string? Problem) Accept(string reply, AiTextJob job);
 }
 
 /// <summary>What to use: the model's writing when <see cref="Written"/>, otherwise the usual wording and why.</summary>
-public sealed record AiTextResult(string Text, bool Written, string? Problem = null);
+public sealed record AiTextResult(string Text, bool Written, string? Problem = null)
+{
+    /// <summary>
+    /// The model's reply as it came, before clean-up and checks (the last try's, when it was set aside), for
+    /// troubleshooting; null when there wasn't one (no model, an error) or it wasn't kept.
+    /// </summary>
+    public string? Raw { get; init; }
+}
 
 /// <summary>How a job is put to the model, and how its reply is cleaned up and checked.</summary>
 public static partial class AiTextRules
@@ -107,6 +136,13 @@ public static partial class AiTextRules
         foreach (string name in job.MustSay)
         {
             Add(name);
+        }
+
+        // Only jobs with a format of their own say so, so every other job keeps the writing it already has.
+        if (job.Format is { } format)
+        {
+            Add("format");
+            Add(format.Id);
         }
 
         return text.ToString();

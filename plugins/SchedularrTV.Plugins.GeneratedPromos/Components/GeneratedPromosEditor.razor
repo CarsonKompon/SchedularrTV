@@ -1,5 +1,5 @@
 @* Generated promo templates for a channel or block, with one template open for editing. *@
-@inject TemplateAssets Assets
+@inject TemplateAssets TemplateFiles
 @inject ConfigEditor Editor
 
 @if (Config is not { } generated)
@@ -154,7 +154,7 @@ else
     private async Task<string> ImportPackage(TemplatePackageReader reader)
     {
         GeneratedSharedImport shared = new();
-        GeneratedPromoTemplate template = await GeneratedPromoPackages.ImportAsync(reader, Assets,
+        GeneratedPromoTemplate template = await GeneratedPromoPackages.ImportAsync(reader, TemplateFiles,
             Config?.Templates.Select(existing => existing.Name) ?? [], Editor.Working.Settings.GeneratedPromosSharedImages, shared);
         string sharedNote = shared.Summary.Length == 0 ? "" : " " + shared.Summary;
         if (Config is { } config)

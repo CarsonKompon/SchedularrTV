@@ -29,10 +29,14 @@
             <input type="text" value="@Config.Style" placeholder="@StylePlaceholder" @onchange="e => Set(() => Config.Style = Optional(e))" />
         </label>
     </div>
-    <label class="field">
-        <span>@PromptLabel</span>
-        <textarea rows="2" placeholder="@PromptPlaceholder" @onchange="e => Set(() => Config.Prompt = Optional(e))">@Config.Prompt</textarea>
-    </label>
+    @if (ShowPrompt)
+    {
+        <label class="field">
+            <span>@PromptLabel</span>
+            <textarea rows="2" placeholder="@PromptPlaceholder" @onchange="e => Set(() => Config.Prompt = Optional(e))">@Config.Prompt</textarea>
+        </label>
+    }
+    @ChildContent
     <div class="grid @(Compact ? "grid-2" : "grid-3")">
         <label class="field">
             <span>At most (words)</span>
@@ -80,6 +84,12 @@
     [Parameter] public EventCallback Changed { get; set; }
 
     [Parameter] public string PromptLabel { get; set; } = "What to write";
+
+    /// <summary>Shows the single "what to write" box; off when the caller asks for directions its own way (it can put them in <see cref="ChildContent"/>).</summary>
+    [Parameter] public bool ShowPrompt { get; set; } = true;
+
+    /// <summary>Shown where the prompt box is.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
 
     [Parameter] public string PromptPlaceholder { get; set; } = string.Empty;
 

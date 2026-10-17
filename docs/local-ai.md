@@ -52,6 +52,25 @@ The writer produces text; a separate [voice plugin](generated-promos.md#voices) 
 
 Overlay captions are prepared ahead of airing and shared by repeat episodes. Promos are written during rendering; successful text is cached under **`ai-text/`**.
 
+## Transcribe episodes (Whisper)
+
+For promos with [clips curated by AI](generated-promos.md#clips-curated-by-ai), the plugin also writes down what's said in episodes, with Whisper (whisper.cpp) running on this computer:
+
+1. Open **Plugins → Local AI writer → Settings**.
+2. Under **Speech recognition (Whisper)**, download the engine.
+3. Download a Whisper model and select **Use this**.
+4. Optionally set **Episodes' language** (`en`, `fr`…); left empty, Whisper works it out for each episode.
+
+| Model | Approximate download | Use |
+| --- | --- | --- |
+| **Whisper tiny** | 78 MB | Quickest; misses more words |
+| **Whisper base** | 148 MB | General-purpose starting point |
+| **Whisper small** | 488 MB | Clearer through music and shouting; about three times slower |
+
+**Your own Whisper model file** accepts whisper.cpp ggml models (`ggml-*.bin`). Transcribing uses **Processor threads** like the writer. Each episode is transcribed once, when a promo first needs it (or **Try it** in the template editor), and the transcript is kept with the generated promos. On processors without AVX, the engine download is the build that works without it.
+
+Plugin authors can add other speech recognition with **`AddSpeechTranscriber`** (API 1.10). See [Plugin development](plugin-development.md).
+
 ## In the schedule file
 
 Add **`writer`** to a generated promo's voice or a supported text layer:

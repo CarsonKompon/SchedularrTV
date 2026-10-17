@@ -36,7 +36,7 @@ The reference path above assumes a project under **`samples/<project>`**. Regist
   "id": "acme.screen-bug",
   "name": "Screen bug",
   "version": "1.0.0",
-  "apiVersion": "1.9",
+  "apiVersion": "1.10",
   "entryAssembly": "Acme.ScreenBug.dll",
   "enabledByDefault": true,
   "dependencies": [],
@@ -84,6 +84,7 @@ Required dependencies must be available and meet minimum versions. Dependencies 
 | Output | **`AddPlayoutOutput<T>()`** · `IPlayoutPublisher` |
 | Speech | **`AddSpeechProvider<T>()`** · `ITextToSpeechProvider` |
 | Text generation | **`AddTextGenerator<T>()`** · `ITextGenerator` |
+| Speech recognition (API 1.10) | **`AddSpeechTranscriber<T>()`** · `ISpeechTranscriber`: timed transcripts of episodes, for AI-curated promo clips. The host hands it a 16 kHz mono WAV and caches the result |
 | Picture search (API 1.9) | **`AddImageSearchProvider<T>()`** · `IImageSearchProvider`, for shared images' automatic pictures |
 | Publish-time processing | **`AddPlayoutProcessor<T>()`** · `IPlayoutProcessor` |
 | Complete external channels | **`AddExternalChannels<T>()`** · `IExternalChannelSource` |

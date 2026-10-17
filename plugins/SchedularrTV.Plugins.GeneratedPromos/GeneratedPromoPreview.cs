@@ -121,6 +121,14 @@ public sealed class GeneratedPromoPreview(
     /// <summary>Finds automatic image layers' pictures, when the scheduler provides it (it always does; tools and tests may not).</summary>
     public SchedularrTV.Service.Images.AutomaticImages? AutomaticImages => services.GetService<SchedularrTV.Service.Images.AutomaticImages>();
 
+    /// <summary>Episodes' transcripts, for layers curated by AI.</summary>
+    public PromoTranscripts Transcripts => promos.Transcripts;
+
+    /// <summary>A fresh curated plan for the template as it would air now, for the editor's "Try it".</summary>
+    public Task<SchedularrTV.Service.Writing.AiTextResult> TryCurationAsync(GeneratedPromoTemplate template, ChannelConfig channel, TimeZoneInfo zone,
+        string seed, CancellationToken cancellationToken = default) =>
+        promos.TryCurationAsync(Resolve(template, channel, zone), seed, cancellationToken);
+
     /// <summary>The template's AI jobs for the editor's "Try it", with what it would air with right now.</summary>
     public ResolvedGeneratedPromo? Resolve(GeneratedPromoTemplate template, ChannelConfig channel, TimeZoneInfo zone) =>
         GeneratedPromoResolver.Resolve(template, channel.Name, Listings(channel, template, out _), zone, clock.GetUtcNow(), ImageSubjects(channel, template),
@@ -148,6 +156,9 @@ public sealed class GeneratedPromoPreview(
 
         // AI-written captions show once they're written (the usual text until then; the editor redraws when they are).
         promo = GeneratedPromoWriting.Peek(promo, Writer);
+        // A layer curated by AI shows its clips once the episode's transcribed and the plan's written (both in the
+        // background; until then it shows its one clip), placed for lines of about the length they'll be spoken.
+        promo = promos.PeekCuration(promo);
         PromoComposition composition = GeneratedPromoResolver.Compose(promo);
         if (composition.BackgroundPath is { } background && !PromoRenderer.IsImage(background))
         {
