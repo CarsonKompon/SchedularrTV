@@ -346,7 +346,20 @@ public sealed partial class GeneratedPromoService(
             audio = curated.VoicePath;
             promo = promo with { CuratedClips = curated.Timeline.Clips };
         }
-        else if (promo.Script is { } script && template.Voice is { Enabled: true } voice)
+        else if (promo.Prerecorded is { } recorded && template.Voice is { Enabled: true } recordedVoice)
+        {
+            try
+            {
+                (audio, tempo) = await PrerecordedAsync(recorded, template.Duration - recordedVoice.Start - TimeSpan.FromMilliseconds(300), cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                audio = null;
+                voiceError = ex;
+            }
+        }
+        else if (promo.Script is { } script && template.Voice is { Enabled: true, IsPrerecorded: false } voice)
         {
             try
             {
@@ -678,6 +691,141 @@ public sealed partial class GeneratedPromoService(
         }
 
         return path;
+    }
+
+    // Takes' lengths by path and when the file last changed, so they're measured once each.
+    private readonly ConcurrentDictionary<string, TimeSpan> _takeLengths = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>How long a recorded take is, measured once (and again whenever its file changes).</summary>
+    public async Task<TimeSpan> TakeLengthAsync(string path, CancellationToken cancellationToken = default)
+    {
+        string key = $"{path}|{File.GetLastWriteTimeUtc(path).Ticks}";
+        if (_takeLengths.TryGetValue(key, out TimeSpan known))
+        {
+            return known;
+        }
+
+        TimeSpan length = await ProbeAsync(path, cancellationToken).ConfigureAwait(false);
+        _takeLengths[key] = length;
+        return length;
+    }
+
+    /// <summary>
+    /// A pre-recorded voice-over put together: the template and takes that fit <paramref name="room"/> (see
+    /// <see cref="PrerecordedVoice.Choose"/>), said one after another, and how much it's sped up when even the
+    /// shortest runs long (only if the template allows it).
+    /// </summary>
+    public async Task<(string Path, double Tempo)> PrerecordedAsync(PrerecordedVoiceRequest request, TimeSpan room, CancellationToken cancellationToken = default)
+    {
+        Dictionary<string, TimeSpan> lengths = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string take in request.Candidates.SelectMany(candidate => candidate.Parts).SelectMany(part => part.Takes).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            lengths[take] = await TakeLengthAsync(take, cancellationToken).ConfigureAwait(false);
+        }
+
+        PrerecordedChoice choice = PrerecordedVoice.Choose(request, take => lengths[take], room);
+        string path = await AssembleAsync(choice.Takes, request.Gap, cancellationToken).ConfigureAwait(false);
+        double tempo = 1;
+        if (request.SpeedUp && room > TimeSpan.Zero && choice.Length > room)
+        {
+            tempo = Math.Min(MaxTempo, choice.Length / room);
+        }
+
+        return (path, tempo);
+    }
+
+    /// <summary>
+    /// Takes said one after another with <paramref name="gap"/> of silence between them, as one file in the voice-over
+    /// folder (kept and reused like a spoken one).
+    /// </summary>
+    public async Task<string> AssembleAsync(IReadOnlyList<string> takes, TimeSpan gap, CancellationToken cancellationToken = default)
+    {
+        if (takes.Count == 0)
+        {
+            throw new InvalidOperationException("There are no takes to put together.");
+        }
+
+        string identity = string.Join('\u001f', takes.Select(take => $"{Path.GetFullPath(take)}|{File.GetLastWriteTimeUtc(take).Ticks}"));
+        string hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes($"prerecorded\u001f{gap.Ticks}\u001f{identity}")))[..32];
+        if (CachedVoice(hash) is { } cached)
+        {
+            Touch(cached);
+            return cached;
+        }
+
+        Directory.CreateDirectory(VoiceDirectory);
+        string path = Path.Combine(VoiceDirectory, $"{hash}.wav");
+        string partial = Path.Combine(VoiceDirectory, $"{PartialPrefix}{Guid.NewGuid():N}");
+        string seconds = Math.Max(0, gap.TotalSeconds).ToString("0.###", CultureInfo.InvariantCulture);
+        StringBuilder filter = new();
+        for (int index = 0; index < takes.Count; index++)
+        {
+            // Every take in the same format (they may be recorded differently), with the gap after all but the last.
+            filter.Append(CultureInfo.InvariantCulture, $"[{index}:a]aformat=sample_fmts=s16:sample_rates=48000:channel_layouts=stereo");
+            if (index < takes.Count - 1 && gap > TimeSpan.Zero)
+            {
+                filter.Append(CultureInfo.InvariantCulture, $",apad=pad_dur={seconds}");
+            }
+
+            filter.Append(CultureInfo.InvariantCulture, $"[a{index}];");
+        }
+
+        for (int index = 0; index < takes.Count; index++)
+        {
+            filter.Append(CultureInfo.InvariantCulture, $"[a{index}]");
+        }
+
+        filter.Append(CultureInfo.InvariantCulture, $"concat=n={takes.Count}:v=0:a=1[out]");
+
+        var info = new ProcessStartInfo(_options.FfmpegPath)
+        {
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        foreach (string argument in (string[])["-hide_banner", "-loglevel", "error", "-y"])
+        {
+            info.ArgumentList.Add(argument);
+        }
+
+        foreach (string take in takes)
+        {
+            info.ArgumentList.Add("-i");
+            info.ArgumentList.Add(take);
+        }
+
+        foreach (string argument in (string[])["-filter_complex", filter.ToString(), "-map", "[out]", "-vn", "-c:a", "pcm_s16le", "-f", "wav", partial])
+        {
+            info.ArgumentList.Add(argument);
+        }
+
+        try
+        {
+            using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffmpeg could not be started.");
+            Work.Track(process, "Generated Promos", "Putting the voice-over together");
+            Task<string> error = process.StandardError.ReadToEndAsync(cancellationToken);
+            try
+            {
+                await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                if (!process.HasExited) process.Kill(entireProcessTree: true);
+                throw;
+            }
+
+            if (process.ExitCode != 0 || !File.Exists(partial))
+            {
+                throw new InvalidOperationException($"ffmpeg could not put the voice-over's takes together (exit {process.ExitCode}): {(await error.ConfigureAwait(false)).Trim()}");
+            }
+
+            File.Move(partial, path, overwrite: true);
+            return path;
+        }
+        finally
+        {
+            File.Delete(partial);
+        }
     }
 
     private string? CachedVoice(string hash) =>

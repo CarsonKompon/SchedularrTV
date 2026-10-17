@@ -25,7 +25,7 @@ public static class GeneratedPromoWriting
         string variety)
     {
         if (template.Voice is not { Enabled: true, Writer: { } writer } voice || listings.Count == 0
-            || voice.Advanced is { Enabled: true })
+            || voice.Advanced is { Enabled: true } || voice.IsPrerecorded)
         {
             return null;
         }

@@ -380,6 +380,147 @@ public sealed class GeneratedPromoPreview(
         }
     }
 
+    /// <summary>Where recorded and imported voice pack takes are kept, under the data folder's assets.</summary>
+    public const string VoicePackAssets = "voice-packs";
+
+    /// <summary>How long a take is (measured once per version of its file).</summary>
+    public Task<TimeSpan> TakeLengthAsync(string path, CancellationToken cancellationToken = default) =>
+        promos.TakeLengthAsync(path, cancellationToken);
+
+    /// <summary>
+    /// A take recorded in the browser, made into a WAV file (with the silence at either end trimmed, if asked) and kept
+    /// with the voice packs' other takes; returns its path.
+    /// </summary>
+    public async Task<string> SaveRecordingAsync(Stream content, string name, bool trimSilence, CancellationToken cancellationToken = default)
+    {
+        string directory = Path.Combine(promos.Root, GeneratedPromoService.PreviewFolder, "recordings");
+        Directory.CreateDirectory(directory);
+        string raw = Path.Combine(directory, $"{Guid.NewGuid():N}.recording");
+        string wav = Path.Combine(directory, $"{Guid.NewGuid():N}.wav");
+        try
+        {
+            await using (var file = new FileStream(raw, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+            {
+                await content.CopyToAsync(file, cancellationToken).ConfigureAwait(false);
+            }
+
+            // Leading silence (the click of the button) and trailing silence go, so takes join up tightly.
+            const string Trim = "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.05,areverse,"
+                + "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.08,areverse";
+            List<string> arguments = ["-hide_banner", "-loglevel", "error", "-y", "-i", raw, "-vn"];
+            if (trimSilence)
+            {
+                arguments.AddRange(["-af", Trim]);
+            }
+
+            arguments.AddRange(["-ar", "48000", "-c:a", "pcm_s16le", "-f", "wav", wav]);
+            await RunFfmpegAsync(arguments, "could not read the recording", cancellationToken).ConfigureAwait(false);
+
+            string safe = TemplateAssets.SafeName(name, "take");
+            string fileName = $"{safe}-{DateTime.Now:yyyyMMdd-HHmmss}.wav";
+            if (services.GetService<TemplateAssets>() is { } assets)
+            {
+                await using var kept = new FileStream(wav, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+                return await assets.KeepAsync(VoicePackAssets, fileName, kept, cancellationToken).ConfigureAwait(false);
+            }
+
+            // Without the data folder's assets (tools, tests), kept beside the promos.
+            string folder = Path.Combine(promos.Root, VoicePackAssets);
+            Directory.CreateDirectory(folder);
+            string target = Path.Combine(folder, fileName);
+            File.Move(wav, target, overwrite: true);
+            return target;
+        }
+        finally
+        {
+            File.Delete(raw);
+            File.Delete(wav);
+        }
+    }
+
+    /// <summary>A take (or any audio file) as a clip the browser can play from the promos folder.</summary>
+    public async Task<string> AudioClipAsync(string source, CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(source))
+        {
+            throw new FileNotFoundException("The scheduler can't find this recording.", source);
+        }
+
+        string key = $"{Path.GetFullPath(source)}|{File.GetLastWriteTimeUtc(source).Ticks}|take";
+        string directory = Path.Combine(promos.Root, GeneratedPromoService.PreviewFolder, "takes");
+        string clip = Path.Combine(directory, Hash(key) + ".mp4");
+        if (File.Exists(clip))
+        {
+            File.SetLastWriteTimeUtc(clip, DateTime.UtcNow);
+            return clip;
+        }
+
+        Directory.CreateDirectory(directory);
+        string partial = clip + ".partial.mp4";
+        try
+        {
+            await RunFfmpegAsync(["-hide_banner", "-loglevel", "error", "-y", "-i", source, "-vn", "-c:a", "aac", "-b:a", "160k",
+                "-movflags", "+faststart", "-f", "mp4", partial], "could not read the recording", cancellationToken).ConfigureAwait(false);
+            File.Move(partial, clip, overwrite: true);
+            return clip;
+        }
+        finally
+        {
+            File.Delete(partial);
+        }
+    }
+
+    /// <summary>
+    /// A pre-recorded voice-over said: the template and takes that would be chosen to fit <paramref name="room"/> (give the
+    /// request a new seed for another random pick), as a clip the browser can play, with how much the render would speed it up.
+    /// </summary>
+    public async Task<(string Clip, PrerecordedChoice Choice, double Tempo)> SayAsync(PrerecordedVoiceRequest request, TimeSpan room,
+        CancellationToken cancellationToken = default)
+    {
+        Dictionary<string, TimeSpan> lengths = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string take in request.Candidates.SelectMany(candidate => candidate.Parts).SelectMany(part => part.Takes).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            lengths[take] = await promos.TakeLengthAsync(take, cancellationToken).ConfigureAwait(false);
+        }
+
+        PrerecordedChoice choice = PrerecordedVoice.Choose(request, take => lengths[take], room);
+        string joined = await promos.AssembleAsync(choice.Takes, request.Gap, cancellationToken).ConfigureAwait(false);
+        double tempo = request.SpeedUp && room > TimeSpan.Zero && choice.Length > room ? Math.Min(1.35, choice.Length / room) : 1;
+        return (await AudioClipAsync(joined, cancellationToken).ConfigureAwait(false), choice, tempo);
+    }
+
+    private async Task RunFfmpegAsync(IEnumerable<string> arguments, string problem, CancellationToken cancellationToken)
+    {
+        var info = new ProcessStartInfo(options.Value.FfmpegPath)
+        {
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        foreach (string argument in arguments)
+        {
+            info.ArgumentList.Add(argument);
+        }
+
+        using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffmpeg could not be started.");
+        Work.Track(process);
+        Task<string> error = process.StandardError.ReadToEndAsync(cancellationToken);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            throw;
+        }
+
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"ffmpeg {problem} (exit {process.ExitCode}): {(await error.ConfigureAwait(false)).Trim()}");
+        }
+    }
+
     public string FileUrl(string path) =>
         "api/generated-promos/files/" + string.Join('/', promos.RelativePath(path)
             .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Select(Uri.EscapeDataString));

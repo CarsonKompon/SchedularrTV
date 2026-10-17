@@ -32,6 +32,32 @@
 .gp-scope .ed-background-rules > summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
 .gp-scope .ed-background-rules[open] > summary { margin-bottom: 10px; }
 .gp-scope .song-preview { display: block; width: 100%; height: 32px; margin-top: 4px; }
+
+/* ---- Pre-recorded voice-overs: voice packs, their phrases' takes and templates. ---- */
+.gp-scope .voice-mode { margin-bottom: 10px; }
+.gp-scope .voice-packs .card { margin: 8px 0; }
+.gp-scope .voice-takes { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+.gp-scope .voice-take { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 2px; border: 1px solid var(--line); border-radius: 999px; font-size: 12.5px; }
+.gp-scope .voice-take-missing { border-color: var(--warn); }
+.gp-scope .voice-take-length { margin: 0; font-size: 11.5px; }
+.gp-scope .voice-take-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex-basis: 100%; }
+.gp-scope .voice-take-audio { display: block; width: 100%; height: 32px; margin-top: 4px; }
+.gp-scope .voice-takes-empty { margin: 0; }
+.gp-scope .voice-rec-dot { width: 10px; height: 10px; border-radius: 50%; background: #e5484d; animation: gp-voice-rec 1s ease-in-out infinite; }
+@keyframes gp-voice-rec { 50% { opacity: 0.25; } }
+.gp-scope .voice-entry { border-top: 1px solid var(--line); padding: 4px 0; }
+.gp-scope .voice-entry-head { display: flex; align-items: center; gap: 8px; }
+.gp-scope .voice-entry-head input[type="text"] { flex: 0 1 320px; }
+.gp-scope .voice-entry-empty strong { color: var(--muted); font-weight: 500; }
+.gp-scope .voice-keyed { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); column-gap: 16px; }
+.gp-scope .voice-add-phrase input[type="text"] { flex: 1 1 240px; }
+.gp-scope .voice-template-name { flex: 0 1 320px; font-weight: 600; }
+.gp-scope .voice-parts { list-style: decimal; margin: 8px 0; padding-left: 28px; display: grid; gap: 6px; }
+.gp-scope .voice-part { display: list-item; }
+.gp-scope .voice-part > * { vertical-align: middle; margin-right: 6px; }
+.gp-scope .voice-part select { max-width: 280px; }
+.gp-scope .voice-part-missing .pill { border-color: var(--warn); color: var(--warn); }
+.gp-scope .voice-part-tools { display: inline-flex; gap: 2px; }
 .gp-scope .promo-video { width: 100%; max-width: 960px; margin-top: 12px; border-radius: 8px; background: #000; }
 
 /* ---- Visual editor. The same rules (under .ov-scope) style the Overlays editor: keep the two in step. ---- */

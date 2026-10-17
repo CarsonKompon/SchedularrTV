@@ -850,6 +850,247 @@ public sealed class GeneratedVoiceConfig
     /// <remarks>Left out of render keys while null, so templates without it keep their renders.</remarks>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public AiTextConfig? Writer { get; set; }
+
+    /// <summary>
+    /// Where the voice comes from: text-to-speech (null, the default, which keeps render keys of older templates) or
+    /// lines recorded ahead of time, from a voice pack (<see cref="Prerecorded"/>).
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedVoiceMode? Mode { get; set; }
+
+    /// <summary>Which voice pack, and which of its templates, a pre-recorded voice-over is built from. Kept while TTS is chosen.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedPrerecordedVoiceConfig? Prerecorded { get; set; }
+
+    /// <summary>Whether the voice-over is built from pre-recorded lines rather than spoken by text-to-speech.</summary>
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public bool IsPrerecorded => Mode == GeneratedVoiceMode.Prerecorded && Prerecorded is not null;
+}
+
+/// <summary>Where a generated promo's voice-over comes from.</summary>
+public enum GeneratedVoiceMode
+{
+    /// <summary>Spoken by a text-to-speech voice.</summary>
+    Tts,
+
+    /// <summary>Built from lines recorded ahead of time (a voice pack's phrases, put together by one of its templates).</summary>
+    Prerecorded
+}
+
+/// <summary>How a promo picks its pre-recorded voice-over from a voice pack.</summary>
+public enum GeneratedVoiceFit
+{
+    /// <summary>Any template and takes that fit the time, picked at random (shorter takes are swapped in when it's tight).</summary>
+    Random,
+
+    /// <summary>Uses as much of the time as it can: the longest template and takes that still fit.</summary>
+    Fill
+}
+
+/// <summary>A template's pre-recorded voice-over: a voice pack (<c>settings.plugins.generated-promos.voice_packs</c>) and which of its templates to use.</summary>
+public sealed class GeneratedPrerecordedVoiceConfig
+{
+    /// <summary>The voice pack's <see cref="GeneratedVoicePack.Id"/>.</summary>
+    public string Pack { get; set; } = string.Empty;
+
+    /// <summary>Ids of the pack's templates this promo may use; null (or empty) lets it use any that suit it.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Templates { get; set; }
+
+    public GeneratedVoiceFit Fit { get; set; } = GeneratedVoiceFit.Random;
+
+    /// <summary>Speeds the finished voice-over up (as text-to-speech is) when even its shortest takes run long.</summary>
+    public bool SpeedUp { get; set; } = true;
+
+    /// <summary>The pack <see cref="Pack"/> names, found when the configuration is loaded or edited.</summary>
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public GeneratedVoicePack? Linked { get; set; }
+}
+
+/// <summary>What a voice pack phrase says, and so how its recordings are chosen for a promo.</summary>
+public enum GeneratedVoicePhraseKind
+{
+    /// <summary>The same words every time ("Coming up next…"); its takes are picked between.</summary>
+    Text,
+
+    /// <summary>A show's name: a set of takes for each show.</summary>
+    ShowName,
+
+    /// <summary>When the show airs: today, tonight, tomorrow or a weekday, each with its own takes.</summary>
+    Day,
+
+    /// <summary>The show's start time, said from recorded hours, minutes and am/pm ("8" "30" "pm").</summary>
+    Time
+}
+
+/// <summary>
+/// A set of pre-recorded phrases and templates that put them together, kept once for every generated promo template
+/// (<c>settings.plugins.generated-promos.voice_packs</c>), so a show's name is recorded once and used everywhere.
+/// </summary>
+public sealed class GeneratedVoicePack
+{
+    public string Id { get; set; } = NewId();
+
+    public string Name { get; set; } = "Voice pack";
+
+    public List<GeneratedVoicePhrase> Phrases { get; set; } = [];
+
+    public List<GeneratedVoicePackTemplate> Templates { get; set; } = [];
+
+    /// <summary>Silence between the parts of a template, so takes recorded separately don't run into each other.</summary>
+    public TimeSpan Gap { get; set; } = TimeSpan.FromMilliseconds(60);
+
+    public static string NewId() => Guid.NewGuid().ToString("N");
+}
+
+/// <summary>One phrase of a voice pack: fixed words, or a show name, day or time with takes for each value.</summary>
+public sealed class GeneratedVoicePhrase
+{
+    public string Id { get; set; } = GeneratedVoicePack.NewId();
+
+    /// <summary>What it says, for a text phrase ("Coming up next…"); otherwise a label ("Show name").</summary>
+    public string Name { get; set; } = string.Empty;
+
+    public GeneratedVoicePhraseKind Kind { get; set; } = GeneratedVoicePhraseKind.Text;
+
+    /// <summary>A text phrase's takes, one picked for each promo.</summary>
+    public List<GeneratedVoiceTake> Takes { get; set; } = [];
+
+    /// <summary>
+    /// A show name, day or time phrase's values, each with its takes: show titles (matched loosely), day keys
+    /// (<see cref="GeneratedVoiceKeys.Days"/>), or time parts (<see cref="GeneratedVoiceKeys.TimeParts"/>).
+    /// </summary>
+    public List<GeneratedVoiceEntry> Entries { get; set; } = [];
+
+    /// <summary>Time phrases: hours 0 to 23 rather than 1 to 12 with am/pm.</summary>
+    public bool TwentyFourHour { get; set; }
+
+    /// <summary>Time phrases on a 12-hour clock: whether "am" or "pm" is said after the time.</summary>
+    public bool SayAmPm { get; set; } = true;
+}
+
+/// <summary>One value of a show name, day or time phrase, and its takes.</summary>
+public sealed class GeneratedVoiceEntry
+{
+    public string Key { get; set; } = string.Empty;
+
+    public List<GeneratedVoiceTake> Takes { get; set; } = [];
+}
+
+/// <summary>One recording of a phrase.</summary>
+public sealed class GeneratedVoiceTake
+{
+    public string Path { get; set; } = string.Empty;
+
+    /// <summary>How long it is, measured when it's added (and again when a promo is made), for the editor.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public TimeSpan? Length { get; set; }
+}
+
+/// <summary>A voice pack template: phrases said in order, one take of each, to make a promo's voice-over.</summary>
+public sealed class GeneratedVoicePackTemplate
+{
+    public string Id { get; set; } = GeneratedVoicePack.NewId();
+
+    public string Name { get; set; } = "Template";
+
+    public bool Enabled { get; set; } = true;
+
+    public List<GeneratedVoicePart> Parts { get; set; } = [];
+}
+
+/// <summary>One part of a voice pack template.</summary>
+public sealed class GeneratedVoicePart
+{
+    /// <summary>The phrase's <see cref="GeneratedVoicePhrase.Id"/>.</summary>
+    public string Phrase { get; set; } = string.Empty;
+
+    /// <summary>
+    /// For show name, day and time phrases: which show it's about. 0 is the show the promo is about (for Up Next, the
+    /// next show); 1 the show after it, and so on (Up Next only).
+    /// </summary>
+    public int Show { get; set; }
+}
+
+/// <summary>The values a day or time phrase can have recordings for.</summary>
+public static class GeneratedVoiceKeys
+{
+    public static readonly IReadOnlyList<string> Days =
+        ["today", "tonight", "tomorrow", "tomorrow night", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+
+    public const string Am = "am";
+    public const string Pm = "pm";
+    public const string Noon = "noon";
+    public const string Midnight = "midnight";
+
+    /// <summary>An hour's key: <c>8</c>, or <c>20</c> on a 24-hour clock.</summary>
+    public static string Hour(int hour) => hour.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>Minutes past the hour's key, written apart from hours: <c>:05</c>, <c>:30</c>.</summary>
+    public static string Minute(int minute) => ":" + minute.ToString("00", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The time parts a time phrase can have takes for: hours, minutes past the hour (every 5), am/pm on a 12-hour
+    /// clock, and noon/midnight (optional, said instead of 12 o'clock).
+    /// </summary>
+    public static IReadOnlyList<string> TimeParts(bool twentyFourHour, bool sayAmPm)
+    {
+        List<string> parts = [.. twentyFourHour ? Enumerable.Range(0, 24).Select(Hour) : Enumerable.Range(1, 12).Select(Hour)];
+        parts.AddRange(Enumerable.Range(1, 11).Select(step => Minute(step * 5)));
+        if (!twentyFourHour && sayAmPm)
+        {
+            parts.Add(Am);
+            parts.Add(Pm);
+        }
+
+        parts.Add(Noon);
+        parts.Add(Midnight);
+        return parts;
+    }
+
+    /// <summary>A time part's label, for the editor.</summary>
+    public static string TimeLabel(string key) => key switch
+    {
+        Am => "AM",
+        Pm => "PM",
+        Noon => "Noon (optional)",
+        Midnight => "Midnight (optional)",
+        ":05" => ":05 (\"oh-five\")",
+        _ => key
+    };
+
+    /// <summary>A day key's label, for the editor.</summary>
+    public static string DayLabel(string key) => System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(key);
+}
+
+/// <summary>Finding and linking voice packs.</summary>
+public static class GeneratedVoicePacks
+{
+    public static GeneratedVoicePack? Find(IEnumerable<GeneratedVoicePack>? library, string? id) =>
+        string.IsNullOrWhiteSpace(id) ? null
+            : library?.FirstOrDefault(pack => string.Equals(pack.Id, id.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Points every template's pre-recorded voice-over at the pack it names (or at nothing, when it's gone).</summary>
+    public static void Link(SchedulerConfig config)
+    {
+        foreach (GeneratedPromoTemplate template in GeneratedSharedImages.Templates(config))
+        {
+            Link(template, config.Settings.GeneratedPromosVoicePacks);
+        }
+    }
+
+    public static void Link(GeneratedPromoTemplate template, IEnumerable<GeneratedVoicePack>? library)
+    {
+        if (template.Voice?.Prerecorded is { } prerecorded)
+        {
+            prerecorded.Linked = Find(library, prerecorded.Pack);
+        }
+    }
+
+    /// <summary>How many generated promo templates use the pack for their voice-over.</summary>
+    public static int Uses(SchedulerConfig config, string id) =>
+        GeneratedSharedImages.Templates(config).Count(template =>
+            template.Voice?.Prerecorded is { } prerecorded && string.Equals(prerecorded.Pack, id, StringComparison.OrdinalIgnoreCase));
 }
 
 public sealed class GeneratedAdvancedVoiceConfig

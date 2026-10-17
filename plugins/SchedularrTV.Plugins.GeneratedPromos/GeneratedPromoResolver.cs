@@ -52,6 +52,12 @@ public sealed record ResolvedGeneratedPromo(
     public IReadOnlyList<CuratedClip>? CuratedClips { get; init; }
 
     /// <summary>
+    /// A pre-recorded voice-over: what it can be made from. One template and its takes are chosen (to fit the promo)
+    /// when it's rendered; <see cref="Script"/> only describes one for the editor.
+    /// </summary>
+    public PrerecordedVoiceRequest? Prerecorded { get; init; }
+
+    /// <summary>
     /// Whether a variable image's automatic picture was still being searched for, so the promo will look different once
     /// it's found (it isn't made until then).
     /// </summary>
@@ -126,7 +132,15 @@ public static partial class GeneratedPromoResolver
         List<IReadOnlyList<string>> lines = [.. template.Layers.Select(layer => Lines(layer,
             layer.Kind == GeneratedLayerKind.UpNext ? upcoming : used, zone, channelName, promoTime))];
         string variety = $"{string.Join('|', used.Select(listing => $"{listing.Title}@{listing.Start.UtcTicks}"))}|{promoTime.UtcTicks}";
-        string? script = template.Voice is { Enabled: true } voice
+
+        // A pre-recorded voice-over: the voice pack templates that can say it for these shows (one is chosen, with its
+        // takes, when the promo is made). Its read-out is only for the editor.
+        PrerecordedVoiceRequest? prerecorded = template.Voice is { Enabled: true, IsPrerecorded: true } recordedVoice
+            ? PrerecordedVoice.Plan(recordedVoice, template.Type == GeneratedPromoType.UpNext && upcoming.Count > 0 ? upcoming : used, zone, promoTime, variety)
+            : null;
+        string? script = template.Voice is { Enabled: true, IsPrerecorded: true }
+            ? prerecorded is null ? null : PrerecordedVoice.Describe(prerecorded)
+            : template.Voice is { Enabled: true } voice
             ? voice.Advanced is { Enabled: true }
                 ? GeneratedPromoVoice.Script(voice, upcoming, used[0], channelName, zone, variety)
                 : Script(template.Type, used, zone, promoTime,
@@ -136,6 +150,16 @@ public static partial class GeneratedPromoResolver
             : null;
 
         string identity = JsonSerializer.Serialize(new { Version = 1, Template = template, Lines = lines, Script = script }, KeyJson);
+        if (prerecorded is not null)
+        {
+            // What it can be made from: the templates and takes, and each take's file as it is now (a re-recorded take
+            // makes the promo again).
+            identity += $"|prerecorded|{JsonSerializer.Serialize(prerecorded, KeyJson)}";
+            foreach (string take in prerecorded.Candidates.SelectMany(candidate => candidate.Parts).SelectMany(part => part.Takes).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (File.Exists(take)) identity += $"|{take}|{File.GetLastWriteTimeUtc(take).Ticks}|{new FileInfo(take).Length}";
+            }
+        }
         if (images.Count > 0)
         {
             identity += $"|images|{JsonSerializer.Serialize(images, KeyJson)}";
@@ -190,7 +214,7 @@ public static partial class GeneratedPromoResolver
         // A video layer curated by AI: its plan needs the episode's transcript, so it's written when the promo is made,
         // keyed (like AI writing) by what's asked: the template, the episode, and the usual read-out it falls back on.
         CuratedPromoRequest? curation = null;
-        if (script is not null && CuratedPromo.LayerIndex(template) is { } curatedIndex && videos.TryGetValue(curatedIndex, out PromoVideoSource? curatedVideo)
+        if (script is not null && prerecorded is null && CuratedPromo.LayerIndex(template) is { } curatedIndex && videos.TryGetValue(curatedIndex, out PromoVideoSource? curatedVideo)
             && template.Layers[curatedIndex].Video is { Curated: { } curated, Episode: { } curatedEpisode }
             && GeneratedImageSelectors.TryParse(curatedEpisode, out GeneratedImageContext curatedContext, out int curatedOffset)
             && GeneratedPromoImages.Show(template, listings, imageSubjects, curatedContext, curatedOffset) is { } curatedShow)
@@ -248,6 +272,7 @@ public static partial class GeneratedPromoResolver
             LayerJobs = layerJobs,
             LayerVideos = videos,
             Curation = curation,
+            Prerecorded = prerecorded,
             ImagesPending = automaticImages is SchedularrTV.Service.Images.AutomaticImageLookup { Pending: true }
         };
     }

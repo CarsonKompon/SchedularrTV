@@ -38,6 +38,7 @@ public static class SchedulerConfigLoader
             .WithAttributeOverride<SchedulerSettings>(settings => settings.GeneratedPromosLeadTime, new YamlIgnoreAttribute())
             .WithAttributeOverride<SchedulerSettings>(settings => settings.GeneratedPromosWatchedOnly, new YamlIgnoreAttribute())
             .WithAttributeOverride<SchedulerSettings>(settings => settings.GeneratedPromosSharedImages, new YamlIgnoreAttribute())
+            .WithAttributeOverride<SchedulerSettings>(settings => settings.GeneratedPromosVoicePacks, new YamlIgnoreAttribute())
             .WithAttributeOverride<ChannelConfig>(channel => channel.Plugins!, new YamlIgnoreAttribute())
             .WithAttributeOverride<ChannelConfig>(channel => channel.PromoBaseTags!, new YamlIgnoreAttribute())
             .WithAttributeOverride<ChannelConfig>(channel => channel.Promos!, new YamlIgnoreAttribute())
@@ -413,13 +414,20 @@ public static class SchedulerConfigLoader
                 errors.Add($"{templateScope}: background_color must be a hex colour such as #101828.");
             }
 
-            if (template.Voice is { Enabled: true } voice
+            if (template.Voice is { Enabled: true, IsPrerecorded: true } recordedVoice)
+            {
+                if (string.IsNullOrWhiteSpace(recordedVoice.Prerecorded!.Pack))
+                    errors.Add($"{templateScope}.voice.prerecorded: choose a voice pack.");
+                else if (GeneratedVoicePacks.Find(config.Settings.GeneratedPromosVoicePacks, recordedVoice.Prerecorded.Pack) is null)
+                    warnings.Add($"{templateScope}.voice.prerecorded: there is no voice pack '{recordedVoice.Prerecorded.Pack}', so it has no voice-over.");
+            }
+            else if (template.Voice is { Enabled: true } voice
                 && (string.IsNullOrWhiteSpace(voice.Provider) || string.IsNullOrWhiteSpace(voice.Voice)))
             {
                 errors.Add($"{templateScope}.voice: choose a provider and a voice.");
             }
 
-            if (template.Voice is { Enabled: true, Advanced: { Enabled: true } advanced } authoredVoice)
+            if (template.Voice is { Enabled: true, IsPrerecorded: false, Advanced: { Enabled: true } advanced } authoredVoice)
             {
                 if (advanced.Templates.Count == 0 || advanced.Templates.Any(string.IsNullOrWhiteSpace))
                     errors.Add($"{templateScope}.voice.advanced: add at least one nonempty script template.");
@@ -1036,6 +1044,24 @@ public static class SchedulerConfigLoader
         }
 
         GeneratedSharedImages.Link(config);
+
+        config.Settings.GeneratedPromosVoicePacks ??= [];
+        foreach (GeneratedVoicePack pack in config.Settings.GeneratedPromosVoicePacks)
+        {
+            pack.Id = pack.Id?.Trim() ?? string.Empty;
+            pack.Phrases ??= [];
+            pack.Templates ??= [];
+            foreach (GeneratedVoicePhrase phrase in pack.Phrases)
+            {
+                phrase.Takes ??= [];
+                phrase.Entries ??= [];
+                foreach (GeneratedVoiceEntry entry in phrase.Entries) entry.Takes ??= [];
+            }
+
+            foreach (GeneratedVoicePackTemplate template in pack.Templates) template.Parts ??= [];
+        }
+
+        GeneratedVoicePacks.Link(config);
     }
 
     /// <summary>

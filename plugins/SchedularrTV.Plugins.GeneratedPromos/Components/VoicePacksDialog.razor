@@ -1,0 +1,654 @@
+@* Voice packs: pre-recorded phrases (fixed lines, show names, days, times, each with several takes) and the templates
+   that put them together into a promo's voice-over. Kept once for every generated promo template. *@
+@using Microsoft.Extensions.DependencyInjection
+@inject ConfigEditor Editor
+@inject GeneratedPromoPreview Preview
+@inject IServiceProvider Services
+
+<div class="modal-backdrop" @onclick="Close">
+    <div class="modal modal-wide voice-packs" role="dialog" aria-modal="true" aria-labelledby="voice-packs-title" @onclick:stopPropagation="true">
+        <div class="modal-head">
+            <h2 id="voice-packs-title">Voice packs</h2>
+            <div class="spacer"></div>
+            <button class="btn btn-ghost btn-icon btn-sm" type="button" title="Close" aria-label="Close" @onclick="Close"><Icon Name="x" Size="16" /></button>
+        </div>
+
+        <div class="row row-wrap">
+            <label class="field" style="flex: 1 1 260px; margin: 0;">
+                <span>Voice pack</span>
+                <select value="@(Pack?.Id ?? string.Empty)" @onchange="e => SelectPack(e.Value?.ToString())">
+                    @if (Library.Count == 0)
+                    {
+                        <option value="">No voice packs yet</option>
+                    }
+                    @foreach (GeneratedVoicePack pack in Library)
+                    {
+                        <option value="@pack.Id">@(string.IsNullOrWhiteSpace(pack.Name) ? "Untitled" : pack.Name)</option>
+                    }
+                </select>
+            </label>
+            <button class="btn btn-sm" type="button" @onclick="AddPack"><Icon Name="plus" Size="15" />New voice pack</button>
+        </div>
+
+        @if (Pack is { } current)
+        {
+            <div class="row" role="tablist" aria-label="Voice pack sections">
+                <button class="btn btn-sm @(_tab == Tab.Phrases ? "btn-primary" : "")" type="button" role="tab" aria-selected="@(_tab == Tab.Phrases)"
+                        @onclick="() => _tab = Tab.Phrases">Phrases (@current.Phrases.Count)</button>
+                <button class="btn btn-sm @(_tab == Tab.Templates ? "btn-primary" : "")" type="button" role="tab" aria-selected="@(_tab == Tab.Templates)"
+                        @onclick="() => _tab = Tab.Templates">Templates (@current.Templates.Count)</button>
+                <button class="btn btn-sm @(_tab == Tab.Settings ? "btn-primary" : "")" type="button" role="tab" aria-selected="@(_tab == Tab.Settings)"
+                        @onclick="() => _tab = Tab.Settings">Pack settings</button>
+            </div>
+
+            @switch (_tab)
+            {
+                case Tab.Phrases:
+                    @(PhrasesTab(current))
+                    break;
+                case Tab.Templates:
+                    @(TemplatesTab(current))
+                    break;
+                default:
+                    @(SettingsTab(current))
+                    break;
+            }
+        }
+        else
+        {
+            <p class="hint">A voice pack holds lines recorded ahead of time—fixed phrases like “Coming up next…”, every show's name, days and
+                times—and templates that string them together. Make one to get started.</p>
+        }
+
+        <div class="row">
+            <div class="spacer"></div>
+            <button class="btn btn-primary" type="button" @onclick="Close">Done</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>The pack to show when the dialog opens.</summary>
+    [Parameter] public string? Focus { get; set; }
+
+    /// <summary>Shows to try templates with (the template being edited's preview shows), the first being the promo's own.</summary>
+    [Parameter] public IReadOnlyList<UpNextListing> Shows { get; set; } = [];
+    [Parameter] public TimeZoneInfo Zone { get; set; } = TimeZoneInfo.Local;
+    [Parameter] public DateTimeOffset AirsAt { get; set; } = DateTimeOffset.Now;
+
+    /// <summary>How much time the voice-over has, for trying templates.</summary>
+    [Parameter] public TimeSpan Room { get; set; } = TimeSpan.FromSeconds(9);
+
+    /// <summary>Raised with the pack chosen in the dialog, so the template being edited can pick it up.</summary>
+    [Parameter] public EventCallback<string> PackChosen { get; set; }
+
+    private enum Tab { Phrases, Templates, Settings }
+
+    private const string DayHelp = "A show airing today says “tonight” from 5pm when that's recorded, else “today”; tomorrow likewise. "
+        + "Otherwise its weekday is said, which also stands in for any of these that aren't recorded.";
+
+    private const string TimeHelp = "8:30 PM is said as “8” “:30” “PM”; 8:00 PM as “8” “PM”. Noon and midnight are said instead of 12:00 when they're recorded. "
+        + "A time whose parts aren't all recorded can't be said, so templates that say it are skipped for that promo.";
+
+    // Bumped to reset the "add a part" picker after each pick.
+    private int _partPicker;
+
+    private Tab _tab = Tab.Phrases;
+    private string? _packId;
+    private readonly HashSet<string> _open = new(StringComparer.OrdinalIgnoreCase);
+    private string _newText = string.Empty;
+    private GeneratedVoicePhraseKind _newKind = GeneratedVoicePhraseKind.Text;
+    private readonly Dictionary<string, string> _newShow = new(StringComparer.Ordinal);
+    private bool _trimSilence = true;
+
+    // Trying a template: which one, its clip, what it said, or why it couldn't.
+    private string? _tryingId;
+    private string? _tryUrl;
+    private string? _tryNote;
+    private bool _tryBusy;
+    private int _tries;
+
+    private List<GeneratedVoicePack> Library => Editor.Working.Settings.GeneratedPromosVoicePacks;
+
+    private GeneratedVoicePack? Pack => GeneratedVoicePacks.Find(Library, _packId) ?? Library.FirstOrDefault();
+
+    protected override void OnInitialized()
+    {
+        _packId = GeneratedVoicePacks.Find(Library, Focus)?.Id ?? Library.FirstOrDefault()?.Id;
+    }
+
+    private Task Notify() => Changed.InvokeAsync();
+
+    private Task Set(Action change)
+    {
+        change();
+        return Notify();
+    }
+
+    private Task Close() => OnClose.InvokeAsync();
+
+    private void SelectPack(string? id)
+    {
+        _packId = id;
+        _open.Clear();
+        ClearTry();
+    }
+
+    private async Task AddPack()
+    {
+        GeneratedVoicePack created = new()
+        {
+            Name = GeneratedPromoEditing.UniqueName(Library.Select(pack => pack.Name), "Voice pack"),
+            Phrases =
+            [
+                new GeneratedVoicePhrase { Name = "Coming up next…", Kind = GeneratedVoicePhraseKind.Text },
+                new GeneratedVoicePhrase { Name = "Show name", Kind = GeneratedVoicePhraseKind.ShowName },
+                new GeneratedVoicePhrase { Name = "Day", Kind = GeneratedVoicePhraseKind.Day },
+                new GeneratedVoicePhrase { Name = "Time", Kind = GeneratedVoicePhraseKind.Time }
+            ]
+        };
+        created.Templates.Add(new GeneratedVoicePackTemplate
+        {
+            Name = "Coming up next",
+            Parts = [new GeneratedVoicePart { Phrase = created.Phrases[0].Id }, new GeneratedVoicePart { Phrase = created.Phrases[1].Id }]
+        });
+        Library.Add(created);
+        _packId = created.Id;
+        _tab = Tab.Phrases;
+        await Notify();
+        await PackChosen.InvokeAsync(created.Id);
+    }
+
+    private Task RemovePack(GeneratedVoicePack pack)
+    {
+        if (GeneratedVoicePacks.Uses(Editor.Working, pack.Id) > 0) return Task.CompletedTask;
+        Library.Remove(pack);
+        _packId = Library.FirstOrDefault()?.Id;
+        return Notify();
+    }
+
+    private void Toggle(string key)
+    {
+        if (!_open.Remove(key)) _open.Add(key);
+    }
+
+    private static string KindName(GeneratedVoicePhraseKind kind) => kind switch
+    {
+        GeneratedVoicePhraseKind.ShowName => "Show name",
+        GeneratedVoicePhraseKind.Day => "Day",
+        GeneratedVoicePhraseKind.Time => "Time",
+        _ => "Text"
+    };
+
+    private static int TakeCount(GeneratedVoicePhrase phrase) =>
+        phrase.Kind == GeneratedVoicePhraseKind.Text ? phrase.Takes.Count : phrase.Entries.Sum(entry => entry.Takes.Count);
+
+    private static string Summary(GeneratedVoicePhrase phrase)
+    {
+        int takes = TakeCount(phrase);
+        string recorded = takes == 1 ? "1 take" : $"{takes} takes";
+        if (phrase.Kind == GeneratedVoicePhraseKind.Text) return recorded;
+        int values = phrase.Entries.Count(entry => entry.Takes.Count > 0);
+        string noun = phrase.Kind switch
+        {
+            GeneratedVoicePhraseKind.ShowName => values == 1 ? "show" : "shows",
+            GeneratedVoicePhraseKind.Day => values == 1 ? "day" : "days",
+            _ => values == 1 ? "part" : "parts"
+        };
+        return $"{values} {noun} · {recorded}";
+    }
+
+    // ---- Phrases ----------------------------------------------------------------------------------------------
+
+    private RenderFragment PhrasesTab(GeneratedVoicePack pack) => __builder =>
+    {
+        <p class="hint">
+            Each phrase has one or more takes; a promo picks one at random, preferring shorter takes when time is tight. Show name, day and time
+            phrases have takes for each value: every show's name, each day, and the hours, minutes and am/pm a time is said from.
+        </p>
+        @foreach (GeneratedVoicePhrase phrase in pack.Phrases)
+        {
+            string key = $"phrase:{phrase.Id}";
+            bool open = _open.Contains(key);
+            int uses = pack.Templates.Sum(template => template.Parts.Count(part => part.Phrase == phrase.Id));
+            <div class="card voice-phrase" @key="phrase">
+                <div class="card-head">
+                    <button class="btn btn-ghost btn-icon btn-sm" type="button" aria-expanded="@(open ? "true" : "false")"
+                            aria-label="@(open ? "Collapse" : "Expand")" @onclick="() => Toggle(key)">
+                        <Icon Name="@(open ? "chevron-down" : "chevron-right")" Size="16" />
+                    </button>
+                    <span class="pill">@KindName(phrase.Kind)</span>
+                    <strong style="cursor: pointer;" @onclick="() => Toggle(key)">@(string.IsNullOrWhiteSpace(phrase.Name) ? "Untitled" : phrase.Name)</strong>
+                    <span class="hint">@Summary(phrase)@(uses == 0 ? " · not in a template" : uses == 1 ? " · in 1 template" : $" · in {uses} templates")</span>
+                    <div class="spacer"></div>
+                    <button class="btn btn-sm btn-danger" type="button" title="Delete this phrase (and its parts in templates)"
+                            @onclick="() => RemovePhrase(pack, phrase)">Delete</button>
+                </div>
+                @if (open)
+                {
+                    <label class="field">
+                        <span>@(phrase.Kind == GeneratedVoicePhraseKind.Text ? "What it says" : "Name")</span>
+                        <input type="text" value="@phrase.Name" @onchange="e => Set(() => phrase.Name = e.Value?.ToString() ?? string.Empty)" />
+                    </label>
+                    @switch (phrase.Kind)
+                    {
+                        case GeneratedVoicePhraseKind.Text:
+                            <VoiceTakesEditor Takes="phrase.Takes" Changed="Notify" Prompt="@phrase.Name" TrimSilence="_trimSilence" />
+                            break;
+                        case GeneratedVoicePhraseKind.ShowName:
+                            @(ShowEntries(phrase))
+                            break;
+                        case GeneratedVoicePhraseKind.Day:
+                            @(KeyedEntries(phrase, GeneratedVoiceKeys.Days, GeneratedVoiceKeys.DayLabel, DayHelp))
+                            break;
+                        case GeneratedVoicePhraseKind.Time:
+                            @(TimeSettings(phrase))
+                            @(KeyedEntries(phrase, GeneratedVoiceKeys.TimeParts(phrase.TwentyFourHour, phrase.SayAmPm), GeneratedVoiceKeys.TimeLabel, TimeHelp))
+                            break;
+                    }
+                }
+            </div>
+        }
+
+        <div class="row row-wrap voice-add-phrase">
+            <select value="@_newKind" aria-label="Kind of phrase" @onchange="e => _newKind = Enum.Parse<GeneratedVoicePhraseKind>(e.Value?.ToString() ?? nameof(GeneratedVoicePhraseKind.Text))">
+                @foreach (GeneratedVoicePhraseKind kind in Enum.GetValues<GeneratedVoicePhraseKind>())
+                {
+                    <option value="@kind">@KindName(kind)</option>
+                }
+            </select>
+            <input type="text" value="@_newText" aria-label="What the phrase says"
+                   placeholder="@(_newKind == GeneratedVoicePhraseKind.Text ? "What it says, e.g. Only on Nick!" : $"Name, e.g. {KindName(_newKind)}")"
+                   @oninput="e => _newText = e.Value?.ToString() ?? string.Empty" />
+            <button class="btn btn-sm" type="button" disabled="@(_newKind == GeneratedVoicePhraseKind.Text && string.IsNullOrWhiteSpace(_newText))"
+                    @onclick="() => AddPhrase(pack)"><Icon Name="plus" Size="15" />Add phrase</button>
+        </div>
+    };
+
+    private RenderFragment ShowEntries(GeneratedVoicePhrase phrase) => __builder =>
+    {
+        string typed = _newShow.GetValueOrDefault(phrase.Id, string.Empty);
+        IReadOnlyList<string> unrecorded = ScheduledShows().Where(title => ShowTitleMatcher.Find(title, phrase.Entries, entry => entry.Key) is null).ToList();
+        <p class="hint">Show names are matched loosely (case, punctuation, a missing “The” and small typos are forgiven). A promo about a show with
+            no recording here skips the templates that say its name.</p>
+        @foreach (GeneratedVoiceEntry entry in phrase.Entries)
+        {
+            string key = $"entry:{phrase.Id}:{entry.Key}";
+            bool open = _open.Contains(key);
+            <div class="voice-entry" @key="entry">
+                <div class="voice-entry-head">
+                    <button class="btn btn-ghost btn-icon btn-sm" type="button" aria-label="@(open ? "Collapse" : "Expand")" @onclick="() => Toggle(key)">
+                        <Icon Name="@(open ? "chevron-down" : "chevron-right")" Size="14" />
+                    </button>
+                    <input type="text" value="@entry.Key" aria-label="Show title" @onchange="e => Rename(phrase, entry, e.Value?.ToString())" />
+                    <span class="hint">@(entry.Takes.Count == 1 ? "1 take" : $"{entry.Takes.Count} takes")</span>
+                    <div class="spacer"></div>
+                    <button class="btn btn-ghost btn-icon btn-sm" type="button" title="Remove this show" aria-label="@($"Remove {entry.Key}")"
+                            @onclick="() => Set(() => phrase.Entries.Remove(entry))"><Icon Name="x" Size="14" /></button>
+                </div>
+                @if (open)
+                {
+                    <VoiceTakesEditor Takes="entry.Takes" Changed="Notify" Prompt="@entry.Key" TrimSilence="_trimSilence" />
+                }
+            </div>
+        }
+        <div class="row row-wrap">
+            <input type="text" value="@typed" placeholder="Show title" aria-label="Show title to add" list="@($"voice-shows-{phrase.Id}")"
+                   @oninput="e => _newShow[phrase.Id] = e.Value?.ToString() ?? string.Empty" />
+            <datalist id="@($"voice-shows-{phrase.Id}")">
+                @foreach (string title in unrecorded)
+                {
+                    <option value="@title"></option>
+                }
+            </datalist>
+            <button class="btn btn-sm" type="button" disabled="@string.IsNullOrWhiteSpace(typed)" @onclick="() => AddShow(phrase, typed)">Add show</button>
+            @if (unrecorded.Count > 0)
+            {
+                <button class="btn btn-sm" type="button" title="@(string.Join(", ", unrecorded.Take(30)))"
+                        @onclick="() => AddShows(phrase, unrecorded)">Add the @unrecorded.Count scheduled @(unrecorded.Count == 1 ? "show" : "shows") not here yet</button>
+            }
+        </div>
+    };
+
+    private RenderFragment KeyedEntries(GeneratedVoicePhrase phrase, IReadOnlyList<string> keys, Func<string, string> label, string help) => __builder =>
+    {
+        <p class="hint">@help</p>
+        <div class="voice-keyed">
+            @foreach (string value in keys)
+            {
+                GeneratedVoiceEntry? entry = phrase.Entries.FirstOrDefault(candidate => string.Equals(candidate.Key, value, StringComparison.OrdinalIgnoreCase));
+                string key = $"entry:{phrase.Id}:{value}";
+                bool open = _open.Contains(key);
+                int count = entry?.Takes.Count ?? 0;
+                <div class="voice-entry @(count == 0 ? "voice-entry-empty" : null)" @key="value">
+                    <div class="voice-entry-head">
+                        <button class="btn btn-ghost btn-icon btn-sm" type="button" aria-label="@(open ? "Collapse" : "Expand")" @onclick="() => Open(phrase, value, key)">
+                            <Icon Name="@(open ? "chevron-down" : "chevron-right")" Size="14" />
+                        </button>
+                        <strong style="cursor: pointer;" @onclick="() => Open(phrase, value, key)">@label(value)</strong>
+                        <span class="hint">@(count == 0 ? "not recorded" : count == 1 ? "1 take" : $"{count} takes")</span>
+                    </div>
+                    @if (open && entry is not null)
+                    {
+                        <VoiceTakesEditor Takes="entry.Takes" Changed="Notify" Prompt="@label(value)" TrimSilence="_trimSilence" />
+                    }
+                </div>
+            }
+        </div>
+    };
+
+    private RenderFragment TimeSettings(GeneratedVoicePhrase phrase) => __builder =>
+    {
+        <div class="row row-wrap">
+            <label class="check">
+                <input type="checkbox" checked="@phrase.TwentyFourHour" @onchange="e => Set(() => phrase.TwentyFourHour = e.Value is true)" />
+                <span>24-hour clock (hours 0–23, no am/pm)</span>
+            </label>
+            @if (!phrase.TwentyFourHour)
+            {
+                <label class="check">
+                    <input type="checkbox" checked="@phrase.SayAmPm" @onchange="e => Set(() => phrase.SayAmPm = e.Value is true)" />
+                    <span>Say “AM” / “PM” after the time</span>
+                </label>
+            }
+        </div>
+    };
+
+    private async Task Open(GeneratedVoicePhrase phrase, string value, string key)
+    {
+        if (_open.Remove(key)) return;
+        _open.Add(key);
+        if (!phrase.Entries.Any(candidate => string.Equals(candidate.Key, value, StringComparison.OrdinalIgnoreCase)))
+        {
+            phrase.Entries.Add(new GeneratedVoiceEntry { Key = value });
+            await Notify();
+        }
+    }
+
+    private Task Rename(GeneratedVoicePhrase phrase, GeneratedVoiceEntry entry, string? title)
+    {
+        string trimmed = title?.Trim() ?? string.Empty;
+        if (trimmed.Length == 0) return Task.CompletedTask;
+        bool open = _open.Remove($"entry:{phrase.Id}:{entry.Key}");
+        entry.Key = trimmed;
+        if (open) _open.Add($"entry:{phrase.Id}:{trimmed}");
+        return Notify();
+    }
+
+    private Task AddShow(GeneratedVoicePhrase phrase, string title)
+    {
+        string trimmed = title.Trim();
+        if (trimmed.Length == 0) return Task.CompletedTask;
+        _newShow[phrase.Id] = string.Empty;
+        if (phrase.Entries.Any(entry => string.Equals(entry.Key, trimmed, StringComparison.OrdinalIgnoreCase))) return Task.CompletedTask;
+        phrase.Entries.Add(new GeneratedVoiceEntry { Key = trimmed });
+        _open.Add($"entry:{phrase.Id}:{trimmed}");
+        return Notify();
+    }
+
+    private Task AddShows(GeneratedVoicePhrase phrase, IEnumerable<string> titles) => Set(() =>
+    {
+        foreach (string title in titles)
+        {
+            if (!phrase.Entries.Any(entry => string.Equals(entry.Key, title, StringComparison.OrdinalIgnoreCase)))
+                phrase.Entries.Add(new GeneratedVoiceEntry { Key = title });
+        }
+
+        phrase.Entries.Sort((a, b) => string.Compare(a.Key, b.Key, StringComparison.OrdinalIgnoreCase));
+    });
+
+    /// <summary>The shows every channel's current schedule airs, for adding show names quickly.</summary>
+    private IReadOnlyList<string> ScheduledShows()
+    {
+        if (Services.GetService<ScheduleCoordinator>() is not { } coordinator) return [];
+        return coordinator.Latest
+            .SelectMany(schedule => schedule.Entries)
+            .Where(entry => entry.Kind == ScheduleEntryKind.Program && entry.Item is not null && !entry.IsSlotIntro && !entry.IsSlotOutro)
+            .Select(entry => string.IsNullOrWhiteSpace(entry.Item!.SeriesName) ? entry.Item.Title : entry.Item.SeriesName)
+            .Where(title => !string.IsNullOrWhiteSpace(title))
+            .Select(title => title.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private Task AddPhrase(GeneratedVoicePack pack)
+    {
+        string text = _newText.Trim();
+        if (_newKind == GeneratedVoicePhraseKind.Text && text.Length == 0) return Task.CompletedTask;
+        GeneratedVoicePhrase phrase = new() { Kind = _newKind, Name = text.Length > 0 ? text : KindName(_newKind) };
+        pack.Phrases.Add(phrase);
+        _open.Add($"phrase:{phrase.Id}");
+        _newText = string.Empty;
+        return Notify();
+    }
+
+    private Task RemovePhrase(GeneratedVoicePack pack, GeneratedVoicePhrase phrase) => Set(() =>
+    {
+        pack.Phrases.Remove(phrase);
+        foreach (GeneratedVoicePackTemplate template in pack.Templates)
+        {
+            template.Parts.RemoveAll(part => part.Phrase == phrase.Id);
+        }
+    });
+
+    // ---- Templates --------------------------------------------------------------------------------------------
+
+    private RenderFragment TemplatesTab(GeneratedVoicePack pack) => __builder =>
+    {
+        <p class="hint">
+            A template says its parts in order, one take of each, to make a promo's voice-over. A promo uses one of the templates it's allowed
+            whose recordings cover its show (its name, day and time), choosing shorter takes when time is tight; if even the shortest runs long it
+            can be sped up. Add a short fallback template so every promo has something to say.
+        </p>
+        @if (pack.Phrases.Count == 0)
+        {
+            <p class="hint warn">Add some phrases first.</p>
+        }
+        @foreach (GeneratedVoicePackTemplate template in pack.Templates)
+        {
+            IReadOnlyList<string> missing = Shows.Count == 0 ? Array.Empty<string>() : PrerecordedVoice.Missing(pack, template, Shows, Zone, AirsAt);
+            <div class="card voice-template" @key="template">
+                <div class="card-head">
+                    <input type="text" class="voice-template-name" value="@template.Name" aria-label="Template name"
+                           @onchange="e => Set(() => template.Name = e.Value?.ToString() ?? string.Empty)" />
+                    <label class="check" style="margin: 0;">
+                        <input type="checkbox" checked="@template.Enabled" @onchange="e => Set(() => template.Enabled = e.Value is true)" />
+                        <span>On</span>
+                    </label>
+                    <div class="spacer"></div>
+                    <button class="btn btn-sm" type="button" disabled="@(_tryBusy || template.Parts.Count == 0)"
+                            title="Say it for the preview's shows (a new random pick of takes each time)" @onclick="() => Try(pack, template)">
+                        @(_tryBusy && _tryingId == template.Id ? "…" : "▶ Try")
+                    </button>
+                    <button class="btn btn-sm" type="button" title="Make a copy" @onclick="() => Duplicate(pack, template)">Duplicate</button>
+                    <button class="btn btn-sm btn-danger" type="button" @onclick="() => Set(() => pack.Templates.Remove(template))">Delete</button>
+                </div>
+                <ol class="voice-parts">
+                    @for (int index = 0; index < template.Parts.Count; index++)
+                    {
+                        int position = index;
+                        GeneratedVoicePart part = template.Parts[position];
+                        GeneratedVoicePhrase? phrase = pack.Phrases.FirstOrDefault(candidate => candidate.Id == part.Phrase);
+                        <li class="voice-part @(phrase is null ? "voice-part-missing" : null)" @key="part">
+                            <span class="pill">@(phrase is null ? "Deleted" : KindName(phrase.Kind))</span>
+                            <select value="@part.Phrase" aria-label="@($"Phrase of part {position + 1}")" @onchange="e => Set(() => part.Phrase = e.Value?.ToString() ?? string.Empty)">
+                                @if (phrase is null)
+                                {
+                                    <option value="@part.Phrase">(deleted phrase)</option>
+                                }
+                                @foreach (GeneratedVoicePhrase option in pack.Phrases)
+                                {
+                                    <option value="@option.Id">@PhraseLabel(option)</option>
+                                }
+                            </select>
+                            @if (phrase is not null && phrase.Kind != GeneratedVoicePhraseKind.Text)
+                            {
+                                <select value="@part.Show" aria-label="@($"Which show part {position + 1} is about")"
+                                        @onchange="e => Set(() => part.Show = int.TryParse(e.Value?.ToString(), out int which) ? Math.Clamp(which, 0, 9) : 0)">
+                                    @for (int show = 0; show < 10; show++)
+                                    {
+                                        <option value="@show">@ShowLabel(show)</option>
+                                    }
+                                </select>
+                            }
+                            <span class="voice-part-tools">
+                                <button class="btn btn-ghost btn-icon btn-sm" type="button" disabled="@(position == 0)" title="Earlier" aria-label="Move earlier"
+                                        @onclick="() => Move(template, position, -1)">↑</button>
+                                <button class="btn btn-ghost btn-icon btn-sm" type="button" disabled="@(position == template.Parts.Count - 1)" title="Later" aria-label="Move later"
+                                        @onclick="() => Move(template, position, 1)">↓</button>
+                                <button class="btn btn-ghost btn-icon btn-sm" type="button" title="Remove this part" aria-label="Remove this part"
+                                        @onclick="() => Set(() => template.Parts.RemoveAt(position))"><Icon Name="x" Size="14" /></button>
+                            </span>
+                        </li>
+                    }
+                </ol>
+                @if (pack.Phrases.Count > 0)
+                {
+                    <div class="row row-wrap">
+                        <select @key="_partPicker" value="" aria-label="Add a part" @onchange="e => AddPart(template, e.Value?.ToString())">
+                            <option value="">+ Add a part…</option>
+                            @foreach (GeneratedVoicePhrase option in pack.Phrases)
+                            {
+                                <option value="@option.Id">@PhraseLabel(option)</option>
+                            }
+                        </select>
+                    </div>
+                }
+                @if (missing.Count > 0 && template.Parts.Count > 0)
+                {
+                    <p class="hint warn">Can't be said for the preview's shows: @(string.Join("; ", missing)).</p>
+                }
+                @if (_tryingId == template.Id)
+                {
+                    @if (_tryNote is not null)
+                    {
+                        <p class="hint" role="status">@_tryNote</p>
+                    }
+                    @if (_tryUrl is not null)
+                    {
+                        <audio src="@_tryUrl" autoplay controls class="voice-take-audio voice-try-audio"></audio>
+                    }
+                }
+            </div>
+        }
+        <button class="btn btn-sm" type="button" @onclick="() => AddTemplate(pack)"><Icon Name="plus" Size="15" />New template</button>
+    };
+
+    private static string PhraseLabel(GeneratedVoicePhrase phrase) =>
+        phrase.Kind == GeneratedVoicePhraseKind.Text ? $"“{phrase.Name}”" : $"{phrase.Name} ({KindName(phrase.Kind).ToLowerInvariant()})";
+
+    private static string ShowLabel(int show) => show switch
+    {
+        0 => "the promo's show",
+        1 => "2nd upcoming show",
+        2 => "3rd upcoming show",
+        _ => $"{show + 1}th upcoming show"
+    };
+
+    private Task AddTemplate(GeneratedVoicePack pack) => Set(() => pack.Templates.Add(new GeneratedVoicePackTemplate
+    {
+        Name = GeneratedPromoEditing.UniqueName(pack.Templates.Select(template => template.Name), "Template")
+    }));
+
+    private Task Duplicate(GeneratedVoicePack pack, GeneratedVoicePackTemplate template) => Set(() =>
+        pack.Templates.Insert(pack.Templates.IndexOf(template) + 1, new GeneratedVoicePackTemplate
+        {
+            Name = GeneratedPromoEditing.UniqueName(pack.Templates.Select(existing => existing.Name), template.Name),
+            Enabled = template.Enabled,
+            Parts = [.. template.Parts.Select(part => new GeneratedVoicePart { Phrase = part.Phrase, Show = part.Show })]
+        }));
+
+    private Task AddPart(GeneratedVoicePackTemplate template, string? phrase)
+    {
+        _partPicker++;
+        if (string.IsNullOrWhiteSpace(phrase)) return Task.CompletedTask;
+        return Set(() => template.Parts.Add(new GeneratedVoicePart { Phrase = phrase }));
+    }
+
+    private Task Move(GeneratedVoicePackTemplate template, int position, int by) => Set(() =>
+    {
+        int target = position + by;
+        if (target < 0 || target >= template.Parts.Count) return;
+        (template.Parts[position], template.Parts[target]) = (template.Parts[target], template.Parts[position]);
+    });
+
+    private void ClearTry()
+    {
+        _tryingId = null;
+        _tryUrl = null;
+        _tryNote = null;
+    }
+
+    private async Task Try(GeneratedVoicePack pack, GeneratedVoicePackTemplate template)
+    {
+        ClearTry();
+        _tryingId = template.Id;
+        if (Shows.Count == 0)
+        {
+            _tryNote = "Open this from a template's voice-over to try it with that template's shows.";
+            return;
+        }
+
+        GeneratedVoiceConfig voice = new()
+        {
+            Mode = GeneratedVoiceMode.Prerecorded,
+            Prerecorded = new GeneratedPrerecordedVoiceConfig { Pack = pack.Id, Templates = [template.Id], Linked = pack }
+        };
+        if (PrerecordedVoice.Plan(voice, Shows, Zone, AirsAt, $"try|{++_tries}|{DateTime.UtcNow.Ticks}") is not { } request)
+        {
+            _tryNote = $"It can't be said for these shows: {string.Join("; ", PrerecordedVoice.Missing(pack, template, Shows, Zone, AirsAt))}.";
+            return;
+        }
+
+        _tryBusy = true;
+        try
+        {
+            (string clip, PrerecordedChoice choice, double tempo) = await Preview.SayAsync(request, Room);
+            _tryUrl = $"{Preview.FileUrl(clip)}?v={DateTime.UtcNow.Ticks}";
+            _tryNote = $"{choice.Candidate.Describe()} — {PrerecordedVoice.Seconds(choice.Length)} of {PrerecordedVoice.Seconds(Room)}"
+                       + (tempo > 1.001 ? $"; a promo would speed it up {tempo:0.00}×." : choice.Length > Room ? "; too long, and speeding up is off." : ".");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _tryNote = $"Couldn't put it together: {ex.GetBaseException().Message}";
+        }
+        finally
+        {
+            _tryBusy = false;
+        }
+    }
+
+    // ---- Settings ---------------------------------------------------------------------------------------------
+
+    private RenderFragment SettingsTab(GeneratedVoicePack pack) => __builder =>
+    {
+        int uses = GeneratedVoicePacks.Uses(Editor.Working, pack.Id);
+        <div class="grid grid-2">
+            <label class="field">
+                <span>Name</span>
+                <input type="text" value="@pack.Name" @onchange="e => Set(() => pack.Name = e.Value?.ToString() ?? string.Empty)" />
+            </label>
+            <label class="field">
+                <span>Pause between parts (ms)</span>
+                <input type="number" min="0" max="2000" step="10" value="@Math.Round(pack.Gap.TotalMilliseconds)"
+                       @onchange="e => Set(() => pack.Gap = TimeSpan.FromMilliseconds(Math.Clamp(double.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double ms) ? ms : 60, 0, 2000)))" />
+            </label>
+        </div>
+        <label class="check">
+            <input type="checkbox" checked="@_trimSilence" @onchange="e => _trimSilence = e.Value is true" />
+            <span>Trim the silence at the start and end of new recordings</span>
+        </label>
+        <p class="hint">Recording uses this computer's microphone through the browser, which only allows it on a secure page (https, or
+            http://localhost on the computer running SchedularrTV). Takes can also be recorded elsewhere and added as files.</p>
+        <div class="row">
+            <span class="hint">@(uses == 0 ? "No template uses this pack." : uses == 1 ? "Used by 1 template." : $"Used by {uses} templates.")</span>
+            <div class="spacer"></div>
+            <button class="btn btn-sm btn-danger" type="button" disabled="@(uses > 0)"
+                    title="@(uses > 0 ? "Still used by a template" : "Delete this voice pack")" @onclick="() => RemovePack(pack)">Delete voice pack</button>
+        </div>
+    };
+}

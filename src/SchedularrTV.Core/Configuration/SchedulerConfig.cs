@@ -109,6 +109,12 @@ public sealed class SchedulerSettings
     public List<GeneratedSharedImage> GeneratedPromosSharedImages { get; set; } = [];
 
     /// <summary>
+    /// Pre-recorded voice-over phrases and templates kept once for every generated promo template
+    /// (<c>plugins.generated-promos.voice_packs</c>); a template's voice-over uses one by its id.
+    /// </summary>
+    public List<GeneratedVoicePack> GeneratedPromosVoicePacks { get; set; } = [];
+
+    /// <summary>
     /// Global settings of installed plugins, keyed by plugin id; channels and blocks can override them. The
     /// bundled features (promos, generated promos) are kept in their typed properties instead, and only share
     /// this section in the YAML (<see cref="PluginSections"/>).

@@ -74,6 +74,11 @@ public static class GeneratedPromoEditing
             }
         }
 
+        if (template.Voice?.Prerecorded is { } recorded && copy.Voice?.Prerecorded is { } recordedCopy)
+        {
+            recordedCopy.Linked = recorded.Linked;
+        }
+
         return copy;
     }
 

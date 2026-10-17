@@ -1148,6 +1148,19 @@
     </label>
     @if (Template.Voice is { Enabled: true } voice)
     {
+        bool prerecordedMode = voice.Mode == GeneratedVoiceMode.Prerecorded;
+        <div class="row voice-mode" role="group" aria-label="Where the voice comes from">
+            <button class="btn btn-sm @(!prerecordedMode ? "btn-primary" : "")" type="button" aria-pressed="@(!prerecordedMode)"
+                    @onclick="() => SetVoiceMode(voice, GeneratedVoiceMode.Tts)">Text-to-speech</button>
+            <button class="btn btn-sm @(prerecordedMode ? "btn-primary" : "")" type="button" aria-pressed="@prerecordedMode"
+                    @onclick="() => SetVoiceMode(voice, GeneratedVoiceMode.Prerecorded)">Pre-recorded lines</button>
+        </div>
+        @if (prerecordedMode && voice.Prerecorded is { } recorded)
+        {
+            @(PrerecordedSettings(voice, recorded))
+        }
+        else
+        {
         bool advancedVoice = voice.Advanced is { Enabled: true };
         ITextToSpeechProvider? provider = Voices.Providers.FirstOrDefault(candidate => string.Equals(candidate.Id, voice.Provider, StringComparison.OrdinalIgnoreCase));
         IReadOnlyList<TtsVoice> voiceList = VoiceList(provider);
@@ -1298,6 +1311,13 @@
                             TryHint="Writes one with this channel's next shows (a new one each time)." />
         }
         }
+        }
+    }
+
+    @if (_voicePacksOpen)
+    {
+        <VoicePacksDialog Focus="@Template.Voice?.Prerecorded?.Pack" Changed="VoicePacksChanged" OnClose="() => _voicePacksOpen = false"
+                          PackChosen="PackCreated" Shows="@VoiceShows()" Zone="@Zone" AirsAt="@Preview.Now" Room="@VoiceRoom" />
     }
 
     <h3 class="ed-section">Background music</h3>
@@ -3554,6 +3574,209 @@
     }
 
     private string DefaultVoiceTemplate => Template.Type == GeneratedPromoType.UpNext ? "Now, it's {up_next}." : "It's {show} on {channel}!";
+
+    // ---- Pre-recorded voice-over --------------------------------------------------------------------------------
+
+    private bool _voicePacksOpen;
+    private string? _sayUrl;
+    private string? _sayNote;
+    private bool _saying;
+    private int _says;
+
+    private List<GeneratedVoicePack> VoicePacks => Editor.Working.Settings.GeneratedPromosVoicePacks;
+
+    /// <summary>The time the voice-over has: the promo less when it starts, and a moment at the end.</summary>
+    private TimeSpan VoiceRoom => Template.Duration - (Template.Voice?.Start ?? TimeSpan.Zero) - TimeSpan.FromMilliseconds(300);
+
+    /// <summary>The shows a pre-recorded voice-over's parts can be about, as the promo would have them right now.</summary>
+    private IReadOnlyList<UpNextListing> VoiceShows()
+    {
+        IReadOnlyList<UpNextListing> listings = PreviewListings(out _);
+        IReadOnlyList<UpNextListing> upcoming = Preview.ImageSubjects(Channel, Template).Upcoming;
+        return Template.Type == GeneratedPromoType.UpNext && upcoming.Count > 0 ? upcoming : listings;
+    }
+
+    private Task SetVoiceMode(GeneratedVoiceConfig voice, GeneratedVoiceMode mode) => Set(() =>
+    {
+        // Text-to-speech is the default, kept as null so templates without pre-recorded lines keep their renders.
+        voice.Mode = mode == GeneratedVoiceMode.Prerecorded ? mode : null;
+        if (mode == GeneratedVoiceMode.Prerecorded && voice.Prerecorded is null)
+        {
+            voice.Prerecorded = new GeneratedPrerecordedVoiceConfig { Pack = VoicePacks.Count == 1 ? VoicePacks[0].Id : string.Empty };
+        }
+
+        GeneratedVoicePacks.Link(Template, VoicePacks);
+        ClearSay();
+    });
+
+    private Task ChooseVoicePack(string id) => Set(() =>
+    {
+        if (Template.Voice?.Prerecorded is not { } recorded) return;
+        if (!string.Equals(recorded.Pack, id, StringComparison.OrdinalIgnoreCase)) recorded.Templates = null;
+        recorded.Pack = id;
+        GeneratedVoicePacks.Link(Template, VoicePacks);
+        ClearSay();
+    });
+
+    // A pack made in the dialog becomes this template's when it has none yet.
+    private Task PackCreated(string id) =>
+        Template.Voice?.Prerecorded is { } recorded && GeneratedVoicePacks.Find(VoicePacks, recorded.Pack) is null
+            ? ChooseVoicePack(id)
+            : Task.CompletedTask;
+
+    private Task VoicePacksChanged()
+    {
+        GeneratedVoicePacks.Link(Template, VoicePacks);
+        return Commit();
+    }
+
+    private Task SetPackTemplate(GeneratedPrerecordedVoiceConfig recorded, GeneratedVoicePack pack, string id, bool use) => Set(() =>
+    {
+        // Ticking every template is the same as "all of them", which also takes in ones added later.
+        List<string> chosen = recorded.Templates is { Count: > 0 } list ? list : [.. pack.Templates.Select(template => template.Id)];
+        chosen.RemoveAll(existing => string.Equals(existing, id, StringComparison.OrdinalIgnoreCase));
+        if (use) chosen.Add(id);
+        recorded.Templates = pack.Templates.All(template => chosen.Contains(template.Id, StringComparer.OrdinalIgnoreCase)) ? null : chosen;
+        ClearSay();
+    });
+
+    private void ClearSay()
+    {
+        _sayUrl = null;
+        _sayNote = null;
+    }
+
+    private async Task SayVoiceOver()
+    {
+        ClearSay();
+        GeneratedVoicePacks.Link(Template, VoicePacks);
+        if (Preview.Resolve(Template, Channel, Zone)?.Prerecorded is not { } request)
+        {
+            _sayNote = "None of the voice pack's templates can be said for these shows.";
+            return;
+        }
+
+        _saying = true;
+        try
+        {
+            (string clip, PrerecordedChoice choice, double tempo) = await Preview.SayAsync(request with { Seed = $"{request.Seed}|try|{++_says}" }, VoiceRoom, _life.Token);
+            _sayUrl = $"{Preview.FileUrl(clip)}?v={DateTime.UtcNow.Ticks}";
+            _sayNote = $"{choice.Candidate.Name}: {choice.Candidate.Describe()} — {PrerecordedVoice.Seconds(choice.Length)} of {PrerecordedVoice.Seconds(VoiceRoom)}"
+                       + (tempo > 1.001 ? $", sped up {tempo:0.00}× in the promo." : choice.Length > VoiceRoom ? ", so the end is cut off (speeding up is off)." : ".");
+        }
+        catch (OperationCanceledException) when (_life.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _sayNote = $"Couldn't put it together: {ex.GetBaseException().Message}";
+        }
+        finally
+        {
+            _saying = false;
+        }
+    }
+
+    private RenderFragment PrerecordedSettings(GeneratedVoiceConfig voice, GeneratedPrerecordedVoiceConfig recorded) => __builder =>
+    {
+        GeneratedVoicePack? pack = GeneratedVoicePacks.Find(VoicePacks, recorded.Pack);
+        <div class="grid grid-3">
+            <label class="field">
+                <span>Voice pack</span>
+                <select value="@(pack?.Id ?? string.Empty)" @onchange="e => ChooseVoicePack(e.Value?.ToString() ?? string.Empty)">
+                    @if (pack is null)
+                    {
+                        <option value="">@(VoicePacks.Count == 0 ? "No voice packs yet" : "Choose a voice pack")</option>
+                    }
+                    @foreach (GeneratedVoicePack option in VoicePacks)
+                    {
+                        <option value="@option.Id">@(string.IsNullOrWhiteSpace(option.Name) ? "Untitled" : option.Name)</option>
+                    }
+                </select>
+            </label>
+            <label class="field">
+                <span>Starts speaking at (s)</span>
+                <input type="number" min="0" step="0.05" value="@Number(voice.Start.TotalSeconds)"
+                       @onchange="e => SetSeconds(e, value => voice.Start = value)" />
+            </label>
+            <label class="field">
+                <span>Choosing takes</span>
+                <select value="@recorded.Fit" @onchange="e => Set(() => recorded.Fit = Enum.Parse<GeneratedVoiceFit>(Text(e)))">
+                    <option value="@GeneratedVoiceFit.Random">At random (shorter ones when time is tight)</option>
+                    <option value="@GeneratedVoiceFit.Fill">Fill the time (longest that fit)</option>
+                </select>
+            </label>
+        </div>
+        <div class="row row-wrap">
+            <button class="btn btn-sm" type="button" @onclick="() => _voicePacksOpen = true">
+                <Icon Name="mic" Size="15" />@(VoicePacks.Count == 0 ? "Make a voice pack…" : "Edit voice packs…")
+            </button>
+            <span class="hint" style="margin: 0;">Record phrases (with several takes each) and build templates from them; packs are shared by every promo.</span>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(recorded.Pack) && pack is null)
+        {
+            <p class="hint warn">The chosen voice pack no longer exists, so this promo has no voice-over.</p>
+        }
+        @if (pack is not null)
+        {
+            IReadOnlyList<UpNextListing> shows = VoiceShows();
+            DateTimeOffset now = Preview.Now;
+            <div class="field">
+                <span>Templates this promo may use (one that suits the shows is picked for each promo)</span>
+                @if (pack.Templates.Count == 0)
+                {
+                    <p class="hint warn">This pack has no templates yet. Open the voice packs to build one.</p>
+                }
+                @foreach (GeneratedVoicePackTemplate option in pack.Templates)
+                {
+                    bool used = recorded.Templates is not { Count: > 0 } || recorded.Templates.Contains(option.Id, StringComparer.OrdinalIgnoreCase);
+                    IReadOnlyList<string> missing = PrerecordedVoice.Missing(pack, option, shows, Zone, now);
+                    <label class="check" @key="option">
+                        <input type="checkbox" checked="@used" @onchange="e => SetPackTemplate(recorded, pack, option.Id, e.Value is true)" />
+                        <span>
+                            <strong>@(string.IsNullOrWhiteSpace(option.Name) ? "Untitled" : option.Name)</strong>@(option.Enabled ? "" : " (off in the pack)")
+                            <span class="hint" style="margin: 0;">— @PackTemplateWords(pack, option)</span>
+                            @if (used && option.Enabled && missing.Count > 0)
+                            {
+                                <span class="hint warn" style="margin: 0;"> Skipped for these shows: @(string.Join("; ", missing)).</span>
+                            }
+                        </span>
+                    </label>
+                }
+            </div>
+            <label class="check">
+                <input type="checkbox" checked="@recorded.SpeedUp" @onchange="e => Set(() => recorded.SpeedUp = e.Value is true)" />
+                <span>Speed it up (up to 1.35×) when even the shortest takes run longer than the promo</span>
+            </label>
+            string readOut = Script();
+            @if (string.IsNullOrWhiteSpace(readOut))
+            {
+                <p class="hint warn">None of these templates can be said for the preview's shows, so this promo would have no voice-over. Record what's missing, or add a template that needs less.</p>
+            }
+            else
+            {
+                <p class="hint">One possible read-out: <em>@readOut</em></p>
+                <div class="row row-wrap">
+                    <button class="btn btn-sm" type="button" disabled="@_saying" @onclick="SayVoiceOver">@(_saying ? "Putting it together…" : "▶ Hear one")</button>
+                    @if (_sayNote is not null)
+                    {
+                        <span class="hint" style="margin: 0;" role="status">@_sayNote</span>
+                    }
+                </div>
+                @if (_sayUrl is not null)
+                {
+                    <audio class="song-preview" src="@_sayUrl" autoplay controls></audio>
+                }
+            }
+        }
+    };
+
+    private static string PackTemplateWords(GeneratedVoicePack pack, GeneratedVoicePackTemplate template) =>
+        template.Parts.Count == 0 ? "no parts yet"
+            : string.Join(" + ", template.Parts.Select(part => pack.Phrases.FirstOrDefault(phrase => phrase.Id == part.Phrase) is { } phrase
+                ? phrase.Kind == GeneratedVoicePhraseKind.Text ? $"“{phrase.Name}”"
+                : part.Show == 0 ? $"[{phrase.Name}]" : $"[{phrase.Name} of show {part.Show + 1}]"
+                : "[deleted]"));
 
     private Task ToggleAdvancedVoice(GeneratedVoiceConfig voice, bool enabled) => Set(() =>
     {

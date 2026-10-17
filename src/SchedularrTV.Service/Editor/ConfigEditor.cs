@@ -41,6 +41,8 @@ public sealed class ConfigEditor(SchedulerConfigProvider provider)
         SchedularrTV.Core.Scheduling.AdBreakMigration.Migrate(_working);
         // Templates added, imported or relinked pick up their shared images straight away, for the previews.
         GeneratedSharedImages.Link(_working);
+        // And their pre-recorded voice-overs their voice packs.
+        GeneratedVoicePacks.Link(_working);
         Validate();
         Changed?.Invoke();
     }

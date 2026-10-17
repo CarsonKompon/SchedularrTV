@@ -623,6 +623,62 @@ voice:
     include_post_messages: false
 ```
 
+### Pre-recorded lines (voice packs)
+
+Under **Voice-over**, choose **Pre-recorded lines** instead of **Text-to-speech** to build the voice-over from recordings. Switching back keeps both settings.
+
+Recordings live in **voice packs**, shared by every template on every channel (so each show's name is recorded once). Open **Edit voice packs…**:
+
+- **Phrases** — each phrase has one or more *takes* (recordings); a promo picks one at random. Record a take from the microphone with **● Record** (the browser only allows this on `https` or `http://localhost` on the computer running SchedularrTV; silence at both ends is trimmed), or **Add files…** recorded elsewhere. Kinds:
+  - **Text** — fixed words: "Coming up next…", "…airs…", "Here on Nick."
+  - **Show name** — takes for each show. Names match loosely, like variable images. **Add the scheduled shows not here yet** lists every show the channels currently air.
+  - **Day** — today, tonight (said from 5pm), tomorrow, tomorrow night, and each weekday. The weekday stands in for any you didn't record.
+  - **Time** — hours (1–12, or 0–23 on a 24-hour clock), minutes past the hour in steps of 5 (`:05` … `:55`), AM/PM, and optionally noon/midnight. 8:30 PM is said "8" ":30" "PM"; 8:00 PM "8" "PM".
+- **Templates** — phrases in order, for example `"Episode premiere…"` · *Show name* · `"…airs…"` · *Day* · `"…at…"` · *Time* · `"Here on Nick."`. A show name, day or time part can be about the promo's show or, for Up Next, a later upcoming show. **▶ Try** plays it for the template's preview shows.
+
+Each promo uses one of the templates you allow whose recordings cover what it must say; a template missing a recording for that show, day or time is skipped (the editor lists what's missing). Add a short fallback such as `"Coming up next…"` · *Show name*. Takes are fitted to the time from **Starts speaking at** to the end of the promo:
+
+- **At random** picks a template and takes at random, swapping in shorter takes until it fits.
+- **Fill the time** uses the longest template and takes that still fit.
+- If even the shortest choice runs long, **Speed it up** plays it faster (up to 1.35×, as with text-to-speech).
+
+The choice is fixed per promo, so a re-render sounds the same. Re-recording a take renders promos that use it again.
+
+```yaml
+voice:
+  mode: prerecorded
+  start: 00:00:00.3500000
+  prerecorded:
+    pack: 3f0c…            # a voice pack's id
+    templates: [9a1b…]     # optional: only these of its templates
+    fit: random            # or fill
+    speed_up: true
+
+# kept once under settings:
+settings:
+  plugins:
+    generated-promos:
+      voice_packs:
+        - id: 3f0c…
+          name: Nick announcer
+          gap: 00:00:00.0600000      # pause between parts
+          phrases:
+            - id: p1
+              name: Coming up next…
+              kind: text
+              takes: [{ path: D:\voice\next-1.wav }, { path: D:\voice\next-2.wav }]
+            - id: p2
+              name: Show name
+              kind: show_name
+              entries:
+                - key: Rugrats
+                  takes: [{ path: D:\voice\rugrats.wav }]
+          templates:
+            - id: 9a1b…
+              name: Coming up next
+              parts: [{ phrase: p1 }, { phrase: p2, show: 0 }]
+```
+
 ### Piper
 
 1. Open **Plugins → Piper voices → Settings**.
