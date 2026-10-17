@@ -109,6 +109,8 @@ public static class SchedulerHost
         builder.Services.Configure<UpdateOptions>(builder.Configuration.GetSection(UpdateOptions.SectionName));
         builder.Services.AddSingleton<UpdateChecker>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<UpdateChecker>());
+        // Installs an update from the app: plans it and hands it to the tray, which quits, installs and relaunches.
+        builder.Services.AddSingleton<UpdateInstaller>();
         builder.Services.AddTransient<AppSettingsForm>();
         builder.Services.AddScoped<OnboardingState>();
 

@@ -1,27 +1,93 @@
-@* Says when a newer release is out, with a link to it. Shown at the top of the settings pages. *@
+@* Says when a newer release (or nightly) is out, and installs it: the app closes, updates itself and its plugins, and
+   starts again. Where it can't install itself (run on its own, a development build) it links to the download. Shown at
+   the top of the settings pages. *@
+@using SchedularrTV.Hosting
 @using SchedularrTV.Service.Hosting
 @implements IDisposable
 @inject UpdateChecker Updates
+@inject UpdateInstaller Installer
 
-@if (Updates.Available is { } update)
+@if (Installer.Pending is { } pending)
 {
     <div class="banner banner-ok update-banner" role="status">
-        <Icon Name="sparkles" Size="15" />
+        <span class="spinner spinner-sm"></span>
         <span>
-            <strong>SchedularrTV @update.Tag is available.</strong>
-            You're running @AppRuntime.Version.
+            <strong>Installing SchedularrTV @UpdateChecker.Label(pending.Version)…</strong>
+            The app is closing to update itself@(pending.Downloads.Any(download => download.Kind == UpdateDownload.PluginKind) ? " and its plugins" : string.Empty).
+            A window shows how it's going, and this page comes back when SchedularrTV has started again.
         </span>
+    </div>
+}
+else if (Updates.Available is { } update)
+{
+    UpdateReadiness readiness = Installer.Check(update);
+    <div class="banner banner-ok update-banner" role="status">
+        <Icon Name="sparkles" Size="15" />
+        <span class="update-banner-text">
+            <strong>SchedularrTV @update.Label is available.</strong>
+            You're running @UpdateChecker.Label(AppRuntime.Version).
+            @if (readiness.CanInstall)
+            {
+                int plugins = readiness.Downloads.Count(download => download.Kind == UpdateDownload.PluginKind);
+                <span>
+                    Installing closes the app, updates it@(plugins > 0 ? $" and {plugins} plugin{(plugins == 1 ? string.Empty : "s")}" : string.Empty), and starts it again.
+                    @if (readiness.PluginsLeftAlone.Count > 0)
+                    {
+                        <span>Not in this release, so left as they are: @string.Join(", ", readiness.PluginsLeftAlone).</span>
+                    }
+                </span>
+            }
+            else if (readiness.Reason is { } reason)
+            {
+                <span class="muted">@reason</span>
+            }
+            @if ((_error ?? Installer.Problem) is { } problem)
+            {
+                <span class="update-banner-error">@problem</span>
+            }
+        </span>
+        @if (readiness.CanInstall)
+        {
+            <button class="btn btn-sm btn-primary" type="button" disabled="@_installing" @onclick="() => Install(update)">
+                @(_installing ? "Starting…" : "Install and Restart")
+            </button>
+        }
         @if (update.Url.Length > 0)
         {
-            <a class="btn btn-sm btn-primary" href="@update.Url" target="_blank" rel="noopener">Get @update.Tag</a>
+            <a class="btn btn-sm @(readiness.CanInstall ? string.Empty : "btn-primary")" href="@update.Url" target="_blank" rel="noopener">
+                @(readiness.CanInstall ? "What's new" : $"Get {update.Label}")
+            </a>
         }
     </div>
 }
 
+<style>
+    .update-banner-text { display: grid; gap: 2px; flex: 1; min-width: 0; }
+    .update-banner-error { color: var(--danger, #ff8a8a); }
+</style>
+
 @code {
-    protected override void OnInitialized() => Updates.Changed += OnChanged;
+    private bool _installing;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        Updates.Changed += OnChanged;
+        Installer.Requested += OnChanged;
+    }
 
     private void OnChanged() => _ = InvokeAsync(StateHasChanged);
 
-    public void Dispose() => Updates.Changed -= OnChanged;
+    private void Install(AvailableUpdate update)
+    {
+        _installing = true;
+        _error = Installer.Install(update);
+        _installing = false;
+    }
+
+    public void Dispose()
+    {
+        Updates.Changed -= OnChanged;
+        Installer.Requested -= OnChanged;
+    }
 }

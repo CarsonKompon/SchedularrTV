@@ -1,0 +1,94 @@
+@* App settings' Updates card: which channel updates come from (numbered releases or the nightly build), and a check now. *@
+@using SchedularrTV.Service.Hosting
+@implements IDisposable
+@inject UpdateChecker Updates
+
+<div class="card">
+    <div class="card-head"><h2>Updates</h2></div>
+    <div class="grid grid-2">
+        <label class="field">
+            <span>Update channel</span>
+            <select value="@Updates.Channel" disabled="@_checking" @onchange="SetChannel">
+                <option value="@UpdateChannel.Release">Releases (numbered versions; recommended)</option>
+                <option value="@UpdateChannel.Nightly">Nightly (a new build after every change; may have problems)</option>
+            </select>
+        </label>
+        <div class="field">
+            <span>Running</span>
+            <code style="padding:8px 0;">@UpdateChecker.Label(AppRuntime.Version)</code>
+        </div>
+    </div>
+    <div class="row row-wrap" style="gap:10px;align-items:center;">
+        <button class="btn btn-sm" type="button" disabled="@_checking" @onclick="CheckNow">@(_checking ? "Checking…" : "Check for updates")</button>
+        <span class="hint" style="margin:0;">@Status</span>
+    </div>
+    <p class="hint">
+        @if (Updates.Channel == UpdateChannel.Nightly)
+        {
+            <span>Nightly builds are made from every change and aren't tested like releases. Switching back to Releases doesn't go back to an older version by itself: you stay on this one until a newer release comes out.</span>
+        }
+        else
+        {
+            <span>When a newer release is out, the settings pages offer to install it: the app closes, updates itself and the plugins the release has, and starts again.</span>
+        }
+    </p>
+</div>
+
+@code {
+    private bool _checking;
+    private readonly CancellationTokenSource _life = new();
+
+    private string Status =>
+        Updates.LastProblem is { } problem ? problem
+        : Updates.Available is { } update ? $"{update.Label} is available (see the banner above)."
+        : Updates.LastChecked is { } at ? $"Up to date. Checked {at.ToLocalTime():ddd HH:mm}."
+        : "Not checked yet.";
+
+    protected override void OnInitialized() => Updates.Changed += OnChanged;
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task SetChannel(ChangeEventArgs e)
+    {
+        if (!Enum.TryParse(e.Value?.ToString(), out UpdateChannel channel))
+        {
+            return;
+        }
+
+        _checking = true;
+        try
+        {
+            await Updates.SetChannelAsync(channel, _life.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            _checking = false;
+        }
+    }
+
+    private async Task CheckNow()
+    {
+        _checking = true;
+        try
+        {
+            await Updates.CheckAsync(_life.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            _checking = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        Updates.Changed -= OnChanged;
+        _life.Cancel();
+        _life.Dispose();
+    }
+}

@@ -11,6 +11,15 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // Started as the update installer, from a temporary copy, while the app itself closes.
+        if (AppPaths.Argument(args, UpdateRequest.ApplyArgument) is { Length: > 0 } updateRequest)
+        {
+            return UpdaterProgram.Run(args, updateRequest);
+        }
+
+        // Installer copies left in the temporary folder by earlier updates.
+        _ = Task.Run(UpdateLauncher.ClearOldCopies);
+
         string serverDirectory = Path.Combine(AppContext.BaseDirectory, "server");
         // The old Windows tray kept its schedule beside the exe; keep using it after an in-place upgrade.
         string legacyRoot = File.Exists(Path.Combine(AppContext.BaseDirectory, "config", "schedule.yaml")) ? AppContext.BaseDirectory : serverDirectory;
@@ -28,12 +37,12 @@ internal static class Program
 
         if (AppPaths.Flag(args, NoTrayFlag) || (OperatingSystem.IsLinux() && !HasDisplay()))
         {
-            return RunWithoutTray(server);
+            return RunWithoutTray(server, args);
         }
 
         try
         {
-            AppBuilder.Configure(() => new TrayApplicationContext(server))
+            AppBuilder.Configure(() => new TrayApplicationContext(server, args))
                 .UsePlatformDetect()
                 .With(new MacOSPlatformOptions { ShowInDock = false })
                 .LogToTrace()
@@ -44,7 +53,7 @@ internal static class Program
         {
             // No tray support (a bare window manager, a missing library): keep the scheduler usable.
             Console.Error.WriteLine($"Couldn't show the tray icon ({ex.Message}); running without it.");
-            return RunWithoutTray(server);
+            return RunWithoutTray(server, args);
         }
     }
 
@@ -56,7 +65,7 @@ internal static class Program
         || !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY"));
 
     /// <summary>Runs the server in the foreground until Ctrl+C or a stop signal, restarting it if it crashes.</summary>
-    private static int RunWithoutTray(SchedulerController server)
+    private static int RunWithoutTray(SchedulerController server, string[] args)
     {
         // A Windows GUI program has no console of its own; borrow the one it was started from, if any.
         if (OperatingSystem.IsWindows())
@@ -82,6 +91,19 @@ internal static class Program
             {
                 Console.Error.WriteLine(error);
             }
+        };
+
+        // An update asked for from the web UI: the installer takes over once this has stopped.
+        server.UpdateRequested += () =>
+        {
+            if (UpdateLauncher.Launch(server.UpdateRequestPath, server.DataDirectory, args) is { } problem)
+            {
+                Console.Error.WriteLine(problem);
+                return;
+            }
+
+            Console.WriteLine("Closing to install the update…");
+            stop.Set();
         };
 
         server.StartAsync().GetAwaiter().GetResult();

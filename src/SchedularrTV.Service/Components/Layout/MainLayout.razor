@@ -51,7 +51,7 @@
                 <Icon Name="sliders" /><span>Channel settings</span>
                 @if (Updates.Available is { } update)
                 {
-                    <span class="nav-update-dot" title="@($"SchedularrTV {update.Tag} is available")" aria-label="Update available"></span>
+                    <span class="nav-update-dot" title="@($"SchedularrTV {update.Label} is available")" aria-label="Update available"></span>
                 }
             </NavLink>
             <NavLink class="nav-item" href="settings/app">

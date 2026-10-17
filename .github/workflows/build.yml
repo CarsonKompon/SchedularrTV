@@ -205,14 +205,33 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # The nightly's version goes in its title: the app's updater reads it from there (the tag is always "nightly").
+      - uses: actions/checkout@v4
+        if: github.ref == 'refs/heads/main'
+        with:
+          path: source
+          fetch-depth: 0
+
+      - name: Nightly version
+        id: nightly
+        if: github.ref == 'refs/heads/main'
+        working-directory: source
+        run: |
+          latest="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)"
+          latest="${latest#v}"; latest="${latest%%-*}"
+          IFS=. read -r major minor patch <<< "${latest:-0.0.0}"
+          echo "version=${major:-0}.${minor:-0}.$(( ${patch:-0} + 1 ))-nightly.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
       - name: Nightly pre-release
         if: github.ref == 'refs/heads/main'
+        env:
+          VERSION: ${{ steps.nightly.outputs.version }}
         run: |
           gh release delete nightly --yes --cleanup-tag || true
           gh release create nightly dist/* \
             --prerelease \
             --target "$GITHUB_SHA" \
-            --title "Nightly build" \
+            --title "Nightly build $VERSION" \
             --notes "Built automatically from ${GITHUB_SHA::7} on main. Download the $PREFIX-build-* file for your system, unzip it and run SchedularrTV. For generated promos, their voices and web page channels (WeatherStar weather and more), also download $PREFIX-all-plugins.zip and install it from the Plugins page (or pick single plugins from the $PREFIX-plugin-*.zip files). These builds are untested snapshots; use a numbered release for anything you rely on."
 
       - name: Release

@@ -71,6 +71,17 @@ Replace `localhost` with the ErsatzTV computer's address for players on other de
 
 ## Update
 
+When a newer version is out, the settings pages say so. Select **Install and Restart**:
+
+1. SchedularrTV closes (the tray and the server, and ErsatzTV with them when it manages it).
+2. A small window shows the update downloading the new version for your computer, and a new copy of every installed plugin the release has, whether it's in the data folder or the app's own `plugins` folder. Each download is checked against the checksum GitHub publishes.
+3. The new version replaces the old one. Anything in the app's folder that isn't part of the release (plugins kept there, a schedule an older install kept beside the app) is brought across.
+4. SchedularrTV starts again, and the window closes once its server answers.
+
+If anything fails, or the new version doesn't start within two minutes, the previous version (and its plugins) is put back and started instead, and the window says why. Each step is logged in **`logs/update.log`** in the data folder. Plugins the release doesn't have (other people's) are left as they are, and the banner lists them.
+
+Updating from the app needs the tray app (the normal way to run SchedularrTV) and a folder SchedularrTV can write to. Run on its own (Docker, a systemd service, the server started directly), as a development build, or from a folder that needs administrator rights (such as Program Files), the banner links to the download instead. Update by hand then:
+
 1. Stop SchedularrTV.
 2. Extract the new release over the application folder, or replace **`SchedularrTV.app`** on macOS.
 3. Update optional plugins from the same release.
@@ -78,7 +89,14 @@ Replace `localhost` with the ErsatzTV computer's address for players on other de
 
 The data folder survives application updates. **Plugins** shows the installation folder; macOS stores plugins outside the app bundle.
 
-Release checks run every six hours by default. Set **`Updates:Enabled`** to `false` in app configuration to disable them; nightly builds are not offered as updates.
+### Update channel
+
+**App settings → Updates → Update channel** chooses where updates come from:
+
+- **Releases** (the default): numbered versions, checked every six hours.
+- **Nightly**: the build made from every change to the code, from the `nightly` pre-release. Nightlies aren't tested like releases.
+
+Switching from Nightly back to Releases doesn't go back to an older version: you stay on the nightly until a newer release is out. **Check for updates** checks straight away. Set **`Updates:Enabled`** to `false` in app configuration to turn checks off.
 
 ## Data folder
 

@@ -70,6 +70,44 @@ public sealed class SchedulerController : IAsyncDisposable
 
     public event Action? StateChanged;
 
+    /// <summary>Where the server leaves an update the user asked to install (see <see cref="UpdateRequest"/>).</summary>
+    public string UpdateRequestPath => UpdateRequest.PathFor(DataDirectory);
+
+    /// <summary>
+    /// Raised (once) from the health check when the server has asked for an update to be installed: the tray then starts
+    /// the installer and quits.
+    /// </summary>
+    public event Action? UpdateRequested;
+
+    private bool _updateRaised;
+
+    // Asked for in the last few minutes: an old request left behind (the tray wasn't running then) isn't acted on.
+    private static readonly TimeSpan UpdateRequestFresh = TimeSpan.FromMinutes(15);
+
+    private void CheckForUpdateRequest()
+    {
+        if (_updateRaised || UpdateRequested is null || !File.Exists(UpdateRequestPath))
+        {
+            return;
+        }
+
+        if (UpdateRequest.Load(UpdateRequestPath) is not { } request || DateTimeOffset.UtcNow - request.RequestedAt > UpdateRequestFresh)
+        {
+            try
+            {
+                File.Delete(UpdateRequestPath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
+
+            return;
+        }
+
+        _updateRaised = true;
+        UpdateRequested?.Invoke();
+    }
+
     public async Task StartAsync()
     {
         await _lifecycle.WaitAsync().ConfigureAwait(false);
@@ -287,6 +325,7 @@ public sealed class SchedulerController : IAsyncDisposable
                 if (healthy)
                 {
                     SetState(ServerState.Running);
+                    CheckForUpdateRequest();
                 }
                 else if (_external)
                 {

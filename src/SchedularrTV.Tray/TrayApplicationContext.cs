@@ -9,7 +9,7 @@ namespace SchedularrTV.Tray;
 /// <summary>
 /// The tray icon and its menu. There are no windows: everything else happens in the web UI.
 /// </summary>
-public sealed class TrayApplicationContext(SchedulerController server) : Application
+public sealed class TrayApplicationContext(SchedulerController server, string[]? arguments = null) : Application
 {
     private TrayIcon? _icon;
     private NativeMenuItem _status = null!;
@@ -67,6 +67,7 @@ public sealed class TrayApplicationContext(SchedulerController server) : Applica
         TrayIcon.SetIcons(this, new TrayIcons { _icon });
 
         server.StateChanged += () => Dispatcher.UIThread.Post(Update);
+        server.UpdateRequested += () => Dispatcher.UIThread.Post(() => _ = InstallUpdateAsync());
         Update();
         _ = server.StartAsync();
 
@@ -143,6 +144,27 @@ public sealed class TrayApplicationContext(SchedulerController server) : Applica
             }
         });
         Update();
+    }
+
+    /// <summary>
+    /// An update asked for from the web UI: starts the installer (a copy of this program, outside the app's folder), then
+    /// quits, stopping the server cleanly; the installer waits for both to be gone before replacing anything.
+    /// </summary>
+    private async Task InstallUpdateAsync()
+    {
+        if (_exiting)
+        {
+            return;
+        }
+
+        _status.Header = "Installing update…";
+        if (UpdateLauncher.Launch(server.UpdateRequestPath, server.DataDirectory, arguments ?? []) is { } problem)
+        {
+            _status.Header = $"Problem: {Truncate(problem)}";
+            return;
+        }
+
+        await ExitAsync();
     }
 
     private async Task ExitAsync()
