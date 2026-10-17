@@ -174,8 +174,24 @@ public static class ErsatzTvEncoding
         };
     }
 
+    /// <summary>
+    /// ffmpeg filters a hardware acceleration must not use. <c>pad_cuda</c> leaves rows of the padded picture
+    /// unwritten, which show as a green line along the bottom of letterboxed or pillarboxed programmes (anything not
+    /// already the channel's size; ads usually are, so they look fine). Without it ErsatzTV pads in software, with real
+    /// black, and keeps decoding, scaling and encoding on the card.
+    /// </summary>
+    public static IReadOnlyList<string> DisabledFilters(string hardware) => hardware switch
+    {
+        "cuda" => ["pad_cuda"],
+        _ => []
+    };
+
     /// <summary>The overlay that gives a channel <paramref name="encoding"/>, whatever its channel.json says.</summary>
-    public static string Overlay(EffectiveEncoding encoding, bool copyVideo = false)
+    /// <param name="channelDisabledFilters">
+    /// The filters the channel's own channel.json disables. An overlay replaces the list rather than adding to it, so
+    /// they're carried over whenever the overlay sets one.
+    /// </param>
+    public static string Overlay(EffectiveEncoding encoding, bool copyVideo = false, IEnumerable<string>? channelDisabledFilters = null)
     {
         var video = new JsonObject
         {
@@ -205,6 +221,20 @@ public static class ErsatzTvEncoding
             ["version"] = OverlayVersion,
             ["normalization"] = new JsonObject { ["video"] = video }
         };
+
+        IReadOnlyList<string> disabled = DisabledFilters(encoding.Hardware);
+        if (disabled.Count > 0)
+        {
+            var filters = new JsonArray();
+            foreach (string filter in (channelDisabledFilters ?? Enumerable.Empty<string>()).Select(f => f.Trim()).Where(f => f.Length > 0)
+                         .Concat(disabled).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
+            {
+                filters.Add(filter);
+            }
+
+            overlay["ffmpeg"] = new JsonObject { ["disabled_filters"] = filters };
+        }
+
         return overlay.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
     }
 

@@ -85,7 +85,8 @@ public sealed class LineupPublisher(
             }
 
             string encoding = ErsatzTvEncoding.Overlay(ErsatzTvEncoding.Resolve(_options.Encoding, schedule),
-                copyVideo: IsPassthrough(schedule) && !ErsatzTvEncoding.HasOverrides(schedule));
+                copyVideo: IsPassthrough(schedule) && !ErsatzTvEncoding.HasOverrides(schedule),
+                channelDisabledFilters: await ReadDisabledFiltersAsync(channelConfigPath, cancellationToken).ConfigureAwait(false));
             string encodingPath = await EnsureOverlayAsync(root, ErsatzTvEncoding.FileName(encoding), encoding, cancellationToken).ConfigureAwait(false);
             encodingOverlays.Add(encodingPath);
             overlays.Add(encodingPath);
@@ -145,6 +146,23 @@ public sealed class LineupPublisher(
           }
         }
         """;
+
+    /// <summary>The <c>ffmpeg.disabled_filters</c> a channel.json sets; none when it sets none or can't be read.</summary>
+    internal static async Task<IReadOnlyList<string>> ReadDisabledFiltersAsync(string channelConfigPath, CancellationToken cancellationToken)
+    {
+        try
+        {
+            string json = await File.ReadAllTextAsync(channelConfigPath, cancellationToken).ConfigureAwait(false);
+            return System.Text.Json.Nodes.JsonNode.Parse(json)?["ffmpeg"]?["disabled_filters"] is System.Text.Json.Nodes.JsonArray filters
+                ? filters.Select(f => f?.GetValueKind() == JsonValueKind.String ? f.GetValue<string>() : null)
+                    .OfType<string>().ToList()
+                : [];
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)
+        {
+            return [];
+        }
+    }
 
     private static Task<string> EnsureCopyOverlayAsync(string root, CancellationToken cancellationToken) =>
         EnsureOverlayAsync(root, "copy.json", CopyOverlay, cancellationToken);
