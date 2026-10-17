@@ -19,8 +19,9 @@ permissions:
 env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
-  # Every download starts with this: SchedularrTV-v1.0.0-win-x64.zip for a release, SchedularrTV-nightly-win-x64.zip
-  # for the nightly (and any other build).
+  # Every download starts with this: SchedularrTV-v1.0.0-… for a release, SchedularrTV-nightly-… for the nightly (and
+  # any other build). The app itself is SchedularrTV-v1.0.0-build-win-x64.zip and plugins SchedularrTV-v1.0.0-plugin-…,
+  # so the builds sort together above the plugins.
   PREFIX: ${{ startsWith(github.ref, 'refs/tags/v') && format('SchedularrTV-{0}', github.ref_name) || 'SchedularrTV-nightly' }}
 
 jobs:
@@ -95,11 +96,11 @@ jobs:
       - name: Package (Windows)
         if: startsWith(matrix.rid, 'win')
         shell: pwsh
-        run: Compress-Archive -Path publish/SchedularrTV -DestinationPath "${{ env.PREFIX }}-${{ matrix.rid }}.zip"
+        run: Compress-Archive -Path publish/SchedularrTV -DestinationPath "${{ env.PREFIX }}-build-${{ matrix.rid }}.zip"
 
       - name: Package (Linux)
         if: startsWith(matrix.rid, 'linux')
-        run: tar -C publish -czf "${{ env.PREFIX }}-${{ matrix.rid }}.tar.gz" SchedularrTV
+        run: tar -C publish -czf "${{ env.PREFIX }}-build-${{ matrix.rid }}.tar.gz" SchedularrTV
 
       # A menu-bar-only .app (LSUIElement), so it shows no Dock icon. Not notarised: see the README for opening it.
       - name: Package (macOS)
@@ -132,14 +133,14 @@ jobs:
           # Ad-hoc signatures so Apple silicon will run the two programs; there is no developer certificate.
           codesign --force --sign - "$app/Contents/MacOS/SchedularrTV" || true
           codesign --force --sign - "$app/Contents/MacOS/server/SchedularrTV.Service" || true
-          (cd publish && ditto -c -k --sequesterRsrc --keepParent SchedularrTV.app "../${{ env.PREFIX }}-${{ matrix.rid }}.zip")
+          (cd publish && ditto -c -k --sequesterRsrc --keepParent SchedularrTV.app "../${{ env.PREFIX }}-build-${{ matrix.rid }}.zip")
 
       - uses: actions/upload-artifact@v4
         with:
           name: SchedularrTV-${{ matrix.rid }}
           path: |
-            ${{ env.PREFIX }}-${{ matrix.rid }}.zip
-            ${{ env.PREFIX }}-${{ matrix.rid }}.tar.gz
+            ${{ env.PREFIX }}-build-${{ matrix.rid }}.zip
+            ${{ env.PREFIX }}-build-${{ matrix.rid }}.tar.gz
           if-no-files-found: error
 
   # The optional plugins (Generated promos, the voices, web page channels…) aren't in the main download. Each is zipped on its own,
@@ -212,7 +213,7 @@ jobs:
             --prerelease \
             --target "$GITHUB_SHA" \
             --title "Nightly build" \
-            --notes "Built automatically from ${GITHUB_SHA::7} on main. Download the file for your system, unzip it and run SchedularrTV. For generated promos, their voices and web page channels (WeatherStar weather and more), also download $PREFIX-all-plugins.zip and install it from the Plugins page (or pick single plugins from the $PREFIX-plugin-*.zip files). These builds are untested snapshots; use a numbered release for anything you rely on."
+            --notes "Built automatically from ${GITHUB_SHA::7} on main. Download the $PREFIX-build-* file for your system, unzip it and run SchedularrTV. For generated promos, their voices and web page channels (WeatherStar weather and more), also download $PREFIX-all-plugins.zip and install it from the Plugins page (or pick single plugins from the $PREFIX-plugin-*.zip files). These builds are untested snapshots; use a numbered release for anything you rely on."
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')

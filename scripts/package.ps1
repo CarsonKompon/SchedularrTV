@@ -273,12 +273,12 @@ if (-not $PluginsOnly) {
 
         switch -Wildcard ($rid) {
             'win-*' {
-                $package = Join-Path $dist "$prefix-$rid.zip"
+                $package = Join-Path $dist "$prefix-build-$rid.zip"
                 Remove-Item -LiteralPath $package -Force -ErrorAction SilentlyContinue
                 [IO.Compression.ZipFile]::CreateFromDirectory($out, $package, [IO.Compression.CompressionLevel]::Optimal, $true)
             }
             'linux-*' {
-                $package = Join-Path $dist "$prefix-$rid.tar.gz"
+                $package = Join-Path $dist "$prefix-build-$rid.tar.gz"
                 New-TarGz $out 'SchedularrTV' $package
             }
             'osx-*' {
@@ -307,7 +307,7 @@ if (-not $PluginsOnly) {
 </plist>
 "@ | Set-Content -LiteralPath (Join-Path $app 'Contents/Info.plist') -Encoding utf8NoBOM -NoNewline
 
-                $package = Join-Path $dist "$prefix-$rid.zip"
+                $package = Join-Path $dist "$prefix-build-$rid.zip"
                 Remove-Item -LiteralPath $package -Force -ErrorAction SilentlyContinue
                 if ($IsMacOS) {
                     # As CI: ad-hoc signatures so Apple silicon runs the two programs, zipped by ditto.

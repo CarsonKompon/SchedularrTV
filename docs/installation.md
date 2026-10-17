@@ -19,11 +19,11 @@ Choose an archive from [Releases](https://github.com/CarsonKompon/SchedularrTV/r
 
 | System | Archive |
 | --- | --- |
-| Windows x64 | `SchedularrTV-<version>-win-x64.zip` |
-| macOS Apple silicon | `SchedularrTV-<version>-osx-arm64.zip` |
-| macOS Intel | `SchedularrTV-<version>-osx-x64.zip` |
-| Linux x64 | `SchedularrTV-<version>-linux-x64.tar.gz` |
-| Linux ARM64 | `SchedularrTV-<version>-linux-arm64.tar.gz` |
+| Windows x64 | `SchedularrTV-<version>-build-win-x64.zip` |
+| macOS Apple silicon | `SchedularrTV-<version>-build-osx-arm64.zip` |
+| macOS Intel | `SchedularrTV-<version>-build-osx-x64.zip` |
+| Linux x64 | `SchedularrTV-<version>-build-linux-x64.tar.gz` |
+| Linux ARM64 | `SchedularrTV-<version>-build-linux-arm64.tar.gz` |
 
 **`<version>`** is a release tag such as `v1.0.0`, or `nightly`. Nightly builds track `main`.
 
@@ -46,7 +46,7 @@ Choose an archive from [Releases](https://github.com/CarsonKompon/SchedularrTV/r
 Extract the archive, then run **`SchedularrTV`**:
 
 ```sh
-tar xzf SchedularrTV-<version>-linux-x64.tar.gz
+tar xzf SchedularrTV-<version>-build-linux-x64.tar.gz
 ./SchedularrTV/SchedularrTV
 ```
 

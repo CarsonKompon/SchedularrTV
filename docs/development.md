@@ -84,7 +84,7 @@ Guides live in **`docs/*.md`** and are embedded in the service. **`Docs/DocsLibr
 
 | Artifact | Contents |
 | --- | --- |
-| **Platform archive** | Self-contained tray at root and service under `server/` |
+| **`build-<target>` archive** | Self-contained tray at root and service under `server/` |
 | **`plugin-<id>.zip`** | One framework-dependent plugin |
 | **`all-plugins.zip`** | All optional plugins |
 | **macOS archive** | App bundle with ad-hoc signing |
