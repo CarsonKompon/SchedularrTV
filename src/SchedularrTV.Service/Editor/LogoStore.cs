@@ -73,39 +73,74 @@ public sealed class LogoStore(IOptions<SchedulerServiceOptions> options, Schedul
         string root = Root;
         Directory.CreateDirectory(root);
 
-        // Named from the channel id rather than the upload, so a crafted file name cannot escape
-        // the folder and re-uploading replaces the old logo instead of accumulating files.
+        // Named by the app rather than the upload, so a crafted file name cannot escape the folder. Every upload gets a
+        // file of its own: a name made only from the channel id (ch8.png) was shared by whichever channel held that id
+        // later, so an upload to one channel replaced another channel's logo. The old file is let go by the caller
+        // with Release, once nothing uses it.
         string safeId = SafeId(channelId);
-        Remove(channelId);
+        string name = $"{safeId}-{Guid.NewGuid().ToString("N")[..8]}{extension}";
 
-        string path = Path.Combine(root, safeId + extension);
+        string path = Path.Combine(root, name);
         await File.WriteAllBytesAsync(path, bytes, cancellationToken).ConfigureAwait(false);
 
-        // Cache-busted so a replaced logo does not keep showing the previous image.
-        string stamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
-        return $"{baseUri.TrimEnd('/')}{RequestPath}/{safeId}{extension}?v={stamp}";
+        return $"{baseUri.TrimEnd('/')}{RequestPath}/{name}";
     }
 
-    /// <summary>Deletes any stored logo for a channel. Safe to call when none exists.</summary>
-    public void Remove(string channelId)
+    /// <summary>
+    /// Deletes the stored file <paramref name="logo"/> points at, unless one of <paramref name="stillUsed"/> (the other
+    /// channels' logos, and the saved schedule's, which a discard goes back to) points at the same file. Does nothing
+    /// for an external URL or a file that's already gone.
+    /// </summary>
+    public void Release(string? logo, IEnumerable<string?> stillUsed)
     {
-        string safeId = SafeId(channelId);
-        string root = Root;
-
-        foreach (string extension in Extensions)
+        if (StoredFileName(logo) is not { } name
+            || stillUsed.Any(other => string.Equals(StoredFileName(other), name, StringComparison.OrdinalIgnoreCase)))
         {
-            string path = Path.Combine(root, safeId + extension);
+            return;
+        }
 
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
+        string root = Root;
+        string path = Path.GetFullPath(Path.Combine(root, name));
+        if (!path.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A leftover image is harmless; failing the edit over it would not be.
         }
     }
 
     /// <summary>True when the value points at a logo this app stores, rather than an external URL.</summary>
-    public static bool IsStored(string? logo) =>
-        logo is not null && logo.Contains(RequestPath + "/", StringComparison.OrdinalIgnoreCase);
+    public static bool IsStored(string? logo) => StoredFileName(logo) is not null;
+
+    /// <summary>The file name in this app's logo folder that <paramref name="logo"/> points at, or null for anything else.</summary>
+    public static string? StoredFileName(string? logo)
+    {
+        if (string.IsNullOrWhiteSpace(logo))
+        {
+            return null;
+        }
+
+        int at = logo.IndexOf(RequestPath + "/", StringComparison.OrdinalIgnoreCase);
+        if (at < 0)
+        {
+            return null;
+        }
+
+        string rest = logo[(at + RequestPath.Length + 1)..];
+        int end = rest.IndexOfAny(['?', '#']);
+        string name = Uri.UnescapeDataString(end < 0 ? rest : rest[..end]);
+
+        return name.Length > 0 && name == Path.GetFileName(name) && Extensions.Contains(Path.GetExtension(name).ToLowerInvariant())
+            ? name
+            : null;
+    }
 
     private static string SafeId(string channelId)
     {

@@ -3,6 +3,7 @@
 @inject NavigationManager Nav
 @inject RotationResetter Rotation
 @inject LogoStore Logos
+@inject SchedulerConfigProvider SavedConfig
 @inject IEnumerable<PluginEditorSection> EditorSections
 @inject AlwaysOnKeeper AlwaysOn
 @inject ScheduleCoordinator Coordinator
@@ -479,7 +480,9 @@ else
 
             // BaseUri is the origin this browser reached the app on, so the URL recorded here is one
             // a player on the same network can also fetch.
-            _channel!.Logo = await Logos.SaveAsync(_channel.Id, file.Name, content, Nav.BaseUri);
+            string? previous = _channel!.Logo;
+            _channel.Logo = await Logos.SaveAsync(_channel.Id, file.Name, content, Nav.BaseUri);
+            Logos.Release(previous, LogosStillUsed());
             Editor.MarkDirty();
         }
         catch (Exception ex)
@@ -490,16 +493,20 @@ else
 
     private void RemoveLogo()
     {
-        // An externally hosted logo is not ours to delete; only clear the reference.
-        if (LogoStore.IsStored(_channel!.Logo))
-        {
-            Logos.Remove(_channel.Id);
-        }
-
+        // An externally hosted logo is not ours to delete, and a stored one another channel uses (or the saved schedule
+        // still does) is kept; only the reference is cleared then.
+        string? previous = _channel!.Logo;
         _channel.Logo = null;
+        Logos.Release(previous, LogosStillUsed());
         _logoError = null;
         Editor.MarkDirty();
     }
+
+    /// <summary>Logos other channels use, and every logo in the saved schedule (a discard goes back to it).</summary>
+    private IEnumerable<string?> LogosStillUsed() =>
+        Editor.Working.Channels.Where(channel => !ReferenceEquals(channel, _channel)).Select(channel => channel.Logo)
+            .Concat(SavedConfig.Current.Channels.Select(channel => channel.Logo))
+            .ToList();
 
     // The app-wide encoding this channel inherits, read live so a setting saved in App settings shows at once.
     private ErsatzTvEncodingOptions GlobalEncoding => ErsatzOptions.Value.Encoding;
