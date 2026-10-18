@@ -255,6 +255,27 @@ public sealed class PrerecordedVoiceTests : IDisposable
     }
 
     [Fact]
+    public void Voice_over_volume_reduces_or_boosts_with_a_limiter()
+    {
+        GeneratedVoiceConfig voice = new();
+        Assert.Equal(1, voice.EffectiveVolume);
+        Assert.Equal(string.Empty, PromoRenderer.VoiceLevel(voice.EffectiveVolume));
+
+        voice.Volume = 0.5;
+        Assert.Equal(",volume=0.5", PromoRenderer.VoiceLevel(voice.EffectiveVolume));
+
+        voice.Volume = 2;
+        string boosted = PromoRenderer.VoiceLevel(voice.EffectiveVolume);
+        Assert.StartsWith(",volume=2,alimiter=", boosted);
+
+        // Out of range is held within 0 and the most it can be boosted.
+        voice.Volume = 40;
+        Assert.Equal(GeneratedVoiceConfig.MaxVolume, voice.EffectiveVolume);
+        voice.Volume = -1;
+        Assert.Equal(0, voice.EffectiveVolume);
+    }
+
+    [Fact]
     public void A_show_named_again_says_more_then_even_more()
     {
         (GeneratedVoicePack pack, GeneratedVoiceConfig voice) = Pack();

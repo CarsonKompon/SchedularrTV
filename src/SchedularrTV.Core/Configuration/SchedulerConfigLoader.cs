@@ -420,6 +420,11 @@ public static class SchedulerConfigLoader
                 errors.Add($"{templateScope}: background_color must be a hex colour such as #101828.");
             }
 
+            if (template.Voice is { Enabled: true, Volume: { } voiceVolume } && (!double.IsFinite(voiceVolume) || voiceVolume < 0 || voiceVolume > GeneratedVoiceConfig.MaxVolume))
+            {
+                warnings.Add($"{templateScope}.voice.volume: {voiceVolume} is outside 0 to {GeneratedVoiceConfig.MaxVolume}, so it's held within that.");
+            }
+
             if (template.Voice is { Enabled: true, IsPrerecorded: true } recordedVoice)
             {
                 if (string.IsNullOrWhiteSpace(recordedVoice.Prerecorded!.Pack))

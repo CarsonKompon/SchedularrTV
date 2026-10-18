@@ -846,6 +846,20 @@ public sealed class GeneratedVoiceConfig
     /// <summary>Delay from the start of the promo before the voice begins.</summary>
     public TimeSpan Start { get; set; } = TimeSpan.FromMilliseconds(350);
 
+    /// <summary>
+    /// How loud the voice-over (text-to-speech or pre-recorded) is mixed: 1 as recorded, below to reduce it, above to boost
+    /// it (up to <see cref="MaxVolume"/>). Null is 1, and keeps render keys of templates without it unchanged.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public double? Volume { get; set; }
+
+    /// <summary>The loudest a voice-over can be boosted: 4× (about +12 dB).</summary>
+    public const double MaxVolume = 4;
+
+    /// <summary><see cref="Volume"/> as used: 1 when unset, kept within 0 and <see cref="MaxVolume"/>.</summary>
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public double EffectiveVolume => Volume is { } volume && double.IsFinite(volume) ? Math.Clamp(volume, 0, MaxVolume) : 1;
+
     /// <summary>Has a language model word the read-out; null reads the usual wording.</summary>
     /// <remarks>Left out of render keys while null, so templates without it keep their renders.</remarks>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]

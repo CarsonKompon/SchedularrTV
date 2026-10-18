@@ -519,6 +519,22 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         return args;
     }
 
+    /// <summary>
+    /// The voice's volume filter (empty at 1): quieter is a plain gain; a boost is followed by a limiter so loud peaks
+    /// are held under full scale instead of clipping. Music ducking keys off the voice as it ends up.
+    /// </summary>
+    public static string VoiceLevel(double volume)
+    {
+        double level = double.IsFinite(volume) ? Math.Clamp(volume, 0, SchedularrTV.Core.Configuration.GeneratedVoiceConfig.MaxVolume) : 1;
+        if (Math.Abs(level - 1) < 0.001)
+        {
+            return string.Empty;
+        }
+
+        string gain = $",volume={level.ToString("0.###", CultureInfo.InvariantCulture)}";
+        return level > 1 ? $"{gain},alimiter=limit=0.95:attack=5:release=50:level=disabled" : gain;
+    }
+
     private static List<string> AudioArguments(PromoComposition composition, string outputPath)
     {
         List<string> args = ["-hide_banner", "-loglevel", "error", "-y"];
@@ -533,7 +549,7 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
 
         string delay = ((long)composition.AudioStart.TotalMilliseconds).ToString(CultureInfo.InvariantCulture);
         string tempo = Math.Clamp(composition.AudioTempo, 0.5, 2).ToString("0.###", CultureInfo.InvariantCulture);
-        string voice = $"[0:a]aresample=48000,aformat=channel_layouts=stereo,atempo={tempo},adelay={delay}:all=1,apad";
+        string voice = $"[0:a]aresample=48000,aformat=channel_layouts=stereo,atempo={tempo}{VoiceLevel(composition.AudioVolume)},adelay={delay}:all=1,apad";
         string ending = $"afade=t=out:st={Seconds(composition.Duration - TimeSpan.FromMilliseconds(250))}:d=0.25[a]";
         bool voiced = composition.AudioPath is not null;
         int keys = voiced ? beds.Count(bed => bed.DuckUnderVoice) : 0;

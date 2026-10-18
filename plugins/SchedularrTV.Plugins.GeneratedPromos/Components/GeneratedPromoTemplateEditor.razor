@@ -1155,6 +1155,19 @@
             <button class="btn btn-sm @(prerecordedMode ? "btn-primary" : "")" type="button" aria-pressed="@prerecordedMode"
                     @onclick="() => SetVoiceMode(voice, GeneratedVoiceMode.Prerecorded)">Pre-recorded lines</button>
         </div>
+        <div class="row row-wrap voice-volume">
+            <label class="field" style="flex: 1 1 280px; margin: 0;">
+                <span>Voice-over volume: @VoiceVolumeLabel(voice.EffectiveVolume)</span>
+                <input type="range" min="0" max="@Number(GeneratedVoiceConfig.MaxVolume * 100)" step="5" value="@Number(Math.Round(voice.EffectiveVolume * 100))"
+                       aria-label="Voice-over volume in percent; above 100 boosts it"
+                       @onchange="e => SetNumber(e, value => SetVoiceVolume(voice, value))" />
+            </label>
+            @if (voice.Volume is not null)
+            {
+                <button class="btn btn-sm" type="button" @onclick="() => Set(() => voice.Volume = null)">Reset to 100%</button>
+            }
+        </div>
+        <p class="hint">Turns the text-to-speech or pre-recorded voice down or up in the mix. Above 100% boosts it, and a limiter stops loud peaks clipping.</p>
         @if (prerecordedMode && voice.Prerecorded is { } recorded)
         {
             @(PrerecordedSettings(voice, recorded))
@@ -3595,6 +3608,21 @@
         IReadOnlyList<UpNextListing> listings = PreviewListings(out _);
         IReadOnlyList<UpNextListing> upcoming = Preview.ImageSubjects(Channel, Template).Upcoming;
         return Template.Type == GeneratedPromoType.UpNext && upcoming.Count > 0 ? upcoming : listings;
+    }
+
+    // 100% is kept as null, so templates left at it keep their render keys.
+    private static void SetVoiceVolume(GeneratedVoiceConfig voice, double percent)
+    {
+        double level = Math.Clamp(Math.Round(percent) / 100, 0, GeneratedVoiceConfig.MaxVolume);
+        voice.Volume = Math.Abs(level - 1) < 0.001 ? null : level;
+    }
+
+    private static string VoiceVolumeLabel(double level)
+    {
+        string percent = $"{Math.Round(level * 100):0}%";
+        if (level <= 0) return $"{percent} (silent)";
+        double decibels = 20 * Math.Log10(level);
+        return Math.Abs(decibels) < 0.05 ? $"{percent} (as recorded)" : $"{percent} ({decibels:+0.0;-0.0} dB)";
     }
 
     private Task SetVoiceMode(GeneratedVoiceConfig voice, GeneratedVoiceMode mode) => Set(() =>

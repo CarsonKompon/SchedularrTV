@@ -623,6 +623,15 @@ voice:
     include_post_messages: false
 ```
 
+### Voice-over volume
+
+**Voice-over volume** (under **Voice-over**, for text-to-speech and pre-recorded lines alike) turns the voice down or up in the promo's mix, from 0% to 400%; the label shows the change in dB. Above 100% the voice is boosted and run through a limiter so loud peaks don't clip. Music and other sounds set to duck under the voice follow it as it ends up. 100% is the default and isn't written out; changing it renders the template's promos again. The editor's **▶ Hear one** / **Try** previews play the voice as recorded, without this.
+
+```yaml
+voice:
+  volume: 1.5   # 150% (about +3.5 dB); 0.5 halves it
+```
+
 ### Pre-recorded lines (voice packs)
 
 Under **Voice-over**, choose **Pre-recorded lines** instead of **Text-to-speech** to build the voice-over from recordings. Switching back keeps both settings.

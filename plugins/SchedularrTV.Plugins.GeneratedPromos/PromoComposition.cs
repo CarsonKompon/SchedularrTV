@@ -165,6 +165,9 @@ public sealed record PromoComposition
     /// <summary>Playback speed for the voice, above 1 to fit a long read into the promo.</summary>
     public double AudioTempo { get; init; } = 1;
 
+    /// <summary>How loud the voice is mixed: 1 as it is, below 1 quieter, above 1 boosted (with a limiter so it doesn't clip).</summary>
+    public double AudioVolume { get; init; } = 1;
+
     public PromoMusic? Music { get; init; }
 
     /// <summary>The sound of video layers that include it, each starting and fading with its layer.</summary>

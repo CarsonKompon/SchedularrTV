@@ -524,6 +524,7 @@ public static partial class GeneratedPromoResolver
             AudioPath = audioPath,
             AudioStart = template.Voice?.Start ?? TimeSpan.Zero,
             AudioTempo = audioTempo,
+            AudioVolume = template.Voice?.EffectiveVolume ?? 1,
             // Songs from a music library are picked (and fetched) when the promo is rendered.
             Music = template.Music?.Songs is { Count: > 0 } songs && template.Music is { FromLibrary: false } music
                 && Song(songs, promo.Key) is { } song
