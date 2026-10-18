@@ -1,0 +1,125 @@
+@* The parts of a voice-over template, in order: which of the pack's phrases each says, which show it's about, and the
+   pause before it. Used for the pack's own templates and for templates kept inline in a generated promo. *@
+
+<ol class="voice-parts">
+    @for (int index = 0; index < Template.Parts.Count; index++)
+    {
+        int position = index;
+        GeneratedVoicePart part = Template.Parts[position];
+        GeneratedVoicePhrase? phrase = Pack.Phrases.FirstOrDefault(candidate => candidate.Id == part.Phrase);
+        <li class="voice-part @(phrase is null ? "voice-part-missing" : null)" @key="part">
+            <span class="pill">@(phrase is null ? "Deleted" : KindName(phrase.Kind))</span>
+            <select value="@part.Phrase" aria-label="@($"Phrase of part {position + 1}")" @onchange="e => Set(() => part.Phrase = e.Value?.ToString() ?? string.Empty)">
+                @if (phrase is null)
+                {
+                    <option value="@part.Phrase">(deleted phrase)</option>
+                }
+                @foreach (GeneratedVoicePhrase option in Pack.Phrases)
+                {
+                    <option value="@option.Id">@PhraseLabel(option)</option>
+                }
+            </select>
+            @if (phrase is not null && phrase.Kind is not (GeneratedVoicePhraseKind.Text or GeneratedVoicePhraseKind.ChannelName))
+            {
+                <select value="@part.Show" aria-label="@($"Which show part {position + 1} is about")"
+                        @onchange="e => Set(() => part.Show = int.TryParse(e.Value?.ToString(), out int which) ? Math.Clamp(which, 0, 9) : 0)">
+                    @for (int show = 0; show < 10; show++)
+                    {
+                        <option value="@show">@ShowLabel(show)</option>
+                    }
+                </select>
+            }
+            @if (position > 0)
+            {
+                <label class="voice-part-gap" title="The pause before this part, in milliseconds (negative overlaps it with the part before). Empty uses the pack's.">
+                    <span>pause</span>
+                    <input type="number" min="-500" max="2000" step="10"
+                           value="@(part.Gap is { } own ? Math.Round(own.TotalMilliseconds).ToString(System.Globalization.CultureInfo.InvariantCulture) : string.Empty)"
+                           placeholder="@($"{Pack.Gap.TotalMilliseconds:0}")" aria-label="@($"Pause before part {position + 1} in milliseconds")"
+                           @onchange="e => Set(() => part.Gap = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : ParseGap(e.Value))" />
+                    <span>ms</span>
+                </label>
+            }
+            <span class="voice-part-tools">
+                <button class="btn btn-ghost btn-icon btn-sm" type="button" disabled="@(position == 0)" title="Earlier" aria-label="Move earlier"
+                        @onclick="() => Move(position, -1)">↑</button>
+                <button class="btn btn-ghost btn-icon btn-sm" type="button" disabled="@(position == Template.Parts.Count - 1)" title="Later" aria-label="Move later"
+                        @onclick="() => Move(position, 1)">↓</button>
+                <button class="btn btn-ghost btn-icon btn-sm" type="button" title="Remove this part" aria-label="Remove this part"
+                        @onclick="() => Set(() => Template.Parts.RemoveAt(position))"><Icon Name="x" Size="14" /></button>
+            </span>
+        </li>
+    }
+</ol>
+@if (Pack.Phrases.Count > 0)
+{
+    <div class="row row-wrap">
+        <select @key="_partPicker" value="" aria-label="Add a part" @onchange="e => AddPart(e.Value?.ToString())">
+            <option value="">+ Add a part…</option>
+            @foreach (GeneratedVoicePhrase option in Pack.Phrases)
+            {
+                <option value="@option.Id">@PhraseLabel(option)</option>
+            }
+        </select>
+    </div>
+}
+
+@code {
+    /// <summary>The pack whose phrases the parts say.</summary>
+    [Parameter, EditorRequired] public GeneratedVoicePack Pack { get; set; } = new();
+
+    [Parameter, EditorRequired] public GeneratedVoicePackTemplate Template { get; set; } = new();
+
+    /// <summary>Raised after each edit.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    // Bumped to reset the "add a part" picker after each pick.
+    private int _partPicker;
+
+    private Task Set(Action change)
+    {
+        change();
+        return Changed.InvokeAsync();
+    }
+
+    private Task AddPart(string? phrase)
+    {
+        _partPicker++;
+        if (string.IsNullOrWhiteSpace(phrase)) return Task.CompletedTask;
+        return Set(() => Template.Parts.Add(new GeneratedVoicePart { Phrase = phrase }));
+    }
+
+    private Task Move(int position, int by) => Set(() =>
+    {
+        int target = position + by;
+        if (target < 0 || target >= Template.Parts.Count) return;
+        (Template.Parts[position], Template.Parts[target]) = (Template.Parts[target], Template.Parts[position]);
+    });
+
+    /// <summary>A pause typed in milliseconds, kept within what a pack allows; null when it isn't a number.</summary>
+    private static TimeSpan? ParseGap(object? value) =>
+        double.TryParse(value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double ms)
+            ? GeneratedVoicePack.ClampGap(TimeSpan.FromMilliseconds(ms))
+            : null;
+
+    public static string KindName(GeneratedVoicePhraseKind kind) => kind switch
+    {
+        GeneratedVoicePhraseKind.ShowName => "Show name",
+        GeneratedVoicePhraseKind.Day => "Day",
+        GeneratedVoicePhraseKind.Time => "Time",
+        GeneratedVoicePhraseKind.DayTime => "Day & time",
+        GeneratedVoicePhraseKind.ChannelName => "Channel name",
+        _ => "Text"
+    };
+
+    public static string PhraseLabel(GeneratedVoicePhrase phrase) =>
+        phrase.Kind == GeneratedVoicePhraseKind.Text ? $"“{phrase.Name}”" : $"{phrase.Name} ({KindName(phrase.Kind).ToLowerInvariant()})";
+
+    private static string ShowLabel(int show) => show switch
+    {
+        0 => "the promo's show",
+        1 => "2nd upcoming show",
+        2 => "3rd upcoming show",
+        _ => $"{show + 1}th upcoming show"
+    };
+}

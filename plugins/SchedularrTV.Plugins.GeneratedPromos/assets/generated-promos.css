@@ -53,6 +53,7 @@
 .gp-scope .voice-keyed { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); column-gap: 16px; }
 .gp-scope .voice-add-phrase input[type="text"] { flex: 1 1 240px; }
 .gp-scope .voice-template-name { flex: 0 1 320px; font-weight: 600; }
+.gp-scope .voice-pack-template-list { padding-left: 24px; }
 .gp-scope .voice-parts { list-style: decimal; margin: 8px 0; padding-left: 28px; display: grid; gap: 6px; }
 .gp-scope .voice-part { display: list-item; }
 .gp-scope .voice-part > * { vertical-align: middle; margin-right: 6px; }

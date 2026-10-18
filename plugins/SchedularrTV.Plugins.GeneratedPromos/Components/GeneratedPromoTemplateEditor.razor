@@ -3640,8 +3640,97 @@
         chosen.RemoveAll(existing => string.Equals(existing, id, StringComparison.OrdinalIgnoreCase));
         if (use) chosen.Add(id);
         recorded.Templates = pack.Templates.All(template => chosen.Contains(template.Id, StringComparer.OrdinalIgnoreCase)) ? null : chosen;
+
+        // Unticking the last one means none of the pack's (an empty pick would otherwise mean all of them).
+        if (recorded.Templates is { Count: 0 })
+        {
+            recorded.Templates = null;
+            recorded.UsePackTemplates = false;
+        }
         ClearSay();
     });
+
+    // Off leaves only this promo's own templates; on is kept as null so promos without them keep their render keys.
+    private Task SetUsePackTemplates(GeneratedPrerecordedVoiceConfig recorded, bool use) => Set(() =>
+    {
+        recorded.UsePackTemplates = use ? null : false;
+        ClearSay();
+    });
+
+    // Bumped to reset the "copy a pack template" picker after each pick.
+    private int _inlineCopyPicker;
+
+    /// <summary>
+    /// Adds a template kept with this promo: empty, or a copy of the pack's template <paramref name="copyOf"/> (its parts
+    /// say the same phrases, so it can be tweaked here without changing the pack's).
+    /// </summary>
+    private Task AddInlineTemplate(GeneratedPrerecordedVoiceConfig recorded, GeneratedVoicePack pack, string? copyOf)
+    {
+        GeneratedVoicePackTemplate? source = null;
+        if (copyOf is not null)
+        {
+            _inlineCopyPicker++;
+            source = pack.Templates.FirstOrDefault(template => string.Equals(template.Id, copyOf, StringComparison.OrdinalIgnoreCase));
+            if (source is null) return Task.CompletedTask;
+        }
+
+        return Set(() =>
+        {
+            recorded.InlineTemplates ??= [];
+            IEnumerable<string> taken = recorded.InlineTemplates.Select(template => template.Name);
+            recorded.InlineTemplates.Add(new GeneratedVoicePackTemplate
+            {
+                Name = GeneratedPromoEditing.UniqueName(taken, source is null ? "This promo's template" : source.Name),
+                Parts = source?.Parts.Select(part => new GeneratedVoicePart { Phrase = part.Phrase, Show = part.Show, Gap = part.Gap }).ToList() ?? []
+            });
+            ClearSay();
+        });
+    }
+
+    private Task RemoveInlineTemplate(GeneratedPrerecordedVoiceConfig recorded, GeneratedVoicePackTemplate inline) => Set(() =>
+    {
+        recorded.InlineTemplates?.Remove(inline);
+        if (recorded.InlineTemplates is { Count: 0 }) recorded.InlineTemplates = null;
+        ClearSay();
+    });
+
+    /// <summary>Moves an inline template into the pack, where every promo using it can pick it; this promo keeps using it.</summary>
+    private Task MoveInlineToPack(GeneratedPrerecordedVoiceConfig recorded, GeneratedVoicePack pack, GeneratedVoicePackTemplate inline) => Set(() =>
+    {
+        recorded.InlineTemplates?.Remove(inline);
+        if (recorded.InlineTemplates is { Count: 0 }) recorded.InlineTemplates = null;
+        inline.Name = GeneratedPromoEditing.UniqueName(pack.Templates.Select(template => template.Name), string.IsNullOrWhiteSpace(inline.Name) ? "Template" : inline.Name);
+        pack.Templates.Add(inline);
+
+        // Still said by this promo: a pick of the pack's templates gets it added, and its pack templates are turned on.
+        if (recorded.Templates is { Count: > 0 } chosen) chosen.Add(inline.Id);
+        if (!recorded.PackTemplatesUsed)
+        {
+            recorded.UsePackTemplates = null;
+            recorded.Templates = [inline.Id];
+        }
+
+        ClearSay();
+    });
+
+    private Task RenameInlineTemplate(GeneratedVoicePackTemplate inline, string? name)
+    {
+        inline.Name = name ?? string.Empty;
+        return InlineTemplateChanged();
+    }
+
+    private Task EnableInlineTemplate(GeneratedVoicePackTemplate inline, bool enabled)
+    {
+        inline.Enabled = enabled;
+        return InlineTemplateChanged();
+    }
+
+    // Like a voice pack edit, an inline template's changes nothing on screen, so only the edit is recorded.
+    private Task InlineTemplateChanged()
+    {
+        ClearSay();
+        return Changed.InvokeAsync();
+    }
 
     private void ClearSay()
     {
@@ -3655,7 +3744,7 @@
         GeneratedVoicePacks.Link(Template, VoicePacks);
         if (Preview.Resolve(Template, Channel, Zone)?.Prerecorded is not { } request)
         {
-            _sayNote = "None of the voice pack's templates can be said for these shows.";
+            _sayNote = "None of this promo's templates can be said for these shows.";
             return;
         }
 
@@ -3727,26 +3816,83 @@
             GeneratedVoiceContext voiceWhere = Preview.VoiceContext(Channel);
             <div class="field">
                 <span>Templates this promo may use (one that suits the shows is picked for each promo)</span>
-                @if (pack.Templates.Count == 0)
+                <label class="check">
+                    <input type="checkbox" checked="@recorded.PackTemplatesUsed" @onchange="e => SetUsePackTemplates(recorded, e.Value is true)" />
+                    <span>Use the voice pack's templates</span>
+                </label>
+                @if (recorded.PackTemplatesUsed)
                 {
-                    <p class="hint warn">This pack has no templates yet. Open the voice packs to build one.</p>
+                    <div class="voice-pack-template-list">
+                        @if (pack.Templates.Count == 0)
+                        {
+                            <p class="hint warn">This pack has no templates yet. Open the voice packs to build one, or make one just for this promo below.</p>
+                        }
+                        @foreach (GeneratedVoicePackTemplate option in pack.Templates)
+                        {
+                            bool used = recorded.Templates is not { Count: > 0 } || recorded.Templates.Contains(option.Id, StringComparer.OrdinalIgnoreCase);
+                            IReadOnlyList<string> missing = PrerecordedVoice.Missing(pack, option, shows, Zone, now, voiceWhere);
+                            <label class="check" @key="option">
+                                <input type="checkbox" checked="@used" @onchange="e => SetPackTemplate(recorded, pack, option.Id, e.Value is true)" />
+                                <span>
+                                    <strong>@(string.IsNullOrWhiteSpace(option.Name) ? "Untitled" : option.Name)</strong>@(option.Enabled ? "" : " (off in the pack)")
+                                    <span class="hint" style="margin: 0;">— @PackTemplateWords(pack, option)</span>
+                                    @if (used && option.Enabled && missing.Count > 0)
+                                    {
+                                        <span class="hint warn" style="margin: 0;"> Skipped for these shows: @(string.Join("; ", missing)).</span>
+                                    }
+                                </span>
+                            </label>
+                        }
+                    </div>
                 }
-                @foreach (GeneratedVoicePackTemplate option in pack.Templates)
+            </div>
+            <div class="field">
+                <span>This promo's own templates (built from the pack's phrases, kept with this promo only)</span>
+                @if (recorded.InlineTemplates is not { Count: > 0 })
                 {
-                    bool used = recorded.Templates is not { Count: > 0 } || recorded.Templates.Contains(option.Id, StringComparer.OrdinalIgnoreCase);
-                    IReadOnlyList<string> missing = PrerecordedVoice.Missing(pack, option, shows, Zone, now, voiceWhere);
-                    <label class="check" @key="option">
-                        <input type="checkbox" checked="@used" @onchange="e => SetPackTemplate(recorded, pack, option.Id, e.Value is true)" />
-                        <span>
-                            <strong>@(string.IsNullOrWhiteSpace(option.Name) ? "Untitled" : option.Name)</strong>@(option.Enabled ? "" : " (off in the pack)")
-                            <span class="hint" style="margin: 0;">— @PackTemplateWords(pack, option)</span>
-                            @if (used && option.Enabled && missing.Count > 0)
+                    <p class="hint" style="margin: 0;">None yet. Make one to say something particular to this promo, or copy one of the pack's to tweak it here.</p>
+                }
+                @foreach (GeneratedVoicePackTemplate inline in recorded.InlineTemplates ?? [])
+                {
+                    IReadOnlyList<string> missing = PrerecordedVoice.Missing(pack, inline, shows, Zone, now, voiceWhere);
+                    <div class="card voice-template" @key="inline">
+                        <div class="card-head">
+                            <input type="text" class="voice-template-name" value="@inline.Name" aria-label="Template name"
+                                   @onchange="e => RenameInlineTemplate(inline, e.Value?.ToString())" />
+                            <label class="check" style="margin: 0;">
+                                <input type="checkbox" checked="@inline.Enabled" @onchange="e => EnableInlineTemplate(inline, e.Value is true)" />
+                                <span>On</span>
+                            </label>
+                            <div class="spacer"></div>
+                            <button class="btn btn-sm" type="button" title="Move it into the voice pack, so other promos can use it too"
+                                    @onclick="() => MoveInlineToPack(recorded, pack, inline)">Move to pack</button>
+                            <button class="btn btn-sm btn-danger" type="button" @onclick="() => RemoveInlineTemplate(recorded, inline)">Delete</button>
+                        </div>
+                        @if (pack.Phrases.Count == 0)
+                        {
+                            <p class="hint warn">The pack has no phrases yet. Open the voice packs to record some.</p>
+                        }
+                        <VoiceTemplateParts Pack="pack" Template="inline" Changed="InlineTemplateChanged" />
+                        @if (inline.Enabled && missing.Count > 0 && inline.Parts.Count > 0)
+                        {
+                            <p class="hint warn">Skipped for these shows: @(string.Join("; ", missing)).</p>
+                        }
+                    </div>
+                }
+                <div class="row row-wrap">
+                    <button class="btn btn-sm" type="button" @onclick="() => AddInlineTemplate(recorded, pack, null)"><Icon Name="plus" Size="15" />New template for this promo</button>
+                    @if (pack.Templates.Count > 0)
+                    {
+                        <select @key="_inlineCopyPicker" value="" aria-label="Copy one of the pack's templates into this promo"
+                                @onchange="e => AddInlineTemplate(recorded, pack, e.Value?.ToString())">
+                            <option value="">Copy a pack template…</option>
+                            @foreach (GeneratedVoicePackTemplate option in pack.Templates)
                             {
-                                <span class="hint warn" style="margin: 0;"> Skipped for these shows: @(string.Join("; ", missing)).</span>
+                                <option value="@option.Id">@(string.IsNullOrWhiteSpace(option.Name) ? "Untitled" : option.Name)</option>
                             }
-                        </span>
-                    </label>
-                }
+                        </select>
+                    }
+                </div>
             </div>
             <label class="check">
                 <input type="checkbox" checked="@recorded.SpeedUp" @onchange="e => Set(() => recorded.SpeedUp = e.Value is true)" />

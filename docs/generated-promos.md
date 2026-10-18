@@ -638,6 +638,8 @@ Recordings live in **voice packs**, shared by every template on every channel (s
   - **Day & time** — one take per day and time: "Monday at 11:30", "tonight at 8:00 PM", "tomorrow at noon". The editor shows one day's times at a time. Today, tonight and tomorrow fall back to the weekday at that time, as with **Day**.
 - **Templates** — phrases in order, for example `"Episode premiere…"` · *Show name* · `"…airs…"` · *Day* · `"…at…"` · *Time* · `"Here on Nick."`. A show name, day or time part can be about the promo's show or, for Up Next, a later upcoming show. **▶ Try** plays it for the template's preview shows.
 
+**Templates kept with one promo.** Besides ticking which of the pack's templates a promo may use, a promo can have its own templates, built from the same pack's phrases but kept with that promo only. Under the pack's template list, press **New template for this promo**, or **Copy a pack template…** to start from one of the pack's and tweak it without changing the pack. They're edited the same way (parts, which show, pauses) and are used alongside the pack's templates; untick **Use the voice pack's templates** (or untick every one of them) to use only the promo's own. **Move to pack** turns one into a pack template that other promos can use. Deleting a phrase from the pack also removes it from promos' own templates, and the phrase's "in N templates" count includes them.
+
 Each promo uses one of the templates you allow whose recordings cover what it must say; a template missing a recording for that show, day or time is skipped (the editor lists what's missing). Add a short fallback such as `"Coming up next…"` · *Show name*. Takes are fitted to the time from **Starts speaking at** to the end of the promo:
 
 - **At random** picks a template and takes at random, swapping in shorter takes until it fits.
@@ -655,6 +657,16 @@ voice:
   prerecorded:
     pack: 3f0c…            # a voice pack's id
     templates: [9a1b…]     # optional: only these of its templates
+    use_pack_templates: false   # optional: only the inline templates below
+    inline_templates:      # optional: templates kept with this promo, from the pack's phrases
+      - id: c7d2…
+        name: Tonight's premiere
+        enabled: true
+        parts:
+          - phrase: p1
+          - phrase: p2
+            show: 0
+            gap: -00:00:00.0400000
     fit: random            # or fill
     speed_up: true
 

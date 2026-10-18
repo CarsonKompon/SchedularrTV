@@ -424,8 +424,19 @@ public static class SchedulerConfigLoader
             {
                 if (string.IsNullOrWhiteSpace(recordedVoice.Prerecorded!.Pack))
                     errors.Add($"{templateScope}.voice.prerecorded: choose a voice pack.");
-                else if (GeneratedVoicePacks.Find(config.Settings.GeneratedPromosVoicePacks, recordedVoice.Prerecorded.Pack) is null)
+                else if (GeneratedVoicePacks.Find(config.Settings.GeneratedPromosVoicePacks, recordedVoice.Prerecorded.Pack) is not { } recordedPack)
                     warnings.Add($"{templateScope}.voice.prerecorded: there is no voice pack '{recordedVoice.Prerecorded.Pack}', so it has no voice-over.");
+                else
+                {
+                    GeneratedPrerecordedVoiceConfig recorded = recordedVoice.Prerecorded;
+                    if (!recorded.PackTemplatesUsed && recorded.InlineTemplates is not { Count: > 0 })
+                        warnings.Add($"{templateScope}.voice.prerecorded: the pack's templates are turned off and it has no inline templates, so it has no voice-over.");
+                    foreach (GeneratedVoicePackTemplate inline in recorded.InlineTemplates ?? [])
+                    {
+                        if ((inline.Parts ?? []).Any(part => !recordedPack.Phrases.Any(phrase => string.Equals(phrase.Id, part.Phrase, StringComparison.OrdinalIgnoreCase))))
+                            warnings.Add($"{templateScope}.voice.prerecorded.inline_templates '{inline.Name}': a part names a phrase that isn't in voice pack '{recordedPack.Name}', so it's never said.");
+                    }
+                }
             }
             else if (template.Voice is { Enabled: true } voice
                 && (string.IsNullOrWhiteSpace(voice.Provider) || string.IsNullOrWhiteSpace(voice.Voice)))
@@ -1065,6 +1076,14 @@ public static class SchedulerConfigLoader
             }
 
             foreach (GeneratedVoicePackTemplate template in pack.Templates) template.Parts ??= [];
+        }
+
+        // A promo's own (inline) voice-over templates: an empty list is the same as none.
+        foreach (GeneratedPromoTemplate template in GeneratedSharedImages.Templates(config))
+        {
+            if (template.Voice?.Prerecorded is not { } recorded) continue;
+            if (recorded.InlineTemplates is { Count: 0 }) recorded.InlineTemplates = null;
+            foreach (GeneratedVoicePackTemplate inline in recorded.InlineTemplates ?? []) inline.Parts ??= [];
         }
 
         GeneratedVoicePacks.Link(config);

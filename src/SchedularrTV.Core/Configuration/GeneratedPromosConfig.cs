@@ -897,6 +897,24 @@ public sealed class GeneratedPrerecordedVoiceConfig
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? Templates { get; set; }
 
+    /// <summary>
+    /// Whether the pack's own templates (those <see cref="Templates"/> allows) can be used. Null (the default) is yes, so
+    /// promos without inline templates keep their render keys; false leaves only <see cref="InlineTemplates"/>.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? UsePackTemplates { get; set; }
+
+    /// <summary>
+    /// Templates kept with this promo rather than in the pack, built from the pack's phrases; used alongside the pack's
+    /// (or alone, when <see cref="UsePackTemplates"/> is false). Null when there are none.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedVoicePackTemplate>? InlineTemplates { get; set; }
+
+    /// <summary>Whether the pack's templates are used (<see cref="UsePackTemplates"/>, null being yes).</summary>
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public bool PackTemplatesUsed => UsePackTemplates ?? true;
+
     public GeneratedVoiceFit Fit { get; set; } = GeneratedVoiceFit.Random;
 
     /// <summary>Speeds the finished voice-over up (as text-to-speech is) when even its shortest takes run long.</summary>
@@ -1204,6 +1222,13 @@ public static class GeneratedVoicePacks
             prerecorded.Linked = Find(library, prerecorded.Pack);
         }
     }
+
+    /// <summary>Templates kept inline in generated promos that use the pack, for counting and tidying their phrases.</summary>
+    public static IEnumerable<GeneratedVoicePackTemplate> InlineTemplates(SchedulerConfig config, string id) =>
+        GeneratedSharedImages.Templates(config)
+            .Select(template => template.Voice?.Prerecorded)
+            .Where(prerecorded => prerecorded is not null && string.Equals(prerecorded.Pack, id, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(prerecorded => prerecorded!.InlineTemplates ?? []);
 
     /// <summary>How many generated promo templates use the pack for their voice-over.</summary>
     public static int Uses(SchedulerConfig config, string id) =>

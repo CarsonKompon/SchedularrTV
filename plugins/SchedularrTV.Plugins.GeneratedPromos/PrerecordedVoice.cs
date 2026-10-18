@@ -51,15 +51,9 @@ public static class PrerecordedVoice
         }
 
         GeneratedPrerecordedVoiceConfig config = voice.Prerecorded;
-        HashSet<string>? allowed = config.Templates is { Count: > 0 } chosen ? new HashSet<string>(chosen, StringComparer.OrdinalIgnoreCase) : null;
         List<PrerecordedCandidate> candidates = [];
-        foreach (GeneratedVoicePackTemplate template in pack.Templates)
+        foreach (GeneratedVoicePackTemplate template in Usable(config, pack))
         {
-            if (!template.Enabled || template.Parts.Count == 0 || (allowed is not null && !allowed.Contains(template.Id)))
-            {
-                continue;
-            }
-
             TimeSpan gap = GeneratedVoicePack.ClampGap(pack.Gap);
             List<PrerecordedPart>? parts = [];
             foreach (GeneratedVoicePart part in template.Parts)
@@ -85,6 +79,22 @@ public static class PrerecordedVoice
 
         return candidates.Count == 0 ? null
             : new PrerecordedVoiceRequest(candidates, GeneratedVoicePack.ClampGap(pack.Gap), config.Fit, config.SpeedUp, $"{seed}|prerecorded", pack.TrimSilence);
+    }
+
+    /// <summary>
+    /// The templates a promo may use: the pack's that it allows (unless they're turned off), then its own inline ones,
+    /// which are built from the same pack's phrases. Templates that are off or have no parts are left out.
+    /// </summary>
+    public static IEnumerable<GeneratedVoicePackTemplate> Usable(GeneratedPrerecordedVoiceConfig config, GeneratedVoicePack pack)
+    {
+        IEnumerable<GeneratedVoicePackTemplate> fromPack = [];
+        if (config.PackTemplatesUsed)
+        {
+            HashSet<string>? allowed = config.Templates is { Count: > 0 } chosen ? new HashSet<string>(chosen, StringComparer.OrdinalIgnoreCase) : null;
+            fromPack = pack.Templates.Where(template => allowed is null || allowed.Contains(template.Id));
+        }
+
+        return fromPack.Concat(config.InlineTemplates ?? []).Where(template => template.Enabled && template.Parts is { Count: > 0 });
     }
 
     /// <summary>

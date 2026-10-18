@@ -255,6 +255,62 @@ public sealed class PrerecordedVoiceTests : IDisposable
     }
 
     [Fact]
+    public void Inline_templates_are_used_with_the_packs_or_on_their_own()
+    {
+        (GeneratedVoicePack pack, GeneratedVoiceConfig voice) = Pack();
+        GeneratedVoicePackTemplate inline = new() { Name = "Just this promo", Parts = [new() { Phrase = pack.Phrases[1].Id }, new() { Phrase = pack.Phrases[0].Id }] };
+        voice.Prerecorded!.InlineTemplates = [inline];
+
+        PrerecordedVoiceRequest request = PrerecordedVoice.Plan(voice, [new("Rugrats", At.AddHours(5.5))], TimeZoneInfo.Utc, At, "seed")!;
+        Assert.Equal(new[] { "Short", "Long", "Just this promo" }, request.Candidates.Select(candidate => candidate.Name));
+
+        // A pick of the pack's templates leaves inline ones in.
+        voice.Prerecorded.Templates = [pack.Templates[1].Id];
+        request = PrerecordedVoice.Plan(voice, [new("Rugrats", At.AddHours(5.5))], TimeZoneInfo.Utc, At, "seed")!;
+        Assert.Equal(new[] { "Long", "Just this promo" }, request.Candidates.Select(candidate => candidate.Name));
+
+        // With the pack's turned off, only inline ones are said.
+        voice.Prerecorded.UsePackTemplates = false;
+        request = PrerecordedVoice.Plan(voice, [new("Rugrats", At.AddHours(5.5))], TimeZoneInfo.Utc, At, "seed")!;
+        Assert.Equal("Just this promo", Assert.Single(request.Candidates).Name);
+        Assert.Equal(new[] { "Rugrats", "Coming up next" }, request.Candidates[0].Parts.Select(part => part.Label));
+
+        // An inline template that's off (or the pack's off with none inline) says nothing.
+        inline.Enabled = false;
+        Assert.Null(PrerecordedVoice.Plan(voice, [new("Rugrats", At.AddHours(5.5))], TimeZoneInfo.Utc, At, "seed"));
+    }
+
+    [Fact]
+    public void Inline_templates_round_trip_through_the_schedule_file()
+    {
+        (GeneratedVoicePack pack, _) = Pack();
+        GeneratedPromoTemplate template = new()
+        {
+            Name = "Promo",
+            Voice = new GeneratedVoiceConfig
+            {
+                Mode = GeneratedVoiceMode.Prerecorded,
+                Prerecorded = new GeneratedPrerecordedVoiceConfig
+                {
+                    Pack = pack.Id, UsePackTemplates = false,
+                    InlineTemplates = [new() { Name = "Mine", Parts = [new() { Phrase = pack.Phrases[0].Id, Gap = TimeSpan.FromMilliseconds(-40) }] }]
+                }
+            }
+        };
+        SchedulerConfig config = new();
+        config.Settings.GeneratedPromosVoicePacks.Add(pack);
+        config.Channels.Add(new ChannelConfig { Id = "nick", Name = "Nick", Number = 1, BaseRotation = new() { Query = "*" }, GeneratedPromos = new() { Templates = [template] } });
+
+        SchedulerConfig loaded = SchedulerConfigLoader.Parse(YamlCommentMerger.Merge(string.Empty, SchedulerConfigLoader.Serialize(config)));
+        GeneratedPrerecordedVoiceConfig read = loaded.Channels[0].GeneratedPromos!.Templates[0].Voice!.Prerecorded!;
+        Assert.False(read.PackTemplatesUsed);
+        GeneratedVoicePackTemplate inline = Assert.Single(read.InlineTemplates!);
+        Assert.Equal("Mine", inline.Name);
+        Assert.Equal(pack.Phrases[0].Id, Assert.Single(inline.Parts).Phrase);
+        Assert.Equal(TimeSpan.FromMilliseconds(-40), inline.Parts[0].Gap);
+    }
+
+    [Fact]
     public void Voice_packs_round_trip_through_the_schedule_file()
     {
         (GeneratedVoicePack pack, _) = Pack();
