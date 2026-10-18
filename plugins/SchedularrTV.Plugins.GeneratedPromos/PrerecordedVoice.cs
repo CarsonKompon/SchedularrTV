@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using SchedularrTV.Core.Configuration;
 using SchedularrTV.Core.Scheduling;
 
@@ -22,8 +23,9 @@ public sealed record PrerecordedCandidate(string Template, string Name, IReadOnl
 /// </summary>
 /// <param name="Gap">The pack's pause between parts, for parts without their own (each part's is in <see cref="PrerecordedPart.Before"/>).</param>
 /// <param name="TrimSilence">Whether takes have the silence at either end trimmed before they're measured and joined.</param>
+/// <param name="NormalizeLevels">Whether each take is brought to the same loudness before they're joined.</param>
 public sealed record PrerecordedVoiceRequest(IReadOnlyList<PrerecordedCandidate> Candidates, TimeSpan Gap, GeneratedVoiceFit Fit, bool SpeedUp, string Seed,
-    bool TrimSilence = false);
+    bool TrimSilence = false, bool NormalizeLevels = false);
 
 /// <summary>Where a promo airs, for voice-overs that name it: the channel's id, and the block it airs in (if any).</summary>
 /// <param name="ChannelName">The channel's name, for the editor's read-out.</param>
@@ -80,7 +82,8 @@ public static class PrerecordedVoice
         }
 
         return candidates.Count == 0 ? null
-            : new PrerecordedVoiceRequest(candidates, GeneratedVoicePack.ClampGap(pack.Gap), config.Fit, config.SpeedUp, $"{seed}|prerecorded", pack.TrimSilence);
+            : new PrerecordedVoiceRequest(candidates, GeneratedVoicePack.ClampGap(pack.Gap), config.Fit, config.SpeedUp, $"{seed}|prerecorded", pack.TrimSilence,
+                config.LevelsNormalized);
     }
 
     /// <summary>
@@ -539,6 +542,68 @@ public static class PrerecordedVoice
     private static List<string>? Entry(GeneratedVoicePhrase phrase, string key) =>
         phrase.Entries.Where(entry => string.Equals(entry.Key?.Trim(), key, StringComparison.OrdinalIgnoreCase))
             .Select(entry => Usable(entry.Takes)).FirstOrDefault(takes => takes.Count > 0);
+
+    /// <summary>The loudness every take is brought to when levels are evened out (EBU R128 integrated loudness).</summary>
+    public const double TargetLoudness = -18;
+
+    /// <summary>The highest a take's peak may be raised to, so evening it out never clips it.</summary>
+    public const double PeakCeiling = -1;
+
+    /// <summary>The most a take is turned up or down, so a near-silent or broken take isn't blown up.</summary>
+    public const double MaxLevelChange = 20;
+
+    /// <summary>Changes smaller than this aren't worth a new file.</summary>
+    public const double LevelTolerance = 0.5;
+
+    /// <summary>
+    /// How many dB to turn a take up (or down, negative) to bring it to <see cref="TargetLoudness"/>: from its integrated
+    /// loudness, or for a take too short to measure that way (under about 0.4 s), its mean volume. A boost stops short of
+    /// pushing its peak over <see cref="PeakCeiling"/>, and no change is more than <see cref="MaxLevelChange"/>. Zero when
+    /// it can't be measured or is already within <see cref="LevelTolerance"/>.
+    /// </summary>
+    public static double LevelGain(double? integratedLufs, double? meanDb, double? peakDb)
+    {
+        // ebur128 reports -70 LUFS (its gate) when there's too little to measure.
+        double? loudness = integratedLufs is { } lufs && double.IsFinite(lufs) && lufs > -69 ? lufs
+            : meanDb is { } mean && double.IsFinite(mean) && mean > -69 ? mean
+            : null;
+        if (loudness is not { } measured)
+        {
+            return 0;
+        }
+
+        double gain = TargetLoudness - measured;
+        if (gain > 0 && peakDb is { } peak && double.IsFinite(peak))
+        {
+            gain = Math.Min(gain, Math.Max(0, PeakCeiling - peak));
+        }
+
+        gain = Math.Clamp(gain, -MaxLevelChange, MaxLevelChange);
+        return Math.Abs(gain) < LevelTolerance ? 0 : Math.Round(gain, 2);
+    }
+
+    /// <summary>
+    /// Reads a take's loudness from ffmpeg's ebur128 and volumedetect output: integrated loudness (the summary's, which
+    /// comes last), true peak, mean and max volume. Nulls for what isn't there.
+    /// </summary>
+    public static (double? Integrated, double? Mean, double? Peak) ParseLoudness(string ffmpegOutput)
+    {
+        static double? Last(string text, string pattern)
+        {
+            MatchCollection matches = System.Text.RegularExpressions.Regex.Matches(text, pattern);
+            if (matches.Count == 0) return null;
+            string value = matches[^1].Groups[1].Value;
+            return value is "-inf" ? double.NegativeInfinity
+                : double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) ? parsed : null;
+        }
+
+        double? integrated = Last(ffmpegOutput, @"\bI:\s+(-inf|-?\d+(?:\.\d+)?)\s+LUFS");
+        double? truePeak = Last(ffmpegOutput, @"\bPeak:\s+(-inf|-?\d+(?:\.\d+)?)\s+dBFS");
+        double? mean = Last(ffmpegOutput, @"mean_volume:\s+(-inf|-?\d+(?:\.\d+)?)\s+dB");
+        double? max = Last(ffmpegOutput, @"max_volume:\s+(-inf|-?\d+(?:\.\d+)?)\s+dB");
+        double? peak = truePeak is { } tp && double.IsFinite(tp) ? max is { } m && double.IsFinite(m) ? Math.Max(tp, m) : tp : max;
+        return (integrated, mean, peak);
+    }
 
     /// <summary>A length in seconds, for the editor.</summary>
     public static string Seconds(TimeSpan length) => length.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) + " s";

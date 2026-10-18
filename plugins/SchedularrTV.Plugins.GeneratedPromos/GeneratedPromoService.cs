@@ -735,6 +735,11 @@ public sealed partial class GeneratedPromoService(
         foreach (string take in request.Candidates.SelectMany(candidate => candidate.Parts).SelectMany(part => part.Takes).Distinct(StringComparer.OrdinalIgnoreCase))
         {
             string file = request.TrimSilence ? await TrimmedAsync(take, cancellationToken).ConfigureAwait(false) : take;
+            if (request.NormalizeLevels)
+            {
+                file = await LevelledAsync(file, cancellationToken).ConfigureAwait(false);
+            }
+
             used[take] = file;
             lengths[take] = await TakeLengthAsync(file, cancellationToken).ConfigureAwait(false);
         }
@@ -778,6 +783,86 @@ public sealed partial class GeneratedPromoService(
         }
 
         return path;
+    }
+
+    // Each take's measured change in dB, by file and version, so a take already at the target isn't measured every time.
+    private readonly ConcurrentDictionary<string, double> _takeGains = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A take brought to the same loudness as every other (<see cref="PrerecordedVoice.TargetLoudness"/>), kept in the
+    /// voice-over folder and made again if the take changes; the take itself when it's already close enough, or when it
+    /// can't be measured (it's then joined as it is, rather than failing the voice-over).
+    /// </summary>
+    public async Task<string> LevelledAsync(string take, CancellationToken cancellationToken = default)
+    {
+        string version = $"{Path.GetFullPath(take)}\u001f{File.GetLastWriteTimeUtc(take).Ticks}";
+        if (!_takeGains.TryGetValue(version, out double gain))
+        {
+            try
+            {
+                (double? integrated, double? mean, double? peak) = await LoudnessAsync(take, cancellationToken).ConfigureAwait(false);
+                gain = PrerecordedVoice.LevelGain(integrated, mean, peak);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+            {
+                logger.LogWarning("Couldn't measure how loud {Take} is, so it's used as recorded: {Message}", take, ex.GetBaseException().Message);
+                return take;
+            }
+
+            _takeGains[version] = gain;
+        }
+
+        if (gain == 0)
+        {
+            return take;
+        }
+
+        string amount = gain.ToString("0.##", CultureInfo.InvariantCulture);
+        string hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes($"levelled-v1\u001f{amount}\u001f{version}")))[..32];
+        if (CachedVoice(hash) is { } cached)
+        {
+            Touch(cached);
+            return cached;
+        }
+
+        Directory.CreateDirectory(VoiceDirectory);
+        string path = Path.Combine(VoiceDirectory, $"{hash}.wav");
+        await FfmpegToVoiceAsync(["-i", take, "-vn", "-af", $"aformat=sample_fmts=s16:sample_rates=48000:channel_layouts=stereo,volume={amount}dB"],
+            path, "could not even out a take's level", cancellationToken).ConfigureAwait(false);
+        return path;
+    }
+
+    /// <summary>A take's integrated loudness, mean volume and peak, as ffmpeg measures them.</summary>
+    private async Task<(double? Integrated, double? Mean, double? Peak)> LoudnessAsync(string take, CancellationToken cancellationToken)
+    {
+        var info = new ProcessStartInfo(_options.FfmpegPath)
+        {
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        foreach (string argument in (string[])["-hide_banner", "-nostats", "-i", take, "-vn", "-af", "ebur128=peak=true,volumedetect", "-f", "null", "-"])
+        {
+            info.ArgumentList.Add(argument);
+        }
+
+        using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffmpeg could not be started.");
+        Work.Track(process, "Generated Promos", "Measuring a take's level");
+        Task<string> output = process.StandardError.ReadToEndAsync(cancellationToken);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            throw;
+        }
+
+        string text = await output.ConfigureAwait(false);
+        return process.ExitCode == 0
+            ? PrerecordedVoice.ParseLoudness(text)
+            : throw new InvalidOperationException($"ffmpeg could not measure it (exit {process.ExitCode}): {text.Trim()}");
     }
 
     /// <summary>

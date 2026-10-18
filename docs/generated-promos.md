@@ -657,6 +657,8 @@ Each promo uses one of the templates you allow whose recordings cover what it mu
 
 The choice is fixed per promo, so a re-render sounds the same. Re-recording a take renders promos that use it again.
 
+**Evening out the volume.** **Even out the volume of every phrase** (on by default, per promo template) measures each take's loudness and brings it to the same level (−18 LUFS) before the takes are joined, so a phrase recorded closer to or further from the mic doesn't jump out. A take that is turned up stops short of clipping, no take is changed by more than 20 dB, and takes too short to measure the usual way use their average volume. Each take is measured once per version of its file. **Voice-over volume** then sets how loud the joined result is in the promo. Untick it (`normalize_levels: false`) to join the takes as recorded.
+
 **Pauses and overlaps.** By default, the silence at the start and end of every take is trimmed before joining (**Trim silence from takes**), so the only pause is **Pause between parts**. Set it below zero to start each part slightly before the previous one ends, crossfaded, so the sentence runs on as if said in one go; −40 to −80 ms usually sounds natural. An overlap never takes more than 40% of the shorter take. Any template part after the first can set its own **pause** (empty uses the pack's), e.g. a tight overlap into the show name and a longer beat before the closer. A time's hour, minutes and AM/PM use the pack's pause between them.
 
 ```yaml
@@ -678,6 +680,7 @@ voice:
             gap: -00:00:00.0400000
     fit: random            # or fill
     speed_up: true
+    normalize_levels: false   # optional: on unless turned off
 
 # kept once under settings:
 settings:

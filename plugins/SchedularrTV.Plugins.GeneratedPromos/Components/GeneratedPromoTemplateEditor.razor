@@ -3685,6 +3685,13 @@
         ClearSay();
     });
 
+    // On (the default) is kept as null.
+    private Task SetNormalizeLevels(GeneratedPrerecordedVoiceConfig recorded, bool normalize) => Set(() =>
+    {
+        recorded.NormalizeLevels = normalize ? null : false;
+        ClearSay();
+    });
+
     // Bumped to reset the "copy a pack template" picker after each pick.
     private int _inlineCopyPicker;
 
@@ -3925,6 +3932,11 @@
             <label class="check">
                 <input type="checkbox" checked="@recorded.SpeedUp" @onchange="e => Set(() => recorded.SpeedUp = e.Value is true)" />
                 <span>Speed it up (up to 1.35×) when even the shortest takes run longer than the promo</span>
+            </label>
+            <label class="check">
+                <input type="checkbox" checked="@recorded.LevelsNormalized"
+                       @onchange="e => SetNormalizeLevels(recorded, e.Value is true)" />
+                <span>Even out the volume of every phrase (for takes recorded closer to or further from the mic)</span>
             </label>
             string readOut = Script();
             @if (string.IsNullOrWhiteSpace(readOut))

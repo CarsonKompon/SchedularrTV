@@ -934,6 +934,17 @@ public sealed class GeneratedPrerecordedVoiceConfig
     /// <summary>Speeds the finished voice-over up (as text-to-speech is) when even its shortest takes run long.</summary>
     public bool SpeedUp { get; set; } = true;
 
+    /// <summary>
+    /// Evens out how loud each take is before they're joined, so a phrase recorded closer to (or further from) the mic
+    /// doesn't jump out. Null (the default) is on; false joins the takes as recorded.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? NormalizeLevels { get; set; }
+
+    /// <summary>Whether takes are evened out (<see cref="NormalizeLevels"/>, null being yes).</summary>
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public bool LevelsNormalized => NormalizeLevels ?? true;
+
     /// <summary>The pack <see cref="Pack"/> names, found when the configuration is loaded or edited.</summary>
     [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
     public GeneratedVoicePack? Linked { get; set; }

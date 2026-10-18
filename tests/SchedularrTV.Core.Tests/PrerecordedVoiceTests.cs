@@ -255,6 +255,47 @@ public sealed class PrerecordedVoiceTests : IDisposable
     }
 
     [Fact]
+    public void Takes_are_evened_out_to_one_loudness_without_clipping()
+    {
+        // Recorded further from the mic: turned up to the target.
+        Assert.Equal(6, PrerecordedVoice.LevelGain(-24, -26, -10));
+        // Closer: turned down.
+        Assert.Equal(-4, PrerecordedVoice.LevelGain(-14, -15, -1));
+        // A boost stops short of pushing the peak over the ceiling.
+        Assert.Equal(3, PrerecordedVoice.LevelGain(-24, -26, -4));
+        // Too short for integrated loudness (ebur128 says -70): its mean volume is used.
+        Assert.Equal(4, PrerecordedVoice.LevelGain(-70, -22, -12));
+        // Close enough, unmeasurable, or absurd changes.
+        Assert.Equal(0, PrerecordedVoice.LevelGain(-18.2, null, -3));
+        Assert.Equal(0, PrerecordedVoice.LevelGain(null, null, null));
+        Assert.Equal(PrerecordedVoice.MaxLevelChange, PrerecordedVoice.LevelGain(-60, -60, -50));
+
+        string output = """
+            [Parsed_ebur128_0 @ 0x1] t: 0.4  TARGET:-23 LUFS    M: -30.1 S:-120.7     I: -30.1 LUFS       LRA:   0.0 LU  TPK: -9.9 -9.9 dBFS
+            [Parsed_ebur128_0 @ 0x1] Summary:
+
+              Integrated loudness:
+                I:         -24.3 LUFS
+                Threshold: -34.5 LUFS
+
+              True peak:
+                Peak:       -8.7 dBFS
+            [Parsed_volumedetect_1 @ 0x2] mean_volume: -26.1 dB
+            [Parsed_volumedetect_1 @ 0x2] max_volume: -9.0 dB
+            """;
+        (double? integrated, double? mean, double? peak) = PrerecordedVoice.ParseLoudness(output);
+        Assert.Equal(-24.3, integrated);
+        Assert.Equal(-26.1, mean);
+        Assert.Equal(-8.7, peak);
+
+        // On by default; turning it off is carried to the request.
+        (_, GeneratedVoiceConfig voice) = Pack();
+        Assert.True(PrerecordedVoice.Plan(voice, [new("Rugrats", At.AddHours(5))], TimeZoneInfo.Utc, At, "seed")!.NormalizeLevels);
+        voice.Prerecorded!.NormalizeLevels = false;
+        Assert.False(PrerecordedVoice.Plan(voice, [new("Rugrats", At.AddHours(5))], TimeZoneInfo.Utc, At, "seed")!.NormalizeLevels);
+    }
+
+    [Fact]
     public void Voice_over_volume_reduces_or_boosts_with_a_limiter()
     {
         GeneratedVoiceConfig voice = new();
