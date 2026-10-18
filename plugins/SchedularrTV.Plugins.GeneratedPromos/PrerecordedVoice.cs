@@ -56,10 +56,12 @@ public static class PrerecordedVoice
         {
             TimeSpan gap = GeneratedVoicePack.ClampGap(pack.Gap);
             List<PrerecordedPart>? parts = [];
-            foreach (GeneratedVoicePart part in template.Parts)
+            IReadOnlyList<GeneratedVoiceVariant> variants = Variants(pack, template, shows);
+            for (int index = 0; index < template.Parts.Count; index++)
             {
+                GeneratedVoicePart part = template.Parts[index];
                 GeneratedVoicePhrase? phrase = pack.Phrases.FirstOrDefault(candidate => string.Equals(candidate.Id, part.Phrase, StringComparison.OrdinalIgnoreCase));
-                IReadOnlyList<PrerecordedPart>? said = phrase is null ? null : Parts(phrase, part.Show, shows, zone, airsAt, where);
+                IReadOnlyList<PrerecordedPart>? said = phrase is null ? null : Parts(phrase, part.Show, shows, zone, airsAt, where, variants[index]);
                 if (said is null)
                 {
                     parts = null;
@@ -110,8 +112,10 @@ public static class PrerecordedVoice
             missing.Add("it has no parts yet");
         }
 
-        foreach (GeneratedVoicePart part in template.Parts)
+        IReadOnlyList<GeneratedVoiceVariant> variants = Variants(pack, template, shows);
+        for (int index = 0; index < template.Parts.Count; index++)
         {
+            GeneratedVoicePart part = template.Parts[index];
             GeneratedVoicePhrase? phrase = pack.Phrases.FirstOrDefault(candidate => string.Equals(candidate.Id, part.Phrase, StringComparison.OrdinalIgnoreCase));
             if (phrase is null)
             {
@@ -119,7 +123,7 @@ public static class PrerecordedVoice
                 continue;
             }
 
-            if (Parts(phrase, part.Show, shows, zone, airsAt, where) is not null)
+            if (Parts(phrase, part.Show, shows, zone, airsAt, where, variants[index]) is not null)
             {
                 continue;
             }
@@ -165,8 +169,9 @@ public static class PrerecordedVoice
     /// What a phrase says about show <paramref name="show"/> (0 is the promo's own): one part, or for a time several (hour,
     /// minutes, am/pm). Null when that show isn't there or the phrase has no recording for what it would say.
     /// </summary>
+    /// <param name="variant">For show name phrases: plainly, "more …" or "even more …" (see <see cref="Variants"/>).</param>
     public static IReadOnlyList<PrerecordedPart>? Parts(GeneratedVoicePhrase phrase, int show, IReadOnlyList<UpNextListing> shows,
-        TimeZoneInfo zone, DateTimeOffset airsAt, GeneratedVoiceContext? where = null)
+        TimeZoneInfo zone, DateTimeOffset airsAt, GeneratedVoiceContext? where = null, GeneratedVoiceVariant variant = GeneratedVoiceVariant.Plain)
     {
         if (phrase.Kind == GeneratedVoicePhraseKind.Text)
         {
@@ -203,9 +208,31 @@ public static class PrerecordedVoice
         {
             case GeneratedVoicePhraseKind.ShowName:
                 // Matched among shows with takes first; only the match's files are checked (a pack can hold hundreds of shows).
-                GeneratedVoiceEntry? entry = ShowTitleMatcher.Find(listing.Title, phrase.Entries.Where(candidate => candidate.Takes.Count > 0), candidate => candidate.Key);
-                List<string> showTakes = entry is null ? [] : Usable(entry.Takes);
-                return showTakes.Count == 0 ? null : new[] { new PrerecordedPart(UpNextPromo.SpokenTitle(listing.Title), showTakes) };
+                // A mention after the first says "more …" or "even more …", falling back to the variant before when unrecorded.
+                GeneratedVoiceVariant[] tries = variant switch
+                {
+                    GeneratedVoiceVariant.EvenMore => [GeneratedVoiceVariant.EvenMore, GeneratedVoiceVariant.More, GeneratedVoiceVariant.Plain],
+                    GeneratedVoiceVariant.More => [GeneratedVoiceVariant.More, GeneratedVoiceVariant.Plain],
+                    _ => [GeneratedVoiceVariant.Plain]
+                };
+                GeneratedVoiceEntry? entry = ShowTitleMatcher.Find(listing.Title,
+                    phrase.Entries.Where(candidate => tries.Any(each => candidate.TakesOf(each) is { Count: > 0 })), candidate => candidate.Key);
+                if (entry is null)
+                {
+                    return null;
+                }
+
+                string title = UpNextPromo.SpokenTitle(listing.Title);
+                foreach (GeneratedVoiceVariant each in tries)
+                {
+                    List<string> showTakes = Usable(entry.TakesOf(each) ?? []);
+                    if (showTakes.Count > 0)
+                    {
+                        return new[] { new PrerecordedPart(VariantLabel(each, title), showTakes) };
+                    }
+                }
+
+                return null;
 
             case GeneratedVoicePhraseKind.Day:
                 foreach (string key in DayKeys(listing.Start, airsAt, zone))
@@ -257,6 +284,46 @@ public static class PrerecordedVoice
                 return null;
         }
     }
+
+    /// <summary>
+    /// How each part of a template says a show's name: plainly the first time the template names a show, "more …" the
+    /// second time it names the same show (by another part, or another upcoming slot that's the same show), and
+    /// "even more …" after that. Parts that aren't show names are <see cref="GeneratedVoiceVariant.Plain"/>.
+    /// </summary>
+    public static IReadOnlyList<GeneratedVoiceVariant> Variants(GeneratedVoicePack pack, GeneratedVoicePackTemplate template, IReadOnlyList<UpNextListing> shows)
+    {
+        Dictionary<string, int> mentions = new(StringComparer.Ordinal);
+        GeneratedVoiceVariant[] variants = new GeneratedVoiceVariant[template.Parts.Count];
+        for (int index = 0; index < template.Parts.Count; index++)
+        {
+            GeneratedVoicePart part = template.Parts[index];
+            GeneratedVoicePhrase? phrase = pack.Phrases.FirstOrDefault(candidate => string.Equals(candidate.Id, part.Phrase, StringComparison.OrdinalIgnoreCase));
+            if (phrase?.Kind != GeneratedVoicePhraseKind.ShowName || part.Show < 0 || part.Show >= shows.Count)
+            {
+                continue;
+            }
+
+            string show = ShowTitleMatcher.Words(shows[part.Show].Title);
+            int before = mentions.GetValueOrDefault(show);
+            mentions[show] = before + 1;
+            variants[index] = before switch
+            {
+                0 => GeneratedVoiceVariant.Plain,
+                1 => GeneratedVoiceVariant.More,
+                _ => GeneratedVoiceVariant.EvenMore
+            };
+        }
+
+        return variants;
+    }
+
+    /// <summary>A show name as a variant says it: "Rugrats", "More Rugrats", "Even more Rugrats".</summary>
+    public static string VariantLabel(GeneratedVoiceVariant variant, string title) => variant switch
+    {
+        GeneratedVoiceVariant.More => $"More {title}",
+        GeneratedVoiceVariant.EvenMore => $"Even more {title}",
+        _ => title
+    };
 
     /// <summary>
     /// The day keys a show's airing can be said with, best first: tonight (from 5pm) or today, tomorrow night or

@@ -631,7 +631,7 @@ Recordings live in **voice packs**, shared by every template on every channel (s
 
 - **Phrases** — each phrase has one or more *takes* (recordings); a promo picks one at random. Record a take from the microphone with **● Record** (the browser only allows this on `https` or `http://localhost` on the computer running SchedularrTV; silence at both ends is trimmed), or **Add files…** recorded elsewhere. Kinds:
   - **Text** — fixed words: "Coming up next…", "…airs…", "Here on Nick."
-  - **Show name** — takes for each show. Names match loosely, like variable images. To add many at once, pick a channel or one of its blocks (it starts on the template's channel) and press **Add all N shows from …**. The shows come from its programming—base rotation, block shows and anchors (just the block's, for a block), matched against the library the way a schedule build matches them—plus anything already scheduled there; once those are added, the same button offers **Add the remaining X shows not here yet** whenever the schedule brings new ones.
+  - **Show name** — takes for each show. Names match loosely, like variable images. The **Recording** dropdown switches the list between the plain names, **“More …”** and **“Even more …”**: record "More Rugrats" and "Even more Rugrats" for a show, and a template that names the same show again says "more …" the second time and "even more …" the third time and after. That covers a template with several show name parts about the same show, and Up Next slots that turn out to be the same show back to back. A show without the variant says the one before it ("even more" falls back to "more", "more" to the plain name). To add many at once, pick a channel or one of its blocks (it starts on the template's channel) and press **Add all N shows from …**. The shows come from its programming—base rotation, block shows and anchors (just the block's, for a block), matched against the library the way a schedule build matches them—plus anything already scheduled there; once those are added, the same button offers **Add the remaining X shows not here yet** whenever the schedule brings new ones.
   - **Day** — today, tonight (said from 5pm), tomorrow, tomorrow night, and each weekday. The weekday stands in for any you didn't record.
   - **Time** — hours (1–12, or 0–23 on a 24-hour clock), minutes past the hour in steps of 5 (`:05` … `:55`), AM/PM, and optionally noon/midnight. 8:30 PM is said "8" ":30" "PM"; 8:00 PM "8" "PM". For a more natural read, turn on **Say the whole time in one take** and record each time whole ("2:45", or "2:45 PM" with **Include AM/PM in the take**), listed every 5–60 minutes (**Times every**). A time without a whole take falls back to the separate parts, so you can record the common times whole and keep parts for the rest.
   - **Channel name** — one take per channel, said for whichever channel the promo airs on ("…only on Nick!"). With **Say the block's name instead while a promo airs in a block**, blocks get takes too, and a promo airing in a recorded block says its name ("Saturday Morning Cartoons") instead; a block without one says its channel's name.
@@ -690,6 +690,8 @@ settings:
               entries:
                 - key: Rugrats
                   takes: [{ path: D:\voice\rugrats.wav }]
+                  more: [{ path: D:\voice\more-rugrats.wav }]            # optional, 2nd mention
+                  even_more: [{ path: D:\voice\even-more-rugrats.wav }]  # optional, 3rd mention on
           templates:
             - id: 9a1b…
               name: Coming up next

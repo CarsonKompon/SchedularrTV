@@ -1072,7 +1072,7 @@ public static class SchedulerConfigLoader
             {
                 phrase.Takes ??= [];
                 phrase.Entries ??= [];
-                foreach (GeneratedVoiceEntry entry in phrase.Entries) entry.Takes ??= [];
+                foreach (GeneratedVoiceEntry entry in phrase.Entries) entry.Tidy();
             }
 
             foreach (GeneratedVoicePackTemplate template in pack.Templates) template.Parts ??= [];

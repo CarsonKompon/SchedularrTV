@@ -1040,6 +1040,59 @@ public sealed class GeneratedVoiceEntry
     public string Key { get; set; } = string.Empty;
 
     public List<GeneratedVoiceTake> Takes { get; set; } = [];
+
+    /// <summary>
+    /// Show name phrases: takes of "more …" ("More Rugrats"), said when a template names the same show a second time.
+    /// Null when none are recorded.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedVoiceTake>? More { get; set; }
+
+    /// <summary>
+    /// Show name phrases: takes of "even more …" ("Even more Rugrats"), said when a template names the same show a third
+    /// time (or more). Null when none are recorded.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedVoiceTake>? EvenMore { get; set; }
+
+    /// <summary>The takes of one variant (null when that variant has none yet).</summary>
+    public List<GeneratedVoiceTake>? TakesOf(GeneratedVoiceVariant variant) => variant switch
+    {
+        GeneratedVoiceVariant.More => More,
+        GeneratedVoiceVariant.EvenMore => EvenMore,
+        _ => Takes
+    };
+
+    /// <summary>The takes of one variant, made (empty) when it has none yet, for recording into.</summary>
+    public List<GeneratedVoiceTake> EnsureTakesOf(GeneratedVoiceVariant variant) => variant switch
+    {
+        GeneratedVoiceVariant.More => More ??= [],
+        GeneratedVoiceVariant.EvenMore => EvenMore ??= [],
+        _ => Takes
+    };
+
+    /// <summary>Every take of every variant.</summary>
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public int TakeCount => Takes.Count + (More?.Count ?? 0) + (EvenMore?.Count ?? 0);
+
+    /// <summary>Drops variant lists left empty, so they aren't written out.</summary>
+    public void Tidy()
+    {
+        Takes ??= [];
+        if (More is { Count: 0 }) More = null;
+        if (EvenMore is { Count: 0 }) EvenMore = null;
+    }
+}
+
+/// <summary>
+/// How a show's name is said: plainly the first time a template names it, "more …" the second, "even more …" the third
+/// and after (each falls back to the one before when it isn't recorded).
+/// </summary>
+public enum GeneratedVoiceVariant
+{
+    Plain,
+    More,
+    EvenMore
 }
 
 /// <summary>One recording of a phrase.</summary>

@@ -255,6 +255,39 @@ public sealed class PrerecordedVoiceTests : IDisposable
     }
 
     [Fact]
+    public void A_show_named_again_says_more_then_even_more()
+    {
+        (GeneratedVoicePack pack, GeneratedVoiceConfig voice) = Pack();
+        GeneratedVoicePhrase show = pack.Phrases[1];
+        GeneratedVoiceEntry rugrats = show.Entries[0];
+        rugrats.More = [Take("more-rugrats")];
+        pack.Templates.Clear();
+        pack.Templates.Add(new GeneratedVoicePackTemplate
+        {
+            Name = "Marathon",
+            Parts = [new() { Phrase = show.Id }, new() { Phrase = pack.Phrases[0].Id }, new() { Phrase = show.Id }, new() { Phrase = show.Id }]
+        });
+
+        // "Even more" isn't recorded yet, so the third mention falls back to "more".
+        PrerecordedVoiceRequest request = PrerecordedVoice.Plan(voice, [new("Rugrats", At.AddHours(5))], TimeZoneInfo.Utc, At, "seed")!;
+        Assert.Equal(new[] { "Rugrats", "Coming up next", "More Rugrats", "More Rugrats" }, Assert.Single(request.Candidates).Parts.Select(part => part.Label));
+        Assert.EndsWith("more-rugrats.wav", request.Candidates[0].Parts[2].Takes[0]);
+
+        rugrats.EvenMore = [Take("even-more-rugrats")];
+        request = PrerecordedVoice.Plan(voice, [new("Rugrats", At.AddHours(5))], TimeZoneInfo.Utc, At, "seed")!;
+        Assert.Equal("Even more Rugrats", request.Candidates[0].Parts[3].Label);
+
+        // Up Next slots that turn out to be the same show count as naming it again; a different show starts over.
+        pack.Templates[0].Parts = [new() { Phrase = show.Id }, new() { Phrase = show.Id, Show = 1 }];
+        request = PrerecordedVoice.Plan(voice, [new("Rugrats", At.AddHours(5)), new("Rugrats", At.AddHours(5.5))], TimeZoneInfo.Utc, At, "seed")!;
+        Assert.Equal(new[] { "Rugrats", "More Rugrats" }, request.Candidates[0].Parts.Select(part => part.Label));
+
+        show.Entries.Add(new() { Key = "Doug", Takes = [Take("doug")] });
+        request = PrerecordedVoice.Plan(voice, [new("Rugrats", At.AddHours(5)), new("Doug", At.AddHours(5.5))], TimeZoneInfo.Utc, At, "seed")!;
+        Assert.Equal(new[] { "Rugrats", "Doug" }, request.Candidates[0].Parts.Select(part => part.Label));
+    }
+
+    [Fact]
     public void Inline_templates_are_used_with_the_packs_or_on_their_own()
     {
         (GeneratedVoicePack pack, GeneratedVoiceConfig voice) = Pack();
@@ -314,10 +347,14 @@ public sealed class PrerecordedVoiceTests : IDisposable
     public void Voice_packs_round_trip_through_the_schedule_file()
     {
         (GeneratedVoicePack pack, _) = Pack();
+        pack.Phrases[1].Entries[0].More = [Take("more-rugrats")];
+        pack.Phrases[1].Entries[0].EvenMore = [];
         SchedulerConfig config = new();
         config.Settings.GeneratedPromosVoicePacks.Add(pack);
         SchedulerConfig loaded = SchedulerConfigLoader.Parse(SchedulerConfigLoader.Serialize(config));
         GeneratedVoicePack read = Assert.Single(loaded.Settings.GeneratedPromosVoicePacks);
+        Assert.EndsWith("more-rugrats.wav", Assert.Single(read.Phrases[1].Entries[0].More!).Path);
+        Assert.Null(read.Phrases[1].Entries[0].EvenMore);
         Assert.Equal(pack.Id, read.Id);
         Assert.Equal(4, read.Phrases.Count);
         Assert.Equal(GeneratedVoicePhraseKind.Time, read.Phrases[3].Kind);

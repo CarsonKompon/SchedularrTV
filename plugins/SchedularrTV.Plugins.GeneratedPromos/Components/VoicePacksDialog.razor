@@ -106,6 +106,9 @@
     private string _newText = string.Empty;
     private GeneratedVoicePhraseKind _newKind = GeneratedVoicePhraseKind.Text;
     private readonly Dictionary<string, string> _newShow = new(StringComparer.Ordinal);
+
+    // Which way of saying show names (plain, "more …", "even more …") each show name phrase is showing takes for.
+    private readonly Dictionary<string, GeneratedVoiceVariant> _showVariant = new(StringComparer.Ordinal);
     private bool _trimSilence = true;
 
     // Trying a template: which one, its clip, what it said, or why it couldn't.
@@ -246,14 +249,14 @@
     };
 
     private static int TakeCount(GeneratedVoicePhrase phrase) =>
-        phrase.Kind == GeneratedVoicePhraseKind.Text ? phrase.Takes.Count : phrase.Entries.Sum(entry => entry.Takes.Count);
+        phrase.Kind == GeneratedVoicePhraseKind.Text ? phrase.Takes.Count : phrase.Entries.Sum(entry => entry.TakeCount);
 
     private static string Summary(GeneratedVoicePhrase phrase)
     {
         int takes = TakeCount(phrase);
         string recorded = takes == 1 ? "1 take" : $"{takes} takes";
         if (phrase.Kind == GeneratedVoicePhraseKind.Text) return recorded;
-        int values = phrase.Entries.Count(entry => entry.Takes.Count > 0);
+        int values = phrase.Entries.Count(entry => entry.TakeCount > 0);
         string noun = phrase.Kind switch
         {
             GeneratedVoicePhraseKind.ShowName => values == 1 ? "show" : "shows",
@@ -383,9 +386,31 @@
             : [.. phrase.Entries.Where(entry => entry.Key.Contains(filter, StringComparison.OrdinalIgnoreCase))];
         int limit = _showLimit.GetValueOrDefault(phrase.Id, ShowPage);
         HashSet<GeneratedVoiceEntry> selected = SelectedShows(phrase);
-        int withoutTakes = phrase.Entries.Count(entry => entry.Takes.Count == 0);
+        int withoutTakes = phrase.Entries.Count(entry => entry.TakeCount == 0);
+        GeneratedVoiceVariant variant = _showVariant.GetValueOrDefault(phrase.Id, GeneratedVoiceVariant.Plain);
+        int RecordedAs(GeneratedVoiceVariant candidate) => phrase.Entries.Count(entry => entry.TakesOf(candidate) is { Count: > 0 });
         <p class="hint">Show names are matched loosely (case, punctuation, a missing “The” and small typos are forgiven). A promo about a show with
             no recording here skips the templates that say its name.</p>
+        <div class="row row-wrap">
+            <label class="field" style="margin: 0;">
+                <span>Recording</span>
+                <select value="@variant" @onchange="e => ChooseShowVariant(phrase, e.Value?.ToString())">
+                    @foreach (GeneratedVoiceVariant option in Enum.GetValues<GeneratedVoiceVariant>())
+                    {
+                        int count = RecordedAs(option);
+                        <option value="@option">@VariantName(option)@(count > 0 ? $" ({count} recorded)" : "")</option>
+                    }
+                </select>
+            </label>
+        </div>
+        @if (variant != GeneratedVoiceVariant.Plain)
+        {
+            <p class="hint">
+                @(variant == GeneratedVoiceVariant.More
+                    ? "Said instead of the plain name the second time a template names the same show (“Rugrats… then more Rugrats”), whether by another part or by the next upcoming show being the same one. A show without it says its plain name."
+                    : "Said the third time (and after) a template names the same show. A show without it says “more …” if that's recorded, else its plain name.")
+            </p>
+        }
         @if (phrase.Entries.Count > 0)
         {
             <div class="row row-wrap voice-entry-tools">
@@ -419,14 +444,16 @@
                         <Icon Name="@(open ? "chevron-down" : "chevron-right")" Size="14" />
                     </button>
                     <input type="text" value="@entry.Key" aria-label="Show title" @onchange="e => Rename(phrase, entry, e.Value?.ToString())" />
-                    <span class="hint">@(entry.Takes.Count == 0 ? "not recorded" : entry.Takes.Count == 1 ? "1 take" : $"{entry.Takes.Count} takes")</span>
+                    @{ int takes = entry.TakesOf(variant)?.Count ?? 0; }
+                    <span class="hint">@(takes == 0 ? "not recorded" : takes == 1 ? "1 take" : $"{takes} takes")@(variant == GeneratedVoiceVariant.Plain ? "" : $" of “{PrerecordedVoice.VariantLabel(variant, entry.Key)}”")</span>
                     <div class="spacer"></div>
                     <button class="btn btn-ghost btn-icon btn-sm" type="button" title="Remove this show" aria-label="@($"Remove {entry.Key}")"
                             @onclick="() => Set(() => { phrase.Entries.Remove(entry); selected.Remove(entry); })"><Icon Name="x" Size="14" /></button>
                 </div>
                 @if (open)
                 {
-                    <VoiceTakesEditor Takes="entry.Takes" Changed="Notify" Prompt="@entry.Key" TrimSilence="_trimSilence" />
+                    <VoiceTakesEditor @key="variant" Takes="entry.EnsureTakesOf(variant)" Changed="Notify"
+                                      Prompt="@PrerecordedVoice.VariantLabel(variant, entry.Key)" TrimSilence="_trimSilence" />
                 }
             </div>
         }
@@ -756,9 +783,24 @@
         });
     }
 
+    private void ChooseShowVariant(GeneratedVoicePhrase phrase, string? value)
+    {
+        _showVariant[phrase.Id] = Enum.TryParse(value, out GeneratedVoiceVariant chosen) ? chosen : GeneratedVoiceVariant.Plain;
+
+        // Variant lists opened but left empty aren't kept.
+        foreach (GeneratedVoiceEntry entry in phrase.Entries) entry.Tidy();
+    }
+
+    private static string VariantName(GeneratedVoiceVariant variant) => variant switch
+    {
+        GeneratedVoiceVariant.More => "“More …” (2nd mention)",
+        GeneratedVoiceVariant.EvenMore => "“Even more …” (3rd mention on)",
+        _ => "Show names"
+    };
+
     private Task RemoveShowsWithoutTakes(GeneratedVoicePhrase phrase) => Set(() =>
     {
-        phrase.Entries.RemoveAll(entry => entry.Takes.Count == 0);
+        phrase.Entries.RemoveAll(entry => entry.TakeCount == 0);
         _showLimit.Remove(phrase.Id);
     });
 
@@ -963,7 +1005,13 @@
             Name = UniquePhraseName(pack, phrase.Name),
             Kind = phrase.Kind,
             Takes = Takes(phrase.Takes, keepTakes),
-            Entries = [.. phrase.Entries.Select(entry => new GeneratedVoiceEntry { Key = entry.Key, Takes = Takes(entry.Takes, keepTakes) })],
+            Entries = [.. phrase.Entries.Select(entry => new GeneratedVoiceEntry
+            {
+                Key = entry.Key,
+                Takes = Takes(entry.Takes, keepTakes),
+                More = keepTakes && entry.More is { Count: > 0 } more ? Takes(more, true) : null,
+                EvenMore = keepTakes && entry.EvenMore is { Count: > 0 } evenMore ? Takes(evenMore, true) : null
+            })],
             TwentyFourHour = phrase.TwentyFourHour,
             SayAmPm = phrase.SayAmPm,
             Combined = phrase.Combined,
@@ -976,6 +1024,7 @@
         pack.Phrases.Insert(at < 0 ? pack.Phrases.Count : at + 1, copy);
         _open.Add($"phrase:{copy.Id}");
         if (_dayTimeDay.TryGetValue(phrase.Id, out string? day)) _dayTimeDay[copy.Id] = day;
+        if (_showVariant.TryGetValue(phrase.Id, out GeneratedVoiceVariant variant)) _showVariant[copy.Id] = variant;
         return Notify();
     }
 
