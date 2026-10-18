@@ -734,7 +734,13 @@ public sealed partial class GeneratedPromoService(
         Dictionary<string, TimeSpan> lengths = new(StringComparer.OrdinalIgnoreCase);
         foreach (string take in request.Candidates.SelectMany(candidate => candidate.Parts).SelectMany(part => part.Takes).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            string file = request.TrimSilence ? await TrimmedAsync(take, cancellationToken).ConfigureAwait(false) : take;
+            // Cleaned first, so trimming and levelling go by the voice rather than the noise.
+            string file = request.CleanFilter is { } clean ? await CleanedAsync(take, clean, cancellationToken).ConfigureAwait(false) : take;
+            if (request.TrimSilence)
+            {
+                file = await TrimmedAsync(file, cancellationToken).ConfigureAwait(false);
+            }
+
             if (request.NormalizeLevels)
             {
                 file = await LevelledAsync(file, cancellationToken).ConfigureAwait(false);
@@ -783,6 +789,84 @@ public sealed partial class GeneratedPromoService(
         }
 
         return path;
+    }
+
+    /// <summary>
+    /// A take with a voice pack's cleaning applied (<see cref="VoiceCleanup.Filter"/>), kept in the voice-over folder and
+    /// made again if the take or the cleaning changes.
+    /// </summary>
+    public async Task<string> CleanedAsync(string take, string filter, CancellationToken cancellationToken = default)
+    {
+        string hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"cleaned\u001f{filter}\u001f{Path.GetFullPath(take)}\u001f{File.GetLastWriteTimeUtc(take).Ticks}")))[..32];
+        if (CachedVoice(hash) is { } cached)
+        {
+            Touch(cached);
+            return cached;
+        }
+
+        Directory.CreateDirectory(VoiceDirectory);
+        string path = Path.Combine(VoiceDirectory, $"{hash}.wav");
+        await FfmpegToVoiceAsync(["-i", take, "-vn", "-af", $"aformat=sample_fmts=s16:sample_rates=48000:channel_layouts=stereo,{filter}"],
+            path, "could not clean up a take", cancellationToken).ConfigureAwait(false);
+        return path;
+    }
+
+    /// <summary>
+    /// The pitch of a steady whine or squeal in some takes (see <see cref="VoiceCleanup.FindWhine"/>), read from up to
+    /// 30 seconds of each; null when there's no clear one.
+    /// </summary>
+    public async Task<double?> FindWhineAsync(IEnumerable<string> takes, CancellationToken cancellationToken = default)
+    {
+        List<float[]> decoded = [];
+        foreach (string take in takes.Where(File.Exists))
+        {
+            decoded.Add(await MonoSamplesAsync(take, TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false));
+        }
+
+        return VoiceCleanup.FindWhine(decoded);
+    }
+
+    /// <summary>A recording as mono samples at <see cref="VoiceCleanup.Rate"/>, up to <paramref name="most"/> of it.</summary>
+    private async Task<float[]> MonoSamplesAsync(string path, TimeSpan most, CancellationToken cancellationToken)
+    {
+        var info = new ProcessStartInfo(_options.FfmpegPath)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        foreach (string argument in (string[])["-hide_banner", "-loglevel", "error", "-i", path, "-vn", "-t", most.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture),
+                     "-ac", "1", "-ar", VoiceCleanup.Rate.ToString(CultureInfo.InvariantCulture), "-f", "f32le", "-"])
+        {
+            info.ArgumentList.Add(argument);
+        }
+
+        using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffmpeg could not be started.");
+        Work.Track(process, "Generated Promos", "Listening for a mic whine");
+        Task<string> error = process.StandardError.ReadToEndAsync(cancellationToken);
+        using MemoryStream raw = new();
+        try
+        {
+            await process.StandardOutput.BaseStream.CopyToAsync(raw, cancellationToken).ConfigureAwait(false);
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            throw;
+        }
+
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"ffmpeg could not read {Path.GetFileName(path)} (exit {process.ExitCode}): {(await error.ConfigureAwait(false)).Trim()}");
+        }
+
+        byte[] bytes = raw.ToArray();
+        float[] samples = new float[bytes.Length / sizeof(float)];
+        Buffer.BlockCopy(bytes, 0, samples, 0, samples.Length * sizeof(float));
+        return samples;
     }
 
     // Each take's measured change in dB, by file and version, so a take already at the target isn't measured every time.

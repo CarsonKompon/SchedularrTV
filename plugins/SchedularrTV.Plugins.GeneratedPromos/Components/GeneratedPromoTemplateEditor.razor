@@ -3607,7 +3607,7 @@
     {
         IReadOnlyList<UpNextListing> listings = PreviewListings(out _);
         IReadOnlyList<UpNextListing> upcoming = Preview.ImageSubjects(Channel, Template).Upcoming;
-        return Template.Type == GeneratedPromoType.UpNext && upcoming.Count > 0 ? upcoming : listings;
+        return PrerecordedVoice.Shows(Template.Type, listings, upcoming);
     }
 
     // 100% is kept as null, so templates left at it keep their render keys.
@@ -3966,7 +3966,7 @@
             : string.Join(" + ", template.Parts.Select(part => pack.Phrases.FirstOrDefault(phrase => phrase.Id == part.Phrase) is { } phrase
                 ? phrase.Kind == GeneratedVoicePhraseKind.Text ? $"“{phrase.Name}”"
                 : phrase.Kind == GeneratedVoicePhraseKind.ChannelName ? $"[{phrase.Name}]"
-                : part.Show == 0 ? $"[{phrase.Name}]" : $"[{phrase.Name} of show {part.Show + 1}]"
+                : part.Show == 0 ? $"[{phrase.Name}]" : $"[{phrase.Name} of {PrerecordedVoice.ShowLabel(part.Show)}]"
                 : "[deleted]"));
 
     private Task ToggleAdvancedVoice(GeneratedVoiceConfig voice, bool enabled) => Set(() =>

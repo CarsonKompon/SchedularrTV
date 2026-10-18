@@ -495,6 +495,17 @@ public sealed class GeneratedPromoPreview(
         return (await AudioClipAsync(joined, cancellationToken).ConfigureAwait(false), choice, tempo);
     }
 
+    /// <summary>The pitch of a steady mic whine in some takes, in Hz; null when there's no clear one.</summary>
+    public Task<double?> FindWhineAsync(IEnumerable<string> takes, CancellationToken cancellationToken = default) =>
+        promos.FindWhineAsync(takes, cancellationToken);
+
+    /// <summary>A take as a clip the browser can play: cleaned with <paramref name="filter"/>, or as recorded when it's null.</summary>
+    public async Task<string> CleanedClipAsync(string take, string? filter, CancellationToken cancellationToken = default)
+    {
+        string source = filter is null ? take : await promos.CleanedAsync(take, filter, cancellationToken).ConfigureAwait(false);
+        return await AudioClipAsync(source, cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task RunFfmpegAsync(IEnumerable<string> arguments, string problem, CancellationToken cancellationToken)
     {
         var info = new ProcessStartInfo(options.Value.FfmpegPath)

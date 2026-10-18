@@ -24,8 +24,14 @@ public sealed record PrerecordedCandidate(string Template, string Name, IReadOnl
 /// <param name="Gap">The pack's pause between parts, for parts without their own (each part's is in <see cref="PrerecordedPart.Before"/>).</param>
 /// <param name="TrimSilence">Whether takes have the silence at either end trimmed before they're measured and joined.</param>
 /// <param name="NormalizeLevels">Whether each take is brought to the same loudness before they're joined.</param>
+/// <param name="CleanFilter">
+/// The voice pack's cleaning (<see cref="VoiceCleanup.Filter"/>), applied to each take first; null leaves takes as
+/// recorded (and is left out of render keys, so promos of packs without cleaning keep theirs).
+/// </param>
 public sealed record PrerecordedVoiceRequest(IReadOnlyList<PrerecordedCandidate> Candidates, TimeSpan Gap, GeneratedVoiceFit Fit, bool SpeedUp, string Seed,
-    bool TrimSilence = false, bool NormalizeLevels = false);
+    bool TrimSilence = false, bool NormalizeLevels = false,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    string? CleanFilter = null);
 
 /// <summary>Where a promo airs, for voice-overs that name it: the channel's id, and the block it airs in (if any).</summary>
 /// <param name="ChannelName">The channel's name, for the editor's read-out.</param>
@@ -83,8 +89,41 @@ public static class PrerecordedVoice
 
         return candidates.Count == 0 ? null
             : new PrerecordedVoiceRequest(candidates, GeneratedVoicePack.ClampGap(pack.Gap), config.Fit, config.SpeedUp, $"{seed}|prerecorded", pack.TrimSilence,
-                config.LevelsNormalized);
+                config.LevelsNormalized, VoiceCleanup.Filter(pack.Cleanup));
     }
+
+    /// <summary>
+    /// The shows a pre-recorded voice-over's parts can be about, in order: the promo's own show first (part show 0), then
+    /// the shows after it (1 the next one, 2 the one after that…). For Up Next that's simply the upcoming shows, the
+    /// promo's show being the next one. For every other type it's the promo's show and then the upcoming shows, so a Now
+    /// Playing promo can say "now X, then Y, later Z" the way its "next" and "next2" images show them. The promo's own
+    /// airing isn't repeated if it's among the upcoming ones.
+    /// </summary>
+    public static IReadOnlyList<UpNextListing> Shows(GeneratedPromoType type, IReadOnlyList<UpNextListing> promoted, IReadOnlyList<UpNextListing> upcoming)
+    {
+        if (type == GeneratedPromoType.UpNext)
+        {
+            return upcoming.Count > 0 ? upcoming : promoted;
+        }
+
+        if (promoted.Count == 0)
+        {
+            return upcoming;
+        }
+
+        UpNextListing own = promoted[0];
+        return [own, .. upcoming.Where(show => !(string.Equals(show.Title, own.Title, StringComparison.Ordinal) && show.Start == own.Start))];
+    }
+
+    /// <summary>Which show a template part is about, for the editor: "the promo's show", "the show after it", "2nd show after it"…</summary>
+    public static string ShowLabel(int show) => show switch
+    {
+        <= 0 => "the promo's show",
+        1 => "the show after it",
+        2 => "2nd show after it",
+        3 => "3rd show after it",
+        _ => $"{show}th show after it"
+    };
 
     /// <summary>
     /// The templates a promo may use: the pack's that it allows (unless they're turned off), then its own inline ones,
@@ -143,7 +182,9 @@ public static class PrerecordedVoice
             }
             else if (part.Show < 0 || part.Show >= shows.Count)
             {
-                missing.Add($"{name} is about show {part.Show + 1}, and this promo only has {shows.Count}");
+                missing.Add(shows.Count == 1
+                    ? $"{name} is about {ShowLabel(part.Show)}, and nothing is scheduled after this promo's show"
+                    : $"{name} is about {ShowLabel(part.Show)}, and only {shows.Count - 1} {(shows.Count == 2 ? "show is" : "shows are")} scheduled after this promo's show");
             }
             else
             {

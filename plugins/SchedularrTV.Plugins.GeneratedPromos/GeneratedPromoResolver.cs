@@ -138,7 +138,7 @@ public static partial class GeneratedPromoResolver
         // A pre-recorded voice-over: the voice pack templates that can say it for these shows (one is chosen, with its
         // takes, when the promo is made). Its read-out is only for the editor.
         PrerecordedVoiceRequest? prerecorded = template.Voice is { Enabled: true, IsPrerecorded: true } recordedVoice
-            ? PrerecordedVoice.Plan(recordedVoice, template.Type == GeneratedPromoType.UpNext && upcoming.Count > 0 ? upcoming : used, zone, promoTime, variety, where)
+            ? PrerecordedVoice.Plan(recordedVoice, PrerecordedVoice.Shows(template.Type, used, upcoming), zone, promoTime, variety, where)
             : null;
         string? script = template.Voice is { Enabled: true, IsPrerecorded: true }
             ? prerecorded is null ? null : PrerecordedVoice.Describe(prerecorded)

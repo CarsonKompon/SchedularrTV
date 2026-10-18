@@ -1002,6 +1002,13 @@ public sealed class GeneratedVoicePack
     /// <summary>Trims the silence at the start and end of every take before they're joined, so pauses are only what <see cref="Gap"/> says.</summary>
     public bool TrimSilence { get; set; } = true;
 
+    /// <summary>
+    /// Cleaning applied to every take before it's trimmed, levelled and joined: removing a mic's whine or squeal, cutting
+    /// high frequencies, and reducing steady background noise. Null (the default) leaves takes as recorded.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedVoiceCleanup? Cleanup { get; set; }
+
     /// <summary>The shortest and longest a pause may be: up to half a second of overlap, up to two seconds of silence.</summary>
     public static readonly TimeSpan MinGap = TimeSpan.FromMilliseconds(-500);
     public static readonly TimeSpan MaxGap = TimeSpan.FromSeconds(2);
@@ -1010,6 +1017,34 @@ public sealed class GeneratedVoicePack
     public static TimeSpan ClampGap(TimeSpan gap) => gap < MinGap ? MinGap : gap > MaxGap ? MaxGap : gap;
 
     public static string NewId() => Guid.NewGuid().ToString("N");
+}
+
+/// <summary>How a voice pack's takes are cleaned before they're used (each part off while null).</summary>
+public sealed class GeneratedVoiceCleanup
+{
+    /// <summary>
+    /// The pitch of a steady whine or squeal to remove, in Hz (its first two harmonics are taken out too while they're
+    /// under 20 kHz). Null when there's none to remove.
+    /// </summary>
+    public double? Whine { get; set; }
+
+    /// <summary>How wide the cut around <see cref="Whine"/> is: higher is narrower (Q, 2 to 30). A drifting whine needs a wider cut.</summary>
+    public double WhineSharpness { get; set; } = 8;
+
+    /// <summary>Everything above this many Hz is cut (a voice is clear up to about 8–10 kHz). Null leaves the highs alone.</summary>
+    public double? LowPass { get; set; }
+
+    /// <summary>How much steady background noise (hiss, hum, fans) is reduced, in dB (6 to 30). Null leaves it.</summary>
+    public double? Denoise { get; set; }
+
+    public const double MinWhine = 1000, MaxWhine = 20000;
+    public const double MinSharpness = 2, MaxSharpness = 30;
+    public const double MinLowPass = 3000, MaxLowPass = 20000;
+    public const double MinDenoise = 6, MaxDenoise = 30;
+
+    /// <summary>Whether it changes anything.</summary>
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public bool Active => Whine is not null || LowPass is not null || Denoise is not null;
 }
 
 /// <summary>One phrase of a voice pack: fixed words, or a show name, day or time with takes for each value.</summary>

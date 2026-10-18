@@ -22,10 +22,11 @@
             @if (phrase is not null && phrase.Kind is not (GeneratedVoicePhraseKind.Text or GeneratedVoicePhraseKind.ChannelName))
             {
                 <select value="@part.Show" aria-label="@($"Which show part {position + 1} is about")"
+                        title="Counted from the promo's own show. Now Playing: the promo's show is on now, the show after it is next, the 2nd after it is later. Up Next: the promo's show is the next one."
                         @onchange="e => Set(() => part.Show = int.TryParse(e.Value?.ToString(), out int which) ? Math.Clamp(which, 0, 9) : 0)">
                     @for (int show = 0; show < 10; show++)
                     {
-                        <option value="@show">@ShowLabel(show)</option>
+                        <option value="@show">@PrerecordedVoice.ShowLabel(show)</option>
                     }
                 </select>
             }
@@ -114,12 +115,4 @@
 
     public static string PhraseLabel(GeneratedVoicePhrase phrase) =>
         phrase.Kind == GeneratedVoicePhraseKind.Text ? $"“{phrase.Name}”" : $"{phrase.Name} ({KindName(phrase.Kind).ToLowerInvariant()})";
-
-    private static string ShowLabel(int show) => show switch
-    {
-        0 => "the promo's show",
-        1 => "2nd upcoming show",
-        2 => "3rd upcoming show",
-        _ => $"{show + 1}th upcoming show"
-    };
 }

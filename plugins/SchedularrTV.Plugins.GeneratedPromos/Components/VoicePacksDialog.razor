@@ -1178,6 +1178,183 @@
 
     // ---- Settings ---------------------------------------------------------------------------------------------
 
+    // ---- Cleaning up recordings -------------------------------------------------------------------------------
+
+    private bool _whineBusy;
+    private string? _cleanNote;
+    private string? _cleanUrl;
+    private string? _cleanSample;
+    private bool _cleanBusy;
+
+    /// <summary>Every take in the pack, of every phrase, value and variant, once each.</summary>
+    private static List<string> AllTakes(GeneratedVoicePack pack) =>
+        [.. pack.Phrases.SelectMany(phrase => phrase.Takes.Concat(phrase.Entries.SelectMany(entry =>
+                entry.Takes.Concat(entry.More ?? []).Concat(entry.EvenMore ?? []))))
+            .Select(take => take.Path?.Trim() ?? string.Empty)
+            .Where(path => path.Length > 0 && File.Exists(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    private RenderFragment CleanupSettings(GeneratedVoicePack pack) => __builder =>
+    {
+        GeneratedVoiceCleanup cleanup = pack.Cleanup ?? new GeneratedVoiceCleanup();
+        List<string> takes = AllTakes(pack);
+        string? sample = takes.FirstOrDefault(take => string.Equals(take, _cleanSample, StringComparison.OrdinalIgnoreCase)) ?? takes.FirstOrDefault();
+        <h3 class="ed-section">Clean up recordings</h3>
+        <p class="hint">Applied to every take before it's used, by every template of this pack (the recordings themselves aren't changed).
+            Changing it makes the pack's promos again.</p>
+        <div class="voice-cleanup">
+            <label class="check" style="margin: 0;">
+                <input type="checkbox" checked="@(cleanup.Whine is not null)" @onchange="e => SetWhine(pack, e.Value is true ? cleanup.Whine ?? 15000 : null)" />
+                <span>Remove a whine or squeal</span>
+            </label>
+            @if (cleanup.Whine is { } whine)
+            {
+                <div class="row row-wrap">
+                    <label class="field" style="margin: 0;">
+                        <span>Its pitch (Hz)</span>
+                        <input type="number" min="@GeneratedVoiceCleanup.MinWhine" max="@GeneratedVoiceCleanup.MaxWhine" step="1" value="@Math.Round(whine)"
+                               @onchange="e => SetWhine(pack, ParseNumber(e.Value) ?? whine)" />
+                    </label>
+                    <label class="field" style="flex: 1 1 200px; margin: 0;">
+                        <span>Cut: @(cleanup.WhineSharpness >= 15 ? "narrow" : cleanup.WhineSharpness >= 6 ? "medium" : "wide") (Q @cleanup.WhineSharpness.ToString("0", System.Globalization.CultureInfo.InvariantCulture))</span>
+                        <input type="range" min="@GeneratedVoiceCleanup.MinSharpness" max="@GeneratedVoiceCleanup.MaxSharpness" step="1" value="@cleanup.WhineSharpness"
+                               aria-label="How narrow the cut around the whine is"
+                               @onchange="e => SetCleanup(pack, c => c.WhineSharpness = Math.Clamp(ParseNumber(e.Value) ?? 8, GeneratedVoiceCleanup.MinSharpness, GeneratedVoiceCleanup.MaxSharpness))" />
+                    </label>
+                </div>
+            }
+            <div class="row row-wrap">
+                <button class="btn btn-sm" type="button" disabled="@(_whineBusy || takes.Count == 0)"
+                        title="Listens to the pack's takes (between words, where it's plainest) for a steady high tone" @onclick="() => FindWhine(pack, takes)">
+                    @(_whineBusy ? "Listening…" : "Find it in the recordings")
+                </button>
+                <span class="hint" style="margin: 0;">Its harmonics (2× and 3× the pitch) are taken out too. Make the cut wider if the whine wavers.</span>
+            </div>
+
+            <label class="check" style="margin: 0;">
+                <input type="checkbox" checked="@(cleanup.LowPass is not null)" @onchange="e => SetCleanup(pack, c => c.LowPass = e.Value is true ? c.LowPass ?? 12000 : null)" />
+                <span>Cut everything above a pitch</span>
+            </label>
+            @if (cleanup.LowPass is { } lowPass)
+            {
+                <label class="field" style="margin: 0;">
+                    <span>Above @((lowPass / 1000).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)) kHz</span>
+                    <input type="range" min="@GeneratedVoiceCleanup.MinLowPass" max="@GeneratedVoiceCleanup.MaxLowPass" step="500" value="@lowPass"
+                           aria-label="Cut-off in hertz"
+                           @onchange="e => SetCleanup(pack, c => c.LowPass = Math.Clamp(ParseNumber(e.Value) ?? 12000, GeneratedVoiceCleanup.MinLowPass, GeneratedVoiceCleanup.MaxLowPass))" />
+                </label>
+                <p class="hint" style="margin: 0;">A voice stays clear down to about 8–10 kHz; lower starts to sound muffled. Good for a squeal that moves around.</p>
+            }
+
+            <label class="check" style="margin: 0;">
+                <input type="checkbox" checked="@(cleanup.Denoise is not null)" @onchange="e => SetCleanup(pack, c => c.Denoise = e.Value is true ? c.Denoise ?? 12 : null)" />
+                <span>Reduce steady background noise (hiss, hum, fans)</span>
+            </label>
+            @if (cleanup.Denoise is { } denoise)
+            {
+                <label class="field" style="margin: 0;">
+                    <span>Strength: @denoise.ToString("0", System.Globalization.CultureInfo.InvariantCulture) dB</span>
+                    <input type="range" min="@GeneratedVoiceCleanup.MinDenoise" max="@GeneratedVoiceCleanup.MaxDenoise" step="1" value="@denoise"
+                           aria-label="Noise reduction in decibels"
+                           @onchange="e => SetCleanup(pack, c => c.Denoise = Math.Clamp(ParseNumber(e.Value) ?? 12, GeneratedVoiceCleanup.MinDenoise, GeneratedVoiceCleanup.MaxDenoise))" />
+                </label>
+                <p class="hint" style="margin: 0;">Too strong makes the voice sound watery; 10–15 dB is usually plenty.</p>
+            }
+
+            @if (sample is not null)
+            {
+                <div class="row row-wrap">
+                    <label class="field" style="flex: 1 1 240px; margin: 0;">
+                        <span>Compare with a take</span>
+                        <select value="@sample" @onchange="e => { _cleanSample = e.Value?.ToString(); _cleanUrl = null; _cleanNote = null; }">
+                            @foreach (string take in takes)
+                            {
+                                <option value="@take">@Path.GetFileName(take)</option>
+                            }
+                        </select>
+                    </label>
+                    <button class="btn btn-sm" type="button" disabled="@_cleanBusy" @onclick="() => Compare(sample, null)">▶ As recorded</button>
+                    <button class="btn btn-sm" type="button" disabled="@(_cleanBusy || VoiceCleanup.Filter(pack.Cleanup) is null)"
+                            @onclick="() => Compare(sample, VoiceCleanup.Filter(pack.Cleanup))">▶ Cleaned</button>
+                </div>
+            }
+            @if (_cleanNote is not null)
+            {
+                <p class="hint" role="status">@_cleanNote</p>
+            }
+            @if (_cleanUrl is not null)
+            {
+                <audio src="@_cleanUrl" autoplay controls class="voice-take-audio"></audio>
+            }
+        </div>
+    };
+
+    private static double? ParseNumber(object? value) =>
+        double.TryParse(value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double number)
+            && double.IsFinite(number) ? number : null;
+
+    // Settings left changing nothing are dropped, so the pack's promos go back to their uncleaned renders.
+    private Task SetCleanup(GeneratedVoicePack pack, Action<GeneratedVoiceCleanup> change) => Set(() =>
+    {
+        GeneratedVoiceCleanup cleanup = pack.Cleanup ?? new GeneratedVoiceCleanup();
+        change(cleanup);
+        pack.Cleanup = cleanup.Active ? cleanup : null;
+        _cleanUrl = null;
+        _cleanNote = null;
+    });
+
+    private Task SetWhine(GeneratedVoicePack pack, double? pitch) =>
+        SetCleanup(pack, cleanup => cleanup.Whine = pitch is { } hz ? Math.Clamp(Math.Round(hz), GeneratedVoiceCleanup.MinWhine, GeneratedVoiceCleanup.MaxWhine) : null);
+
+    private async Task FindWhine(GeneratedVoicePack pack, List<string> takes)
+    {
+        _whineBusy = true;
+        _cleanNote = null;
+        try
+        {
+            // A dozen takes is plenty to hear a steady tone, and keeps it quick for packs of hundreds.
+            double? found = await Preview.FindWhineAsync(takes.Take(12));
+            if (found is { } pitch)
+            {
+                await SetWhine(pack, pitch);
+                _cleanNote = $"Found a steady tone at about {pitch:0} Hz; it's now removed. Compare a take below to check.";
+            }
+            else
+            {
+                _cleanNote = "No clear steady whine stood out in the recordings. If you can hear one, try cutting everything above a pitch instead.";
+            }
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _cleanNote = $"Couldn't listen to the recordings: {ex.GetBaseException().Message}";
+        }
+        finally
+        {
+            _whineBusy = false;
+        }
+    }
+
+    private async Task Compare(string take, string? filter)
+    {
+        _cleanBusy = true;
+        _cleanNote = null;
+        try
+        {
+            string clip = await Preview.CleanedClipAsync(take, filter);
+            _cleanUrl = $"{Preview.FileUrl(clip)}?v={DateTime.UtcNow.Ticks}";
+            _cleanNote = filter is null ? "As recorded." : "Cleaned.";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _cleanUrl = null;
+            _cleanNote = $"Couldn't play it: {ex.GetBaseException().Message}";
+        }
+        finally
+        {
+            _cleanBusy = false;
+        }
+    }
+
     private RenderFragment SettingsTab(GeneratedVoicePack pack) => __builder =>
     {
         int uses = GeneratedVoicePacks.Uses(Editor.Working, pack.Id);
@@ -1206,6 +1383,7 @@
         </label>
         <p class="hint">Recording uses this computer's microphone through the browser, which only allows it on a secure page (https, or
             http://localhost on the computer running SchedularrTV). Takes can also be recorded elsewhere and added as files.</p>
+        @(CleanupSettings(pack))
         <div class="row">
             <span class="hint">@(uses == 0 ? "No template uses this pack." : uses == 1 ? "Used by 1 template." : $"Used by {uses} templates.")</span>
             <div class="spacer"></div>

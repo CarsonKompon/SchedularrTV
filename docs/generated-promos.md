@@ -645,7 +645,7 @@ Recordings live in **voice packs**, shared by every template on every channel (s
   - **Time** — hours (1–12, or 0–23 on a 24-hour clock), minutes past the hour in steps of 5 (`:05` … `:55`), AM/PM, and optionally noon/midnight. 8:30 PM is said "8" ":30" "PM"; 8:00 PM "8" "PM". For a more natural read, turn on **Say the whole time in one take** and record each time whole ("2:45", or "2:45 PM" with **Include AM/PM in the take**), listed every 5–60 minutes (**Times every**). A time without a whole take falls back to the separate parts, so you can record the common times whole and keep parts for the rest.
   - **Channel name** — one take per channel, said for whichever channel the promo airs on ("…only on Nick!"). With **Say the block's name instead while a promo airs in a block**, blocks get takes too, and a promo airing in a recorded block says its name ("Saturday Morning Cartoons") instead; a block without one says its channel's name.
   - **Day & time** — one take per day and time: "Monday at 11:30", "tonight at 8:00 PM", "tomorrow at noon". The editor shows one day's times at a time. Today, tonight and tomorrow fall back to the weekday at that time, as with **Day**.
-- **Templates** — phrases in order, for example `"Episode premiere…"` · *Show name* · `"…airs…"` · *Day* · `"…at…"` · *Time* · `"Here on Nick."`. A show name, day or time part can be about the promo's show or, for Up Next, a later upcoming show. **▶ Try** plays it for the template's preview shows.
+- **Templates** — phrases in order, for example `"Episode premiere…"` · *Show name* · `"…airs…"` · *Day* · `"…at…"` · *Time* · `"Here on Nick."`. A show name, day or time part can be about the promo's show, **the show after it**, the **2nd show after it**, and so on, for any promo type. For Now Playing that's now / next / later (the same shows as `next` and `next2` variable images), so `"Now…"` · *Show name* · `"…then…"` · *Show name (the show after it)* · `"…later…"` · *Show name (2nd show after it)* works. For Up Next, the promo's show is the next one, so the show after it is the 2nd upcoming show. **▶ Try** plays it for the template's preview shows.
 
 **Templates kept with one promo.** Besides ticking which of the pack's templates a promo may use, a promo can have its own templates, built from the same pack's phrases but kept with that promo only. Under the pack's template list, press **New template for this promo**, or **Copy a pack template…** to start from one of the pack's and tweak it without changing the pack. They're edited the same way (parts, which show, pauses) and are used alongside the pack's templates; untick **Use the voice pack's templates** (or untick every one of them) to use only the promo's own. **Move to pack** turns one into a pack template that other promos can use. Deleting a phrase from the pack also removes it from promos' own templates, and the phrase's "in N templates" count includes them.
 
@@ -656,6 +656,24 @@ Each promo uses one of the templates you allow whose recordings cover what it mu
 - If even the shortest choice runs long, **Speed it up** plays it faster (up to 1.35×, as with text-to-speech).
 
 The choice is fixed per promo, so a re-render sounds the same. Re-recording a take renders promos that use it again.
+
+**Cleaning up recordings.** A voice pack's **Pack settings** tab can clean every take before it's used, for all of the pack's templates (the recordings on disk aren't changed):
+
+- **Remove a whine or squeal** — notches out a steady tone at a pitch you give (and its 2× and 3× harmonics). **Find it in the recordings** listens to up to a dozen of the pack's takes, between the words where a whine is plainest, and fills in the pitch when one clearly stands out. Widen the cut if the whine wavers.
+- **Cut everything above a pitch** — a low-pass filter (a voice stays clear down to about 8–10 kHz), for a squeal that moves around.
+- **Reduce steady background noise** — FFT noise reduction for hiss, hum and fans; 10–15 dB is usually plenty.
+
+**▶ As recorded** / **▶ Cleaned** compare any take. Cleaning happens first, so silence trimming and levelling go by the voice; changing it makes the pack's promos again.
+
+```yaml
+voice_packs:
+  - id: 3f0c…
+    cleanup:
+      whine: 15200          # Hz
+      whine_sharpness: 8    # Q: higher is narrower
+      low_pass: 12000       # Hz
+      denoise: 12           # dB
+```
 
 **Evening out the volume.** **Even out the volume of every phrase** (on by default, per promo template) measures each take's loudness and brings it to the same level (−18 LUFS) before the takes are joined, so a phrase recorded closer to or further from the mic doesn't jump out. A take that is turned up stops short of clipping, no take is changed by more than 20 dB, and takes too short to measure the usual way use their average volume. Each take is measured once per version of its file. **Voice-over volume** then sets how loud the joined result is in the promo. Untick it (`normalize_levels: false`) to join the takes as recorded.
 

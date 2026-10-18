@@ -255,6 +255,77 @@ public sealed class PrerecordedVoiceTests : IDisposable
     }
 
     [Fact]
+    public void A_mic_whine_is_found_and_notched_out()
+    {
+        // Half a second of "words" (loud, broad noise) and half of quiet hiss, with a faint steady whine at 15.2 kHz throughout.
+        Random random = new(7);
+        float[] take = new float[VoiceCleanup.Rate * 3];
+        for (int index = 0; index < take.Length; index++)
+        {
+            bool speaking = index / (VoiceCleanup.Rate / 2) % 2 == 0;
+            double noise = (random.NextDouble() * 2 - 1) * (speaking ? 0.3 : 0.003);
+            take[index] = (float)(noise + 0.02 * Math.Sin(2 * Math.PI * 15200 * index / VoiceCleanup.Rate));
+        }
+
+        double? whine = VoiceCleanup.FindWhine([take]);
+        Assert.NotNull(whine);
+        Assert.InRange(whine!.Value, 15190, 15210);
+
+        // Plain noise has no whine.
+        float[] hiss = [.. Enumerable.Range(0, VoiceCleanup.Rate * 2).Select(_ => (float)((random.NextDouble() * 2 - 1) * 0.01))];
+        Assert.Null(VoiceCleanup.FindWhine([hiss]));
+
+        // The filter: notches at the pitch (and harmonics under 20 kHz), then the low-pass, then noise reduction.
+        Assert.Null(VoiceCleanup.Filter(null));
+        Assert.Null(VoiceCleanup.Filter(new GeneratedVoiceCleanup()));
+        string filter = VoiceCleanup.Filter(new GeneratedVoiceCleanup { Whine = 7000, LowPass = 12000, Denoise = 12 })!;
+        Assert.Contains("bandreject=f=7000:width_type=q:w=8", filter);
+        Assert.Contains("bandreject=f=14000:", filter);
+        Assert.Contains("bandreject=f=21000:", filter);
+        Assert.Contains("lowpass=f=12000", filter);
+        Assert.EndsWith("afftdn=nr=12:nf=-50:tn=1", filter);
+        Assert.DoesNotContain("f=30000", VoiceCleanup.Filter(new GeneratedVoiceCleanup { Whine = 15000 })!);
+
+        // A pack's cleaning goes to the request; none keeps it out (and out of render keys).
+        (GeneratedVoicePack pack, GeneratedVoiceConfig voice) = Pack();
+        Assert.Null(PrerecordedVoice.Plan(voice, [new("Rugrats", At.AddHours(5))], TimeZoneInfo.Utc, At, "seed")!.CleanFilter);
+        pack.Cleanup = new GeneratedVoiceCleanup { Whine = 15200 };
+        Assert.StartsWith("bandreject=f=15200", PrerecordedVoice.Plan(voice, [new("Rugrats", At.AddHours(5))], TimeZoneInfo.Utc, At, "seed")!.CleanFilter);
+    }
+
+    [Fact]
+    public void Now_playing_promos_can_name_the_shows_after_theirs()
+    {
+        UpNextListing now = new("Rugrats", At);
+        List<UpNextListing> upcoming = [new("Doug", At.AddMinutes(30)), new("Arthur", At.AddHours(1))];
+
+        // Now Playing: the promo's show, then the upcoming ones (now, next, later).
+        Assert.Equal(new[] { "Rugrats", "Doug", "Arthur" },
+            PrerecordedVoice.Shows(GeneratedPromoType.NowPlaying, [now], upcoming).Select(show => show.Title));
+        // Its own airing isn't counted twice when the upcoming list starts with it.
+        Assert.Equal(new[] { "Rugrats", "Doug", "Arthur" },
+            PrerecordedVoice.Shows(GeneratedPromoType.NowPlaying, [now], [now, .. upcoming]).Select(show => show.Title));
+        // Up Next: the promo's show is the next one.
+        Assert.Equal(new[] { "Doug", "Arthur" }, PrerecordedVoice.Shows(GeneratedPromoType.UpNext, [upcoming[0]], upcoming).Select(show => show.Title));
+
+        (GeneratedVoicePack pack, GeneratedVoiceConfig voice) = Pack();
+        GeneratedVoicePhrase names = pack.Phrases[1];
+        names.Entries.Add(new() { Key = "Doug", Takes = [Take("doug")] });
+        names.Entries.Add(new() { Key = "Arthur", Takes = [Take("arthur")] });
+        pack.Templates.Clear();
+        GeneratedVoicePackTemplate threeShows = new()
+        {
+            Name = "Now, then, later",
+            Parts = [new() { Phrase = names.Id }, new() { Phrase = names.Id, Show = 1 }, new() { Phrase = names.Id, Show = 2 }]
+        };
+        pack.Templates.Add(threeShows);
+        IReadOnlyList<UpNextListing> shows = PrerecordedVoice.Shows(GeneratedPromoType.NowPlaying, [now], upcoming);
+        Assert.Empty(PrerecordedVoice.Missing(pack, threeShows, shows, TimeZoneInfo.Utc, At));
+        Assert.Equal(new[] { "Rugrats", "Doug", "Arthur" },
+            PrerecordedVoice.Plan(voice, shows, TimeZoneInfo.Utc, At, "seed")!.Candidates[0].Parts.Select(part => part.Label));
+    }
+
+    [Fact]
     public void Takes_are_evened_out_to_one_loudness_without_clipping()
     {
         // Recorded further from the mic: turned up to the target.
