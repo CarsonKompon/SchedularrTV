@@ -83,7 +83,7 @@ public static class GlyphFallback
             return text;
         }
 
-        bool capitals = text.Any(char.IsLetter) && !text.Any(char.IsLower);
+        bool capitals = IsAllCapitals(text);
         StringBuilder result = new(text.Length + 8);
         Rune[] runes = [.. text.EnumerateRunes()];
         for (int index = 0; index < runes.Length; index++)
@@ -175,6 +175,30 @@ public static class GlyphFallback
         }
 
         return plain.ToString().Normalize(NormalizationForm.FormC);
+    }
+
+    /// <summary>
+    /// Whether the text is written in capitals ("TOM &amp; JERRY"): no lower-case letters, and at least three capitals in
+    /// a row, so initials like "R&amp;B" or "AT&amp;T" on their own don't count.
+    /// </summary>
+    private static bool IsAllCapitals(string text)
+    {
+        if (text.Any(char.IsLower))
+        {
+            return false;
+        }
+
+        int run = 0;
+        foreach (char c in text)
+        {
+            run = char.IsUpper(c) ? run + 1 : 0;
+            if (run >= 3)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool IsControl(Rune rune) => Rune.IsControl(rune) || rune.Value is '\n' or '\r' or '\t';

@@ -17,6 +17,7 @@ public sealed class GlyphFallbackTests
         Assert.Equal("Tom and Jerry", GlyphFallback.Apply("Tom & Jerry", font));
         Assert.Equal("R and B", GlyphFallback.Apply("R&B", font));
         Assert.Equal("TOM AND JERRY", GlyphFallback.Apply("TOM & JERRY", font));
+        Assert.Equal("AT and T", GlyphFallback.Apply("AT&T", font));
 
         // A font with "&" keeps it.
         Assert.Equal("Tom & Jerry", GlyphFallback.Apply("Tom & Jerry", Ascii));
