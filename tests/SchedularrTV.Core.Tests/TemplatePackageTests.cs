@@ -357,6 +357,118 @@ public sealed class TemplatePackageTests : IDisposable
         await Assert.ThrowsAsync<InvalidOperationException>(() => new TemplatePackages(_otherData).OpenAsync(stream));
     }
 
+    private GeneratedVoicePack VoicePack()
+    {
+        GeneratedVoicePhrase intro = new() { Name = "Coming up next", Takes = [new() { Path = Write("voice/next.wav", "next take") }] };
+        GeneratedVoicePhrase show = new()
+        {
+            Name = "Show", Kind = GeneratedVoicePhraseKind.ShowName,
+            Entries = [new() { Key = "Rugrats", Takes = [new() { Path = Write("voice/rugrats.wav", "rugrats take") }] }]
+        };
+        GeneratedVoicePack pack = new() { Name = "Announcer", Phrases = [intro, show] };
+        pack.Templates.Add(new GeneratedVoicePackTemplate { Name = "Next", Parts = [new() { Phrase = intro.Id }, new() { Phrase = show.Id }] });
+        return pack;
+    }
+
+    private static async Task<GeneratedVoicePackImport> ImportVoiceAsync(string zip, string data, List<GeneratedVoicePack> library)
+    {
+        await using FileStream stream = File.OpenRead(zip);
+        using TemplatePackageReader reader = await new TemplatePackages(data).OpenAsync(stream);
+        Assert.Equal(VoicePackPackages.Kind, reader.Manifest.Kind);
+        return await VoicePackPackages.ImportAsync(reader, new TemplateAssets(data), library);
+    }
+
+    [Fact]
+    public async Task Voice_packs_install_then_only_gain_what_they_lack()
+    {
+        GeneratedVoicePack pack = VoicePack();
+        string zip = await ExportAsync(_data, writer => VoicePackPackages.ExportAsync(pack, writer));
+
+        // Installed whole on a computer without it, its recordings kept there.
+        List<GeneratedVoicePack> library = [];
+        GeneratedVoicePackImport installed = await ImportVoiceAsync(zip, _otherData, library);
+        Assert.True(installed.Installed);
+        GeneratedVoicePack mine = Assert.Single(library);
+        Assert.Equal(pack.Id, mine.Id);
+        string take = Assert.Single(mine.Phrases[0].Takes).Path;
+        Assert.True(new TemplateAssets(_otherData).IsKept(take));
+        Assert.Equal("next take", File.ReadAllText(take));
+        Assert.Null(mine.Phrases[0].Takes[0].Hash);
+
+        // The same pack again changes nothing; local edits are kept.
+        mine.Name = "My announcer";
+        mine.Templates[0].Name = "Renamed";
+        string zipAgain = await ExportAsync(_data, writer => VoicePackPackages.ExportAsync(pack, writer));
+        GeneratedVoicePackImport again = await ImportVoiceAsync(zipAgain, _otherData, library);
+        Assert.False(again.Changed);
+        Assert.Contains("already up to date", again.Summary);
+        Assert.Single(mine.Phrases[0].Takes);
+        Assert.Equal("My announcer", mine.Name);
+
+        // A newer copy with a new phrase, show, recording and template: only those are added.
+        GeneratedVoicePhrase closer = new() { Name = "Only on Nick!", Takes = [new() { Path = Write("voice/nick.wav", "nick take") }] };
+        pack.Phrases.Add(closer);
+        pack.Phrases[1].Entries.Add(new() { Key = "Doug", Takes = [new() { Path = Write("voice/doug.wav", "doug take") }] });
+        pack.Phrases[0].Takes.Add(new() { Path = Write("voice/next-2.wav", "another next take") });
+        pack.Phrases[1].Entries[0].More = [new() { Path = Write("voice/more-rugrats.wav", "more rugrats") }];
+        pack.Templates.Add(new GeneratedVoicePackTemplate { Name = "With closer", Parts = [new() { Phrase = pack.Phrases[1].Id }, new() { Phrase = closer.Id }] });
+        string newer = await ExportAsync(_data, writer => VoicePackPackages.ExportAsync(pack, writer));
+        GeneratedVoicePackImport updated = await ImportVoiceAsync(newer, _otherData, library);
+        Assert.False(updated.Installed);
+        Assert.Equal(1, updated.Phrases);
+        Assert.Equal(1, updated.Values);
+        Assert.Equal(1, updated.Templates);
+        Assert.Equal(4, updated.Takes); // next-2, more Rugrats, Doug and the closer; nothing already there
+        Assert.Single(library);
+        Assert.Equal(2, mine.Phrases[0].Takes.Count);
+        Assert.Equal("Renamed", mine.Templates[0].Name);
+        Assert.Equal(2, mine.Templates.Count);
+        Assert.Equal(3, mine.Phrases.Count);
+        Assert.Single(mine.Phrases[1].Entries[0].More!);
+    }
+
+    [Fact]
+    public async Task A_generated_promo_brings_its_voice_pack()
+    {
+        GeneratedVoicePack pack = VoicePack();
+        var template = new GeneratedPromoTemplate
+        {
+            Name = "Up Next",
+            Voice = new GeneratedVoiceConfig
+            {
+                Mode = GeneratedVoiceMode.Prerecorded,
+                Prerecorded = new GeneratedPrerecordedVoiceConfig { Pack = pack.Id, Linked = pack }
+            }
+        };
+
+        string zip = await ExportAsync(_data, writer => GeneratedPromoPackages.ExportAsync(template, writer, null, [pack]));
+        Assert.Null(template.VoicePack);
+
+        List<GeneratedVoicePack> library = [];
+        GeneratedVoicePackImport report = new();
+        GeneratedPromoTemplate imported;
+        await using (FileStream stream = File.OpenRead(zip))
+        using (TemplatePackageReader reader = await new TemplatePackages(_otherData).OpenAsync(stream))
+        {
+            imported = await GeneratedPromoPackages.ImportAsync(reader, new TemplateAssets(_otherData), [], null, null, library, report);
+        }
+
+        Assert.True(report.Installed);
+        Assert.Null(imported.VoicePack);
+        Assert.Same(Assert.Single(library), imported.Voice!.Prerecorded!.Linked);
+
+        // Imported again where the pack is already up to date: nothing is installed or changed.
+        GeneratedVoicePackImport second = new();
+        await using (FileStream stream = File.OpenRead(zip))
+        using (TemplatePackageReader reader = await new TemplatePackages(_otherData).OpenAsync(stream))
+        {
+            await GeneratedPromoPackages.ImportAsync(reader, new TemplateAssets(_otherData), ["Up Next"], null, null, library, second);
+        }
+
+        Assert.False(second.Changed);
+        Assert.Single(library);
+    }
+
     private static async Task<string> ExportAsync(string data, Func<TemplatePackageWriter, Task<string>> fill)
     {
         var packages = new TemplatePackages(data);

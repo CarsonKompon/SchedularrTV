@@ -148,15 +148,17 @@ else
 
     private Task<string> ExportSelected(TemplatePackageWriter writer) =>
         _selected is { } template
-            ? GeneratedPromoPackages.ExportAsync(template, writer, Editor.Working.Settings.GeneratedPromosSharedImages)
+            ? GeneratedPromoPackages.ExportAsync(template, writer, Editor.Working.Settings.GeneratedPromosSharedImages, Editor.Working.Settings.GeneratedPromosVoicePacks)
             : throw new InvalidOperationException("Choose a template to export.");
 
     private async Task<string> ImportPackage(TemplatePackageReader reader)
     {
         GeneratedSharedImport shared = new();
+        GeneratedVoicePackImport voice = new();
         GeneratedPromoTemplate template = await GeneratedPromoPackages.ImportAsync(reader, TemplateFiles,
-            Config?.Templates.Select(existing => existing.Name) ?? [], Editor.Working.Settings.GeneratedPromosSharedImages, shared);
-        string sharedNote = shared.Summary.Length == 0 ? "" : " " + shared.Summary;
+            Config?.Templates.Select(existing => existing.Name) ?? [], Editor.Working.Settings.GeneratedPromosSharedImages, shared,
+            Editor.Working.Settings.GeneratedPromosVoicePacks, voice);
+        string sharedNote = (shared.Summary.Length == 0 ? "" : " " + shared.Summary) + (voice.Pack is null ? "" : " " + voice.Summary);
         if (Config is { } config)
         {
             config.Templates.Add(template);

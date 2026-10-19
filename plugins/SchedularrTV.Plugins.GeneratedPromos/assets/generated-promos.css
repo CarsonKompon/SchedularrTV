@@ -54,6 +54,60 @@
 .gp-scope .voice-add-phrase input[type="text"] { flex: 1 1 240px; }
 .gp-scope .voice-template-name { flex: 0 1 320px; font-weight: 600; }
 .gp-scope .voice-pack-template-list { padding-left: 24px; }
+
+/* Picking a voice pack's templates for a promo: a grid of selectable cards */
+.gp-scope .vt-picker { display: grid; gap: 10px; margin: 6px 0 12px; }
+.gp-scope .vt-picker-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.gp-scope .vt-picker-head > div:first-child { display: grid; gap: 2px; }
+.gp-scope .vt-picker-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.gp-scope .vt-segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.gp-scope .vt-segmented button {
+    border: 0; background: var(--panel-2); color: var(--muted); padding: 5px 12px; font-size: 12.5px; cursor: pointer;
+}
+.gp-scope .vt-segmented button + button { border-left: 1px solid var(--line); }
+.gp-scope .vt-segmented button.active { background: color-mix(in srgb, var(--accent) 18%, var(--panel-2)); color: var(--text); font-weight: 600; }
+.gp-scope .vt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.gp-scope .vt-card {
+    position: relative; display: grid; gap: 8px; align-content: start; padding: 10px 12px; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); color: var(--text);
+    transition: border-color .12s, box-shadow .12s, background .12s, opacity .12s;
+}
+.gp-scope .vt-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.gp-scope .vt-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gp-scope .vt-card.selected {
+    border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--panel-2));
+    box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.gp-scope .vt-card:not(.selected) { opacity: .72; }
+.gp-scope .vt-card:not(.selected):hover { opacity: 1; }
+.gp-scope .vt-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.gp-scope .vt-check {
+    flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 5px;
+    border: 1.5px solid var(--line); font-size: 12px; line-height: 1; color: var(--panel-2);
+}
+.gp-scope .vt-card.selected .vt-check { background: var(--accent); border-color: var(--accent); color: #fff; }
+.gp-scope .vt-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gp-scope .vt-badge {
+    flex: none; font-size: 11px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted);
+}
+.gp-scope .vt-ready .vt-badge { color: #2f9e5b; border-color: color-mix(in srgb, #2f9e5b 45%, var(--line)); }
+.gp-scope .vt-skipped .vt-badge { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+.gp-scope .vt-off .vt-name { text-decoration: line-through; color: var(--muted); }
+.gp-scope .vt-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.gp-scope .vt-chip {
+    font-size: 12px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel);
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.gp-scope .vt-chip-text { font-style: italic; }
+.gp-scope .vt-chip-show { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
+.gp-scope .vt-chip-when { border-color: color-mix(in srgb, #c98a1b 50%, var(--line)); background: color-mix(in srgb, #c98a1b 12%, var(--panel)); }
+.gp-scope .vt-chip-channel { border-color: color-mix(in srgb, #8a5cd6 50%, var(--line)); background: color-mix(in srgb, #8a5cd6 12%, var(--panel)); }
+.gp-scope .vt-chip-missing { color: var(--warn); border-style: dashed; }
+.gp-scope .vt-why { margin: 0; font-size: 12px; color: var(--warn); }
+.gp-scope .vt-card-foot { display: flex; justify-content: flex-end; margin: -4px -6px -6px 0; }
+.gp-scope .vt-card audio { width: 100%; }
+.gp-scope .vt-empty { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px; border: 1px dashed var(--line); border-radius: 10px; }
+.gp-scope .vt-empty p { margin: 0; color: var(--muted); }
 .gp-scope .voice-parts { list-style: decimal; margin: 8px 0; padding-left: 28px; display: grid; gap: 6px; }
 .gp-scope .voice-part { display: list-item; }
 .gp-scope .voice-part > * { vertical-align: middle; margin-right: 6px; }

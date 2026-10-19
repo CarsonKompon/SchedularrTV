@@ -144,10 +144,21 @@ public static class GeneratedPromoPackages
     /// shared images its variables use (from <paramref name="sharedLibrary"/>) go in with it, so every package works on
     /// its own; each such variable also carries a copy of its images, for versions that don't know shared images.
     /// </summary>
+    /// <param name="voiceLibrary">
+    /// The voice packs; the one a pre-recorded voice-over uses goes in with its recordings, so importing the template
+    /// installs it (or brings an installed copy up to date).
+    /// </param>
     public static async Task<string> ExportAsync(GeneratedPromoTemplate template, TemplatePackageWriter writer,
-        IEnumerable<GeneratedSharedImage>? sharedLibrary = null)
+        IEnumerable<GeneratedSharedImage>? sharedLibrary = null, IEnumerable<GeneratedVoicePack>? voiceLibrary = null)
     {
         GeneratedPromoTemplate copy = GeneratedPromoEditing.Copy(template);
+        copy.VoicePack = null;
+        if (template.Voice is { IsPrerecorded: true, Prerecorded: { } recorded }
+            && (GeneratedVoicePacks.Find(voiceLibrary, recorded.Pack) ?? recorded.Linked) is { } voicePack)
+        {
+            copy.VoicePack = await VoicePackPackages.PackedAsync(voicePack, writer).ConfigureAwait(false);
+        }
+
         List<GeneratedSharedImage> shared = [];
         foreach (GeneratedVariableImage image in copy.VariableImages ?? [])
         {
@@ -218,11 +229,38 @@ public static class GeneratedPromoPackages
     /// that is keeps everything it has and only gains the show and block overrides (and a default) it lacks. Only the
     /// files of what's added are taken from the package. Null turns the template's shared variables into its own.
     /// </param>
+    /// <param name="voiceLibrary">
+    /// The voice packs to install the package's into (see <see cref="VoicePackPackages.MergeAsync"/>): added when it
+    /// isn't there, otherwise only what it lacks is added, and nothing at all when it has everything. Null leaves the
+    /// packs alone (the voice-over then uses the pack only if it's already installed).
+    /// </param>
     public static async Task<GeneratedPromoTemplate> ImportAsync(TemplatePackageReader reader, TemplateAssets assets, IEnumerable<string> existingNames,
-        List<GeneratedSharedImage>? sharedLibrary = null, GeneratedSharedImport? report = null, CancellationToken cancellationToken = default)
+        List<GeneratedSharedImage>? sharedLibrary = null, GeneratedSharedImport? report = null,
+        List<GeneratedVoicePack>? voiceLibrary = null, GeneratedVoicePackImport? voiceReport = null, CancellationToken cancellationToken = default)
     {
         GeneratedPromoTemplate template = reader.Item<GeneratedPromoTemplate>();
         Func<string?, Task<string?>> keep = path => reader.AssetAsync(path, assets, AssetCategory, cancellationToken);
+        GeneratedVoicePack? packagedVoice = template.VoicePack;
+        template.VoicePack = null;
+        if (packagedVoice is not null && voiceLibrary is not null)
+        {
+            GeneratedVoicePackImport merged = await VoicePackPackages.MergeAsync(voiceLibrary, packagedVoice,
+                path => reader.AssetAsync(path, assets, GeneratedPromoPreview.VoicePackAssets, cancellationToken), cancellationToken).ConfigureAwait(false);
+            if (voiceReport is not null)
+            {
+                voiceReport.Pack = merged.Pack;
+                voiceReport.Installed = merged.Installed;
+                voiceReport.Phrases = merged.Phrases;
+                voiceReport.Values = merged.Values;
+                voiceReport.Templates = merged.Templates;
+                voiceReport.Takes = merged.Takes;
+            }
+        }
+
+        if (voiceLibrary is not null)
+        {
+            GeneratedVoicePacks.Link(template, voiceLibrary);
+        }
         List<GeneratedSharedImage> packaged = template.SharedImages ?? [];
         template.SharedImages = null;
 

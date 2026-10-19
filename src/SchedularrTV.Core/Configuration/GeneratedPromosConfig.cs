@@ -452,6 +452,14 @@ public sealed class GeneratedPromoTemplate
     [YamlIgnore]
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public List<GeneratedSharedImage>? SharedImages { get; set; }
+
+    /// <summary>
+    /// Only in template packages: the voice pack the template's pre-recorded voice-over uses, so importing it installs
+    /// (or brings up to date) that pack. Never in the schedule file, where packs are kept once under the plugin's settings.
+    /// </summary>
+    [YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedVoicePack? VoicePack { get; set; }
 }
 
 public sealed class GeneratedPromoAvailability
@@ -1171,6 +1179,14 @@ public sealed class GeneratedVoiceTake
     /// <summary>How long it is, measured when it's added (and again when a promo is made), for the editor.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public TimeSpan? Length { get; set; }
+
+    /// <summary>
+    /// Only in packages: the recording's content hash, so importing a pack that's already installed adds only the takes
+    /// it doesn't have (the same recording has a different path on each computer). Never in the schedule file.
+    /// </summary>
+    [YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Hash { get; set; }
 }
 
 /// <summary>A voice pack template: phrases said in order, one take of each, to make a promo's voice-over.</summary>

@@ -3622,6 +3622,7 @@
     {
         _sayUrl = null;
         _sayNote = null;
+        _sayFor = null;
     }
 
     private async Task SayVoiceOver()
@@ -3865,38 +3866,7 @@
             IReadOnlyList<UpNextListing> shows = VoiceShows();
             DateTimeOffset now = Preview.Now;
             GeneratedVoiceContext voiceWhere = Preview.VoiceContext(Channel);
-            <div class="field">
-                <span>Templates this promo may use (one that suits the shows is picked for each promo)</span>
-                <label class="check">
-                    <input type="checkbox" checked="@recorded.PackTemplatesUsed" @onchange="e => SetUsePackTemplates(recorded, e.Value is true)" />
-                    <span>Use the voice pack's templates</span>
-                </label>
-                @if (recorded.PackTemplatesUsed)
-                {
-                    <div class="voice-pack-template-list">
-                        @if (pack.Templates.Count == 0)
-                        {
-                            <p class="hint warn">This pack has no templates yet. Open the voice packs to build one, or make one just for this promo below.</p>
-                        }
-                        @foreach (GeneratedVoicePackTemplate option in pack.Templates)
-                        {
-                            bool used = recorded.Templates is not { Count: > 0 } || recorded.Templates.Contains(option.Id, StringComparer.OrdinalIgnoreCase);
-                            IReadOnlyList<string> missing = PrerecordedVoice.Missing(pack, option, shows, Zone, now, voiceWhere);
-                            <label class="check" @key="option">
-                                <input type="checkbox" checked="@used" @onchange="e => SetPackTemplate(recorded, pack, option.Id, e.Value is true)" />
-                                <span>
-                                    <strong>@(string.IsNullOrWhiteSpace(option.Name) ? "Untitled" : option.Name)</strong>@(option.Enabled ? "" : " (off in the pack)")
-                                    <span class="hint" style="margin: 0;">— @PackTemplateWords(pack, option)</span>
-                                    @if (used && option.Enabled && missing.Count > 0)
-                                    {
-                                        <span class="hint warn" style="margin: 0;"> Skipped for these shows: @(string.Join("; ", missing)).</span>
-                                    }
-                                </span>
-                            </label>
-                        }
-                    </div>
-                }
-            </div>
+            @(PackTemplatePicker(recorded, pack, shows, now, voiceWhere))
             <div class="field">
                 <span>This promo's own templates (built from the pack's phrases, kept with this promo only)</span>
                 @if (recorded.InlineTemplates is not { Count: > 0 })
@@ -3968,13 +3938,13 @@
             {
                 <p class="hint">One possible read-out: <em>@readOut</em></p>
                 <div class="row row-wrap">
-                    <button class="btn btn-sm" type="button" disabled="@_saying" @onclick="SayVoiceOver">@(_saying ? "Putting it together…" : "▶ Hear one")</button>
-                    @if (_sayNote is not null)
+                    <button class="btn btn-sm" type="button" disabled="@_saying" @onclick="SayVoiceOver">@(_saying && _sayFor is null ? "Putting it together…" : "▶ Hear one")</button>
+                    @if (_sayNote is not null && _sayFor is null)
                     {
                         <span class="hint" style="margin: 0;" role="status">@_sayNote</span>
                     }
                 </div>
-                @if (_sayUrl is not null)
+                @if (_sayUrl is not null && _sayFor is null)
                 {
                     <audio class="song-preview" src="@_sayUrl" autoplay controls></audio>
                 }
@@ -3998,13 +3968,211 @@
         ClearSay();
     });
 
-    private static string PackTemplateWords(GeneratedVoicePack pack, GeneratedVoicePackTemplate template) =>
-        template.Parts.Count == 0 ? "no parts yet"
-            : string.Join(" + ", template.Parts.Select(part => pack.Phrases.FirstOrDefault(phrase => phrase.Id == part.Phrase) is { } phrase
-                ? phrase.Kind == GeneratedVoicePhraseKind.Text ? $"“{phrase.Name}”"
-                : phrase.Kind == GeneratedVoicePhraseKind.ChannelName ? $"[{phrase.Name}]"
-                : part.Show == 0 ? $"[{phrase.Name}]" : $"[{phrase.Name} of {PrerecordedVoice.ShowLabel(part.Show)}]"
-                : "[deleted]"));
+    // Which pack template's ▶ was last pressed (its clip and note show on its card); null for the read-out's "Hear one".
+    private string? _sayFor;
+
+    /// <summary>
+    /// The voice pack's templates as cards to pick from: each shows what it says (its phrases as chips), whether it can
+    /// be said for the preview's shows, and plays on its own; clicking a card adds it to (or takes it from) this promo.
+    /// </summary>
+    private RenderFragment PackTemplatePicker(GeneratedPrerecordedVoiceConfig recorded, GeneratedVoicePack pack,
+        IReadOnlyList<UpNextListing> shows, DateTimeOffset now, GeneratedVoiceContext voiceWhere) => __builder =>
+    {
+        bool usePack = recorded.PackTemplatesUsed;
+        int chosen = usePack ? pack.Templates.Count(option => IsPackTemplateUsed(recorded, option)) : 0;
+        <div class="vt-picker">
+            <div class="vt-picker-head">
+                <div>
+                    <strong>Voice-over templates</strong>
+                    <span class="hint" style="margin: 0;">One that suits the shows is picked for each promo.</span>
+                </div>
+                <div class="spacer"></div>
+                <div class="vt-segmented" role="group" aria-label="Which templates this promo uses">
+                    <button type="button" class="@(usePack ? "active" : "")" aria-pressed="@usePack"
+                            @onclick="() => SetUsePackTemplates(recorded, true)">From the voice pack</button>
+                    <button type="button" class="@(!usePack ? "active" : "")" aria-pressed="@(!usePack)"
+                            @onclick="() => SetUsePackTemplates(recorded, false)">Only this promo's own</button>
+                </div>
+            </div>
+            @if (usePack)
+            {
+                @if (pack.Templates.Count == 0)
+                {
+                    <div class="vt-empty">
+                        <p>“@(string.IsNullOrWhiteSpace(pack.Name) ? "Untitled" : pack.Name)” has no templates yet.</p>
+                        <button class="btn btn-sm" type="button" @onclick="() => _voicePacksOpen = true">Build one in the voice pack…</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="vt-picker-bar">
+                        <span class="hint" style="margin: 0;">
+                            @(recorded.Templates is not { Count: > 0 } ? $"Using all {pack.Templates.Count} (templates added to the pack later are used too)" : $"Using {chosen} of {pack.Templates.Count}")
+                        </span>
+                        <div class="spacer"></div>
+                        <button class="btn btn-ghost btn-sm" type="button" disabled="@(recorded.Templates is not { Count: > 0 })"
+                                @onclick="() => SelectAllPackTemplates(recorded)">Select all</button>
+                        <button class="btn btn-ghost btn-sm" type="button" @onclick="() => SetUsePackTemplates(recorded, false)">Select none</button>
+                    </div>
+                    <div class="vt-grid" role="listbox" aria-multiselectable="true" aria-label="The voice pack's templates">
+                        @foreach (GeneratedVoicePackTemplate option in pack.Templates)
+                        {
+                            bool used = IsPackTemplateUsed(recorded, option);
+                            IReadOnlyList<string> missing = PrerecordedVoice.Missing(pack, option, shows, Zone, now, voiceWhere);
+                            string state = !option.Enabled ? "off" : missing.Count > 0 ? "skipped" : "ready";
+                            string name = string.IsNullOrWhiteSpace(option.Name) ? "Untitled" : option.Name;
+                            <div class="vt-card @(used ? "selected" : "") vt-@state" @key="option" role="option" aria-selected="@(used ? "true" : "false")" tabindex="0"
+                                 title="@(used ? $"Click to stop using “{name}”" : $"Click to use “{name}”")"
+                                 @onclick="() => SetPackTemplate(recorded, pack, option.Id, !used)"
+                                 @onkeydown="e => CardKey(e, recorded, pack, option.Id, !used)">
+                                <div class="vt-card-head">
+                                    <span class="vt-check" aria-hidden="true">@(used ? "✓" : "")</span>
+                                    <strong class="vt-name">@name</strong>
+                                    <span class="vt-badge">@(state switch { "off" => "Off in the pack", "skipped" => "Can't say these shows", _ => "Ready" })</span>
+                                </div>
+                                <div class="vt-chips">@(TemplateChips(pack, option))</div>
+                                @if (state == "skipped")
+                                {
+                                    <p class="vt-why">@(string.Join("; ", missing)).</p>
+                                }
+                                <div class="vt-card-foot">
+                                    <button class="btn btn-ghost btn-sm" type="button" disabled="@(_saying || option.Parts.Count == 0)"
+                                            title="Hear this template for the preview's shows (a new pick of takes each time)"
+                                            @onclick="() => SayTemplate(pack, option)" @onclick:stopPropagation="true">
+                                        @(_saying && _sayFor == option.Id ? "Putting it together…" : "▶ Hear it")
+                                    </button>
+                                </div>
+                                @if (_sayFor == option.Id)
+                                {
+                                    <div @onclick:stopPropagation="true">
+                                        @if (_sayNote is not null)
+                                        {
+                                            <p class="vt-why" role="status" style="color: var(--muted);">@_sayNote</p>
+                                        }
+                                        @if (_sayUrl is not null)
+                                        {
+                                            <audio class="song-preview" src="@_sayUrl" autoplay controls></audio>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            }
+            else
+            {
+                <p class="hint">The voice pack's templates aren't used; only this promo's own templates below are.</p>
+            }
+        </div>
+    };
+
+    // Enter or Space on a focused card picks it, as a click does.
+    private Task CardKey(KeyboardEventArgs e, GeneratedPrerecordedVoiceConfig recorded, GeneratedVoicePack pack, string id, bool use) =>
+        e.Key is "Enter" or " " ? SetPackTemplate(recorded, pack, id, use) : Task.CompletedTask;
+
+    private static bool IsPackTemplateUsed(GeneratedPrerecordedVoiceConfig recorded, GeneratedVoicePackTemplate option) =>
+        recorded.PackTemplatesUsed && (recorded.Templates is not { Count: > 0 } || recorded.Templates.Contains(option.Id, StringComparer.OrdinalIgnoreCase));
+
+    private Task SelectAllPackTemplates(GeneratedPrerecordedVoiceConfig recorded) => Set(() =>
+    {
+        recorded.Templates = null;
+        recorded.UsePackTemplates = null;
+        ClearSay();
+    });
+
+    /// <summary>A template's parts as chips: fixed words in quotes, and what changes per promo (show, day, time, channel) as labels.</summary>
+    private static RenderFragment TemplateChips(GeneratedVoicePack pack, GeneratedVoicePackTemplate template) => __builder =>
+    {
+        if (template.Parts.Count == 0)
+        {
+            <span class="vt-chip vt-chip-missing">no parts yet</span>
+        }
+
+        foreach (GeneratedVoicePart part in template.Parts)
+        {
+            GeneratedVoicePhrase? phrase = pack.Phrases.FirstOrDefault(candidate => candidate.Id == part.Phrase);
+            if (phrase is null)
+            {
+                <span class="vt-chip vt-chip-missing">deleted phrase</span>
+            }
+            else if (phrase.Kind == GeneratedVoicePhraseKind.Text)
+            {
+                <span class="vt-chip vt-chip-text">“@phrase.Name”</span>
+            }
+            else
+            {
+                string kind = phrase.Kind switch
+                {
+                    GeneratedVoicePhraseKind.ShowName => "show",
+                    GeneratedVoicePhraseKind.ChannelName => "channel",
+                    _ => "when"
+                };
+                string about = phrase.Kind is GeneratedVoicePhraseKind.ChannelName || part.Show == 0 ? "" : $" · {PrerecordedVoice.ShowLabel(part.Show)}";
+                <span class="vt-chip vt-chip-@kind" title="@VoiceTemplateParts.KindName(phrase.Kind)">@(string.IsNullOrWhiteSpace(phrase.Name) ? VoiceTemplateParts.KindName(phrase.Kind) : phrase.Name)@about</span>
+            }
+        }
+    };
+
+    /// <summary>Says one pack template for the preview's shows, whether or not this promo uses it yet.</summary>
+    private async Task SayTemplate(GeneratedVoicePack pack, GeneratedVoicePackTemplate option)
+    {
+        ClearSay();
+        _sayFor = option.Id;
+        if (Template.Voice is not { Prerecorded: { } recorded })
+        {
+            return;
+        }
+
+        GeneratedVoiceConfig trial = new()
+        {
+            Mode = GeneratedVoiceMode.Prerecorded,
+            Prerecorded = new GeneratedPrerecordedVoiceConfig
+            {
+                Pack = pack.Id, Templates = [option.Id], Linked = pack, NormalizeLevels = recorded.NormalizeLevels, Fit = recorded.Fit, SpeedUp = recorded.SpeedUp
+            }
+        };
+
+        // A template that's off in the pack is still heard here, so it can be judged before turning it on.
+        bool wasEnabled = option.Enabled;
+        PrerecordedVoiceRequest? request;
+        try
+        {
+            option.Enabled = true;
+            request = PrerecordedVoice.Plan(trial, VoiceShows(), Zone, Preview.Now, $"try|{++_says}|{DateTime.UtcNow.Ticks}", Preview.VoiceContext(Channel));
+        }
+        finally
+        {
+            option.Enabled = wasEnabled;
+        }
+
+        if (request is null)
+        {
+            _sayNote = $"It can't be said for these shows: {string.Join("; ", PrerecordedVoice.Missing(pack, option, VoiceShows(), Zone, Preview.Now, Preview.VoiceContext(Channel)))}.";
+            return;
+        }
+
+        _saying = true;
+        try
+        {
+            (string clip, PrerecordedChoice choice, double tempo) = await Preview.SayAsync(request, VoiceRoom, _life.Token);
+            _sayUrl = $"{Preview.FileUrl(clip)}?v={DateTime.UtcNow.Ticks}";
+            _sayNote = $"{choice.Candidate.Describe()} — {PrerecordedVoice.Seconds(choice.Length)} of {PrerecordedVoice.Seconds(VoiceRoom)}"
+                       + (tempo > 1.001 ? $", sped up {tempo:0.00}× in the promo." : choice.Length > VoiceRoom ? ", so the end is cut off (speeding up is off)." : ".");
+        }
+        catch (OperationCanceledException) when (_life.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _sayNote = $"Couldn't put it together: {ex.GetBaseException().Message}";
+        }
+        finally
+        {
+            _saying = false;
+        }
+    }
+
 
     private Task ToggleAdvancedVoice(GeneratedVoiceConfig voice, bool enabled) => Set(() =>
     {

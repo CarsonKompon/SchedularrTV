@@ -5,6 +5,7 @@
 @inject ConfigEditor Editor
 @inject GeneratedPromoPreview Preview
 @inject IServiceProvider Services
+@inject TemplateAssets TemplateFiles
 
 <div class="modal-backdrop" @onclick="Close">
     <div class="modal modal-wide voice-packs" role="dialog" aria-modal="true" aria-labelledby="voice-packs-title" @onclick:stopPropagation="true">
@@ -30,6 +31,10 @@
             </label>
             <button class="btn btn-sm" type="button" @onclick="AddPack"><Icon Name="plus" Size="15" />New voice pack</button>
         </div>
+        <TemplatePackageButtons Kind="@VoicePackPackages.Kind" What="voice pack" ImportText="Import a voice pack…"
+                                ExportText="@(Pack is { } shown ? $"Export “{(string.IsNullOrWhiteSpace(shown.Name) ? "Untitled" : shown.Name)}”" : "Export")"
+                                ExportTitle="Save this voice pack, with all its recordings, as a .zip to share"
+                                CanExport="@(Pack is not null)" OnExport="ExportPack" OnImport="ImportPack" />
 
         @if (Pack is { } current)
         {
@@ -223,6 +228,33 @@
         _tab = Tab.Phrases;
         await Notify();
         await PackChosen.InvokeAsync(created.Id);
+    }
+
+    private Task<string> ExportPack(TemplatePackageWriter writer) =>
+        Pack is { } pack ? VoicePackPackages.ExportAsync(pack, writer) : throw new InvalidOperationException("Choose a voice pack to export.");
+
+    // Installs the pack, or adds what an installed copy lacks; the pack is shown either way.
+    private async Task<string> ImportPack(TemplatePackageReader reader)
+    {
+        GeneratedVoicePackImport result = await VoicePackPackages.ImportAsync(reader, TemplateFiles, Library);
+        if (result.Pack is { } pack)
+        {
+            _packId = pack.Id;
+            _open.Clear();
+            ClearTry();
+        }
+
+        if (result.Changed)
+        {
+            await Notify();
+            if (result.Installed && result.Pack is { } installed)
+            {
+                await PackChosen.InvokeAsync(installed.Id);
+            }
+        }
+
+        StateHasChanged();
+        return result.Changed ? $"{result.Summary} Save to keep it." : result.Summary;
     }
 
     private Task RemovePack(GeneratedVoicePack pack)
