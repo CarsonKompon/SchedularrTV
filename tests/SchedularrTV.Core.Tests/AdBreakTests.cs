@@ -204,6 +204,13 @@ public class AdBreakTests
         Assert.Equal("saturday", timed.Attributes["promo_day"]);
         Assert.Equal("830pm", timed.Attributes["promo_clock"]);
 
+        // A group of days: Weekdays (Monday to Friday) or Weekends.
+        MediaItem? weekdays = AdBreakCompiler.Describe(Clip($@"{Root}\Up Next\Top Cat\Weekdays\4pm\clip.mp4"), [folder]);
+        Assert.Equal("weekdays", weekdays!.Attributes["promo_day"]);
+        Assert.Equal("4pm", weekdays.Attributes["promo_clock"]);
+        Assert.Equal("Top Cat", weekdays.Attributes["show_id"]);
+        Assert.Equal("weekends", AdBreakCompiler.Describe(Clip($@"{Root}\Up Next\Top Cat\Weekend\clip.mp4"), [folder])!.Attributes["promo_day"]);
+
         MediaItem? generic = AdBreakCompiler.Describe(Clip($@"{Root}\Up Next\clip.mp4"), [folder]);
         Assert.Equal("Any Show", generic!.Attributes["show_id"]);
 

@@ -389,9 +389,9 @@ public sealed class FileSystemMediaLibrary(
                     // used on its own, so the folder is read by what it says rather than by depth.
                     case 3:
                     case 4:
-                        if (TryReadDay(segment, out DayOfWeek day))
+                        if (TryReadDay(segment, out string day))
                         {
-                            attributes["promo_day"] = day.ToString().ToLowerInvariant();
+                            attributes["promo_day"] = day;
                         }
                         else
                         {
@@ -429,15 +429,11 @@ public sealed class FileSystemMediaLibrary(
         new string([.. folderName.ToLowerInvariant().Where(char.IsLetterOrDigit)]);
 
     /// <summary>
-    /// Recognises a weekday folder. Letters only, so a numeric clock folder is never mistaken for the
-    /// underlying enum value.
+    /// Recognises a day folder: a weekday, or Weekdays / Weekends (see <see cref="SchedularrTV.Core.Scheduling.PromoDays"/>).
+    /// Letters only, so a numeric clock folder is never mistaken for the underlying enum value.
     /// </summary>
-    internal static bool TryReadDay(string folderName, out DayOfWeek day)
-    {
-        string trimmed = folderName.Trim();
-
-        return Enum.TryParse(trimmed, ignoreCase: true, out day) && trimmed.All(char.IsLetter);
-    }
+    internal static bool TryReadDay(string folderName, out string day) =>
+        SchedularrTV.Core.Scheduling.PromoDays.TryRead(folderName, out day);
 
     private static bool TryReadAttribute(
         string segment,

@@ -244,7 +244,7 @@ public static class AdBreakFolderJobs
         || string.Equals(folder.Name, temporal.AnyTimeTag, StringComparison.OrdinalIgnoreCase)
         || string.Equals(folder.Name, AdBreakConfig.DefaultAnyShowFolder, StringComparison.OrdinalIgnoreCase)
         || string.Equals(folder.Name, AdBreakConfig.DefaultAnyMovieFolder, StringComparison.OrdinalIgnoreCase)
-        || AdBreakCompiler.TryReadDay(folder.Name, out _)
+        || PromoDays.TryRead(folder.Name, out _)
         || AdBreakCompiler.TryReadClock(folder.Name, out _);
 
     /// <summary>Whether a folder has a folder named for a promo type in it, directly or under qualifiers (dates, days…).</summary>
@@ -401,6 +401,7 @@ public static class AdBreakFolderJobs
             if (promoRoot.Days)
             {
                 Add($"{show}/Eventually/Saturday", "Only for a Saturday airing");
+                Add($"{show}/Eventually/Weekdays/4pm", "Only for a 4pm airing, Monday to Friday (Weekends: Saturday and Sunday)");
             }
 
             if (promoRoot.AnyShow)

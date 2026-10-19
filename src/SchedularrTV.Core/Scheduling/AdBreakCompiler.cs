@@ -442,9 +442,10 @@ public static class AdBreakCompiler
                 }
             }
 
-            if (source.Days && day is null && TryReadDay(segment, out DayOfWeek weekday))
+            // A weekday, or a group of them (Weekdays, Weekends).
+            if (source.Days && day is null && PromoDays.TryRead(segment, out string days))
             {
-                day = weekday.ToString().ToLowerInvariant();
+                day = days;
             }
             else if (source.Times && clock is null && TryReadClock(segment, out string? normalized))
             {

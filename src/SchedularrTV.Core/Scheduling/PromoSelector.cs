@@ -239,7 +239,7 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
                 continue;
             }
 
-            if (day is not null && !string.Equals(day, airing.Day, StringComparison.OrdinalIgnoreCase))
+            if (day is not null && !PromoDays.Matches(day, airing.Day))
             {
                 continue;
             }
@@ -311,7 +311,7 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
                 continue;
             }
 
-            if (day is not null && Attribute(described, "promo_day") is { } filedDay && !string.Equals(filedDay, day, StringComparison.OrdinalIgnoreCase))
+            if (day is not null && Attribute(described, "promo_day") is { } filedDay && !PromoDays.Matches(filedDay, day))
             {
                 continue;
             }

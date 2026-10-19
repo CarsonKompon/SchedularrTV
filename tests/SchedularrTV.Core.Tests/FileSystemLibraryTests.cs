@@ -236,8 +236,28 @@ public class FileSystemLibraryTests
     [InlineData("400pm", false)]
     // DayOfWeek is an enum, so a bare number would otherwise parse as Thursday.
     [InlineData("4", false)]
+    [InlineData("Weekdays", true)]
+    [InlineData("Weekend", true)]
+    [InlineData("Week Days", true)]
     public void A_day_folder_is_told_apart_from_a_time_one(string folderName, bool expected) =>
         Assert.Equal(expected, FileSystemMediaLibrary.TryReadDay(folderName, out _));
+
+    [Fact]
+    public void A_weekdays_folder_files_the_promo_for_monday_to_friday()
+    {
+        (_, Dictionary<string, string> attributes) = FileSystemMediaLibrary.Describe(
+            Root,
+            Path.Combine(Root, "Cartoon Network", "Promos", "Super Chunk", "Eventually", "Weekdays", "4pm", "clip.mp4"),
+            Folder());
+
+        Assert.Equal("weekdays", attributes["promo_day"]);
+        Assert.Equal("4pm", attributes["promo_clock"]);
+        Assert.True(Scheduling.PromoDays.Matches("weekdays", "wednesday"));
+        Assert.False(Scheduling.PromoDays.Matches("weekdays", "saturday"));
+        Assert.True(Scheduling.PromoDays.Matches("weekends", "sunday"));
+        Assert.False(Scheduling.PromoDays.Matches("weekends", "friday"));
+        Assert.True(Scheduling.PromoDays.Matches("friday", "friday"));
+    }
 
     [Fact]
     public void An_any_show_folder_is_stored_as_the_show()
