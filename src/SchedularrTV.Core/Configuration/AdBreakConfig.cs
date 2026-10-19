@@ -182,6 +182,12 @@ public sealed class AdBreakConfig
     /// <summary>A show folder by this name, inside a promo folder, holds clips for any show.</summary>
     public string? AnyShowFolder { get; set; }
 
+    /// <summary>
+    /// A show folder by this name, inside a promo folder, holds clips for any movie: used instead of the "any show" ones
+    /// when the programme is a movie (a clip for that movie still comes first), and never for a show. Null: "Any Movie".
+    /// </summary>
+    public string? AnyMovieFolder { get; set; }
+
     /// <summary>Most Coming Up and Later Today promos in one break. Null: 2.</summary>
     public int? MaxPromosPerBreak { get; set; }
 
@@ -201,6 +207,8 @@ public sealed class AdBreakConfig
     public AdBreakTagRules? TagRules { get; set; }
 
     public const string DefaultAnyShowFolder = "Any Show";
+
+    public const string DefaultAnyMovieFolder = "Any Movie";
 }
 
 /// <summary>

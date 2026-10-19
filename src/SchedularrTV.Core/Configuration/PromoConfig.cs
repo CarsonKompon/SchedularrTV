@@ -21,6 +21,12 @@ public sealed class PromoConfig
     /// </summary>
     public string AnyShowAlias { get; set; } = "Any Show";
 
+    /// <summary>
+    /// Show folder that stands in for whichever movie is being promoted: used instead of <see cref="AnyShowAlias"/>'s
+    /// clips when the programme is a movie (a clip for that movie still comes first), and never for a show.
+    /// </summary>
+    public string AnyMovieAlias { get; set; } = "Any Movie";
+
     /// <summary>How far ahead the lookahead engine inspects anchors for promo targets.</summary>
     public TimeSpan Lookahead { get; set; } = TimeSpan.FromHours(12);
 

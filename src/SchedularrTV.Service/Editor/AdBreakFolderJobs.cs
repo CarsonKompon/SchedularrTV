@@ -238,11 +238,12 @@ public static class AdBreakFolderJobs
 
     private static bool IsTypeFolder(CommercialFolder folder) => AdBreakPromo.FromFolderName(folder.Name) is not null;
 
-    /// <summary>A folder named for a time of year, a weekday, a start time, or "any time"/"any show": a qualifier, not a show.</summary>
+    /// <summary>A folder named for a time of year, a weekday, a start time, or "any time"/"any show"/"any movie": a qualifier, not a show.</summary>
     private static bool IsQualifier(CommercialFolder folder, TemporalTagOptions temporal) =>
         SeasonalFolders.IsSeasonal(folder.Name, temporal)
         || string.Equals(folder.Name, temporal.AnyTimeTag, StringComparison.OrdinalIgnoreCase)
         || string.Equals(folder.Name, AdBreakConfig.DefaultAnyShowFolder, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(folder.Name, AdBreakConfig.DefaultAnyMovieFolder, StringComparison.OrdinalIgnoreCase)
         || AdBreakCompiler.TryReadDay(folder.Name, out _)
         || AdBreakCompiler.TryReadClock(folder.Name, out _);
 
@@ -407,6 +408,8 @@ public static class AdBreakFolderJobs
                 Add($"{adBreak.AnyShowFolder ?? AdBreakConfig.DefaultAnyShowFolder}/Now Playing", "Now Playing clips for any show");
             }
 
+            Add($"{adBreak.AnyMovieFolder ?? AdBreakConfig.DefaultAnyMovieFolder}/Now Playing", "Now Playing clips for any movie (used instead of any show's when a movie is on)");
+
             if (adBreak.Seasonal)
             {
                 Add($"Christmas/{show}/Up Next", "Seasonal: only in the run-up to Christmas");
@@ -446,6 +449,8 @@ public static class AdBreakFolderJobs
                 {
                     Add(anyShow, "Clips for any show");
                 }
+
+                Add(adBreak.AnyMovieFolder ?? AdBreakConfig.DefaultAnyMovieFolder, "Clips for any movie (used instead of any show's when a movie is on)");
             }
             else if (day is not null || time is not null)
             {

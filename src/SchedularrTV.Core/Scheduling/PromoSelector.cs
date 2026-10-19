@@ -68,19 +68,20 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
                 continue;
             }
 
+            bool isMovie = target.Sample?.Kind == MediaKind.Movie;
             IReadOnlyList<MediaItem> matches;
             if (window.Folders is { } folders)
             {
-                matches = await FolderMatchesAsync(folders, target.ShowIds, target.At, cancellationToken).ConfigureAwait(false);
+                matches = await FolderMatchesAsync(folders, target.ShowIds, target.At, cancellationToken, isMovie: isMovie).ConfigureAwait(false);
             }
             else
             {
                 List<QueryExpression> clauses = InterstitialQueryBuilder.PromoClauses(config, target.ShowIds, baseTags);
                 clauses.Add(new FieldExpression("promo_type", ComparisonOperator.In, promoTypes));
 
-                matches = await session
+                matches = [.. BestTier(await session
                     .SearchAsync(QueryExpression.And(clauses), cancellationToken)
-                    .ConfigureAwait(false);
+                    .ConfigureAwait(false), isMovie, null)];
             }
 
             MediaItem? pick = ClockMatches(matches, target.At, window.IncludeClockVariants)
@@ -102,13 +103,18 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
     /// Picks the promo for one fixed position in a break. Returns the longest that still fits, so the
     /// break carries as much context as it can.
     /// </summary>
+    /// <param name="isMovie">
+    /// The programme is a movie: clips in the "any movie" folder are used for it ahead of the "any show" ones (a clip
+    /// for that movie still comes first). Otherwise "any movie" clips aren't used at all.
+    /// </param>
     public async ValueTask<MediaItem?> SelectSpotAsync(
         PromoSpotConfig spot,
         IReadOnlyList<string> showIds,
         DateTimeOffset at,
         TimeSpan available,
         CancellationToken cancellationToken,
-        bool isNew = false)
+        bool isNew = false,
+        bool isMovie = false)
     {
         if (!config.Enabled || !spot.Enabled || available <= TimeSpan.Zero || showIds.Count == 0)
         {
@@ -119,7 +125,7 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
         List<MediaItem> matches = [];
         if (spot.Folders is { } folders)
         {
-            matches.AddRange(await FolderMatchesAsync(folders, showIds, at, cancellationToken).ConfigureAwait(false));
+            matches.AddRange(await FolderMatchesAsync(folders, showIds, at, cancellationToken, isMovie: isMovie).ConfigureAwait(false));
         }
 
         QueryExpression expression = InterstitialQueryBuilder.BuildSpot(config, spot, showIds, baseTags);
@@ -128,8 +134,9 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
             matches.AddRange(Unseen(matches, await session.SearchAsync(expression, cancellationToken).ConfigureAwait(false)));
         }
 
-        List<MediaItem> fitting = [.. ClockMatches(matches, at, honourClock: true)
-            .Where(m => m.Duration > TimeSpan.Zero && m.Duration <= available)];
+        // Of what fits: clips for the programme itself, else (for a movie) "any movie" ones, else "any show" ones.
+        List<MediaItem> fitting = [.. BestTier(ClockMatches(matches, at, honourClock: true)
+            .Where(m => m.Duration > TimeSpan.Zero && m.Duration <= available), isMovie, spot.Folders)];
 
         // Clips made for new episodes only play for one, and win when it is.
         List<MediaItem> fresh = [.. fitting.Where(AdBreakCompiler.IsNewEpisodeClip)];
@@ -255,12 +262,17 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
     /// The clips in an ad break's promo folders for one of <paramref name="showIds"/> (or any show, when null), read
     /// for their show, day and start time. A clip filed under a weekday only counts for an airing that day.
     /// </summary>
+    /// <param name="isMovie">
+    /// The programme is a movie: clips in an "any movie" folder come before the "any show" ones. Otherwise (and for
+    /// trailers, with no programme) "any movie" clips are left out.
+    /// </param>
     private async ValueTask<IReadOnlyList<MediaItem>> FolderMatchesAsync(
         IReadOnlyList<PromoFolderSource> folders,
         IReadOnlyList<string>? showIds,
         DateTimeOffset? at,
         CancellationToken cancellationToken,
-        DateTimeOffset? seasonAt = null)
+        DateTimeOffset? seasonAt = null,
+        bool isMovie = false)
     {
         if (folders.Count == 0)
         {
@@ -274,8 +286,10 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
         HashSet<string>? wanted = showIds is null ? null : new(showIds, StringComparer.OrdinalIgnoreCase);
         string? day = at?.DayOfWeek.ToString().ToLowerInvariant();
 
-        // A clip made for the show beats one for any show; the generic ones are only the fallback.
+        // A clip made for the show beats one for any movie (for a movie), which beats one for any show; the generic
+        // ones are only the fallback.
         List<MediaItem> matches = [];
+        List<MediaItem> anyMovieClips = [];
         List<MediaItem> generic = [];
         foreach (MediaItem clip in clips)
         {
@@ -285,8 +299,14 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
                 continue;
             }
 
-            bool anyShow = folders.Any(folder => string.Equals(folder.AnyShowFolder, show, StringComparison.OrdinalIgnoreCase));
-            if (wanted is not null && !anyShow && !wanted.Contains(show))
+            bool anyMovie = folders.Any(folder => string.Equals(folder.AnyMovie, show, StringComparison.OrdinalIgnoreCase));
+            if (anyMovie && !(isMovie && wanted is not null))
+            {
+                continue;
+            }
+
+            bool anyShow = !anyMovie && folders.Any(folder => string.Equals(folder.AnyShowFolder, show, StringComparison.OrdinalIgnoreCase));
+            if (wanted is not null && !anyShow && !anyMovie && !wanted.Contains(show))
             {
                 continue;
             }
@@ -296,10 +316,40 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
                 continue;
             }
 
-            (anyShow && wanted is not null ? generic : matches).Add(described);
+            (anyMovie ? anyMovieClips : anyShow && wanted is not null ? generic : matches).Add(described);
         }
 
-        return matches.Count > 0 ? matches : generic;
+        return matches.Count > 0 ? matches : anyMovieClips.Count > 0 ? anyMovieClips : generic;
+    }
+
+    /// <summary>
+    /// For a movie, the best clips there are: those for it by name, else those for any movie, else those for any show.
+    /// For a show, everything as it was, less the "any movie" clips, which never play for one.
+    /// </summary>
+    private IEnumerable<MediaItem> BestTier(IEnumerable<MediaItem> items, bool isMovie, IReadOnlyList<PromoFolderSource>? folders)
+    {
+        bool Is(string? show, string? alias) => !string.IsNullOrWhiteSpace(alias) && string.Equals(show, alias, StringComparison.OrdinalIgnoreCase);
+        int Tier(MediaItem item)
+        {
+            string? show = Attribute(item, "show_id");
+            if (Is(show, config.AnyMovieAlias) || (folders ?? []).Any(folder => Is(show, folder.AnyMovie))) return 1;
+            if (Is(show, config.AnyShowAlias) || (folders ?? []).Any(folder => Is(show, folder.AnyShowFolder))) return 2;
+            return 0;
+        }
+
+        List<(MediaItem Item, int Tier)> ranked = [.. items.Select(item => (item, Tier(item))).Where(entry => isMovie || entry.Item2 != 1)];
+        if (ranked.Count == 0)
+        {
+            return [];
+        }
+
+        if (!isMovie)
+        {
+            return ranked.Select(entry => entry.Item);
+        }
+
+        int best = ranked.Min(entry => entry.Tier);
+        return ranked.Where(entry => entry.Tier == best).Select(entry => entry.Item);
     }
 
     /// <summary>The items of <paramref name="more"/> not already in <paramref name="have"/>.</summary>

@@ -204,6 +204,9 @@ public static class AdBreakCompiler
             AnyShowAlias = adBreaks.Select(adBreak => adBreak.AnyShowFolder).FirstOrDefault(name => !string.IsNullOrWhiteSpace(name))
                            ?? tagPromos?.AnyShowAlias
                            ?? AdBreakConfig.DefaultAnyShowFolder,
+            AnyMovieAlias = adBreaks.Select(adBreak => adBreak.AnyMovieFolder).FirstOrDefault(name => !string.IsNullOrWhiteSpace(name))
+                            ?? tagPromos?.AnyMovieAlias
+                            ?? AdBreakConfig.DefaultAnyMovieFolder,
             // Far enough ahead for every folder window; tag-based ones keep the lookahead they had.
             Lookahead = adBreaks.Select(adBreak => adBreak.Lookahead).FirstOrDefault(value => value is not null)
                         ?? TimeSpan.FromTicks(Math.Max(fallbacks.Lookahead.Ticks,
@@ -235,7 +238,8 @@ public static class AdBreakCompiler
         promo.Times,
         promo.Days,
         adBreak.AnyShowFolder ?? AdBreakConfig.DefaultAnyShowFolder,
-        Seasonal: adBreak.Seasonal ? temporal : null);
+        Seasonal: adBreak.Seasonal ? temporal : null,
+        AnyMovieFolder: adBreak.AnyMovieFolder);
 
     private static PromoFolderSource RootFolder(AdBreakConfig adBreak, AdBreakPromoRoot root, AdPromoType type, TemporalTagOptions temporal) => new(
         root.Path,
@@ -246,7 +250,8 @@ public static class AdBreakCompiler
         root.Days,
         adBreak.AnyShowFolder ?? AdBreakConfig.DefaultAnyShowFolder,
         type,
-        adBreak.Seasonal ? temporal : null);
+        adBreak.Seasonal ? temporal : null,
+        adBreak.AnyMovieFolder);
 
     /// <summary>Folders inside <paramref name="folder"/> that the ad break gives a different job, and so are left out of it.</summary>
     private static List<string> Excluded(AdBreakConfig adBreak, string folder, AdFolderRole? role)

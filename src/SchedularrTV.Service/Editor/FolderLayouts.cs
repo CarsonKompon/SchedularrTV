@@ -102,6 +102,11 @@ public static class FolderLayouts
             shows.Add(new FolderChoice(promos.AnyShowAlias, FolderState.Fixed, "Stands in for any show"));
         }
 
+        if (!string.IsNullOrWhiteSpace(promos.AnyMovieAlias))
+        {
+            shows.Add(new FolderChoice(promos.AnyMovieAlias, FolderState.Fixed, "Stands in for any movie (ahead of any show's, when a movie is on)"));
+        }
+
         FolderLevel showLevel = new("show", shows, Note: "Named exactly as the series is");
 
         // Each spot and lookahead window, by the folder name that reads as its promo type.

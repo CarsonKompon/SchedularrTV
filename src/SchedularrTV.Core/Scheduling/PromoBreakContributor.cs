@@ -88,9 +88,18 @@ internal sealed class PromoBreakContributor(IPromoSpotSubstitute? generated) : I
                 ids.Add(alias);
             }
 
+            // A movie has no series: it's known by its title (so a folder named for it, or "Any Movie", can promote it).
+            if (ids.Count == 0 && sample.Kind == MediaKind.Movie && !string.IsNullOrWhiteSpace(sample.Title))
+            {
+                ids.Add(sample.Title);
+            }
+
             if (ids.Count > 0)
             {
-                return new PromoTarget(at, ids, sample.SeriesName ?? fallbackName) { IsNew = isNew, Sample = sample };
+                return new PromoTarget(at, ids, sample.SeriesName ?? (sample.Kind == MediaKind.Movie ? sample.Title : null) ?? fallbackName)
+                {
+                    IsNew = isNew, Sample = sample
+                };
             }
         }
 
@@ -179,7 +188,7 @@ internal sealed class PromoBreakPlan(
                 free -= _rightBack.Duration;
             }
 
-            _youreWatching = await ReserveForShowAsync(promoConfig.YoureWatching, showIds, playing?.Start, free, cancellationToken, watchingNew)
+            _youreWatching = await ReserveForShowAsync(promoConfig.YoureWatching, showIds, playing?.Start, free, cancellationToken, watchingNew, IsMovie(playing?.Item))
                 .ConfigureAwait(false);
 
             // A generated one can stand in for (or mix with) the library clip, like the other spots.
@@ -192,7 +201,7 @@ internal sealed class PromoBreakPlan(
 
             free -= _youreWatching?.Duration ?? TimeSpan.Zero;
 
-            _backToTheShow = await ReserveForShowAsync(promoConfig.BackToTheShow, showIds, playing?.Start, free, cancellationToken, watchingNew)
+            _backToTheShow = await ReserveForShowAsync(promoConfig.BackToTheShow, showIds, playing?.Start, free, cancellationToken, watchingNew, IsMovie(playing?.Item))
                 .ConfigureAwait(false);
 
             if (promoConfig.Enabled && promoConfig.BackToTheShow.Enabled && showIds.Count > 0
@@ -553,7 +562,7 @@ internal sealed class PromoBreakPlan(
         }
 
         return await new PromoSelector(Session, promoConfig, promoBaseTags)
-            .SelectSpotAsync(spot, target.ShowIds, target.At, available, cancellationToken, target.IsNew)
+            .SelectSpotAsync(spot, target.ShowIds, target.At, available, cancellationToken, target.IsNew, IsMovie(target.Sample))
             .ConfigureAwait(false);
     }
 
@@ -564,7 +573,8 @@ internal sealed class PromoBreakPlan(
         DateTimeOffset? at,
         TimeSpan available,
         CancellationToken cancellationToken,
-        bool isNew = false)
+        bool isNew = false,
+        bool isMovie = false)
     {
         if (!promoConfig.Enabled || !spot.Enabled || showIds.Count == 0 || at is null || available <= TimeSpan.Zero)
         {
@@ -572,9 +582,12 @@ internal sealed class PromoBreakPlan(
         }
 
         return await new PromoSelector(Session, promoConfig, promoBaseTags)
-            .SelectSpotAsync(spot, showIds, at.Value, available, cancellationToken, isNew)
+            .SelectSpotAsync(spot, showIds, at.Value, available, cancellationToken, isNew, isMovie)
             .ConfigureAwait(false);
     }
+
+    /// <summary>Whether a programme is a movie, so its promos come from the "any movie" folder before the "any show" one.</summary>
+    private static bool IsMovie(MediaItem? item) => item?.Kind == MediaKind.Movie;
 
     /// <summary>Signs off the programme that just played, so the target is behind rather than ahead.</summary>
     private async ValueTask<MediaItem?> ReserveSignOffAsync(TimeSpan available, CancellationToken cancellationToken)
@@ -603,7 +616,7 @@ internal sealed class PromoBreakPlan(
         }
 
         return await new PromoSelector(Session, promoConfig, promoBaseTags)
-            .SelectSpotAsync(spot, showIds, finished!.Start, available, cancellationToken, finished.IsPremiere)
+            .SelectSpotAsync(spot, showIds, finished!.Start, available, cancellationToken, finished.IsPremiere, IsMovie(finished.Item))
             .ConfigureAwait(false);
     }
 
@@ -630,6 +643,12 @@ internal sealed class PromoBreakPlan(
         if (item.SeriesName is not null)
         {
             ids.Add(item.SeriesName);
+        }
+
+        // A movie has no series: it's known by its title.
+        if (ids.Count == 0 && item.Kind == MediaKind.Movie && !string.IsNullOrWhiteSpace(item.Title))
+        {
+            ids.Add(item.Title);
         }
 
         return ids;

@@ -154,15 +154,20 @@ public static class InterstitialQueryBuilder
         return clauses;
     }
 
-    /// <summary>Lets one clip stand in for every show on the channel.</summary>
+    /// <summary>
+    /// Lets one clip stand in for every show on the channel (and one for every movie: the promo picker keeps those for
+    /// movies, preferring them there over the "any show" ones).
+    /// </summary>
     private static List<string> WithAnyShow(PromoConfig promos, IReadOnlyList<string> showIds)
     {
         List<string> ids = [.. showIds];
 
-        if (!string.IsNullOrWhiteSpace(promos.AnyShowAlias)
-            && !ids.Contains(promos.AnyShowAlias, StringComparer.OrdinalIgnoreCase))
+        foreach (string? alias in new[] { promos.AnyShowAlias, promos.AnyMovieAlias })
         {
-            ids.Add(promos.AnyShowAlias);
+            if (!string.IsNullOrWhiteSpace(alias) && !ids.Contains(alias, StringComparer.OrdinalIgnoreCase))
+            {
+                ids.Add(alias);
+            }
         }
 
         return ids;

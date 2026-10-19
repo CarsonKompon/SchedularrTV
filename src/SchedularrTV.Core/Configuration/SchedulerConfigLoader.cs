@@ -1173,6 +1173,7 @@ public static class SchedulerConfigLoader
             .Select(promo => { promo.Path = promo.Path.Trim(); promo.Chance = promo.Chance is { } chance ? Math.Clamp(chance, 0, 1) : null; return promo; })];
 
         adBreak.AnyShowFolder = string.IsNullOrWhiteSpace(adBreak.AnyShowFolder) ? null : adBreak.AnyShowFolder.Trim();
+        adBreak.AnyMovieFolder = string.IsNullOrWhiteSpace(adBreak.AnyMovieFolder) ? null : adBreak.AnyMovieFolder.Trim();
 
         if (adBreak.TagRules is { } rules)
         {

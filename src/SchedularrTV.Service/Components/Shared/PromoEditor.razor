@@ -131,6 +131,11 @@
                 <input type="text" value="@Config.AnyShowAlias"
                        @onchange="e => { Config.AnyShowAlias = e.Value?.ToString() ?? string.Empty; Changed.InvokeAsync(); }" />
             </label>
+            <label class="field" style="max-width:260px;" title="Clips in a show folder by this name play for any movie, ahead of the &quot;any show&quot; ones, and never for a show">
+                <span>"Any movie" folder name</span>
+                <input type="text" value="@Config.AnyMovieAlias"
+                       @onchange="e => { Config.AnyMovieAlias = e.Value?.ToString() ?? string.Empty; Changed.InvokeAsync(); }" />
+            </label>
         </details>
 
         <h3>Where to file the clips</h3>
@@ -185,7 +190,8 @@
                 the show starts then; the folder above it covers every other hour. Under
                 <code>Eventually</code> the day goes above the time
                 (<code>Eventually\Saturday\400pm</code>), and either level may be left out. A show folder
-                named <code>@Config.AnyShowAlias</code> stands in for whatever is being promoted.
+                named <code>@Config.AnyShowAlias</code> stands in for whatever is being promoted, and one named
+                <code>@Config.AnyMovieAlias</code> for any movie (used ahead of the any-show clips when a movie is on, and never for a show).
             </p>
         }
     }

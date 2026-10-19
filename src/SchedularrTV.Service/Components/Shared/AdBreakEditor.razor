@@ -138,6 +138,11 @@
                         <input type="text" value="@AdBreak.AnyShowFolder" placeholder="@AdBreakConfig.DefaultAnyShowFolder"
                                @onchange="e => { AdBreak.AnyShowFolder = Text(e); return Notify(); }" />
                     </label>
+                    <label class="field" title="Clips in a show folder by this name play for any movie, ahead of the &quot;any show&quot; ones, and never for a show">
+                        <span>"Any movie" folder name</span>
+                        <input type="text" value="@AdBreak.AnyMovieFolder" placeholder="@AdBreakConfig.DefaultAnyMovieFolder"
+                               @onchange="e => { AdBreak.AnyMovieFolder = Text(e); return Notify(); }" />
+                    </label>
                     <label class="field">
                         <span>Most Coming Up promos per break</span>
                         <input type="number" min="0" value="@(AdBreak.MaxPromosPerBreak?.ToString() ?? "")" placeholder="2"

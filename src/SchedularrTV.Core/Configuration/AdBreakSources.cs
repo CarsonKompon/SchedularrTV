@@ -15,6 +15,7 @@ public sealed record AdPoolSource(string Folder, IReadOnlyList<string> Excluded,
 /// <param name="Seasonal">
 /// When set, folders named for a month, season, holiday or date only count then (and aren't read as the show).
 /// </param>
+/// <param name="AnyMovieFolder">The show folder holding clips for any movie; null is "Any Movie".</param>
 public sealed record PromoFolderSource(
     string Folder,
     IReadOnlyList<string> Excluded,
@@ -24,4 +25,9 @@ public sealed record PromoFolderSource(
     bool Days,
     string AnyShowFolder,
     AdPromoType? Type = null,
-    SchedularrTV.Core.Temporal.TemporalTagOptions? Seasonal = null);
+    SchedularrTV.Core.Temporal.TemporalTagOptions? Seasonal = null,
+    string? AnyMovieFolder = null)
+{
+    /// <summary>The "any movie" folder's name as used: <see cref="AnyMovieFolder"/>, or "Any Movie".</summary>
+    public string AnyMovie => string.IsNullOrWhiteSpace(AnyMovieFolder) ? AdBreakConfig.DefaultAnyMovieFolder : AnyMovieFolder;
+}

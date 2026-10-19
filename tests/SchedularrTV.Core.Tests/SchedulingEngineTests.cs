@@ -382,6 +382,34 @@ public class SchedulingEngineTests
     }
 
     [Fact]
+    public async Task A_movie_gets_any_movie_promos_ahead_of_any_show_ones_and_a_show_never_does()
+    {
+        List<MediaItem> items = Library();
+        items.Add(new MediaItem { Id = "movie-good-burger", Title = "Good Burger", Kind = MediaKind.Movie, Duration = TimeSpan.FromMinutes(95) });
+        items.Add(TestMedia.Promo("nowplaying-any-show", TimeSpan.FromSeconds(5), "Any Show", "now_playing", "Adult Swim"));
+        items.Add(TestMedia.Promo("nowplaying-any-movie", TimeSpan.FromSeconds(5), "Any Movie", "now_playing", "Adult Swim"));
+
+        ChannelConfig channel = SpongeBobBlockChannel();
+        channel.Blocks.Add(new BlockConfig
+        {
+            Name = "Movie at 18:00",
+            Time = TimeSpan.FromHours(18),
+            Days = [DayOfWeek.Monday],
+            Shows = [new ContentSelector { Query = "title:'Good Burger'" }]
+        });
+
+        var engine = new SchedulingEngine(new FakeMediaLibrary(items), new InMemoryPlaybackStateStore());
+        ChannelSchedule schedule = await engine.BuildAsync(Config(channel), channel, Day, Day + TimeSpan.FromHours(24));
+
+        List<ScheduleEntry> nowPlaying = [.. schedule.Entries.Where(e => e.Kind == ScheduleEntryKind.NowPlayingPromo)];
+        ScheduleEntry beforeMovie = Assert.Single(nowPlaying, e => e.End == Day.AddHours(18));
+        Assert.Equal("nowplaying-any-movie", beforeMovie.Item?.Id);
+
+        // Shows never get the movie one.
+        Assert.All(nowPlaying.Where(e => e.End != Day.AddHours(18)), e => Assert.NotEqual("nowplaying-any-movie", e.Item?.Id));
+    }
+
+    [Fact]
     public async Task By_default_up_next_airs_among_the_ads_while_now_playing_stays_last()
     {
         ChannelSchedule schedule = await BuildAsync(SpongeBobBlockChannel());
