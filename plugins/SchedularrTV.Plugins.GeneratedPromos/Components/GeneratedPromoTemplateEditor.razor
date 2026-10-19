@@ -317,7 +317,6 @@
                 <div class="spacer"></div>
                 <span class="ed-meta">@Template.Width × @Template.Height</span>
             </div>
-            @(VariantBar())
             @if (!Template.Layers.Any(layer => layer.Kind == RequiredKind))
             {
                 @* Optional: a template can show the shows with variable images alone. *@
@@ -2429,7 +2428,7 @@
     }
 
     /// <summary>
-    /// Above the canvas: the default look and each variant, to switch what's being edited, and to add one. While a
+    /// Under the canvas, above the backgrounds: the default look and each variant, to switch what's being edited, and to add one. While a
     /// variant is edited, a line says what changes go where.
     /// </summary>
     private RenderFragment VariantBar() => __builder =>
@@ -4937,6 +4936,7 @@
         <LowPowerNotice Inline="true" Advice="LowPowerTemplateWarnings" />
         @if (Template.Generator is null)
         {
+            @(VariantBar())
             @(VariantSettings())
         }
         <div class="field">
