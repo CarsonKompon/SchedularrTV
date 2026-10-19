@@ -117,12 +117,12 @@ else if (Grid)
         @foreach (LibraryShow show in VisibleShows.Take(_limit))
         {
             bool selected = _selected.Contains(show.Id);
-            <div class="media-card @(selected ? "selected" : "")" @key="show.Id">
-                <input class="media-card-check" type="checkbox" aria-label="@($"Select {show.Name}")" checked="@selected" @onchange="() => Toggle(show.Id)" />
+            <div class="media-card @(selected ? "selected" : "")" @key="show.Id" tabindex="0" role="checkbox"
+                 aria-checked="@(selected ? "true" : "false")" aria-label="@show.Name"
+                 @onclick="() => Toggle(show.Id)" @onkeydown="e => OnCardKey(e, show.Id)">
+                <span class="media-card-check" aria-hidden="true"><Icon Name="check" Size="14" StrokeWidth="3" /></span>
                 <div class="media-card-poster">
-                    <a href="@ShowUrl(show)">
                     <Artwork Id="@show.Id" Title="@show.Name" Width="320" />
-                    </a>
                     @if (Membership(show).ToList() is { Count: > 0 } member)
                     {
                         <div class="media-card-in">
@@ -137,10 +137,10 @@ else if (Grid)
                         </div>
                     }
                     <div class="media-card-actions" @onkeydown:stopPropagation="true">
-                        <a class="btn btn-sm" href="@ShowUrl(show)">View show</a>
+                        <a class="btn btn-sm" href="@ShowUrl(show)" @onclick:stopPropagation="true">View show</a>
                     </div>
                 </div>
-                <a class="media-card-title" title="@show.Name" href="@ShowUrl(show)">@show.Name</a>
+                <div class="media-card-title" title="@show.Name">@show.Name</div>
                 <div class="media-card-meta">
                     <span>@(show.Year?.ToString() ?? "—")</span>
                     <span>&middot;</span>
@@ -171,13 +171,14 @@ else
                     <LibrarySortHeader Sort="_sort" Column="LibrarySortColumn.Runtime" Label="Runtime" Width="115px" OnSort="_sort.Toggle" />
                     <LibrarySortHeader Sort="_sort" Column="LibrarySortColumn.AverageEpisode" Label="Avg. episode" Width="135px" OnSort="_sort.Toggle" />
                     <th style="width:170px;">In collections</th>
+                    <th style="width:110px;">Details</th>
                 </tr>
             </thead>
             <tbody>
                 @foreach (LibraryShow show in VisibleShows.Take(_limit))
                 {
                     bool selected = _selected.Contains(show.Id);
-                    <tr class="@(selected ? "selected" : "")" @key="show.Id">
+                    <tr class="selectable @(selected ? "selected" : "")" @key="show.Id" @onclick="() => Toggle(show.Id)">
                         <td>
                             <input type="checkbox" aria-label="@($"Select {show.Name}")" checked="@selected"
                                    @onclick:stopPropagation="true" @onchange="() => Toggle(show.Id)" />
@@ -186,7 +187,7 @@ else
                             <div class="media-title">
                                 <Artwork Id="@show.Id" Title="@show.Name" Width="96" />
                                 <div style="min-width:0;">
-                                    <a class="media-name" href="@ShowUrl(show)">@show.Name</a>
+                                    <div class="media-name">@show.Name</div>
                                     <div class="media-sub">
                                         @if (_duplicateNames.Contains(show.Name))
                                         {
@@ -209,11 +210,7 @@ else
                             </div>
                         </td>
                         <td class="num muted">@(show.Year?.ToString() ?? "—")</td>
-                        <td>
-                            <a class="btn btn-sm" href="@ShowUrl(show)">
-                                @show.Seasons.Count <Icon Name="chevron-right" Size="13" />
-                            </a>
-                        </td>
+                        <td class="num">@show.Seasons.Count</td>
                         <td class="num">@show.EpisodeCount</td>
                         <td class="num muted">@show.Runtime</td>
                         <td class="num muted" title="Mean of available episode runtimes">@show.AverageEpisodeRuntime</td>
@@ -225,6 +222,7 @@ else
                                 }
                             </div>
                         </td>
+                        <td><a class="btn btn-sm" href="@ShowUrl(show)" @onclick:stopPropagation="true">View show</a></td>
                     </tr>
                 }
             </tbody>
@@ -332,6 +330,11 @@ else
         }
 
         return ("", term);
+    }
+
+    private void OnCardKey(KeyboardEventArgs e, string id)
+    {
+        if (e.Key is " " or "Enter") Toggle(id);
     }
 
     private void Toggle(string id)

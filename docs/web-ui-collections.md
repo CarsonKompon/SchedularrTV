@@ -88,7 +88,7 @@ The option excludes season `0` without fixing the list of regular seasons, allow
 
 ## Browse a show's seasons and episodes
 
-Click a show's poster or title on **TV Shows** to open its detail page. Expand a season to see its episodes, select a target collection, then use **Add season to collection** or **Add episode**. **Add whole show** includes future seasons too. These actions add to the collection without narrowing existing picks. Checkboxes on the TV Shows page still support adding several whole shows at once.
+Click **View show** on **TV Shows** to open its detail page. Clicking the show card or list row checks or unchecks it for bulk collection selection. Expand a season on the detail page to see its episodes, select a target collection, then use **Add season to collection** or **Add episode**. **Add whole show** includes future seasons too. These actions add to the collection without narrowing existing picks.
 
 ### Show and season aliases
 
