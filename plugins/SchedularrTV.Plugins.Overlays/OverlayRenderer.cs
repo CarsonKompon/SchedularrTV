@@ -512,6 +512,8 @@ public sealed class OverlayRenderer(Func<string> folder)
 
         SKTypeface typeface = Typefaces.GetOrAdd((layer.FontFamily ?? "Arial", layer.Bold),
             key => SKTypeface.FromFamilyName(key.Family, key.Bold ? SKFontStyle.Bold : SKFontStyle.Normal) ?? SKTypeface.Default);
+        // Characters the font can't draw are swapped for ones it can ("&" → "and", "é" → "e"), as in generated promos.
+        text = SchedularrTV.Service.Rendering.GlyphFallback.Apply(text, typeface);
         using var font = new SKFont(typeface, Math.Clamp(layer.FontSize, 6, 400)) { Edging = SKFontEdging.Antialias, Subpixel = true };
         using var paint = new SKPaint { Color = Colour(layer.Color, SKColors.White), IsAntialias = true };
         using SKImageFilter? shadow = layer.Shadow

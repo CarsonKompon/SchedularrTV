@@ -410,7 +410,10 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
 
         // Shrinks to fit (shared with overlays), wrapping between words first when the layer asks to.
         // Letter and line spacing are part of the fit, so spaced-out text still fits its box.
-        IReadOnlyList<string> lines = SchedularrTV.Service.Rendering.TextFit.Fit(layer.Lines, bounds, font, paint, layer.WordWrap,
+        // Characters the font can't draw are swapped for ones it can ("&" → "and", "é" → "e") before fitting, so the fit
+        // measures what's drawn.
+        IReadOnlyList<string> drawable = [.. layer.Lines.Select(line => cache.Drawable(typeface, line))];
+        IReadOnlyList<string> lines = SchedularrTV.Service.Rendering.TextFit.Fit(drawable, bounds, font, paint, layer.WordWrap,
             letterSpacing: layer.LetterSpacing, lineSpacing: layer.LineSpacing);
 
         float x = layer.Align switch
@@ -631,6 +634,22 @@ public sealed class PromoImageCache : IDisposable
 {
     private readonly Dictionary<string, SKImage?> _images = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<(string Family, bool Bold), SKTypeface> _typefaces = [];
+    private readonly Dictionary<(SKTypeface Typeface, string Text), string> _drawable = [];
+
+    /// <summary>
+    /// <paramref name="text"/> as <paramref name="typeface"/> can draw it (see <see cref="SchedularrTV.Service.Rendering.GlyphFallback"/>),
+    /// worked out once per line and font rather than every frame.
+    /// </summary>
+    public string Drawable(SKTypeface typeface, string text)
+    {
+        if (!_drawable.TryGetValue((typeface, text), out string? drawable))
+        {
+            drawable = SchedularrTV.Service.Rendering.GlyphFallback.Apply(text, typeface);
+            _drawable[(typeface, text)] = drawable;
+        }
+
+        return drawable;
+    }
 
     public SKTypeface Typeface(string family, bool bold)
     {
