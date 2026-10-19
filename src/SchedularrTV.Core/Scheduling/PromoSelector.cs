@@ -227,7 +227,7 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
 
         // Unanchored rotation time has no day or hour to check against, so an undated trailer is the
         // only kind a base-rotation show can carry.
-        if (day is null && clock is null && outlook.Rotation.Contains(show))
+        if (day is null && clock is null && (outlook.RotationPromoNames ?? outlook.Rotation).Contains(show))
         {
             return true;
         }
@@ -249,7 +249,7 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
                 continue;
             }
 
-            if (airing.Titles.Contains(show))
+            if ((airing.PromoNames ?? airing.Titles).Contains(show))
             {
                 return true;
             }

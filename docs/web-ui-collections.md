@@ -86,9 +86,21 @@ Enable **Skip specials and extras in every title** for a directly defined select
 
 The option excludes season `0` without fixing the list of regular seasons, allowing newly added seasons to appear. Explicit season picks remain as selected; movies are unaffected.
 
+## Browse a show's seasons and episodes
+
+Click a show's poster or title on **TV Shows** to open its detail page. Expand a season to see its episodes, select a target collection, then use **Add season to collection** or **Add episode**. **Add whole show** includes future seasons too. These actions add to the collection without narrowing existing picks. Checkboxes on the TV Shows page still support adding several whole shows at once.
+
+### Show and season aliases
+
+The show detail page has a **Show aliases** editor, and each expanded season has its own alias editor. Add alternate names such as `Billy and Mandy` for `The Grim Adventures of Billy & Mandy`, or `Total Drama Island` for season 1 of `Total Drama`.
+
+All aliases match show folders for promos in **Ad Breaks**. A season alias matches only when that season is being promoted. Aliases are also included when searching the TV Shows page.
+
+Check **Preferred name** to use an alias for generated promo speech, Up Next text, and variable-image matching. Each show and season can have one preferred alias. The season's preference takes precedence over the show's; otherwise the original library title is used. Adding an alias without selecting it as preferred only adds a matching name. Use the editor's usual **Save** action to persist changes.
+
 ## Add intros and outros
 
-1. Open a show's **Intros/outros** editor from **TV Shows** or a collection.
+1. Open a show from **TV Shows**, then click **Intros/outros** on its detail page. Collection-specific overrides are also available from a collection.
 2. Choose extras or **Browse files on disk**.
 3. Set opening or closing placement and clip order.
 4. Restrict bumper blocks to specific seasons when needed.

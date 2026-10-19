@@ -427,7 +427,8 @@
     // An empty entry would otherwise be written back to the config for every show ever opened.
     private void Prune(string show)
     {
-        if (Editor.Working.Titles.TryGetValue(show, out TitleDefaults? defaults) && defaults.Bumpers.Count == 0)
+        if (Editor.Working.Titles.TryGetValue(show, out TitleDefaults? defaults) && defaults.Bumpers.Count == 0
+            && defaults.Aliases.Count == 0 && defaults.Seasons.Count == 0)
         {
             Editor.Working.Titles.Remove(show);
         }

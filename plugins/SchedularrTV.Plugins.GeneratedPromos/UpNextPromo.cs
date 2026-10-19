@@ -25,6 +25,21 @@ public sealed record UpNextListing(string Title, DateTimeOffset Start, string? E
 /// <summary>Reads programmes from a schedule and phrases them for a voice-over.</summary>
 public static class UpNextPromo
 {
+    private const string PreferredNameAttribute = "generated_promos.preferred_name";
+
+    /// <summary>A private rendering view: keep canonical identities for eligibility queries, but use preferred names in every listing.</summary>
+    public static ChannelSchedule WithPreferredNames(ChannelSchedule schedule, SchedulerConfig config) => schedule with
+    {
+        Entries = [.. schedule.Entries.Select(entry => entry with
+        {
+            Item = entry.Item is { } item ? WithPreferredName(item, config) : null,
+            GeneratedSubject = entry.GeneratedSubject is { } predicted ? ShowAliases.PreferredName(config, predicted) : null
+        })]
+    };
+
+    public static MediaItem WithPreferredName(MediaItem item, SchedulerConfig config) => item.WithChapters(item.Chapters,
+        new Dictionary<string, string> { [PreferredNameAttribute] = ShowAliases.PreferredName(config, item) });
+
     private static readonly System.Text.RegularExpressions.Regex TitleYear = new(@"\s*\(\s*[0-9]{4}\s*\)",
         System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
@@ -232,7 +247,8 @@ public static class UpNextPromo
         entry.Kind == ScheduleEntryKind.Program && entry.Item is not null
         && !entry.IsSlotIntro && !entry.IsSlotOutro && !entry.ContinuesSlot && entry.SegmentNumber <= 1;
 
-    private static string TitleOf(MediaItem item) => string.IsNullOrWhiteSpace(item.SeriesName) ? item.Title : item.SeriesName;
+    private static string TitleOf(MediaItem item) => item.Attributes.TryGetValue(PreferredNameAttribute, out string? preferred)
+        ? preferred : string.IsNullOrWhiteSpace(item.SeriesName) ? item.Title : item.SeriesName;
 
     public static UpNextListing Listing(MediaItem item, DateTimeOffset start, string? block = null) =>
         new(TitleOf(item), start, EpisodeOf(item), item.Path, item.Duration > TimeSpan.Zero ? item.Duration : null,

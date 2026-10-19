@@ -101,6 +101,14 @@ public static class SchedulerConfigLoader
                 sections.Select(pair => KeyValuePair.Create(pair.Key, Plain(pair.Value))),
                 StringComparer.OrdinalIgnoreCase);
 
+    private static void ValidateAliases(List<TitleAlias> aliases, string scope, List<string> errors)
+    {
+        if (aliases.Any(alias => string.IsNullOrWhiteSpace(alias.Name))) errors.Add($"{scope}: names must not be empty.");
+        if (aliases.Count(alias => alias.Preferred) > 1) errors.Add($"{scope}: only one alias can be the preferred name.");
+        if (aliases.Select(alias => alias.Name?.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() != aliases.Count)
+            errors.Add($"{scope}: names must be unique (case-insensitive).");
+    }
+
     private static object? Plain(object? value) => value switch
     {
         System.Collections.IDictionary map => Entries(map).ToDictionary(
@@ -130,6 +138,16 @@ public static class SchedulerConfigLoader
     {
         List<string> errors = [];
         List<string> warnings = [];
+
+        foreach ((string name, TitleDefaults title) in config.Titles)
+        {
+            ValidateAliases(title.Aliases, $"titles.{name}.aliases", errors);
+            foreach ((int number, SeasonDefaults season) in title.Seasons)
+            {
+                if (number < 0) errors.Add($"titles.{name}.seasons: season numbers must be zero or greater.");
+                ValidateAliases(season.Aliases, $"titles.{name}.seasons.{number}.aliases", errors);
+            }
+        }
 
         if (config.Settings.Interstitials?.MaxShowsPerSlot < 0)
         {

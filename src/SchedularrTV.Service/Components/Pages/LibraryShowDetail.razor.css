@@ -1,0 +1,5 @@
+.show-section { margin: 24px 0; }
+.show-season { border: 1px solid var(--line-strong); border-radius: 10px; margin: 12px 0; }
+.show-season summary { padding: 16px; cursor: pointer; font-weight: 600; }
+.show-season-body { padding: 0 16px 16px; }
+.show-season-body .media-table-wrap { margin-top: 16px; }

@@ -1,0 +1,151 @@
+@page "/library/show"
+@implements IDisposable
+@inject ConfigEditor Editor
+@inject LibraryBrowser Library
+
+<PageHeader Title="@(_show?.Name ?? "TV Show")" Eyebrow="Library">
+    <ChildContent><a href="library/shows">← TV Shows</a></ChildContent>
+</PageHeader>
+
+@if (_loading)
+{
+    <LibraryProgress />
+}
+else if (_show is not { } show)
+{
+    <div class="empty"><div class="empty-title">Show not found</div><div>Return to TV Shows or rescan your library.</div></div>
+}
+else
+{
+    <div class="row" style="align-items:flex-start;margin-bottom:24px;">
+        <Artwork Id="@show.Id" Title="@show.Name" Class="art-lg" Width="200" />
+        <div>
+            <h2>@show.Name</h2>
+            <p class="muted">@(show.Year?.ToString() ?? "Unknown year") · @show.EpisodeCount episodes · @show.Runtime</p>
+            <button class="btn" @onclick="() => _bumpers = new ContentInclude { Show = show.Name, ShowId = show.Id }">Intros/outros (@_defaults.Bumpers.Count)</button>
+        </div>
+    </div>
+    <section class="show-section">
+        <h2>Show aliases</h2>
+        <p class="hint">Alternate names match promo folders in Ad Breaks. Choose a preferred name for generated promo TTS, Up Next text and variable images. A season's preferred name takes precedence.</p>
+        <TitleAliasEditor Aliases="_defaults.Aliases" Changed="SaveAliases" />
+    </section>
+    <section class="show-section">
+        <h2>Seasons &amp; episodes</h2>
+        <div class="row">
+            <label class="field"><span>Add to collection</span>
+                <select @bind="_target">
+                    <option value="">Choose a collection…</option>
+                    @foreach (string key in Editor.Working.GlobalCollections.Keys.OrderBy(key => key))
+                    {
+                        <option value="@key">@key</option>
+                    }
+                </select>
+            </label>
+            <button class="btn btn-primary" disabled="@(!HasTarget)" @onclick="() => Add(null, null)">Add whole show</button>
+        </div>
+        @if (Editor.Working.GlobalCollections.Count == 0)
+        {
+            <p class="hint">Create a collection on the <a href="collections">Collections</a> page first.</p>
+        }
+        @if (_message is not null)
+        {
+            <div class="banner banner-ok" role="status">@_message</div>
+        }
+        @foreach (var season in _episodes.GroupBy(episode => episode.Season).OrderBy(group => group.Key))
+        {
+            SeasonDefaults settings = Season(season.Key);
+            <details class="show-season" @key="season.Key">
+                <summary>@(season.Key == 0 ? "Specials" : $"Season {season.Key}") @SeasonName(settings) <span class="muted">· @season.Count() episodes</span></summary>
+                <div class="show-season-body">
+                    <div class="row"><h3>Season aliases</h3><div class="spacer"></div>
+                        <button class="btn btn-sm btn-primary" disabled="@(!HasTarget)" @onclick="() => Add(season.Key, null)">Add season to collection</button>
+                    </div>
+                    <TitleAliasEditor Aliases="settings.Aliases" Changed="SaveAliases" />
+                    <div class="media-table-wrap">
+                        <table class="media-table">
+                            <thead><tr><th>Episode</th><th>Title</th><th>Runtime</th><th>Add to collection</th></tr></thead>
+                            <tbody>
+                                @foreach (LibraryEpisode episode in season.OrderBy(episode => episode.Episode))
+                                {
+                                    <tr @key="episode.Code"><td>@episode.Code</td><td>@episode.Title</td><td>@((int)episode.Duration.TotalMinutes)m</td>
+                                        <td><button class="btn btn-sm" disabled="@(!HasTarget)" @onclick="() => Add(season.Key, episode.Code)" aria-label="@($"Add {episode.Code} to collection")">Add episode</button></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </details>
+        }
+        @if (_episodes.Count == 0)
+        {
+            <p class="hint">No episodes are available for this show.</p>
+        }
+    </section>
+}
+
+@if (_bumpers is { } bumpers)
+{
+    <BumperEditor Include="bumpers" ShowWide="true" Changed="BumpersChanged" OnClose="() => _bumpers = null" />
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "id")] public string? Id { get; set; }
+    private LibraryShow? _show;
+    private IReadOnlyList<LibraryEpisode> _episodes = [];
+    private TitleDefaults _defaults = new();
+    private Dictionary<int, SeasonDefaults> _seasonSettings = [];
+    private ContentInclude? _bumpers;
+    private string _target = "";
+    private string? _message;
+    private bool _loading = true;
+    private bool HasTarget => Editor.Working.GlobalCollections.ContainsKey(_target);
+
+    protected override void OnInitialized() => Library.Changed += LibraryChanged;
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _bumpers = null;
+        _message = null;
+        string? requested = Id;
+        var shows = await Library.GetShowsAsync();
+        if (requested != Id) return;
+        _show = shows.FirstOrDefault(show => show.Id == requested);
+        var episodes = _show is null ? Array.Empty<LibraryEpisode>() : await Library.GetEpisodesAsync(_show.Id);
+        if (requested != Id) return;
+        _episodes = episodes.DistinctBy(episode => episode.Code).ToList();
+        _defaults = _show is not null && Editor.Working.Titles.TryGetValue(_show.Name, out var defaults) ? defaults : new();
+        _seasonSettings = new(_defaults.Seasons);
+        _loading = false;
+    }
+
+    private void LibraryChanged() => _ = InvokeAsync(async () => { if (!Library.Updating) await OnParametersSetAsync(); StateHasChanged(); });
+    public void Dispose() => Library.Changed -= LibraryChanged;
+    private SeasonDefaults Season(int number)
+    {
+        if (!_seasonSettings.TryGetValue(number, out var season)) _seasonSettings[number] = season = new();
+        return season;
+    }
+    private static string SeasonName(SeasonDefaults season) => season.Aliases.FirstOrDefault(alias => alias.Preferred)?.Name
+        ?? season.Aliases.FirstOrDefault()?.Name ?? "";
+    private void SaveAliases()
+    {
+        if (_show is null) return;
+        _defaults.Seasons = _seasonSettings.Where(pair => pair.Value.Aliases.Count > 0).ToDictionary();
+        Editor.Working.Titles[_show.Name] = _defaults;
+        Editor.MarkDirty();
+    }
+    private void BumpersChanged()
+    {
+        if (_show is not null && Editor.Working.Titles.TryGetValue(_show.Name, out var defaults)) _defaults = defaults;
+        Editor.MarkDirty();
+    }
+    private void Add(int? season, string? episode)
+    {
+        if (_show is null || !Editor.Working.GlobalCollections.TryGetValue(_target, out var target)) return;
+        ShowCollectionEditor.Add(target, _show, season, episode);
+        _message = $"Added {(episode ?? (season is { } number ? $"Season {number}" : "the whole show"))} to \"{_target}\".";
+        Editor.MarkDirty();
+    }
+}

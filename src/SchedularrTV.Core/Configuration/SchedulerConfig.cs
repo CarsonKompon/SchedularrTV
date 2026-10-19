@@ -36,6 +36,23 @@ public sealed class SchedulerConfig
 public sealed class TitleDefaults
 {
     public List<BumperBlock> Bumpers { get; set; } = [];
+
+    public List<TitleAlias> Aliases { get; set; } = [];
+
+    public Dictionary<int, SeasonDefaults> Seasons { get; set; } = [];
+}
+
+public sealed class SeasonDefaults
+{
+    public List<TitleAlias> Aliases { get; set; } = [];
+}
+
+public sealed class TitleAlias
+{
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>Use for generated promo speech, captions and variable images. A season preference wins over the show's.</summary>
+    public bool Preferred { get; set; }
 }
 
 public sealed class SchedulerSettings

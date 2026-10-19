@@ -117,12 +117,12 @@ else if (Grid)
         @foreach (LibraryShow show in VisibleShows.Take(_limit))
         {
             bool selected = _selected.Contains(show.Id);
-            <div class="media-card @(selected ? "selected" : "")" @key="show.Id" tabindex="0" role="checkbox"
-                 aria-checked="@(selected ? "true" : "false")" aria-label="@show.Name"
-                 @onclick="() => Toggle(show.Id)" @onkeydown="e => OnCardKey(e, show.Id)">
-                <span class="media-card-check" aria-hidden="true"><Icon Name="check" Size="14" StrokeWidth="3" /></span>
+            <div class="media-card @(selected ? "selected" : "")" @key="show.Id">
+                <input class="media-card-check" type="checkbox" aria-label="@($"Select {show.Name}")" checked="@selected" @onchange="() => Toggle(show.Id)" />
                 <div class="media-card-poster">
+                    <a href="@ShowUrl(show)">
                     <Artwork Id="@show.Id" Title="@show.Name" Width="320" />
+                    </a>
                     @if (Membership(show).ToList() is { Count: > 0 } member)
                     {
                         <div class="media-card-in">
@@ -137,15 +137,10 @@ else if (Grid)
                         </div>
                     }
                     <div class="media-card-actions" @onkeydown:stopPropagation="true">
-                        <button class="btn btn-sm" @onclick="() => OpenSeasons(show)" @onclick:stopPropagation="true" title="Pick seasons">
-                            Seasons
-                        </button>
-                        <button class="btn btn-sm" @onclick="() => OpenBumpers(show)" @onclick:stopPropagation="true" title="Intros and outros played around this show's episodes">
-                            Intros/outros@(BumperCount(show) is > 0 and var count ? $" ({count})" : "")
-                        </button>
+                        <a class="btn btn-sm" href="@ShowUrl(show)">View show</a>
                     </div>
                 </div>
-                <div class="media-card-title" title="@show.Name">@show.Name</div>
+                <a class="media-card-title" title="@show.Name" href="@ShowUrl(show)">@show.Name</a>
                 <div class="media-card-meta">
                     <span>@(show.Year?.ToString() ?? "—")</span>
                     <span>&middot;</span>
@@ -176,14 +171,13 @@ else
                     <LibrarySortHeader Sort="_sort" Column="LibrarySortColumn.Runtime" Label="Runtime" Width="115px" OnSort="_sort.Toggle" />
                     <LibrarySortHeader Sort="_sort" Column="LibrarySortColumn.AverageEpisode" Label="Avg. episode" Width="135px" OnSort="_sort.Toggle" />
                     <th style="width:170px;">In collections</th>
-                    <th style="width:130px;">Intros/outros</th>
                 </tr>
             </thead>
             <tbody>
                 @foreach (LibraryShow show in VisibleShows.Take(_limit))
                 {
                     bool selected = _selected.Contains(show.Id);
-                    <tr class="selectable @(selected ? "selected" : "")" @key="show.Id" @onclick="() => Toggle(show.Id)">
+                    <tr class="@(selected ? "selected" : "")" @key="show.Id">
                         <td>
                             <input type="checkbox" aria-label="@($"Select {show.Name}")" checked="@selected"
                                    @onclick:stopPropagation="true" @onchange="() => Toggle(show.Id)" />
@@ -192,7 +186,7 @@ else
                             <div class="media-title">
                                 <Artwork Id="@show.Id" Title="@show.Name" Width="96" />
                                 <div style="min-width:0;">
-                                    <div class="media-name">@show.Name</div>
+                                    <a class="media-name" href="@ShowUrl(show)">@show.Name</a>
                                     <div class="media-sub">
                                         @if (_duplicateNames.Contains(show.Name))
                                         {
@@ -216,9 +210,9 @@ else
                         </td>
                         <td class="num muted">@(show.Year?.ToString() ?? "—")</td>
                         <td>
-                            <button class="btn btn-sm" @onclick="() => OpenSeasons(show)" @onclick:stopPropagation="true">
+                            <a class="btn btn-sm" href="@ShowUrl(show)">
                                 @show.Seasons.Count <Icon Name="chevron-right" Size="13" />
-                            </button>
+                            </a>
                         </td>
                         <td class="num">@show.EpisodeCount</td>
                         <td class="num muted">@show.Runtime</td>
@@ -230,12 +224,6 @@ else
                                     <span class="pill pill-accent">@collection</span>
                                 }
                             </div>
-                        </td>
-                        <td>
-                            <button class="btn btn-sm" @onclick="() => OpenBumpers(show)" @onclick:stopPropagation="true"
-                                    title="Intros and outros played around this show's episodes">
-                                @(BumperCount(show) is > 0 and var count ? $"{count} block{(count == 1 ? "" : "s")}" : "Add") <Icon Name="chevron-right" Size="13" />
-                            </button>
                         </td>
                     </tr>
                 }
@@ -255,78 +243,9 @@ else
     </div>
 }
 
-@if (_seasonShow is { } current)
-{
-    <div class="modal-backdrop" @onclick="CloseSeasons">
-        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="season-title" @onclick:stopPropagation="true">
-            <div class="modal-head">
-                <Artwork Id="@current.Id" Title="@current.Name" Class="art-lg" Width="200" />
-                <div style="flex:1;min-width:0;">
-                    <div class="eyebrow">Pick seasons</div>
-                    <h2 id="season-title">@current.Name</h2>
-                    <div class="muted" style="font-size:12.5px;margin-top:4px;">
-                        @(current.Year?.ToString() ?? "Unknown year") &middot; @current.EpisodeCount episodes &middot; @current.Runtime
-                    </div>
-                </div>
-                <button class="btn btn-sm btn-ghost btn-icon" aria-label="Close" @onclick="CloseSeasons"><Icon Name="x" Size="16" /></button>
-            </div>
-
-            <label class="field">
-                <span>Add to collection</span>
-                <select @onchange="OnSeasonTargetChanged" value="@_targetCollection">
-                    <option value="">Choose a collection…</option>
-                    @foreach (string key in Editor.Working.GlobalCollections.Keys.OrderBy(k => k))
-                    {
-                        <option value="@key">@key</option>
-                    }
-                </select>
-            </label>
-
-            <div class="chip-row">
-                @foreach (SeasonSummary season in _seasons)
-                {
-                    <button class="chip @(_seasonPick.Contains(season.Number) ? "chip-on" : "")"
-                            aria-pressed="@(_seasonPick.Contains(season.Number) ? "true" : "false")"
-                            @onclick="() => ToggleSeason(season.Number)">
-                        @season.Label
-                        <span class="chip-sub">@season.EpisodeCount ep</span>
-                    </button>
-                }
-            </div>
-
-            <p class="hint">
-                Selected seasons are added as one series entry.
-            </p>
-
-            <div class="row">
-                <button class="btn btn-sm btn-ghost" @onclick="SelectAllSeasons">All seasons</button>
-                <button class="btn btn-sm btn-ghost" @onclick="() => _seasonPick.Clear()">None</button>
-                <div class="spacer"></div>
-                <button class="btn" @onclick="CloseSeasons">Cancel</button>
-                <button class="btn btn-primary" disabled="@(_seasonPick.Count == 0 || _targetCollection.Length == 0)"
-                        @onclick="() => AddSeasons(current)">
-                    @AddSeasonsLabel()
-                </button>
-            </div>
-        </div>
-    </div>
-}
-
-@if (_bumpersFor is { } bumpers)
-{
-    <BumperEditor Include="bumpers" ShowWide="true" Changed="Editor.MarkDirty" OnClose="() => _bumpersFor = null" />
-}
-
 @code {
+    private static string ShowUrl(LibraryShow show) => $"library/show?id={Uri.EscapeDataString(show.Id)}";
     private const int PageSize = 120;
-
-    // The show-wide intros and outros (schedule titles:), edited through a stand-in collection entry for the show.
-    private ContentInclude? _bumpersFor;
-
-    private void OpenBumpers(LibraryShow show) => _bumpersFor = new ContentInclude { Show = show.Name, ShowId = show.Id };
-
-    private int BumperCount(LibraryShow show) =>
-        Editor.Working.Titles.TryGetValue(show.Name, out TitleDefaults? defaults) ? defaults.Bumpers.Count : 0;
 
     [SupplyParameterFromQuery(Name = "view")] public string? ViewMode { get; set; }
 
@@ -340,10 +259,6 @@ else
     private bool _loading = true;
     private bool _refreshing;
     private int _limit = PageSize;
-
-    private LibraryShow? _seasonShow;
-    private IReadOnlyList<SeasonSummary> _seasons = [];
-    private readonly HashSet<int> _seasonPick = [];
 
     private bool Grid => !string.Equals(ViewMode, "list", StringComparison.OrdinalIgnoreCase);
 
@@ -387,7 +302,10 @@ else
             (string name, string network) = ParseFilter(_filter);
 
             return _sort.Apply(_shows
-                .Where(s => name.Length == 0 || s.Name.Contains(name, StringComparison.OrdinalIgnoreCase))
+                .Where(s => name.Length == 0 || s.Name.Contains(name, StringComparison.OrdinalIgnoreCase)
+                    || Editor.Working.Titles.TryGetValue(s.Name, out var defaults)
+                    && defaults.Aliases.Concat(defaults.Seasons.Values.SelectMany(season => season.Aliases))
+                        .Any(alias => alias.Name.Contains(name, StringComparison.OrdinalIgnoreCase)))
                 .Where(s => network.Length == 0 || s.Networks.Any(n => n.Contains(network, StringComparison.OrdinalIgnoreCase))));
         }
     }
@@ -424,14 +342,6 @@ else
         }
     }
 
-    private void OnCardKey(KeyboardEventArgs e, string id)
-    {
-        if (e.Key is " " or "Enter")
-        {
-            Toggle(id);
-        }
-    }
-
     private bool AllShownSelected => VisibleShows.Take(_limit).All(s => _selected.Contains(s.Id)) && VisibleShows.Any();
 
     private void SelectShown(bool select)
@@ -465,7 +375,7 @@ else
                 Entry = c.Value.Include.FirstOrDefault(i => Matches(i, show))
             })
             .Where(x => x.Entry is not null)
-            .Select(x => x.Entry!.Seasons.Count > 0
+            .Select(x => x.Entry!.Episodes.Count > 0 ? $"{x.Key} · episodes" : x.Entry.Seasons.Count > 0
                 ? $"{x.Key} · S{string.Join(" S", x.Entry.Seasons)}"
                 : x.Key);
 
@@ -479,12 +389,12 @@ else
         int added = 0;
         foreach (LibraryShow show in _shows.Where(s => _selected.Contains(s.Id)))
         {
-            if (target.Include.Any(i => Matches(i, show)))
+            if (target.Include.Any(i => Matches(i, show) && i.Seasons.Count == 0 && i.Episodes.Count == 0))
             {
                 continue;
             }
 
-            target.Include.Add(new ContentInclude { Show = show.Name, ShowId = show.Id });
+            ShowCollectionEditor.Add(target, show);
             added++;
         }
 
@@ -502,7 +412,6 @@ else
         {
             await Library.RefreshAsync();
             Load(await Library.GetShowsAsync());
-            _seasonShow = null;
             _message = "Library rescanned.";
         }
         finally
@@ -511,112 +420,4 @@ else
         }
     }
 
-    private sealed record SeasonSummary(int Number, int EpisodeCount)
-    {
-        public string Label => Number == 0 ? "Specials" : $"Season {Number}";
-    }
-
-    private async Task OpenSeasons(LibraryShow show)
-    {
-        _seasonShow = show;
-        _seasonPick.Clear();
-
-        IReadOnlyList<LibraryEpisode> episodes = await Library.GetEpisodesAsync(show.Id);
-        _seasons = episodes
-            .GroupBy(e => e.Season)
-            .Select(g => new SeasonSummary(g.Key, g.Count()))
-            .OrderBy(s => s.Number)
-            .ToList();
-
-        PreTickExisting();
-    }
-
-    // Pre-tick whatever is already in the target collection so the dialog reflects reality.
-    private void PreTickExisting()
-    {
-        _seasonPick.Clear();
-
-        if (_seasonShow is not null && Editor.Working.GlobalCollections.TryGetValue(_targetCollection, out ContentSelector? target))
-        {
-            ContentInclude? entry = target.Include.FirstOrDefault(i => Matches(i, _seasonShow));
-
-            foreach (int season in entry?.Seasons ?? [])
-            {
-                _seasonPick.Add(season);
-            }
-        }
-    }
-
-    private void OnSeasonTargetChanged(ChangeEventArgs e)
-    {
-        _targetCollection = e.Value?.ToString() ?? string.Empty;
-        PreTickExisting();
-    }
-
-    private void CloseSeasons() => _seasonShow = null;
-
-    private void ToggleSeason(int season)
-    {
-        if (!_seasonPick.Add(season))
-        {
-            _seasonPick.Remove(season);
-        }
-    }
-
-    private void SelectAllSeasons()
-    {
-        foreach (SeasonSummary season in _seasons)
-        {
-            _seasonPick.Add(season.Number);
-        }
-    }
-
-    private string AddSeasonsLabel() => _seasonPick.Count == _seasons.Count && _seasons.Count > 0
-        ? "Add whole show"
-        : $"Add {_seasonPick.Count} season(s)";
-
-    private void AddSeasons(LibraryShow show)
-    {
-        if (!Editor.Working.GlobalCollections.TryGetValue(_targetCollection, out ContentSelector? target))
-        {
-            return;
-        }
-
-        bool wholeShow = _seasonPick.Count == _seasons.Count;
-        ContentInclude? entry = target.Include.FirstOrDefault(i => Matches(i, show));
-
-        bool alreadyWholeShow = entry is { Seasons.Count: 0 };
-
-        if (entry is null)
-        {
-            entry = new ContentInclude { Show = show.Name, ShowId = show.Id };
-            target.Include.Add(entry);
-        }
-
-        // An empty season list already means "every season", so adding to an existing entry like that
-        // would silently narrow it rather than widen it.
-        if (wholeShow || alreadyWholeShow)
-        {
-            entry.Seasons.Clear();
-        }
-        else
-        {
-            foreach (int season in _seasonPick)
-            {
-                if (!entry.Seasons.Contains(season))
-                {
-                    entry.Seasons.Add(season);
-                }
-            }
-
-            entry.Seasons.Sort();
-        }
-
-        _message = entry.Seasons.Count == 0
-            ? $"Added all of \"{show.Name}\" to \"{_targetCollection}\"."
-            : $"Added \"{show.Name}\" seasons {string.Join(", ", entry.Seasons)} to \"{_targetCollection}\".";
-
-        _seasonShow = null;
-        Editor.MarkDirty();
-    }
 }

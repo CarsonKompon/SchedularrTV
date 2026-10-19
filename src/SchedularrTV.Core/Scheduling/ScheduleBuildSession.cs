@@ -218,12 +218,14 @@ internal sealed class ScheduleBuildSession(
         }
 
         HashSet<string> rotation = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> rotationPromoNames = new(StringComparer.OrdinalIgnoreCase);
         if (channel.BaseRotation is { } baseRotation)
         {
             rotation.UnionWith(await TitlesOfAsync(baseRotation, cancellationToken).ConfigureAwait(false));
+            rotationPromoNames.UnionWith(await TitlesOfAsync(baseRotation, cancellationToken, includeAliases: true).ConfigureAwait(false));
         }
 
-        ChannelOutlook outlook = new([.. airings.OrderBy(a => a.At)], rotation);
+        ChannelOutlook outlook = new([.. airings.OrderBy(a => a.At)], rotation) { RotationPromoNames = rotationPromoNames };
         _outlooks[horizon] = outlook;
         return outlook;
     }
@@ -235,21 +237,23 @@ internal sealed class ScheduleBuildSession(
         CancellationToken cancellationToken)
     {
         HashSet<string> titles = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> promoNames = new(StringComparer.OrdinalIgnoreCase);
 
         foreach (ContentSelector selector in selectors)
         {
             titles.UnionWith(await TitlesOfAsync(selector, cancellationToken).ConfigureAwait(false));
+            promoNames.UnionWith(await TitlesOfAsync(selector, cancellationToken, includeAliases: true).ConfigureAwait(false));
         }
 
         if (titles.Count > 0)
         {
             string day = TimeZoneInfo.ConvertTime(at, timeZone).DayOfWeek.ToString().ToLowerInvariant();
-            airings.Add(new UpcomingAiring(at, day, titles));
+            airings.Add(new UpcomingAiring(at, day, titles) { PromoNames = promoNames });
         }
     }
 
     /// <summary>Every title a selector could play, keyed by the query so two rules sharing a pool cost one search.</summary>
-    public async ValueTask<IReadOnlySet<string>> TitlesOfAsync(ContentSelector selector, CancellationToken cancellationToken)
+    public async ValueTask<IReadOnlySet<string>> TitlesOfAsync(ContentSelector selector, CancellationToken cancellationToken, bool includeAliases = false)
     {
         QueryExpression expression;
         try
@@ -262,7 +266,7 @@ internal sealed class ScheduleBuildSession(
             return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
-        string key = expression.ToQueryString();
+        string key = expression.ToQueryString() + (includeAliases ? "|promo-aliases" : "");
         if (_titles.TryGetValue(key, out IReadOnlySet<string>? cached))
         {
             return cached;
@@ -270,6 +274,7 @@ internal sealed class ScheduleBuildSession(
 
         IReadOnlyList<MediaItem> items = await SearchAsync(expression, cancellationToken).ConfigureAwait(false);
         HashSet<string> titles = new(items.Select(TitleRotation.TitleOf), StringComparer.OrdinalIgnoreCase);
+        if (includeAliases) titles.UnionWith(items.SelectMany(item => ShowAliases.Names(config, item)));
 
         _titles[key] = titles;
         return titles;

@@ -94,9 +94,10 @@ internal sealed class PromoBreakContributor(IPromoSpotSubstitute? generated) : I
                 ids.Add(sample.Title);
             }
 
+            ids.AddRange(ShowAliases.Names(session.Config, sample));
             if (ids.Count > 0)
             {
-                return new PromoTarget(at, ids, sample.SeriesName ?? (sample.Kind == MediaKind.Movie ? sample.Title : null) ?? fallbackName)
+                return new PromoTarget(at, ids, ShowAliases.PreferredName(session.Config, sample))
                 {
                     IsNew = isNew, Sample = sample
                 };
@@ -626,7 +627,7 @@ internal sealed class PromoBreakPlan(
         return previousSeries is not null && showIds.Contains(previousSeries, StringComparer.OrdinalIgnoreCase);
     }
 
-    private static List<string> ShowIdsOf(MediaItem? item)
+    private List<string> ShowIdsOf(MediaItem? item)
     {
         List<string> ids = [];
 
@@ -651,6 +652,7 @@ internal sealed class PromoBreakPlan(
             ids.Add(item.Title);
         }
 
+        ids.AddRange(ShowAliases.Names(context.Config, item));
         return ids;
     }
 

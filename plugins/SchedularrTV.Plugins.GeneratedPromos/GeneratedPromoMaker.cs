@@ -15,6 +15,7 @@ public sealed class GeneratedPromoMaker(GeneratedPromoService promos, Schedularr
         DateTimeOffset airsAt, CancellationToken cancellationToken = default)
     {
         (GeneratedPromoSource? source, List<GeneratedPromoTemplate> templates) = Candidates(config, channel, blockName, type);
+        schedule = UpNextPromo.WithPreferredNames(schedule, config);
         TimeZoneInfo zone = SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(channel.TimeZone) ? config.Settings.TimeZone : channel.TimeZone);
         templates.RemoveAll(template => !GeneratedPromoEligibility.IsAvailable(template, airsAt, zone));
         if (source is null || templates.Count == 0)

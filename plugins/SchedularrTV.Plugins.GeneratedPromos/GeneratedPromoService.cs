@@ -195,6 +195,7 @@ public sealed partial class GeneratedPromoService(
             }
 
             bool watched = Watched(config.Settings, schedule.ChannelNumber);
+            ChannelSchedule namedSchedule = UpNextPromo.WithPreferredNames(schedule, config);
             TimeZoneInfo zone = SchedulingEngine.ResolveTimeZone(
                 string.IsNullOrWhiteSpace(channel?.TimeZone) ? config.Settings.TimeZone : channel.TimeZone);
             List<ScheduleEntry>? changed = null;
@@ -215,21 +216,21 @@ public sealed partial class GeneratedPromoService(
                 if (template is { Enabled: true } && source is not null && GeneratedPromoEligibility.IsAvailable(template, entry.Start, zone))
                 {
                     int needed = GeneratedPromoResolver.ListingsNeeded(template);
-                    IReadOnlyList<UpNextListing> listings = Subject(template.Type, schedule, entry, needed, template.UpcomingGrouping);
+                    IReadOnlyList<UpNextListing> listings = Subject(template.Type, namedSchedule, namedSchedule.Entries[index], needed, template.UpcomingGrouping);
 
                     // A template for some programmes only: the one the promo turned out to be about has to match too
                     // (when it couldn't be known at planning, or the prediction was wrong); otherwise the stand-in airs.
                     bool suits = !GeneratedPromoEligibility.HasProgrammeQuery(template) || (listings.Count > 0
-                        && GeneratedPromoEligibility.SuitsProgramme(template, UpNextPromo.ItemFor(schedule, listings[0])));
+                        && GeneratedPromoEligibility.SuitsProgramme(template, UpNextPromo.ItemFor(namedSchedule, listings[0])));
                     if (suits && (listings.Count >= needed || (listings.Count > 0 && entry.Start - now < PartialListingWindow)))
                     {
                         // Variable images' automatic pictures are looked for (in the background) for promos about to be made.
                         bool making = watched && WithinLead(config.Settings, entry.Start, now);
                         ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, entry.Start,
-                            GeneratedImageSubjects.FromSchedule(schedule, entry.Start, entry.End, template), automaticImages?.Lookup(queue: making),
+                            GeneratedImageSubjects.FromSchedule(namedSchedule, entry.Start, entry.End, template), automaticImages?.Lookup(queue: making),
                             new GeneratedVoiceContext(channel!.Id, entry.BlockName, channel.Name),
                             // Variants limited to some programmes check the one this promo is about.
-                            listings.Count > 0 && template.HasVariants ? UpNextPromo.ItemFor(schedule, listings[0]) : null)!
+                            listings.Count > 0 && template.HasVariants ? UpNextPromo.ItemFor(namedSchedule, listings[0]) : null)!
                             with { Folder = Folder(source, template) };
                         path = Existing(promo);
                         if (path is not null)

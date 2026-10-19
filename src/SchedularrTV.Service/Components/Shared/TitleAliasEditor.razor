@@ -1,0 +1,46 @@
+<div class="alias-editor">
+    @foreach (TitleAlias alias in Aliases)
+    {
+        <div class="row" @key="alias">
+            <span style="flex:1;">@alias.Name</span>
+            <label><input type="checkbox" checked="@alias.Preferred" @onchange="() => Prefer(alias)" /> Preferred name</label>
+            <button class="btn btn-sm btn-ghost" aria-label="@($"Remove alias {alias.Name}")" @onclick="() => Remove(alias)">Remove</button>
+        </div>
+    }
+    <div class="row">
+        <input aria-label="New alias" placeholder="Add an alternate name…" @bind="_name" @bind:event="oninput" @onkeydown="KeyDown" />
+        <button class="btn btn-sm" disabled="@(!CanAdd)" @onclick="Add">Add alias</button>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<TitleAlias> Aliases { get; set; } = [];
+    [Parameter] public EventCallback Changed { get; set; }
+    private string _name = "";
+    private bool CanAdd => !string.IsNullOrWhiteSpace(_name)
+        && !Aliases.Any(alias => string.Equals(alias.Name, _name.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private async Task Add()
+    {
+        if (!CanAdd) return;
+        Aliases.Add(new TitleAlias { Name = _name.Trim() });
+        _name = "";
+        await Changed.InvokeAsync();
+    }
+
+    private Task KeyDown(KeyboardEventArgs e) => e.Key == "Enter" ? Add() : Task.CompletedTask;
+
+    private async Task Prefer(TitleAlias alias)
+    {
+        bool preferred = !alias.Preferred;
+        foreach (TitleAlias candidate in Aliases) candidate.Preferred = false;
+        alias.Preferred = preferred;
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Remove(TitleAlias alias)
+    {
+        Aliases.Remove(alias);
+        await Changed.InvokeAsync();
+    }
+}

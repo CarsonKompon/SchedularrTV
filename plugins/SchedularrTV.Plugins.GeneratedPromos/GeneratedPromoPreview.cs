@@ -24,6 +24,9 @@ public sealed class GeneratedPromoPreview(
     private readonly ConcurrentDictionary<string, string?> _frames = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, MediaItem?> _standIns = new(StringComparer.OrdinalIgnoreCase);
 
+    private SchedulerConfig NamingConfig => services.GetService<ConfigEditor>()?.Working
+        ?? services.GetService<SchedulerConfigProvider>()?.Current ?? new SchedulerConfig();
+
     /// <summary>
     /// Finds an episode file the channel could play, so a sample preview still has a clip to play behind
     /// the promo or hand to a generator.
@@ -55,6 +58,7 @@ public sealed class GeneratedPromoPreview(
         ChannelSchedule? schedule = services.GetService<ScheduleCoordinator>()?.Latest
             .FirstOrDefault(candidate => string.Equals(candidate.ChannelId, channel.Id, StringComparison.OrdinalIgnoreCase));
         int needed = GeneratedPromoResolver.ListingsNeeded(template);
+        if (schedule is not null) schedule = UpNextPromo.WithPreferredNames(schedule, NamingConfig);
         IReadOnlyList<UpNextListing> real = schedule is null ? [] : template.Type switch
         {
             GeneratedPromoType.ThisHasBeen or GeneratedPromoType.YoureWatching or GeneratedPromoType.BackToTheShow
@@ -91,7 +95,7 @@ public sealed class GeneratedPromoPreview(
 
         // The promoted show is a real file when one was found, so episode clips work before the first build.
         return _standIns.GetValueOrDefault(channel.Id) is { } standIn
-            ? [UpNextPromo.Listing(standIn, samples[0].Start) with { IsNew = samples[0].IsNew }, .. samples.Skip(1)]
+            ? [UpNextPromo.Listing(UpNextPromo.WithPreferredName(standIn, NamingConfig), samples[0].Start) with { IsNew = samples[0].IsNew }, .. samples.Skip(1)]
             : samples;
     }
 
@@ -102,7 +106,7 @@ public sealed class GeneratedPromoPreview(
         DateTimeOffset now = clock.GetUtcNow();
         ChannelSchedule? schedule = services.GetService<ScheduleCoordinator>()?.Latest
             .FirstOrDefault(candidate => string.Equals(candidate.ChannelId, channel.Id, StringComparison.OrdinalIgnoreCase));
-        if (schedule is not null) return GeneratedImageSubjects.FromSchedule(schedule, now, template: template);
+        if (schedule is not null) return GeneratedImageSubjects.FromSchedule(UpNextPromo.WithPreferredNames(schedule, NamingConfig), now, template: template);
         // Use the same first sample and airtime as the text preview, so its background rules agree with its caption.
         var next = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, now.Minute < 30 ? 30 : 0, 0, now.Offset);
         if (now.Minute >= 30) next = next.AddHours(1);
@@ -111,7 +115,7 @@ public sealed class GeneratedPromoPreview(
             .Select(rule => rule.Within?.TotalMinutes ?? 0).DefaultIfEmpty().Max() / 30) + 1);
         List<UpNextListing> samples = [.. Enumerable.Range(0, count)
             .Select(index => new UpNextListing(SampleTitles[index % SampleTitles.Length], next.AddMinutes(30 * index)))];
-        if (_standIns.GetValueOrDefault(channel.Id) is { } standIn) samples[0] = UpNextPromo.Listing(standIn, next);
+        if (_standIns.GetValueOrDefault(channel.Id) is { } standIn) samples[0] = UpNextPromo.Listing(UpNextPromo.WithPreferredName(standIn, NamingConfig), next);
         return new(new UpNextListing(SampleTitles[0], now.AddMinutes(-15)), samples);
     }
 
