@@ -13,7 +13,7 @@ public sealed record GeneratedImageSubjects(UpNextListing? Current, IReadOnlyLis
         GeneratedUpcomingGrouping grouping = template?.UpcomingGrouping ?? GeneratedUpcomingGrouping.Timeslot;
         int needed = Math.Max(10, template is null ? 1 : GeneratedPromoResolver.ListingsNeeded(template));
         IReadOnlyList<UpNextListing> upcoming = UpNextPromo.Listings(schedule, after ?? at, needed, grouping: grouping);
-        TimeSpan within = (template?.BackgroundRules ?? []).Where(rule => rule.MatchShows != false)
+        TimeSpan within = (template is null ? Enumerable.Empty<GeneratedBackgroundRule>() : GeneratedPromoVariants.AllRules(template)).Where(rule => rule.MatchShows != false)
             .Select(rule => rule.Within ?? TimeSpan.Zero).DefaultIfEmpty().Max();
         if (within > TimeSpan.Zero)
         {

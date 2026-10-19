@@ -106,7 +106,7 @@ public sealed class GeneratedPromoPreview(
         // Use the same first sample and airtime as the text preview, so its background rules agree with its caption.
         var next = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, now.Minute < 30 ? 30 : 0, 0, now.Offset);
         if (now.Minute >= 30) next = next.AddHours(1);
-        int count = Math.Max(10, (int)Math.Ceiling((template?.BackgroundRules ?? [])
+        int count = Math.Max(10, (int)Math.Ceiling((template is null ? Enumerable.Empty<GeneratedBackgroundRule>() : GeneratedPromoVariants.AllRules(template))
             .Where(rule => rule.MatchShows != false)
             .Select(rule => rule.Within?.TotalMinutes ?? 0).DefaultIfEmpty().Max() / 30) + 1);
         List<UpNextListing> samples = [.. Enumerable.Range(0, count)

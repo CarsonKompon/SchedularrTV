@@ -353,7 +353,82 @@ public enum GeneratedUpcomingGrouping
     Show
 }
 
-public sealed class GeneratedPromoTemplate
+/// <summary>Something with a list of background images or videos to pick from, and rules for picking them: a template, or one of its variants.</summary>
+public interface IGeneratedBackgrounds
+{
+    /// <summary>The first background (the single-background form).</summary>
+    string? Background { get; set; }
+
+    /// <summary>More backgrounds to pick from, with <see cref="Background"/>.</summary>
+    List<string>? Backgrounds { get; set; }
+
+    /// <summary>Show-based eligibility, time ranges and relative weights, keyed by background path.</summary>
+    List<GeneratedBackgroundRule>? BackgroundRules { get; set; }
+
+    /// <summary>Every background to pick from: <see cref="Background"/> first, then <see cref="Backgrounds"/>, without blanks or repeats.</summary>
+    IReadOnlyList<string> BackgroundChoices { get; }
+}
+
+/// <summary>Layers placed, coloured or timed their own way: a variant's edits (or, in older templates, one background's).</summary>
+public interface IGeneratedLayerEdits
+{
+    /// <summary>Layers' own positions, sizes, opacity and keyframes, by layer id.</summary>
+    List<GeneratedLayerOverride> Layers { get; set; }
+
+    List<GeneratedLayerColor>? Colors { get; set; }
+
+    List<GeneratedLayerTiming>? Timings { get; set; }
+}
+
+/// <summary>
+/// A variant of a generated promo: the same promo with its own backgrounds, its own placement, colour and timing of the
+/// template's layers (and layers of its own, see <see cref="GeneratedLayer.Variant"/>), some of the template's layers
+/// hidden, and its own availability on top of the template's. One variant (or the template's own "default" look) is
+/// picked for each promo.
+/// </summary>
+public sealed class GeneratedPromoVariant : IGeneratedBackgrounds, IGeneratedLayerEdits
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N")[..8];
+
+    public string Name { get; set; } = "Variant";
+
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Relative chance against the other variants (and the default look) that can air; 1 is normal.</summary>
+    public double Weight { get; set; } = 1;
+
+    /// <summary>When this variant may be picked, on top of the template's own availability. Null: whenever the template airs.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedPromoAvailability? Availability { get; set; }
+
+    /// <summary>The variant's first background; with none (and no <see cref="Backgrounds"/>), it uses the template's.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Background { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Backgrounds { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedBackgroundRule>? BackgroundRules { get; set; }
+
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<string> BackgroundChoices => GeneratedPromoTemplate.Choices(Background, Backgrounds);
+
+    /// <summary>The template's layers placed (moved, resized, faded, animated) differently in this variant, by layer id.</summary>
+    public List<GeneratedLayerOverride> Layers { get; set; } = [];
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedLayerColor>? Colors { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedLayerTiming>? Timings { get; set; }
+
+    /// <summary>Ids of the template's layers this variant doesn't show.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Hidden { get; set; }
+}
+
+public sealed class GeneratedPromoTemplate : IGeneratedBackgrounds
 {
     public string Name { get; set; } = string.Empty;
 
@@ -408,18 +483,48 @@ public sealed class GeneratedPromoTemplate
     public List<GeneratedBackgroundRule>? BackgroundRules { get; set; }
 
     /// <summary>
-    /// Layers placed differently over particular backgrounds (to follow what's in a video, say): while the promo uses
-    /// that background, each listed layer takes its position, size, opacity and keyframes from here instead. Null when
-    /// there are none, so templates without them keep their render keys.
+    /// Older templates: layers placed differently over particular backgrounds. Turned into <see cref="Variants"/> when the
+    /// schedule (or a package) is loaded; still honoured if one is met.
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public List<GeneratedBackgroundOverride>? BackgroundOverrides { get; set; }
 
     /// <summary>Every background to pick from: <see cref="Background"/> first, then <see cref="Backgrounds"/>, without blanks or repeats.</summary>
     [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
-    public IReadOnlyList<string> BackgroundChoices =>
-        [.. (Background is { Length: > 0 } single ? (Backgrounds ?? []).Prepend(single) : Backgrounds ?? [])
+    public IReadOnlyList<string> BackgroundChoices => Choices(Background, Backgrounds);
+
+    /// <summary><paramref name="first"/> then <paramref name="more"/>, without blanks or repeats.</summary>
+    public static IReadOnlyList<string> Choices(string? first, IEnumerable<string>? more) =>
+        [.. (first is { Length: > 0 } single ? (more ?? []).Prepend(single) : more ?? [])
             .Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>
+    /// Variants of the promo, one of which (or the template's own default look) is picked for each promo. Null when
+    /// there are none, so templates without them keep their render keys.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedPromoVariant>? Variants { get; set; }
+
+    /// <summary>
+    /// What the template's own look (with no variant) is called next to its variants. Null is "Default".
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? DefaultName { get; set; }
+
+    /// <summary>
+    /// The default look's relative chance against the variants. Null is 1; 0 keeps it out of the pick, so it's only used
+    /// when no variant can air.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public double? DefaultWeight { get; set; }
+
+    /// <summary>Whether the template has variants to pick between.</summary>
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public bool HasVariants => Variants is { Count: > 0 };
+
+    /// <summary>The variant with <paramref name="id"/>, or null (the default look).</summary>
+    public GeneratedPromoVariant? Variant(string? id) =>
+        id is null ? null : Variants?.FirstOrDefault(variant => string.Equals(variant.Id, id, StringComparison.Ordinal));
 
     /// <summary>
     /// The sound of a background video (not an image, nor the episode clip, which has its own). Null plays it with the
@@ -502,6 +607,17 @@ public sealed class GeneratedBackgroundRule
     public bool OnlyWhenMatching { get; set; }
     /// <summary>Relative chance on a match. Ordinary backgrounds, and nonmatching preferred backgrounds, weigh 1.</summary>
     public double MatchWeight { get; set; } = 5;
+}
+
+/// <summary>Another file or wording a layer can show, and when it's picked.</summary>
+public sealed class GeneratedLayerChoice
+{
+    /// <summary>The file (image or video layers) or the text (text layers, with the same tokens as the layer's own).</summary>
+    public string Value { get; set; } = string.Empty;
+
+    /// <summary>When it's picked; null: always eligible, at normal chance.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedBackgroundRule? Rule { get; set; }
 }
 
 public sealed class GeneratedBackgroundTimeRange
@@ -1588,7 +1704,7 @@ public sealed class GeneratedCorners
 }
 
 /// <summary>How a template's layers are placed over one of its backgrounds, where that differs from the template.</summary>
-public sealed class GeneratedBackgroundOverride
+public sealed class GeneratedBackgroundOverride : IGeneratedLayerEdits
 {
     /// <summary>The background file, as listed in the template's backgrounds.</summary>
     public string Background { get; set; } = string.Empty;
@@ -1743,6 +1859,33 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? Parent { get; set; }
+
+    /// <summary>
+    /// The <see cref="GeneratedPromoVariant.Id"/> of the variant this layer belongs to: it's drawn only in that variant.
+    /// Null for the template's own layers, which every variant shows (unless it hides them).
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Variant { get; set; }
+
+    /// <summary>
+    /// Other files (image and video layers) or wordings (text layers) to pick from instead of <see cref="Path"/> or
+    /// <see cref="Text"/>, one per promo, each with its own rule for when it's picked. Null when there are none.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedLayerChoice>? Alternatives { get; set; }
+
+    /// <summary>When the layer's own <see cref="Path"/> or <see cref="Text"/> is picked over its <see cref="Alternatives"/>; null: always eligible, at normal chance.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedBackgroundRule? ChoiceRule { get; set; }
+
+    /// <summary>A shallow copy saying <paramref name="value"/> (as its text, or showing it as its file) instead of its own.</summary>
+    public GeneratedLayer WithChoice(string value)
+    {
+        GeneratedLayer copy = (GeneratedLayer)MemberwiseClone();
+        if (Kind == GeneratedLayerKind.Text) copy.Text = value;
+        else copy.Path = value;
+        return copy;
+    }
 
     /// <summary>When set, this shape or image masks its target instead of drawing as visible artwork.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]

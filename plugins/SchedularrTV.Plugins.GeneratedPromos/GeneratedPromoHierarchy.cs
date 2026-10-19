@@ -264,9 +264,11 @@ public static class GeneratedPromoHierarchy
         layer.Parent = group?.Id;
     }
 
-    // The template's own layout, then every background that places layers its own way.
+    // The template's own layout, then every variant (and an older template's background) that places layers its own way.
     private static IEnumerable<string?> Backgrounds(GeneratedPromoTemplate template) =>
-        new string?[] { null }.Concat((template.BackgroundOverrides ?? []).Select(tracked => (string?)tracked.Background));
+        new string?[] { null }
+            .Concat((template.Variants ?? []).Select(variant => (string?)variant.Id))
+            .Concat((template.BackgroundOverrides ?? []).Select(tracked => (string?)tracked.Background));
 
     /// <summary>
     /// Puts every group's layers straight after it, keeping the drawing order otherwise: what the layer list shows, and

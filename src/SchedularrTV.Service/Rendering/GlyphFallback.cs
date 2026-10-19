@@ -53,8 +53,11 @@ public static class GlyphFallback
     /// listed stand-in, or the letter without its accents (or another compatible form, like "ﬁ" → "fi"). A character
     /// with no stand-in the font has is left as it is.
     /// </summary>
-    public static string Apply(string text, SKTypeface typeface) =>
-        Apply(text, codepoint => typeface.ContainsGlyph(codepoint));
+    public static string Apply(string text, SKTypeface typeface)
+    {
+        using var font = new SKFont(typeface);
+        return Apply(text, codepoint => font.ContainsGlyph(codepoint));
+    }
 
     /// <summary>As <see cref="Apply(string, SKTypeface)"/>, with whether the font has a character given by <paramref name="has"/>.</summary>
     public static string Apply(string text, Func<int, bool> has)

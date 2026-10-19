@@ -174,8 +174,7 @@ public static class GeneratedPromoEditing
         }
 
         // Corner pins are pixels too.
-        foreach (IGeneratedPose pose in template.Layers.Cast<IGeneratedPose>()
-                     .Concat((template.BackgroundOverrides ?? []).SelectMany(tracked => tracked.Layers)))
+        foreach (IGeneratedPose pose in template.Layers.Cast<IGeneratedPose>().Concat(AllPlacements(template)))
         {
             pose.Corners = ScaleCorners(pose.Corners, scaleX, scaleY);
             foreach (GeneratedKeyframe key in pose.Keyframes ?? [])
@@ -184,8 +183,8 @@ public static class GeneratedPromoEditing
             }
         }
 
-        // Each background's own placements move with the frame too.
-        foreach (GeneratedLayerOverride placed in (template.BackgroundOverrides ?? []).SelectMany(tracked => tracked.Layers))
+        // Each variant's own placements move with the frame too.
+        foreach (GeneratedLayerOverride placed in AllPlacements(template))
         {
             placed.X = (float)Math.Round(placed.X * scaleX);
             placed.Y = (float)Math.Round(placed.Y * scaleY);
@@ -221,7 +220,14 @@ public static class GeneratedPromoEditing
         }
     }
 
-    // ---- Per-background placements ----
+    // ---- Per-variant placements ----
+
+    // Every layout of the layers besides the template's own: its variants' (and an older template's per-background ones).
+    private static IEnumerable<IGeneratedLayerEdits> AllEdits(GeneratedPromoTemplate template) =>
+        (template.Variants ?? []).Cast<IGeneratedLayerEdits>().Concat(template.BackgroundOverrides ?? []);
+
+    private static IEnumerable<GeneratedLayerOverride> AllPlacements(GeneratedPromoTemplate template) =>
+        AllEdits(template).SelectMany(edits => edits.Layers);
 
     /// <summary>
     /// <paramref name="background"/>'s own placement of the layer, made on first use as a copy of where the template puts
@@ -234,7 +240,7 @@ public static class GeneratedPromoEditing
             return existing;
         }
 
-        GeneratedBackgroundOverride tracked = Tracked(template, background, layer);
+        IGeneratedLayerEdits tracked = Tracked(template, background, layer);
         var placed = new GeneratedLayerOverride
         {
             Layer = layer.Id!,
@@ -254,9 +260,14 @@ public static class GeneratedPromoEditing
     /// <summary>
     /// The background's entry, made if it has none yet; the layer is given an id if it has none, for the entry to name it by.
     /// </summary>
-    private static GeneratedBackgroundOverride Tracked(GeneratedPromoTemplate template, string background, GeneratedLayer layer)
+    private static IGeneratedLayerEdits Tracked(GeneratedPromoTemplate template, string background, GeneratedLayer layer)
     {
         layer.Id ??= NewLayerId(template);
+        if (template.Variant(background) is { } variant)
+        {
+            return variant;
+        }
+
         List<GeneratedBackgroundOverride> all = template.BackgroundOverrides ??= [];
         return all.FirstOrDefault(candidate => string.Equals(candidate.Background, background, StringComparison.OrdinalIgnoreCase))
             ?? Add(all, new GeneratedBackgroundOverride { Background = background });
@@ -284,7 +295,7 @@ public static class GeneratedPromoEditing
             return;
         }
 
-        GeneratedBackgroundOverride tracked = Tracked(template, background, layer);
+        IGeneratedLayerEdits tracked = Tracked(template, background, layer);
         (tracked.Colors ??= []).Add(new GeneratedLayerColor { Layer = layer.Id!, Color = color });
     }
 
@@ -299,7 +310,7 @@ public static class GeneratedPromoEditing
             return existing;
         }
 
-        GeneratedBackgroundOverride tracked = Tracked(template, background, layer);
+        IGeneratedLayerEdits tracked = Tracked(template, background, layer);
         var timed = new GeneratedLayerTiming
         {
             Layer = layer.Id!,
@@ -348,19 +359,30 @@ public static class GeneratedPromoEditing
     public static int PlacedCount(GeneratedPromoTemplate template, string background) =>
         template.Layers.Count(layer => Customised(template, background, layer));
 
-    private static GeneratedBackgroundOverride? Entry(GeneratedPromoTemplate template, string background) =>
-        template.BackgroundOverrides?.FirstOrDefault(candidate => string.Equals(candidate.Background, background, StringComparison.OrdinalIgnoreCase));
+    private static IGeneratedLayerEdits? Entry(GeneratedPromoTemplate template, string background) =>
+        GeneratedPromoResolver.Edits(template, background);
 
-    /// <summary>Follows a background file being swapped for another (null: removed), keeping or dropping its placements.</summary>
-    public static void RenameBackground(GeneratedPromoTemplate template, string from, string? to)
+    /// <summary>
+    /// Follows a background file of <paramref name="host"/> (the template, or one of its variants) being swapped for
+    /// another (null: removed), keeping or dropping its rule (and, in an older template, its placements).
+    /// </summary>
+    public static void RenameBackground(GeneratedPromoTemplate template, string from, string? to) => RenameBackground(template, template, from, to);
+
+    /// <inheritdoc cref="RenameBackground(GeneratedPromoTemplate, string, string?)"/>
+    public static void RenameBackground(GeneratedPromoTemplate template, IGeneratedBackgrounds host, string from, string? to)
     {
-        foreach (GeneratedBackgroundRule rule in (template.BackgroundRules ?? [])
+        foreach (GeneratedBackgroundRule rule in (host.BackgroundRules ?? [])
                      .Where(rule => string.Equals(rule.Background, from, StringComparison.OrdinalIgnoreCase)).ToList())
         {
-            if (string.IsNullOrWhiteSpace(to)) template.BackgroundRules!.Remove(rule);
+            if (string.IsNullOrWhiteSpace(to)) host.BackgroundRules!.Remove(rule);
             else rule.Background = to;
         }
-        if (template.BackgroundRules is { Count: 0 }) template.BackgroundRules = null;
+        if (host.BackgroundRules is { Count: 0 }) host.BackgroundRules = null;
+        if (!ReferenceEquals(host, template))
+        {
+            return;
+        }
+
         foreach (GeneratedBackgroundOverride tracked in (template.BackgroundOverrides ?? [])
                      .Where(candidate => string.Equals(candidate.Background, from, StringComparison.OrdinalIgnoreCase)).ToList())
         {
@@ -385,11 +407,16 @@ public static class GeneratedPromoEditing
             // Keep the mask editable and invisible until the user chooses a new target.
             foreach (GeneratedLayer mask in template.Layers.Where(candidate => candidate.Mask?.Target == id))
                 mask.Mask!.Target = null;
-            foreach (GeneratedBackgroundOverride tracked in template.BackgroundOverrides ?? [])
+            foreach (IGeneratedLayerEdits tracked in AllEdits(template))
             {
                 tracked.Layers.RemoveAll(placed => string.Equals(placed.Layer, id, StringComparison.Ordinal));
                 tracked.Colors?.RemoveAll(colour => string.Equals(colour.Layer, id, StringComparison.Ordinal));
                 tracked.Timings?.RemoveAll(timing => string.Equals(timing.Layer, id, StringComparison.Ordinal));
+            }
+
+            foreach (GeneratedPromoVariant variant in template.Variants ?? [])
+            {
+                variant.Hidden?.RemoveAll(hidden => string.Equals(hidden, id, StringComparison.Ordinal));
             }
         }
 
@@ -399,10 +426,15 @@ public static class GeneratedPromoEditing
     // Empty lists go, so the YAML and render keys stay as if there had never been any.
     private static void Tidy(GeneratedPromoTemplate template)
     {
-        foreach (GeneratedBackgroundOverride tracked in template.BackgroundOverrides ?? [])
+        foreach (IGeneratedLayerEdits tracked in AllEdits(template))
         {
             if (tracked.Colors is { Count: 0 }) tracked.Colors = null;
             if (tracked.Timings is { Count: 0 }) tracked.Timings = null;
+        }
+
+        foreach (GeneratedPromoVariant variant in template.Variants ?? [])
+        {
+            if (variant.Hidden is { Count: 0 }) variant.Hidden = null;
         }
 
         template.BackgroundOverrides?.RemoveAll(tracked => tracked.Layers.Count == 0 && tracked.Colors is null && tracked.Timings is null);
@@ -600,13 +632,13 @@ public static class GeneratedPromoEditing
     /// The editable background list, folding in the single background older templates carry, so the first entry is
     /// kept in <see cref="GeneratedPromoTemplate.Background"/> and the rest in <see cref="GeneratedPromoTemplate.Backgrounds"/>.
     /// </summary>
-    public static List<string> Backgrounds(GeneratedPromoTemplate template) => [.. template.BackgroundChoices];
+    public static List<string> Backgrounds(IGeneratedBackgrounds template) => [.. template.BackgroundChoices];
 
     /// <summary>
-    /// Stores <paramref name="backgrounds"/>: the first as <see cref="GeneratedPromoTemplate.Background"/> (so a template
-    /// with one background reads as it always has) and any others in <see cref="GeneratedPromoTemplate.Backgrounds"/>.
+    /// Stores <paramref name="backgrounds"/> (on a template or a variant): the first as <see cref="IGeneratedBackgrounds.Background"/>
+    /// (so one background reads as it always has) and any others in <see cref="IGeneratedBackgrounds.Backgrounds"/>.
     /// </summary>
-    public static void SetBackgrounds(GeneratedPromoTemplate template, IEnumerable<string?> backgrounds)
+    public static void SetBackgrounds(IGeneratedBackgrounds template, IEnumerable<string?> backgrounds)
     {
         List<string> kept = [.. backgrounds.OfType<string>().Select(path => path.Trim()).Where(path => path.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)];

@@ -23,6 +23,12 @@ public sealed record ResolvedGeneratedPromo(
     /// <summary>Background chosen by show rules; null also represents no eligible background while rules are enabled.</summary>
     public string? SelectedBackground { get; init; }
 
+    /// <summary>The id of the variant picked for this promo; null for the template's default look (or a template without variants).</summary>
+    public string? Variant { get; init; }
+
+    /// <summary>The file or wording picked for each layer (by index) that has others to pick from and didn't use its own.</summary>
+    public IReadOnlyDictionary<int, string> LayerChoices { get; init; } = new Dictionary<int, string>();
+
     /// <summary>The promoted episode's file when the template plays a clip of it.</summary>
     public string? ClipPath { get; init; }
 
@@ -122,7 +128,8 @@ public static partial class GeneratedPromoResolver
         DateTimeOffset? airsAt = null,
         GeneratedImageSubjects? imageSubjects = null,
         IAutomaticImageLookup? automaticImages = null,
-        GeneratedVoiceContext? where = null)
+        GeneratedVoiceContext? where = null,
+        SchedularrTV.Core.Media.MediaItem? programme = null)
     {
         if (listings.Count == 0)
         {
@@ -136,10 +143,39 @@ public static partial class GeneratedPromoResolver
         // Variable images' automatic pictures are part of the promo's key, so finding one later makes the promo again with it.
         IReadOnlyDictionary<string, string> images = GeneratedPromoImages.Resolve(template, listings, imageSubjects, automaticImages);
         DateTimeOffset promoTime = airsAt ?? used[0].Start;
-
-        List<IReadOnlyList<string>> lines = [.. template.Layers.Select(layer => Lines(layer,
-            layer.Kind == GeneratedLayerKind.UpNext ? upcoming : used, zone, channelName, promoTime))];
         string variety = $"{string.Join('|', used.Select(listing => $"{listing.Title}@{listing.Start.UtcTicks}"))}|{promoTime.UtcTicks}";
+
+        // What pick rules (backgrounds', variants' and layers') look at: the Now Playing show itself, which is
+        // authoritative even when it started before the promo or the schedule still calls the previous one "current" at
+        // a break boundary; otherwise the shows coming up.
+        bool nowPlaying = template.Type == GeneratedPromoType.NowPlaying;
+        IReadOnlyList<UpNextListing> ruleSubjects = nowPlaying ? used
+            : imageSubjects?.Upcoming ?? (template.Type == GeneratedPromoType.UpNext ? listings : []);
+
+        // The variant this promo shows (null: the template's default look), picked once per promo.
+        GeneratedPromoVariant? variant = GeneratedPromoBackgrounds.SelectVariant(template, ruleSubjects, promoTime, variety, programme, nowPlaying, zone);
+
+        // Each layer's file or wording, for layers with others to pick from; the rest use their own.
+        Dictionary<int, string> choices = [];
+        List<GeneratedLayer> effective = new(template.Layers.Count);
+        for (int index = 0; index < template.Layers.Count; index++)
+        {
+            GeneratedLayer layer = template.Layers[index];
+            string own = (layer.Kind == GeneratedLayerKind.Text ? layer.Text : layer.Path) ?? string.Empty;
+            if (GeneratedPromoBackgrounds.SelectChoice(layer, ruleSubjects, promoTime, $"{variety}|layer|{layer.Id ?? index.ToString(CultureInfo.InvariantCulture)}",
+                    nowPlaying, zone) is { } chosen && !string.Equals(chosen, own, StringComparison.Ordinal))
+            {
+                choices[index] = chosen;
+                effective.Add(layer.WithChoice(chosen));
+            }
+            else
+            {
+                effective.Add(layer);
+            }
+        }
+
+        List<IReadOnlyList<string>> lines = [.. effective.Select(layer => Lines(layer,
+            layer.Kind == GeneratedLayerKind.UpNext ? upcoming : used, zone, channelName, promoTime))];
 
         // A pre-recorded voice-over: the voice pack templates that can say it for these shows (one is chosen, with its
         // takes, when the promo is made). Its read-out is only for the editor.
@@ -192,6 +228,12 @@ public static partial class GeneratedPromoResolver
         Dictionary<int, AiTextJob> layerJobs = [];
         for (int index = 0; index < template.Layers.Count; index++)
         {
+            // A layer the picked variant doesn't show isn't worth writing.
+            if (!GeneratedPromoVariants.Visible(template, variant?.Id, template.Layers[index]))
+            {
+                continue;
+            }
+
             if (GeneratedPromoWriting.Layer(template, template.Layers[index], index, channelName, used, zone, promoTime,
                     string.Join('\n', lines[index]), variety) is { } layerJob)
             {
@@ -220,7 +262,7 @@ public static partial class GeneratedPromoResolver
         Dictionary<int, PromoVideoSource> videos = [];
         for (int index = 0; index < template.Layers.Count; index++)
         {
-            if (VideoSource(template, template.Layers[index], index, listings, imageSubjects, promoTime) is { } video)
+            if (VideoSource(template, effective[index], index, listings, imageSubjects, promoTime) is { } video)
             {
                 videos[index] = video;
                 identity += $"|video|{index}|{video.Path}|{video.Start.Ticks}";
@@ -253,9 +295,25 @@ public static partial class GeneratedPromoResolver
         }
 
         // Background videos once played silently; promos that now play one's sound are rendered again.
-        if (BackgroundSound(template).Enabled && template.BackgroundChoices.Any(path => !PromoRenderer.IsImage(path)))
+        if (BackgroundSound(template).Enabled && template.BackgroundChoices
+                .Concat((template.Variants ?? []).SelectMany(each => each.BackgroundChoices)).Any(path => !PromoRenderer.IsImage(path)))
         {
             identity += "|background-sound";
+        }
+
+        // The variant and each layer's pick are what the promo is, so another pick is another promo.
+        if (template.HasVariants)
+        {
+            identity += $"|variant|{variant?.Id ?? "default"}";
+        }
+
+        if (choices.Count > 0)
+        {
+            identity += $"|choices|{JsonSerializer.Serialize(choices, KeyJson)}";
+            foreach (string path in choices.Values.Where(File.Exists).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                identity += $"|{path}|{File.GetLastWriteTimeUtc(path).Ticks}";
+            }
         }
 
         IReadOnlyList<string> arguments = template.Generator is { } generator
@@ -266,21 +324,21 @@ public static partial class GeneratedPromoResolver
             identity += $"|generator|{JsonSerializer.Serialize(arguments, KeyJson)}";
         }
 
+        // With variants, the background comes from the picked variant (or the template's, for the default look and
+        // variants without backgrounds of their own); otherwise from the template, by its rules when it has any.
         string? selectedBackground = null;
-        if (template.BackgroundRules is { Count: > 0 })
+        IGeneratedBackgrounds backgroundHost = variant is { BackgroundChoices.Count: > 0 } ? variant : template;
+        if (template.HasVariants || template.BackgroundRules is { Count: > 0 })
         {
-            bool nowPlaying = template.Type == GeneratedPromoType.NowPlaying;
-            // The Now Playing subject is authoritative, even when it started before the promo or the
-            // surrounding schedule context still calls the previous programme "current" at a break boundary.
-            IReadOnlyList<UpNextListing> subjects = nowPlaying ? used
-                : imageSubjects?.Upcoming ?? (template.Type == GeneratedPromoType.UpNext ? listings : []);
-            selectedBackground = GeneratedPromoBackgrounds.Select(template, subjects, promoTime, identity + variety, nowPlaying, zone);
+            selectedBackground = GeneratedPromoBackgrounds.Select(backgroundHost, ruleSubjects, promoTime, identity + variety, nowPlaying, zone);
             identity += $"|selected-background|{JsonSerializer.Serialize(selectedBackground)}";
         }
         string key = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity)))[..32];
         return new ResolvedGeneratedPromo(template, lines, script, key)
         {
             SelectedBackground = selectedBackground,
+            Variant = variant?.Id,
+            LayerChoices = choices,
             ClipPath = clip?.Path,
             ClipStart = clip?.Start ?? TimeSpan.Zero,
             GeneratorArguments = arguments,
@@ -506,12 +564,15 @@ public static partial class GeneratedPromoResolver
         GeneratedPromoTemplate template = promo.Template;
         // A generator that is handed the clip plays it itself, so it isn't laid underneath as well.
         string? clipPath = template.BackgroundClip is null || UsesClip(template.Generator) ? null : promo.ClipPath;
-        string? background = clipPath ?? (template.BackgroundRules is { Count: > 0 }
+        string? background = clipPath ?? (template.HasVariants || template.BackgroundRules is { Count: > 0 }
             ? promo.SelectedBackground : Background(template.BackgroundChoices, promo.Key));
-        // Over an episode clip there's no chosen background, so layers sit where the template puts them.
+        // Layers are placed, timed and coloured as the picked variant has them. Older templates (per-background layouts
+        // not yet turned into variants) go by the background; over an episode clip there's none, so they sit where the
+        // template puts them.
+        string? edits = template.HasVariants ? promo.Variant : clipPath is null ? background : null;
         Dictionary<int, PromoLayer> drawnByIndex = [];
         List<(PromoVideoLayer Layer, CuratedClip Clip)> curatedDrawn = [];
-        List<PromoLayer> layers = template.Generator is not null ? [] : DrawnLayers(promo, clipPath is null ? background : null, drawnByIndex, curatedDrawn);
+        List<PromoLayer> layers = template.Generator is not null ? [] : DrawnLayers(promo, edits, drawnByIndex, curatedDrawn);
         return new PromoComposition
         {
             LayerAudio = [.. VideoAudio(template, drawnByIndex), .. CuratedAudio(curatedDrawn, template.Duration)],
@@ -634,7 +695,7 @@ public static partial class GeneratedPromoResolver
                 return done;
             }
 
-            GeneratedLayer layer = template.Layers[index];
+            GeneratedLayer layer = promo.LayerChoices.TryGetValue(index, out string? chosen) ? template.Layers[index].WithChoice(chosen) : template.Layers[index];
             PromoLayer? drawn = Layer(layer, Pose(template, background, layer), TimingFor(template, background, layer),
                 ColorFor(template, background, layer), promo.LayerLines[index], promo.VariableImages, promo.LayerVideos.GetValueOrDefault(index));
             building.Add(index);
@@ -652,7 +713,8 @@ public static partial class GeneratedPromoResolver
         List<PromoLayer> layers = [];
         for (int index = 0; index < template.Layers.Count; index++)
         {
-            if (Build(index) is not { } drawn)
+            // Layers of other variants, and the template's layers this variant hides (with what's inside them), aren't drawn.
+            if (!GeneratedPromoVariants.Visible(template, background, template.Layers[index]) || Build(index) is not { } drawn)
             {
                 continue;
             }
@@ -724,26 +786,29 @@ public static partial class GeneratedPromoResolver
     public static IGeneratedPose Pose(GeneratedPromoTemplate template, string? background, GeneratedLayer layer) =>
         Placement(template, background, layer) ?? (IGeneratedPose)layer;
 
-    /// <summary><paramref name="background"/>'s own placement of the layer, or null when it uses the template's.</summary>
+    /// <summary>
+    /// The layer edits that <paramref name="key"/> stands for: the variant with that id, or (in older templates not yet
+    /// turned into variants) the background with that path's layout. Null for the template's own layout.
+    /// </summary>
+    public static IGeneratedLayerEdits? Edits(GeneratedPromoTemplate template, string? key) =>
+        key is null ? null
+            : (IGeneratedLayerEdits?)template.Variant(key)
+              ?? template.BackgroundOverrides?.FirstOrDefault(tracked => string.Equals(tracked.Background, key, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The variant's (<paramref name="background"/>: its id, or an older template's background) own placement of the layer, or null when it uses the template's.</summary>
     public static GeneratedLayerOverride? Placement(GeneratedPromoTemplate template, string? background, GeneratedLayer layer) =>
-        background is null || layer.Id is not { Length: > 0 } id ? null
-            : template.BackgroundOverrides?
-                .FirstOrDefault(tracked => string.Equals(tracked.Background, background, StringComparison.OrdinalIgnoreCase))?
-                .Layers.FirstOrDefault(placed => string.Equals(placed.Layer, id, StringComparison.Ordinal));
+        layer.Id is not { Length: > 0 } id ? null
+            : Edits(template, background)?.Layers.FirstOrDefault(placed => string.Equals(placed.Layer, id, StringComparison.Ordinal));
 
-    /// <summary><paramref name="background"/>'s own colour for the layer, or null when it uses the layer's.</summary>
+    /// <summary>The variant's own colour for the layer, or null when it uses the layer's.</summary>
     public static GeneratedLayerColor? Recolour(GeneratedPromoTemplate template, string? background, GeneratedLayer layer) =>
-        background is null || layer.Id is not { Length: > 0 } id ? null
-            : template.BackgroundOverrides?
-                .FirstOrDefault(tracked => string.Equals(tracked.Background, background, StringComparison.OrdinalIgnoreCase))?
-                .Colors?.FirstOrDefault(colour => string.Equals(colour.Layer, id, StringComparison.Ordinal));
+        layer.Id is not { Length: > 0 } id ? null
+            : Edits(template, background)?.Colors?.FirstOrDefault(colour => string.Equals(colour.Layer, id, StringComparison.Ordinal));
 
-    /// <summary><paramref name="background"/>'s own timing of the layer, or null when it uses the layer's.</summary>
+    /// <summary>The variant's own timing of the layer, or null when it uses the layer's.</summary>
     public static GeneratedLayerTiming? Retiming(GeneratedPromoTemplate template, string? background, GeneratedLayer layer) =>
-        background is null || layer.Id is not { Length: > 0 } id ? null
-            : template.BackgroundOverrides?
-                .FirstOrDefault(tracked => string.Equals(tracked.Background, background, StringComparison.OrdinalIgnoreCase))?
-                .Timings?.FirstOrDefault(timed => string.Equals(timed.Layer, id, StringComparison.Ordinal));
+        layer.Id is not { Length: > 0 } id ? null
+            : Edits(template, background)?.Timings?.FirstOrDefault(timed => string.Equals(timed.Layer, id, StringComparison.Ordinal));
 
     /// <summary>When the layer shows over <paramref name="background"/>, and how it comes and goes: that background's own timing, or the layer's.</summary>
     public static IGeneratedTiming TimingFor(GeneratedPromoTemplate template, string? background, GeneratedLayer layer) =>

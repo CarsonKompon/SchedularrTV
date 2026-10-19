@@ -51,16 +51,18 @@ public sealed class GeneratedPromoMaker(GeneratedPromoService promos, Schedularr
 
         GeneratedImageSubjects subjects = GeneratedImageSubjects.FromSchedule(schedule, airsAt, template: template);
         var where = new GeneratedVoiceContext(channel.Id, blockName, channel.Name);
+        // Variants limited to some programmes check the one this promo is about.
+        SchedularrTV.Core.Media.MediaItem? programme = template.HasVariants ? UpNextPromo.ItemFor(schedule, listings[0]) : null;
 
         // Made now, so variable images' automatic pictures are waited for first.
         if (automaticImages?.Lookup(queue: true) is { } lookup)
         {
-            _ = GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, airsAt, subjects, lookup, where);
+            _ = GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, airsAt, subjects, lookup, where, programme);
             await lookup.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
         if (GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, airsAt, subjects,
-                automaticImages?.Lookup(queue: false), where) is not { } promo)
+                automaticImages?.Lookup(queue: false), where, programme) is not { } promo)
         {
             return null;
         }

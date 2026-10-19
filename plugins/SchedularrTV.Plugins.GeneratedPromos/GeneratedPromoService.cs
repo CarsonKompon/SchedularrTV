@@ -227,7 +227,9 @@ public sealed partial class GeneratedPromoService(
                         bool making = watched && WithinLead(config.Settings, entry.Start, now);
                         ResolvedGeneratedPromo promo = GeneratedPromoResolver.Resolve(template, source.Owner.Name, listings, zone, entry.Start,
                             GeneratedImageSubjects.FromSchedule(schedule, entry.Start, entry.End, template), automaticImages?.Lookup(queue: making),
-                            new GeneratedVoiceContext(channel!.Id, entry.BlockName, channel.Name))!
+                            new GeneratedVoiceContext(channel!.Id, entry.BlockName, channel.Name),
+                            // Variants limited to some programmes check the one this promo is about.
+                            listings.Count > 0 && template.HasVariants ? UpNextPromo.ItemFor(schedule, listings[0]) : null)!
                             with { Folder = Folder(source, template) };
                         path = Existing(promo);
                         if (path is not null)

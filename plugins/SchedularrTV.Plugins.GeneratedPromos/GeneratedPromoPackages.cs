@@ -89,6 +89,40 @@ public static class GeneratedPromoPackages
         foreach (GeneratedLayer layer in template.Layers)
         {
             layer.Path = await map(layer.Path).ConfigureAwait(false);
+
+            // An image or video layer's other files to pick from; wordings aren't files.
+            if (layer.Kind != GeneratedLayerKind.Text && layer.Alternatives is { } alternatives)
+            {
+                foreach (GeneratedLayerChoice choice in alternatives.ToList())
+                {
+                    if (await map(choice.Value).ConfigureAwait(false) is { Length: > 0 } moved) choice.Value = moved;
+                    else alternatives.Remove(choice);
+                }
+
+                layer.Alternatives = alternatives.Count == 0 ? null : alternatives;
+            }
+        }
+
+        // Each variant's own backgrounds, and their rules (kept by path).
+        foreach (GeneratedPromoVariant variant in template.Variants ?? [])
+        {
+            List<string> variantBackgrounds = [];
+            foreach (string variantBackground in variant.BackgroundChoices)
+            {
+                string? moved = await map(variantBackground).ConfigureAwait(false);
+                foreach (GeneratedBackgroundRule variantRule in (variant.BackgroundRules ?? [])
+                             .Where(candidate => string.Equals(candidate.Background, variantBackground, StringComparison.OrdinalIgnoreCase)).ToList())
+                {
+                    if (moved is { Length: > 0 }) variantRule.Background = moved;
+                    else variant.BackgroundRules!.Remove(variantRule);
+                }
+
+                if (moved is { Length: > 0 }) variantBackgrounds.Add(moved);
+            }
+
+            variant.Background = variantBackgrounds.Count > 0 ? variantBackgrounds[0] : null;
+            variant.Backgrounds = variantBackgrounds.Count > 1 ? [.. variantBackgrounds.Skip(1)] : null;
+            if (variant.BackgroundRules is { Count: 0 }) variant.BackgroundRules = null;
         }
 
         foreach (GeneratedVariableImage image in template.VariableImages ?? [])
@@ -240,6 +274,8 @@ public static class GeneratedPromoPackages
     {
         GeneratedPromoTemplate template = reader.Item<GeneratedPromoTemplate>();
         Func<string?, Task<string?>> keep = path => reader.AssetAsync(path, assets, AssetCategory, cancellationToken);
+        // Packages from before variants: their per-background layouts become variants, as the schedule's do.
+        GeneratedPromoVariants.Convert(template);
         GeneratedVoicePack? packagedVoice = template.VoicePack;
         template.VoicePack = null;
         if (packagedVoice is not null && voiceLibrary is not null)

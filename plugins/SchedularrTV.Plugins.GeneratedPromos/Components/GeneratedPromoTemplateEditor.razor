@@ -317,20 +317,7 @@
                 <div class="spacer"></div>
                 <span class="ed-meta">@Template.Width × @Template.Height</span>
             </div>
-            @if (_editBackground is { } editingBackground)
-            {
-                <div class="banner ed-placing" role="status">
-                    <div>
-                        <strong>Placing layers for @Path.GetFileName(editingBackground)</strong>
-                        <span class="hint" style="margin:0;display:block;">
-                            Moving, resizing, opacity, keyframes, colour, and when layers appear, leave and how they animate in and out now change this background only (⌖ marks layers set for it;
-                            @GeneratedPromoEditing.PlacedCount(Template, editingBackground) so far). Everything else still applies to every background.
-                        </span>
-                    </div>
-                    <div class="spacer"></div>
-                    <button class="btn btn-sm btn-primary" type="button" @onclick="() => EditBackground(null)">Done</button>
-                </div>
-            }
+            @(VariantBar())
             @if (!Template.Layers.Any(layer => layer.Kind == RequiredKind))
             {
                 @* Optional: a template can show the shows with variable images alone. *@
@@ -349,7 +336,7 @@
                 @* The preview frame. Script swaps it in only once the next frame has decoded, so it never blanks between frames;
                    the renderer leaves this element alone (nothing about it changes between renders). *@
                 <div class="ed-still" id="@_stillId" aria-hidden="true"></div>
-                @foreach (GeneratedLayer layer in Template.Layers)
+                @foreach (GeneratedLayer layer in Template.Layers.Where(VisibleHere))
                 {
                     bool isSelected = ReferenceEquals(layer, _layer);
                     bool inSelection = _chosen.Contains(layer);
@@ -381,7 +368,7 @@
                 @* Pinned layers' shapes, and with the Perspective tool, the selected layer's four corners to drag. In the
                    template's own pixels, so they line up with the frame however wide the canvas is drawn. *@
                 <svg class="ed-quads" viewBox="0 0 @Template.Width @Template.Height" preserveAspectRatio="none" aria-hidden="true">
-                    @foreach (GeneratedLayer layer in Template.Layers)
+                    @foreach (GeneratedLayer layer in Template.Layers.Where(VisibleHere))
                     {
                         bool showQuad = IsPinned(layer) || (_pinTool && ReferenceEquals(layer, _layer));
                         if (showQuad)
@@ -433,7 +420,7 @@
                     <div class="spacer"></div>
                     @if (_layer is { } timedLayer)
                     {
-                        <span class="ed-meta">@Label(timedLayer)@(Pose(timedLayer).Keyframes is { Count: > 0 } timedKeys ? $" · {timedKeys.Count} keyframe{(timedKeys.Count == 1 ? "" : "s")}" : "")@(PlacedHere(timedLayer) ? " · placed for this background" : "")</span>
+                        <span class="ed-meta">@Label(timedLayer)@(Pose(timedLayer).Keyframes is { Count: > 0 } timedKeys ? $" · {timedKeys.Count} keyframe{(timedKeys.Count == 1 ? "" : "s")}" : "")@(PlacedHere(timedLayer) ? " · set for this variant" : "")</span>
                     }
                 </div>
                 <div class="ed-ruler" id="@_rulerId" role="slider" tabindex="0" aria-label="Preview time" aria-valuemin="0"
@@ -554,11 +541,13 @@
                 }
             </div>
             <ol class="layer-list layer-tree @(_listDrag is null ? "" : "dragging")" aria-label="Layers">
-                @foreach ((GeneratedLayer layer, int depth) in GeneratedPromoHierarchy.Rows(Template, IsOpen))
+                @foreach ((GeneratedLayer layer, int depth) in ListedRows())
                 {
                     bool rowGroup = GeneratedPromoHierarchy.IsGroup(layer);
                     string drop = ReferenceEquals(_dropOn, layer) ? $"drop-{_dropWhere.ToString().ToLowerInvariant()}" : "";
-                    <li class="layer-row @(ReferenceEquals(layer, _layer) ? "selected" : "") @(_chosen.Contains(layer) ? "chosen" : "") @drop" @key="layer"
+                    bool ownRow = layer.Variant is not null;
+                    bool hiddenRow = !ownRow && GeneratedPromoVariants.Hides(EditingVariant, layer);
+                    <li class="layer-row @(ReferenceEquals(layer, _layer) ? "selected" : "") @(_chosen.Contains(layer) ? "chosen" : "") @(ownRow ? "variant-own" : "") @(hiddenRow ? "variant-hidden" : "") @drop" @key="layer"
                         style="padding-left:@(depth * 16)px" draggable="true"
                         @ondragstart="() => StartListDrag(layer)" @ondragend="EndListDrag"
                         @ondragover="e => ListDragOver(e, layer)" @ondragover:preventDefault="true"
@@ -574,9 +563,22 @@
                         }
                         <button type="button" class="layer-select" aria-pressed="@(_chosen.Contains(layer) ? "true" : "false")"
                                 @onclick="e => ClickRow(e, layer)">
-                            <span>@(rowGroup ? "▣ " : "")@Label(layer)</span>
-                            <small>@(layer.Mask is { } rowMask ? $"{rowMask.Mode} mask" : rowGroup ? $"{GeneratedPromoHierarchy.Children(Template, layer).Count} inside" : KindName(layer.Kind))</small>
+                            <span>
+                                @(rowGroup ? "▣ " : "")@Label(layer)
+                                @if (ownRow)
+                                {
+                                    <span class="vt-own-badge" title="Only in this variant">only here</span>
+                                }
+                            </span>
+                            <small>@(hiddenRow ? "hidden in this variant" : layer.Mask is { } rowMask ? $"{rowMask.Mode} mask" : rowGroup ? $"{GeneratedPromoHierarchy.Children(Template, layer).Count} inside" : KindName(layer.Kind))@(layer.Alternatives is { Count: > 0 } rowChoices ? $" · {rowChoices.Count + 1} to pick from" : "")</small>
                         </button>
+                        @if (_editVariant is not null && !ownRow)
+                        {
+                            <button class="layer-lock @(hiddenRow ? "on" : "")" type="button" aria-pressed="@(hiddenRow ? "true" : "false")"
+                                    aria-label="@(hiddenRow ? "Show" : "Hide") @Label(layer) in this variant"
+                                    title="@(hiddenRow ? "Show it in this variant again" : "Hide it in this variant (the default and other variants still show it)")"
+                                    @onclick="() => SetHidden(layer, !hiddenRow)">@(hiddenRow ? "🚫" : "👁")</button>
+                        }
                         @{
                             bool lockedByGroup = !layer.Locked && IsLocked(layer);
                         }
@@ -713,6 +715,7 @@
                             <span>Text ({channel} is the channel name; new lines start new lines)</span>
                             <textarea rows="2" @onchange="e => Set(() => selected.Text = Text(e))">@selected.Text</textarea>
                         </label>
+                        @(LayerChoices(selected, "wording"))
                         <label class="check">
                             <input type="checkbox" checked="@(selected.Writer is not null)"
                                    @onchange="e => Set(() => selected.Writer = e.Value is true ? selected.Writer ?? new AiTextConfig() : null)" />
@@ -765,6 +768,7 @@
                         {
                             <p class="hint warn">The scheduler can't find this file.</p>
                         }
+                        @(LayerChoices(selected, "image"))
                         }
                     }
                     else if (selected.Kind == GeneratedLayerKind.Video)
@@ -798,6 +802,7 @@
                             {
                                 <p class="hint warn">The scheduler can't find this file.</p>
                             }
+                            @(LayerChoices(selected, "video"))
                             <label class="field">
                                 <span>Start into the file (s)</span>
                                 <input type="number" min="0" step="0.1" value="@Number(video.FileStart.TotalSeconds)"
@@ -954,10 +959,10 @@
                     @if (selected.Kind is not (GeneratedLayerKind.Image or GeneratedLayerKind.Group or GeneratedLayerKind.Video))
                     {
                         (string rgb, int alpha) = GeneratedPromoEditing.SplitColor(ColorOf(selected));
-                        bool ownColour = _editBackground is not null && GeneratedPromoResolver.Recolour(Template, _editBackground, selected) is not null;
+                        bool ownColour = OverridesFor(selected) && GeneratedPromoResolver.Recolour(Template, _editVariant, selected) is not null;
                         <div class="grid grid-2">
                             <div class="field">
-                                <span>Colour@(_editBackground is null ? "" : ownColour ? " (this background's)" : " (the template's; changing it sets this background's)")</span>
+                                <span>Colour@(!OverridesFor(selected) ? "" : ownColour ? " (this variant's)" : " (the default's; changing it sets this variant's)")</span>
                                 <ScreenColourPicker @key="selected" Value="@rgb"
                                                     ValueChanged="colour => SetColor(selected, GeneratedPromoEditing.JoinColor(colour, alpha))" />
                             </div>
@@ -997,21 +1002,31 @@
                     }
 
                     @{ LayerPose selectedPose = GeneratedPromoEditing.PoseAt(Pose(selected), Time); }
-                    @if (_editBackground is { } placingFor)
+                    @if (selected.Variant is { } ownerId)
+                    {
+                        <div class="ed-placing-layer">
+                            <span class="hint" style="margin:0;">
+                                <span class="vt-own-badge">only in @VariantLabel(ownerId)</span> This layer belongs to that variant: everything about it is its own.
+                            </span>
+                        </div>
+                    }
+                    else if (_editVariant is { } placingFor && OverridesFor(selected))
                     {
                         <div class="ed-placing-layer">
                             @if (PlacedHere(selected))
                             {
                                 <span class="hint" style="margin:0;">
-                                    ⌖ @CustomisedParts(selected, placingFor) its own way for @Path.GetFileName(placingFor).
+                                    ⌖ @CustomisedParts(selected, placingFor) its own way for @VariantLabel(placingFor).
                                 </span>
-                                <button class="btn btn-sm" type="button" title="Use the template's position, size, opacity, keyframes, timing and colour again for this background"
-                                        @onclick="() => ResetPlacement(selected)">Use the template's</button>
+                                <button class="btn btn-sm" type="button" title="Use the default's position, size, opacity, keyframes, timing and colour again in this variant"
+                                        @onclick="() => ResetPlacement(selected)">Use the default's</button>
                             }
                             else
                             {
-                                <span class="hint" style="margin:0;">As the template has it; move it or change its colour to set it for @Path.GetFileName(placingFor) only.</span>
+                                <span class="hint" style="margin:0;">As the default has it; move it or change its colour to set it for @VariantLabel(placingFor) only.</span>
                             }
+                            <button class="btn btn-sm" type="button" title="Don't show this layer in this variant (it stays in the default and other variants)"
+                                    @onclick="() => SetHidden(selected, true)">Hide in this variant</button>
                         </div>
                     }
                     <h4>
@@ -1080,17 +1095,17 @@
                     @{ IGeneratedTiming timing = Timing(selected); }
                     <h4>
                         Timing and animation
-                        @if (_editBackground is { } timingFor)
+                        @if (_editVariant is { } timingFor && OverridesFor(selected))
                         {
                             @if (GeneratedPromoResolver.Retiming(Template, timingFor, selected) is not null)
                             {
-                                <span class="ed-meta">· this background's own</span>
-                                <button class="btn btn-sm" type="button" title="Use the template's timing and transitions again for this background"
-                                        @onclick="() => ResetTiming(selected)">Use the template's</button>
+                                <span class="ed-meta">· this variant's own</span>
+                                <button class="btn btn-sm" type="button" title="Use the default's timing and transitions again in this variant"
+                                        @onclick="() => ResetTiming(selected)">Use the default's</button>
                             }
                             else
                             {
-                                <span class="ed-meta">· the template's; changing it sets this background's</span>
+                                <span class="ed-meta">· the default's; changing it sets this variant's</span>
                             }
                         }
                     </h4>
@@ -1544,6 +1559,12 @@
 
     protected override void OnParametersSet()
     {
+        // A variant that's gone (the template was swapped or reloaded) goes back to the default look.
+        if (_editVariant is not null && Template.Variant(_editVariant) is null)
+        {
+            _editVariant = null;
+        }
+
         if (_layer is not null && !Template.Layers.Contains(_layer))
         {
             _layer = Template.Layers.FirstOrDefault();
@@ -1901,19 +1922,50 @@
         }
     }
 
-    /// <summary>The template as the preview draws it: with only the background chosen to preview, when one is.</summary>
+    /// <summary>
+    /// The template as the preview draws it: as the edited variant (or the default look) always, whatever its
+    /// availability, chance or rules say, with only the background chosen to preview when one is.
+    /// </summary>
     private GeneratedPromoTemplate StillTemplate()
     {
-        if (_previewBackground is not { } background
-            || !GeneratedPromoEditing.Backgrounds(Template).Contains(background, StringComparer.OrdinalIgnoreCase))
+        if (_previewBackground is { } chosen && !BackgroundList.Contains(chosen, StringComparer.OrdinalIgnoreCase))
         {
             _previewBackground = null;
+        }
+
+        if (_previewBackground is null && !Template.HasVariants)
+        {
             return Template;
         }
 
         GeneratedPromoTemplate copy = GeneratedPromoEditing.Copy(Template);
-        GeneratedPromoEditing.SetBackgrounds(copy, [background]);
-        copy.BackgroundRules = null; // Explicit audition/editing can show an otherwise ineligible background.
+        GeneratedPromoVariant? editing = copy.Variant(_editVariant);
+        if (editing is null)
+        {
+            // The default look: no variants to pick.
+            copy.Variants = null;
+            copy.DefaultWeight = null;
+        }
+        else
+        {
+            // Only this variant, always picked.
+            editing.Enabled = true;
+            editing.Weight = 1;
+            editing.Availability = null;
+            copy.Variants = [editing];
+            copy.DefaultWeight = 0;
+        }
+
+        // The edited variant is shown even when none of its backgrounds could be picked right now; an explicitly
+        // previewed background is shown whatever its rule says. Otherwise the canvas shows the one these shows would get.
+        IGeneratedBackgrounds host = editing is { BackgroundChoices.Count: > 0 } ? editing : copy;
+        if (editing is not null) editing.BackgroundRules = null;
+        if (_previewBackground is { } background)
+        {
+            host.BackgroundRules = null;
+            GeneratedPromoEditing.SetBackgrounds(host, [background]);
+        }
+
         return copy;
     }
 
@@ -2273,17 +2325,33 @@
             GeneratedPromoEditing.SetPose(target, Time, change(GeneratedPromoEditing.PoseAt(target, Time), (float)value));
         });
 
-    // ---- Placing layers per background ----
+    // ---- Variants ----
 
-    // The background whose placements are being edited; null edits the template's own.
-    private string? _editBackground;
+    // The variant being edited (its id); null edits the template's own (default) look.
+    private string? _editVariant;
 
-    /// <summary>Where the layer is in what the canvas shows: the edited background's placement of it, or the template's.</summary>
-    private IGeneratedPose Pose(GeneratedLayer layer) => GeneratedPromoResolver.Pose(Template, _editBackground, layer);
+    /// <summary>The variant being edited, or null for the default look.</summary>
+    private GeneratedPromoVariant? EditingVariant => Template.Variant(_editVariant);
 
-    /// <summary>What a move, resize or keyframe change goes into: the edited background's placement (made on first change), or the layer.</summary>
+    /// <summary>
+    /// Whether changes to the layer's place, timing and colour go into the edited variant's own edits: for the template's
+    /// layers while editing a variant. A variant's own layers (and everything in the default look) change the layer itself.
+    /// </summary>
+    private bool OverridesFor(GeneratedLayer layer) => EditingVariant is not null && layer.Variant is null;
+
+    /// <summary>Whether the layer is drawn in what's being edited (the default look, or the edited variant).</summary>
+    private bool VisibleHere(GeneratedLayer layer) => GeneratedPromoVariants.Visible(Template, _editVariant, layer);
+
+    /// <summary>A variant's name, or the default look's.</summary>
+    private string VariantLabel(string? id) =>
+        Template.Variant(id) is { } variant ? (string.IsNullOrWhiteSpace(variant.Name) ? "Untitled variant" : variant.Name) : GeneratedPromoVariants.DefaultName(Template);
+
+    /// <summary>Where the layer is in what the canvas shows: the edited variant's placement of it, or the template's.</summary>
+    private IGeneratedPose Pose(GeneratedLayer layer) => GeneratedPromoResolver.Pose(Template, _editVariant, layer);
+
+    /// <summary>What a move, resize or keyframe change goes into: the edited variant's placement (made on first change), or the layer.</summary>
     private IGeneratedPose Editable(GeneratedLayer layer) =>
-        _editBackground is { } background ? GeneratedPromoEditing.Place(Template, background, layer) : layer;
+        _editVariant is { } background && OverridesFor(layer) ? GeneratedPromoEditing.Place(Template, background, layer) : layer;
 
     /// <summary>
     /// <paramref name="key"/> (one of what <see cref="Pose"/> shows) in what gets edited: the same keyframe, or its copy in
@@ -2296,14 +2364,14 @@
         return ReferenceEquals(shown, target) ? (target, key) : (target, GeneratedPromoEditing.KeyframeAt(target, key.At));
     }
 
-    private bool PlacedHere(GeneratedLayer layer) => GeneratedPromoEditing.Customised(Template, _editBackground, layer);
+    private bool PlacedHere(GeneratedLayer layer) => GeneratedPromoEditing.Customised(Template, _editVariant, layer);
 
     /// <summary>When the layer shows in what the canvas shows: the edited background's own timing, or the layer's.</summary>
-    private IGeneratedTiming Timing(GeneratedLayer layer) => GeneratedPromoResolver.TimingFor(Template, _editBackground, layer);
+    private IGeneratedTiming Timing(GeneratedLayer layer) => GeneratedPromoResolver.TimingFor(Template, _editVariant, layer);
 
     /// <summary>What a timing change goes into: the edited background's timing (made on first change), or the layer.</summary>
     private IGeneratedTiming EditableTiming(GeneratedLayer layer) =>
-        _editBackground is { } background ? GeneratedPromoEditing.Retime(Template, background, layer) : layer;
+        _editVariant is { } background && OverridesFor(layer) ? GeneratedPromoEditing.Retime(Template, background, layer) : layer;
 
     /// <summary>"Placed", "Timed and coloured" and the like: what <paramref name="background"/> sets its own way for the layer.</summary>
     private string CustomisedParts(GeneratedLayer layer, string background)
@@ -2322,15 +2390,15 @@
     }
 
     private Task ResetTiming(GeneratedLayer layer) =>
-        _editBackground is { } background ? Set(() => GeneratedPromoEditing.Untime(Template, background, layer)) : Task.CompletedTask;
+        _editVariant is { } background ? Set(() => GeneratedPromoEditing.Untime(Template, background, layer)) : Task.CompletedTask;
 
     /// <summary>The layer's colour in what the canvas shows: the edited background's own, or the layer's.</summary>
-    private string ColorOf(GeneratedLayer layer) => GeneratedPromoResolver.ColorFor(Template, _editBackground, layer);
+    private string ColorOf(GeneratedLayer layer) => GeneratedPromoResolver.ColorFor(Template, _editVariant, layer);
 
     /// <summary>Sets the layer's colour: for the edited background only while placing layers for one, otherwise everywhere.</summary>
     private Task SetColor(GeneratedLayer layer, string color) => Set(() =>
     {
-        if (_editBackground is { } background)
+        if (_editVariant is { } background && OverridesFor(layer))
         {
             GeneratedPromoEditing.Recolour(Template, background, layer, color);
         }
@@ -2340,17 +2408,270 @@
         }
     });
 
-    /// <summary>Starts (or stops, with null) placing layers for one background; the canvas shows that background meanwhile.</summary>
-    private void EditBackground(string? background)
+    /// <summary>
+    /// Switches to editing a variant (or, with null, the default look): the canvas and layer list show it, and changes to
+    /// the template's layers' place, timing and colour go into it. New layers belong to it.
+    /// </summary>
+    private void EditVariant(string? id)
     {
         _keys.Clear();
-        _editBackground = background;
-        _previewBackground = background;
+        _editVariant = Template.Variant(id)?.Id;
+        _previewBackground = null;
+        // A selection the variant doesn't show would be edited out of sight.
+        if (_layer is { } current && !VisibleHere(current))
+        {
+            _layer = Template.Layers.LastOrDefault(VisibleHere);
+            _chosen.Clear();
+            if (_layer is not null) _chosen.Add(_layer);
+        }
+
         RequestStill();
     }
 
+    /// <summary>
+    /// Above the canvas: the default look and each variant, to switch what's being edited, and to add one. While a
+    /// variant is edited, a line says what changes go where.
+    /// </summary>
+    private RenderFragment VariantBar() => __builder =>
+    {
+        <div class="vt-variant-bar" role="tablist" aria-label="Variants">
+            <span class="ed-toolbar-label">Variant</span>
+            <button type="button" role="tab" class="vt-variant-tab @(_editVariant is null ? "active" : "")" aria-selected="@(_editVariant is null ? "true" : "false")"
+                    title="The template's own look: its layers, backgrounds and placements" @onclick="() => EditVariant(null)">
+                @GeneratedPromoVariants.DefaultName(Template)
+                @if (Template.HasVariants && (Template.DefaultWeight ?? 1) <= 0)
+                {
+                    <span class="vt-variant-note">fallback</span>
+                }
+            </button>
+            @foreach (GeneratedPromoVariant variant in Template.Variants ?? [])
+            {
+                bool active = _editVariant == variant.Id;
+                <button type="button" role="tab" class="vt-variant-tab @(active ? "active" : "") @(variant.Enabled ? "" : "off")" @key="variant.Id"
+                        aria-selected="@(active ? "true" : "false")" @onclick="() => EditVariant(variant.Id)">
+                    @(string.IsNullOrWhiteSpace(variant.Name) ? "Untitled variant" : variant.Name)
+                    @if (!variant.Enabled)
+                    {
+                        <span class="vt-variant-note">off</span>
+                    }
+                    else if (variant.Availability is not null)
+                    {
+                        <span class="vt-variant-note" title="Has its own availability">⏱</span>
+                    }
+                </button>
+            }
+            <button type="button" class="btn btn-sm" title="A new variant of this promo, starting from the default look" @onclick="() => AddVariant(false)">+ Variant</button>
+            @if (EditingVariant is not null)
+            {
+                <button type="button" class="btn btn-sm" title="A new variant starting as a copy of this one (its backgrounds, placements and own layers)"
+                        @onclick="() => AddVariant(true)">Duplicate</button>
+            }
+        </div>
+        @if (EditingVariant is { } editing)
+        {
+            <p class="hint vt-variant-hint" role="status">
+                Editing <strong>@VariantLabel(editing.Id)</strong>: moving, resizing, keyframes, colour and timing of the default's layers change this
+                variant only (⌖ marks them; @GeneratedPromoEditing.PlacedCount(Template, editing.Id) so far), 👁 hides one here, and new layers belong to this
+                variant (<span class="vt-own-badge">only here</span>). Text, files and other settings of the default's layers still apply to every variant.
+            </p>
+        }
+    };
+
+    /// <summary>
+    /// The settings of what's being edited, as a variant among the others: its name, whether it's used, its relative
+    /// chance and its own availability (on top of the template's). For the default look, its name and chance.
+    /// </summary>
+    private RenderFragment VariantSettings() => __builder =>
+    {
+        if (EditingVariant is { } variant)
+        {
+            <div class="card vt-variant-settings">
+                <div class="grid grid-3">
+                    <label class="field">
+                        <span>Variant name</span>
+                        <input type="text" value="@variant.Name" @onchange="e => Set(() => variant.Name = Text(e).Trim())" />
+                    </label>
+                    <label class="field">
+                        <span>Relative chance (1 is normal)</span>
+                        <input type="number" min="0.1" max="1000" step="0.1" value="@Number(variant.Weight)"
+                               @onchange="e => SetNumber(e, value => variant.Weight = Math.Clamp(value, 0.1, 1000))" />
+                    </label>
+                    <label class="check template-enabled">
+                        <input type="checkbox" checked="@variant.Enabled" @onchange="e => Set(() => variant.Enabled = e.Value is true)" />
+                        <span>Use this variant</span>
+                    </label>
+                </div>
+                <h4>Variant availability <span class="ed-meta">on top of the promo's own</span></h4>
+                <label class="check">
+                    <input type="checkbox" checked="@(variant.Availability?.TimeRange is not null)"
+                           @onchange="e => SetVariantAvailability(variant, a => a.TimeRange = e.Value is true ? a.TimeRange ?? new GeneratedBackgroundTimeRange() : null)" />
+                    <span>Only during a daily time range</span>
+                </label>
+                @if (variant.Availability?.TimeRange is { } hours)
+                {
+                    <div class="grid grid-2">
+                        <label class="field">
+                            <span>From (channel-local time, inclusive)</span>
+                            <input type="time" step="60" value="@BackgroundTime(hours.Start)" @onchange="e => SetBackgroundTime(e, value => hours.Start = value)" />
+                        </label>
+                        <label class="field">
+                            <span>Until (exclusive)</span>
+                            <input type="time" step="60" value="@BackgroundTime(hours.End)" @onchange="e => SetBackgroundTime(e, value => hours.End = value)" />
+                        </label>
+                    </div>
+                }
+                <label class="check">
+                    <input type="checkbox" checked="@(variant.Availability?.DateRange is not null)"
+                           @onchange="e => SetVariantAvailability(variant, a => a.DateRange = e.Value is true ? a.DateRange ?? new GeneratedAnnualDateRange() : null)" />
+                    <span>Only during dates each year</span>
+                </label>
+                @if (variant.Availability?.DateRange is { } dates)
+                {
+                    <div class="grid grid-2">
+                        @foreach (bool start in new[] { true, false })
+                        {
+                            string date = start ? dates.Start : dates.End;
+                            <div class="field">
+                                <span>@(start ? "From (inclusive)" : "Through (inclusive)")</span>
+                                <div class="row">
+                                    <select aria-label="@(start ? "Start month" : "End month")" value="@AvailabilityDatePart(date, month: true)"
+                                            @onchange="e => SetAvailabilityDate(dates, start, month: true, e)">
+                                        @for (int month = 1; month <= 12; month++)
+                                        {
+                                            <option value="@month">@CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(month)</option>
+                                        }
+                                    </select>
+                                    <input type="number" aria-label="@(start ? "Start day" : "End day")" min="1" max="31" value="@AvailabilityDatePart(date, month: false)"
+                                           @onchange="e => SetAvailabilityDate(dates, start, month: false, e)" />
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+                <label class="field">
+                    <span>Only for programmes matching (library query, optional)</span>
+                    <input type="text" value="@variant.Availability?.Query" spellcheck="false" placeholder="genre:'Action'"
+                           @onchange="e => SetVariantAvailability(variant, a => a.Query = string.IsNullOrWhiteSpace(Text(e)) ? null : Text(e).Trim())" />
+                </label>
+                @if (variant.Availability is not null && !GeneratedPromoEligibility.IsAvailable(variant.Availability, Preview.Now, Zone))
+                {
+                    <p class="hint">This variant couldn't be picked right now; the canvas still shows it while you edit it.</p>
+                }
+                <div class="row row-wrap">
+                    <span class="hint" style="margin:0;">
+                        @(Template.Layers.Count(layer => layer.Variant == variant.Id)) of its own layers ·
+                        @(variant.Hidden?.Count ?? 0) of the default's hidden · @GeneratedPromoEditing.PlacedCount(Template, variant.Id) set its own way
+                    </span>
+                    <div class="spacer"></div>
+                    <button class="btn btn-sm btn-danger" type="button" title="Delete this variant and its own layers" @onclick="() => RemoveVariant(variant)">Delete variant</button>
+                </div>
+            </div>
+        }
+        else if (Template.HasVariants)
+        {
+            <div class="card vt-variant-settings">
+                <div class="grid grid-2">
+                    <label class="field">
+                        <span>Name of the default look</span>
+                        <input type="text" value="@GeneratedPromoVariants.DefaultName(Template)" placeholder="Default"
+                               @onchange='e => Set(() => Template.DefaultName = string.IsNullOrWhiteSpace(Text(e)) || Text(e).Trim() == "Default" ? null : Text(e).Trim())' />
+                    </label>
+                    <label class="field">
+                        <span>Relative chance against the variants (0: only when no variant can air)</span>
+                        <input type="number" min="0" max="1000" step="0.1" value="@Number(Template.DefaultWeight ?? 1)"
+                               @onchange="e => SetNumber(e, value => Template.DefaultWeight = Math.Abs(value - 1) < 0.0001 ? null : Math.Clamp(value, 0, 1000))" />
+                    </label>
+                </div>
+                <p class="hint">
+                    Each promo shows one look: this default or one of the variants that can air then, picked by their relative chances (fixed by
+                    what the promo is, so a re-render looks the same). Backgrounds with show rules make their variant likelier when they match.
+                </p>
+            </div>
+        }
+    };
+
+    private Task AddVariant(bool copyCurrent) => Set(() =>
+    {
+        GeneratedPromoVariant? from = copyCurrent ? EditingVariant : null;
+        List<GeneratedPromoVariant> variants = Template.Variants ??= [];
+        string name = GeneratedPromoEditing.UniqueName(variants.Select(variant => variant.Name).Append(GeneratedPromoVariants.DefaultName(Template)),
+            from is null ? $"Variant {variants.Count + 1}" : $"{from.Name} copy");
+        GeneratedPromoVariant made = from is null ? new GeneratedPromoVariant { Name = name } : GeneratedPromoEditing.Copy(from);
+        made.Id = NewVariantId();
+        made.Name = name;
+        variants.Add(made);
+
+        // A copy brings the original's own layers too, as its own.
+        if (from is not null)
+        {
+            // Each of its own layers not inside another of its own (a group copies what's inside it).
+            foreach (GeneratedLayer own in Template.Layers.Where(layer => layer.Variant == from.Id
+                         && GeneratedPromoHierarchy.ParentOf(Template, layer)?.Variant != from.Id).ToList())
+            {
+                GeneratedLayer copy = GeneratedPromoHierarchy.Duplicate(Template, own);
+                foreach (GeneratedLayer inside in GeneratedPromoHierarchy.Subtree(Template, copy))
+                {
+                    inside.Variant = made.Id;
+                }
+
+                GeneratedPromoEditing.Offset(copy, -20, -20);
+            }
+        }
+
+        EditVariant(made.Id);
+    });
+
+    private string NewVariantId()
+    {
+        while (true)
+        {
+            string id = Guid.NewGuid().ToString("N")[..8];
+            if (Template.Variant(id) is null) return id;
+        }
+    }
+
+    /// <summary>Deletes a variant, its own layers with it; the default look is edited afterwards.</summary>
+    private Task RemoveVariant(GeneratedPromoVariant variant) => Set(() =>
+    {
+        foreach (GeneratedLayer own in Template.Layers.Where(layer => layer.Variant == variant.Id).ToList())
+        {
+            if (Template.Layers.Contains(own)) GeneratedPromoHierarchy.Remove(Template, own);
+        }
+
+        Template.Variants?.Remove(variant);
+        if (Template.Variants is { Count: 0 })
+        {
+            Template.Variants = null;
+            Template.DefaultWeight = null;
+        }
+
+        EditVariant(null);
+    });
+
+    /// <summary>Hides (or shows again) one of the template's layers in the edited variant.</summary>
+    private Task SetHidden(GeneratedLayer layer, bool hidden) => Set(() =>
+    {
+        if (EditingVariant is not { } variant || layer.Variant is not null)
+        {
+            return;
+        }
+
+        layer.Id ??= GeneratedPromoHierarchy.NewId(Template);
+        List<string> list = variant.Hidden ??= [];
+        list.RemoveAll(id => string.Equals(id, layer.Id, StringComparison.Ordinal));
+        if (hidden) list.Add(layer.Id);
+        if (list.Count == 0) variant.Hidden = null;
+    });
+
+    private Task SetVariantAvailability(GeneratedPromoVariant variant, Action<GeneratedPromoAvailability> change) => Set(() =>
+    {
+        GeneratedPromoAvailability availability = variant.Availability ?? new GeneratedPromoAvailability();
+        change(availability);
+        variant.Availability = availability is { TimeRange: null, DateRange: null } && string.IsNullOrWhiteSpace(availability.Query) ? null : availability;
+    });
+
     private Task ResetPlacement(GeneratedLayer layer) =>
-        _editBackground is { } background ? Set(() => GeneratedPromoEditing.Unplace(Template, background, layer)) : Task.CompletedTask;
+        _editVariant is { } background ? Set(() => GeneratedPromoEditing.Unplace(Template, background, layer)) : Task.CompletedTask;
 
     // ---- Variable image uses ----
 
@@ -2513,6 +2834,13 @@
         }
     });
 
+    /// <summary>
+    /// The layer list's rows for what's being edited: the template's layers (those the variant hides too, to show them
+    /// again) and the edited variant's own; other variants' layers aren't listed.
+    /// </summary>
+    private List<(GeneratedLayer Layer, int Depth)> ListedRows() =>
+        [.. GeneratedPromoHierarchy.Rows(Template, IsOpen).Where(row => row.Layer.Variant is null || row.Layer.Variant == _editVariant)];
+
     /// <summary>Selects just this layer.</summary>
     private void Select(GeneratedLayer layer)
     {
@@ -2534,7 +2862,7 @@
 
         if (e.ShiftKey && _layer is { } anchor)
         {
-            List<GeneratedLayer> rows = [.. GeneratedPromoHierarchy.Rows(Template, IsOpen).Select(row => row.Layer)];
+            List<GeneratedLayer> rows = [.. ListedRows().Select(row => row.Layer)];
             int from = rows.IndexOf(anchor);
             int to = rows.IndexOf(layer);
             if (from >= 0 && to >= 0)
@@ -2599,6 +2927,8 @@
     private Task AddLayer(GeneratedLayerKind kind)
     {
         GeneratedLayer layer = GeneratedPromoEditing.NewLayer(Template, kind);
+        // Made while editing a variant, it's that variant's own.
+        layer.Variant = EditingVariant?.Id;
         Template.Layers.Add(layer);
         Select(layer);
         return Commit();
@@ -2642,9 +2972,11 @@
         GeneratedPromoHierarchy.Remove(Template, layer);
         _chosen.Clear();
         _layer = null;
-        if (Template.Layers.Count > 0)
+        // The layer below it that's in what's being edited (not another variant's), else the top one that is.
+        GeneratedLayer? next = Template.Layers.Take(Math.Max(0, index)).LastOrDefault(VisibleHere) ?? Template.Layers.LastOrDefault(VisibleHere);
+        if (next is not null)
         {
-            Select(Template.Layers[Math.Clamp(index - 1, 0, Template.Layers.Count - 1)]);
+            Select(next);
         }
     });
 
@@ -2657,7 +2989,7 @@
 
         _chosen.Clear();
         _layer = null;
-        if (Template.Layers.LastOrDefault() is { } top)
+        if (Template.Layers.LastOrDefault(VisibleHere) is { } top)
         {
             Select(top);
         }
@@ -2668,7 +3000,10 @@
     // Grouping keeps everything where it is on screen, as it is at the preview time.
     private Task GroupChosen() => _chosen.Count == 0 ? Task.CompletedTask : Set(() =>
     {
+        bool ownLayers = EditingVariant is { } variant && _chosen.All(layer => layer.Variant == variant.Id);
         GeneratedLayer group = GeneratedPromoHierarchy.Group(Template, _chosen, Time);
+        // A group of a variant's own layers is the variant's too.
+        if (ownLayers) group.Variant = _editVariant;
         Select(group);
     });
 
@@ -3120,8 +3455,11 @@
 
     private static readonly string[] BackgroundExtensions = [.. FileBrowsing.Images, .. FileBrowsing.Videos];
 
-    /// <summary>Every background the template picks from, the single one older templates have included.</summary>
-    private List<string> BackgroundList => GeneratedPromoEditing.Backgrounds(Template);
+    /// <summary>Whose backgrounds the background list edits: the edited variant's, or the template's (the default look's).</summary>
+    private IGeneratedBackgrounds BackgroundHost => EditingVariant is { } variant ? variant : Template;
+
+    /// <summary>Every background what's being edited picks from, the single one older templates have included.</summary>
+    private List<string> BackgroundList => GeneratedPromoEditing.Backgrounds(BackgroundHost);
 
     /// <summary>Swaps the background at <paramref name="index"/> for another file, or removes it when null.</summary>
     private Task SetBackground(int index, string? value) => Set(() =>
@@ -3139,13 +3477,8 @@
             _previewBackground = replacement;
         }
 
-        if (string.Equals(_editBackground, old, StringComparison.OrdinalIgnoreCase))
-        {
-            _editBackground = replacement;
-        }
-
-        // Its layer placements go with it to the new file, or with it when it's removed.
-        GeneratedPromoEditing.RenameBackground(Template, old, replacement);
+        // Its rule goes with it to the new file, or with it when it's removed.
+        GeneratedPromoEditing.RenameBackground(Template, BackgroundHost, old, replacement);
 
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -3156,14 +3489,14 @@
             backgrounds[index] = value;
         }
 
-        GeneratedPromoEditing.SetBackgrounds(Template, backgrounds);
+        GeneratedPromoEditing.SetBackgrounds(BackgroundHost, backgrounds);
     });
 
     /// <summary>The template's background video sound settings, kept on the template from the first change.</summary>
     private GeneratedBackgroundSoundConfig EditBackgroundSound() => Template.BackgroundSound ??= new GeneratedBackgroundSoundConfig();
 
     private Task AddBackgrounds(IReadOnlyList<string> picked) =>
-        Set(() => GeneratedPromoEditing.SetBackgrounds(Template, [.. BackgroundList, .. picked]));
+        Set(() => GeneratedPromoEditing.SetBackgrounds(BackgroundHost, [.. BackgroundList, .. picked]));
 
     private Task TogglePromoAvailability(bool time, bool enabled) => Set(() =>
     {
@@ -3203,33 +3536,229 @@
         if (start) range.Start = changed; else range.End = changed;
     });
 
-    private Task ToggleBackgroundRule(string background, bool enabled) => Set(() =>
+    // ---- A layer's files or wordings to pick from ----
+
+    /// <summary>
+    /// A layer's other files (image and video layers) or wordings (text layers), one picked per promo: each with the same
+    /// "choose based on the shows / only during a daily time range" settings backgrounds have, and so does its own.
+    /// </summary>
+    private RenderFragment LayerChoices(GeneratedLayer layer, string what) => __builder =>
     {
-        GeneratedBackgroundRule rule = EditableBackgroundRule(background);
+        List<GeneratedLayerChoice> alternatives = layer.Alternatives ?? [];
+        bool text = layer.Kind == GeneratedLayerKind.Text;
+        <details class="vt-choices" open="@(alternatives.Count > 0)">
+            <summary>
+                @(alternatives.Count == 0 ? $"Pick from several {what}s" : $"Picks from {alternatives.Count + 1} {what}s, one per promo")
+            </summary>
+            @if (alternatives.Count > 0)
+            {
+                <p class="hint">The one above is the first to pick from; each promo uses one of these by their settings (fixed by what the promo is, so a re-render looks the same).</p>
+                @(RuleEditor(OwnChoiceSlot(layer), $"The first {what}'s"))
+            }
+            <ol class="song-list vt-choice-list">
+                @for (int index = 0; index < alternatives.Count; index++)
+                {
+                    int position = index;
+                    GeneratedLayerChoice choice = alternatives[position];
+                    <li @key="choice">
+                        <div class="song-row">
+                            @if (text)
+                            {
+                                <textarea rows="2" aria-label="@($"Wording {position + 2}")" @onchange="e => Set(() => choice.Value = Text(e))">@choice.Value</textarea>
+                            }
+                            else
+                            {
+                                <FilePathPicker Value="@choice.Value" ValueChanged="value => Set(() => choice.Value = value ?? string.Empty)" KeepCopyIn="@GeneratedPromoPackages.AssetCategory"
+                                                Extensions="@(layer.Kind == GeneratedLayerKind.Video ? FileBrowsing.Videos : FileBrowsing.Images)" Label="@what" />
+                            }
+                            <button class="btn btn-sm btn-danger" type="button" aria-label="@($"Remove {what} {position + 2}")"
+                                    @onclick="() => RemoveChoice(layer, choice)">Remove</button>
+                        </div>
+                        @if (!text && Missing(choice.Value))
+                        {
+                            <p class="hint warn">The scheduler can't find this file.</p>
+                        }
+                        @(RuleEditor(new RuleSlot(() => choice.Rule, rule => choice.Rule = rule), char.ToUpperInvariant(what[0]) + what[1..]))
+                    </li>
+                }
+            </ol>
+            <div class="row row-wrap">
+                @if (text)
+                {
+                    <button class="btn btn-sm" type="button" @onclick="() => AddChoices(layer, [string.Empty])">+ Another wording</button>
+                }
+                else
+                {
+                    <FilePathPicker Multiple="true" ButtonText="@($"Add {what}s to pick from…")" Label="@($"{what}s")" KeepCopyIn="@GeneratedPromoPackages.AssetCategory"
+                                    Extensions="@(layer.Kind == GeneratedLayerKind.Video ? FileBrowsing.Videos : FileBrowsing.Images)" OnPicked="picked => AddChoices(layer, picked)" />
+                }
+            </div>
+        </details>
+    };
+
+    private RuleSlot OwnChoiceSlot(GeneratedLayer layer) => new(() => layer.ChoiceRule, rule => layer.ChoiceRule = rule);
+
+    private Task AddChoices(GeneratedLayer layer, IReadOnlyList<string> values) => Set(() =>
+    {
+        List<GeneratedLayerChoice> alternatives = layer.Alternatives ??= [];
+        foreach (string value in values)
+        {
+            // Files already there aren't added twice; an empty wording is a new one to fill in.
+            if (value.Length > 0 && (string.Equals(value, layer.Path, StringComparison.OrdinalIgnoreCase)
+                    || alternatives.Any(choice => string.Equals(choice.Value, value, StringComparison.OrdinalIgnoreCase))))
+            {
+                continue;
+            }
+
+            alternatives.Add(new GeneratedLayerChoice { Value = value });
+        }
+
+        if (alternatives.Count == 0) layer.Alternatives = null;
+    });
+
+    private Task RemoveChoice(GeneratedLayer layer, GeneratedLayerChoice choice) => Set(() =>
+    {
+        layer.Alternatives?.Remove(choice);
+        if (layer.Alternatives is { Count: 0 })
+        {
+            layer.Alternatives = null;
+            layer.ChoiceRule = null;
+        }
+    });
+
+    // ---- Pick rules (backgrounds' and layers' files and wordings) ----
+
+    /// <summary>
+    /// Where a pick rule lives and how it's stored: read it, and set it (null: none). Backgrounds keep theirs in their
+    /// host's list keyed by path; a layer's own file or wording and each alternative keep one each.
+    /// </summary>
+    private sealed record RuleSlot(Func<GeneratedBackgroundRule?> Get, Action<GeneratedBackgroundRule?> Store);
+
+    private RuleSlot BackgroundRuleSlot(IGeneratedBackgrounds host, string background) => new(
+        () => GeneratedPromoBackgrounds.Rule(host, background),
+        rule =>
+        {
+            host.BackgroundRules?.RemoveAll(existing => string.Equals(existing.Background, background, StringComparison.OrdinalIgnoreCase));
+            if (rule is not null)
+            {
+                rule.Background = background;
+                (host.BackgroundRules ??= []).Add(rule);
+            }
+
+            if (host.BackgroundRules is { Count: 0 }) host.BackgroundRules = null;
+        });
+
+    private Task ToggleRuleShows(RuleSlot slot, bool enabled) => Set(() =>
+    {
+        GeneratedBackgroundRule rule = slot.Get() ?? new GeneratedBackgroundRule { MatchShows = false };
         rule.MatchShows = enabled ? null : false;
-        RemoveUnusedBackgroundRule(rule);
+        slot.Store(rule.MatchShows == false && rule.TimeRange is null ? null : rule);
     });
 
-    private GeneratedBackgroundRule EditableBackgroundRule(string background)
+    private Task ToggleRuleTimeRange(RuleSlot slot, bool enabled) => Set(() =>
     {
-        if (GeneratedPromoBackgrounds.Rule(Template, background) is { } rule) return rule;
-        rule = new GeneratedBackgroundRule { Background = background, MatchShows = false };
-        (Template.BackgroundRules ??= []).Add(rule);
-        return rule;
-    }
-
-    private Task ToggleBackgroundTimeRange(string background, bool enabled) => Set(() =>
-    {
-        GeneratedBackgroundRule rule = EditableBackgroundRule(background);
+        GeneratedBackgroundRule rule = slot.Get() ?? new GeneratedBackgroundRule { MatchShows = false };
         rule.TimeRange = enabled ? rule.TimeRange ?? new GeneratedBackgroundTimeRange() : null;
-        RemoveUnusedBackgroundRule(rule);
+        slot.Store(rule.MatchShows == false && rule.TimeRange is null ? null : rule);
     });
 
-    private void RemoveUnusedBackgroundRule(GeneratedBackgroundRule rule)
+    /// <summary>
+    /// The "choose based on the shows / only during a daily time range" settings for one pick (a background, or one of
+    /// a layer's files or wordings), folded away under a summary.
+    /// </summary>
+    private RenderFragment RuleEditor(RuleSlot slot, string what) => __builder =>
     {
-        if (rule.MatchShows == false && rule.TimeRange is null) Template.BackgroundRules?.Remove(rule);
-        if (Template.BackgroundRules is { Count: 0 }) Template.BackgroundRules = null;
-    }
+        GeneratedBackgroundRule? rule = slot.Get();
+        bool matchShows = rule is not null && rule.MatchShows != false;
+        <details class="ed-background-rules">
+            <summary>@what selection · @(matchShows ? "show matching on" : "show matching off") · @(rule?.TimeRange is { } hours ? $"{BackgroundTime(hours.Start)}–{BackgroundTime(hours.End)}" : "any time")</summary>
+            <label class="check">
+                <input type="checkbox" checked="@matchShows" @onchange="e => ToggleRuleShows(slot, e.Value is true)" />
+                <span>@(Template.Type == GeneratedPromoType.NowPlaying ? "Choose based on the Now Playing show" : "Choose based on upcoming shows")</span>
+            </label>
+            @if (matchShows && rule is not null)
+            {
+                <div class="grid grid-2">
+                    <label class="field">
+                        <span>Matching shows (one per line; any can match)</span>
+                        <textarea rows="3" placeholder="SpongeBob SquarePants&#10;Rugrats"
+                                  @onchange="e => Set(() => rule.Shows = Text(e).Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.OrdinalIgnoreCase).ToList())">@string.Join('\n', rule.Shows)</textarea>
+                    </label>
+                    <label class="field">
+                        <span>When no show matches</span>
+                        <select value="@(rule.OnlyWhenMatching ? "exclude" : "normal")"
+                                @onchange='e => Set(() => rule.OnlyWhenMatching = Text(e) == "exclude")'>
+                            <option value="normal">Still eligible at normal chance (prefer on match)</option>
+                            <option value="exclude">Never use it (only when matching)</option>
+                        </select>
+                    </label>
+                    @if (Template.Type != GeneratedPromoType.NowPlaying)
+                    {
+                        <label class="field">
+                            <span>Look ahead by</span>
+                            <select value="@(rule.Within is null ? "shows" : "time")"
+                                    @onchange='e => Set(() => rule.Within = Text(e) == "time" ? TimeSpan.FromMinutes(60) : null)'>
+                                <option value="shows">Number of upcoming shows</option>
+                                <option value="time">Time from the promo's start</option>
+                            </select>
+                        </label>
+                        @if (rule.Within is { } within)
+                        {
+                            <label class="field">
+                                <span>Within the next (minutes)</span>
+                                <input type="number" min="1" max="1440" step="1" value="@Number(within.TotalMinutes)"
+                                       @onchange="e => SetNumber(e, value => rule.Within = TimeSpan.FromMinutes(Math.Clamp(value, 1, 1440)))" />
+                            </label>
+                        }
+                        else
+                        {
+                            <label class="field">
+                                <span>Next shows (1 = only the next show)</span>
+                                <input type="number" min="1" max="10" value="@rule.NextShows"
+                                       @onchange="e => SetNumber(e, value => rule.NextShows = (int)Math.Clamp(value, 1, 10))" />
+                            </label>
+                        }
+                    }
+                    <label class="field">
+                        <span>Relative chance when matching</span>
+                        <input type="number" min="1" max="1000" step="1" value="@Number(rule.MatchWeight)"
+                               @onchange="e => SetNumber(e, value => rule.MatchWeight = Math.Clamp(value, 1, 1000))" />
+                    </label>
+                </div>
+                @if (Template.Type == GeneratedPromoType.NowPlaying)
+                {
+                    <p class="hint">Matches the show this Now Playing promo identifies, including a show that has already started. Lookahead settings aren't used for this promo type.</p>
+                }
+                <p class="hint">Normal chance is 1. A weight of 5 gives five times the chance of an ordinary pick. “Only when matching” restricts this one; others can still be picked. Names use the same loose matching as variable images.</p>
+                @if (rule.Shows.Count == 0)
+                {
+                    <p class="hint warn">Add at least one show for this rule to match.</p>
+                }
+            }
+            <label class="check">
+                <input type="checkbox" checked="@(rule?.TimeRange is not null)" @onchange="e => ToggleRuleTimeRange(slot, e.Value is true)" />
+                <span>Only choose during a daily time range</span>
+            </label>
+            @if (rule?.TimeRange is { } range)
+            {
+                <div class="grid grid-2">
+                    <label class="field">
+                        <span>From (channel-local time, inclusive)</span>
+                        <input type="time" step="60" value="@BackgroundTime(range.Start)" @onchange="e => SetBackgroundTime(e, value => range.Start = value)" />
+                    </label>
+                    <label class="field">
+                        <span>Until (exclusive)</span>
+                        <input type="time" step="60" value="@BackgroundTime(range.End)" @onchange="e => SetBackgroundTime(e, value => range.End = value)" />
+                    </label>
+                </div>
+                <p class="hint">Uses the promo's scheduled start in @Zone.Id. An earlier end crosses midnight, such as 22:00–06:00. Outside this range it can't be chosen, even when its show matches.</p>
+                @if (range.Start == range.End)
+                {
+                    <p class="hint warn">Start and end must differ. Turn off the time range to allow any time.</p>
+                }
+            }
+        </details>
+    };
 
     private static string BackgroundTime(TimeSpan time) => time.ToString(@"hh\:mm", CultureInfo.InvariantCulture);
 
@@ -3240,8 +3769,6 @@
 
     private void PreviewBackground(string? background)
     {
-        // Looking at another background ends placing layers for the one being edited.
-        _editBackground = null;
         _previewBackground = background;
         RequestStill();
     }
@@ -4408,11 +4935,20 @@
             </div>
         }
         <LowPowerNotice Inline="true" Advice="LowPowerTemplateWarnings" />
+        @if (Template.Generator is null)
+        {
+            @(VariantSettings())
+        }
         <div class="field">
             <span>
                 @(Template.BackgroundClip is null || GeneratedPromoResolver.UsesClip(Template.Generator) ? "Background images or videos" : "Fallback background images or videos (when the episode file can't be read)")
+                @(EditingVariant is null ? "" : $"for {VariantLabel(_editVariant)}")
                 (optional; videos loop; with several, one is picked at random for each promo)
             </span>
+            @if (EditingVariant is not null && BackgroundList.Count == 0)
+            {
+                <p class="hint">This variant has no backgrounds of its own, so it uses @(VariantLabel(null))'s. Add some to give it its own.</p>
+            }
             <ol class="song-list background-list">
                 @foreach ((string background, int position) in BackgroundList.Select((path, index) => (path, index)))
                 {
@@ -4421,17 +4957,7 @@
                         <div class="song-row">
                             <FilePathPicker Value="@background" ValueChanged="value => SetBackground(position, value)" KeepCopyIn="@GeneratedPromoPackages.AssetCategory"
                                             Extensions="BackgroundExtensions" Label="background image or video" Placeholder="D:\Media\Promos\Backgrounds\loop.mp4" />
-                            @if (Template.Generator is null)
-                            {
-                                bool editing = string.Equals(_editBackground, background, StringComparison.OrdinalIgnoreCase);
-                                int placed = GeneratedPromoEditing.PlacedCount(Template, background);
-                                <button class="btn btn-sm @(editing ? "btn-primary" : "")" type="button" aria-pressed="@(editing ? "true" : "false")"
-                                        title="@(editing ? "Back to editing the template's own layout" : "Place and animate layers for this background only")"
-                                        @onclick="() => EditBackground(editing ? null : background)">
-                                    @(editing ? "Done" : placed > 0 ? $"Edit ({placed})" : "Edit")
-                                </button>
-                            }
-                            @if (BackgroundList.Count > 1 && Template.Generator is null && !string.Equals(_editBackground, background, StringComparison.OrdinalIgnoreCase))
+                            @if (BackgroundList.Count > 1 && Template.Generator is null)
                             {
                                 <button class="btn btn-sm" type="button" aria-pressed="@(previewing ? "true" : "false")"
                                         title="@(previewing ? "Go back to the background this promo picks" : "Show this background in the canvas preview")"
@@ -4446,98 +4972,7 @@
                         {
                             <p class="hint warn">The scheduler can't find this file.</p>
                         }
-                        @{
-                            GeneratedBackgroundRule? rule = GeneratedPromoBackgrounds.Rule(Template, background);
-                            bool matchShows = rule is not null && rule.MatchShows != false;
-                        }
-                        <details class="ed-background-rules">
-                            <summary>Background selection · @(matchShows ? "show matching on" : "show matching off") · @(rule?.TimeRange is { } hours ? $"{BackgroundTime(hours.Start)}–{BackgroundTime(hours.End)}" : "any time")</summary>
-                        <label class="check">
-                            <input type="checkbox" checked="@matchShows" @onchange="e => ToggleBackgroundRule(background, e.Value is true)" />
-                            <span>@(Template.Type == GeneratedPromoType.NowPlaying ? "Choose based on the Now Playing show" : "Choose based on upcoming shows")</span>
-                        </label>
-                        @if (matchShows && rule is not null)
-                        {
-                            <div class="grid grid-2">
-                                <label class="field">
-                                    <span>Matching shows (one per line; any can match)</span>
-                                    <textarea rows="3" placeholder="SpongeBob SquarePants&#10;Rugrats"
-                                              @onchange="e => Set(() => rule.Shows = Text(e).Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.OrdinalIgnoreCase).ToList())">@string.Join('\n', rule.Shows)</textarea>
-                                </label>
-                                <label class="field">
-                                    <span>When no show matches</span>
-                                    <select value="@(rule.OnlyWhenMatching ? "exclude" : "normal")"
-                                            @onchange='e => Set(() => rule.OnlyWhenMatching = Text(e) == "exclude")'>
-                                        <option value="normal">Still eligible at normal chance (prefer on match)</option>
-                                        <option value="exclude">Never use this background (only when matching)</option>
-                                    </select>
-                                </label>
-                                @if (Template.Type != GeneratedPromoType.NowPlaying)
-                                {
-                                <label class="field">
-                                    <span>Look ahead by</span>
-                                    <select value="@(rule.Within is null ? "shows" : "time")"
-                                            @onchange='e => Set(() => rule.Within = Text(e) == "time" ? TimeSpan.FromMinutes(60) : null)'>
-                                        <option value="shows">Number of upcoming shows</option>
-                                        <option value="time">Time from the promo's start</option>
-                                    </select>
-                                </label>
-                                @if (rule.Within is { } within)
-                                {
-                                    <label class="field">
-                                        <span>Within the next (minutes)</span>
-                                        <input type="number" min="1" max="1440" step="1" value="@Number(within.TotalMinutes)"
-                                               @onchange="e => SetNumber(e, value => rule.Within = TimeSpan.FromMinutes(Math.Clamp(value, 1, 1440)))" />
-                                    </label>
-                                }
-                                else
-                                {
-                                    <label class="field">
-                                        <span>Next shows (1 = only the next show)</span>
-                                        <input type="number" min="1" max="10" value="@rule.NextShows"
-                                               @onchange="e => SetNumber(e, value => rule.NextShows = (int)Math.Clamp(value, 1, 10))" />
-                                    </label>
-                                }
-                                }
-                                <label class="field">
-                                    <span>Relative chance when matching</span>
-                                    <input type="number" min="1" max="1000" step="1" value="@Number(rule.MatchWeight)"
-                                           @onchange="e => SetNumber(e, value => rule.MatchWeight = Math.Clamp(value, 1, 1000))" />
-                                </label>
-                            </div>
-                            @if (Template.Type == GeneratedPromoType.NowPlaying)
-                            {
-                                <p class="hint">Matches the show this Now Playing promo identifies, including a show that has already started. Lookahead settings aren't used for this promo type.</p>
-                            }
-                            <p class="hint">Normal chance is 1. A weight of 5 gives five times the chance of an ordinary background. “Only when matching” restricts this background; other eligible backgrounds can still be picked. Names use the same loose matching as variable images. These rules don't add shows to the text or voice-over.</p>
-                            @if (rule.Shows.Count == 0)
-                            {
-                                <p class="hint warn">Add at least one show for this rule to match.</p>
-                            }
-                        }
-                        <label class="check">
-                            <input type="checkbox" checked="@(rule?.TimeRange is not null)" @onchange="e => ToggleBackgroundTimeRange(background, e.Value is true)" />
-                            <span>Only choose during a daily time range</span>
-                        </label>
-                        @if (rule?.TimeRange is { } range)
-                        {
-                            <div class="grid grid-2">
-                                <label class="field">
-                                    <span>From (channel-local time, inclusive)</span>
-                                    <input type="time" step="60" value="@BackgroundTime(range.Start)" @onchange="e => SetBackgroundTime(e, value => range.Start = value)" />
-                                </label>
-                                <label class="field">
-                                    <span>Until (exclusive)</span>
-                                    <input type="time" step="60" value="@BackgroundTime(range.End)" @onchange="e => SetBackgroundTime(e, value => range.End = value)" />
-                                </label>
-                            </div>
-                            <p class="hint">Uses the promo's scheduled start in @Zone.Id. An earlier end crosses midnight, such as 22:00–06:00. Outside this range the background cannot be chosen, even when its show matches. Show matching is optional.</p>
-                            @if (range.Start == range.End)
-                            {
-                                <p class="hint warn">Start and end must differ. Turn off the time range to allow any time.</p>
-                            }
-                        }
-                        </details>
+                        @(RuleEditor(BackgroundRuleSlot(BackgroundHost, background), "Background"))
                     </li>
                 }
             </ol>
@@ -4549,9 +4984,9 @@
                     <span class="hint" style="margin:0;">@(_previewBackground is null ? "The canvas shows the one these shows would get." : "The canvas shows the one you're previewing.")</span>
                 }
             </div>
-            @if (Template.BackgroundRules is { Count: > 0 })
+            @if (BackgroundHost.BackgroundRules is { Count: > 0 })
             {
-                <p class="hint">If no background is eligible, the background colour is used. Preview/Edit buttons let you inspect a background regardless of its rule.</p>
+                <p class="hint">If no background is eligible, the background colour is used@(EditingVariant is null ? "" : ", and this variant isn't picked"). Preview lets you inspect a background regardless of its rule.</p>
             }
         </div>
         @if (BackgroundList.Any(background => !PromoRenderer.IsImage(background)))

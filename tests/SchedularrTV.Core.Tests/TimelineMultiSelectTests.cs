@@ -136,18 +136,22 @@ public sealed class TimelineMultiSelectTests
             {
                 var layer = new GeneratedLayer { Id = "test-layer", Keyframes = [.. new[] { 1, 3, 5 }.Select(at => new GeneratedKeyframe { At = TimeSpan.FromSeconds(at) })] };
                 Layer = layer;
-                _template = new GeneratedPromoTemplate { Layers = [layer], Duration = TimeSpan.FromSeconds(10), Fps = 30 };
+                _template = new GeneratedPromoTemplate
+                {
+                    Layers = [layer], Duration = TimeSpan.FromSeconds(10), Fps = 30,
+                    Variants = background ? [new GeneratedPromoVariant { Id = "v1", Name = "Variant" }] : null
+                };
                 _component = new GeneratedPromoTemplateEditor();
                 ParameterView.FromDictionary(new Dictionary<string, object?> { ["Template"] = _template }).SetParameterProperties(_component);
                 Field("_stillRunning", true);
-                if (background) Field("_editBackground", "background.mp4");
+                if (background) Field("_editVariant", "v1");
             }
             Field("_layer", Layer);
             Field("_rulerWidth", 1000d);
         }
 
         public object[] Keys => Layer is OverlayLayer overlay ? [.. (overlay.Keyframes ?? []).Cast<object>()]
-            : [.. (GeneratedPromoResolver.Pose(_template!, _background ? "background.mp4" : null, (GeneratedLayer)Layer).Keyframes ?? []).Cast<object>()];
+            : [.. (GeneratedPromoResolver.Pose(_template!, _background ? "v1" : null, (GeneratedLayer)Layer).Keyframes ?? []).Cast<object>()];
         public object[] Selection => [.. ((IEnumerable)_component.GetType().GetProperty("SelectedKeys", Private)!.GetValue(_component)!).Cast<object>()];
 
         public async Task Click(object key, bool ctrl = false, bool shift = false)

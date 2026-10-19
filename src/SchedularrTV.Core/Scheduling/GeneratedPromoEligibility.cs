@@ -9,9 +9,13 @@ namespace SchedularrTV.Core.Scheduling;
 /// <summary>Availability of the whole promo at its scheduled airtime, never at the time a render happens.</summary>
 public static class GeneratedPromoEligibility
 {
-    public static bool IsAvailable(GeneratedPromoTemplate template, DateTimeOffset airsAt, TimeZoneInfo zone)
+    public static bool IsAvailable(GeneratedPromoTemplate template, DateTimeOffset airsAt, TimeZoneInfo zone) =>
+        IsAvailable(template.Availability, airsAt, zone);
+
+    /// <summary>Whether a time range and date range (a template's, or a variant's) allow <paramref name="airsAt"/>; null allows any time.</summary>
+    public static bool IsAvailable(GeneratedPromoAvailability? availability, DateTimeOffset airsAt, TimeZoneInfo zone)
     {
-        if (template.Availability is not { } availability) return true;
+        if (availability is null) return true;
         DateTimeOffset local = TimeZoneInfo.ConvertTime(airsAt, zone);
         if (availability.TimeRange is { } time && !Contains(time, local.TimeOfDay)) return false;
         if (availability.DateRange is not { } dates) return true;
@@ -28,9 +32,13 @@ public static class GeneratedPromoEligibility
     /// Whether the programme the promo is about suits the template's library query. Templates without one suit any
     /// programme; with one, an unknown programme (null) doesn't, and neither does a query that doesn't read.
     /// </summary>
-    public static bool SuitsProgramme(GeneratedPromoTemplate template, MediaItem? programme)
+    public static bool SuitsProgramme(GeneratedPromoTemplate template, MediaItem? programme) =>
+        SuitsProgramme(template.Availability, programme);
+
+    /// <summary>As <see cref="SuitsProgramme(GeneratedPromoTemplate, MediaItem?)"/>, for a template's or a variant's availability.</summary>
+    public static bool SuitsProgramme(GeneratedPromoAvailability? availability, MediaItem? programme)
     {
-        if (template.Availability?.Query is not { } text || string.IsNullOrWhiteSpace(text))
+        if (availability?.Query is not { } text || string.IsNullOrWhiteSpace(text))
         {
             return true;
         }

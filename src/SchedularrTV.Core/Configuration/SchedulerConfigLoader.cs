@@ -425,6 +425,23 @@ public static class SchedulerConfigLoader
                 warnings.Add($"{templateScope}.voice.volume: {voiceVolume} is outside 0 to {GeneratedVoiceConfig.MaxVolume}, so it's held within that.");
             }
 
+            foreach (GeneratedPromoVariant variant in template.Variants ?? [])
+            {
+                string variantScope = $"{templateScope}.variants '{variant.Name}'";
+                if (variant.Availability?.TimeRange is { } variantHours && !Scheduling.GeneratedPromoEligibility.Valid(variantHours))
+                    warnings.Add($"{variantScope}: its daily time range needs a start and end that differ, so it's never picked.");
+                if (variant.Availability?.DateRange is { } variantDates
+                    && (!Scheduling.GeneratedPromoEligibility.TryMonthDay(variantDates.Start, out _) || !Scheduling.GeneratedPromoEligibility.TryMonthDay(variantDates.End, out _)))
+                    warnings.Add($"{variantScope}: its dates must be written MM-DD, so it's never picked.");
+            }
+
+            if (template.Variants is { Count: > 0 } allVariants && template.DefaultWeight is <= 0
+                && allVariants.All(variant => !variant.Enabled))
+                warnings.Add($"{templateScope}: every variant is off and the default look is only a fallback, so the default look is always used.");
+
+            foreach (GeneratedLayer orphan in (template.Layers ?? []).Where(layer => layer.Variant is { Length: > 0 } owner && template.Variant(owner) is null))
+                warnings.Add($"{templateScope}: layer '{orphan.Name}' belongs to a variant that no longer exists, so it's never drawn.");
+
             if (template.Voice is { Enabled: true, IsPrerecorded: true } recordedVoice)
             {
                 if (string.IsNullOrWhiteSpace(recordedVoice.Prerecorded!.Pack))
@@ -1087,6 +1104,25 @@ public static class SchedulerConfigLoader
             }
 
             foreach (GeneratedVoicePackTemplate template in pack.Templates) template.Parts ??= [];
+        }
+
+        // Older templates' per-background layouts become variants; empty lists go, as if never set.
+        foreach (GeneratedPromoTemplate template in GeneratedSharedImages.Templates(config))
+        {
+            GeneratedPromoVariants.Convert(template);
+            if (template.Variants is { Count: 0 }) template.Variants = null;
+            foreach (GeneratedPromoVariant variant in template.Variants ?? [])
+            {
+                variant.Id = string.IsNullOrWhiteSpace(variant.Id) ? Guid.NewGuid().ToString("N")[..8] : variant.Id.Trim();
+                variant.Layers ??= [];
+                if (variant.Hidden is { Count: 0 }) variant.Hidden = null;
+            }
+
+            foreach (GeneratedLayer layer in template.Layers ?? [])
+            {
+                if (layer.Alternatives is { Count: 0 }) layer.Alternatives = null;
+                foreach (GeneratedLayerChoice choice in layer.Alternatives ?? []) choice.Value ??= string.Empty;
+            }
         }
 
         // A promo's own (inline) voice-over templates: an empty list is the same as none.

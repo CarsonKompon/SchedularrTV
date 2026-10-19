@@ -106,7 +106,7 @@ The **⬚ Perspective** tool (or **P** after clicking the timeline or a box) swa
 - Pins are kept along the box's own edges, so moving, resizing or turning the layer afterwards keeps its perspective.
 - On an animated layer, pulling a corner sets a keyframe at the playhead. Keyframe the corners across a few frames to keep text on the face of a turning block; they ease between keyframes like position does.
 - **Square up** (under Position) puts the corners back, at the playhead on an animated layer. A pin pulled so far it would fold the picture over itself is drawn square instead.
-- Pins can be set per background, like position.
+- Pins can be set per variant, like position.
 
 In YAML a pin is `corners:` on a layer or keyframe, with `top_left_x`, `top_left_y`, `top_right_x` … `bottom_left_y`, each how many pixels that corner is pulled.
 
@@ -159,7 +159,7 @@ layers:
 
 **+ Video** adds a box that plays a video. Under **Plays**, choose a video file, or a clip of an episode: the one the promo is for, what's on now (or before the break), the next episode, or one 2 to 10 shows ahead. An episode clip starts where you set it, or, left blank, somewhere in the middle that changes each airing. If there's no such show, or its file can't be read, the layer is left out.
 
-Video layers move, resize, turn, fade, group and keyframe like any other layer, and can be placed and timed per background.
+Video layers move, resize, turn, fade, group and keyframe like any other layer, and can be placed and timed per variant. A video layer can also pick from several files (see *Picking a layer's file or wording*).
 
 **Transparent video** works automatically: use MOV with ProRes 4444 or QuickTime Animation (QTRLE), or WebM with VP8/VP9 alpha. The file must actually contain an alpha channel; an ordinary MOV is not necessarily transparent. WebM decoding uses FFmpeg's `libvpx` / `libvpx-vp9` decoders, which must be included in the installed FFmpeg build. Transparent areas reveal the background and layers underneath in both the canvas preview and rendered promo.
 
@@ -332,17 +332,55 @@ Text and shape layers have **Pick from screen** beside their colour selector. Cl
 
 Existing rectangle templates keep their appearance. In YAML, shapes retain `kind: rect` for compatibility and add `shape: ellipse` (or `rectangle`, `triangle`, `diamond`, `star`), `rotation: 30`, and `soft_edges: 8` as needed. Leaving these out gives the original sharp, unrotated rectangle.
 
-#### Placing layers for one background
+#### Variants
 
-Layers can be placed and animated differently over each background, to follow what's in a particular video, while everything else (text, variable images, voice, music, timing) stays shared:
+A template can have **variants**: versions of the same promo, each with its own backgrounds, its own placement, colour and timing of the template's layers, layers of its own, and its own availability. Each promo shows one look: the template's own (**Default**) or one of the variants that can air then.
 
-1. Select **Edit** next to the background. The canvas switches to it and a banner shows which background you're placing for.
-2. Move, resize, change opacity or keyframe layers as usual. The first change to a layer gives that background its own copy of the layer's position, size, opacity and keyframes (⌖ marks it); layers you don't touch keep following the template.
-3. Change a layer's **Colour** to use a different one over this background, such as darker text over a light picture. A colour alone doesn't copy the layer's position, so it still moves with the template.
-4. Change **Appears at**, **Leaves at**, **Enter**, **Exit** or **Transition length** to time the layer differently over this background. Like colour, timing is kept on its own; **Use the template's** next to the timing heading resets just the timing.
-5. **Use the template's** at the top of the layer settings drops everything that background sets for the layer: position, keyframes, timing and colour. **Done** goes back to editing the template's own layout.
+- **Switching.** The **Variant** bar above the canvas lists **Default** and each variant; click one to edit it. **+ Variant** adds one starting from the default look; **Duplicate** copies the one you're editing (backgrounds, placements, hidden layers and its own layers).
+- **Editing the default's layers in a variant.** Move, resize, change opacity or keyframe layers as usual: the first change gives the variant its own copy of the layer's position, size, opacity and keyframes (⌖ marks it); layers you don't touch keep following the default. **Colour** and timing (**Appears at**, **Leaves at**, **Enter**, **Exit**, **Transition length**) are kept on their own the same way. **Use the default's** drops what the variant sets for a layer. Text, files and other settings of the default's layers apply to every variant.
+- **Hiding.** 👁 in the layer list (or **Hide in this variant**) hides one of the default's layers in this variant only; hidden rows are struck through and can be shown again.
+- **Layers of its own.** Layers added while editing a variant belong to it: they're listed with an **only here** badge and a purple edge, are drawn only in that variant, and aren't listed for the default or other variants. Deleting a variant deletes its own layers.
+- **Backgrounds.** While a variant is being edited, the background list is the variant's own. A variant without backgrounds uses the default's. Each background still has its **Background selection** (show matching and daily time range), and a variant's matching background makes the variant itself likelier by the same weight.
+- **Picking.** In the variant's settings (under **Canvas**, while editing it): its name, **Relative chance** (1 is normal), **Use this variant**, and **Variant availability**: a daily time range, dates each year and a programme library query, all on top of the promo's own availability. While editing **Default**, set the default look's name and its relative chance; 0 makes it only the fallback when no variant can air. The pick is fixed by what the promo is, so a re-render looks the same.
 
-The **Edit** button shows how many layers a background places its own way. Swapping a background's file keeps its placements; removing it drops them. Over an episode clip, layers use the template's layout. In YAML, placements are under `background_overrides`, each naming its `background` and listing `layers` by the layer's `id`, `colors` (each a `layer` id and a `color`), and `timings` (each a `layer` id with `start`, `end`, `transition_in`, `transition_out` and `transition_duration`).
+Older templates' per-background layouts are turned into variants when the schedule (or an older package) is loaded: each background that placed, coloured or timed layers its own way becomes a variant with just that background, its selection rule and those edits; backgrounds without any stay with the default look, which is weighted so each background stays as likely as before. Converted templates render once more.
+
+```yaml
+default_weight: 2            # optional; 0 = only when no variant can air
+variants:
+  - id: 3fa9c2d1
+    name: Night
+    weight: 1
+    availability:            # optional, on top of the template's
+      time_range: { start: '18:00:00', end: '23:59:00' }
+    background: 'D:\Media\Promos\Backgrounds\night.mp4'
+    layers:                  # the template's layers placed its own way, by id
+      - { layer: a1b2c3d4, x: 900, y: 50, width: 400, height: 100, opacity: 1 }
+    colors: [{ layer: e5f6a7b8, color: '#202020' }]
+    hidden: [c9d0e1f2]        # the template's layers it doesn't show
+layers:
+  - name: Moon
+    kind: image
+    variant: 3fa9c2d1        # drawn only in that variant
+    path: 'D:\Media\Promos\moon.png'
+```
+
+#### Picking a layer's file or wording
+
+Image and video layers can pick from several files, and text layers from several wordings, one per promo. Under the layer's file (or text), open **Pick from several …** and add more. Each one, including the layer's own, has the same **selection** settings as backgrounds: choose based on the upcoming (or Now Playing) shows, with a relative chance when matching, and only during a daily time range. Wordings use the same tokens as the layer's text. The layer list shows how many a layer picks from.
+
+```yaml
+- name: Heading
+  kind: text
+  text: UP NEXT
+  choice_rule:                # optional: when its own text is picked
+    match_shows: false
+    time_range: { start: '06:00:00', end: '12:00:00' }
+  alternatives:
+    - value: COMING UP
+    - value: 'NEXT ON {channel}'
+      rule: { shows: [Rugrats], only_when_matching: true, match_weight: 5 }
+```
 
 A background video plays its own sound by default, looping with the picture. Under the background list, untick **Play the background video's sound** to mute it, or set its volume and whether it dips while the voice speaks. Videos without a sound track play silently. The episode clip has its own sound settings and isn't affected. **Lower the music while the episode clip's (or background video's) sound plays** also follows a background video's sound.
 
