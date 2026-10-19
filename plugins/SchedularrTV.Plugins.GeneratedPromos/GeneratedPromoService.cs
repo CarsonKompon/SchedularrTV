@@ -360,7 +360,7 @@ public sealed partial class GeneratedPromoService(
                 voiceError = ex;
             }
         }
-        else if (promo.Script is { } script && template.Voice is { Enabled: true, IsPrerecorded: false } voice)
+        else if (promo.Script is { } script && template.Voice is { Enabled: true } voice && (!voice.IsPrerecorded || promo.TtsFallback))
         {
             try
             {

@@ -941,6 +941,14 @@ public sealed class GeneratedPrerecordedVoiceConfig
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public bool? NormalizeLevels { get; set; }
 
+    /// <summary>
+    /// When none of the templates can be said for a promo's shows (a recording is missing, or the pack is gone), the
+    /// voice-over is spoken by text-to-speech instead, with the voice-over's text-to-speech settings (service, voice,
+    /// openers and closers, advanced scripts). Null or false leaves such a promo without a voice-over.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? FallbackToTts { get; set; }
+
     /// <summary>Whether takes are evened out (<see cref="NormalizeLevels"/>, null being yes).</summary>
     [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
     public bool LevelsNormalized => NormalizeLevels ?? true;

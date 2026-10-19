@@ -255,6 +255,39 @@ public sealed class PrerecordedVoiceTests : IDisposable
     }
 
     [Fact]
+    public void Missing_recordings_can_fall_back_to_text_to_speech()
+    {
+        (_, GeneratedVoiceConfig recordedVoice) = Pack();
+        GeneratedPromoTemplate template = GeneratedPromoTemplates.UpNext();
+        recordedVoice.Provider = template.Voice!.Provider;
+        recordedVoice.Voice = "narrator";
+        template.Voice = recordedVoice;
+
+        // A recorded show: said from the recordings.
+        ResolvedGeneratedPromo recorded = GeneratedPromoResolver.Resolve(template, "Nick", [new("Rugrats", At.AddHours(5))], TimeZoneInfo.Utc, At)!;
+        Assert.NotNull(recorded.Prerecorded);
+        Assert.False(recorded.TtsFallback);
+
+        // Not recorded, and no fallback: no voice-over.
+        List<UpNextListing> unrecorded = [new("Hey Arnold!", At.AddHours(5))];
+        ResolvedGeneratedPromo silent = GeneratedPromoResolver.Resolve(template, "Nick", unrecorded, TimeZoneInfo.Utc, At)!;
+        Assert.Null(silent.Prerecorded);
+        Assert.Null(silent.Script);
+        Assert.False(silent.TtsFallback);
+
+        // With the fallback, text-to-speech says the usual read-out, and the promo is keyed apart from the silent one.
+        recordedVoice.Prerecorded!.FallbackToTts = true;
+        ResolvedGeneratedPromo spoken = GeneratedPromoResolver.Resolve(template, "Nick", unrecorded, TimeZoneInfo.Utc, At)!;
+        Assert.True(spoken.TtsFallback);
+        Assert.Null(spoken.Prerecorded);
+        Assert.Contains("Hey Arnold", spoken.Script);
+        Assert.NotEqual(silent.Key, spoken.Key);
+
+        // The fallback isn't used when the recordings can say it.
+        Assert.False(GeneratedPromoResolver.Resolve(template, "Nick", [new("Rugrats", At.AddHours(5))], TimeZoneInfo.Utc, At)!.TtsFallback);
+    }
+
+    [Fact]
     public void A_mic_whine_is_found_and_notched_out()
     {
         // Half a second of "words" (loud, broad noise) and half of quiet hiss, with a faint steady whine at 15.2 kHz throughout.

@@ -58,6 +58,12 @@ public sealed record ResolvedGeneratedPromo(
     public PrerecordedVoiceRequest? Prerecorded { get; init; }
 
     /// <summary>
+    /// The voice-over is pre-recorded, but nothing could be said from the recordings for these shows, so <see cref="Script"/>
+    /// is spoken by text-to-speech instead.
+    /// </summary>
+    public bool TtsFallback { get; init; }
+
+    /// <summary>
     /// Whether a variable image's automatic picture was still being searched for, so the promo will look different once
     /// it's found (it isn't made until then).
     /// </summary>
@@ -140,7 +146,10 @@ public static partial class GeneratedPromoResolver
         PrerecordedVoiceRequest? prerecorded = template.Voice is { Enabled: true, IsPrerecorded: true } recordedVoice
             ? PrerecordedVoice.Plan(recordedVoice, PrerecordedVoice.Shows(template.Type, used, upcoming), zone, promoTime, variety, where)
             : null;
-        string? script = template.Voice is { Enabled: true, IsPrerecorded: true }
+        // No voice pack template can be said for these shows (a recording is missing): text-to-speech says it instead, when
+        // the template allows it, with its text-to-speech settings.
+        bool ttsFallback = prerecorded is null && template.Voice is { Enabled: true, IsPrerecorded: true, Prerecorded.FallbackToTts: true };
+        string? script = template.Voice is { Enabled: true, IsPrerecorded: true } && !ttsFallback
             ? prerecorded is null ? null : PrerecordedVoice.Describe(prerecorded)
             : template.Voice is { Enabled: true } voice
             ? voice.Advanced is { Enabled: true }
@@ -152,6 +161,12 @@ public static partial class GeneratedPromoResolver
             : null;
 
         string identity = JsonSerializer.Serialize(new { Version = 1, Template = template, Lines = lines, Script = script }, KeyJson);
+        if (ttsFallback)
+        {
+            // Recording what's missing later makes the promo again, with the recordings.
+            identity += "|tts-fallback";
+        }
+
         if (prerecorded is not null)
         {
             // What it can be made from: the templates and takes, and each take's file as it is now (a re-recorded take
@@ -216,7 +231,7 @@ public static partial class GeneratedPromoResolver
         // A video layer curated by AI: its plan needs the episode's transcript, so it's written when the promo is made,
         // keyed (like AI writing) by what's asked: the template, the episode, and the usual read-out it falls back on.
         CuratedPromoRequest? curation = null;
-        if (script is not null && prerecorded is null && CuratedPromo.LayerIndex(template) is { } curatedIndex && videos.TryGetValue(curatedIndex, out PromoVideoSource? curatedVideo)
+        if (script is not null && prerecorded is null && !ttsFallback && CuratedPromo.LayerIndex(template) is { } curatedIndex && videos.TryGetValue(curatedIndex, out PromoVideoSource? curatedVideo)
             && template.Layers[curatedIndex].Video is { Curated: { } curated, Episode: { } curatedEpisode }
             && GeneratedImageSelectors.TryParse(curatedEpisode, out GeneratedImageContext curatedContext, out int curatedOffset)
             && GeneratedPromoImages.Show(template, listings, imageSubjects, curatedContext, curatedOffset) is { } curatedShow)
@@ -275,6 +290,7 @@ public static partial class GeneratedPromoResolver
             LayerVideos = videos,
             Curation = curation,
             Prerecorded = prerecorded,
+            TtsFallback = ttsFallback,
             ImagesPending = automaticImages is SchedularrTV.Service.Images.AutomaticImageLookup { Pending: true }
         };
     }

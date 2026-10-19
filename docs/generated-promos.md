@@ -657,6 +657,18 @@ Each promo uses one of the templates you allow whose recordings cover what it mu
 
 The choice is fixed per promo, so a re-render sounds the same. Re-recording a take renders promos that use it again.
 
+**Falling back to text-to-speech.** Tick **Fall back to text-to-speech when the recordings can't say it** and a promo that no template can say (a show, day, time or channel isn't recorded, or the voice pack is gone) is spoken by text-to-speech instead of going without a voice-over. Its settings appear under the checkbox: voice service and voice, openers and closers, and advanced script templates, all as for a text-to-speech voice-over (AI wording and curated clips aren't used for a fallback). **Starts speaking at** and **Voice-over volume** are shared. Once the missing recording is added, the promo is made again with the recordings.
+
+```yaml
+voice:
+  mode: prerecorded
+  provider: tiktok
+  voice: en_us_006
+  prerecorded:
+    pack: 3f0c…
+    fallback_to_tts: true
+```
+
 **Cleaning up recordings.** A voice pack's **Pack settings** tab can clean every take before it's used, for all of the pack's templates (the recordings on disk aren't changed):
 
 - **Remove a whine or squeal** — notches out a steady tone at a pitch you give (and its 2× and 3× harmonics). **Find it in the recordings** listens to up to a dozen of the pack's takes, between the words where a whine is plainest, and fills in the pitch when one clearly stands out. Widen the cut if the whine wavers.

@@ -1174,156 +1174,7 @@
         }
         else
         {
-        bool advancedVoice = voice.Advanced is { Enabled: true };
-        ITextToSpeechProvider? provider = Voices.Providers.FirstOrDefault(candidate => string.Equals(candidate.Id, voice.Provider, StringComparison.OrdinalIgnoreCase));
-        IReadOnlyList<TtsVoice> voiceList = VoiceList(provider);
-        IReadOnlyList<string> languages = [.. voiceList.Select(option => option.Language).Distinct().Order()];
-        IReadOnlyList<TtsVoice> shown = ShownVoices(voiceList);
-        string current = VoiceId(voiceList, voice.Voice);
-        <div class="grid grid-3">
-            <label class="field">
-                <span>Voice service</span>
-                <select value="@voice.Provider" @onchange="e => SetProvider(voice, Text(e))">
-                    @foreach (ITextToSpeechProvider candidate in Voices.Providers)
-                    {
-                        <option value="@candidate.Id">@candidate.DisplayName</option>
-                    }
-                </select>
-            </label>
-            <label class="field">
-                <span>Voice@(_voicesLoading ? " (loading…)" : languages.Count > 1 ? $" ({shown.Count} of {voiceList.Count})" : "")</span>
-                <select value="@current" @onchange="e => Set(() => voice.Voice = Text(e))">
-                    @if (!shown.Any(option => option.Id == current))
-                    {
-                        <option value="@voice.Voice">@(string.IsNullOrWhiteSpace(voice.Voice) ? "Choose a voice" : VoiceLabel(voiceList, voice.Voice))</option>
-                    }
-                    @foreach (TtsVoice option in shown)
-                    {
-                        <option value="@option.Id" title="@option.Description">@VoiceLabel(voiceList, option.Id)</option>
-                    }
-                </select>
-            </label>
-            <label class="field">
-                <span>Starts speaking at (s)</span>
-                <input type="number" min="0" step="0.05" value="@Number(voice.Start.TotalSeconds)"
-                       @onchange="e => SetSeconds(e, value => voice.Start = value)" />
-            </label>
-        </div>
-        @if (languages.Count > 1)
-        {
-            <div class="grid grid-2">
-                <label class="field">
-                    <span>Voice language</span>
-                    <select value="@_voiceLanguage" @onchange="e => _voiceLanguage = Text(e)">
-                        <option value="@AllLanguages">All languages</option>
-                        @foreach (string language in languages)
-                        {
-                            <option value="@language">@language</option>
-                        }
-                    </select>
-                </label>
-                <label class="field">
-                    <span>Search voices</span>
-                    <input type="search" value="@_voiceSearch" placeholder="narrator, deep, female…" @oninput="e => _voiceSearch = Text(e)" />
-                </label>
-            </div>
-        }
-        @if (provider?.SetupProblem is { } setup)
-        {
-            <p class="hint warn">@setup</p>
-        }
-        else if (_voiceError is { } voiceError)
-        {
-            <p class="hint warn">Couldn't load the voice list: @voiceError</p>
-        }
-        <label class="check">
-            <input type="checkbox" checked="@advancedVoice" @onchange="e => ToggleAdvancedVoice(voice, e.Value is true)" />
-            <span>Advanced voice-over templates (write the complete script)</span>
-        </label>
-        @if (voice.Advanced is { Enabled: true } advanced)
-        {
-            <p class="hint">One of your eligible templates is picked for each promo. Its wording is used exactly, with tokens filled in—no automatic linking phrases or AI rewriting.</p>
-            @for (int index = 0; index < advanced.Templates.Count; index++)
-            {
-                int position = index;
-                <div class="field" @key="position">
-                    <label for="@($"{_canvasId}-voice-{position}")">Script template @(position + 1)</label>
-                    <textarea id="@($"{_canvasId}-voice-{position}")" rows="3"
-                              @onchange="e => Set(() => advanced.Templates[position] = Text(e))">@advanced.Templates[position]</textarea>
-                    <button class="btn btn-sm btn-danger" type="button" @onclick="() => Set(() => advanced.Templates.RemoveAt(position))">Remove template</button>
-                </div>
-            }
-            <button class="btn btn-sm" type="button" @onclick="() => Set(() => advanced.Templates.Add(DefaultVoiceTemplate))">Add script template</button>
-            <p class="hint">{up_next}, {up_next_2} … {up_next_10} always use the same upcoming sequence as text and variable images. The template's “Count upcoming programmes by” setting controls whether this counts timeslots/episodes or groups consecutive slots by show. {show} names the show this promo is for; {channel}, {episode}, {start_time}, and {end_time} are also available.</p>
-            <p class="hint">Use {up_next_2:raw} to bypass repeat wording, or :episode, :start_time, or :end_time for its details. A template referencing an unavailable upcoming listing is skipped; add a shorter template as a fallback. If none can be used, this promo has no voice-over.</p>
-            <div class="grid grid-2">
-                <label class="field">
-                    <span>Before a repeated show title (spaces included)</span>
-                    <input type="text" value="@advanced.RepeatPrefix" @onchange="e => Set(() => advanced.RepeatPrefix = Text(e))" />
-                </label>
-                <label class="field">
-                    <span>After a repeated show title (spaces included)</span>
-                    <input type="text" value="@advanced.RepeatSuffix" @onchange="e => Set(() => advanced.RepeatSuffix = Text(e))" />
-                </label>
-            </div>
-            <p class="hint">For example, “more ” makes a later token say “more Rugrats” if an earlier listing is also Rugrats. Separate slots of the same show can repeat in Timeslot / episode mode; episodes packed into one slot stay together. Clear both fields to repeat titles unchanged.</p>
-            <label class="check">
-                <input type="checkbox" checked="@advanced.IncludePreMessages" @onchange="e => Set(() => advanced.IncludePreMessages = e.Value is true)" />
-                <span>Include an opener before the script (optional)</span>
-            </label>
-            <label class="check">
-                <input type="checkbox" checked="@advanced.IncludePostMessages" @onchange="e => Set(() => advanced.IncludePostMessages = e.Value is true)" />
-                <span>Include a closer after the script (optional)</span>
-            </label>
-        }
-        <div class="grid grid-2">
-            @if (!advancedVoice || voice.Advanced!.IncludePreMessages)
-            {
-            <div class="field">
-                <span>Said first (one is picked for each promo)</span>
-                <PhraseListEditor Values="PreMessages(voice)" Changed="Commit" Label="Opener"
-                                  Placeholder="@GeneratedPromoResolver.DefaultPreMessage(Template.Type)"
-                                  EmptyHint="@(advancedVoice ? "No opener; the script stands on its own." : $"Says the usual “{GeneratedPromoResolver.DefaultPreMessage(Template.Type)}”")" />
-            </div>
-            }
-            @if (!advancedVoice || voice.Advanced!.IncludePostMessages)
-            {
-            <div class="field">
-                <span>Said last ({channel}, {show}, {time} and {when} are filled in)</span>
-                <PhraseListEditor Values="PostMessages(voice)" Changed="Commit" Label="Closer" Placeholder="Only on {channel}!"
-                                  EmptyHint="Nothing is said after the shows." />
-            </div>
-            }
-        </div>
-        @if (CuratedPromo.LayerIndex(Template) is { } curatedLayer)
-        {
-            <p class="hint">
-                The voice-over is written by the layer curated by AI (<strong>@(string.IsNullOrWhiteSpace(Template.Layers[curatedLayer].Name) ? $"layer {curatedLayer + 1}" : Template.Layers[curatedLayer].Name)</strong>),
-                in this voice, around the clips it picks, between the <strong>Said first</strong> and <strong>Said last</strong> picked
-                below (said as written; for curated promos they can also use @CuratedTokens, and empty says nothing extra).
-                The read-out below is said instead whenever it can't be curated.
-            </p>
-        }
-        <p class="hint">@(advancedVoice ? "Template read-out:" : voice.Writer is null ? ReadOutLabel : UsualReadOutLabel) <em>@Script()</em></p>
-        @if (advancedVoice && string.IsNullOrWhiteSpace(Script()))
-        {
-            <p class="hint warn">No usable voice-over template for these shows. Check tokens and add a template requiring fewer upcoming listings.</p>
-        }
-
-        @if (!advancedVoice)
-        {
-        <label class="check">
-            <input type="checkbox" checked="@(voice.Writer is not null)"
-                   @onchange="e => Set(() => voice.Writer = e.Value is true ? voice.Writer ?? new AiTextConfig() : null)" />
-            <span>Have AI word it naturally (and say something about the episode)</span>
-        </label>
-        @if (voice.Writer is { } voiceWriter)
-        {
-            <AiTextSettings Config="voiceWriter" Changed="Commit" PromptLabel="Anything else it should do (optional)"
-                            PromptPlaceholder="@VoicePromptPlaceholder" WordsPlaceholder="@VoiceWords(voice)" Try="@TryVoice"
-                            TryHint="Writes one with this channel's next shows (a new one each time)." />
-        }
-        }
+            @(TtsSettings(voice, fallback: false))
         }
     }
 
@@ -3804,6 +3655,171 @@
         }
     }
 
+    /// <summary>
+    /// Text-to-speech settings: the voice-over's own, or (<paramref name="fallback"/>) those a pre-recorded voice-over falls
+    /// back on when its recordings can't say a promo, which leave out what only applies to text-to-speech proper (when
+    /// it starts is shared, curation and AI wording aren't used for a fallback).
+    /// </summary>
+    private RenderFragment TtsSettings(GeneratedVoiceConfig voice, bool fallback) => __builder =>
+    {
+        bool advancedVoice = voice.Advanced is { Enabled: true };
+        ITextToSpeechProvider? provider = Voices.Providers.FirstOrDefault(candidate => string.Equals(candidate.Id, voice.Provider, StringComparison.OrdinalIgnoreCase));
+        IReadOnlyList<TtsVoice> voiceList = VoiceList(provider);
+        IReadOnlyList<string> languages = [.. voiceList.Select(option => option.Language).Distinct().Order()];
+        IReadOnlyList<TtsVoice> shown = ShownVoices(voiceList);
+        string current = VoiceId(voiceList, voice.Voice);
+        <div class="grid grid-3">
+            <label class="field">
+                <span>Voice service</span>
+                <select value="@voice.Provider" @onchange="e => SetProvider(voice, Text(e))">
+                    @foreach (ITextToSpeechProvider candidate in Voices.Providers)
+                    {
+                        <option value="@candidate.Id">@candidate.DisplayName</option>
+                    }
+                </select>
+            </label>
+            <label class="field">
+                <span>Voice@(_voicesLoading ? " (loading…)" : languages.Count > 1 ? $" ({shown.Count} of {voiceList.Count})" : "")</span>
+                <select value="@current" @onchange="e => Set(() => voice.Voice = Text(e))">
+                    @if (!shown.Any(option => option.Id == current))
+                    {
+                        <option value="@voice.Voice">@(string.IsNullOrWhiteSpace(voice.Voice) ? "Choose a voice" : VoiceLabel(voiceList, voice.Voice))</option>
+                    }
+                    @foreach (TtsVoice option in shown)
+                    {
+                        <option value="@option.Id" title="@option.Description">@VoiceLabel(voiceList, option.Id)</option>
+                    }
+                </select>
+            </label>
+            @if (!fallback)
+            {
+                <label class="field">
+                    <span>Starts speaking at (s)</span>
+                    <input type="number" min="0" step="0.05" value="@Number(voice.Start.TotalSeconds)"
+                           @onchange="e => SetSeconds(e, value => voice.Start = value)" />
+                </label>
+            }
+        </div>
+        @if (languages.Count > 1)
+        {
+            <div class="grid grid-2">
+                <label class="field">
+                    <span>Voice language</span>
+                    <select value="@_voiceLanguage" @onchange="e => _voiceLanguage = Text(e)">
+                        <option value="@AllLanguages">All languages</option>
+                        @foreach (string language in languages)
+                        {
+                            <option value="@language">@language</option>
+                        }
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Search voices</span>
+                    <input type="search" value="@_voiceSearch" placeholder="narrator, deep, female…" @oninput="e => _voiceSearch = Text(e)" />
+                </label>
+            </div>
+        }
+        @if (provider?.SetupProblem is { } setup)
+        {
+            <p class="hint warn">@setup</p>
+        }
+        else if (_voiceError is { } voiceError)
+        {
+            <p class="hint warn">Couldn't load the voice list: @voiceError</p>
+        }
+        <label class="check">
+            <input type="checkbox" checked="@advancedVoice" @onchange="e => ToggleAdvancedVoice(voice, e.Value is true)" />
+            <span>Advanced voice-over templates (write the complete script)</span>
+        </label>
+        @if (voice.Advanced is { Enabled: true } advanced)
+        {
+            <p class="hint">One of your eligible templates is picked for each promo. Its wording is used exactly, with tokens filled in—no automatic linking phrases or AI rewriting.</p>
+            @for (int index = 0; index < advanced.Templates.Count; index++)
+            {
+                int position = index;
+                <div class="field" @key="position">
+                    <label for="@($"{_canvasId}-voice-{position}")">Script template @(position + 1)</label>
+                    <textarea id="@($"{_canvasId}-voice-{position}")" rows="3"
+                              @onchange="e => Set(() => advanced.Templates[position] = Text(e))">@advanced.Templates[position]</textarea>
+                    <button class="btn btn-sm btn-danger" type="button" @onclick="() => Set(() => advanced.Templates.RemoveAt(position))">Remove template</button>
+                </div>
+            }
+            <button class="btn btn-sm" type="button" @onclick="() => Set(() => advanced.Templates.Add(DefaultVoiceTemplate))">Add script template</button>
+            <p class="hint">{up_next}, {up_next_2} … {up_next_10} always use the same upcoming sequence as text and variable images. The template's “Count upcoming programmes by” setting controls whether this counts timeslots/episodes or groups consecutive slots by show. {show} names the show this promo is for; {channel}, {episode}, {start_time}, and {end_time} are also available.</p>
+            <p class="hint">Use {up_next_2:raw} to bypass repeat wording, or :episode, :start_time, or :end_time for its details. A template referencing an unavailable upcoming listing is skipped; add a shorter template as a fallback. If none can be used, this promo has no voice-over.</p>
+            <div class="grid grid-2">
+                <label class="field">
+                    <span>Before a repeated show title (spaces included)</span>
+                    <input type="text" value="@advanced.RepeatPrefix" @onchange="e => Set(() => advanced.RepeatPrefix = Text(e))" />
+                </label>
+                <label class="field">
+                    <span>After a repeated show title (spaces included)</span>
+                    <input type="text" value="@advanced.RepeatSuffix" @onchange="e => Set(() => advanced.RepeatSuffix = Text(e))" />
+                </label>
+            </div>
+            <p class="hint">For example, “more ” makes a later token say “more Rugrats” if an earlier listing is also Rugrats. Separate slots of the same show can repeat in Timeslot / episode mode; episodes packed into one slot stay together. Clear both fields to repeat titles unchanged.</p>
+            <label class="check">
+                <input type="checkbox" checked="@advanced.IncludePreMessages" @onchange="e => Set(() => advanced.IncludePreMessages = e.Value is true)" />
+                <span>Include an opener before the script (optional)</span>
+            </label>
+            <label class="check">
+                <input type="checkbox" checked="@advanced.IncludePostMessages" @onchange="e => Set(() => advanced.IncludePostMessages = e.Value is true)" />
+                <span>Include a closer after the script (optional)</span>
+            </label>
+        }
+        <div class="grid grid-2">
+            @if (!advancedVoice || voice.Advanced!.IncludePreMessages)
+            {
+            <div class="field">
+                <span>Said first (one is picked for each promo)</span>
+                <PhraseListEditor Values="PreMessages(voice)" Changed="Commit" Label="Opener"
+                                  Placeholder="@GeneratedPromoResolver.DefaultPreMessage(Template.Type)"
+                                  EmptyHint="@(advancedVoice ? "No opener; the script stands on its own." : $"Says the usual “{GeneratedPromoResolver.DefaultPreMessage(Template.Type)}”")" />
+            </div>
+            }
+            @if (!advancedVoice || voice.Advanced!.IncludePostMessages)
+            {
+            <div class="field">
+                <span>Said last ({channel}, {show}, {time} and {when} are filled in)</span>
+                <PhraseListEditor Values="PostMessages(voice)" Changed="Commit" Label="Closer" Placeholder="Only on {channel}!"
+                                  EmptyHint="Nothing is said after the shows." />
+            </div>
+            }
+        </div>
+        @if (!fallback)
+        {
+        if (CuratedPromo.LayerIndex(Template) is { } curatedLayer)
+        {
+            <p class="hint">
+                The voice-over is written by the layer curated by AI (<strong>@(string.IsNullOrWhiteSpace(Template.Layers[curatedLayer].Name) ? $"layer {curatedLayer + 1}" : Template.Layers[curatedLayer].Name)</strong>),
+                in this voice, around the clips it picks, between the <strong>Said first</strong> and <strong>Said last</strong> picked
+                below (said as written; for curated promos they can also use @CuratedTokens, and empty says nothing extra).
+                The read-out below is said instead whenever it can't be curated.
+            </p>
+        }
+        <p class="hint">@(advancedVoice ? "Template read-out:" : voice.Writer is null ? ReadOutLabel : UsualReadOutLabel) <em>@Script()</em></p>
+        @if (advancedVoice && string.IsNullOrWhiteSpace(Script()))
+        {
+            <p class="hint warn">No usable voice-over template for these shows. Check tokens and add a template requiring fewer upcoming listings.</p>
+        }
+
+        @if (!advancedVoice)
+        {
+        <label class="check">
+            <input type="checkbox" checked="@(voice.Writer is not null)"
+                   @onchange="e => Set(() => voice.Writer = e.Value is true ? voice.Writer ?? new AiTextConfig() : null)" />
+            <span>Have AI word it naturally (and say something about the episode)</span>
+        </label>
+        @if (voice.Writer is { } voiceWriter)
+        {
+            <AiTextSettings Config="voiceWriter" Changed="Commit" PromptLabel="Anything else it should do (optional)"
+                            PromptPlaceholder="@VoicePromptPlaceholder" WordsPlaceholder="@VoiceWords(voice)" Try="@TryVoice"
+                            TryHint="Writes one with this channel's next shows (a new one each time)." />
+        }
+        }
+        }
+    };
+
     private RenderFragment PrerecordedSettings(GeneratedVoiceConfig voice, GeneratedPrerecordedVoiceConfig recorded) => __builder =>
     {
         GeneratedVoicePack? pack = GeneratedVoicePacks.Find(VoicePacks, recorded.Pack);
@@ -3939,9 +3955,14 @@
                 <span>Even out the volume of every phrase (for takes recorded closer to or further from the mic)</span>
             </label>
             string readOut = Script();
-            @if (string.IsNullOrWhiteSpace(readOut))
+            bool fallingBack = Preview.Resolve(Template, Channel, Zone)?.TtsFallback == true;
+            @if (fallingBack)
             {
-                <p class="hint warn">None of these templates can be said for the preview's shows, so this promo would have no voice-over. Record what's missing, or add a template that needs less.</p>
+                <p class="hint warn">None of these templates can be said for the preview's shows, so text-to-speech says it instead: <em>@readOut</em></p>
+            }
+            else if (string.IsNullOrWhiteSpace(readOut))
+            {
+                <p class="hint warn">None of these templates can be said for the preview's shows, so this promo would have no voice-over. Record what's missing, add a template that needs less, or fall back to text-to-speech below.</p>
             }
             else
             {
@@ -3959,7 +3980,23 @@
                 }
             }
         }
+        <label class="check">
+            <input type="checkbox" checked="@(recorded.FallbackToTts == true)" @onchange="e => SetFallbackToTts(recorded, e.Value is true)" />
+            <span>Fall back to text-to-speech when the recordings can't say it (a show, day or time isn't recorded)</span>
+        </label>
+        @if (recorded.FallbackToTts == true)
+        {
+            <p class="hint">Said with these text-to-speech settings, as a text-to-speech voice-over would be (without AI wording). Recording what was missing makes the promo again with the recordings.</p>
+            @(TtsSettings(voice, fallback: true))
+        }
     };
+
+    // Off is kept as null.
+    private Task SetFallbackToTts(GeneratedPrerecordedVoiceConfig recorded, bool fallback) => Set(() =>
+    {
+        recorded.FallbackToTts = fallback ? true : null;
+        ClearSay();
+    });
 
     private static string PackTemplateWords(GeneratedVoicePack pack, GeneratedVoicePackTemplate template) =>
         template.Parts.Count == 0 ? "no parts yet"

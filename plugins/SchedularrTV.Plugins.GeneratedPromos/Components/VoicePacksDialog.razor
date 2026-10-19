@@ -279,7 +279,7 @@
         </p>
         // Promos' own (inline) templates count as uses too.
         List<GeneratedVoicePackTemplate> inlineTemplates = [.. GeneratedVoicePacks.InlineTemplates(Editor.Working, pack.Id)];
-        @foreach (GeneratedVoicePhrase phrase in pack.Phrases)
+        foreach (GeneratedVoicePhrase phrase in pack.Phrases)
         {
             string key = $"phrase:{phrase.Id}";
             bool open = _open.Contains(key);

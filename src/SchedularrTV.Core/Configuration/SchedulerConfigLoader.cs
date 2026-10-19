@@ -430,7 +430,8 @@ public static class SchedulerConfigLoader
                 if (string.IsNullOrWhiteSpace(recordedVoice.Prerecorded!.Pack))
                     errors.Add($"{templateScope}.voice.prerecorded: choose a voice pack.");
                 else if (GeneratedVoicePacks.Find(config.Settings.GeneratedPromosVoicePacks, recordedVoice.Prerecorded.Pack) is not { } recordedPack)
-                    warnings.Add($"{templateScope}.voice.prerecorded: there is no voice pack '{recordedVoice.Prerecorded.Pack}', so it has no voice-over.");
+                    warnings.Add($"{templateScope}.voice.prerecorded: there is no voice pack '{recordedVoice.Prerecorded.Pack}', so "
+                        + (recordedVoice.Prerecorded.FallbackToTts == true ? "text-to-speech says its voice-over." : "it has no voice-over."));
                 else
                 {
                     GeneratedPrerecordedVoiceConfig recorded = recordedVoice.Prerecorded;
@@ -442,6 +443,10 @@ public static class SchedulerConfigLoader
                             warnings.Add($"{templateScope}.voice.prerecorded.inline_templates '{inline.Name}': a part names a phrase that isn't in voice pack '{recordedPack.Name}', so it's never said.");
                     }
                 }
+
+                if (recordedVoice.Prerecorded.FallbackToTts == true
+                    && (string.IsNullOrWhiteSpace(recordedVoice.Provider) || string.IsNullOrWhiteSpace(recordedVoice.Voice)))
+                    warnings.Add($"{templateScope}.voice.prerecorded.fallback_to_tts: choose a text-to-speech provider and voice, or promos missing a recording still have no voice-over.");
             }
             else if (template.Voice is { Enabled: true } voice
                 && (string.IsNullOrWhiteSpace(voice.Provider) || string.IsNullOrWhiteSpace(voice.Voice)))
@@ -449,7 +454,8 @@ public static class SchedulerConfigLoader
                 errors.Add($"{templateScope}.voice: choose a provider and a voice.");
             }
 
-            if (template.Voice is { Enabled: true, IsPrerecorded: false, Advanced: { Enabled: true } advanced } authoredVoice)
+            if (template.Voice is { Enabled: true, Advanced: { Enabled: true } advanced } authoredVoice
+                && (!authoredVoice.IsPrerecorded || authoredVoice.Prerecorded!.FallbackToTts == true))
             {
                 if (advanced.Templates.Count == 0 || advanced.Templates.Any(string.IsNullOrWhiteSpace))
                     errors.Add($"{templateScope}.voice.advanced: add at least one nonempty script template.");
