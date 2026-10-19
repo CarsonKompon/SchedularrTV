@@ -43,18 +43,56 @@ public sealed class GeneratedPromoVariantTests
     }
 
     [Fact]
-    public void A_default_left_without_backgrounds_is_only_a_fallback()
+    public void When_every_background_was_edited_the_first_becomes_the_default_look()
     {
         GeneratedPromoTemplate template = GeneratedPromoTemplates.UpNext();
         GeneratedPromoEditing.SetBackgrounds(template, ["one.mp4", "two.mp4"]);
-        GeneratedPromoEditing.Recolour(template, "one.mp4", template.Layers[2], "#202020");
-        GeneratedPromoEditing.Retime(template, "two.mp4", template.Layers[2]).Start = TimeSpan.FromSeconds(2);
+        GeneratedLayer heading = template.Layers[2];
+        string usual = heading.Color;
+        GeneratedPromoEditing.Recolour(template, "one.mp4", heading, "#202020");
+        GeneratedPromoEditing.Retime(template, "two.mp4", heading).Start = TimeSpan.FromSeconds(2);
 
         GeneratedPromoVariants.Convert(template);
 
-        Assert.Equal(2, template.Variants!.Count);
-        Assert.Empty(template.BackgroundChoices);
-        Assert.Equal((double?)0, template.DefaultWeight);
+        // The default look is "one" (never a look without a background), as likely as "two".
+        Assert.Equal(new[] { "one.mp4" }, template.BackgroundChoices);
+        Assert.Null(template.DefaultWeight);
+        Assert.Equal("#202020", heading.Color);
+        GeneratedPromoVariant two = Assert.Single(template.Variants!);
+        Assert.Equal("two.mp4", two.Background);
+
+        // "two" still looks as it did: the old colour (now its own), and its own timing.
+        Assert.Equal(usual, GeneratedPromoResolver.ColorFor(template, two.Id, heading));
+        Assert.Equal(TimeSpan.FromSeconds(2), GeneratedPromoResolver.TimingFor(template, two.Id, heading).Start);
+    }
+
+    [Fact]
+    public void Templates_an_earlier_conversion_left_without_a_default_background_are_repaired()
+    {
+        GeneratedPromoTemplate template = GeneratedPromoTemplates.UpNext();
+        GeneratedLayer heading = template.Layers[2];
+        heading.Id = "head";
+        template.Variants =
+        [
+            new GeneratedPromoVariant { Name = "red", Background = "red.mp4", Layers = [new GeneratedLayerOverride { Layer = "head", X = 500, Width = 10, Height = 10 }] },
+            new GeneratedPromoVariant { Name = "blue", Background = "blue.mp4" }
+        ];
+        template.DefaultWeight = 0;
+        float usualX = heading.X;
+
+        Assert.True(GeneratedPromoVariants.RepairConverted(template));
+
+        Assert.Equal(new[] { "red.mp4" }, template.BackgroundChoices);
+        Assert.Null(template.DefaultWeight);
+        Assert.Equal(500, heading.X);
+        GeneratedPromoVariant blue = Assert.Single(template.Variants!);
+        Assert.Equal(usualX, GeneratedPromoResolver.Pose(template, blue.Id, heading).X);
+
+        // A template set up that way on purpose (its own names, say) is left alone.
+        template.Variants = [new GeneratedPromoVariant { Name = "Night", Background = "night.mp4" }];
+        template.Background = null;
+        template.DefaultWeight = 0;
+        Assert.False(GeneratedPromoVariants.RepairConverted(template));
     }
 
     [Fact]

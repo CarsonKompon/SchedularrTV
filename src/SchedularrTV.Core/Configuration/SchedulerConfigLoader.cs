@@ -1110,6 +1110,7 @@ public static class SchedulerConfigLoader
         foreach (GeneratedPromoTemplate template in GeneratedSharedImages.Templates(config))
         {
             GeneratedPromoVariants.Convert(template);
+            GeneratedPromoVariants.RepairConverted(template);
             if (template.Variants is { Count: 0 }) template.Variants = null;
             foreach (GeneratedPromoVariant variant in template.Variants ?? [])
             {
