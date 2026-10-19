@@ -1,5 +1,5 @@
-// Same pointer-centred 1–16× zoom as the Generated Promos editor. Canvas bounds include
-// this transform, so the editor's drag/resize/rotate calculations continue to use screen pixels.
+// Shared pointer-centred zoom/pan for both design editors. Canvas bounds include the
+// transform, so each editor's drag/resize/rotate calculations keep using screen pixels.
 export function create(viewportId, canvasId) {
     const viewport = document.getElementById(viewportId);
     const canvas = document.getElementById(canvasId);

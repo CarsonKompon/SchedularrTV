@@ -1,0 +1,30 @@
+<div class="canvas-studio @(_help ? "show-help" : "") @(_focus ? "focus-canvas" : "")">
+    <div class="studio-heading">
+        <Icon Name="layers" /><strong>Design</strong>
+        <span class="spacer"></span>
+        <EditorIconButton Icon="book" Label="Show editing help" Active="_help" OnClick="() => _help = !_help" />
+        <EditorIconButton Icon="sliders" Label="Toggle layer inspector" Active="@(!_focus)" OnClick="() => _focus = !_focus" />
+    </div>
+    @if (_help)
+    {
+        <p class="studio-help">Drag to move · handles to resize · Shift to constrain · Alt to bypass snapping.<br />Ctrl/⌘ + scroll to zoom · middle-drag to pan · Ctrl/⌘ + 0 to fit.<br />Select multiple layers or keyframes with Ctrl/⌘ or Shift.</p>
+    }
+    <div class="ed-workspace">
+        <div class="studio-stage-area">
+            @if (Tools is not null)
+            {
+                <div class="studio-tool-rail">@Tools</div>
+            }
+            <div class="ed-stage">@Stage</div>
+        </div>
+        <aside class="ed-side" aria-label="Layers and properties">@Inspector</aside>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public RenderFragment? Stage { get; set; }
+    [Parameter, EditorRequired] public RenderFragment? Inspector { get; set; }
+    [Parameter] public RenderFragment? Tools { get; set; }
+    private bool _help;
+    private bool _focus;
+}

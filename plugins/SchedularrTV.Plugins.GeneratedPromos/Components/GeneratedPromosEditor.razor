@@ -49,9 +49,9 @@ else
                     }
                 </select>
             </label>
-            <button class="btn btn-sm" type="button" @onclick="Add">New template</button>
-            <button class="btn btn-sm" type="button" disabled="@(_selected is null)" @onclick="Duplicate">Duplicate</button>
-            <button class="btn btn-sm btn-danger" type="button" @onclick="Disable">Remove all</button>
+            <EditorIconButton Icon="plus" Label="New template" OnClick="Add" />
+            <EditorIconButton Icon="copy" Label="Duplicate template" Disabled="@(_selected is null)" OnClick="Duplicate" />
+            <EditorIconButton Icon="trash" Label="Remove all templates" Danger="true" OnClick="Disable" />
         </div>
         <TemplatePackageButtons Kind="@GeneratedPromoPackages.Kind" What="generated promo template"
                                 ExportText="@(_selected is null ? "Export" : $"Export “{(string.IsNullOrWhiteSpace(_selected.Name) ? "Untitled" : _selected.Name)}”")"
@@ -64,7 +64,7 @@ else
                 <button type="button" class="template-choice @(ReferenceEquals(template, _selected) ? "selected" : "")" @key="template"
                         aria-pressed="@(ReferenceEquals(template, _selected) ? "true" : "false")" @onclick="() => _selected = template">
                     <strong>@(string.IsNullOrWhiteSpace(template.Name) ? "Untitled" : template.Name)</strong>
-                    <span>@Summary(template)</span>
+                    <span title="@Summary(template)">@Summary(template)</span>
                 </button>
             }
             @if (generated.Templates.Count == 0)

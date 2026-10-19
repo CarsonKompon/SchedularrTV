@@ -1,0 +1,69 @@
+@* IDs remain owned by the editor so its preview and zoom interop can target this shared surface. *@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+<div class="ed-viewport" id="@ViewportId">
+    <span class="ed-zoom-badge" aria-hidden="true"></span>
+    <div class="ed-canvas" id="@CanvasId" role="group" aria-label="@Label" @onpointerenter="Measure"
+         style="aspect-ratio:@Width / @Height;">
+        <div class="ed-still" id="@StillId" aria-hidden="true"></div>
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string ViewportId { get; set; } = "";
+    [Parameter, EditorRequired] public string CanvasId { get; set; } = "";
+    [Parameter, EditorRequired] public string StillId { get; set; } = "";
+    [Parameter] public string Label { get; set; } = "Design canvas";
+    [Parameter] public int Width { get; set; }
+    [Parameter] public int Height { get; set; }
+    [Parameter] public EventCallback Measure { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private IJSObjectReference? _zoom;
+    private bool _disposed;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_zoom is not null || _disposed) return;
+        try
+        {
+            await using var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/canvas-viewport.js");
+            if (_disposed) return;
+            _zoom = await module.InvokeAsync<IJSObjectReference>("create", ViewportId, CanvasId);
+            if (_disposed) await ReleaseZoom();
+        }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException)
+        {
+            // A later render retries if the circuit was temporarily unavailable.
+        }
+    }
+
+    public async Task ResetAsync()
+    {
+        try
+        {
+            if (_zoom is not null) await _zoom.InvokeVoidAsync("reset");
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        await ReleaseZoom();
+    }
+
+    private async Task ReleaseZoom()
+    {
+        var zoom = _zoom;
+        _zoom = null;
+        if (zoom is null) return;
+        try
+        {
+            await zoom.InvokeVoidAsync("dispose");
+            await zoom.DisposeAsync();
+        }
+        catch (JSDisconnectedException) { }
+    }
+}

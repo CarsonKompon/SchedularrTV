@@ -1,0 +1,20 @@
+<div class="ed-timeline-head">
+    <div class="ed-frame-step" role="group" aria-label="Step through frames">
+        <EditorIconButton Icon="rewind" Label="Back a second (Shift + ←)" OnClick="() => Step.InvokeAsync(-FramesPerSecond)" />
+        <EditorIconButton Icon="arrow-left" Label="Previous frame (← or ,)" OnClick="() => Step.InvokeAsync(-1)" />
+        <EditorIconButton Icon="arrow-right" Label="Next frame (→ or .)" OnClick="() => Step.InvokeAsync(1)" />
+        <EditorIconButton Icon="forward" Label="Forward a second (Shift + →)" OnClick="() => Step.InvokeAsync(FramesPerSecond)" />
+    </div>
+    <strong title="Preview time">@Time.ToString("0.000")<span class="ed-meta"> / @Duration.ToString("0.##")s</span></strong>
+    <div class="spacer"></div>
+    <span class="ed-meta" title="Current frame / total frames">@(Frame + 1) / @FrameCount</span>
+</div>
+
+@code {
+    [Parameter] public double Time { get; set; }
+    [Parameter] public double Duration { get; set; }
+    [Parameter] public int Frame { get; set; }
+    [Parameter] public int FrameCount { get; set; }
+    [Parameter] public int FramesPerSecond { get; set; }
+    [Parameter] public EventCallback<int> Step { get; set; }
+}

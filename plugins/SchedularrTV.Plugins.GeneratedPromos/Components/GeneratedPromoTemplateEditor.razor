@@ -17,7 +17,7 @@
             <span class="pill pill-muted">off</span>
         }
         <div class="spacer"></div>
-        <button class="btn btn-sm btn-danger" type="button" @onclick="OnRemove">Delete template</button>
+        <EditorIconButton Icon="trash" Label="Delete template" Danger="true" OnClick="OnRemove" />
     </div>
 
     @if (Errors.Count > 0)
@@ -32,6 +32,8 @@
         </div>
     }
 
+    <details class="studio-section">
+    <summary><Icon Name="sliders" /> Template settings</summary>
     <div class="grid grid-3">
         <label class="field">
             <span>Name</span>
@@ -172,7 +174,11 @@
         }
     </details>
 
-    <VariableImagesEditor Template="Template" Changed="Commit" />
+    </details>
+    <details class="studio-section">
+        <summary><Icon Name="image" /> Variable images (@(Template.VariableImages?.Count ?? 0))</summary>
+        <VariableImagesEditor Template="Template" Changed="Commit" />
+    </details>
 
     @if (Template.Generator is { } generator)
     {
@@ -302,21 +308,14 @@
     }
     else
     {
-    <div class="ed-workspace">
-        <div class="ed-stage">
-            <div class="ed-toolbar">
-                <span class="ed-toolbar-label">Add</span>
-                <button class="btn btn-sm" type="button" @onclick="() => AddLayer(RequiredKind)">+ @KindName(RequiredKind)</button>
-                <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Text)">+ Text</button>
-                <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Rect)">+ Shape</button>
-                <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Image)">+ Image</button>                <button class="btn btn-sm" type="button" @onclick="() => AddLayer(GeneratedLayerKind.Video)">+ Video</button>
-                <span class="ed-toolbar-label" style="margin-left:8px;">Tool</span>
-                <button class="btn btn-sm @(_pinTool ? "btn-primary" : "")" type="button" aria-pressed="@(_pinTool ? "true" : "false")"
-                        title="Drag the selected layer's corners for a perspective look, like text on the side of a building (P)"
-                        @onclick="() => _pinTool = !_pinTool">⬚ Perspective</button>
-                <div class="spacer"></div>
-                <span class="ed-meta">@Template.Width × @Template.Height</span>
-            </div>
+    <CanvasWorkspace>
+        <Tools>
+            <CanvasToolRail SupportsPerspective="true" @bind-Perspective="_pinTool" />
+        </Tools>
+        <Stage>
+            <CanvasTools Width="Template.Width" Height="Template.Height" Fit="ResetZoom" Add="AddCanvasLayer">
+                <button class="btn btn-sm" type="button" title="@($"Add {KindName(RequiredKind)}")" @onclick="() => AddLayer(RequiredKind)"><Icon Name="tv" />@KindName(RequiredKind)</button>
+            </CanvasTools>
             @if (!Template.Layers.Any(layer => layer.Kind == RequiredKind))
             {
                 @* Optional: a template can show the shows with variable images alone. *@
@@ -328,13 +327,8 @@
                 </p>
             }
             @* Ctrl + wheel zooms about the pointer and the middle button pans; script moves the canvas inside this frame. *@
-            <div class="ed-viewport" id="@_viewportId">
-            <span class="ed-zoom-badge" aria-hidden="true"></span>
-            <div class="ed-canvas" id="@_canvasId" role="group" aria-label="Promo canvas" @onpointerenter="MeasureCanvas"
-                 style="aspect-ratio:@(Template.Width) / @(Template.Height);">
-                @* The preview frame. Script swaps it in only once the next frame has decoded, so it never blanks between frames;
-                   the renderer leaves this element alone (nothing about it changes between renders). *@
-                <div class="ed-still" id="@_stillId" aria-hidden="true"></div>
+            <CanvasViewport @ref="_viewport" ViewportId="@_viewportId" CanvasId="@_canvasId" StillId="@_stillId" Label="Promo canvas"
+                            Width="Template.Width" Height="Template.Height" Measure="MeasureCanvas">
                 @foreach (GeneratedLayer layer in Template.Layers.Where(VisibleHere))
                 {
                     bool isSelected = ReferenceEquals(layer, _layer);
@@ -397,31 +391,9 @@
                 {
                     <div class="snap-guide snap-guide-y" aria-hidden="true"></div>
                 }
-            </div>
-            </div>
-            <div class="ed-viewport-bar">
-                <span class="hint" style="margin:0;">Ctrl + scroll to zoom in for precise edits, middle-drag to pan.</span>
-                <div class="spacer"></div>
-                <button class="btn btn-sm" type="button" title="Show the whole frame again (Ctrl + 0)" @onclick="ResetZoom">Fit</button>
-            </div>
+            </CanvasViewport>
             <div class="ed-timeline">
-                <div class="ed-timeline-head">
-                    <div class="ed-frame-step" role="group" aria-label="Step through frames">
-                        <button class="btn btn-sm" type="button" title="Back a second (Shift+←)" aria-label="Back a second" @onclick="() => StepFrames(-Fps)">«</button>
-                        <button class="btn btn-sm" type="button" title="Previous frame (← or ,)" aria-label="Previous frame" @onclick="() => StepFrames(-1)">‹</button>
-                        <button class="btn btn-sm" type="button" title="Next frame (→ or .)" aria-label="Next frame" @onclick="() => StepFrames(1)">›</button>
-                        <button class="btn btn-sm" type="button" title="Forward a second (Shift+→)" aria-label="Forward a second" @onclick="() => StepFrames(Fps)">»</button>
-                    </div>
-                    <span>
-                        <strong>@($"{_time:0.000}")s</strong> of @($"{DurationSeconds:0.#}")s
-                        <span class="ed-meta">· frame @(CurrentFrame + 1) of @FrameCount</span>
-                    </span>
-                    <div class="spacer"></div>
-                    @if (_layer is { } timedLayer)
-                    {
-                        <span class="ed-meta">@Label(timedLayer)@(Pose(timedLayer).Keyframes is { Count: > 0 } timedKeys ? $" · {timedKeys.Count} keyframe{(timedKeys.Count == 1 ? "" : "s")}" : "")@(PlacedHere(timedLayer) ? " · set for this variant" : "")</span>
-                    }
-                </div>
+                <CanvasTransport Time="_time" Duration="DurationSeconds" Frame="CurrentFrame" FrameCount="FrameCount" FramesPerSecond="Fps" Step="StepFrames" />
                 <div class="ed-ruler" id="@_rulerId" role="slider" tabindex="0" aria-label="Preview time" aria-valuemin="0"
                      aria-valuemax="@Number(DurationSeconds)" aria-valuenow="@Number(_time)" aria-valuetext="@($"{_time:0.00} seconds")"
                      @onpointerdown="StartScrub" @onpointerdown:preventDefault="true" @onkeydown="RulerKey">
@@ -451,8 +423,7 @@
                     <div class="ed-keybar" aria-label="Keyframes">
                         @if (!GeneratedPromoEditing.HasKeyframes(Pose(keyLayer)))
                         {
-                            <button class="btn btn-sm" type="button" @onclick="() => StartKeyframes(keyLayer)"
-                                    title="Animate this layer's position, size and opacity by setting them at different times">◆ Animate with keyframes</button>
+                            <EditorIconButton Icon="keyframe" Label="Animate layer with keyframes" OnClick="() => StartKeyframes(keyLayer)" />
                             <span class="hint">Starts with a keyframe here; move the time and drag the box to add more.</span>
                         }
                         else
@@ -472,8 +443,8 @@
                                         }
                                     </select>
                                 </label>
-                                <button class="btn btn-sm btn-danger" type="button" @onclick="() => RemoveSelectedKeys(keyLayer)">Delete selected</button>
-                                <button class="btn btn-sm" type="button" @onclick="() => _keys.Clear()">Clear selection</button>
+                                <EditorIconButton Icon="trash" Label="Delete selected keyframes" Danger="true" OnClick="() => RemoveSelectedKeys(keyLayer)" />
+                                <EditorIconButton Icon="x" Label="Clear keyframe selection" OnClick="() => _keys.Clear()" />
                             }
                             else if (EditingKeyframe is { } key)
                             {
@@ -492,18 +463,17 @@
                                         }
                                     </select>
                                 </label>
-                                <button class="btn btn-sm btn-danger" type="button" @onclick="() => RemoveKeyframe(keyLayer, key)">Delete keyframe</button>
+                                <EditorIconButton Icon="trash" Label="Delete keyframe" Danger="true" OnClick="() => RemoveKeyframe(keyLayer, key)" />
                             }
                             else
                             {
-                                <button class="btn btn-sm" type="button" @onclick="() => AddKeyframe(keyLayer)">◆ Add keyframe at @($"{_time:0.00}")s</button>
+                                <EditorIconButton Icon="keyframe" Label="@($"Add keyframe at {_time:0.00}s")" OnClick="() => AddKeyframe(keyLayer)" />
                             }
                             <button class="btn btn-sm" type="button" title="Next keyframe" aria-label="Next keyframe"
                                     disabled="@(NextKeyframe(keyLayer, 1) is null)" @onclick="() => GoToKeyframe(keyLayer, 1)">▶</button>
                             <span class="hint">Ctrl/⌘-click to select several; Shift-click for a range. Drag any selected keyframe to move them together.</span>
                             <div class="spacer"></div>
-                            <button class="btn btn-sm" type="button" title="Remove every keyframe, leaving the layer where it is now"
-                                    @onclick="() => StopKeyframes(keyLayer)">Stop animating</button>
+                            <button class="btn btn-sm btn-danger" type="button" title="Remove all keyframes, keeping the current pose" @onclick="() => StopKeyframes(keyLayer)"><Icon Name="stop" />Stop animating</button>
                         }
                     </div>
                 }
@@ -518,27 +488,15 @@
                 <p class="hint warn" role="alert">Preview failed: @_stillError</p>
             }
 
-            <h3 class="ed-section">Canvas</h3>
-            @CanvasSettings
-        </div>
+            <details class="studio-section">
+                <summary><Icon Name="sliders" /> Canvas &amp; background</summary>
+                @CanvasSettings
+            </details>
+        </Stage>
 
-        <div class="ed-side">
-            <h3 class="ed-section">Layers <span class="ed-meta">top first</span></h3>
-            <div class="layer-actions">
-                <span class="ed-meta">@(_chosen.Count > 1 ? $"{_chosen.Count} selected" : "Ctrl or Shift + click to select several")</span>
-                <div class="spacer"></div>
-                <button class="btn btn-sm" type="button" disabled="@(_chosen.Count == 0)" title="Put the selected layers in a group, which can then be moved, turned, faded and animated as one"
-                        @onclick="GroupChosen">Group</button>
-                @if (_layer is { Kind: GeneratedLayerKind.Group } openGroup)
-                {
-                    <button class="btn btn-sm" type="button" title="Take the layers out of this group and remove it (its own animation goes with it)"
-                            @onclick="() => Ungroup(openGroup)">Ungroup</button>
-                }
-                @if (_chosen.Count > 1)
-                {
-                    <button class="btn btn-sm btn-danger" type="button" @onclick="RemoveChosen">Delete @_chosen.Count</button>
-                }
-            </div>
+        <Inspector>
+            <CanvasLayerActions Selected="_chosen.Count" Group="GroupChosen" CanUngroup="@(_layer is { Kind: GeneratedLayerKind.Group })"
+                                Ungroup="() => Ungroup(_layer!)" Remove="RemoveChosen" />
             <ol class="layer-list layer-tree @(_listDrag is null ? "" : "dragging")" aria-label="Layers">
                 @foreach ((GeneratedLayer layer, int depth) in ListedRows())
                 {
@@ -594,7 +552,7 @@
             </ol>
             @if (Template.Layers.Count == 0)
             {
-                <p class="hint">No layers yet. Add one above the canvas.</p>
+                <p class="hint" role="status">No layers yet. Use the insert tools above the canvas.</p>
             }
             else
             {
@@ -607,8 +565,8 @@
                     <div class="inspector-head">
                         <h3 class="ed-section">@KindName(selected.Kind)</h3>
                         <div class="spacer"></div>
-                        <button class="btn btn-sm" type="button" @onclick="() => DuplicateLayer(selected)">Duplicate</button>
-                        <button class="btn btn-sm btn-danger" type="button" @onclick="() => RemoveLayer(selected)">Delete</button>
+                        <EditorIconButton Icon="copy" Label="Duplicate layer" OnClick="() => DuplicateLayer(selected)" />
+                        <EditorIconButton Icon="trash" Label="Delete layer" Danger="true" OnClick="() => RemoveLayer(selected)" />
                     </div>
                     <label class="field">
                         <span>Layer name</span>
@@ -1151,11 +1109,12 @@
                     </div>
                 </div>
             }
-        </div>
-    </div>
+        </Inspector>
+    </CanvasWorkspace>
     }
 
-    <h3 class="ed-section">Voice-over</h3>
+    <details class="studio-section">
+    <summary><Icon Name="mic" /> Voice-over</summary>
     <label class="check">
         <input type="checkbox" checked="@(Template.Voice is { Enabled: true })" @onchange="ToggleVoice" />
         <span>Read the listings aloud</span>
@@ -1198,7 +1157,9 @@
                           PackChosen="PackCreated" Shows="@VoiceShows()" ChannelId="@Channel.Id" Where="@Preview.VoiceContext(Channel)" Zone="@Zone" AirsAt="@Preview.Now" Room="@VoiceRoom" />
     }
 
-    <h3 class="ed-section">Background music</h3>
+    </details>
+    <details class="studio-section">
+    <summary><Icon Name="music" /> Background music</summary>
     <label class="check">
         <input type="checkbox" checked="@(Template.Music is not null)" @onchange="ToggleMusic" />
         <span>Play a song under the promo</span>
@@ -1336,6 +1297,7 @@
         }
     }
 
+    </details>
     <h3 class="ed-section">Preview</h3>
     <div class="row row-wrap">
         <button class="btn btn-primary" type="button" disabled="@_rendering" @onclick="() => RenderVideo(null)">
@@ -1363,6 +1325,13 @@
 }
 
 @code {
+    private Task AddCanvasLayer(string kind) => AddLayer(kind switch
+    {
+        "shape" => GeneratedLayerKind.Rect,
+        "image" => GeneratedLayerKind.Image,
+        "video" => GeneratedLayerKind.Video,
+        _ => GeneratedLayerKind.Text
+    });
     [Parameter, EditorRequired] public GeneratedPromoTemplate Template { get; set; } = new();
     [Parameter, EditorRequired] public ChannelConfig Channel { get; set; } = new() { Id = "", Name = "" };
     [Parameter] public EventCallback Changed { get; set; }
@@ -1579,7 +1548,6 @@
         {
             // The canvas is gone; its frame (and zooming) are put back when it returns.
             _shownStill = null;
-            _zoomWired = false;
             return;
         }
 
@@ -1589,10 +1557,6 @@
             await MeasureCanvas();
         }
 
-        if (!_zoomWired)
-        {
-            _zoomWired = await SetUpZoom();
-        }
 
         // A frame drawn before the canvas was on the page (or before it came back).
         if (_still is not null && !ReferenceEquals(_still, _shownStill) && !_stillRunning)
@@ -1767,112 +1731,11 @@
 
     private readonly string _viewportId = $"promo-viewport-{Guid.NewGuid():N}";
 
-    /// <summary>
-    /// Zoom and pan live in the page: the canvas is scaled and moved inside its frame with a CSS transform. Everything
-    /// that turns the pointer into template pixels measures the canvas as drawn, so drags stay exact at any zoom.
-    /// Ctrl (⌘) + wheel zooms about the pointer (1× to 16×); the middle button drags it around; Ctrl + 0 fits it again.
-    /// </summary>
-    private const string ZoomScript = """
-        window.schedularrPromoZoom ??= (viewportId, canvasId) => {
-            const viewport = document.getElementById(viewportId);
-            const canvas = document.getElementById(canvasId);
-            if (!viewport || !canvas || viewport.promoZoom) return;
-            const badge = viewport.querySelector('.ed-zoom-badge');
-            let zoom = 1, x = 0, y = 0, pan = null;
-            const clamp = () => {
-                const width = viewport.clientWidth, height = viewport.clientHeight;
-                x = Math.min(0, Math.max(width - width * zoom, x));
-                y = Math.min(0, Math.max(height - height * zoom, y));
-            };
-            const apply = () => {
-                clamp();
-                canvas.style.transformOrigin = '0 0';
-                canvas.style.transform = zoom === 1 ? '' : `translate(${x}px, ${y}px) scale(${zoom})`;
-                canvas.style.setProperty('--zoom', zoom);
-                viewport.classList.toggle('zoomed', zoom !== 1);
-                if (badge) badge.textContent = zoom === 1 ? '' : `${Math.round(zoom * 100)}%`;
-            };
-            const zoomAt = (next, px, py) => {
-                next = Math.min(16, Math.max(1, next));
-                x = px - (px - x) * next / zoom;
-                y = py - (py - y) * next / zoom;
-                zoom = next;
-                if (zoom === 1) { x = 0; y = 0; }
-                apply();
-            };
-            viewport.addEventListener('wheel', e => {
-                if (!e.ctrlKey && !e.metaKey) return;
-                e.preventDefault();
-                const r = viewport.getBoundingClientRect();
-                zoomAt(zoom * Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)), e.clientX - r.left, e.clientY - r.top);
-            }, { passive: false });
-            // Middle button: pan, and keep the browser's autoscroll (and the editor's box dragging) out of it.
-            viewport.addEventListener('pointerdown', e => {
-                if (e.button !== 1) return;
-                e.preventDefault();
-                e.stopPropagation();
-                pan = { sx: e.clientX, sy: e.clientY, x, y };
-                viewport.setPointerCapture(e.pointerId);
-                viewport.classList.add('panning');
-            }, true);
-            viewport.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); }, true);
-            viewport.addEventListener('auxclick', e => { if (e.button === 1) e.preventDefault(); }, true);
-            viewport.addEventListener('pointermove', e => {
-                if (!pan) return;
-                x = pan.x + e.clientX - pan.sx;
-                y = pan.y + e.clientY - pan.sy;
-                apply();
-            });
-            const end = () => { pan = null; viewport.classList.remove('panning'); };
-            viewport.addEventListener('pointerup', end);
-            viewport.addEventListener('pointercancel', end);
-            document.addEventListener('keydown', e => {
-                if ((e.ctrlKey || e.metaKey) && e.key === '0' && viewport.isConnected && viewport.matches(':hover')) {
-                    e.preventDefault();
-                    zoomAt(1, 0, 0);
-                }
-            });
-            window.addEventListener('resize', apply);
-            viewport.promoZoom = { reset: () => zoomAt(1, 0, 0) };
-        };
-        window.schedularrPromoZoomReset ??= viewportId => document.getElementById(viewportId)?.promoZoom?.reset();
-        """;
-
-    private bool _zoomScriptReady;
-    private bool _zoomWired;
-
-    /// <summary>Wires zooming and panning up to the canvas (once per canvas; it's safe to call again).</summary>
-    private async Task<bool> SetUpZoom()
-    {
-        try
-        {
-            if (!_zoomScriptReady)
-            {
-                await JS.InvokeVoidAsync("eval", ZoomScript);
-                _zoomScriptReady = true;
-            }
-
-            await JS.InvokeVoidAsync("schedularrPromoZoom", _viewportId, _canvasId);
-            return true;
-        }
-        catch (Exception)
-        {
-            // Disconnected or still prerendering: wired up after the next render.
-            return false;
-        }
-    }
+    private CanvasViewport? _viewport;
 
     private async Task ResetZoom()
     {
-        try
-        {
-            await JS.InvokeVoidAsync("schedularrPromoZoomReset", _viewportId);
-        }
-        catch (Exception)
-        {
-            // Nothing to reset.
-        }
-
+        if (_viewport is not null) await _viewport.ResetAsync();
         await MeasureCanvas();
     }
     // The frame the page is showing, so it's only sent again when it changes or the canvas comes back.

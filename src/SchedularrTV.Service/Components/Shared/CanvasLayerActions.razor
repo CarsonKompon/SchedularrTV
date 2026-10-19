@@ -1,0 +1,23 @@
+<div class="layer-actions" role="group" aria-label="Layer actions">
+    <Icon Name="layers" Size="14" />
+    <strong class="ed-meta">Layers</strong>
+    <span class="ed-meta" title="Selected layers">@Selected</span>
+    <div class="spacer"></div>
+    <EditorIconButton Icon="group" Label="Group selected layers" Disabled="@(Selected == 0)" OnClick="Group" />
+    @if (CanUngroup)
+    {
+        <EditorIconButton Icon="ungroup" Label="Ungroup selected group" OnClick="Ungroup" />
+    }
+    @if (Selected > 1)
+    {
+        <EditorIconButton Icon="trash" Label="@($"Delete {Selected} selected layers")" Danger="true" OnClick="Remove" />
+    }
+</div>
+
+@code {
+    [Parameter] public int Selected { get; set; }
+    [Parameter] public bool CanUngroup { get; set; }
+    [Parameter] public EventCallback Group { get; set; }
+    [Parameter] public EventCallback Ungroup { get; set; }
+    [Parameter] public EventCallback Remove { get; set; }
+}

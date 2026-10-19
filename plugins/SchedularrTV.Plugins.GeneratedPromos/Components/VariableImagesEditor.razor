@@ -1,7 +1,6 @@
 @inject ConfigEditor Editor
 
-<details class="ed-plain">
-    <summary>Variable images (@(Template.VariableImages?.Count ?? 0))</summary>
+<div class="variable-images">
     <p class="hint">Each variable shows one of the <strong>shared images</strong>, picking its picture by show (or, for shows without one, finding
         one automatically with a picture search). Shared images are kept once for every template and overlay, so they're edited in one place: <button class="btn btn-sm" type="button" @onclick="() => OpenDialog(null)">Edit shared images…</button></p>
     <p class="hint">Use a variable as an image layer's source, or pass its placeholder (for example, {variable_image_01}) in external program
@@ -82,7 +81,7 @@
         </div>
     }
     <button class="btn btn-sm" type="button" @onclick="Add">+ Variable image</button>
-</details>
+</div>
 
 @if (_dialogOpen)
 {

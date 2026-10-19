@@ -1,0 +1,18 @@
+<div class="ed-toolbar" role="group" aria-label="Insert layer">
+    @ChildContent
+    <button class="btn btn-sm" type="button" title="Add text" @onclick='() => Add.InvokeAsync("text")'><Icon Name="type" />Text</button>
+    <button class="btn btn-sm" type="button" title="Add shape" @onclick='() => Add.InvokeAsync("shape")'><Icon Name="square" />Shape</button>
+    <button class="btn btn-sm" type="button" title="Add image" @onclick='() => Add.InvokeAsync("image")'><Icon Name="image" />Image</button>
+    <button class="btn btn-sm" type="button" title="Add video" @onclick='() => Add.InvokeAsync("video")'><Icon Name="video" />Video</button>
+    <div class="spacer"></div>
+    <span class="ed-meta">@Width × @Height</span>
+    <EditorIconButton Icon="maximize" Label="Fit canvas (Ctrl/⌘ + 0)" OnClick="Fit" />
+</div>
+
+@code {
+    [Parameter] public int Width { get; set; }
+    [Parameter] public int Height { get; set; }
+    [Parameter] public EventCallback<string> Add { get; set; }
+    [Parameter] public EventCallback Fit { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

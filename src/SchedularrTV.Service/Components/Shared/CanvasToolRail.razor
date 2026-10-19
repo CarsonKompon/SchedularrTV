@@ -1,0 +1,16 @@
+@* Tool choices are independent from layer insertion. Extra tools can be supplied by either editor. *@
+<div class="canvas-tool-rail" role="group" aria-label="Canvas tools">
+    <EditorIconButton Icon="cursor" Label="Select tool" Active="@(!Perspective)" OnClick="() => PerspectiveChanged.InvokeAsync(false)" />
+    @if (SupportsPerspective)
+    {
+        <EditorIconButton Icon="perspective" Label="Perspective tool (P)" Active="Perspective" OnClick="() => PerspectiveChanged.InvokeAsync(true)" />
+    }
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public bool SupportsPerspective { get; set; }
+    [Parameter] public bool Perspective { get; set; }
+    [Parameter] public EventCallback<bool> PerspectiveChanged { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

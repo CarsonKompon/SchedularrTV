@@ -1,0 +1,45 @@
+.canvas-studio { border: 1px solid var(--line); border-radius: 12px; overflow: clip; margin: 12px 0; background: var(--panel); }
+.studio-heading { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--panel-2); font-size: 12px; }
+.spacer { flex: 1; }
+.studio-help { padding: 8px 12px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.8; border-bottom: 1px solid var(--line); }
+.canvas-studio .ed-workspace { grid-template-columns: minmax(0, 1fr) 300px; gap: 0; margin: 0; }
+.canvas-studio .ed-stage { min-width: 0; padding: 10px; }
+.studio-stage-area { display: flex; min-width: 0; }
+.studio-stage-area > .ed-stage { flex: 1; }
+.studio-tool-rail { flex: 0 0 auto; padding: 8px 5px; border-right: 1px solid var(--line); background: var(--panel-2); }
+.studio-tool-rail:empty { display: none; }
+.studio-tool-rail ::deep .canvas-tool-rail { display: flex; flex-direction: column; gap: 5px; position: sticky; top: 10px; }
+.canvas-studio .ed-side { min-width: 0; padding: 10px; border: 0; border-left: 1px solid var(--line); border-radius: 0; max-height: 78vh; overflow: auto; scrollbar-width: thin; }
+.focus-canvas .ed-workspace { grid-template-columns: minmax(0, 1fr); }
+.focus-canvas .ed-side { display: none; }
+.canvas-studio ::deep .ed-toolbar { gap: 4px; margin-bottom: 8px; }
+.canvas-studio ::deep .ed-toolbar .spacer { flex: 1; }
+.canvas-studio ::deep .btn-icon { display: inline-flex; justify-content: center; align-items: center; width: 30px; height: 30px; padding: 0; flex-shrink: 0; }
+.canvas-studio ::deep button:focus-visible, .canvas-studio ::deep summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.canvas-studio ::deep .ed-section { font-size: 11px; letter-spacing: .08em; margin: 12px 0 8px; }
+.canvas-studio ::deep .field { margin-bottom: 8px; gap: 4px; font-size: 12px; }
+.canvas-studio ::deep .field > span { font-size: 11px; }
+.canvas-studio ::deep .grid { gap: 8px; }
+.canvas-studio ::deep input:not([type=checkbox]):not([type=range]):not([type=color]), .canvas-studio ::deep select { min-height: 30px; padding: 5px 7px; font-size: 12px; min-width: 0; }
+.canvas-studio ::deep .ed-viewport { background: radial-gradient(circle, #ffffff18 1px, transparent 1px) 0 0 / 16px 16px, #11151c; border: 1px solid var(--line); }
+.canvas-studio ::deep .ed-canvas { border-radius: 2px; }
+.canvas-studio ::deep .ed-timeline { border-top: 1px solid var(--line); padding-top: 8px; }
+.canvas-studio ::deep .ed-timeline-head { font-size: 12px; gap: 6px; }
+.canvas-studio ::deep .ed-ruler { margin: 0 6px; height: 42px; }
+.canvas-studio ::deep .layer-list { max-height: 210px; margin-bottom: 8px; scrollbar-width: thin; }
+.canvas-studio ::deep .layer-select { padding: 4px 6px; font-size: 12px; }
+.canvas-studio ::deep .layer-select small { max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.canvas-studio ::deep .layer-actions { gap: 4px; margin: 0 0 6px; }
+.canvas-studio ::deep .layer-actions > .ed-meta { font-size: 10px; }
+.canvas-studio ::deep .inspector-head { position: sticky; top: -10px; z-index: 5; background: var(--panel-2); padding: 8px 0; margin-bottom: 6px; }
+.canvas-studio ::deep .layer-tag { opacity: 0; }
+.canvas-studio ::deep .layer-box:is(:hover, .selected, .chosen) .layer-tag { opacity: 1; }
+.canvas-studio:not(.show-help) ::deep .hint:not(.warn):not([role]) { display: none; }
+@media (max-width: 1000px) {
+    .canvas-studio .ed-workspace { grid-template-columns: minmax(0, 1fr); }
+    .canvas-studio .ed-side { border-left: 0; border-top: 1px solid var(--line); max-height: 60vh; }
+}
+@media (max-width: 600px) {
+    .canvas-studio .ed-stage, .canvas-studio .ed-side { padding: 8px; }
+    .canvas-studio ::deep .btn-icon { width: 34px; height: 34px; }
+}

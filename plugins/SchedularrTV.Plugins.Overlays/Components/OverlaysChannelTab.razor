@@ -5,8 +5,8 @@
 {
     <link rel="stylesheet" href="plugins/overlays/overlays.css?v=@StyleVersion" />
     <div class="ov-scope">
-        <div class="card">
-            <div class="card-head"><h2>Overlays</h2></div>
+        <div class="card studio-scope">
+            <div class="card-head"><Icon Name="layers" /><h2>Overlays</h2></div>
             <LowPowerNotice Inline="true" Title="@($"On {HardwareProfile.DeviceName}: ErsatzTV re-encodes every programme an overlay is shown on (in software here), even on a channel that passes video through. Prefer overlays on channels that are re-encoded anyway, and show them only part of the time where you can.")" />
             <div class="grid grid-2">
                 <label class="field">
@@ -77,7 +77,7 @@
                     <div class="dropdown">
                         <button class="btn btn-primary" type="button" aria-haspopup="menu" aria-expanded="@(_menu == AddMenu ? "true" : "false")"
                                 @onclick="() => Toggle(AddMenu)">
-                            <Icon Name="plus" Size="15" />Add an overlay<Icon Name="chevron-down" Size="14" />
+                            <Icon Name="plus" Size="15" />Overlay<Icon Name="chevron-down" Size="14" />
                         </button>
                         @if (_menu == AddMenu)
                         {
@@ -97,8 +97,8 @@
                     {
                         <div class="dropdown">
                             <button class="btn" type="button" aria-haspopup="menu" aria-expanded="@(_menu == CopyMenu ? "true" : "false")"
-                                    @onclick="() => Toggle(CopyMenu)">
-                                <Icon Name="copy" Size="15" />Copy in another channel's<Icon Name="chevron-down" Size="14" />
+                                    title="Copy overlays from another channel" aria-label="Copy overlays from another channel" @onclick="() => Toggle(CopyMenu)">
+                                <Icon Name="copy" Size="15" /><Icon Name="chevron-down" Size="14" />
                             </button>
                             @if (_menu == CopyMenu)
                             {
@@ -121,10 +121,6 @@
                                             CanExport="@(_selected is not null && own.Overlays.Contains(_selected))"
                                             OnExport="ExportSelected" OnImport="ImportPackage" />
                 </div>
-                <p class="hint">
-                    Copying in makes this @(Block is null ? "channel's" : "block's") own copies, changed separately from then on. To keep it the same
-                    as another channel's, choose <em>Same as another channel</em> above instead.
-                </p>
 
                 @if (own.Overlays.Count == 0)
                 {
@@ -141,15 +137,15 @@
                                 <label class="check" style="margin:0;" title="Shown">
                                     <input type="checkbox" checked="@overlay.Enabled" @onchange="e => Set(() => overlay.Enabled = e.Value is true)" />
                                 </label>
-                                <button class="ov-item-name" type="button" @onclick="() => _selected = overlay">
+                                <button class="ov-item-name" type="button" aria-pressed="@(ReferenceEquals(overlay, _selected) ? "true" : "false")" title="@OverlayDescriptions.When(overlay)" @onclick="() => _selected = overlay">
                                     <strong>@overlay.Name</strong>
                                     <span class="muted">@(overlay.Kind == OverlayKinds.File ? "File" : "Design") · @OverlayDescriptions.When(overlay)@(overlay.Conditions is { HasConditions: true } conditions ? $" · {conditions.Describe()}" : "")@(OverlayContention.IsAdditive(overlay) ? "" : " · takes turns")</span>
                                 </button>
                                 <div class="spacer"></div>
                                 <button class="btn btn-sm btn-icon" type="button" title="Up" disabled="@(position == 0)" @onclick="() => Move(position, -1)">↑</button>
                                 <button class="btn btn-sm btn-icon" type="button" title="Down" disabled="@(position == own.Overlays.Count - 1)" @onclick="() => Move(position, 1)">↓</button>
-                                <button class="btn btn-sm" type="button" @onclick="() => Duplicate(overlay)">Duplicate</button>
-                                <button class="btn btn-sm btn-ghost" type="button" @onclick="() => Remove(overlay)">Delete</button>
+                                <EditorIconButton Icon="copy" Label="@($"Duplicate {overlay.Name}")" OnClick="() => Duplicate(overlay)" />
+                                <EditorIconButton Icon="trash" Label="@($"Delete {overlay.Name}")" Danger="true" OnClick="() => Remove(overlay)" />
                             </div>
                         }
                     </div>

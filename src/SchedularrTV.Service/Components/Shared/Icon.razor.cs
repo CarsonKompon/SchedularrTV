@@ -4,6 +4,17 @@ public partial class Icon
 {
     private static readonly Dictionary<string, string> Paths = new(StringComparer.Ordinal)
     {
+        ["type"] = """<path d="M4 7V4h16v3M12 4v16M8 20h8"/>""",
+        ["cursor"] = """<path d="m4 3 7 18 2-8 8-2L4 3Z"/>""",
+        ["perspective"] = """<path d="m4 6 16-3v18L4 18V6ZM4 12h16M12 5v15"/><path d="M3 5h2v2H3zM19 2h2v2h-2zM3 17h2v2H3zM19 20h2v2h-2z"/>""",
+        ["group"] = """<rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 3"/><path d="M7 7h6v6H7zM11 11h6v6h-6z"/>""",
+        ["ungroup"] = """<path d="M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5"/><path d="M7 7h4v4H7zM13 13h4v4h-4z"/>""",
+        ["keyframe"] = """<path d="m12 3 9 9-9 9-9-9 9-9Z"/>""",
+        ["stop"] = """<rect x="5" y="5" width="14" height="14" rx="1"/>""",
+        ["square"] = """<rect x="4" y="4" width="16" height="16" rx="2"/>""",
+        ["maximize"] = """<path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/>""",
+        ["rewind"] = """<path d="m11 19-9-7 9-7v14Zm10 0-9-7 9-7v14Z"/>""",
+        ["forward"] = """<path d="m3 5 9 7-9 7V5Zm10 0 9 7-9 7V5Z"/>""",
         ["dashboard"] = """<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>""",
         ["radio"] = """<path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>""",
         ["layers"] = """<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>""",

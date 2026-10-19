@@ -13,6 +13,8 @@
         <span class="pill pill-muted">@(Overlay.Kind == OverlayKinds.File ? "File" : OverlayAnimation.IsAnimated(Overlay) ? "Animated design" : "Design")</span>
     </div>
 
+    <details class="studio-section">
+    <summary><Icon Name="sliders" /> Overlay settings</summary>
     <div class="grid grid-2">
         <label class="field"><span>Name</span>
             <input type="text" value="@Overlay.Name" @onchange="e => Set(() => Overlay.Name = Text(e, Overlay.Name))" /></label>
@@ -40,25 +42,25 @@
         </details>
     }
 
-    <div class="ed-workspace">
-        <div class="ed-stage">
+    </details>
+    <CanvasWorkspace>
+        <Tools>
             @if (IsDesign)
             {
-                <div class="ed-toolbar">
-                    <span class="ed-toolbar-label">Add</span>
-                    <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Text)">+ Text</button>
-                    <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Image)">+ Picture</button>                    <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Rect)">+ Shape</button>
-                    <button class="btn btn-sm" type="button" @onclick="() => AddLayer(OverlayLayerKinds.Video)">+ Video</button>
-                    <div class="spacer"></div>
-                    <span class="ed-meta">@Overlay.Width × @Overlay.Height</span>
-                </div>
+                <CanvasToolRail />
             }
-            <div class="ed-viewport" id="@_viewportId">
-            <span class="ed-zoom-badge" aria-hidden="true"></span>
-            <div class="ed-canvas" id="@_canvasId" role="group" aria-label="Overlay canvas" @onpointerenter="MeasureCanvas"
-                 style="aspect-ratio:@(CanvasWidth) / @(CanvasHeight);">
-                @* The preview. Script swaps each new picture in once it has decoded, so it never blanks while scrubbing. *@
-                <div class="ed-still" id="@_stillId" aria-hidden="true"></div>
+        </Tools>
+        <Stage>
+            @if (IsDesign)
+            {
+                <CanvasTools Width="Overlay.Width" Height="Overlay.Height" Fit="ResetZoom" Add="AddCanvasLayer" />
+            }
+            else
+            {
+                <div class="ed-toolbar"><span class="spacer"></span><EditorIconButton Icon="maximize" Label="Fit canvas (Ctrl/⌘ + 0)" OnClick="ResetZoom" /></div>
+            }
+            <CanvasViewport @ref="_viewport" ViewportId="@_viewportId" CanvasId="@_canvasId" StillId="@_stillId" Label="Overlay canvas"
+                            Width="CanvasWidth" Height="CanvasHeight" Measure="MeasureCanvas">
                 @if (IsDesign)
                 {
                     @foreach (OverlayLayer layer in Overlay.Layers)
@@ -99,35 +101,12 @@
                         <div class="snap-guide snap-guide-y" aria-hidden="true"></div>
                     }
                 }
-            </div>
-
-            </div>
-            <div class="ed-viewport-bar">
-                <span class="hint" style="margin:0;">Ctrl/⌘ + scroll to zoom in for precise edits, middle-drag to pan.</span>
-                <div class="spacer"></div>
-                <button class="btn btn-sm" type="button" title="Show the whole frame again (Ctrl/⌘ + 0)" @onclick="ResetZoom">Fit</button>
-            </div>
+            </CanvasViewport>
 
             @if (IsDesign)
             {
                 <div class="ed-timeline">
-                    <div class="ed-timeline-head">
-                        <div class="ed-frame-step" role="group" aria-label="Step through frames">
-                            <button class="btn btn-sm" type="button" title="Back a second (Shift+←)" aria-label="Back a second" @onclick="() => StepFrames(-FramesPerSecond)">«</button>
-                            <button class="btn btn-sm" type="button" title="Previous frame (← or ,)" aria-label="Previous frame" @onclick="() => StepFrames(-1)">‹</button>
-                            <button class="btn btn-sm" type="button" title="Next frame (→ or .)" aria-label="Next frame" @onclick="() => StepFrames(1)">›</button>
-                            <button class="btn btn-sm" type="button" title="Forward a second (Shift+→)" aria-label="Forward a second" @onclick="() => StepFrames(FramesPerSecond)">»</button>
-                        </div>
-                        <span>
-                            <strong>@($"{_time:0.000}")s</strong> of @($"{TimelineLength:0.#}")s
-                            <span class="ed-meta">· frame @(CurrentFrame + 1) of @FrameCount · @(TimingSchedule.Always ? "the animation as each part of the programme starts" : "one appearance")</span>
-                        </span>
-                        <div class="spacer"></div>
-                        @if (_layer is { } timedLayer)
-                        {
-                            <span class="ed-meta">@Label(timedLayer)@(timedLayer.Keyframes is { Count: > 0 } timedKeys ? $" · {timedKeys.Count} keyframe{(timedKeys.Count == 1 ? "" : "s")}" : "")</span>
-                        }
-                    </div>
+                    <CanvasTransport Time="_time" Duration="TimelineLength" Frame="CurrentFrame" FrameCount="FrameCount" FramesPerSecond="FramesPerSecond" Step="StepFrames" />
                     <div class="ed-ruler" id="@_rulerId" role="slider" tabindex="0" aria-label="Preview time" aria-valuemin="0"
                          aria-valuemax="@Number(TimelineLength)" aria-valuenow="@Number(_time)" aria-valuetext="@($"{_time:0.00} seconds")"
                          @onpointerdown="StartScrub" @onpointerdown:preventDefault="true" @onkeydown="RulerKey">
@@ -159,8 +138,7 @@
                             }
                             else if (!OverlayAnimation.HasKeyframes(keyLayer))
                             {
-                                <button class="btn btn-sm" type="button" @onclick="() => StartKeyframes(keyLayer)"
-                                        title="Animate this layer's position, size, turn and opacity by setting them at different times">◆ Animate with keyframes</button>
+                                <EditorIconButton Icon="keyframe" Label="Animate layer with keyframes" OnClick="() => StartKeyframes(keyLayer)" />
                                 <span class="hint">Starts with a keyframe here; move the time and drag the box to add more.</span>
                             }
                             else
@@ -180,8 +158,8 @@
                                             }
                                         </select>
                                     </label>
-                                    <button class="btn btn-sm btn-danger" type="button" @onclick="() => RemoveSelectedKeys(keyLayer)">Delete selected</button>
-                                    <button class="btn btn-sm" type="button" @onclick="() => _keys.Clear()">Clear selection</button>
+                                    <EditorIconButton Icon="trash" Label="Delete selected keyframes" Danger="true" OnClick="() => RemoveSelectedKeys(keyLayer)" />
+                                    <EditorIconButton Icon="x" Label="Clear keyframe selection" OnClick="() => _keys.Clear()" />
                                 }
                                 else if (EditingKeyframe is { } key)
                                 {
@@ -200,24 +178,29 @@
                                             }
                                         </select>
                                     </label>
-                                    <button class="btn btn-sm btn-danger" type="button" @onclick="() => RemoveKeyframe(keyLayer, key)">Delete keyframe</button>
+                                    <EditorIconButton Icon="trash" Label="Delete keyframe" Danger="true" OnClick="() => RemoveKeyframe(keyLayer, key)" />
                                 }
                                 else
                                 {
-                                    <button class="btn btn-sm" type="button" @onclick="() => AddKeyframe(keyLayer)">◆ Add keyframe at @($"{_time:0.00}")s</button>
+                                    <EditorIconButton Icon="keyframe" Label="@($"Add keyframe at {_time:0.00}s")" OnClick="() => AddKeyframe(keyLayer)" />
                                 }
                                 <button class="btn btn-sm" type="button" title="Next keyframe" aria-label="Next keyframe"
                                         disabled="@(NextKeyframe(keyLayer, 1) is null)" @onclick="() => GoToKeyframe(keyLayer, 1)">▶</button>
                                 <span class="hint">Ctrl/⌘-click to select several; Shift-click for a range. Drag any selected keyframe to move them together.</span>
                                 <div class="spacer"></div>
-                                <button class="btn btn-sm" type="button" title="Remove every keyframe, leaving the layer where it is now"
-                                        @onclick="() => StopKeyframes(keyLayer)">Stop animating</button>
+                                <button class="btn btn-sm btn-danger" type="button" title="Remove all keyframes, keeping the current pose" @onclick="() => StopKeyframes(keyLayer)"><Icon Name="stop" />Stop animating</button>
                             }
                         </div>
                     }
                 </div>
             }
 
+            @if (_previewError is not null)
+            {
+                <p class="hint warn" role="alert">Preview failed: @_previewError</p>
+            }
+            <details class="studio-section">
+            <summary><Icon Name="clock" /> On-air timing</summary>
             <div class="ed-timeline">
                 <div class="field">
                     <span>When it shows, on a 22-minute programme</span>
@@ -269,11 +252,6 @@
                     @(TimingSchedule.Always ? "Shown all the way through, it animates as each part of the programme starts, then stays as it ends up." : "")
                 </p>
             }
-            @if (_previewError is not null)
-            {
-                <p class="hint warn" role="alert">Preview failed: @_previewError</p>
-            }
-
             <h3 class="ed-section">Timing</h3>
             <OverlayScheduleEditor Schedule="TimingSchedule" Changed="TimingChanged" />
             <div class="grid grid-3">
@@ -295,10 +273,14 @@
                 out over the same time.
                 @(IsDesign && TimingSchedule.Always ? "The animation length is the timeline above: keyframed layers move over it as each part of the programme starts." : "")</p>
 
-            <h3 class="ed-section">Conditions and sharing the screen</h3>
+            </details>
+            <details class="studio-section">
+            <summary><Icon Name="layers" /> Conditions &amp; sharing</summary>
             <OverlayConditionsEditor Overlay="Overlay" Changed="ConditionsChanged" />
 
-            <h3 class="ed-section">Canvas</h3>
+            </details>
+            <details class="studio-section">
+            <summary><Icon Name="sliders" /> Canvas settings</summary>
             <div class="grid grid-3">
                 @if (IsDesign)
                 {
@@ -338,27 +320,14 @@
                 <p class="hint">The timeline steps a frame at a time at this rate, keyframes land on its frames, and an animated design's video is made at it.
                     Match it to the design's videos so keyframed layers line up with their frames.</p>
             }
-        </div>
+            </details>
+        </Stage>
 
-        <div class="ed-side">
+        <Inspector>
             @if (IsDesign)
             {
-                <h3 class="ed-section">Layers <span class="ed-meta">top first</span></h3>
-                <div class="layer-actions">
-                    <span class="ed-meta">@(_chosen.Count > 1 ? $"{_chosen.Count} selected" : "Ctrl or Shift + click to select several")</span>
-                    <div class="spacer"></div>
-                    <button class="btn btn-sm" type="button" disabled="@(_chosen.Count == 0)" title="Put the selected layers in a group, which can then be moved, turned, faded and animated as one"
-                            @onclick="GroupChosen">Group</button>
-                    @if (_layer is { Kind: OverlayLayerKinds.Group } openGroup)
-                    {
-                        <button class="btn btn-sm" type="button" title="Take the layers out of this group and remove it (its own animation goes with it)"
-                                @onclick="() => Ungroup(openGroup)">Ungroup</button>
-                    }
-                    @if (_chosen.Count > 1)
-                    {
-                        <button class="btn btn-sm btn-danger" type="button" @onclick="RemoveChosen">Delete @_chosen.Count</button>
-                    }
-                </div>
+                <CanvasLayerActions Selected="_chosen.Count" Group="GroupChosen" CanUngroup="@(_layer is { Kind: OverlayLayerKinds.Group })"
+                                    Ungroup="() => Ungroup(_layer!)" Remove="RemoveChosen" />
                 <ol class="layer-list layer-tree @(_listDrag is null ? "" : "dragging")" aria-label="Layers">
                     @foreach ((OverlayLayer layer, int depth) in OverlayHierarchy.Rows(Overlay, IsOpen))
                     {
@@ -397,7 +366,7 @@
                 </ol>
                 @if (Overlay.Layers.Count == 0)
                 {
-                    <p class="hint">No layers yet. Add one above the canvas.</p>
+                    <p class="hint" role="status">No layers yet. Use the insert tools above the canvas.</p>
                 }
                 else
                 {
@@ -410,8 +379,8 @@
                         <div class="inspector-head">
                             <h3 class="ed-section">@KindName(selected.Kind)</h3>
                             <div class="spacer"></div>
-                            <button class="btn btn-sm" type="button" @onclick="() => DuplicateLayer(selected)">Duplicate</button>
-                            <button class="btn btn-sm btn-danger" type="button" @onclick="() => RemoveLayer(selected)">Delete</button>
+                            <EditorIconButton Icon="copy" Label="Duplicate layer" OnClick="() => DuplicateLayer(selected)" />
+                            <EditorIconButton Icon="trash" Label="Delete layer" Danger="true" OnClick="() => RemoveLayer(selected)" />
                         </div>
                         <label class="field"><span>Layer name</span>
                             <input type="text" value="@selected.Name" @onchange="e => Set(() => selected.Name = Text(e, selected.Name))" /></label>
@@ -718,9 +687,10 @@
                 <label class="check"><input type="checkbox" checked="@Overlay.InsidePicture" @onchange="e => Set(() => Overlay.InsidePicture = e.Value is true)" />
                     <span>Keep inside the picture of letterboxed or 4:3 shows</span></label>
             }
-        </div>
-    </div>
-    <h3 class="ed-section">Preview video</h3>
+        </Inspector>
+    </CanvasWorkspace>
+    <details class="studio-section">
+    <summary><Icon Name="video" /> Preview output settings</summary>
     <div class="grid grid-2">
         <label class="field"><span>Output</span>
             <select @bind="_videoOutput" disabled="@_renderingVideo">
@@ -743,8 +713,9 @@
     <p class="hint">Renders one appearance from the beginning using the preview show contexts above, at the overlay's frame rate.
         Includes keyframes, masks, GIFs and video-layer pictures; audio is not included. Whole-programme overlays preview their opening animation.
         The downloaded video is a snapshot: render again after edits. Preview length is limited to 5 minutes.</p>
+    </details>
     <div class="row row-wrap">
-        <button class="btn btn-primary" type="button" disabled="@_renderingVideo" @onclick="RenderPreviewVideo">@(_renderingVideo ? "Rendering…" : "Render preview video")</button>
+        <button class="btn btn-primary" type="button" disabled="@_renderingVideo" @onclick="RenderPreviewVideo"><Icon Name="play" />@(_renderingVideo ? "Rendering…" : "Render preview")</button>
         @if (_renderingVideo)
         {
             <button class="btn btn-sm" type="button" @onclick="() => _videoRenderCancel?.Cancel()">Cancel</button>
@@ -776,6 +747,7 @@
 }
 
 @code {
+    private Task AddCanvasLayer(string kind) => AddLayer(kind == "shape" ? OverlayLayerKinds.Rect : kind);
     [Parameter, EditorRequired] public Overlay Overlay { get; set; } = new();
 
     [Parameter] public string ChannelName { get; set; } = "Channel";
@@ -856,7 +828,7 @@
     private readonly CancellationTokenSource _life = new();
     private readonly string _canvasId = $"overlay-canvas-{Guid.NewGuid():N}";
     private readonly string _viewportId = $"overlay-viewport-{Guid.NewGuid():N}";
-    private IJSObjectReference? _zoom;
+    private CanvasViewport? _viewport;
     private readonly string _stillId = $"overlay-still-{Guid.NewGuid():N}";
     private readonly string _rulerId = $"overlay-ruler-{Guid.NewGuid():N}";
     private double _canvasPixels;
@@ -940,19 +912,6 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_zoom is null)
-        {
-            try
-            {
-                await using IJSObjectReference module = await JS.InvokeAsync<IJSObjectReference>("import", "./plugins/overlays/zoom.js");
-                _zoom = await module.InvokeAsync<IJSObjectReference>("create", _viewportId, _canvasId);
-            }
-            catch (Exception ex) when (ex is JSException or InvalidOperationException)
-            {
-                // Disconnected or still prerendering: try again after the next render.
-            }
-        }
-
         // Once, as soon as the canvas is on the page.
         if (_canvasPixels <= 0)
         {
@@ -968,11 +927,11 @@
 
     private async Task ResetZoom()
     {
-        if (_zoom is not null) await _zoom.InvokeVoidAsync("reset");
+        if (_viewport is not null) await _viewport.ResetAsync();
         await MeasureCanvas();
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         if (_automatic is not null)
         {
@@ -981,17 +940,7 @@
 
         _life.Cancel();
         _life.Dispose();
-        if (_zoom is not null)
-        {
-            try
-            {
-                await _zoom.InvokeVoidAsync("dispose");
-                await _zoom.DisposeAsync();
-            }
-            catch (JSDisconnectedException)
-            {
-            }
-        }
+        return ValueTask.CompletedTask;
     }
 
     /// <summary>Reads how wide the canvas is drawn, for turning pointer movement into canvas pixels.</summary>
