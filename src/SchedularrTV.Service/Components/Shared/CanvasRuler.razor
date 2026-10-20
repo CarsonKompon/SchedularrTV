@@ -1,0 +1,38 @@
+@using System.Globalization
+
+<div class="ed-ruler" id="@Id" role="slider" tabindex="0" aria-label="Preview time" aria-valuemin="0"
+     aria-valuemax="@N(Duration)" aria-valuenow="@N(Time)" aria-valuetext="@($"{Time:0.00} seconds")"
+     data-squeeze-ruler="@(ClientControlled ? "true" : null)" data-duration="@N(Duration)" data-time="@N(Time)" data-fps="@Fps"
+     @onpointerdown="PointerDown" @onpointerdown:preventDefault="true" @onkeydown="KeyDown">
+    @foreach (double tick in Ticks())
+    {
+        <span class="ed-tick @(tick > Duration * .92 ? "ed-tick-end" : "")" style="left:@Percent(tick)"><span>@N(tick)s</span></span>
+    }
+    @if (SpanStart is { } start && SpanEnd is { } end)
+    {
+        double from = Math.Clamp(start, 0, Duration), to = Math.Clamp(end, 0, Duration);
+        <span class="ed-span" style="left:@Percent(from);width:@Percent(Math.Max(0, to - from))"></span>
+    }
+    @ChildContent
+    <span class="ed-playhead" style="left:@Percent(Time)"></span>
+</div>
+
+@code {
+    [Parameter] public string? Id { get; set; }
+    [Parameter] public double Duration { get; set; } = 1;
+    [Parameter] public double Time { get; set; }
+    [Parameter] public double? SpanStart { get; set; }
+    [Parameter] public double? SpanEnd { get; set; }
+    [Parameter] public int Fps { get; set; } = 30;
+    [Parameter] public bool ClientControlled { get; set; }
+    [Parameter] public EventCallback<PointerEventArgs> PointerDown { get; set; }
+    [Parameter] public EventCallback<KeyboardEventArgs> KeyDown { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    private static string N(double number) => number.ToString("0.####", CultureInfo.InvariantCulture);
+    private IEnumerable<double> Ticks()
+    {
+        double step = Duration <= 12 ? 1 : Duration <= 30 ? 2 : Duration <= 60 ? 5 : Duration <= 120 ? 10 : Duration <= 300 ? 30 : 60;
+        for (double tick = 0; tick <= Duration + .0001; tick += step) yield return tick;
+    }
+    private string Percent(double value) => N(Math.Clamp(value / Math.Max(.001, Duration), 0, 1) * 100) + "%";
+}

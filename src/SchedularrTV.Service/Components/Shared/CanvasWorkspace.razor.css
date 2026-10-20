@@ -52,6 +52,10 @@
 .canvas-studio ::deep :where(.inspector) { border-top: 1px solid var(--line); padding-top: 8px; }
 .canvas-studio ::deep :where(.inspector-head .ed-section) { margin: 0; }
 .canvas-studio ::deep :where(input[type=range]) { width: 100%; }
+.canvas-studio ::deep .ed-keyfield { display: flex; align-items: center; gap: 4px; font-size: 12px; }
+.canvas-studio ::deep .ed-keyfield input { width: 76px; }
+.canvas-studio ::deep .layer-tree .layer-row { min-height: 34px; }
+.canvas-studio ::deep .layer-row[draggable=true] { cursor: grab; }
 @media (max-width: 1000px) {
     .canvas-studio .ed-workspace { grid-template-columns: minmax(0, 1fr); }
     .canvas-studio .ed-side { border-left: 0; border-top: 1px solid var(--line); max-height: 60vh; }

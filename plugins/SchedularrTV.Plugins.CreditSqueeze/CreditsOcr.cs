@@ -10,17 +10,40 @@ namespace SchedularrTV.CreditSqueeze;
 /// <summary>Percentages refer to the original source, before the squeeze layout is applied.</summary>
 public sealed record CreditsRecognition(int TopPercent = 0, int BottomPercent = 100, int MinimumConfidence = 60)
 {
+    // YAML constructs plugin settings through a real parameterless constructor;
+    // optional positional arguments alone do not provide one to reflection.
+    public CreditsRecognition() : this(0, 100, 60) { }
     public CreditsRecognition Normalized() => new(Math.Clamp(TopPercent, 0, 95),
         Math.Clamp(BottomPercent, Math.Clamp(TopPercent, 0, 95) + 5, 100), Math.Clamp(MinimumConfidence, 0, 95));
 }
 
-public sealed record CreditsOcrOptions(string Executable, string Language, int SampleSeconds, int Version = 3, string? DataDirectory = null,
+public sealed record CreditsOcrOptions(string Executable, string Language, int SampleSeconds, int Version = 5, string? DataDirectory = null,
     CreditsRecognition? Recognition = null);
 public sealed record CreditsOcrLine(string Text, double Confidence, CreditsTextBox? Box = null);
-public sealed record CreditsOcrResult(IReadOnlyList<CreditsOcrLine> Lines, int Frames, int RejectedDetections = 0, string? Failure = null)
+public sealed record CreditsOcrPage(TimeSpan At, IReadOnlyList<CreditsOcrLine> Lines);
+public sealed record CreditsOcrResult(IReadOnlyList<CreditsOcrLine> Lines, int Frames, int RejectedDetections = 0, string? Failure = null,
+    IReadOnlyList<CreditsOcrPage>? Pages = null)
 {
     public int UncertainLines => Lines.Count(line => line.Confidence < 60);
     public bool UsedFallback => Failure is not null;
+
+    /// <summary>Preserve complete scans (including blank ones); hold consecutive identical scans as one page.</summary>
+    public static IReadOnlyList<CreditsOcrPage> ScanPages(IReadOnlyList<IReadOnlyList<CreditsOcrLine>> frames, int sampleSeconds)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(sampleSeconds, 1);
+        List<CreditsOcrPage> pages = [];
+        for (int index = 0; index < frames.Count; index++)
+        {
+            CreditsOcrLine[] lines = frames[index].Select(line => line with { Text = line.Text.Trim(), Box = null }).ToArray();
+            if (pages.Count > 0 && pages[^1].Lines.Select(line => line.Text).SequenceEqual(lines.Select(line => line.Text), StringComparer.Ordinal))
+            {
+                var previous = pages[^1];
+                pages[^1] = previous with { Lines = previous.Lines.Select((line, at) => lines[at].Confidence > line.Confidence ? lines[at] : line).ToArray() };
+            }
+            else pages.Add(new(TimeSpan.FromSeconds((double)index * sampleSeconds), lines));
+        }
+        return pages;
+    }
 }
 
 /// <summary>Reject recognition noise, without guessing names or using a dictionary of common words.</summary>
@@ -55,7 +78,35 @@ public sealed class TesseractCreditsOcr : ICreditsOcrEngine
 {
     public async Task<IReadOnlyList<CreditsOcrLine>> ReadAsync(string image, CreditsOcrOptions options, CancellationToken cancellationToken)
     {
-        List<string> arguments = [image, "stdout", "-l", options.Language, "--psm", "11"];
+        var best = await ReadPassAsync(image, options, "11", cancellationToken).ConfigureAwait(false);
+        int confidence = (options.Recognition ?? new()).Normalized().MinimumConfidence;
+        if (!CreditsOcrPreprocessing.NeedsRetry(best, confidence)) return best;
+        using var bitmap = SkiaSharp.SKBitmap.Decode(image);
+        if (bitmap is null) return best;
+        string processed = Path.Combine(Path.GetDirectoryName(image)!, ".ocr-contrast-" + Guid.NewGuid().ToString("N") + ".png");
+        try
+        {
+            using (var contrast = CreditsOcrPreprocessing.Contrast(bitmap))
+            using (var encoded = contrast.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100))
+                await File.WriteAllBytesAsync(processed, encoded.ToArray(), cancellationToken).ConfigureAwait(false);
+            foreach (string mode in new[] { "11", "6" })
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    var alternative = await ReadPassAsync(processed, options, mode, cancellationToken).ConfigureAwait(false);
+                    best = CreditsOcrPreprocessing.Prefer(best, alternative, confidence);
+                }
+                catch (InvalidOperationException) { /* A failed retry must not discard a usable original pass. */ }
+            }
+            return best;
+        }
+        finally { File.Delete(processed); }
+    }
+
+    private static async Task<IReadOnlyList<CreditsOcrLine>> ReadPassAsync(string image, CreditsOcrOptions options, string mode, CancellationToken cancellationToken)
+    {
+        List<string> arguments = [image, "stdout", "-l", options.Language, "--psm", mode];
         if (options.DataDirectory is { } data) arguments.AddRange(["--tessdata-dir", data]);
         arguments.Add("tsv");
         string tsv = await CreditsOcrTools.RunAsync(options.Executable, arguments, TimeSpan.FromSeconds(45), cancellationToken).ConfigureAwait(false);
@@ -165,14 +216,14 @@ public sealed class CreditsOcr(CreditSqueezeSettings settings, ICreditsOcrEngine
     }
 
     public static string Key(SqueezeJob job, CreditsOcrOptions options) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
-        JsonSerializer.Serialize(new { PipelineVersion = 3, Path = Path.GetFullPath(job.SourcePath), Stamp = SourceStamp(job.SourcePath), job.SourceStart, job.Length, Options = options }))));
+        JsonSerializer.Serialize(new { PipelineVersion = 5, Path = Path.GetFullPath(job.SourcePath), Stamp = SourceStamp(job.SourcePath), job.SourceStart, job.Length, Options = options }))));
 
     public static string FrameFilter(CreditsOcrOptions options)
     {
         var area = (options.Recognition ?? new()).Normalized();
         string crop = area.TopPercent == 0 && area.BottomPercent == 100 ? "" :
             $",crop=iw:'max(2,trunc(ih*{area.BottomPercent - area.TopPercent}/100/2)*2)':0:'trunc(ih*{area.TopPercent}/100/2)*2'";
-        return $"fps=1/{options.SampleSeconds}:start_time=0{crop},scale=w='trunc(min(1920,iw*sar*2)/2)*2':h=-2,setsar=1,format=gray";
+        return $"fps=1/{options.SampleSeconds}:start_time=0{crop},scale=w='trunc(min(1920,iw*sar*2)/2)*2':h=-2,setsar=1,format=rgb24";
     }
 
     public async Task<CreditsOcrResult> ReadAsync(SqueezeJob job, CancellationToken cancellationToken)
@@ -232,7 +283,7 @@ public sealed class CreditsOcr(CreditSqueezeSettings settings, ICreditsOcrEngine
                     throw new InvalidOperationException("Credits Text: OCR found no readable credits after filtering. Check the recognition area, confidence threshold and source segment under Text recognition. The original credits will keep playing until a squeeze is ready.");
                 if (SourceStamp(job.SourcePath) != stamp)
                     throw new InvalidOperationException("Credits Text: the source video changed while OCR was reading it; try again.");
-                var result = new CreditsOcrResult(transcript.Lines.ToArray(), images.Length, rejected);
+                var result = new CreditsOcrResult(transcript.Lines.ToArray(), images.Length, rejected, Pages: CreditsOcrResult.ScanPages(cleaned, options.SampleSeconds));
                 string temporary = Path.Combine(work, "result.json");
                 await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(result), cancellationToken).ConfigureAwait(false);
                 File.Move(temporary, cache, overwrite: true);

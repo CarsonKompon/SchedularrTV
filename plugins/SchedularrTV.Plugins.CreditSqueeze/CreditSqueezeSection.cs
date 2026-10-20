@@ -87,6 +87,20 @@ public sealed class CreditSqueezeSection : SqueezeLook
 
     /// <summary>The name of the section's own look among its templates.</summary>
     public const string MainLook = "Main";
+    public string MainName { get; set; } = MainLook;
+    /// <summary>Legacy schedules have a main look; it can now be removed like a saved template.</summary>
+    public bool IncludeMain { get; set; } = true;
+
+    public bool RemoveLook(SqueezeLook look)
+    {
+        if (ReferenceEquals(look, this))
+        {
+            bool existed = IncludeMain;
+            IncludeMain = false;
+            return existed;
+        }
+        return look is SqueezeTemplate template && Templates.Remove(template);
+    }
 
     /// <summary>On when the section is in the schedule (a channel is only squeezed once it's turned on there).</summary>
     public bool Enabled { get; set; } = true;
@@ -100,14 +114,16 @@ public sealed class CreditSqueezeSection : SqueezeLook
     /// <summary>The looks a squeeze may pick from: the section's own and its enabled templates, any with a weight.</summary>
     public IReadOnlyList<SqueezeLook> Looks()
     {
-        List<SqueezeLook> looks = [.. new SqueezeLook[] { this }.Concat(Templates.Where(template => template.Enabled)).Where(look => look.Weight > 0)];
-        return looks.Count > 0 ? looks : new List<SqueezeLook> { this };
+        IEnumerable<SqueezeLook> main = IncludeMain ? [this] : [];
+        List<SqueezeLook> looks = [.. main.Concat(Templates.Where(template => template.Enabled)).Where(look => look.Weight > 0)];
+        return looks.Count > 0 || !IncludeMain ? looks : new List<SqueezeLook> { this };
     }
 
     /// <summary>The look for a squeeze airing at <paramref name="at"/> on the channel, picked by weight (always the same for the same airing).</summary>
     public SqueezeLook LookFor(string channelId, DateTimeOffset at)
     {
         IReadOnlyList<SqueezeLook> looks = Looks();
+        if (looks.Count == 0) throw new InvalidOperationException("No enabled Credit Squeeze templates are available.");
         if (looks.Count == 1)
         {
             return looks[0];
@@ -134,6 +150,7 @@ public sealed class CreditSqueezeSection : SqueezeLook
         CreditSqueezeSection copy = Copy();
         look.CopyLookTo(copy);
         copy.Weight = 1;
+        copy.IncludeMain = true;
         copy.Templates = [];
         return copy;
     }

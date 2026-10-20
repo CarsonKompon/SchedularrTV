@@ -77,6 +77,26 @@ public sealed class TesseractSetupTests : IDisposable
         }
         var lines = await new TesseractCreditsOcr().ReadAsync(imagePath, new CreditSqueezeSettings(context).Ocr, timeout.Token);
         Assert.Contains("Alex Smith", string.Join(' ', lines.Select(line => line.Text)));
+        using (var surface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(1000, 260)))
+        {
+            surface.Canvas.Clear(new SkiaSharp.SKColor(235, 220, 90));
+            surface.Canvas.Scale(.65f, 1);
+            using var font = new SkiaSharp.SKFont(SkiaSharp.SKTypeface.Default, 70);
+            using var outline = new SkiaSharp.SKPaint { Color = SkiaSharp.SKColors.Black, Style = SkiaSharp.SKPaintStyle.Stroke, StrokeWidth = 3, IsAntialias = true };
+            using var fill = new SkiaSharp.SKPaint { Color = new SkiaSharp.SKColor(210, 30, 45), IsAntialias = true };
+            foreach (var (text, y) in new[] { ("Matt Brown", 100f), ("Michelle Smith", 200f) })
+            {
+                surface.Canvas.DrawText(text, 40, y, SkiaSharp.SKTextAlign.Left, font, outline);
+                surface.Canvas.DrawText(text, 40, y, SkiaSharp.SKTextAlign.Left, font, fill);
+            }
+            using var image = surface.Snapshot();
+            using var data = image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+            await File.WriteAllBytesAsync(imagePath, data.ToArray(), timeout.Token);
+        }
+        var stylized = await new TesseractCreditsOcr().ReadAsync(imagePath, new CreditSqueezeSettings(context).Ocr, timeout.Token);
+        Assert.Contains("Matt Brown", string.Join(' ', stylized.Select(line => line.Text)));
+        Assert.Contains("Michelle Smith", string.Join(' ', stylized.Select(line => line.Text)));
+        Assert.Empty(Directory.GetFiles(_folder, ".ocr-contrast-*"));
         Assert.Empty(Directory.GetDirectories(Path.Combine(_folder, "tools"), ".tesseract-*"));
     }
 

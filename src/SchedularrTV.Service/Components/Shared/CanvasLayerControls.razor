@@ -1,0 +1,14 @@
+<EditorIconButton Icon="@(Locked || InheritedLock ? "lock" : "unlock")" Label="@(InheritedLock ? $"{Label}: locked by its group" : $"{(Locked ? "Unlock" : "Lock")} {Label}")" Active="Locked" OnClick="ToggleLock" />
+<EditorIconButton Icon="arrow-up" Label="@($"Bring {Label} forward")" Disabled="@(!CanForward)" OnClick="Forward" />
+<EditorIconButton Icon="arrow-down" Label="@($"Send {Label} backward")" Disabled="@(!CanBackward)" OnClick="Backward" />
+
+@code {
+    [Parameter] public string Label { get; set; } = "layer";
+    [Parameter] public bool Locked { get; set; }
+    [Parameter] public bool InheritedLock { get; set; }
+    [Parameter] public bool CanForward { get; set; } = true;
+    [Parameter] public bool CanBackward { get; set; } = true;
+    [Parameter] public EventCallback ToggleLock { get; set; }
+    [Parameter] public EventCallback Forward { get; set; }
+    [Parameter] public EventCallback Backward { get; set; }
+}

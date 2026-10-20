@@ -48,6 +48,34 @@ public sealed class SqueezeCanvas
             lines.Skip(index * size).Take(size).Select(line => line.Text).ToArray())).ToArray();
     }
 
+    /// <summary>Use the page already on screen when the layer appears, then follow the source's sampled changes.</summary>
+    public static IReadOnlyList<PromoTextPage> SourceCreditsPages(IReadOnlyList<CreditsOcrPage> pages, TimeSpan start, TimeSpan end)
+    {
+        if (end <= start || pages.Count == 0) return [];
+        var ordered = pages.OrderBy(page => page.At).ToArray();
+        var current = ordered.LastOrDefault(page => page.At <= start);
+        List<PromoTextPage> result = [new(start, current?.Lines.Select(line => line.Text).ToArray() ?? [])];
+        result.AddRange(ordered.Where(page => page.At > start && page.At < end)
+            .Select(page => new PromoTextPage(page.At, page.Lines.Select(line => line.Text).ToArray())));
+        return result;
+    }
+
+    private static IReadOnlyList<PromoTextPage> TextPages(GeneratedLayer layer, SqueezeJob job)
+    {
+        var credits = layer.CreditsText!;
+        TimeSpan start = layer.Start > TimeSpan.Zero ? layer.Start : TimeSpan.Zero;
+        TimeSpan end = layer.End is { } stop && stop < job.Length ? stop : job.Length;
+        if (end <= start) return [];
+        IReadOnlyList<PromoTextPage> pages;
+        if (credits.MatchSourcePages && job.OcrTranscript is { UsedFallback: false, Pages.Count: > 0 } source)
+            pages = SourceCreditsPages(source.Pages, start, end);
+        else if (credits.MatchSourcePages)
+            // Authored fallback has no scan boundaries: show it together rather than applying a hidden line limit.
+            pages = [new(start, CreditLines(credits, job).Select(line => line.Text).ToArray())];
+        else pages = CreditsPages(CreditLines(credits, job), credits.LinesPerPage, start, end);
+        return pages.Select(page => page with { Lines = page.Lines.Select(line => GeneratedTextStyle.Cased(line, layer.TextCase)).ToArray() }).ToArray();
+    }
+
     public static double ParseAspect(string value)
     {
         if (value.Split(':') is [var left, var right]
@@ -95,13 +123,16 @@ public sealed class SqueezeCanvas
             };
             PromoLayer? layer = item.Kind switch
             {
-                GeneratedLayerKind.Rect => new PromoRectLayer { Bounds = bounds, Color = Color(item.Color), Shape = item.Shape ?? GeneratedShape.Rectangle, CornerRadius = item.CornerRadius * scale },
+                 GeneratedLayerKind.Rect => new PromoRectLayer { Bounds = bounds, Color = Color(item.Color), Shape = item.Shape ?? GeneratedShape.Rectangle, CornerRadius = item.CornerRadius * scale, SoftEdges = Math.Max(0, item.SoftEdges ?? 0) * scale },
                 GeneratedLayerKind.Text => new PromoTextLayer
                 {
-                    Bounds = bounds, Lines = item.CreditsText is null ? Tokens(item.Text ?? "", job).Split('\n') : [], Color = Color(item.Color),
-                    Pages = item.CreditsText is { } credits ? CreditsPages(CreditLines(credits, job), credits.LinesPerPage,
-                        item.Start > TimeSpan.Zero ? item.Start : TimeSpan.Zero, item.End is { } end && end < job.Length ? end : job.Length) : null,
+                    Bounds = bounds, Lines = item.CreditsText is null ? GeneratedTextStyle.Cased(Tokens(item.Text ?? "", job), item.TextCase).Split('\n') : [], Color = Color(item.Color),
+                    Pages = item.CreditsText is not null ? TextPages(item, job) : null,
                     FontFamily = item.FontFamily, MaxFontSize = item.FontSize * scale, Bold = item.Bold,
+                    FontWeight = item.FontWeight, Italic = item.Italic,
+                    Shadow = item.Shadow ? new SKColor(0, 0, 0, 160) : null,
+                    LetterSpacing = SchedularrTV.Service.Rendering.TextFit.LetterSpacing(item.LetterSpacing),
+                    LineSpacing = SchedularrTV.Service.Rendering.TextFit.LineSpacing(item.LineSpacing),
                     Align = (SKTextAlign)item.Align, WordWrap = item.WordWrap == true,
                     VerticalAlign = (PromoVerticalAlign)(item.VerticalAlign ?? GeneratedVerticalAlign.Top)
                 },
@@ -142,7 +173,7 @@ public sealed class SqueezeCanvas
     }
 
     private static SKColor Color(string text) => SKColor.TryParse(text, out var color) ? color : SKColors.Black;
-    private static string Tokens(string text, SqueezeJob job) => text.Replace("{next}", job.Next.Title, StringComparison.Ordinal)
+    private static string Tokens(string text, SqueezeJob job) => text.Replace("{up_next}", job.Next.Title, StringComparison.Ordinal).Replace("{next}", job.Next.Title, StringComparison.Ordinal)
         .Replace("{time}", job.Next.When, StringComparison.Ordinal).Replace("{channel}", job.ChannelName, StringComparison.Ordinal)
         .Replace("{show}", job.EndingShow ?? "", StringComparison.Ordinal).Replace("{heading}", job.Heading, StringComparison.Ordinal);
 }

@@ -359,6 +359,43 @@ public sealed class TemplatePackageTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Squeeze_canvas_packages_survive_export_import_and_schedule_reload(bool mainLook)
+    {
+        var template = new SqueezeTemplate
+        {
+            Name = "Canvas credits", UseCanvas = true, Recognition = new(0, 100, 75),
+            Canvases = [SqueezeCanvas.Create("16:9"), SqueezeCanvas.Create("4:3")]
+        };
+        template.Canvases[0].BackgroundColor = "#123456";
+        template.Canvases[0].Layers[0].Keyframes = [new() { Width = 1280, Height = 720 }, new() { At = TimeSpan.FromSeconds(1), X = 40, Width = 400, Height = 600, Easing = GeneratedEasing.EaseInOut }];
+        template.Canvases[0].Layers.Add(new() { Kind = GeneratedLayerKind.Text, Text = "{next}", FontSize = 48, FontWeight = 600, Italic = true, X = 500, Width = 600, Height = 400,
+            CreditsText = new() { FallbackText = "Thanks for watching {show}.", LinesPerPage = 5, MatchSourcePages = true } });
+        template.Canvases[1].Layers.Add(new() { Kind = GeneratedLayerKind.Image, Path = Write("media/canvas-logo.png", "logo") });
+        SqueezeLook original = mainLook ? new CreditSqueezeSection().WithOnly(template) : template;
+        string zip = await ExportAsync(_data, writer => SqueezePackages.ExportAsync(original, template.Name, writer));
+        await using var stream = File.OpenRead(zip);
+        using var reader = await new TemplatePackages(_otherData).OpenAsync(stream);
+        var imported = await SqueezePackages.ImportAsync(reader, new TemplateAssets(_otherData));
+        var saved = SchedulerConfigLoader.ConvertSection<CreditSqueezeSection>(new CreditSqueezeSection { Templates = [imported] })!;
+        var loaded = Assert.Single(saved.Templates);
+        Assert.True(loaded.UseCanvas);
+        Assert.Equal(2, loaded.Canvases.Count);
+        Assert.Equal("#123456", loaded.Canvases[0].BackgroundColor);
+        Assert.Equal(40, loaded.Canvases[0].Layers[0].Keyframes![1].X);
+        Assert.Equal(GeneratedEasing.EaseInOut, loaded.Canvases[0].Layers[0].Keyframes![1].Easing);
+        Assert.Equal(48, loaded.Canvases[0].Layers[1].FontSize);
+        Assert.Equal(600, loaded.Canvases[0].Layers[1].FontWeight);
+        Assert.True(loaded.Canvases[0].Layers[1].Italic);
+        Assert.Equal("Thanks for watching {show}.", loaded.Canvases[0].Layers[1].CreditsText!.FallbackText);
+        Assert.Equal(5, loaded.Canvases[0].Layers[1].CreditsText!.LinesPerPage);
+        Assert.True(loaded.Canvases[0].Layers[1].CreditsText!.MatchSourcePages);
+        Assert.Equal(75, loaded.Recognition.MinimumConfidence);
+        Assert.Equal("logo", File.ReadAllText(loaded.Canvases[1].Layers[1].Path!));
+    }
+
     [Fact]
     public async Task A_zip_without_a_manifest_is_turned_away()
     {

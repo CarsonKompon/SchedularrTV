@@ -72,28 +72,39 @@
                 <EditorIconButton Icon="copy" Label="Create template from this look" OnClick="() => AddTemplate(section)" />
             </div>
             <nav class="cs-templates" aria-label="Credit squeeze templates">
+                @if (section.IncludeMain)
+                {
                 <button type="button" class="cs-template @(_template < 0 ? "active" : "")" aria-pressed="@(_template < 0)" @onclick="() => SelectTemplate(-1)">
-                    @CreditSqueezeSection.MainLook<span class="cs-weight">@WeightText(section, section)</span></button>
+                    @section.MainName<span class="cs-weight">@(section.UseCanvas ? "Canvas" : "Preset") · @WeightText(section, section)</span></button>
+                }
                 @for (int index = 0; index < section.Templates.Count; index++)
                 {
                     int at = index;
                     SqueezeTemplate template = section.Templates[at];
                     <button type="button" class="cs-template @(_template == at ? "active" : "") @(template.Enabled ? "" : "off")" aria-pressed="@(_template == at)" @onclick="() => SelectTemplate(at)">
-                        @template.Name<span class="cs-weight">@WeightText(section, template)</span></button>
+                        @template.Name<span class="cs-weight">@(template.UseCanvas ? "Canvas" : "Preset") · @WeightText(section, template)</span></button>
                 }
             </nav>
             <TemplatePackageButtons Kind="@SqueezePackages.Kind" What="look" ExportText="@($"Export “{LookName(section)}”")"
-                                    ExportTitle="Save the selected look, with its background, as a .zip to share"
+                                    CanExport="@(section.IncludeMain || section.Templates.Count > 0)"
+                                    ExportTitle="Export the selected template, including all canvases, layers, animation, fonts, images and videos"
                                     OnExport="@(writer => SqueezePackages.ExportAsync(look, LookName(section), writer))"
                                     OnImport="@(reader => ImportLook(section, reader))" />
+            @if (!section.IncludeMain && section.Templates.Count == 0)
+            {
+                <div class="empty"><p>No templates. Create or import one to enable credit squeezes.</p>
+                    <button type="button" class="btn btn-primary" @onclick="() => AddTemplate(section)"><Icon Name="plus" />Create template</button></div>
+            }
+            else
+            {
+            <div class="cs-template-edit row row-wrap">
+                <label class="inline-field"><span>Template name</span><input type="text" value="@LookName(section)" @onchange="e => RenameTemplate(section, e)" /></label>
+                <div class="spacer"></div>
+                <button type="button" class="btn btn-sm btn-danger" @onclick="() => DeleteTemplate(section)"><Icon Name="trash" />Delete template</button>
+            </div>
             <details class="studio-section">
             <summary><Icon Name="sliders" /> Template settings · @LookName(section)</summary>
             <div class="grid grid-3" style="align-items:end;">
-                @if (look is SqueezeTemplate editing)
-                {
-                    <label class="field"><span>Name</span>
-                        <input type="text" value="@editing.Name" @onchange="e => Set(() => editing.Name = Text(e, editing.Name))" /></label>
-                }
                 <label class="field"><span>How often it's picked (weight)</span>
                     <input type="number" min="0" max="100" step="0.5" value="@look.Weight.ToString(CultureInfo.InvariantCulture)"
                            @onchange="e => Set(() => look.Weight = Math.Clamp(Number(e, 1), 0, 100))" /></label>
@@ -102,7 +113,6 @@
                     <div class="row row-wrap" style="gap:10px;align-items:center;margin-bottom:10px;">
                         <label class="check" style="margin:0;"><input type="checkbox" checked="@current.Enabled" @onchange="e => Set(() => current.Enabled = e.Value is true)" />
                             <span>In use</span></label>
-                        <EditorIconButton Icon="trash" Label="Delete template" Danger="true" OnClick="() => DeleteTemplate(section)" />
                     </div>
                 }
             </div>
@@ -269,6 +279,17 @@
                 </div>
             </div>
             }
+            <fieldset class="cs-fields" disabled="@(_previewing || _checkingOcr || _installingOcr)">
+                <div class="field"><span>Preview show or movie</span>
+                    <div class="row row-wrap">
+                        <TitlePicker Options="ShowOptions(section)" Value="@_previewShow" AriaLabel="Preview show or movie" Placeholder="Automatic — or choose a show…" OnCommitted="PickPreviewShow" />
+                        @if (_previewShow is not null)
+                        {
+                            <EditorIconButton Icon="x" Label="Use automatic preview selection" OnClick="() => PickPreviewShow(null)" />
+                        }
+                    </div>
+                </div>
+            </fieldset>
             <div class="cs-render-bar">
                 <button class="btn btn-sm btn-primary" type="button" title="@PreviewButton" disabled="@(_previewing || _installingOcr || _checkingOcr)" @onclick="() => RenderPreviewAsync(section)">
                     <Icon Name="play" />@(_previewing ? (_makingPromo ? "Making panel promo…" : "Rendering…") : "Render preview")
@@ -282,6 +303,29 @@
                     <span class="hint" role="status" style="margin:0;">@previewNote</span>
                 }
             </div>
+            @if (_previewJob is { } inspected)
+            {
+                <div class="cs-preview-source" role="status">
+                    <strong>@SourceLabel(inspected)</strong>
+                    <span class="hint">@Path.GetFileName(inspected.SourcePath) · @SourceTime(inspected.SourceStart)–@SourceTime(inspected.SourceStart + inspected.Length)</span>
+                </div>
+                <details class="studio-section" open="@(_previewProblem is not null || _ocrPrompt || _creditsTextPreview?.UsedFallback == true)">
+                    <summary><Icon Name="film" /> Original ending · before squeezing or OCR</summary>
+                    <p class="hint">This is the source segment chosen for the preview, with its original picture and sound. Check it to distinguish missing credits from a recognition failure.</p>
+                    @if (_sourcePreviewUrl is { } original)
+                    {
+                        <video class="cs-video" @key="original" src="@original" controls playsinline muted preload="metadata"></video>
+                    }
+                    else if (_sourcePreviewProblem is { } sourceProblem)
+                    {
+                        <p class="hint warn" role="alert">@sourceProblem</p>
+                    }
+                    else
+                    {
+                        <p class="hint">Preparing the original ending…</p>
+                    }
+                </details>
+            }
             @if (_ocrPrompt)
             {
                 <section class="studio-section" role="region" aria-label="Set up credits text recognition">
@@ -331,6 +375,20 @@
                     <p class="hint">This is the recognized source text, not generated copy. @transcript.RejectedDetections noisy or low-confidence detections were removed across the sampled frames. @transcript.UncertainLines retained lines have low OCR confidence.
                         Even high-confidence OCR can misread small or stylized names. Page size and the text layer's timing determine how it appears.</p>
                     <pre style="white-space:pre-wrap;max-height:360px;overflow:auto;">@string.Join("\n", transcript.Lines.Select(line => line.Text))</pre>
+                    <p class="hint">Fixed-size pages are spread over the layer's duration. “Match original scans” keeps the original line groups and sampled timing. Compare the wording with the original ending above.</p>
+                    @if (transcript.Pages is { Count: > 0 } pages)
+                    {
+                        <details>
+                            <summary>Original scan pages (@pages.Count)</summary>
+                            <div style="max-height:360px;overflow:auto;">
+                                @foreach (var page in pages)
+                                {
+                                    <strong>@SourceTime(page.At) into sampled ending · @(page.Lines.Count) lines</strong>
+                                    <pre style="white-space:pre-wrap;">@(page.Lines.Count == 0 ? "No readable text in this scan" : string.Join("\n", page.Lines.Select(line => line.Text)))</pre>
+                                }
+                            </div>
+                        </details>
+                    }
                 </details>
                 }
             }
@@ -408,6 +466,7 @@
             }
 
             </details>
+            }
             }
             <details class="studio-section">
             <summary><Icon Name="clock" /> Frequency &amp; detection · @(Block is null ? "channel" : "block")</summary>
@@ -512,15 +571,14 @@
         .cs-studio .cs-template-heading { margin: 12px 0 6px; }
         .cs-design-mode, .cs-canvas-picker, .cs-ratios, .cs-render-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
         .cs-design-mode { margin: 12px 0; }
+        .cs-template-edit { gap: 8px; align-items: center; margin: 10px 0; }
+        .cs-template-edit .spacer { flex: 1; }
+        .cs-template-edit input { min-width: 120px; max-width: 100%; }
         .cs-canvas-picker { padding: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
         .cs-canvas-picker select { width: auto; min-width: 140px; font-size: 12px; padding: 6px 8px; }
         .cs-canvas-picker .spacer { flex: 1; }
         .cs-render-bar { margin: 12px 0; }
-        .cs-key-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) 30px; align-items: center; gap: 4px; margin: 4px 0; }
-        .cs-playhead { display: block; width: 100%; margin: 8px 0 0; }
-        .cs-key-track { display: flex; position: relative; height: 42px; margin: 0 12px; padding-top: 20px; }
-        .cs-key-marker { position: absolute; top: 0; width: 22px; height: 22px; transform: translateX(-50%); display: grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 4px; color: var(--muted); background: var(--panel-2); cursor: pointer; }
-        .cs-key-marker.active { color: var(--accent); border-color: var(--accent); }
+        .cs-preview-source { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
         @@media (max-width: 600px) {
             .cs-for { grid-template-columns: minmax(0, 1fr); }
             .cs-outro { grid-template-columns: minmax(70px, 1fr) minmax(70px, 1fr) 40px 44px; gap: 5px; }
@@ -535,6 +593,28 @@
     private void CommitCanvas() => Commit();
     private string? _canvasPreviewRatio;
     private CreditsOcrResult? _creditsTextPreview;
+    private string? _previewShow, _sourcePreviewUrl, _sourcePreviewProblem;
+    private SqueezeJob? _previewJob;
+    private int _previewGeneration;
+    private static string SourceLabel(SqueezeJob job) => job.SourceLabel ?? job.EndingShow ?? Path.GetFileName(job.SourcePath);
+    private static string SourceTime(TimeSpan time) => time.ToString(time.TotalHours >= 1 ? @"h\:mm\:ss" : @"m\:ss", CultureInfo.InvariantCulture);
+    private void ClearPreview()
+    {
+        _previewGeneration++;
+        _previewUrl = null; _previewNote = null; _previewProblem = null; _creditsTextPreview = null;
+        _previewJob = null; _sourcePreviewUrl = null; _sourcePreviewProblem = null; _ocrPrompt = false;
+    }
+    private async Task PickPreviewShow(string? value)
+    {
+        if (_previewing || _checkingOcr || _installingOcr) return;
+        _previewShow = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        ClearPreview();
+        if (_previewShow is { } show && Library is { } library)
+        {
+            try { Credits.LookUp((await library.GetProgrammesAsync()).Where(item => string.Equals(SqueezePlanner.ShowOf(item), show, StringComparison.OrdinalIgnoreCase))); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { }
+        }
+    }
     private bool _ocrPrompt, _installingOcr, _checkingOcr;
     private string? _ocrProblem, _ocrProgress;
     private CancellationTokenSource? _ocrInstallStop;
@@ -601,6 +681,8 @@
 
     private void Load()
     {
+        ClearPreview();
+        _previewShow = null;
         _loadedFor = Context.Channel;
         _loadedIndex = _blockIndex;
         _section = Read(Block is { } block ? block.Plugins : Channel.Plugins);
@@ -613,7 +695,7 @@
         }
 
         _everywhere = Read(Context.Config.Settings.Plugins);
-        _template = -1;
+        _template = _section is { IncludeMain: false, Templates.Count: > 0 } ? 0 : -1;
         _previewUrl = null;
         _previewProblem = null;
         _previewNote = null;
@@ -732,7 +814,7 @@
 
     private static string HomeName(LayoutHome home) => home == LayoutHome.Everywhere ? "on every channel" : "here";
 
-    private string PreviewButton => _show is { } show ? $"Render a preview of {show}" : "Render a preview video";
+    private string PreviewButton => _previewShow is { } show ? $"Render a preview of {show}" : "Render a preview video";
 
     private static TEnum Parse<TEnum>(ChangeEventArgs e, TEnum fallback) where TEnum : struct, Enum =>
         Enum.TryParse(e.Value?.ToString(), out TEnum value) ? value : fallback;
@@ -812,6 +894,8 @@
     private async Task PickShow(string? value)
     {
         _show = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        _previewShow = _show;
+        ClearPreview();
         _specific = true;
         _previewNote = null;
         _previewProblem = null;
@@ -1128,7 +1212,19 @@
     private SqueezeLook Look(CreditSqueezeSection section) =>
         _template >= 0 && _template < section.Templates.Count ? section.Templates[_template] : section;
 
-    private string LookName(CreditSqueezeSection section) => Look(section) is SqueezeTemplate template ? template.Name : CreditSqueezeSection.MainLook;
+    private string LookName(CreditSqueezeSection section) => Look(section) is SqueezeTemplate template ? template.Name : section.MainName;
+
+    private void RenameTemplate(CreditSqueezeSection section, ChangeEventArgs e)
+    {
+        string name = Text(e, LookName(section));
+        var selected = Look(section);
+        var used = section.Templates.Where(template => !ReferenceEquals(template, selected)).Select(template => template.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (section.IncludeMain && !ReferenceEquals(selected, section)) used.Add(section.MainName);
+        string unique = name;
+        for (int number = 2; used.Contains(unique); number++) unique = $"{name} {number}";
+        if (selected is SqueezeTemplate template) template.Name = unique; else section.MainName = unique;
+        Commit();
+    }
 
     /// <summary>A look's share of the squeezes, as shown on its button.</summary>
     private static string WeightText(CreditSqueezeSection section, SqueezeLook look)
@@ -1145,10 +1241,14 @@
 
     private void SelectTemplate(int index)
     {
+        ClearPreview();
         _template = index;
         _frameKey = null;
         _previewNote = null;
         _previewProblem = null;
+        _previewUrl = null;
+        _creditsTextPreview = null;
+        _canvasPreviewRatio = null;
     }
 
     /// <summary>A new template, starting as a copy of the one being edited.</summary>
@@ -1156,13 +1256,14 @@
     {
         int number = section.Templates.Count + 2;
         string name = $"Look {number}";
-        while (section.Templates.Any(template => string.Equals(template.Name, name, StringComparison.OrdinalIgnoreCase)))
+        while (section.Templates.Any(template => string.Equals(template.Name, name, StringComparison.OrdinalIgnoreCase))
+            || section.IncludeMain && string.Equals(section.MainName, name, StringComparison.OrdinalIgnoreCase))
         {
             name = $"Look {++number}";
         }
 
-        section.Templates.Add(SqueezeTemplate.Of(Look(section), name));
-        _template = section.Templates.Count - 1;
+        section.Templates.Add(SqueezeTemplate.Of(!section.IncludeMain && section.Templates.Count == 0 ? new SqueezeLook() : Look(section), name));
+        SelectTemplate(section.Templates.Count - 1);
         Commit();
     }
 
@@ -1173,7 +1274,8 @@
         string name = string.IsNullOrWhiteSpace(template.Name) || template.Name == CreditSqueezeSection.MainLook ? reader.Manifest.Name : template.Name;
         name = string.IsNullOrWhiteSpace(name) || name == CreditSqueezeSection.MainLook ? "Imported look" : name;
         template.Name = name;
-        for (int number = 2; section.Templates.Any(other => string.Equals(other.Name, template.Name, StringComparison.OrdinalIgnoreCase)); number++)
+        for (int number = 2; section.Templates.Any(other => string.Equals(other.Name, template.Name, StringComparison.OrdinalIgnoreCase))
+            || section.IncludeMain && string.Equals(section.MainName, template.Name, StringComparison.OrdinalIgnoreCase); number++)
         {
             template.Name = $"{name} {number}";
         }
@@ -1182,15 +1284,15 @@
         SelectTemplate(section.Templates.Count - 1);
         Commit();
         StateHasChanged();
-        return $"Imported “{template.Name}”. Save to keep it.";
+        string contents = template.UseCanvas ? $" {template.Canvases.Count} canvas(es), {template.Canvases.Sum(canvas => canvas.Layers.Count)} layers." : " Preset layout.";
+        return $"Imported “{template.Name}”.{contents} Save to keep it.";
     }
 
     private void DeleteTemplate(CreditSqueezeSection section)
     {
-        if (_template >= 0 && _template < section.Templates.Count)
+        if (section.RemoveLook(Look(section)))
         {
-            section.Templates.RemoveAt(_template);
-            _template = -1;
+            SelectTemplate(section.IncludeMain ? -1 : section.Templates.Count > 0 ? 0 : -1);
             Commit();
         }
     }
@@ -1231,10 +1333,12 @@
     /// </summary>
     private async Task RenderPreviewAsync(CreditSqueezeSection section)
     {
-        if (_checkingOcr || _previewing) return;
-        _creditsTextPreview = null;
-        _previewProblem = null;
-        _previewNote = null;
+        if (_checkingOcr || _previewing || _installingOcr) return;
+        _previewing = true;
+        ClearPreview();
+        int generation = _previewGeneration;
+        try
+        {
         if (Schedule() is not { } schedule)
         {
             _previewProblem = "The channel hasn't been built yet; save it first.";
@@ -1245,26 +1349,13 @@
         CreditSqueezeSection trial = section.WithOnly(Look(section));
         if (trial.UseCanvas && _canvasPreviewRatio is { } ratio)
             trial.Canvases = trial.Canvases.Where(canvas => canvas.AspectRatio == ratio).ToList();
-        if (trial.UseCanvas && trial.Canvases.Any(canvas => canvas.UsesCreditsText))
-        {
-            _checkingOcr = true;
-            try
-            {
-                var availability = await OcrSetup.CheckAsync(_stop.Token);
-                _ocrPrompt = !availability.Ready;
-                _ocrProblem = availability.Problem;
-                if (!availability.Ready && !trial.Canvases.Where(canvas => canvas.UsesCreditsText).All(canvas => canvas.HasCreditsTextFallback)) return;
-            }
-            catch (OperationCanceledException) { return; }
-            finally { _checkingOcr = false; }
-        }
         trial.Enabled = true;
         trial.CreditsChance = 1;
         trial.OutroChance = 1;
         trial.Outros.Clear();
         TimeZoneInfo zone = SchedulingEngine.ResolveTimeZone(string.IsNullOrWhiteSpace(Channel.TimeZone) ? Context.Config.Settings.TimeZone : Channel.TimeZone);
         SqueezePlan? plan;
-        if (_show is { } show)
+        if (_previewShow is { } show)
         {
             // From the schedule when it airs the show (with its outro), else from one of its episodes in the library, followed by
             // its outro if it has one set up (the schedule only plays a new outro once it's been rebuilt).
@@ -1321,6 +1412,7 @@
             }
         }
 
+        if (generation != _previewGeneration) return;
         // A stand-in (an episode and its outro from the library, as a show with its own outro is previewed) has no breaks, so
         // a panel of commercials takes the ones the channel's real schedule airs over the next few hours.
         if (plan.Job.Panel != SqueezePanel.Promo && plan.Job.Commercials is not { Count: > 0 })
@@ -1339,19 +1431,55 @@
                 ? plan.Job with { FitToPromo = true }
                 : plan.Job with { Length = plan.Job.Length < PreviewLength ? plan.Job.Length : PreviewLength };
             job = Renderer.ForChannel(job, Channel);
+            _previewJob = job;
+            StateHasChanged();
+            try
+            {
+                string original = await Renderer.SourcePreviewAsync(job, Channel.Id, _stop.Token);
+                if (generation != _previewGeneration) return;
+                _sourcePreviewUrl = $"api/credit-squeeze/preview/{Uri.EscapeDataString(original)}";
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+            {
+                if (generation != _previewGeneration) return;
+                _sourcePreviewProblem = $"Couldn't prepare the original ending: {ex.Message}";
+            }
+            StateHasChanged();
+            if (readsCredits)
+            {
+                _checkingOcr = true;
+                try
+                {
+                    var availability = await OcrSetup.CheckAsync(_stop.Token);
+                    if (generation != _previewGeneration) return;
+                    _ocrPrompt = !availability.Ready;
+                    _ocrProblem = availability.Problem;
+                    if (!availability.Ready && !trial.Canvases.Where(canvas => canvas.UsesCreditsText).All(canvas => canvas.HasCreditsTextFallback)) return;
+                }
+                finally { _checkingOcr = false; }
+            }
             CreditsOcrResult? creditsResult = null;
-            string name = await Renderer.PreviewAsync(job, Channel.Id, CancellationToken.None, result => creditsResult = result);
+            string name = await Renderer.PreviewAsync(job, Channel.Id, _stop.Token, result => creditsResult = result);
+            if (generation != _previewGeneration) return;
             _previewUrl = $"api/credit-squeeze/preview/{Uri.EscapeDataString(name)}";
             _creditsTextPreview = creditsResult;
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
         {
-            _previewProblem = $"Couldn't make the preview: {ex.Message}";
+            if (generation != _previewGeneration) return;
+            _previewProblem = $"Couldn't make the preview{(_previewJob is { } attempted ? $" for {SourceLabel(attempted)}" : "")}: {ex.Message}";
         }
         finally
         {
             _previewing = false;
         }
+        }
+        catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            if (generation == _previewGeneration) _previewProblem = $"Couldn't select the preview source: {ex.Message}";
+        }
+        finally { _previewing = false; }
     }
 
     private static string ModeOf(CreditSqueezeSection? section, bool isBlock) => section switch

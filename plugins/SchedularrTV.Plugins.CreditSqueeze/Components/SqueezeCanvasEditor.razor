@@ -27,7 +27,7 @@
     }
     @if (Canvas is { } canvas)
     {
-        <CanvasWorkspace Help="Drag to move; use the corner handle or numeric bounds to resize. Ctrl/⌘ + scroll to zoom, middle-drag to pan, Ctrl/⌘ + 0 to fit. Add keyframes to animate the selected layer at the playhead.">
+        <CanvasWorkspace Help="Drag to move; use the corner handle or numeric bounds to resize. Hold Shift while resizing to keep the starting aspect ratio. Ctrl/⌘ + scroll to zoom, middle-drag to pan, Ctrl/⌘ + 0 to fit. Add keyframes to animate the selected layer at the playhead.">
             <Tools><CanvasToolRail /></Tools>
             <Stage>
                 <CanvasTools Width="canvas.Width" Height="canvas.Height" Add="AddLayer" Fit="Fit">
@@ -41,33 +41,54 @@
                     @foreach (var layer in canvas.Layers)
                     {
                         var pose = Pose(layer);
-                        <div class="layer-box @(ReferenceEquals(_layer, layer) ? "selected" : "")" @key="layer"
+                        <div class="layer-box @(ReferenceEquals(_layer, layer) ? "selected" : "") @(layer.Locked ? "locked" : "") @(_time < layer.Start.TotalSeconds || layer.End is { } end && _time >= end.TotalSeconds ? "hidden-now" : "")" @key="layer"
                              style="left:@Pct(pose.Left, canvas.Width);top:@Pct(pose.Top, canvas.Height);width:@Pct(pose.Width, canvas.Width);height:@Pct(pose.Height, canvas.Height);"
                              data-squeeze-layer="@canvas.Layers.IndexOf(layer)">
                             <span class="layer-tag">@layer.Name</span>
-                            @if (ReferenceEquals(_layer, layer))
+                            @if (ReferenceEquals(_layer, layer) && !layer.Locked)
                             {
                                 <span class="handle handle-se" data-squeeze-resize></span>
                             }
                         </div>
                     }
                 </CanvasViewport>
+                @if (_videoPreviewProblem is { } videoProblem)
+                {
+                    <p class="hint warn" role="status">@videoProblem</p>
+                }
                 <div class="ed-timeline">
-                    <CanvasTransport Time="_time" Duration="_previewSeconds" Frame="CurrentFrame" FrameCount="FrameCount" FramesPerSecond="PreviewFps" Step="StepFrames" KeyboardHints="false" />
-                    <input class="cs-playhead" data-squeeze-scrub type="range" aria-label="Preview time" aria-valuetext="@($"{_time:0.00} seconds")" min="0" max="@N(LastTime)" step="any" value="@N(_time)" />
-                    <div class="cs-key-track" role="group" aria-label="Keyframes for selected layer">
-                        <span class="ed-meta">0s</span><span class="spacer"></span><span class="ed-meta">@N(_previewSeconds)s</span>
+                    <CanvasTransport Time="_time" Duration="_previewSeconds" Frame="CurrentFrame" FrameCount="FrameCount" FramesPerSecond="PreviewFps" Step="StepFrames" />
+                    <CanvasRuler Duration="_previewSeconds" Time="_time" Fps="PreviewFps" ClientControlled="true"
+                                 SpanStart="@(_layer?.Start.TotalSeconds)" SpanEnd="@(_layer is null ? (double?)null : (_layer.End?.TotalSeconds ?? _previewSeconds))">
                         @foreach (var key in _layer?.Keyframes ?? [])
                         {
                             if (key.At.TotalSeconds > LastTime) continue;
-                            <button type="button" class="cs-key-marker @(IsCurrent(key) ? "active" : "")" style="left:@Pct(key.At.TotalSeconds, LastTime);" title="@($"Keyframe at {key.At.TotalSeconds:0.00}s")" aria-label="@($"Seek to keyframe at {key.At.TotalSeconds:0.00}s")" @onclick="() => Seek(key.At.TotalSeconds)"><Icon Name="keyframe" Size="12" /></button>
+                            <span class="ed-key @(IsCurrent(key) ? "current" : "") @(SelectedKeys.Contains(key) ? "selected" : "") @($"ease-{key.Easing.ToString().ToLowerInvariant()}")" @key="key"
+                                  data-squeeze-key="@(_layer!.Keyframes!.IndexOf(key))" data-squeeze-key-layer="@canvas.Layers.IndexOf(_layer)" style="left:@Pct(key.At.TotalSeconds, _previewSeconds);"
+                                  title="@($"Keyframe at {key.At.TotalSeconds:0.00}s. Ctrl/⌘-click to toggle, Shift-click for a range; drag to move.")"></span>
                         }
-                    </div>
+                    </CanvasRuler>
                     @if (_layer is { } timed)
                     {
                         <div class="ed-keybar">
                             <EditorIconButton Icon="arrow-left" Label="Previous keyframe" Disabled="@(!HasKey(-1))" OnClick="() => GoToKey(-1)" />
-                            <button type="button" class="btn btn-sm" title="Capture the current pose at the playhead" @onclick="AddKey"><Icon Name="keyframe" />Add keyframe</button>
+                            @if (SelectedKeys.Count > 1)
+                            {
+                                <strong>@SelectedKeys.Count selected</strong>
+                                <label class="ed-keyfield"><span>Then (all)</span><select value="@SelectedEasing" @onchange="SetKeyEasing"><option value="" disabled>Mixed easing</option>@foreach (var easing in Enum.GetValues<GeneratedEasing>()) { <option value="@easing">@easing</option> }</select></label>
+                                <EditorIconButton Icon="trash" Label="Delete selected keyframes" Danger="true" OnClick="RemoveSelectedKeys" />
+                                <EditorIconButton Icon="x" Label="Clear keyframe selection" OnClick="() => _keys.Clear()" />
+                            }
+                            else if (EditingKey is { } editingKey)
+                            {
+                                <label class="ed-keyfield"><span>At (s)</span><input type="number" min="0" max="@N(LastTime)" step="0.05" value="@N(editingKey.At.TotalSeconds)" @onchange="e => SetKeyTime(editingKey, e)" /></label>
+                                <label class="ed-keyfield"><span>Then</span><select value="@editingKey.Easing" @onchange="SetKeyEasing">@foreach (var easing in Enum.GetValues<GeneratedEasing>()) { <option value="@easing">@easing</option> }</select></label>
+                                <EditorIconButton Icon="trash" Label="Delete keyframe" Danger="true" OnClick="() => RemoveKey(editingKey)" />
+                            }
+                            else
+                            {
+                                <EditorIconButton Icon="keyframe" Label="@(timed.Keyframes is { Count: > 0 } ? "Add keyframe at playhead" : "Animate layer with keyframes")" OnClick="AddKey" />
+                            }
                             <EditorIconButton Icon="arrow-right" Label="Next keyframe" Disabled="@(!HasKey(1))" OnClick="() => GoToKey(1)" />
                             <span class="spacer"></span>
                             @if (timed.Keyframes is { Count: > 0 })
@@ -77,7 +98,7 @@
                         </div>
                     }
                 </div>
-                <p class="hint">Stand-in videos show the layout and channel fit. Use “Render a preview” below to see the actual credits and panel clips.
+                <p class="hint">File videos show the frame at the playhead. Source credits and promo panels use stand-ins; render a preview below to see the scheduled content.
                     Keyframes are seconds from the start of the credits; the canvas runs for the full credits duration.</p>
                 @if (canvas.UsesCreditsText)
                 {
@@ -98,11 +119,14 @@
             </Stage>
             <Inspector>
                 <div class="layer-actions"><Icon Name="layers" Size="14" /><strong class="ed-meta">Layers</strong><span class="ed-meta">@canvas.Layers.Count</span><span class="spacer"></span><span class="ed-meta">top first</span></div>
-                <ol class="layer-list" aria-label="Layers, top first">
+                <ol class="layer-list layer-tree" aria-label="Layers, top first">
                 @foreach (var item in canvas.Layers.AsEnumerable().Reverse())
                 {
-                    <li class="layer-row @(ReferenceEquals(_layer, item) ? "selected" : "")" @key="item">
+                    <li class="layer-row @(ReferenceEquals(_layer, item) ? "selected" : "")" @key="item" draggable="true"
+                        @ondragstart="() => _listDrag = item" @ondragend="() => _listDrag = null" @ondragover:preventDefault="true" @ondrop="() => DropLayer(item)" @ondrop:preventDefault="true">
                         <button type="button" class="layer-select" aria-pressed="@(ReferenceEquals(_layer, item))" @onclick="() => _layer = item"><Icon Name="@LayerIcon(item)" Size="14" /><span>@item.Name</span><small>@LayerKind(item)</small></button>
+                        <CanvasLayerControls Locked="item.Locked" Label="@item.Name" CanForward="@(canvas.Layers.IndexOf(item) < canvas.Layers.Count - 1)" CanBackward="@(canvas.Layers.IndexOf(item) > 0)"
+                                             ToggleLock="async () => { item.Locked = !item.Locked; await Commit(); }" Forward="() => StepLayer(item, 1)" Backward="() => StepLayer(item, -1)" />
                     </li>
                 }
                 </ol>
@@ -119,10 +143,6 @@
                         <EditorIconButton Icon="trash" Label="Delete layer" Danger="true" OnClick="RemoveLayer" />
                     </div>
                     <label class="field"><span>Name</span><input @bind="selected.Name" @bind:after="Commit" /></label>
-                    <div class="row row-wrap" style="gap:4px;">
-                        <EditorIconButton Icon="arrow-up" Label="Bring layer forward" Disabled="@(canvas.Layers.IndexOf(selected) == canvas.Layers.Count - 1)" OnClick="() => Reorder(1)" />
-                        <EditorIconButton Icon="arrow-down" Label="Send layer backward" Disabled="@(canvas.Layers.IndexOf(selected) == 0)" OnClick="() => Reorder(-1)" />
-                    </div>
                     @if (selected.Kind == GeneratedLayerKind.Video)
                     {
                         var video = selected.Video ??= new();
@@ -149,12 +169,24 @@
                         @if (selected.CreditsText is { } credits)
                         {
                             <strong>Credits Text · source OCR</strong>
-                            <p class="hint">Reads the original credits, even when their video layer is hidden. Pages share this layer's active time equally.
+                            <p class="hint">Reads the original credits, even when their video layer is hidden. Choose fixed-size pages or match the original scans.
                                 Set Tesseract and its languages in the Credit squeeze plugin settings. OCR can misread names; check the extracted text under the rendered preview.</p>
-                            <label class="field"><span>Source lines per page</span><input type="number" min="1" max="30" value="@credits.LinesPerPage" @onchange="SetLinesPerPage" /></label>
+                            <label class="field"><span>Paging</span>
+                                <select value="@(credits.MatchSourcePages ? "source" : "fixed")" @onchange="SetPageMode">
+                                    <option value="fixed">Fixed lines per page</option>
+                                    <option value="source">Match original scans</option>
+                                </select></label>
+                            @if (credits.MatchSourcePages)
+                            {
+                                <p class="hint" role="note">Keeps each scan's lines together and changes pages at the sampled source times. Identical consecutive scans hold the same page; scans with no readable text stay blank. Timing accuracy depends on the OCR sampling interval.</p>
+                            }
+                            else
+                            {
+                                <label class="field"><span>Source lines per page</span><input type="number" min="1" max="30" value="@credits.LinesPerPage" @onchange="SetLinesPerPage" /></label>
+                            }
                             <label class="field"><span>Default text if OCR fails</span>
                                 <textarea rows="3" placeholder="Thanks for watching {show}." @bind="credits.FallbackText" @bind:after="Commit"></textarea></label>
-                            <p class="hint" role="note">Used if credits can't be read. Supports {show}, {channel}, {next}, {time}, and {heading}. Leave empty to keep OCR failures from rendering this canvas.</p>
+                            <p class="hint" role="note">Used if credits can't be read. Supports {show}, {channel}, {up_next} (or {next}), {time}, and {heading}. Leave empty to keep OCR failures from rendering this canvas.</p>
                             <button type="button" class="btn btn-sm @(_previewFallback ? "btn-primary" : "")" aria-pressed="@_previewFallback"
                                     disabled="@(string.IsNullOrWhiteSpace(credits.FallbackText) && !_previewFallback)" @onclick="ToggleFallbackPreview">
                                 <Icon Name="type" />@(_previewFallback ? "Show sample OCR text" : "Preview default text")</button>
@@ -162,17 +194,33 @@
                         else
                         {
                         <label class="field"><span>Text</span><textarea @bind="selected.Text" @bind:after="Commit"></textarea></label>
-                        <p class="hint">Tokens: {show}, {next}, {time}, {channel}, {heading}.</p>
+                        <p class="hint" role="note">Tokens: {show}, {up_next} (or {next}), {time}, {channel}, {heading}.</p>
                         }
                         <label class="field"><span>Font</span><select @bind="selected.FontFamily" @bind:after="Commit">@foreach (string font in Fonts) { <option value="@font">@font</option> }</select></label>
                         <label class="field"><span>Font size</span><input type="number" min="1" max="400" @bind="selected.FontSize" @bind:after="Commit" /></label>
                         <div class="field"><span>Alignment</span><TextAlignPad Horizontal="selected.Align" Vertical="@(selected.VerticalAlign ?? GeneratedVerticalAlign.Top)" Changed="cell => SetAlign(cell.Vertical, cell.Horizontal)" /></div>
-                        <label class="check"><input type="checkbox" @bind="selected.Bold" @bind:after="Commit" />Bold</label>
+                        <CanvasFontStyle Weight="selected.FontWeight" Bold="selected.Bold" Italic="selected.Italic"
+                                         WeightChanged="async weight => { selected.FontWeight = weight; await Commit(); }"
+                                         ItalicChanged="async italic => { selected.Italic = italic; await Commit(); }" />
+                        <label class="field"><span>Letters</span><TextCaseSelect Value="selected.TextCase" ValueChanged="async value => { selected.TextCase = value; await Commit(); }" /></label>
+                        <label class="check"><input type="checkbox" @bind="selected.Shadow" @bind:after="Commit" />Drop shadow</label>
                         <label class="check"><input type="checkbox" checked="@(selected.WordWrap == true)" @onchange="e => SetWordWrap(e.Value is true)" />Wrap long lines to the box</label>
+                        <div class="grid grid-2">
+                            <label class="field"><span>Letter spacing (%)</span><input type="number" min="-50" max="200" step="1" value="@N(selected.LetterSpacing ?? 0)" @onchange="e => SetSpacing(e, true)" /></label>
+                            <label class="field"><span>Line spacing (×)</span><input type="number" min="0.3" max="5" step="0.05" value="@N(selected.LineSpacing ?? 1)" @onchange="e => SetSpacing(e, false)" /></label>
+                        </div>
                     }
                     @if (selected.Kind is GeneratedLayerKind.Text or GeneratedLayerKind.Rect)
                     {
                         <div class="field"><span>Colour</span><ScreenColourPicker @key="selected" Value="@selected.Color" ValueChanged="SetColour" /></div>
+                    }
+                    @if (selected.Kind == GeneratedLayerKind.Rect)
+                    {
+                        <label class="field"><span>Shape</span><select @bind="selected.Shape" @bind:after="Commit">@foreach (var shape in Enum.GetValues<GeneratedShape>()) { <option value="@shape">@shape</option> }</select></label>
+                        <div class="grid grid-2">
+                            <label class="field"><span>Corner radius</span><input type="number" min="0" max="500" @bind="selected.CornerRadius" @bind:after="Commit" /></label>
+                            <label class="field"><span>Soft edges (px)</span><input type="number" min="0" max="200" @bind="selected.SoftEdges" @bind:after="Commit" /></label>
+                        </div>
                     }
                     <div class="grid grid-2">
                         @foreach (string field in new[] { "X", "Y", "Width", "Height" })
@@ -191,20 +239,6 @@
                     @if (selected.Video?.Episode == SqueezeCanvas.Credits)
                     {
                         <button type="button" class="btn btn-sm" title="Replace this layer's keyframes with a one-second full-screen-to-box animation" @onclick="AnimateIn"><Icon Name="keyframe" />Animate squeeze-in</button>
-                    }
-                    @if (selected.Keyframes is { Count: > 0 })
-                    {
-                    <details class="studio-section" open>
-                    <summary><Icon Name="keyframe" /> Keyframes (@selected.Keyframes.Count)</summary>
-                    @foreach (var key in selected.Keyframes ?? [])
-                    {
-                        <div class="cs-key-row" @key="key">
-                            <button type="button" class="btn btn-sm @(IsCurrent(key) ? "btn-primary" : "")" title="Seek to this keyframe" aria-pressed="@IsCurrent(key)" @onclick="() => SeekKey(key)">@N(key.At.TotalSeconds)s</button>
-                            <select aria-label="Easing to next keyframe" @bind="key.Easing" @bind:after="Commit">@foreach (var easing in Enum.GetValues<GeneratedEasing>()) { <option value="@easing">@easing</option> }</select>
-                            <EditorIconButton Icon="trash" Label="Delete keyframe" Danger="true" OnClick="() => RemoveKey(key)" />
-                        </div>
-                    }
-                    </details>
                     }
                     </div>
                 }
@@ -257,6 +291,40 @@
     [Parameter] public EventCallback<string?> SelectedRatio { get; set; }
     private SqueezeCanvas? Canvas;
     private GeneratedLayer? _layer;
+    private GeneratedLayer? _listDrag;
+    private readonly SchedularrTV.Core.Editing.KeyframeSelection<GeneratedKeyframe> _keys = new(key => key.At.TotalSeconds);
+    private int _keyGesture;
+    private GeneratedLayer? _keyLayer;
+    private GeneratedKeyframe? _keyAnchor;
+    private List<(GeneratedKeyframe Key, double At)> _keyStarts = [];
+    private bool _keyMovable, _keyChanged;
+    private IReadOnlyList<GeneratedKeyframe> SelectedKeys
+    {
+        get { _keys.Bind(_layer, _layer?.Keyframes ?? []); return _keys.Selected; }
+    }
+    private GeneratedKeyframe? EditingKey => SelectedKeys.LastOrDefault() ?? _layer?.Keyframes?.FirstOrDefault(IsCurrent);
+    private string SelectedEasing => SelectedKeys.Select(key => key.Easing).Distinct().ToArray() is [var easing] ? easing.ToString() : "";
+    private async Task SetKeyEasing(ChangeEventArgs e)
+    {
+        if (!Enum.TryParse<GeneratedEasing>(e.Value?.ToString(), out var easing) || !Enum.IsDefined(easing)) return;
+        var keys = SelectedKeys.Count > 0 ? SelectedKeys : EditingKey is { } current ? new[] { current } : [];
+        foreach (var key in keys) key.Easing = easing;
+        await Commit();
+    }
+    private async Task SetKeyTime(GeneratedKeyframe key, ChangeEventArgs e)
+    {
+        if (!double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double at) || !double.IsFinite(at)) return;
+        key.At = TimeSpan.FromSeconds(Math.Round(Math.Clamp(Math.Round(at * PreviewFps) / PreviewFps, 0, LastTime), 4));
+        _layer?.Keyframes?.Sort((a, b) => a.At.CompareTo(b.At));
+        _time = key.At.TotalSeconds;
+        await Commit();
+    }
+    private async Task RemoveSelectedKeys()
+    {
+        foreach (var key in SelectedKeys.ToArray()) _layer?.Keyframes?.Remove(key);
+        _keys.Clear();
+        await Commit();
+    }
     private string _ratio = "", _sourceRatio = "16:9", _preview = "";
     private readonly string _id = "squeeze-" + Guid.NewGuid().ToString("N");
     private CanvasViewport? _viewport;
@@ -270,6 +338,14 @@
     private SKRect _dragBounds;
     private GeneratedLayer? _dragLayer;
     private PromoComposition? _composition;
+    private CanvasVideoPreview? _videoDecoder;
+    private readonly CancellationTokenSource _videoStop = new();
+    private readonly Dictionary<string, (string Path, SKImage Image)> _videoImages = new(StringComparer.Ordinal);
+    private (PromoComposition Composition, TimeSpan Time, SqueezeCanvas Canvas, int Version)? _pendingVideos;
+    private Task? _videoWork;
+    private bool _loadingVideos;
+    private int _videoVersion;
+    private string? _videoPreviewProblem;
     private bool _previewFallback;
     private void ToggleFallbackPreview() { _previewFallback = !_previewFallback; Refresh(); }
     private IReadOnlyList<string>? _fonts;
@@ -351,7 +427,8 @@
         if (_disposed) { await _interactions.InvokeVoidAsync("dispose"); await _interactions.DisposeAsync(); }
     }
 
-    public sealed record Interaction(string Kind, string Ratio, double Time, int Id, int Layer, bool Resize, double Dx, double Dy, bool Final);
+    public sealed record Interaction(string Kind, string Ratio, double Time, int Id, int Layer, bool Resize, double Dx, double Dy, bool Final, bool LockAspect = false,
+        int Key = -1, bool Toggle = false, bool Range = false, double Delta = 0, string? Command = null);
 
     [JSInvokable]
     public async Task UpdateInteraction(Interaction update)
@@ -359,10 +436,54 @@
         if (_disposed || Canvas is null || update.Ratio != Canvas.AspectRatio) return;
         _interactive = !update.Final;
         if (update.Kind == "scrub" && double.IsFinite(update.Time))
+        {
+            _keys.Clear();
             _time = Math.Clamp(Math.Round(update.Time * PreviewFps) / PreviewFps, 0, LastTime);
+        }
+        else if (update.Kind == "keys" && double.IsFinite(update.Delta))
+        {
+            if (_layer?.Keyframes is not { } keys || update.Layer != Canvas.Layers.IndexOf(_layer)) return;
+            if (_keyGesture != update.Id || !ReferenceEquals(_keyLayer, _layer))
+            {
+                if (update.Key < 0 || update.Key >= keys.Count) return;
+                _keyGesture = update.Id; _keyLayer = _layer; _keyAnchor = keys[update.Key];
+                _ = SelectedKeys;
+                _keyMovable = _keys.Click(_keyAnchor, keys, update.Toggle, update.Range);
+                _keyStarts = SelectedKeys.Select(key => (key, key.At.TotalSeconds)).ToList();
+                _keyChanged = false;
+            }
+            if (_keyMovable)
+            {
+                double delta = SchedularrTV.Core.Editing.KeyframeMoves.Delta(_keyStarts.Select(start => start.At), update.Delta, LastTime, PreviewFps);
+                foreach (var start in _keyStarts) start.Key.At = TimeSpan.FromSeconds(delta == 0 ? start.At : Math.Round(start.At + delta, 4));
+                keys.Sort((a, b) => a.At.CompareTo(b.At));
+                _time = Math.Clamp(_keyAnchor!.At.TotalSeconds, 0, LastTime);
+                _keyChanged = delta != 0;
+            }
+        }
+        else if (update.Kind == "command")
+        {
+            switch (update.Command)
+            {
+                case "left": StepFrames(update.Range ? -PreviewFps : -1); break;
+                case "right": StepFrames(update.Range ? PreviewFps : 1); break;
+                case "home": Seek(0); break;
+                case "end": Seek(LastTime); break;
+                case "previous": GoToKey(-1); break;
+                case "next": GoToKey(1); break;
+                case "add": await AddKey(); break;
+                case "escape": _keys.Clear(); break;
+                case "delete":
+                    if (SelectedKeys.Count > 0) await RemoveSelectedKeys();
+                    else if (EditingKey is { } key) await RemoveKey(key);
+                    break;
+            }
+            StateHasChanged(); return;
+        }
         else if (update.Kind == "drag" && double.IsFinite(update.Dx) && double.IsFinite(update.Dy))
         {
             if (update.Layer < 0 || update.Layer >= Canvas.Layers.Count) return;
+            if (Canvas.Layers[update.Layer].Locked) return;
             if (_gesture != update.Id || _dragLayer is null)
             {
                 _gesture = update.Id;
@@ -371,18 +492,32 @@
             }
             if (!Canvas.Layers.Contains(_dragLayer)) return;
             _layer = _dragLayer;
+            double dx = update.Dx, dy = update.Dy;
+            if (update.Resize && update.LockAspect)
+            {
+                double width = Math.Max(2, _dragBounds.Width), height = Math.Max(2, _dragBounds.Height);
+                double change = Math.Abs(dx / width) >= Math.Abs(dy / height) ? dx / width : dy / height;
+                double scale = Math.Max(Math.Max(2 / width, 2 / height), 1 + change);
+                dx = width * scale - width; dy = height * scale - height;
+            }
             SetPose(update.Resize
-                ? SKRect.Create(_dragBounds.Left, _dragBounds.Top, Math.Max(2, _dragBounds.Width + (float)update.Dx), Math.Max(2, _dragBounds.Height + (float)update.Dy))
-                : SKRect.Create(_dragBounds.Left + (float)update.Dx, _dragBounds.Top + (float)update.Dy, _dragBounds.Width, _dragBounds.Height));
+                ? SKRect.Create(_dragBounds.Left, _dragBounds.Top, Math.Max(2, _dragBounds.Width + (float)dx), Math.Max(2, _dragBounds.Height + (float)dy))
+                : SKRect.Create(_dragBounds.Left + (float)dx, _dragBounds.Top + (float)dy, _dragBounds.Width, _dragBounds.Height));
         }
         Refresh();
         if (update.Final && update.Kind == "drag") { _dragLayer = null; await Changed.InvokeAsync(); }
+        if (update.Final && update.Kind == "keys") { if (_keyChanged) await Changed.InvokeAsync(); _keyLayer = null; }
         StateHasChanged();
     }
 
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
+        _videoStop.Cancel();
+        if (_videoWork is not null) await _videoWork;
+        foreach (var frame in _videoImages.Values) frame.Image.Dispose();
+        _videoImages.Clear();
+        _videoStop.Dispose();
         try { if (_interactions is not null) { await _interactions.InvokeVoidAsync("dispose"); await _interactions.DisposeAsync(); } }
         catch (JSDisconnectedException) { }
         _self?.Dispose();
@@ -452,7 +587,7 @@
     private async Task RemoveCanvas() { if (Canvas is not null) Look.Canvases.Remove(Canvas); Select(Look.Canvases.FirstOrDefault()); await Commit(); }
     private async Task Commit() { Refresh(); await Changed.InvokeAsync(); }
     private async Task Fit() { if (_viewport is not null) await _viewport.ResetAsync(); await Measure(); }
-    private static string N(double number) => number.ToString("0.##", CultureInfo.InvariantCulture);
+    private static string N(double number) => number.ToString("0.####", CultureInfo.InvariantCulture);
     private static string Pct(double number, double size) => N(number / size * 100) + "%";
     private async Task Measure() { _pixels = await JS.InvokeAsync<double>("eval", $"document.getElementById('{_id}')?.getBoundingClientRect().width || 640"); }
     private async Task AddSource() { await AddLayer("video"); _layer!.Video!.Episode = SqueezeCanvas.Credits; _layer.Name = "Source credits video"; await Commit(); }
@@ -475,7 +610,25 @@
         credits.LinesPerPage = Math.Clamp(lines, 1, 30);
         await Commit();
     }
+    private Task SetPageMode(ChangeEventArgs e)
+    {
+        if (_layer?.CreditsText is { } credits) credits.MatchSourcePages = e.Value?.ToString() == "source";
+        return Commit();
+    }
+    private CreditsOcrResult SampleCredits()
+    {
+        var lines = Enumerable.Range(1, 16).Select(index => new CreditsOcrLine($"Sample credits line {index}", 100)).ToArray();
+        return new(lines, 3, Pages: [new(TimeSpan.Zero, lines[..4]),
+            new(TimeSpan.FromSeconds(_previewSeconds / 3), lines[4..11]),
+            new(TimeSpan.FromSeconds(_previewSeconds * 2 / 3), lines[11..])]);
+    }
     private async Task SetWordWrap(bool wrap) { if (_layer is not null) _layer.WordWrap = wrap; await Commit(); }
+    private async Task SetSpacing(ChangeEventArgs e, bool letters)
+    {
+        if (_layer is null || !float.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float value) || !float.IsFinite(value)) return;
+        if (letters) _layer.LetterSpacing = Math.Clamp(value, -50, 200); else _layer.LineSpacing = Math.Clamp(value, .3f, 5);
+        await Commit();
+    }
     private async Task AddLayer(string kind)
     {
         if (Canvas is null) return;
@@ -486,11 +639,18 @@
         Canvas.Layers.Add(_layer); await Commit();
     }
     private async Task RemoveLayer() { if (_layer is not null) Canvas!.Layers.Remove(_layer); _layer = Canvas?.Layers.LastOrDefault(); await Commit(); }
-    private async Task Reorder(int direction)
+    private async Task StepLayer(GeneratedLayer layer, int direction)
     {
-        if (_layer is null || Canvas is null) return;
-        int at = Canvas.Layers.IndexOf(_layer), to = Math.Clamp(at + direction, 0, Canvas.Layers.Count - 1);
-        Canvas.Layers.RemoveAt(at); Canvas.Layers.Insert(to, _layer); await Commit();
+        if (Canvas is null || !Canvas.Layers.Contains(layer)) return;
+        int at = Canvas.Layers.IndexOf(layer), to = Math.Clamp(at + direction, 0, Canvas.Layers.Count - 1);
+        Canvas.Layers.RemoveAt(at); Canvas.Layers.Insert(to, layer); await Commit();
+    }
+    private async Task DropLayer(GeneratedLayer target)
+    {
+        if (Canvas is null || _listDrag is not { } dragged || ReferenceEquals(dragged, target) || !Canvas.Layers.Contains(dragged)) return;
+        int destination = Canvas.Layers.IndexOf(target);
+        Canvas.Layers.Remove(dragged); Canvas.Layers.Insert(destination, dragged); _listDrag = null;
+        await Commit();
     }
     private async Task SetPath(string? path) { if (_layer is not null) _layer.Path = path; await Commit(); }
     private async Task SetFit(ChangeEventArgs e)
@@ -560,7 +720,8 @@
             new GeneratedKeyframe { At = TimeSpan.FromSeconds(1), X = pose.Left, Y = pose.Top, Width = pose.Width, Height = pose.Height }];
         _time = 1; await Commit();
     }
-    private void Refresh()
+    private void Refresh() => RefreshPreview(requestVideo: true);
+    private void RefreshPreview(bool requestVideo)
     {
         if (Canvas is null) return;
         var job = Renderer.ForChannel(new SqueezeJob("__credits__", TimeSpan.Zero, TimeSpan.FromSeconds(_previewSeconds), new("Next programme", null, "8:30 PM", null), [],
@@ -569,24 +730,78 @@
             Canvases = [Canvas],
             OcrTranscript = Canvas.UsesCreditsText
                 ? _previewFallback ? new CreditsOcrResult([], 0, Failure: "Previewing default text")
-                    : new CreditsOcrResult(Enumerable.Range(1, 16).Select(index => new CreditsOcrLine($"Sample credits line {index}", 100)).ToArray(), 0)
+                    : SampleCredits()
                 : null
         }, Channel);
         _composition = Canvas.Compose(job);
         float scale = Math.Min(1, (_interactive ? 480f : 960f) / Math.Max(Canvas.Width, Canvas.Height));
         using var surface = SKSurface.Create(new SKImageInfo(Math.Max(1, (int)(Canvas.Width * scale)), Math.Max(1, (int)(Canvas.Height * scale))));
         surface.Canvas.Scale(scale);
-        using var videos = new StandInFrames(SqueezeCanvas.ParseAspect(_sourceRatio));
+        using var videos = new StandInFrames(SqueezeCanvas.ParseAspect(_sourceRatio), _videoImages);
         PromoRenderer.DrawFrame(surface.Canvas, _composition, TimeSpan.FromSeconds(_time), _images, videos: videos);
         using var image = surface.Snapshot(); using var data = image.Encode(SKEncodedImageFormat.Jpeg, _interactive ? 65 : 85);
         _preview = "data:image/jpeg;base64," + Convert.ToBase64String(data.ToArray());
+        if (requestVideo && !_disposed)
+        {
+            _videoVersion++;
+            _pendingVideos = (_composition, TimeSpan.FromSeconds(_time), Canvas, _videoVersion);
+            if (!_loadingVideos) _videoWork = LoadVideoPreviews();
+        }
     }
 
-    private sealed class StandInFrames(double sourceAspect) : IPromoVideoFrames, IDisposable
+    private async Task LoadVideoPreviews()
+    {
+        _loadingVideos = true;
+        try
+        {
+            while (!_disposed && _pendingVideos is { } request)
+            {
+                _pendingVideos = null;
+                var files = request.Composition.Layers.OfType<PromoVideoLayer>().Where(layer => layer.Path is not ("__credits__" or "__panel__")
+                    && PromoAnimation.Evaluate(layer, request.Time, request.Composition.Duration, request.Composition.Height) is not null).ToArray();
+                string? problem = null;
+                foreach (var layer in files)
+                {
+                    try
+                    {
+                        _videoDecoder ??= Renderer.CreateCanvasVideoPreview();
+                        byte[] data = await _videoDecoder.FrameAsync(layer, layer.PlaybackAt(request.Time), PreviewFps, _videoStop.Token);
+                        if (_disposed || request.Version != _videoVersion || !ReferenceEquals(Canvas, request.Canvas)) break;
+                        var image = SKImage.FromEncodedData(data) ?? throw new IOException("Video preview frame could not be read.");
+                        string id = layer.Id!;
+                        if (_videoImages.Remove(id, out var previous)) previous.Image.Dispose();
+                        _videoImages[id] = (layer.Path, image);
+                    }
+                    catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception or System.Text.Json.JsonException)
+                    {
+                        problem = ex.Message;
+                    }
+                    catch (OperationCanceledException) when (!_videoStop.IsCancellationRequested)
+                    {
+                        problem = $"Video preview timed out: {Path.GetFileName(layer.Path)}";
+                    }
+                }
+                if (_disposed) return;
+                if (request.Version == _videoVersion && ReferenceEquals(Canvas, request.Canvas))
+                {
+                    _videoPreviewProblem = problem;
+                    var active = files.Select(layer => layer.Id!).ToHashSet(StringComparer.Ordinal);
+                    foreach (string old in _videoImages.Keys.Where(id => !active.Contains(id)).ToArray())
+                    { _videoImages[old].Image.Dispose(); _videoImages.Remove(old); }
+                    if (files.Length > 0) { RefreshPreview(requestVideo: false); StateHasChanged(); }
+                }
+            }
+        }
+        catch (OperationCanceledException) when (_videoStop.IsCancellationRequested) { }
+        finally { _loadingVideos = false; }
+    }
+
+    private sealed class StandInFrames(double sourceAspect, IReadOnlyDictionary<string, (string Path, SKImage Image)> fileFrames) : IPromoVideoFrames, IDisposable
     {
         private readonly List<SKImage> _images = [];
         public SKImage Frame(PromoVideoLayer layer, TimeSpan playback)
         {
+            if (layer.Id is { } id && fileFrames.TryGetValue(id, out var frame) && frame.Path == layer.Path) return frame.Image;
             (int w, int h) = layer.FrameSize;
             float scale = Math.Min(1, 480f / Math.Max(w, h));
             w = Math.Max(1, (int)(w * scale)); h = Math.Max(1, (int)(h * scale));
@@ -599,7 +814,8 @@
             using var paint = new SKPaint { Color = layer.Path == "__credits__" ? new SKColor(55, 65, 85) : new SKColor(85, 55, 65) };
             surface.Canvas.DrawRect((w - width) / 2, (h - height) / 2, width, height, paint);
             using var font = new SKFont(SKTypeface.Default, Math.Min(w / 18f, h / 10f)); paint.Color = SKColors.White;
-            surface.Canvas.DrawText(layer.Path == "__credits__" ? "Source credits video" : "Video", w / 2f, h / 2f, SKTextAlign.Center, font, paint);
+            string label = layer.Path == "__credits__" ? "Source credits video" : layer.Path == "__panel__" ? "Promo / commercials panel" : "Loading video…";
+            surface.Canvas.DrawText(label, w / 2f, h / 2f, SKTextAlign.Center, font, paint);
             var image = surface.Snapshot(); _images.Add(image); return image;
         }
         public void Dispose() { foreach (var image in _images) image.Dispose(); }

@@ -1058,6 +1058,8 @@ public static partial class GeneratedPromoResolver
                 MaxFontSize = layer.FontSize,
                 FontFamily = layer.FontFamily,
                 Bold = layer.Bold,
+                FontWeight = layer.FontWeight,
+                Italic = layer.Italic,
                 Align = layer.Align switch
                 {
                     GeneratedTextAlign.Center => SKTextAlign.Center,

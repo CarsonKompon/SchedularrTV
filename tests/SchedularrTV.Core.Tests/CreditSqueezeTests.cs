@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using SchedularrTV.Core.Configuration;
 using SchedularrTV.Core.Media;
 using SchedularrTV.Core.Scheduling;
 using SchedularrTV.CreditSqueeze;
@@ -10,6 +11,15 @@ namespace SchedularrTV.Core.Tests;
 public sealed class CreditSqueezeTests
 {
     private static readonly DateTimeOffset Noon = new(2026, 10, 5, 12, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public void Preview_source_identity_names_the_actual_show_episode_and_custom_outro()
+    {
+        var episode = new MediaItem { Id = "test", Title = "Help Wanted", SeriesName = "SpongeBob SquarePants", SeasonNumber = 1, EpisodeNumber = 1 };
+        Assert.Equal("SpongeBob SquarePants — S01E01 · Help Wanted", SqueezePlanner.DescribeSource(episode));
+        Assert.EndsWith("(custom outro)", SqueezePlanner.DescribeSource(episode, outro: true));
+        Assert.All(Plan(Day(), new CreditSqueezeSection()), plan => Assert.False(string.IsNullOrWhiteSpace(plan.Job.SourceLabel)));
+    }
 
     private static MediaItem Episode(string series, int number, TimeSpan? credits = null) => new()
     {
@@ -427,6 +437,38 @@ public sealed class CreditSqueezeTests
 
         // Previewing one template uses only it.
         Assert.Equal("Next up", Plan(Day(), section.WithOnly(new SqueezeLook { Heading = "Next up" }))[0].Job.Heading);
+    }
+
+    [Fact]
+    public void Main_can_be_renamed_and_deleted_without_reappearing_after_reload()
+    {
+        var section = new CreditSqueezeSection { MainName = "Evening credits" };
+        var saved = new SqueezeTemplate { Name = "Classic credits", Heading = "Classic" };
+        section.Templates.Add(saved);
+        Assert.True(section.RemoveLook(section));
+        Assert.False(section.IncludeMain);
+        Assert.Same(saved, Assert.Single(section.Looks()));
+        Assert.All(Plan(Day(), section), plan => Assert.Equal("Classic", plan.Job.Heading));
+        var loaded = SchedulerConfigLoader.ConvertSection<CreditSqueezeSection>(section)!;
+        Assert.Equal("Evening credits", loaded.MainName);
+        Assert.False(loaded.IncludeMain);
+        Assert.IsType<SqueezeTemplate>(Assert.Single(loaded.Looks()));
+        Assert.True(loaded.RemoveLook(loaded.Templates[0]));
+        Assert.Empty(loaded.Looks());
+        Assert.Empty(Plan(Day(), loaded));
+    }
+
+    [Fact]
+    public void A_deleted_main_is_not_a_fallback_for_disabled_templates_and_previews_still_work()
+    {
+        var section = new CreditSqueezeSection { IncludeMain = false, Templates = [new() { Name = "Paused", Enabled = false }] };
+        Assert.Empty(section.Looks());
+        Assert.Empty(Plan(Day(), section));
+        Assert.NotEmpty(Plan(Day(), section.WithOnly(section.Templates[0])));
+        section.Templates[0].Enabled = true;
+        Assert.NotEmpty(Plan(Day(), section));
+        section.Templates[0].Weight = 0;
+        Assert.Empty(Plan(Day(), section));
     }
 
     [Fact]

@@ -194,13 +194,42 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
     }
 
     private string PreviewFolder => Path.Combine(settings.SaveFolder, "_previews");
+    public CanvasVideoPreview CreateCanvasVideoPreview() => new(settings.Ffmpeg, Ffprobe);
+
+    /// <summary>A browser-playable copy of exactly the original source segment, independent of OCR and squeeze rendering.</summary>
+    public async Task<string> SourcePreviewAsync(SqueezeJob job, string channelId, CancellationToken cancellationToken)
+    {
+        if (job.SourceStart < TimeSpan.Zero || job.Length <= TimeSpan.Zero || job.Length > TimeSpan.FromMinutes(15))
+            throw new InvalidOperationException("Choose a source ending between 0 and 15 minutes long.");
+        if (!File.Exists(job.SourcePath)) throw new InvalidOperationException("The scheduler cannot read the original source video.");
+        Directory.CreateDirectory(PreviewFolder);
+        string prefix = $"source-{new string([.. channelId.Where(char.IsAsciiLetterOrDigit)])}-";
+        string name = prefix + Guid.NewGuid().ToString("N") + ".mp4";
+        string output = Path.Combine(PreviewFolder, name), temporary = output + ".making.mp4";
+        string N(double value) => value.ToString("0.######", CultureInfo.InvariantCulture);
+        try
+        {
+            await CreditsOcrTools.RunAsync(settings.Ffmpeg,
+                ["-y", "-hide_banner", "-loglevel", "error", "-nostdin", "-ss", N(job.SourceStart.TotalSeconds), "-i", job.SourcePath,
+                 "-t", N(job.Length.TotalSeconds), "-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn",
+                 "-vf", "scale=trunc(iw*sar/2)*2:ih,setsar=1,scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
+                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
+                 "-movflags", "+faststart", temporary], TimeSpan.FromMinutes(5), cancellationToken).ConfigureAwait(false);
+            File.Move(temporary, output);
+            foreach (string old in Directory.EnumerateFiles(PreviewFolder, prefix + "*.mp4"))
+                if (old != output && !old.EndsWith(".making.mp4", StringComparison.Ordinal)) TryDelete(old);
+            return name;
+        }
+        finally { TryDelete(temporary); }
+    }
 
     /// <summary>Makes a preview of a squeeze for the editor, replacing the channel's last one; returns its file name.</summary>
     public async Task<string> PreviewAsync(SqueezeJob job, string channelId, CancellationToken cancellationToken, Action<CreditsOcrResult>? onCreditsRead = null)
     {
-        string name = $"{new string([.. channelId.Where(char.IsAsciiLetterOrDigit)])}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.mp4";
+        string prefix = $"render-{new string([.. channelId.Where(char.IsAsciiLetterOrDigit)])}-";
+        string name = prefix + Guid.NewGuid().ToString("N") + ".mp4";
         Directory.CreateDirectory(PreviewFolder);
-        foreach (string old in Directory.EnumerateFiles(PreviewFolder, $"{new string([.. channelId.Where(char.IsAsciiLetterOrDigit)])}-*.mp4"))
+        foreach (string old in Directory.EnumerateFiles(PreviewFolder, prefix + "*.mp4"))
         {
             TryDelete(old);
         }

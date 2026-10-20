@@ -400,19 +400,10 @@
             </CanvasViewport>
             <div class="ed-timeline">
                 <CanvasTransport Time="_time" Duration="DurationSeconds" Frame="CurrentFrame" FrameCount="FrameCount" FramesPerSecond="Fps" Step="StepFrames" />
-                <div class="ed-ruler" id="@_rulerId" role="slider" tabindex="0" aria-label="Preview time" aria-valuemin="0"
-                     aria-valuemax="@Number(DurationSeconds)" aria-valuenow="@Number(_time)" aria-valuetext="@($"{_time:0.00} seconds")"
-                     @onpointerdown="StartScrub" @onpointerdown:preventDefault="true" @onkeydown="RulerKey">
-                    @foreach (double tick in Ticks())
-                    {
-                        <span class="ed-tick @(tick > DurationSeconds * 0.92 ? "ed-tick-end" : "")" style="left:@Pct(tick, DurationSeconds)"><span>@Number(tick)s</span></span>
-                    }
+                <CanvasRuler Id="@_rulerId" Duration="DurationSeconds" Time="_time" Fps="Fps" PointerDown="StartScrub" KeyDown="RulerKey"
+                             SpanStart="@(_layer is null ? (double?)null : Timing(_layer).Start.TotalSeconds)" SpanEnd="@(_layer is null ? (double?)null : (Timing(_layer).End ?? Template.Duration).TotalSeconds)">
                     @if (_layer is { } spanLayer)
                     {
-                        IGeneratedTiming spanTiming = Timing(spanLayer);
-                        double spanStart = spanTiming.Start.TotalSeconds;
-                        double spanEnd = Math.Min(DurationSeconds, (spanTiming.End ?? Template.Duration).TotalSeconds);
-                        <span class="ed-span" style="left:@Pct(spanStart, DurationSeconds);width:@Pct(Math.Max(0, spanEnd - spanStart), DurationSeconds)"></span>
                         GeneratedKeyframe? currentFrame = CurrentKeyframe;
                         @foreach (GeneratedKeyframe frame in Pose(spanLayer).Keyframes ?? [])
                         {
@@ -422,8 +413,7 @@
                                   @onpointerdown="e => StartKeyDrag(e, spanLayer, frame)" @onpointerdown:stopPropagation="true" @onpointerdown:preventDefault="true"></span>
                         }
                     }
-                    <span class="ed-playhead" style="left:@Pct(_time, DurationSeconds)"></span>
-                </div>
+                </CanvasRuler>
                 @if (_layer is { } keyLayer)
                 {
                     <div class="ed-keybar" aria-label="Keyframes">
@@ -545,14 +535,8 @@
                         @{
                             bool lockedByGroup = !layer.Locked && IsLocked(layer);
                         }
-                        <button class="layer-lock @(layer.Locked ? "on" : lockedByGroup ? "inherited" : "")" type="button"
-                                aria-pressed="@(layer.Locked ? "true" : "false")" aria-label="@(layer.Locked ? "Unlock" : "Lock") @Label(layer)"
-                                title="@(layer.Locked ? "Unlock: it can be picked and moved on the canvas again" : lockedByGroup ? "Locked by its group" : "Lock: it can't be picked or moved on the canvas (still editable here)")"
-                                @onclick="() => ToggleLock(layer)">@(layer.Locked || lockedByGroup ? "🔒" : "🔓")</button>
-                        <button class="btn btn-sm" type="button" title="Bring forward" aria-label="Bring @Label(layer) forward"
-                                @onclick="() => StepLayer(layer, 1)">↑</button>
-                        <button class="btn btn-sm" type="button" title="Send backward" aria-label="Send @Label(layer) backward"
-                                @onclick="() => StepLayer(layer, -1)">↓</button>
+                        <CanvasLayerControls Label="@Label(layer)" Locked="layer.Locked" InheritedLock="lockedByGroup" ToggleLock="() => ToggleLock(layer)"
+                                             Forward="() => StepLayer(layer, 1)" Backward="() => StepLayer(layer, -1)" />
                     </li>
                 }
             </ol>
@@ -887,10 +871,8 @@
                                 <TextCaseSelect Value="selected.TextCase" ValueChanged="textCase => Set(() => selected.TextCase = textCase)" />
                             </label>
                             <div class="check-stack">
-                                <label class="check">
-                                    <input type="checkbox" checked="@selected.Bold" @onchange="e => Set(() => selected.Bold = e.Value is true)" />
-                                    <span>Bold</span>
-                                </label>
+                                <CanvasFontStyle Weight="selected.FontWeight" Bold="selected.Bold" Italic="selected.Italic"
+                                                 WeightChanged="weight => Set(() => selected.FontWeight = weight)" ItalicChanged="italic => Set(() => selected.Italic = italic)" />
                                 <label class="check">
                                     <input type="checkbox" checked="@selected.Shadow" @onchange="e => Set(() => selected.Shadow = e.Value is true)" />
                                     <span>Drop shadow</span>
@@ -1880,16 +1862,6 @@
 
         _time = time;
         RequestStill(fast);
-    }
-
-    /// <summary>Second marks along the timeline, spaced so their labels don't crowd.</summary>
-    private IEnumerable<double> Ticks()
-    {
-        double step = DurationSeconds <= 12 ? 1 : DurationSeconds <= 30 ? 2 : DurationSeconds <= 60 ? 5 : 10;
-        for (double tick = 0; tick <= DurationSeconds + 0.0001; tick += step)
-        {
-            yield return tick;
-        }
     }
 
     // ---- Timeline: scrubbing and keyframes ----

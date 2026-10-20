@@ -74,6 +74,9 @@ public sealed record SqueezeJob(
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<SqueezeCanvas>? Canvases { get; init; }
     public CreditsRecognition Recognition { get; init; } = new();
+    /// <summary>Human-readable source identity for editor diagnostics; not part of the render cache.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? SourceLabel { get; init; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
     public bool CanvasCrop { get; init; }
 
@@ -127,7 +130,7 @@ public static class SqueezePlanner
         {
             ScheduleEntry entry = entries[index];
             if (!IsProgramme(entry, includeOutros: true) || entry.Item is not { Path.Length: > 0 } item
-                || settings(entry) is not { Enabled: true } section || NextProgramme(entries, index) is not { } next)
+                || settings(entry) is not { Enabled: true } section || section.Looks().Count == 0 || NextProgramme(entries, index) is not { } next)
             {
                 continue;
             }
@@ -149,7 +152,7 @@ public static class SqueezePlanner
             {
                 // The outro after this episode gets the squeeze instead, if it wins its own roll.
                 if (index + 1 < entries.Count && entries[index + 1] is { IsSlotOutro: true } outro && settings(outro) is { Enabled: true } outroSection
-                    && Rolls(channelId, outro, "outro", outroSection.OutroChanceFor(ShowOf(item))))
+                    && outroSection.Looks().Count > 0 && Rolls(channelId, outro, "outro", outroSection.OutroChanceFor(ShowOf(item))))
                 {
                     continue;
                 }
@@ -244,7 +247,15 @@ public static class SqueezePlanner
             make, make is null ? null : channelId, make is null ? null : entries[index].BlockName, make is null ? default : entries[next].Start,
             make?.Select(made => look.HeadingFor(made)).ToList(),
             BreakRoom(entries, index, next), Panel: look.Panel, Commercials: commercials)
-            { Canvases = look.UseCanvas ? look.Canvases.Select(canvas => canvas.Copy()).ToList() : null, Recognition = look.Recognition.Normalized() }, pending);
+            { Canvases = look.UseCanvas ? look.Canvases.Select(canvas => canvas.Copy()).ToList() : null, Recognition = look.Recognition.Normalized(),
+                SourceLabel = DescribeSource(item, whole) }, pending);
+    }
+
+    public static string DescribeSource(MediaItem item, bool outro = false)
+    {
+        string numbering = item.SeasonNumber is { } season && item.EpisodeNumber is { } episode ? $"S{season:00}E{episode:00} · " : "";
+        string title = string.IsNullOrWhiteSpace(item.SeriesName) ? item.Title : $"{item.SeriesName} — {numbering}{item.Title}";
+        return outro ? $"{title} (custom outro)" : title;
     }
 
     // How far ahead commercials for the panel are gathered from, and how many.
@@ -622,6 +633,7 @@ public static class SqueezePlanner
         TimeSpan assumedCredits = default)
     {
         (int Index, int Next, TimeSpan From)? assumed = null;
+        if (section.Looks().Count == 0) return null;
         (int Index, int Next)? fallback = null;
         for (int index = 0; index < entries.Count; index++)
         {

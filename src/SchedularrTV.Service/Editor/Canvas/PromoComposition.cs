@@ -121,6 +121,8 @@ public sealed record PromoTextLayer : PromoLayer
     public string FontFamily { get; init; } = "Segoe UI";
 
     public bool Bold { get; init; } = true;
+    public int? FontWeight { get; init; }
+    public bool Italic { get; init; }
 
     public SKTextAlign Align { get; init; } = SKTextAlign.Left;
 

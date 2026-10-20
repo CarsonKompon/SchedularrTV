@@ -1,0 +1,27 @@
+@using SchedularrTV.Core.Configuration
+
+<label class="field"><span>Font weight</span>
+    <select value="@GeneratedTextStyle.Weight(Weight, Bold)" title="Uses the closest available weight for this font family" @onchange="ChangeWeight">
+        @foreach (var option in Weights)
+        {
+            <option value="@option.Value">@option.Name · @option.Value</option>
+        }
+        @if (Weight is { } custom && Weights.All(option => option.Value != custom))
+        {
+            <option value="@custom">Custom · @custom</option>
+        }
+    </select>
+</label>
+<label class="check"><input type="checkbox" checked="@Italic" @onchange="e => ItalicChanged.InvokeAsync(e.Value is true)" /><span>Italic</span></label>
+
+@code {
+    [Parameter] public int? Weight { get; set; }
+    [Parameter] public bool Bold { get; set; }
+    [Parameter] public bool Italic { get; set; }
+    [Parameter] public EventCallback<int?> WeightChanged { get; set; }
+    [Parameter] public EventCallback<bool> ItalicChanged { get; set; }
+    private static readonly (int Value, string Name)[] Weights = [(100, "Thin"), (200, "Extra light"), (300, "Light"), (400, "Regular"),
+        (500, "Medium"), (600, "Semibold"), (700, "Bold"), (800, "Extra bold"), (900, "Black")];
+    private Task ChangeWeight(ChangeEventArgs e) => int.TryParse(e.Value?.ToString(), out int weight)
+        ? WeightChanged.InvokeAsync(Math.Clamp(weight, 100, 900)) : Task.CompletedTask;
+}

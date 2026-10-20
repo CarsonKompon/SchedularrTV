@@ -21,6 +21,46 @@ public sealed class CreditsOcrTests : IDisposable
         new("Next", null, "8 PM", null), [], "Channel", "Next", "#FFFFFF", "#000000", 1, false);
     private static CreditsOcrLine[] Lines(params string[] lines) => lines.Select(line => new CreditsOcrLine(line, 95)).ToArray();
 
+    [Fact]
+    public async Task Canvas_file_video_preview_seeks_real_frames_caches_them_and_obeys_loop_and_hold()
+    {
+        string source = await MakeSource();
+        using var services = new ServiceCollection().BuildServiceProvider();
+        using var renderer = new SqueezeRenderer(Settings, services, TimeProvider.System, NullLogger<SqueezeRenderer>.Instance);
+        var decoder = renderer.CreateCanvasVideoPreview();
+        var layer = new PromoVideoLayer { Path = source, Bounds = SKRect.Create(0, 0, 320, 180), Stretch = true };
+        byte[] first = await decoder.FrameAsync(layer, TimeSpan.Zero, 30, CancellationToken.None);
+        byte[] second = await decoder.FrameAsync(layer, TimeSpan.FromSeconds(1.5), 30, CancellationToken.None);
+        using var dark = SKBitmap.Decode(first);
+        using var light = SKBitmap.Decode(second);
+        Assert.True(dark.GetPixel(160, 90).Red < 20);
+        Assert.True(light.GetPixel(160, 90).Red > 240);
+        Assert.Same(second, await decoder.FrameAsync(layer, TimeSpan.FromSeconds(1.5), 30, CancellationToken.None));
+        Assert.Same(second, await decoder.FrameAsync(layer with { Loop = true }, TimeSpan.FromSeconds(4.5), 30, CancellationToken.None));
+        using var held = SKBitmap.Decode(await decoder.FrameAsync(layer, TimeSpan.FromSeconds(99), 30, CancellationToken.None));
+        Assert.True(held.GetPixel(160, 90).Red > 240);
+    }
+
+    [Fact]
+    public async Task Original_ending_is_playable_after_ocr_fails_and_uses_the_exact_source_seek()
+    {
+        string source = await MakeSource();
+        var engine = new RecordingEngine { Empty = true };
+        using var ocr = new CreditsOcr(Settings, engine);
+        using var services = new ServiceCollection().AddSingleton(ocr).BuildServiceProvider();
+        using var renderer = new SqueezeRenderer(Settings, services, TimeProvider.System, NullLogger<SqueezeRenderer>.Instance);
+        var job = Job(source) with { SourceStart = TimeSpan.FromSeconds(1.2), Length = TimeSpan.FromSeconds(1), Canvases = [FallbackCanvas(null)] };
+        string original = await renderer.SourcePreviewAsync(job, "source", CancellationToken.None);
+        Assert.Equal(0, engine.Calls);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => renderer.PreviewAsync(job, "source", CancellationToken.None));
+        string path = Assert.IsType<string>(renderer.PreviewFile(original));
+        byte[] pixels = await FramePixels(path, "0", "original-ending.png");
+        Assert.True(pixels.Where((_, index) => index % 4 != 3).Average(value => (double)value) > 240,
+            "The source player must start in the white ending, not the black programme before it.");
+        Assert.Null(renderer.PreviewFile("../source.mp4"));
+        Assert.Equal(1, engine.Calls);
+    }
+
     private static SqueezeCanvas FallbackCanvas(string? fallback = "Thanks for watching {show}.") => new()
     {
         Layers = [new GeneratedLayer
@@ -244,6 +284,10 @@ public sealed class CreditsOcrTests : IDisposable
         Assert.All(engine.Brightness, brightness => Assert.True(brightness > 240, "OCR must receive the white credits segment, not the earlier black programme."));
         Assert.Equal(["Cast", "Alex Doe"], results[0].Lines.Select(line => line.Text));
         Assert.Equal(results[0].Lines, results[1].Lines);
+        Assert.Single(results[0].Pages!);
+        Assert.Single(results[1].Pages!);
+        Assert.Equal(TimeSpan.Zero, results[1].Pages![0].At);
+        Assert.Equal(["Cast", "Alex Doe"], results[1].Pages![0].Lines.Select(line => line.Text));
         Assert.Empty(Directory.GetDirectories(Path.Combine(Settings.SaveFolder, "_credits-text"), ".work-*"));
 
         // A different layout must reuse OCR, while a different language must read it again.

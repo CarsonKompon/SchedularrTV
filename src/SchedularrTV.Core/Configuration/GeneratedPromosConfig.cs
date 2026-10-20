@@ -330,6 +330,8 @@ public enum GeneratedTextCase
 /// <summary>Text styling shared by generated promos and overlays.</summary>
 public static class GeneratedTextStyle
 {
+    /// <summary>Unspecified weights preserve the legacy Bold switch.</summary>
+    public static int Weight(int? weight, bool bold) => Math.Clamp(weight ?? (bold ? 700 : 400), 100, 900);
     /// <summary><paramref name="text"/> cased as <paramref name="textCase"/> asks; null (or as written) leaves it alone.</summary>
     public static string Cased(string text, GeneratedTextCase? textCase) => textCase switch
     {
@@ -1853,6 +1855,8 @@ public sealed class GeneratedLayerMask
 public sealed class GeneratedCreditsTextOptions
 {
     public int LinesPerPage { get; set; } = 8;
+    /// <summary>Keep each OCR scan's line grouping and sampled timing instead of repaginating the transcript.</summary>
+    public bool MatchSourcePages { get; set; }
     /// <summary>User-authored text shown when source OCR fails or returns no readable credits.</summary>
     public string? FallbackText { get; set; }
 }
@@ -1998,6 +2002,10 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
     public float FontSize { get; set; } = 72;
 
     public bool Bold { get; set; } = true;
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public int? FontWeight { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Italic { get; set; }
 
     public GeneratedTextAlign Align { get; set; } = GeneratedTextAlign.Left;
 

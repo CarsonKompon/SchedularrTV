@@ -19,6 +19,8 @@
     box-sizing: border-box; cursor: move; touch-action: none;
 }
 .ed-canvas ::deep .layer-box:hover { border-color: rgba(255,255,255,.75); }
+.ed-canvas ::deep .layer-box.locked { pointer-events: none; border-style: dotted; opacity: .6; }
+.ed-canvas ::deep .layer-box.hidden-now { border-style: dashed; border-color: rgba(255,255,255,.2); }
 .ed-canvas ::deep .layer-box.selected { border: calc(2px / var(--zoom, 1)) solid var(--accent); z-index: 2; }
 .ed-canvas ::deep .layer-tag {
     position: absolute; left: 0; top: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

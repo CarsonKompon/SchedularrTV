@@ -22,12 +22,19 @@ public sealed class SqueezeCanvasEditorTests
         canvas.Layers.Add(new GeneratedLayer
         {
             Kind = GeneratedLayerKind.Text, Width = 400, Height = 200,
-            CreditsText = new() { FallbackText = "Thanks for watching {show}." }
+            CreditsText = new() { FallbackText = "Thanks for watching {show}.", MatchSourcePages = true }
         });
         string html = await Render(new SqueezeLook { UseCanvas = true, Canvases = [canvas] });
         Assert.Contains("Default text if OCR fails", html);
         Assert.Contains("Thanks for watching {show}.</textarea>", html);
         Assert.Contains("Preview default text", html);
+        Assert.Contains("Match original scans", html);
+        Assert.DoesNotContain("Source lines per page", html);
+        Assert.Contains("Font weight", html);
+        Assert.Contains("Italic", html);
+        Assert.Contains("Drop shadow", html);
+        Assert.Contains("UPPERCASE", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("{up_next}", html);
     }
 
     [Fact]
@@ -55,6 +62,49 @@ public sealed class SqueezeCanvasEditorTests
             Assert.Equal(960, PreviewWidth(output.ToHtmlString()));
             await activator.Editor.UpdateInteraction(new("drag", "4:3", 0, 2, 0, false, 999, 999, true));
             Assert.Equal((300f, 150f), (canvas.Layers[0].X, canvas.Layers[0].Y));
+            await activator.Editor.UpdateInteraction(new("drag", "16:9", 0, 3, 0, true, 128, 0, true, LockAspect: true));
+            Assert.Equal(1408, canvas.Layers[0].Width);
+            Assert.Equal(792, canvas.Layers[0].Height);
+            Assert.Equal((300f, 150f), (canvas.Layers[0].X, canvas.Layers[0].Y));
+            await activator.Editor.UpdateInteraction(new("drag", "16:9", 0, 4, 0, true, 100, -20, true));
+            Assert.Equal(1508, canvas.Layers[0].Width);
+            Assert.Equal(772, canvas.Layers[0].Height);
+            canvas.Layers[0].Locked = true;
+            await activator.Editor.UpdateInteraction(new("drag", "16:9", 0, 5, 0, false, 200, 100, true));
+            Assert.Equal((300f, 150f), (canvas.Layers[0].X, canvas.Layers[0].Y));
+        });
+    }
+
+    [Fact]
+    public async Task Timeline_supports_multi_key_selection_group_drag_and_keyboard_delete()
+    {
+        var canvas = SqueezeCanvas.Create("16:9");
+        var keys = new List<GeneratedKeyframe> { new() { At = TimeSpan.FromSeconds(2), Width = 400, Height = 200 },
+            new() { At = TimeSpan.FromSeconds(4), Width = 400, Height = 200 }, new() { At = TimeSpan.FromSeconds(6), Width = 400, Height = 200 } };
+        canvas.Layers[0].Keyframes = keys;
+        var activator = new CaptureEditor();
+        using var services = new ServiceCollection().AddLogging().AddSingleton<IComponentActivator>(activator).AddSingleton<IJSRuntime, NoJavaScript>()
+            .AddSingleton(provider => new SqueezeRenderer(new CreditSqueezeSettings(new Context()), provider, TimeProvider.System, NullLogger<SqueezeRenderer>.Instance)).BuildServiceProvider();
+        await using var renderer = new HtmlRenderer(services, services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var output = await renderer.RenderComponentAsync<SqueezeCanvasEditor>(ParameterView.FromDictionary(new Dictionary<string, object?>
+            {
+                [nameof(SqueezeCanvasEditor.Look)] = new SqueezeLook { UseCanvas = true, Canvases = [canvas] },
+                [nameof(SqueezeCanvasEditor.Channel)] = new ChannelConfig { Id = "test", Name = "Test" }
+            }));
+            var editor = activator.Editor!;
+            Assert.Contains("class=\"ed-ruler\"", output.ToHtmlString());
+            Assert.Contains("data-squeeze-key=\"0\"", output.ToHtmlString());
+            Assert.Contains("data-squeeze-key-layer=\"0\"", output.ToHtmlString());
+            Assert.DoesNotContain("cs-key-track", output.ToHtmlString());
+            await editor.UpdateInteraction(new("keys", "16:9", 0, 1, 0, false, 0, 0, true, Key: 0));
+            await editor.UpdateInteraction(new("keys", "16:9", 0, 2, 0, false, 0, 0, true, Key: 1, Toggle: true));
+            await editor.UpdateInteraction(new("keys", "16:9", 0, 3, 0, false, 0, 0, true, Key: 0, Delta: 1));
+            Assert.Equal(new[] { 3d, 5d, 6d }, keys.Select(key => key.At.TotalSeconds));
+            Assert.Contains("2 selected", output.ToHtmlString());
+            await editor.UpdateInteraction(new("command", "16:9", 0, 4, 0, false, 0, 0, true, Command: "delete"));
+            Assert.Equal(6, Assert.Single(keys).At.TotalSeconds);
         });
     }
 

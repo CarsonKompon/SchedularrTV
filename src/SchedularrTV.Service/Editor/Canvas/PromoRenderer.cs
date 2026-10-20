@@ -407,8 +407,9 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             return;
         }
 
-        SKTypeface typeface = cache.Typeface(layer.FontFamily, layer.Bold);
+        SKTypeface typeface = cache.Typeface(layer.FontFamily, layer.Bold, layer.FontWeight, layer.Italic);
         using var font = new SKFont(typeface, layer.MaxFontSize) { Edging = SKFontEdging.SubpixelAntialias, Subpixel = true };
+        if (layer.Italic && typeface.FontSlant == SKFontStyleSlant.Upright) font.SkewX = -.2f;
         using var paint = new SKPaint { Color = layer.Color, IsAntialias = true };
         using SKImageFilter? shadow = layer.Shadow is { } shade
             ? SKImageFilter.CreateDropShadow(0, font.Size * 0.04f, font.Size * 0.05f, font.Size * 0.05f, shade)
@@ -640,7 +641,7 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
 public sealed class PromoImageCache : IDisposable
 {
     private readonly Dictionary<string, SKImage?> _images = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<(string Family, bool Bold), SKTypeface> _typefaces = [];
+    private readonly Dictionary<(string Family, int Weight, bool Italic), SKTypeface> _typefaces = [];
     private readonly Dictionary<(SKTypeface Typeface, string Text), string> _drawable = [];
 
     /// <summary>
@@ -658,19 +659,13 @@ public sealed class PromoImageCache : IDisposable
         return drawable;
     }
 
-    public SKTypeface Typeface(string family, bool bold)
+    public SKTypeface Typeface(string family, bool bold, int? weight = null, bool italic = false)
     {
-        if (!_typefaces.TryGetValue((family, bold), out SKTypeface? typeface))
+        int effective = SchedularrTV.Core.Configuration.GeneratedTextStyle.Weight(weight, bold);
+        if (!_typefaces.TryGetValue((family, effective, italic), out SKTypeface? typeface))
         {
-            typeface = SKTypeface.FromFamilyName(family, bold ? SKFontStyle.Bold : SKFontStyle.Normal);
-            // A family that isn't installed may have come with an imported template, kept in the data folder.
-            if (!FontFiles.IsFamily(typeface, family) && FontFiles.KeptTypeface(family, bold) is { } kept)
-            {
-                typeface?.Dispose();
-                typeface = kept;
-            }
-
-            _typefaces[(family, bold)] = typeface;
+            typeface = FontFiles.Typeface(family, effective, italic);
+            _typefaces[(family, effective, italic)] = typeface;
         }
 
         return typeface;

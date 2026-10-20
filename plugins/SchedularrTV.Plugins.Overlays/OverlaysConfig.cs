@@ -443,6 +443,8 @@ public sealed class OverlayLayer
     public float FontSize { get; set; } = 48;
 
     public bool Bold { get; set; } = true;
+    public int? FontWeight { get; set; }
+    public bool Italic { get; set; }
 
     /// <summary>left, center or right.</summary>
     public string Align { get; set; } = "left";

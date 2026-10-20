@@ -64,6 +64,9 @@ public static class FontFiles
     /// caller owns (disposes) it.
     /// </summary>
     public static SKTypeface? KeptTypeface(string? family, bool bold)
+        => KeptTypeface(family, bold ? 700 : 400, false);
+
+    public static SKTypeface? KeptTypeface(string? family, int weight, bool italic)
     {
         if (string.IsNullOrWhiteSpace(family) || !Kept().TryGetValue(family.Trim(), out List<string>? files))
         {
@@ -72,7 +75,7 @@ public static class FontFiles
 
         SKTypeface? best = null;
         int bestScore = int.MaxValue;
-        int wanted = bold ? (int)SKFontStyleWeight.Bold : (int)SKFontStyleWeight.Normal;
+        int wanted = Math.Clamp(weight, 100, 900);
         foreach (string file in files)
         {
             SKTypeface? typeface = Load(file);
@@ -81,8 +84,9 @@ public static class FontFiles
                 continue;
             }
 
-            // Upright before italic, then the nearest weight.
-            int score = Math.Abs(typeface.FontWeight - wanted) + (typeface.FontSlant == SKFontStyleSlant.Upright ? 0 : 1000);
+            // Match the requested slant first, then the nearest available weight.
+            bool slanted = typeface.FontSlant != SKFontStyleSlant.Upright;
+            int score = Math.Abs(typeface.FontWeight - wanted) + (slanted == italic ? 0 : 1000);
             if (score < bestScore)
             {
                 best?.Dispose();
@@ -96,6 +100,26 @@ public static class FontFiles
         }
 
         return best;
+    }
+
+    /// <summary>Shared style resolution for installed fonts and fonts bundled with templates. Caller owns the result.</summary>
+    public static SKTypeface Typeface(string family, int weight, bool italic)
+    {
+        using var style = new SKFontStyle(Math.Clamp(weight, 100, 900), (int)SKFontStyleWidth.Normal,
+            italic ? SKFontStyleSlant.Italic : SKFontStyleSlant.Upright);
+        var face = SKTypeface.FromFamilyName(family, style);
+        if (KeptTypeface(family, weight, italic) is { } kept)
+        {
+            int Score(SKTypeface candidate) => Math.Abs(candidate.FontWeight - weight)
+                + ((candidate.FontSlant != SKFontStyleSlant.Upright) == italic ? 0 : 1000);
+            if (!IsFamily(face, family) || Score(kept) < Score(face!))
+            {
+                face?.Dispose();
+                return kept;
+            }
+            kept.Dispose();
+        }
+        return face ?? SKTypeface.FromFamilyName(null, style);
     }
 
     /// <summary>Whether <paramref name="typeface"/> really is <paramref name="family"/> (not the fallback a missing family gets).</summary>

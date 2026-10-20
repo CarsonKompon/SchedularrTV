@@ -22,7 +22,7 @@ public sealed class OverlayRenderer(Func<string> folder)
     private static readonly JsonSerializerOptions HashJson = new() { WriteIndented = false };
 
     // Kept for the plugin's lifetime: there are only ever a few, and they're shared by every drawing.
-    private static readonly ConcurrentDictionary<(string Family, bool Bold), SKTypeface> Typefaces = new();
+    private static readonly ConcurrentDictionary<(string Family, int Weight, bool Italic), SKTypeface> Typefaces = new();
     private readonly ConcurrentDictionary<string, string> _known = new(StringComparer.Ordinal);
 
     /// <summary>Read on each use, so a changed setting applies straight away.</summary>
@@ -206,6 +206,7 @@ public sealed class OverlayRenderer(Func<string> folder)
         object styled = layer.VerticalAlign is null && layer.TextCase is null && layer.WordWrap is null
             ? look
             : new { Look = look, VerticalAlign = layer.VerticalAlign?.ToString(), TextCase = layer.TextCase?.ToString(), layer.WordWrap };
+        if (layer.FontWeight is not null || layer.Italic) styled = new { Styled = styled, layer.FontWeight, layer.Italic };
         // Spacing likewise: only spaced text hashes differently.
         return layer.LetterSpacing is null && layer.LineSpacing is null
             ? styled
@@ -510,11 +511,12 @@ public sealed class OverlayRenderer(Func<string> folder)
         // Cased as it's drawn, so filled-in tokens and AI-written text are cased too.
         text = GeneratedTextStyle.Cased(text, layer.TextCase);
 
-        SKTypeface typeface = Typefaces.GetOrAdd((layer.FontFamily ?? "Arial", layer.Bold),
-            key => SKTypeface.FromFamilyName(key.Family, key.Bold ? SKFontStyle.Bold : SKFontStyle.Normal) ?? SKTypeface.Default);
+        SKTypeface typeface = Typefaces.GetOrAdd((layer.FontFamily ?? "Arial", GeneratedTextStyle.Weight(layer.FontWeight, layer.Bold), layer.Italic),
+            key => SchedularrTV.Service.Editor.FontFiles.Typeface(key.Family, key.Weight, key.Italic));
         // Characters the font can't draw are swapped for ones it can ("&" → "and", "é" → "e"), as in generated promos.
         text = SchedularrTV.Service.Rendering.GlyphFallback.Apply(text, typeface);
         using var font = new SKFont(typeface, Math.Clamp(layer.FontSize, 6, 400)) { Edging = SKFontEdging.Antialias, Subpixel = true };
+        if (layer.Italic && typeface.FontSlant == SKFontStyleSlant.Upright) font.SkewX = -.2f;
         using var paint = new SKPaint { Color = Colour(layer.Color, SKColors.White), IsAntialias = true };
         using SKImageFilter? shadow = layer.Shadow
             ? SKImageFilter.CreateDropShadow(0, font.Size * 0.05f, font.Size * 0.06f, font.Size * 0.06f, new SKColor(0, 0, 0, 170))
