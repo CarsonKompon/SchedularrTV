@@ -34,6 +34,8 @@ public sealed class CreditSqueezeProcessor(SqueezeRenderer renderer, CreditsMark
             return ValueTask.FromResult(schedule);
         }
 
+        plans = plans.Select(plan => plan with { Job = renderer.ForChannel(plan.Job, channel) }).ToList();
+
         // Unknown counts as watched, so a playout target that can't report viewers still gets its squeezes.
         bool make = !settings.WatchedOnly || viewers?.IsWatched(schedule.ChannelNumber) != false;
         List<ScheduleEntry> entries = SqueezePlanner.Apply(schedule.Entries, plans, plan =>

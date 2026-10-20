@@ -1,11 +1,12 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using SchedularrTV.Plugins.Performance;
 
 namespace SchedularrTV.GeneratedPromos;
 
 /// <summary>FFmpeg's native VP8/VP9 decoders discard WebM alpha; libvpx preserves it.</summary>
-internal static class PromoVideoDecoder
+public static class PromoVideoDecoder
 {
     public static async Task<double> DurationAsync(string ffprobePath, string path, CancellationToken cancellationToken)
     {

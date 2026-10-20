@@ -213,6 +213,7 @@ public sealed class CreditSqueezeSection : SqueezeLook
         copy.Outros = new Dictionary<string, double>(Outros, StringComparer.OrdinalIgnoreCase);
         copy.Shows = Shows.ToDictionary(pair => pair.Key, pair => pair.Value.Copy(), StringComparer.OrdinalIgnoreCase);
         copy.Promos = [.. Promos];
+        copy.Canvases = [.. Canvases.Select(canvas => canvas.Copy())];
         copy.Templates = [.. Templates.Select(template => template.Copy())];
         return copy;
     }

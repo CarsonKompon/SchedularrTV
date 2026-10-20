@@ -12,6 +12,9 @@ using SchedularrTV.Core.Scheduling;
 using SchedularrTV.Plugins.Promos;
 using SchedularrTV.Service;
 using SkiaSharp;
+using SchedularrTV.GeneratedPromos;
+using SchedularrTV.Providers.ErsatzTv;
+using Microsoft.Extensions.Options;
 
 namespace SchedularrTV.CreditSqueeze;
 
@@ -64,6 +67,14 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
     }
 
     private string PathOf(SqueezeJob job) => Path.Combine(settings.SaveFolder, Key(job) + ".mp4");
+
+    /// <summary>Capture inherited channel scaling in the job (and therefore in its cache key).</summary>
+    public SqueezeJob ForChannel(SqueezeJob job, ChannelConfig channel)
+    {
+        if (job.Canvases is null) return job;
+        var global = services.GetService<IOptions<ErsatzTvOptions>>()?.Value.Encoding ?? new ErsatzTvEncodingOptions();
+        return job with { CanvasCrop = ErsatzTvEncoding.Resolve(global, channel.Encoding).ScalingMode == "crop" };
+    }
 
     /// <summary>The squeeze's file when it's been made; null while it hasn't.</summary>
     public string? Ready(SqueezeJob job)
@@ -219,6 +230,35 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         (job, string? playlist) = await WithCommercialsAsync(job, output, cancellationToken).ConfigureAwait(false);
         try
         {
+            if (job.Canvases is not null)
+            {
+                var canvas = SqueezeCanvas.Select(job.Canvases, job.CreditsAspect)
+                    ?? throw new InvalidOperationException("Choose an aspect ratio and create a squeeze canvas first.");
+                string? picture = null;
+                if (job.PromoPath is null && canvas.Layers.Any(layer => layer.Video?.Episode == SqueezeCanvas.Panel)
+                    && await ArtAsync(job.Next.ImageId, cancellationToken).ConfigureAwait(false) is { } art)
+                {
+                    picture = output + ".panel.png";
+                    await File.WriteAllBytesAsync(picture, art, cancellationToken).ConfigureAwait(false);
+                    job = job with { PromoPath = picture };
+                }
+                var composition = canvas.Compose(job, settings.Size.Height);
+                List<PromoMusic> sounds = [];
+                foreach (var sound in composition.LayerAudio)
+                    if (await HasAudioAsync(sound.Path, cancellationToken).ConfigureAwait(false)) sounds.Add(sound);
+                composition = composition with { LayerAudio = sounds };
+                string temp = output + ".making.mp4";
+                try
+                {
+                    var encoding = CurrentEncoding;
+                    await new PromoRenderer(settings.Ffmpeg) { FfprobePath = Ffprobe, Encoding = encoding.Video, HardwareBitrateKbps = encoding.HardwareBitrateKbps }
+                        .RenderAsync(composition, temp, cancellationToken).ConfigureAwait(false);
+                    File.Move(temp, output, overwrite: true);
+                    TryDelete(ExtraPath(output));
+                }
+                finally { TryDelete(temp); if (picture is not null) TryDelete(picture); }
+                return;
+            }
             SqueezeJob fitted = FittedToPromo(job);
 
             // Without a promo after all, the slot shows the next programme's picture, in the usual widescreen slot.
@@ -245,7 +285,9 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         }
 
         List<SqueezeClip> clips = [];
-        TimeSpan room = job.Length - PromoStart;
+        TimeSpan panelStart = SqueezeCanvas.Select(job.Canvases, job.CreditsAspect)?.Layers
+            .Where(layer => layer.Video?.Episode == SqueezeCanvas.Panel).Select(layer => layer.Start).DefaultIfEmpty(TimeSpan.Zero).Min() ?? PromoStart;
+        TimeSpan room = job.Length - panelStart;
         if (job.Panel == SqueezePanel.PromoThenCommercials && job.PromoPath is { } promo && job.PromoLength > TimeSpan.Zero)
         {
             clips.Add(new SqueezeClip(promo, job.PromoLength));

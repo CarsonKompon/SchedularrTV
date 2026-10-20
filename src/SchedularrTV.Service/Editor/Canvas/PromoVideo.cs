@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using SkiaSharp;
+using SchedularrTV.Plugins.Performance;
 
 namespace SchedularrTV.GeneratedPromos;
 
@@ -20,6 +21,14 @@ public sealed record PromoVideoLayer : PromoLayer
 
     /// <summary>Fills the box, cropping the video; otherwise the whole video fits inside it.</summary>
     public bool Fill { get; init; }
+
+    /// <summary>Stretch the picture to the layer bounds, including animated bounds.</summary>
+    public bool Stretch { get; init; }
+
+    /// <summary>Fit the source to this display shape before resizing the layer (credit squeezes).</summary>
+    public double? SourceAspect { get; init; }
+
+    public bool SourceCrop { get; init; }
 
     public bool ChromaKey { get; init; }
     public string KeyColor { get; init; } = "#00FF00";
@@ -73,7 +82,17 @@ public sealed record PromoVideoLayer : PromoLayer
             double softness = double.IsFinite(KeySoftness) ? Math.Clamp(KeySoftness, 0, 1) : 0.1;
             filter += FormattableString.Invariant($",colorkey=0x{color.Red:X2}{color.Green:X2}{color.Blue:X2}:{tolerance:0.######}:{softness:0.######}");
         }
-        return filter + (Fill
+        if (SourceAspect is { } aspect && double.IsFinite(aspect) && aspect > 0)
+        {
+            // Normalise anamorphic sources before padding/cropping to the canvas's display shape.
+            filter += ",scale=w='trunc(iw*sar/2)*2':h=ih,setsar=1";
+            int sourceWidth = Math.Max(2, (int)Math.Round(height * aspect / 2) * 2);
+            string sourceSize = $"{sourceWidth}:{height}";
+            filter += SourceCrop
+                ? $",scale={sourceSize}:force_original_aspect_ratio=increase,crop={sourceSize},setsar=1"
+                : $",scale={sourceSize}:force_original_aspect_ratio=decrease,pad={sourceSize}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1";
+        }
+        return filter + (Stretch ? $",scale={size},setsar=1,format=bgra" : Fill
             ? $",scale={size}:force_original_aspect_ratio=increase,crop={size},format=bgra"
             : $",scale={size}:force_original_aspect_ratio=decrease,pad={size}:(ow-iw)/2:(oh-ih)/2:color=black@0,format=bgra");
     }

@@ -1,0 +1,303 @@
+@using Microsoft.JSInterop
+@using SchedularrTV.GeneratedPromos
+@using SkiaSharp
+@inject IJSRuntime JS
+@inject SqueezeRenderer Renderer
+
+<div class="visual-editor">
+    <p class="hint">Create a canvas for each aspect ratio you need. Matching shows use that shape automatically; with only one canvas, every show uses it.
+        The source is fitted or cropped using the channel's encoding settings, then resized into its layer. Later layers are on top.</p>
+    <div class="row row-wrap" style="gap:8px;align-items:end;">
+        @foreach (var design in Look.Canvases)
+        {
+            <button type="button" class="btn btn-sm @(ReferenceEquals(design, Canvas) ? "btn-primary" : "")" @onclick="() => Select(design)">@design.AspectRatio</button>
+        }
+        <label class="field"><span>New canvas aspect ratio</span>
+            <select @bind="_ratio"><option value="">Choose an aspect ratio…</option>
+                @foreach (string ratio in SqueezeCanvas.Ratios.Where(ratio => Look.Canvases.All(canvas => canvas.AspectRatio != ratio)))
+                { <option value="@ratio">@ratio</option> }
+            </select></label>
+        <button type="button" class="btn btn-sm" disabled="@string.IsNullOrEmpty(_ratio)" @onclick="AddCanvas">Create canvas</button>
+    </div>
+    @if (Canvas is { } canvas)
+    {
+        <CanvasWorkspace Help="Drag to move; use the corner handle or numeric bounds to resize. Ctrl/⌘ + scroll to zoom, middle-drag to pan, Ctrl/⌘ + 0 to fit. Add keyframes to animate the selected layer at the playhead.">
+            <Stage>
+                <CanvasTools Width="canvas.Width" Height="canvas.Height" Add="AddLayer" Fit="Fit">
+                    <button type="button" class="btn btn-sm" @onclick="AddSource">Source video</button>
+                </CanvasTools>
+                <CanvasViewport @ref="_viewport" ViewportId="@(_id + "view")" CanvasId="@_id" StillId="@(_id + "still")"
+                                Width="canvas.Width" Height="canvas.Height" Label="Credits squeeze canvas" Measure="Measure">
+                    <img src="@_preview" alt="Squeeze canvas with stand-in video" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;" />
+                    @foreach (var layer in canvas.Layers)
+                    {
+                        var pose = Pose(layer);
+                        <div class="layer-box @(ReferenceEquals(_layer, layer) ? "selected" : "")" @key="layer"
+                             style="left:@Pct(pose.Left, canvas.Width);top:@Pct(pose.Top, canvas.Height);width:@Pct(pose.Width, canvas.Width);height:@Pct(pose.Height, canvas.Height);"
+                             @onpointerdown="e => StartDrag(e, layer, false)" @onpointerdown:preventDefault="true">
+                            <span class="layer-tag">@layer.Name</span>
+                            @if (ReferenceEquals(_layer, layer))
+                            {
+                                <span class="handle handle-se" @onpointerdown="e => StartDrag(e, layer, true)" @onpointerdown:stopPropagation="true" @onpointerdown:preventDefault="true"></span>
+                            }
+                        </div>
+                    }
+                </CanvasViewport>
+                <label class="field"><span>Playhead: @N(_time) seconds</span>
+                    <input type="range" min="0" max="60" step="0.1" @bind="_time" @bind:event="oninput" @bind:after="Refresh" /></label>
+                <p class="hint">Stand-in videos show the layout and channel fit. Use “Render a preview” below to see the actual credits and panel clips.
+                    Keyframes are seconds from the start of the credits; the canvas runs for the full credits duration.</p>
+                <label class="field"><span>Stand-in source aspect ratio</span>
+                    <select @bind="_sourceRatio" @bind:after="Refresh">@foreach (var ratio in SqueezeCanvas.Ratios) { <option value="@ratio">@ratio</option> }</select></label>
+            </Stage>
+            <Inspector>
+                <h4>Layers (top first)</h4>
+                @foreach (var item in canvas.Layers.AsEnumerable().Reverse())
+                {
+                    <button type="button" class="btn btn-sm" style="display:block;width:100%;margin-bottom:4px;" @onclick="() => _layer = item">@item.Name</button>
+                }
+                @if (_layer is { } selected)
+                {
+                    <label class="field"><span>Name</span><input @bind="selected.Name" @bind:after="Commit" /></label>
+                    <div class="row row-wrap" style="gap:4px;">
+                        <button type="button" class="btn btn-sm" @onclick="() => Reorder(1)">Forward</button>
+                        <button type="button" class="btn btn-sm" @onclick="() => Reorder(-1)">Backward</button>
+                        <button type="button" class="btn btn-sm" @onclick="RemoveLayer">Delete layer</button>
+                    </div>
+                    @if (selected.Kind == GeneratedLayerKind.Video)
+                    {
+                        var video = selected.Video ??= new();
+                        <label class="field"><span>Video source</span><select @bind="video.Episode" @bind:after="Commit">
+                            <option value="@SqueezeCanvas.Credits">Source credits video</option><option value="@SqueezeCanvas.Panel">Promo / commercials panel</option><option value="">Video file</option>
+                        </select></label>
+                        <label class="field"><span>Fit video to layer</span><select value="@(video.Stretch ? "stretch" : video.Fill ? "crop" : "fit")" @onchange="SetFit">
+                            <option value="fit">Fit (keep its shape)</option><option value="crop">Fill (crop edges)</option><option value="stretch">Stretch / squeeze to bounds</option>
+                        </select></label>
+                        @if (string.IsNullOrEmpty(video.Episode))
+                        {
+                            <FilePathPicker Value="selected.Path" ValueChanged="SetPath" Extensions="SchedularrTV.Service.Editor.FileBrowsing.Videos" KeepCopyIn="@SqueezePackages.AssetCategory" Label="video" />
+                            <label class="check"><input type="checkbox" @bind="video.Loop" @bind:after="Commit" />Loop video</label>
+                        }
+                        <label class="check"><input type="checkbox" @bind="video.IncludeAudio" @bind:after="Commit" />Include audio</label>
+                        <label class="field"><span>Volume</span><input type="number" min="0" max="1" step="0.05" @bind="video.Volume" @bind:after="Commit" /></label>
+                    }
+                    @if (selected.Kind == GeneratedLayerKind.Image)
+                    {
+                        <FilePathPicker Value="selected.Path" ValueChanged="SetPath" Extensions="SchedularrTV.Service.Editor.FileBrowsing.Images" KeepCopyIn="@SqueezePackages.AssetCategory" Label="image" />
+                    }
+                    @if (selected.Kind == GeneratedLayerKind.Text)
+                    {
+                        <label class="field"><span>Text</span><textarea @bind="selected.Text" @bind:after="Commit"></textarea></label>
+                        <p class="hint">Tokens: {show}, {next}, {time}, {channel}, {heading}.</p>
+                        <label class="field"><span>Font</span><select @bind="selected.FontFamily" @bind:after="Commit">@foreach (string font in PromoFonts.Installed()) { <option value="@font">@font</option> }</select></label>
+                        <label class="field"><span>Font size</span><input type="number" min="1" max="400" @bind="selected.FontSize" @bind:after="Commit" /></label>
+                    }
+                    @if (selected.Kind is GeneratedLayerKind.Text or GeneratedLayerKind.Rect)
+                    {
+                        <label class="field"><span>Colour</span><input type="color" @bind="selected.Color" @bind:after="Commit" /></label>
+                    }
+                    <div class="grid grid-2">
+                        @foreach (string field in new[] { "X", "Y", "Width", "Height" })
+                        {
+                            <label class="field"><span>@field</span><input type="number" step="1" value="@N(Coordinate(field))" @onchange="e => SetCoordinate(field, e)" /></label>
+                        }
+                    </div>
+                    <label class="field"><span>Opacity</span><input type="range" min="0" max="1" step="0.05" @bind="selected.Opacity" @bind:after="Commit" /></label>
+                    <div class="grid grid-2">
+                        <label class="field"><span>Starts (seconds)</span><input type="number" min="0" step="0.1" value="@N(selected.Start.TotalSeconds)" @onchange="e => SetTiming(e, false)" /></label>
+                        <label class="field"><span>Ends (blank: full credits)</span><input type="number" min="0" step="0.1" value="@(selected.End is { } end ? N(end.TotalSeconds) : "")" @onchange="e => SetTiming(e, true)" /></label>
+                    </div>
+                    <button type="button" class="btn btn-sm" @onclick="AddKey">Add keyframe at playhead</button>
+                    @if (selected.Video?.Episode == SqueezeCanvas.Credits)
+                    {
+                        <button type="button" class="btn btn-sm" @onclick="AnimateIn">Animate from full screen to this box</button>
+                    }
+                    @foreach (var key in selected.Keyframes ?? [])
+                    {
+                        <div class="row" style="gap:4px;">
+                            <button type="button" class="btn btn-sm" @onclick="() => Seek(key.At.TotalSeconds)">@N(key.At.TotalSeconds)s</button>
+                            <select @bind="key.Easing" @bind:after="Commit">@foreach (var easing in Enum.GetValues<GeneratedEasing>()) { <option value="@easing">@easing</option> }</select>
+                            <button type="button" class="btn btn-sm" @onclick="() => RemoveKey(key)">×</button>
+                        </div>
+                    }
+                }
+                <label class="field"><span>Canvas background</span><input type="color" @bind="canvas.BackgroundColor" @bind:after="Commit" /></label>
+                <button type="button" class="btn btn-sm" @onclick="RemoveCanvas">Delete @canvas.AspectRatio canvas</button>
+            </Inspector>
+        </CanvasWorkspace>
+        <label class="field"><span>Panel content (for panel video layers)</span><select @bind="Look.Panel" @bind:after="Commit">
+            <option value="@SqueezePanel.Promo">Promo</option><option value="@SqueezePanel.Commercials">Commercials</option><option value="@SqueezePanel.PromoThenCommercials">Promo, then commercials</option>
+        </select></label>
+        @foreach (var kind in Enum.GetValues<SqueezePromo>())
+        {
+            <label class="check"><input type="checkbox" checked="@Look.Promos.Contains(kind)" @onchange="e => TogglePromo(kind, e.Value is true)" />@kind</label>
+        }
+    }
+</div>
+@if (_drag is not null)
+{
+    <div class="drag-overlay" @onpointermove="Drag" @onpointerup="EndDrag" @onpointercancel="EndDrag" @onpointerleave="EndDrag"></div>
+}
+
+@code {
+    [Parameter, EditorRequired] public SqueezeLook Look { get; set; } = default!;
+    [Parameter, EditorRequired] public ChannelConfig Channel { get; set; } = default!;
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback<string?> SelectedRatio { get; set; }
+    private SqueezeCanvas? Canvas;
+    private GeneratedLayer? _layer;
+    private string _ratio = "", _sourceRatio = "16:9", _preview = "";
+    private readonly string _id = "squeeze-" + Guid.NewGuid().ToString("N");
+    private CanvasViewport? _viewport;
+    private double _time, _pixels = 640;
+    private (double X, double Y, SKRect Bounds, bool Resize)? _drag;
+    private PromoComposition? _composition;
+
+    protected override void OnParametersSet()
+    {
+        if (Canvas is null || !Look.Canvases.Contains(Canvas)) Select(Look.Canvases.FirstOrDefault());
+    }
+    private void Select(SqueezeCanvas? canvas)
+    {
+        bool changed = !ReferenceEquals(Canvas, canvas);
+        Canvas = canvas; _layer = canvas?.Layers.FirstOrDefault(); _time = 0; Refresh();
+        if (changed) _ = SelectedRatio.InvokeAsync(canvas?.AspectRatio);
+    }
+    private async Task AddCanvas()
+    {
+        if (!SqueezeCanvas.Ratios.Contains(_ratio) || Look.Canvases.Any(canvas => canvas.AspectRatio == _ratio)) return;
+        var canvas = SqueezeCanvas.Create(_ratio); Look.Canvases.Add(canvas); _ratio = ""; Select(canvas); await Commit();
+    }
+    private async Task RemoveCanvas() { if (Canvas is not null) Look.Canvases.Remove(Canvas); Select(Look.Canvases.FirstOrDefault()); await Commit(); }
+    private async Task Commit() { Refresh(); await Changed.InvokeAsync(); }
+    private Task Fit() => _viewport?.ResetAsync() ?? Task.CompletedTask;
+    private static string N(double number) => number.ToString("0.##", CultureInfo.InvariantCulture);
+    private static string Pct(double number, double size) => N(number / size * 100) + "%";
+    private async Task Measure() { _pixels = await JS.InvokeAsync<double>("eval", $"document.getElementById('{_id}')?.getBoundingClientRect().width || 640"); }
+    private async Task AddSource() { await AddLayer("video"); _layer!.Video!.Episode = SqueezeCanvas.Credits; _layer.Name = "Source credits video"; await Commit(); }
+    private async Task AddLayer(string kind)
+    {
+        if (Canvas is null) return;
+        _layer = new GeneratedLayer { Name = kind, Kind = kind switch { "text" => GeneratedLayerKind.Text, "image" => GeneratedLayerKind.Image, "video" => GeneratedLayerKind.Video, _ => GeneratedLayerKind.Rect },
+            X = 40, Y = 40, Width = 400, Height = 200, Text = "Up next: {next}", FontSize = 40,
+            TransitionIn = GeneratedTransition.None, TransitionOut = GeneratedTransition.None,
+            Video = kind == "video" ? new GeneratedVideoOptions { Stretch = true, IncludeAudio = true } : null };
+        Canvas.Layers.Add(_layer); await Commit();
+    }
+    private async Task RemoveLayer() { if (_layer is not null) Canvas!.Layers.Remove(_layer); _layer = Canvas?.Layers.LastOrDefault(); await Commit(); }
+    private async Task Reorder(int direction)
+    {
+        if (_layer is null || Canvas is null) return;
+        int at = Canvas.Layers.IndexOf(_layer), to = Math.Clamp(at + direction, 0, Canvas.Layers.Count - 1);
+        Canvas.Layers.RemoveAt(at); Canvas.Layers.Insert(to, _layer); await Commit();
+    }
+    private async Task SetPath(string? path) { if (_layer is not null) _layer.Path = path; await Commit(); }
+    private async Task SetFit(ChangeEventArgs e)
+    {
+        if (_layer?.Video is not { } video) return;
+        video.Stretch = e.Value?.ToString() == "stretch"; video.Fill = e.Value?.ToString() == "crop"; await Commit();
+    }
+    private async Task SetTiming(ChangeEventArgs e, bool end)
+    {
+        if (_layer is null) return;
+        if (end && string.IsNullOrWhiteSpace(e.Value?.ToString())) _layer.End = null;
+        else if (double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds) && double.IsFinite(seconds))
+        {
+            var time = TimeSpan.FromSeconds(Math.Clamp(seconds, 0, 600));
+            if (end) _layer.End = time > _layer.Start ? time : _layer.Start + TimeSpan.FromSeconds(0.1);
+            else { _layer.Start = time; if (_layer.End <= time) _layer.End = null; }
+        }
+        await Commit();
+    }
+    private async Task TogglePromo(SqueezePromo kind, bool on) { Look.Promos.Remove(kind); if (on) Look.Promos.Add(kind); await Commit(); }
+    private SKRect Pose(GeneratedLayer layer)
+    {
+        int index = Canvas!.Layers.IndexOf(layer);
+        var draw = _composition?.Layers.FirstOrDefault(layer => layer.Id == index.ToString(CultureInfo.InvariantCulture));
+        return draw is null ? SKRect.Create(layer.X, layer.Y, layer.Width, layer.Height)
+            : PromoAnimation.Evaluate(draw, TimeSpan.FromSeconds(_time), TimeSpan.FromSeconds(600), Canvas.Height)?.Bounds ?? draw.Bounds;
+    }
+    private double Coordinate(string field) { var pose = Pose(_layer!); return field switch { "X" => pose.Left, "Y" => pose.Top, "Width" => pose.Width, _ => pose.Height }; }
+    private async Task SetCoordinate(string field, ChangeEventArgs e)
+    {
+        if (_layer is null || !float.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float value) || !float.IsFinite(value)) return;
+        var pose = Pose(_layer); float x = pose.Left, y = pose.Top, w = pose.Width, h = pose.Height;
+        switch (field) { case "X": x = value; break; case "Y": y = value; break; case "Width": w = Math.Max(2, value); break; default: h = Math.Max(2, value); break; }
+        SetPose(SKRect.Create(x, y, w, h)); await Commit();
+    }
+    private void SetPose(SKRect pose)
+    {
+        if (_layer is null) return;
+        if (_layer.Keyframes is { Count: > 0 })
+        {
+            var key = _layer.Keyframes.FirstOrDefault(key => Math.Abs(key.At.TotalSeconds - _time) < 0.001);
+            if (key is null) { key = new GeneratedKeyframe { At = TimeSpan.FromSeconds(_time), Opacity = _layer.Opacity }; _layer.Keyframes.Add(key); }
+            key.X = pose.Left; key.Y = pose.Top; key.Width = pose.Width; key.Height = pose.Height;
+            _layer.Keyframes.Sort((a, b) => a.At.CompareTo(b.At));
+        }
+        else { _layer.X = pose.Left; _layer.Y = pose.Top; _layer.Width = pose.Width; _layer.Height = pose.Height; }
+    }
+    private async Task AddKey()
+    {
+        if (_layer is null) return;
+        var pose = Pose(_layer); _layer.Keyframes ??= [];
+        if (_layer.Keyframes.Count == 0) _layer.Keyframes.Add(new GeneratedKeyframe { At = TimeSpan.FromSeconds(_time), Opacity = _layer.Opacity });
+        SetPose(pose); await Commit();
+    }
+    private async Task RemoveKey(GeneratedKeyframe key) { _layer?.Keyframes?.Remove(key); await Commit(); }
+    private void Seek(double time) { _time = time; Refresh(); }
+    private async Task AnimateIn()
+    {
+        if (_layer is null || Canvas is null) return;
+        var pose = Pose(_layer);
+        _layer.Keyframes = [new GeneratedKeyframe { Width = Canvas.Width, Height = Canvas.Height, Easing = GeneratedEasing.EaseInOut },
+            new GeneratedKeyframe { At = TimeSpan.FromSeconds(1), X = pose.Left, Y = pose.Top, Width = pose.Width, Height = pose.Height }];
+        _time = 1; await Commit();
+    }
+    private void StartDrag(PointerEventArgs e, GeneratedLayer layer, bool resize)
+    {
+        if (e.Button != 0) return; _layer = layer; _drag = (e.ClientX, e.ClientY, Pose(layer), resize); _ = Measure();
+    }
+    private void Drag(PointerEventArgs e)
+    {
+        if (_drag is not { } drag || Canvas is null) return;
+        float dx = (float)((e.ClientX - drag.X) * Canvas.Width / Math.Max(1, _pixels)), dy = (float)((e.ClientY - drag.Y) * Canvas.Width / Math.Max(1, _pixels));
+        SetPose(drag.Resize ? SKRect.Create(drag.Bounds.Left, drag.Bounds.Top, Math.Max(2, drag.Bounds.Width + dx), Math.Max(2, drag.Bounds.Height + dy))
+            : SKRect.Create(drag.Bounds.Left + dx, drag.Bounds.Top + dy, drag.Bounds.Width, drag.Bounds.Height)); Refresh();
+    }
+    private async Task EndDrag(PointerEventArgs _) { _drag = null; await Commit(); }
+    private void Refresh()
+    {
+        if (Canvas is null) return;
+        var job = Renderer.ForChannel(new SqueezeJob("__credits__", TimeSpan.Zero, TimeSpan.FromSeconds(600), new("Next programme", null, "8:30 PM", null), [],
+            Channel.Name, Look.Heading, Look.AccentColor, Canvas.BackgroundColor, 1, false, PromoPath: "__panel__", EndingShow: "Current programme") { Canvases = [Canvas] }, Channel);
+        _composition = Canvas.Compose(job);
+        using var surface = SKSurface.Create(new SKImageInfo(Canvas.Width, Canvas.Height));
+        using var images = new PromoImageCache();
+        using var videos = new StandInFrames(SqueezeCanvas.ParseAspect(_sourceRatio));
+        PromoRenderer.DrawFrame(surface.Canvas, _composition, TimeSpan.FromSeconds(_time), images, videos: videos);
+        using var image = surface.Snapshot(); using var data = image.Encode(SKEncodedImageFormat.Png, 80);
+        _preview = "data:image/png;base64," + Convert.ToBase64String(data.ToArray());
+    }
+
+    private sealed class StandInFrames(double sourceAspect) : IPromoVideoFrames, IDisposable
+    {
+        private readonly List<SKImage> _images = [];
+        public SKImage Frame(PromoVideoLayer layer, TimeSpan playback)
+        {
+            (int w, int h) = layer.FrameSize;
+            using var surface = SKSurface.Create(new SKImageInfo(w, h)); surface.Canvas.Clear(SKColors.Black);
+            float width = w, height = h;
+            if (layer.SourceAspect is { } aspect && !layer.SourceCrop)
+            {
+                if (sourceAspect > aspect) height *= (float)(aspect / sourceAspect); else width *= (float)(sourceAspect / aspect);
+            }
+            using var paint = new SKPaint { Color = layer.Path == "__credits__" ? new SKColor(55, 65, 85) : new SKColor(85, 55, 65) };
+            surface.Canvas.DrawRect((w - width) / 2, (h - height) / 2, width, height, paint);
+            using var font = new SKFont(SKTypeface.Default, Math.Min(w / 18f, h / 10f)); paint.Color = SKColors.White;
+            surface.Canvas.DrawText(layer.Path == "__credits__" ? "Source credits video" : "Video", w / 2f, h / 2f, SKTextAlign.Center, font, paint);
+            var image = surface.Snapshot(); _images.Add(image); return image;
+        }
+        public void Dispose() { foreach (var image in _images) image.Dispose(); }
+    }
+}

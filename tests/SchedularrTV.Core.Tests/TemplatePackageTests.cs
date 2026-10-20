@@ -318,6 +318,10 @@ public sealed class TemplatePackageTests : IDisposable
         string backdrop = Write("media/backdrop.png", "backdrop");
         var overlay = new Overlay { Name = "Bug", Kind = OverlayKinds.File, File = bug, Variants = [new OverlayVariant { File = bug }] };
         var look = new SqueezeTemplate { Name = "Neon", BackgroundPath = backdrop, AccentColor = "#00ff00" };
+        look.UseCanvas = true;
+        look.Canvases = [SqueezeCanvas.Create("4:3")];
+        look.Canvases[0].Layers.Add(new GeneratedLayer { Kind = GeneratedLayerKind.Image, Path = bug });
+        look.Canvases[0].Layers.Add(new GeneratedLayer { Kind = GeneratedLayerKind.Video, Path = Write("media/panel.mp4", "video"), Video = new() { Stretch = true } });
 
         string overlayZip = await ExportAsync(_data, writer => OverlayPackages.ExportAsync(overlay, writer));
         string lookZip = await ExportAsync(_data, writer => SqueezePackages.ExportAsync(look, look.Name, writer));
@@ -341,6 +345,13 @@ public sealed class TemplatePackageTests : IDisposable
             SqueezeTemplate imported = await SqueezePackages.ImportAsync(reader, otherAssets);
             Assert.Equal("#00ff00", imported.AccentColor);
             Assert.Equal("backdrop", File.ReadAllText(imported.BackgroundPath!));
+            Assert.True(imported.UseCanvas);
+            Assert.Equal("4:3", Assert.Single(imported.Canvases).AspectRatio);
+            Assert.Equal(SqueezeCanvas.Credits, imported.Canvases[0].Layers[0].Video!.Episode);
+            Assert.Equal("bug", File.ReadAllText(imported.Canvases[0].Layers[1].Path!));
+            Assert.Equal("video", File.ReadAllText(imported.Canvases[0].Layers[2].Path!));
+            Assert.True(imported.Canvases[0].Layers[2].Video!.Stretch);
+            Assert.Equal(bug, look.Canvases[0].Layers[1].Path);
         }
     }
 

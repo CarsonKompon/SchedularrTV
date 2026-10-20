@@ -20,6 +20,8 @@ public static class SqueezePackages
         }
 
         copy.BackgroundPath = writer.Asset(copy.BackgroundPath);
+        foreach (var layer in copy.Canvases.SelectMany(canvas => canvas.Layers))
+            layer.Path = writer.Asset(layer.Path);
         writer.Finish(Kind, name, copy);
         return Task.FromResult(name);
     }
@@ -29,6 +31,8 @@ public static class SqueezePackages
     {
         SqueezeTemplate template = reader.Item<SqueezeTemplate>();
         template.BackgroundPath = await reader.AssetAsync(template.BackgroundPath, assets, AssetCategory, cancellationToken).ConfigureAwait(false);
+        foreach (var layer in template.Canvases.SelectMany(canvas => canvas.Layers))
+            layer.Path = await reader.AssetAsync(layer.Path, assets, AssetCategory, cancellationToken).ConfigureAwait(false);
         return template;
     }
 }

@@ -71,6 +71,11 @@ public sealed record SqueezeJob(
     /// <summary>The panel's promo (or commercials') shape, read the same way; its picture slot is made that shape.</summary>
     public double? PromoAspect { get; init; }
 
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<SqueezeCanvas>? Canvases { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool CanvasCrop { get; init; }
+
     public SqueezeLayout Layout(int width = 1280, int height = 720) =>
         SqueezeLayout.Of(Style, Side, SplitPercent, width, height, CreditsFit, CreditsText, PanelText,
             CreditsAspect ?? SqueezeLayout.Widescreen, PromoAspect ?? SqueezeLayout.Widescreen);
@@ -188,9 +193,10 @@ public static class SqueezePlanner
         }
 
         // Commercials only: no promo is looked for.
-        IReadOnlyList<SqueezePromo> wantedPromos = look.Panel == SqueezePanel.Commercials ? Array.Empty<SqueezePromo>() : look.Promos;
+        bool hasPanel = !look.UseCanvas || look.Canvases.Any(canvas => canvas.Layers.Any(layer => layer.Video?.Episode == SqueezeCanvas.Panel));
+        IReadOnlyList<SqueezePromo> wantedPromos = !hasPanel || look.Panel == SqueezePanel.Commercials ? Array.Empty<SqueezePromo>() : look.Promos;
         (ScheduleEntry? promoEntry, SqueezePromo? promoKind, bool pending) = PickPromoEntry(entries, index, next, wantedPromos, channelId);
-        IReadOnlyList<SqueezeClip>? commercials = look.Panel == SqueezePanel.Promo ? null : CommercialPool(entries, index, next, channelId);
+        IReadOnlyList<SqueezeClip>? commercials = !hasPanel || look.Panel == SqueezePanel.Promo ? null : CommercialPool(entries, index, next, channelId);
         MediaItem? promo = pending ? null : promoEntry?.Item;
 
         // The panel says what the promo in it is for: the next programme, or (Coming Up, Eventually) the airing it promotes.
@@ -219,14 +225,15 @@ public static class SqueezePlanner
             layout.Side, Math.Clamp(layout.SplitPercent, SqueezeLayout.MinSplit, SqueezeLayout.MaxSplit), promo?.Path, promo?.Duration ?? TimeSpan.Zero,
             layout.Style, string.IsNullOrWhiteSpace(look.BackgroundPath) ? null : look.BackgroundPath.Trim(),
             layout.CreditsFit, layout.CreditsText, layout.PanelFit, layout.PanelText,
-            layout.CreditsText ? ending : null,
+            layout.CreditsText || look.UseCanvas ? ending : null,
             layout.CreditsText ? look.CreditsCaption : null,
             layout.CreditsText && !string.IsNullOrWhiteSpace(look.CreditsLine) ? look.CreditsLine.Trim() : null,
             string.IsNullOrWhiteSpace(look.HeadingFont) ? "Arial" : look.HeadingFont,
             string.IsNullOrWhiteSpace(look.TextFont) ? "Arial" : look.TextFont,
             make, make is null ? null : channelId, make is null ? null : entries[index].BlockName, make is null ? default : entries[next].Start,
             make?.Select(made => look.HeadingFor(made)).ToList(),
-            BreakRoom(entries, index, next), Panel: look.Panel, Commercials: commercials), pending);
+            BreakRoom(entries, index, next), Panel: look.Panel, Commercials: commercials)
+            { Canvases = look.UseCanvas ? look.Canvases.Select(canvas => canvas.Copy()).ToList() : null }, pending);
     }
 
     // How far ahead commercials for the panel are gathered from, and how many.

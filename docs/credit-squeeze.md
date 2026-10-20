@@ -26,6 +26,8 @@ Squeezes require following programming. Credits shorter than **8 seconds**, earl
 
 ## Choose the layout
 
+Choose **Design the squeeze with → Preset layout** for the controls below, or **Canvas Editor** to build a layered design.
+
 | Control | Choices |
 | --- | --- |
 | **Style** | Side by side or Framed |
@@ -36,6 +38,23 @@ Squeezes require following programming. Credits shorter than **8 seconds**, earl
 | **Up-next side text** | Listings and heading, or video only |
 
 **Layout for → Specific show** creates show-specific layouts. **Give it its own here** limits an override to the channel/block; **…on every channel** creates a global show layout, with local overrides taking precedence.
+
+## Design a squeeze on the canvas
+
+1. Select **Canvas Editor** in the chosen look.
+2. Choose an **aspect ratio**, then **Create canvas**. The starting canvas contains only the **Source credits video**, filling the entire screen.
+3. Move and resize the source layer. Its default **Stretch / squeeze to bounds** mode compresses the picture to the layer's exact width and height. **Fit** preserves its shape; **Fill** crops the edges.
+4. Add text, shapes, images, or video layers. A video layer can play the **Source credits video**, the **Promo / commercials panel**, or a file. Put artwork behind the source with **Backward**, or above it with **Forward**.
+5. For motion, resize the source to its destination and select **Animate from full screen to this box**. Or add keyframes at the playhead and edit their bounds. Keyframe times are seconds from the start of the credits; the last pose holds for the rest of the credits.
+6. Render a preview, then save the channel. The preview uses the canvas currently selected in the editor.
+
+Each look can have **16:9**, **4:3**, **16:10**, **1:1**, **21:9**, and **9:16** canvases. At render time the show's display aspect ratio (including anamorphic pixels) selects the closest canvas. A single canvas is always used, even if the show or channel output has a different shape. Unknown source shapes are treated as 16:9.
+
+Before squeezing, the source is fitted to the canvas shape using the channel's **encoding scaling mode**, inheriting the app-wide setting when unset: fit keeps the whole picture with black bars; crop fills the picture. Those bars are part of the source layer and resize with it. The canvas keeps its authored aspect ratio; the playout encoder handles conversion to the channel's final output shape. For example, a sole 4:3 canvas still renders for a 16:9 channel.
+
+The editor shows labelled stand-in videos, with a selectable stand-in source ratio to check bars. **Render a preview video** uses actual credits and panel content. Text supports `{show}`, `{next}`, `{time}`, `{channel}`, and `{heading}`.
+
+Canvas designs run for the credits' duration and use their own layer timing/keyframes; the preset's automatic shrink/return and full-screen promo overrun do not apply. Show-specific preset-layout overrides apply to preset looks. Canvas designs and their image/video files are included when copying or exporting a look.
 
 ## Save multiple looks
 

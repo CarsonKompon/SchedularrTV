@@ -2,6 +2,9 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using SkiaSharp;
+using SchedularrTV.Core.Platform;
+using SchedularrTV.Plugins.Performance;
+using SchedularrTV.Service.Editor;
 
 namespace SchedularrTV.GeneratedPromos;
 
@@ -699,7 +702,7 @@ public sealed class PromoImageCache : IDisposable
     }
 }
 
-internal static class ProcessStartInfoExtensions
+public static class ProcessStartInfoExtensions
 {
     public static ProcessStartInfo WithArguments(this ProcessStartInfo info, IEnumerable<string> arguments)
     {

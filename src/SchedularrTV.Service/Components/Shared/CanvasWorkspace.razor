@@ -7,7 +7,14 @@
     </div>
     @if (_help)
     {
-        <p class="studio-help">Drag to move · handles to resize · Shift to constrain · Alt to bypass snapping.<br />Ctrl/⌘ + scroll to zoom · middle-drag to pan · Ctrl/⌘ + 0 to fit.<br />Select multiple layers or keyframes with Ctrl/⌘ or Shift.</p>
+        @if (Help is not null)
+        {
+            <p class="studio-help">@Help</p>
+        }
+        else
+        {
+            <p class="studio-help">Drag to move · handles to resize · Shift to constrain · Alt to bypass snapping.<br />Ctrl/⌘ + scroll to zoom · middle-drag to pan · Ctrl/⌘ + 0 to fit.<br />Select multiple layers or keyframes with Ctrl/⌘ or Shift.</p>
+        }
     }
     <div class="ed-workspace">
         <div class="studio-stage-area">
@@ -25,6 +32,7 @@
     [Parameter, EditorRequired] public RenderFragment? Stage { get; set; }
     [Parameter, EditorRequired] public RenderFragment? Inspector { get; set; }
     [Parameter] public RenderFragment? Tools { get; set; }
+    [Parameter] public string? Help { get; set; }
     private bool _help;
     private bool _focus;
 }

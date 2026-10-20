@@ -22,6 +22,10 @@ public sealed record SqueezeClip(string Path, TimeSpan Length);
 /// </summary>
 public class SqueezeLook
 {
+    /// <summary>Use the canvas designs instead of a preset layout.</summary>
+    public bool UseCanvas { get; set; }
+    public List<SqueezeCanvas> Canvases { get; set; } = [];
+
     public SqueezeStyle Style { get; set; } = SqueezeStyle.SideBySide;
 
     /// <summary>Which side the credits go to; the panel takes the rest.</summary>
@@ -124,6 +128,8 @@ public class SqueezeLook
     /// <summary>Copies everything about how this looks onto <paramref name="target"/>.</summary>
     public void CopyLookTo(SqueezeLook target)
     {
+        target.UseCanvas = UseCanvas;
+        target.Canvases = [.. Canvases.Select(canvas => canvas.Copy())];
         target.UseLayout(OwnLayout());
         target.Promos = [.. Promos];
         target.Panel = Panel;

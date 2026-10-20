@@ -795,8 +795,12 @@
                             </label>
                             <div class="check-stack">
                                 <label class="check">
-                                    <input type="checkbox" checked="@video.Fill" @onchange="e => Set(() => video.Fill = e.Value is true)" />
+                                    <input type="checkbox" checked="@video.Fill" @onchange="e => Set(() => { video.Fill = e.Value is true; video.Stretch = false; })" />
                                     <span>Fill the box (crop the video)</span>
+                                </label>
+                                <label class="check">
+                                    <input type="checkbox" checked="@video.Stretch" @onchange="e => Set(() => { video.Stretch = e.Value is true; video.Fill = false; })" />
+                                    <span>Stretch / squeeze to the layer bounds</span>
                                 </label>
                                 <label class="check">
                                     <input type="checkbox" checked="@video.Loop" @onchange="e => Set(() => video.Loop = e.Value is true)" />

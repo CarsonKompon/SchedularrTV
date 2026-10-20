@@ -137,6 +137,10 @@ public sealed class GeneratedVideoOptions
     /// <summary>Fills the box (cropping the video) rather than fitting inside it.</summary>
     public bool Fill { get; set; }
 
+    /// <summary>Stretch/squeeze the video to its layer bounds instead of preserving its aspect ratio.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Stretch { get; set; }
+
     /// <summary>Removes a solid background colour from this video.</summary>
     public bool ChromaKey { get; set; }
 

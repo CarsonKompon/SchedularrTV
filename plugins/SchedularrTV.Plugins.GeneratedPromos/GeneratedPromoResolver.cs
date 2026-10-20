@@ -1031,6 +1031,7 @@ public static partial class GeneratedPromoResolver
                 StartsWithLayer = (layer.Video?.Playback ?? GeneratedVideoPlayback.WithLayer) == GeneratedVideoPlayback.WithLayer,
                 Loop = layer.Video?.Loop == true,
                 Fill = layer.Video?.Fill == true,
+                Stretch = layer.Video?.Stretch == true,
                 ChromaKey = layer.Video?.ChromaKey == true,
                 KeyColor = layer.Video?.KeyColor ?? "#00FF00",
                 KeyTolerance = layer.Video?.KeyTolerance ?? 0.2,

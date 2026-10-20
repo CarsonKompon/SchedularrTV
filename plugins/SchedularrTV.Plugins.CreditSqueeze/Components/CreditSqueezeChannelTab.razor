@@ -101,6 +101,17 @@
             <p class="hint" style="margin-top:-4px;">Each squeeze picks one of these looks at random, by weight (the same airing always gets the same one). Layout and Look below are
                 the selected one's; a weight of 0 keeps it out. How often, and shows' own layouts, are the channel's whichever is picked.</p>
 
+            <label class="field"><span>Design the squeeze with</span>
+                <select value="@(look.UseCanvas ? "canvas" : "preset")" @onchange='e => Set(() => look.UseCanvas = e.Value?.ToString() == "canvas")'>
+                    <option value="preset">Preset layout</option>
+                    <option value="canvas">Canvas Editor</option>
+                </select></label>
+            @if (look.UseCanvas)
+            {
+                <SqueezeCanvasEditor @key="look" Look="look" Channel="Channel" Changed="CommitCanvas" SelectedRatio="ratio => _canvasPreviewRatio = ratio" />
+            }
+            else
+            {
             <h3 class="cs-heading">Layout <span class="cs-of">(@LookName(section))</span></h3>
             <div class="cs-layout">
                 <div>
@@ -250,6 +261,7 @@
                     <span class="hint">The layout once the credits are in place, with stand-in names; the credits play in the black box.@(SqueezeRenderer.IsVideo(look.BackgroundPath) ? " The background video plays behind it." : "")</span>
                 </div>
             </div>
+            }
             <div class="row row-wrap" style="gap:8px;align-items:center;margin-bottom:6px;">
                 <button class="btn btn-sm" type="button" disabled="@_previewing" @onclick="() => RenderPreviewAsync(section)">
                     @(_previewing ? (_makingPromo ? "Making a promo for the panel, then the preview…" : "Making a preview…") : PreviewButton)
@@ -273,6 +285,8 @@
                 <p class="hint warn">@lookupProblem</p>
             }
 
+            @if (!look.UseCanvas)
+            {
             <h3 class="cs-heading">Look <span class="cs-of">(@LookName(section))</span></h3>
             <div class="grid grid-3">
                 <label class="field"><span>Heading (next programme, Up Next)</span>
@@ -337,6 +351,7 @@
                 <LowPowerNotice Inline="true" Title="The shrinking animation rescales the credits on every frame, the slowest part of a squeeze here. Turn it off if squeezes aren't ready in time." />
             }
 
+            }
             <h3 class="cs-heading">How often <span class="cs-of">(@(Block is null ? "the channel" : "this block"), whichever template)</span></h3>
             <label class="field"><span>Episodes' end credits: @Percent(section.CreditsChance)</span>
                 <input type="range" min="0" max="1" step="0.05" value="@section.CreditsChance.ToString(CultureInfo.InvariantCulture)"
@@ -439,6 +454,9 @@
 
 @code {
     [Parameter, EditorRequired] public PluginEditorContext Context { get; set; } = default!;
+
+    private void CommitCanvas() => Commit();
+    private string? _canvasPreviewRatio;
 
     private const string OwnMode = "own";
     private const string InheritMode = "inherit";
@@ -1119,6 +1137,8 @@
 
         // Previews the selected template's look (whichever an airing would pick).
         CreditSqueezeSection trial = section.WithOnly(Look(section));
+        if (trial.UseCanvas && _canvasPreviewRatio is { } ratio)
+            trial.Canvases = trial.Canvases.Where(canvas => canvas.AspectRatio == ratio).ToList();
         trial.Enabled = true;
         trial.CreditsChance = 1;
         trial.OutroChance = 1;
@@ -1198,7 +1218,7 @@
             SqueezeJob job = plan.Job.PromoPath is not null || plan.Job.WantsMadePromo || plan.Job.Panel != SqueezePanel.Promo
                 ? plan.Job with { FitToPromo = true }
                 : plan.Job with { Length = plan.Job.Length < PreviewLength ? plan.Job.Length : PreviewLength };
-            string name = await Renderer.PreviewAsync(job, Channel.Id, CancellationToken.None);
+            string name = await Renderer.PreviewAsync(Renderer.ForChannel(job, Channel), Channel.Id, CancellationToken.None);
             _previewUrl = $"api/credit-squeeze/preview/{Uri.EscapeDataString(name)}";
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
