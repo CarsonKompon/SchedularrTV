@@ -17,14 +17,17 @@ public sealed record CreditsRecognition(int TopPercent = 0, int BottomPercent = 
         Math.Clamp(BottomPercent, Math.Clamp(TopPercent, 0, 95) + 5, 100), Math.Clamp(MinimumConfidence, 0, 95));
 }
 
-public sealed record CreditsOcrOptions(string Executable, string Language, int SampleSeconds, int Version = 5, string? DataDirectory = null,
-    CreditsRecognition? Recognition = null);
+public sealed record CreditsOcrOptions(string Executable, string Language, int SampleSeconds, int Version = 7, string? DataDirectory = null,
+    CreditsRecognition? Recognition = null, int MaxWidth = 1920, string? QualityDataDirectory = null, string Profile = "balanced", bool DetectionPass = false);
 public sealed record CreditsOcrLine(string Text, double Confidence, CreditsTextBox? Box = null);
 public sealed record CreditsOcrPage(TimeSpan At, IReadOnlyList<CreditsOcrLine> Lines);
+public sealed record CreditsOcrSample(TimeSpan At, IReadOnlyList<CreditsOcrLine> Lines, bool StaticFrame = false,
+    CreditsLayoutKind Layout = CreditsLayoutKind.Unknown, int? VisualGroup = null, bool BlankFrame = false);
+public sealed record CreditsOcrStatistics(int SampledFrames, int UniqueFrames, int RecognizerProcesses, int RetryFrames, long ElapsedMilliseconds, string Model, int CachedFrames = 0, int ConsensusCorrections = 0);
 public sealed record CreditsOcrResult(IReadOnlyList<CreditsOcrLine> Lines, int Frames, int RejectedDetections = 0, string? Failure = null,
-    IReadOnlyList<CreditsOcrPage>? Pages = null)
+    IReadOnlyList<CreditsOcrPage>? Pages = null, IReadOnlyList<CreditsOcrSample>? Samples = null, CreditsOcrStatistics? Statistics = null)
 {
-    public int UncertainLines => Lines.Count(line => line.Confidence < 60);
+    public int UncertainLines => Lines.Count(line => line.Confidence < 85);
     public bool UsedFallback => Failure is not null;
 
     /// <summary>Preserve complete scans (including blank ones); hold consecutive identical scans as one page.</summary>
@@ -49,6 +52,16 @@ public sealed record CreditsOcrResult(IReadOnlyList<CreditsOcrLine> Lines, int F
 /// <summary>Reject recognition noise, without guessing names or using a dictionary of common words.</summary>
 public static class CreditsOcrFiltering
 {
+    /// <summary>A few repeated scraps aren't a usable credits transcript, however confident the OCR engine is.</summary>
+    public static bool Usable(IReadOnlyList<CreditsOcrLine> lines)
+    {
+        var distinct = lines.Where(line => !string.IsNullOrWhiteSpace(line.Text)).DistinctBy(line => line.Text.Trim(), StringComparer.OrdinalIgnoreCase).ToArray();
+        int Letters(string text) => text.EnumerateRunes().Sum(rune => Rune.IsLetter(rune)
+            ? rune.Value is >= 0x3400 and <= 0x9fff or >= 0xac00 and <= 0xd7af ? 3 : 1 : 0);
+        return distinct.Length >= 2 && distinct.Sum(line => Letters(line.Text)) >= 10
+            || distinct.Length == 1 && distinct[0].Confidence >= 85 && Letters(distinct[0].Text) >= 16
+                && distinct[0].Text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length >= 3;
+    }
     public static bool Keep(CreditsOcrLine line, int minimumConfidence = 60)
     {
         if (!double.IsFinite(line.Confidence) || line.Confidence < minimumConfidence || string.IsNullOrWhiteSpace(line.Text)) return false;
@@ -73,44 +86,135 @@ public interface ICreditsOcrEngine
     Task<IReadOnlyList<CreditsOcrLine>> ReadAsync(string image, CreditsOcrOptions options, CancellationToken cancellationToken);
 }
 
-/// <summary>Reads the original pixels locally. No language model, invented text, or correction of names.</summary>
-public sealed class TesseractCreditsOcr : ICreditsOcrEngine
+public sealed record CreditsOcrBatchResult(IReadOnlyList<IReadOnlyList<CreditsOcrLine>> Frames, int Processes, int RetriedFrames, string Model, int CachedFrames = 0);
+public interface ICreditsOcrBatchEngine : ICreditsOcrEngine
 {
-    public async Task<IReadOnlyList<CreditsOcrLine>> ReadAsync(string image, CreditsOcrOptions options, CancellationToken cancellationToken)
+    Task<CreditsOcrBatchResult> ReadBatchAsync(IReadOnlyList<string> images, CreditsOcrOptions options, CancellationToken cancellationToken);
+}
+
+/// <summary>Reads the original pixels locally. No language model, invented text, or correction of names.</summary>
+public sealed class TesseractCreditsOcr : ICreditsOcrBatchEngine
+{
+    private readonly object _cacheGate = new();
+    private readonly Dictionary<string, IReadOnlyList<CreditsOcrLine>> _frameCache = new(StringComparer.Ordinal);
+    private readonly Queue<string> _cacheOrder = new();
+    public async Task<IReadOnlyList<CreditsOcrLine>> ReadAsync(string image, CreditsOcrOptions options, CancellationToken cancellationToken) =>
+        (await ReadBatchAsync([image], options, cancellationToken).ConfigureAwait(false)).Frames[0];
+
+    public async Task<CreditsOcrBatchResult> ReadBatchAsync(IReadOnlyList<string> images, CreditsOcrOptions options, CancellationToken cancellationToken)
     {
-        var best = await ReadPassAsync(image, options, "11", cancellationToken).ConfigureAwait(false);
-        int confidence = (options.Recognition ?? new()).Normalized().MinimumConfidence;
-        if (!CreditsOcrPreprocessing.NeedsRetry(best, confidence)) return best;
-        using var bitmap = SkiaSharp.SKBitmap.Decode(image);
-        if (bitmap is null) return best;
-        string processed = Path.Combine(Path.GetDirectoryName(image)!, ".ocr-contrast-" + Guid.NewGuid().ToString("N") + ".png");
-        try
+        IReadOnlyList<CreditsOcrLine>[] result = images.Select(_ => (IReadOnlyList<CreditsOcrLine>)Array.Empty<CreditsOcrLine>()).ToArray();
+        bool quality = !options.DetectionPass && options.Profile != "fast" && options.QualityDataDirectory is not null;
+        var effective = quality ? options with { DataDirectory = options.QualityDataDirectory } : options;
+        string model = quality ? "tessdata_best" : options.DetectionPass ? "fast boundary scan" : "configured Tesseract model";
+        List<int> nonBlank = [];
+        bool[] blank = new bool[images.Count];
+        string?[] cacheKeys = new string?[images.Count];
+        int cached = 0;
+        for (int index = 0; index < images.Count; index++)
         {
-            using (var contrast = CreditsOcrPreprocessing.Contrast(bitmap))
-            using (var encoded = contrast.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100))
-                await File.WriteAllBytesAsync(processed, encoded.ToArray(), cancellationToken).ConfigureAwait(false);
-            foreach (string mode in new[] { "11", "6" })
+            cancellationToken.ThrowIfCancellationRequested();
+            if (File.Exists(images[index]))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                try
+                await using var file = File.OpenRead(images[index]);
+                string hash = Convert.ToHexStringLower(await SHA256.HashDataAsync(file, cancellationToken));
+                string key = $"{options.Executable}|{options.Language}|{effective.DataDirectory}|{options.Profile}|{options.DetectionPass}|{options.Recognition?.MinimumConfidence ?? 60}|{hash}";
+                cacheKeys[index] = key;
+                lock (_cacheGate)
                 {
-                    var alternative = await ReadPassAsync(processed, options, mode, cancellationToken).ConfigureAwait(false);
-                    best = CreditsOcrPreprocessing.Prefer(best, alternative, confidence);
+                    if (_frameCache.TryGetValue(key, out var known)) { result[index] = known; cached++; continue; }
                 }
-                catch (InvalidOperationException) { /* A failed retry must not discard a usable original pass. */ }
             }
-            return best;
+            using var bitmap = SkiaSharp.SKBitmap.Decode(images[index]);
+            if (bitmap is null || !CreditsOcrPreprocessing.IsBlank(bitmap)) nonBlank.Add(index); else blank[index] = true;
         }
-        finally { File.Delete(processed); }
+        int processes = 0, retried = 0;
+        const int batchSize = 16;
+        foreach (var batch in nonBlank.Chunk(batchSize))
+        {
+            var lines = await ReadPassAsync(batch.Select(index => images[index]).ToArray(), effective, "11", cancellationToken).ConfigureAwait(false);
+            processes++;
+            for (int index = 0; index < batch.Length; index++) result[batch[index]] = lines[index];
+        }
+        if (options.DetectionPass || options.Profile == "fast") return Finish();
+        int confidence = (options.Recognition ?? new()).Normalized().MinimumConfidence;
+        foreach (var batch in nonBlank.Where(index => CreditsOcrPreprocessing.NeedsRetry(result[index], confidence)).Chunk(batchSize))
+        {
+            List<string> processed = [];
+            try
+            {
+                foreach (int index in batch)
+                {
+                    using var bitmap = SkiaSharp.SKBitmap.Decode(images[index]) ?? throw new IOException("Could not decode an OCR frame.");
+                    using var contrast = CreditsOcrPreprocessing.Contrast(bitmap);
+                    using var encoded = contrast.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+                    string path = Path.Combine(Path.GetDirectoryName(images[index])!, ".ocr-contrast-" + Guid.NewGuid().ToString("N") + ".png");
+                    processed.Add(path);
+                    await File.WriteAllBytesAsync(path, encoded.ToArray(), cancellationToken).ConfigureAwait(false);
+                }
+                processes++; retried += batch.Length;
+                var alternate = await ReadPassAsync(processed, effective, "6", cancellationToken).ConfigureAwait(false);
+                for (int index = 0; index < batch.Length; index++) result[batch[index]] = CreditsOcrPreprocessing.Prefer(result[batch[index]], alternate[index], confidence);
+                if (options.Profile == "accurate")
+                {
+                    processes++;
+                    alternate = await ReadPassAsync(batch.Select(index => images[index]).ToArray(), effective, "3", cancellationToken).ConfigureAwait(false);
+                    for (int index = 0; index < batch.Length; index++) result[batch[index]] = CreditsOcrPreprocessing.Prefer(result[batch[index]], alternate[index], confidence);
+                }
+            }
+            catch (InvalidOperationException) { /* A failed retry must not discard the primary result. */ }
+            finally { foreach (string path in processed) if (File.Exists(path)) File.Delete(path); }
+        }
+        return Finish();
+
+        CreditsOcrBatchResult Finish()
+        {
+            lock (_cacheGate)
+            {
+                for (int index = 0; index < result.Length; index++)
+                {
+                    if (cacheKeys[index] is not { } key || _frameCache.ContainsKey(key)) continue;
+                    if (!blank[index] && CreditsOcrPreprocessing.NeedsRetry(result[index], (options.Recognition ?? new()).Normalized().MinimumConfidence)) continue;
+                    while (_frameCache.Count >= 256 && _cacheOrder.TryDequeue(out var oldest)) _frameCache.Remove(oldest);
+                    _frameCache[key] = result[index]; _cacheOrder.Enqueue(key);
+                }
+            }
+            return new(result, processes, retried, model, cached);
+        }
     }
 
-    private static async Task<IReadOnlyList<CreditsOcrLine>> ReadPassAsync(string image, CreditsOcrOptions options, string mode, CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<IReadOnlyList<CreditsOcrLine>>> ReadPassAsync(IReadOnlyList<string> images, CreditsOcrOptions options, string mode, CancellationToken cancellationToken)
     {
-        List<string> arguments = [image, "stdout", "-l", options.Language, "--psm", mode];
-        if (options.DataDirectory is { } data) arguments.AddRange(["--tessdata-dir", data]);
-        arguments.Add("tsv");
-        string tsv = await CreditsOcrTools.RunAsync(options.Executable, arguments, TimeSpan.FromSeconds(45), cancellationToken).ConfigureAwait(false);
-        return ParseTsv(tsv);
+        if (images.Count == 0) return [];
+        string? list = null;
+        try
+        {
+            string input = images[0];
+            if (images.Count > 1)
+            {
+                if (images.Any(path => path.Contains('\n') || path.Contains('\r'))) throw new IOException("OCR frame paths must not contain newlines.");
+                list = Path.Combine(Path.GetDirectoryName(images[0])!, ".ocr-input-" + Guid.NewGuid().ToString("N") + ".txt");
+                await File.WriteAllLinesAsync(list, images.Select(Path.GetFullPath), new UTF8Encoding(false), cancellationToken).ConfigureAwait(false);
+                input = list;
+            }
+            List<string> arguments = [input, "stdout", "-l", options.Language, "--oem", "1", "--psm", mode,
+                "-c", "tessedit_create_tsv=1", "-c", "tessedit_create_txt=0"];
+            if (options.DataDirectory is { } data) arguments.AddRange(["--tessdata-dir", data]);
+            string tsv = await CreditsOcrTools.RunAsync(options.Executable, arguments, TimeSpan.FromSeconds(Math.Clamp(images.Count * 8, 45, 180)), cancellationToken).ConfigureAwait(false);
+            return ParseTsvPages(tsv, images.Count);
+        }
+        finally { if (list is not null && File.Exists(list)) File.Delete(list); }
+    }
+
+    public static IReadOnlyList<IReadOnlyList<CreditsOcrLine>> ParseTsvPages(string tsv, int count)
+    {
+        var pages = Enumerable.Range(0, count).Select(_ => new StringBuilder()).ToArray();
+        foreach (string row in tsv.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var cells = row.Split('\t', 3);
+            if (cells.Length >= 2 && int.TryParse(cells[1], out int page) && page >= 1 && page <= count) pages[page - 1].AppendLine(row);
+        }
+        return pages.Select(page => ParseTsv(page.ToString())).ToArray();
     }
 
     /// <summary>TSV's block/paragraph/line hierarchy keeps names and their headings in OCR reading order.</summary>
@@ -156,9 +260,26 @@ public sealed class CreditsTranscript
 {
     private readonly List<CreditsOcrLine> _lines = [];
     private List<CreditsOcrLine> _previous = [];
+    private List<int> _previousPositions = [];
+    private CreditsLayoutKind _layout;
+    private int? _visualGroup;
     public IReadOnlyList<CreditsOcrLine> Lines => _lines;
 
-    public void Add(IReadOnlyList<CreditsOcrLine> frame)
+    public void Add(CreditsOcrSample sample)
+    {
+        bool sameWords = _previous.Select(line => line.Text).SequenceEqual(sample.Lines.Select(line => line.Text), StringComparer.OrdinalIgnoreCase);
+        bool transition = sample.Layout != CreditsLayoutKind.Unknown && _layout != CreditsLayoutKind.Unknown && sample.Layout != _layout;
+        bool newCard = sample.Layout == CreditsLayoutKind.Card && _layout == CreditsLayoutKind.Card
+            && sample.VisualGroup is not null && _visualGroup is not null && sample.VisualGroup != _visualGroup;
+        if (!sameWords && (transition || newCard)) { _previous = []; _previousPositions = []; }
+        AddCore(sample.Lines);
+        if (sample.Layout != CreditsLayoutKind.Unknown) _layout = sample.Layout;
+        if (sample.Lines.Count > 0) _visualGroup = sample.VisualGroup;
+    }
+
+    public void Add(IReadOnlyList<CreditsOcrLine> frame) => AddCore(frame);
+
+    private void AddCore(IReadOnlyList<CreditsOcrLine> frame)
     {
         List<CreditsOcrLine> current = frame.Where(line => !string.IsNullOrWhiteSpace(line.Text))
             .Select(line => line with { Text = line.Text.Trim() }).ToList();
@@ -168,24 +289,34 @@ public sealed class CreditsTranscript
             return;
         }
 
-        bool Same(CreditsOcrLine a, CreditsOcrLine b) => string.Equals(a.Text, b.Text, StringComparison.Ordinal);
-        int overlap = Math.Min(_previous.Count, current.Count);
-        while (overlap > 0 && !Enumerable.Range(0, overlap).All(index => Same(_previous[_previous.Count - overlap + index], current[index]))) overlap--;
-        if (overlap == 0)
+        bool Same(CreditsOcrLine a, CreditsOcrLine b) => CreditsTextAgreement.Identity(a.Text) == CreditsTextAgreement.Identity(b.Text);
+        List<int> matched = [];
+        // Align a prefix of this scan against the previous scrolling window, allowing
+        // a missed line in that window. Never globally deduplicate names/roles.
+        for (int start = 0; start < _previous.Count; start++)
         {
-            // A scroll sometimes shows only a subset of the preceding frame before new lines arrive.
-            for (int start = 0; start + current.Count <= _previous.Count; start++)
-                if (Enumerable.Range(0, current.Count).All(index => Same(_previous[start + index], current[index]))) return;
+            List<int> candidate = [];
+            int cursor = start;
+            foreach (var line in current)
+            {
+                while (cursor < _previous.Count && !Same(_previous[cursor], line)) cursor++;
+                if (cursor == _previous.Count) break;
+                candidate.Add(cursor++);
+            }
+            if (candidate.Count > matched.Count && (candidate.Count == current.Count || candidate[^1] == _previous.Count - 1)) matched = candidate;
         }
-        // Identical OCR wording can have clearer evidence in a later frame; keep its best confidence.
-        for (int index = 0; index < overlap; index++)
+        List<int> positions = [];
+        for (int index = 0; index < matched.Count; index++)
         {
-            int at = _lines.Count - overlap + index;
+            int at = _previousPositions[matched[index]];
             if (current[index].Confidence > _lines[at].Confidence) _lines[at] = current[index];
+            positions.Add(at);
         }
-        _lines.AddRange(current.Skip(overlap));
-        _previous = current;
+        if (matched.Count == current.Count) return; // retain the wider window through partial scans/fades
+        foreach (var line in current.Skip(matched.Count)) { positions.Add(_lines.Count); _lines.Add(line); }
+        _previous = current; _previousPositions = positions;
     }
+
 }
 
 /// <summary>Samples only the source's credits, OCRs those full-size frames once, and caches the transcript separately from designs.</summary>
@@ -193,6 +324,23 @@ public sealed class CreditsOcr(CreditSqueezeSettings settings, ICreditsOcrEngine
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private string Folder => Path.Combine(settings.SaveFolder, "_credits-text");
+
+    public async Task StoreAsync(SqueezeJob job, CreditsOcrResult result, CancellationToken cancellationToken)
+    {
+        if (result.UsedFallback || !CreditsOcrFiltering.Usable(result.Lines)) return;
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (job.CreditsOcrSourceStamp is { } expected && CreditsOcr.SourceStamp(job.SourcePath) != expected)
+                throw new InvalidOperationException("The source changed while detecting its credits. Please retry.");
+            Directory.CreateDirectory(Folder);
+            string cache = Path.Combine(Folder, Key(job, job.CreditsOcr ?? settings.Ocr) + ".json");
+            string temporary = cache + ".tmp";
+            try { await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(result), cancellationToken); File.Move(temporary, cache, true); }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+        }
+        finally { _gate.Release(); }
+    }
 
     /// <summary>Fallback is resolved per selected canvas and never saved as a successful OCR transcript.</summary>
     public async Task<CreditsOcrResult> ReadForCanvasAsync(SqueezeJob job, SqueezeCanvas canvas, CancellationToken cancellationToken)
@@ -216,17 +364,22 @@ public sealed class CreditsOcr(CreditSqueezeSettings settings, ICreditsOcrEngine
     }
 
     public static string Key(SqueezeJob job, CreditsOcrOptions options) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
-        JsonSerializer.Serialize(new { PipelineVersion = 5, Path = Path.GetFullPath(job.SourcePath), Stamp = SourceStamp(job.SourcePath), job.SourceStart, job.Length, Options = options }))));
+        JsonSerializer.Serialize(new { PipelineVersion = 7, Path = Path.GetFullPath(job.SourcePath), Stamp = SourceStamp(job.SourcePath), job.SourceStart, job.Length, Options = options }))));
 
     public static string FrameFilter(CreditsOcrOptions options)
     {
         var area = (options.Recognition ?? new()).Normalized();
         string crop = area.TopPercent == 0 && area.BottomPercent == 100 ? "" :
             $",crop=iw:'max(2,trunc(ih*{area.BottomPercent - area.TopPercent}/100/2)*2)':0:'trunc(ih*{area.TopPercent}/100/2)*2'";
-        return $"fps=1/{options.SampleSeconds}:start_time=0{crop},scale=w='trunc(min(1920,iw*sar*2)/2)*2':h=-2,setsar=1,format=rgb24";
+        // Normalize anamorphic pixel shape before resizing. Resetting SAR only after a
+        // width-only resize distorts DVD-era fonts and makes recognition substantially harder.
+        return $"fps=1/{options.SampleSeconds}:start_time=0{crop},scale=w='max(2,trunc(iw*sar/2)*2)':h=ih,setsar=1,"
+            + $"scale=w='trunc(min({Math.Clamp(options.MaxWidth, 640, 3840)},iw*2)/2)*2':h=-2,format=rgb24";
     }
 
-    public async Task<CreditsOcrResult> ReadAsync(SqueezeJob job, CancellationToken cancellationToken)
+    public Task<CreditsOcrResult> ReadAsync(SqueezeJob job, CancellationToken cancellationToken) => ScanAsync(job, cancellationToken, requireUsable: true);
+
+    public async Task<CreditsOcrResult> ScanAsync(SqueezeJob job, CancellationToken cancellationToken, bool requireUsable = false)
     {
         if (job.Length <= TimeSpan.Zero || job.Length > TimeSpan.FromMinutes(15) || job.SourceStart < TimeSpan.Zero)
             throw new InvalidOperationException("Credits Text needs a source credits segment between 0 and 15 minutes long.");
@@ -241,12 +394,12 @@ public sealed class CreditsOcr(CreditSqueezeSettings settings, ICreditsOcrEngine
             string stamp = SourceStamp(job.SourcePath);
             if (job.CreditsOcrSourceStamp is { } expected && expected != stamp)
                 throw new InvalidOperationException("Credits Text: the source video changed while this squeeze was waiting; rebuild the schedule to read it again.");
-            string cache = Path.Combine(Folder, Key(job, options) + ".json");
+            string cache = Path.Combine(Folder, Key(job, options) + (requireUsable ? "" : "-scan") + ".json");
             Directory.CreateDirectory(Folder);
             try
             {
                 if (File.Exists(cache) && JsonSerializer.Deserialize<CreditsOcrResult>(await File.ReadAllTextAsync(cache, cancellationToken).ConfigureAwait(false))
-                    is { Lines.Count: > 0 } found && found.Lines.All(line => line is not null && !string.IsNullOrWhiteSpace(line.Text)))
+                    is { Samples.Count: > 0 } found && (!requireUsable || CreditsOcrFiltering.Usable(found.Lines)))
                 {
                     File.SetLastWriteTimeUtc(cache, DateTime.UtcNow);
                     return found;
@@ -259,6 +412,7 @@ public sealed class CreditsOcr(CreditSqueezeSettings settings, ICreditsOcrEngine
             try
             {
                 using var activity = Work.Begin("Credit Squeeze", "Reading credits text", Path.GetFileName(job.SourcePath));
+                var elapsed = Stopwatch.StartNew();
                 string N(double value) => value.ToString("0.######", CultureInfo.InvariantCulture);
                 int frames = (int)Math.Ceiling(job.Length.TotalSeconds / options.SampleSeconds);
                 await CreditsOcrTools.RunAsync(settings.Ffmpeg,
@@ -268,22 +422,46 @@ public sealed class CreditsOcr(CreditSqueezeSettings settings, ICreditsOcrEngine
                 string[] images = Directory.GetFiles(work, "*.png").Order(StringComparer.Ordinal).ToArray();
                 var transcript = new CreditsTranscript();
                 int confidence = (options.Recognition ?? new()).Normalized().MinimumConfidence;
-                List<IReadOnlyList<CreditsOcrLine>> detections = [];
+                var reuse = new CreditsFrameReuse();
+                List<int> frameMap = [];
                 foreach (string image in images)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    detections.Add(await engine.ReadAsync(image, options, cancellationToken).ConfigureAwait(false));
-                    File.Delete(image);
+                    int before = reuse.Unique.Count;
+                    frameMap.Add(await reuse.AddAsync(image, cancellationToken).ConfigureAwait(false));
+                    if (reuse.Unique.Count == before) File.Delete(image);
                 }
+                IReadOnlyList<IReadOnlyList<CreditsOcrLine>> unique;
+                int processes, retries, cachedFrames = 0;
+                string model;
+                if (engine is ICreditsOcrBatchEngine batch)
+                {
+                    var batchResult = await batch.ReadBatchAsync(reuse.Unique, options, cancellationToken).ConfigureAwait(false);
+                    unique = batchResult.Frames; processes = batchResult.Processes; retries = batchResult.RetriedFrames; model = batchResult.Model; cachedFrames = batchResult.CachedFrames;
+                }
+                else
+                {
+                    List<IReadOnlyList<CreditsOcrLine>> read = [];
+                    foreach (string image in reuse.Unique) read.Add(await engine.ReadAsync(image, options, cancellationToken).ConfigureAwait(false));
+                    unique = read; processes = read.Count; retries = 0; model = engine.GetType().Name;
+                }
+                var detections = frameMap.Select(index => unique[index]).ToArray();
                 cancellationToken.ThrowIfCancellationRequested();
                 var cleaned = CreditsOcrAnalysis.Clean(detections, confidence);
                 int rejected = detections.Sum(frame => frame.Count) - cleaned.Sum(frame => frame.Count);
-                foreach (var frame in cleaned) transcript.Add(frame.Select(line => line with { Box = null }).ToArray());
-                if (transcript.Lines.Count == 0)
-                    throw new InvalidOperationException("Credits Text: OCR found no readable credits after filtering. Check the recognition area, confidence threshold and source segment under Text recognition. The original credits will keep playing until a squeeze is ready.");
+                var classified = CreditsLayouts.Classify(cleaned.Select((lines, index) => new CreditsOcrSample(
+                    TimeSpan.FromSeconds((double)index * options.SampleSeconds), lines,
+                    index > 0 && frameMap[index] == frameMap[index - 1] || index + 1 < frameMap.Count && frameMap[index] == frameMap[index + 1],
+                    VisualGroup: frameMap[index], BlankFrame: reuse.Blank[frameMap[index]])).ToArray());
+                var (samples, corrections) = CreditsTextAgreement.Refine(classified);
+                foreach (var sample in samples) transcript.Add(sample);
+                if (requireUsable && !CreditsOcrFiltering.Usable(transcript.Lines))
+                    throw new InvalidOperationException("Credits Text: OCR found no readable credits or too little reliable text after filtering. Check the original ending and recognition settings. Isolated fragments are not treated as a successful transcript.");
                 if (SourceStamp(job.SourcePath) != stamp)
                     throw new InvalidOperationException("Credits Text: the source video changed while OCR was reading it; try again.");
-                var result = new CreditsOcrResult(transcript.Lines.ToArray(), images.Length, rejected, Pages: CreditsOcrResult.ScanPages(cleaned, options.SampleSeconds));
+                var result = new CreditsOcrResult(transcript.Lines.Select(line => line with { Box = null }).ToArray(), images.Length, rejected,
+                    Pages: CreditsOcrResult.ScanPages(samples.Select(sample => sample.Lines).ToArray(), options.SampleSeconds),
+                    Samples: samples, Statistics: new(images.Length, reuse.Unique.Count, processes, retries, elapsed.ElapsedMilliseconds, model, cachedFrames, corrections));
                 string temporary = Path.Combine(work, "result.json");
                 await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(result), cancellationToken).ConfigureAwait(false);
                 File.Move(temporary, cache, overwrite: true);

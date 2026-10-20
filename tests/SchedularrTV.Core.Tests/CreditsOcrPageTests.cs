@@ -30,7 +30,7 @@ public sealed class CreditsOcrPageTests
              new(TimeSpan.FromSeconds(7), []), new(TimeSpan.FromSeconds(9), Lines("Last")), new(TimeSpan.FromSeconds(10), Lines("Outside"))]);
         var layer = new GeneratedLayer { Kind = GeneratedLayerKind.Text, CreditsText = new() { MatchSourcePages = true, LinesPerPage = 1 },
             Start = TimeSpan.FromSeconds(2), End = TimeSpan.FromSeconds(10), TextCase = GeneratedTextCase.Upper, Width = 500, Height = 500 };
-        var canvas = new SqueezeCanvas { Layers = [layer] };
+        var canvas = new SqueezeCanvas { Layers = [layer], TimelineSeconds = 12 };
         var rendered = Assert.IsType<PromoTextLayer>(Assert.Single(canvas.Compose(Job() with { OcrTranscript = source }).Layers));
         Assert.Equal(new[] { 2d, 3d, 7d, 9d }, rendered.Pages!.Select(page => page.At.TotalSeconds));
         Assert.Equal(["FIRST", "SECOND"], rendered.LinesAt(TimeSpan.FromSeconds(2.5)));

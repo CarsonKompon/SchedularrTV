@@ -175,6 +175,8 @@ public sealed class CreditSqueezeSection : SqueezeLook
     /// setting, zero to leave them be.
     /// </summary>
     public double? AssumedCreditsSeconds { get; set; }
+    /// <summary>Detect a source interval with OCR; unknown/uncertain episodes are left untouched.</summary>
+    public bool AutoDetectCredits { get; set; } = true;
 
     /// <summary>How much of the end of an episode without known credits is squeezed (zero: none).</summary>
     public TimeSpan AssumedCredits(TimeSpan pluginDefault) =>

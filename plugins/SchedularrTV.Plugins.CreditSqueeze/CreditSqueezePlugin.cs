@@ -25,6 +25,8 @@ public sealed class CreditSqueezePlugin : IPlugin, IPluginEndpoints
         services.AddSingleton<TesseractSetup>();
         services.AddSingleton<ICreditsOcrEngine, TesseractCreditsOcr>();
         services.AddSingleton<CreditsOcr>();
+        services.AddSingleton<CreditsDetection>();
+        services.AddHostedService(sp => sp.GetRequiredService<CreditsDetection>());
         services.AddSingleton<CreditsMarkers>();
         services.AddHostedService(sp => sp.GetRequiredService<CreditsMarkers>());
         services.AddSingleton(sp =>
@@ -34,6 +36,7 @@ public sealed class CreditSqueezePlugin : IPlugin, IPluginEndpoints
             // A squeeze just made, or credits just found, go in at the next publish.
             renderer.Made += () => sp.GetService<IScheduleRepublisher>()?.RequestRepublish();
             sp.GetRequiredService<CreditsMarkers>().Found += () => sp.GetService<IScheduleRepublisher>()?.RequestRepublish();
+            sp.GetRequiredService<CreditsDetection>().Found += () => sp.GetService<IScheduleRepublisher>()?.RequestRepublish();
             return renderer;
         });
         services.AddHostedService(sp => sp.GetRequiredService<SqueezeRenderer>());

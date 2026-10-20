@@ -110,10 +110,11 @@
                     <div class="grid grid-2">
                         <label class="field"><span>Stand-in source shape</span>
                             <select @bind="_sourceRatio" @bind:after="Refresh">@foreach (var ratio in SqueezeCanvas.Ratios) { <option value="@ratio">@ratio</option> }</select></label>
-                        <label class="field"><span>Preview length (seconds)</span><input type="number" min="1" max="600" value="@N(_previewSeconds)" @onchange="SetPreviewLength" /></label>
+                        <label class="field"><span>Design timeline (seconds)</span><input type="number" min="1" max="900" value="@N(_previewSeconds)" @onchange="SetPreviewLength" /></label>
+                        <label class="check"><input type="checkbox" @bind="canvas.FitTimingToCredits" @bind:after="Commit" />Fit animation timing to actual credits</label>
                         <div class="field"><span>Canvas background</span><ScreenColourPicker Value="@canvas.BackgroundColor" ValueChanged="SetBackground" /></div>
                     </div>
-                    <p class="hint" role="note">Preview length is only for editing. On air, the canvas runs for the full credits duration. Text from OCR is sampled here; review actual names in the rendered preview.</p>
+                    <p class="hint" role="note">The design timeline is a reference, not the credits duration. With timing fit enabled, a keyframe halfway through this timeline stays halfway through a 35-second or 90-second credits interval. Source-matched OCR pages retain their actual scan times.</p>
                     <button type="button" class="btn btn-sm btn-danger" @onclick="RemoveCanvas"><Icon Name="trash" />Delete @canvas.AspectRatio canvas</button>
                 </details>
             </Stage>
@@ -523,12 +524,14 @@
         _self?.Dispose();
         _images.Dispose();
     }
-    private void SetPreviewLength(ChangeEventArgs e)
+    private async Task SetPreviewLength(ChangeEventArgs e)
     {
         if (double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds) && double.IsFinite(seconds))
         {
-            _previewSeconds = Math.Clamp(seconds, 1, 600);
+            _previewSeconds = Math.Clamp(seconds, 1, 900);
+            if (Canvas is not null) Canvas.TimelineSeconds = _previewSeconds;
             Seek(_time);
+            await Changed.InvokeAsync();
         }
     }
     private IEnumerable<GeneratedKeyframe> AdjacentKeys(int direction) => (_layer?.Keyframes ?? [])
@@ -538,7 +541,12 @@
     private void GoToKey(int direction) { if (AdjacentKeys(direction).FirstOrDefault() is { } key) SeekKey(key); }
     private void SeekKey(GeneratedKeyframe key)
     {
-        _previewSeconds = Math.Max(_previewSeconds, key.At.TotalSeconds + 1);
+        if (key.At.TotalSeconds >= _previewSeconds)
+        {
+            _previewSeconds = Math.Min(900, key.At.TotalSeconds + 1);
+            if (Canvas is not null) Canvas.TimelineSeconds = _previewSeconds;
+            _ = Changed.InvokeAsync();
+        }
         Seek(key.At.TotalSeconds);
     }
     private async Task StopAnimating()
@@ -574,6 +582,7 @@
     {
         bool changed = !ReferenceEquals(Canvas, canvas);
         Canvas = canvas; _layer = canvas?.Layers.LastOrDefault(); _time = 0;
+        _previewSeconds = canvas is not null && double.IsFinite(canvas.TimelineSeconds) ? Math.Clamp(canvas.TimelineSeconds, 1, 900) : 60;
         _dragLayer = null;
         _sourceRatio = canvas?.AspectRatio ?? "16:9";
         Refresh();

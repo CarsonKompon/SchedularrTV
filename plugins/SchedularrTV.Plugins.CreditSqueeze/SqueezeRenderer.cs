@@ -71,14 +71,14 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
     /// <summary>Capture inherited channel scaling in the job (and therefore in its cache key).</summary>
     public SqueezeJob ForChannel(SqueezeJob job, ChannelConfig channel)
     {
-        if (job.Canvases is null) return job;
+        if (job.Canvases is null) return job.DetectedCredits ? job with { CreditsOcrSourceStamp = CreditsOcr.SourceStamp(job.SourcePath) } : job;
         var global = services.GetService<IOptions<ErsatzTvOptions>>()?.Value.Encoding ?? new ErsatzTvEncodingOptions();
         bool readsCredits = job.Canvases.Any(canvas => canvas.UsesCreditsText);
         return job with
         {
             CanvasCrop = ErsatzTvEncoding.Resolve(global, channel.Encoding).ScalingMode == "crop",
-            CreditsOcr = readsCredits ? settings.Ocr with { Recognition = job.Recognition.Normalized() } : null,
-            CreditsOcrSourceStamp = readsCredits ? CreditsOcr.SourceStamp(job.SourcePath) : null
+            CreditsOcr = readsCredits ? settings.Ocr with { Recognition = job.Recognition.Normalized(), SampleSeconds = job.DetectedCredits ? 1 : settings.Ocr.SampleSeconds } : null,
+            CreditsOcrSourceStamp = readsCredits || job.DetectedCredits ? CreditsOcr.SourceStamp(job.SourcePath) : null
         };
     }
 
@@ -204,8 +204,10 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         if (!File.Exists(job.SourcePath)) throw new InvalidOperationException("The scheduler cannot read the original source video.");
         Directory.CreateDirectory(PreviewFolder);
         string prefix = $"source-{new string([.. channelId.Where(char.IsAsciiLetterOrDigit)])}-";
-        string name = prefix + Guid.NewGuid().ToString("N") + ".mp4";
-        string output = Path.Combine(PreviewFolder, name), temporary = output + ".making.mp4";
+        string stamp = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes($"{Path.GetFullPath(job.SourcePath)}|{CreditsOcr.SourceStamp(job.SourcePath)}|{job.SourceStart.Ticks}|{job.Length.Ticks}")))[..24];
+        string name = prefix + stamp + ".mp4";
+        string output = Path.Combine(PreviewFolder, name), temporary = output + "." + Guid.NewGuid().ToString("N") + ".making.mp4";
+        if (File.Exists(output)) return name;
         string N(double value) => value.ToString("0.######", CultureInfo.InvariantCulture);
         try
         {
@@ -215,7 +217,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
                  "-vf", "scale=trunc(iw*sar/2)*2:ih,setsar=1,scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
                  "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
                  "-movflags", "+faststart", temporary], TimeSpan.FromMinutes(5), cancellationToken).ConfigureAwait(false);
-            File.Move(temporary, output);
+            File.Move(temporary, output, true);
             foreach (string old in Directory.EnumerateFiles(PreviewFolder, prefix + "*.mp4"))
                 if (old != output && !old.EndsWith(".making.mp4", StringComparison.Ordinal)) TryDelete(old);
             return name;
@@ -330,8 +332,9 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         }
 
         List<SqueezeClip> clips = [];
-        TimeSpan panelStart = SqueezeCanvas.Select(job.Canvases, job.CreditsAspect)?.Layers
-            .Where(layer => layer.Video?.Episode == SqueezeCanvas.Panel).Select(layer => layer.Start).DefaultIfEmpty(TimeSpan.Zero).Min() ?? PromoStart;
+        var panelCanvas = SqueezeCanvas.Select(job.Canvases, job.CreditsAspect);
+        TimeSpan panelStart = panelCanvas is null ? PromoStart : panelCanvas.Layers
+            .Where(layer => layer.Video?.Episode == SqueezeCanvas.Panel).Select(layer => layer.Start).DefaultIfEmpty(TimeSpan.Zero).Min() * panelCanvas.TimingScale(job.Length);
         TimeSpan room = job.Length - panelStart;
         if (job.Panel == SqueezePanel.PromoThenCommercials && job.PromoPath is { } promo && job.PromoLength > TimeSpan.Zero)
         {

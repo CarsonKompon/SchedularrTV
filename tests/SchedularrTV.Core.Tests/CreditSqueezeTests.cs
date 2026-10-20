@@ -13,6 +13,39 @@ public sealed class CreditSqueezeTests
     private static readonly DateTimeOffset Noon = new(2026, 10, 5, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public void Detected_interval_replaces_only_credits_and_preserves_post_credit_scenes()
+    {
+        var day = Day();
+        var settings = new CreditSqueezeSection { AutoDetectCredits = true, AssumedCreditsSeconds = 120, OutroChance = 0 };
+        var detected = new CreditsInterval(TimeSpan.FromMinutes(20) + TimeSpan.FromSeconds(45), TimeSpan.FromMinutes(21) + TimeSpan.FromSeconds(20));
+        var plans = SqueezePlanner.Plan(day, "toons", "Toons", TimeZoneInfo.Utc, _ => settings, _ => null,
+            detectedCredits: (entry, _) => ReferenceEquals(entry, day[0]) ? detected : null);
+        var plan = Assert.Single(plans);
+        Assert.Equal(TimeSpan.FromSeconds(35), plan.Job.Length);
+        Assert.True(plan.Job.DetectedCredits);
+        Assert.Equal(TimeSpan.Zero, plan.Job.MaxExtra);
+        var result = SqueezePlanner.Apply(day, plans, _ => "squeeze.mp4", _ => TimeSpan.FromSeconds(50));
+        int index = result.FindIndex(entry => entry.Source == "credit squeeze");
+        Assert.Equal(day[0].Start + detected.Start, result[index].Start);
+        Assert.Equal(TimeSpan.FromSeconds(35), result[index].Duration);
+        Assert.Equal(detected.End, result[index + 1].InPoint);
+        Assert.Equal(day[0].Duration - detected.End, result[index + 1].Duration);
+        Assert.Equal(day.Sum(entry => entry.Duration.Ticks), result.Sum(entry => entry.Duration.Ticks));
+        Assert.Empty(SqueezePlanner.Plan(day, "toons", "Toons", TimeZoneInfo.Utc, _ => settings, _ => TimeSpan.FromMinutes(21),
+            detectedCredits: (_, _) => null));
+    }
+
+    [Fact]
+    public void Custom_outros_remain_available_without_an_ocr_interval()
+    {
+        var settings = new CreditSqueezeSection { AutoDetectCredits = true };
+        var plans = SqueezePlanner.Plan(Day(), "toons", "Toons", TimeZoneInfo.Utc, _ => settings, _ => null,
+            detectedCredits: (_, _) => null);
+        Assert.True(Assert.Single(plans).WholeEntry);
+        Assert.False(plans[0].Job.DetectedCredits);
+    }
+
+    [Fact]
     public void Preview_source_identity_names_the_actual_show_episode_and_custom_outro()
     {
         var episode = new MediaItem { Id = "test", Title = "Help Wanted", SeriesName = "SpongeBob SquarePants", SeasonNumber = 1, EpisodeNumber = 1 };

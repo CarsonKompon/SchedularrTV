@@ -4,6 +4,7 @@
 @inject ScheduleCoordinator Coordinator
 @inject CreditSqueezeSettings Settings
 @inject TesseractSetup OcrSetup
+@inject CreditsDetection Detection
 @inject SchedularrTV.Service.Editor.TemplateAssets TemplateFiles
 @implements IDisposable
 
@@ -16,8 +17,8 @@
         <summary><Icon Name="book" /> How credit squeezes work</summary>
         <p class="hint">
             As the end credits roll, they shrink into a box and the rest of the picture says what's on next, with its picture and time.
-            Credits are found from chapters named for them, or Jellyfin's media segments (Jellyfin 10.10 and newer, with a segment provider such as
-            Intro Skipper). A show's own outro (an end card played after its episode) can be squeezed too.
+            Automatic OCR detection finds an interval in the original ending. With detection off, credits chapters or media-server markers can be used instead.
+            A show's own outro (an end card played after its episode) can be squeezed too and takes priority when selected.
         </p>
         </details>
         <div class="grid grid-2">
@@ -294,6 +295,14 @@
                 <button class="btn btn-sm btn-primary" type="button" title="@PreviewButton" disabled="@(_previewing || _installingOcr || _checkingOcr)" @onclick="() => RenderPreviewAsync(section)">
                     <Icon Name="play" />@(_previewing ? (_makingPromo ? "Making panel promo…" : "Rendering…") : "Render preview")
                 </button>
+                @if (section.AutoDetectCredits || look.Canvases.Any(canvas => canvas.UsesCreditsText))
+                {
+                    <button class="btn btn-sm" type="button" disabled="@(_previewing || _installingOcr || Settings.HasQualityModels)"
+                            title="Install official higher-accuracy Tesseract LSTM models" @onclick="() => _qualityPrompt = true">
+                        <Icon Name="download" />@(Settings.HasQualityModels ? "Accuracy models installed" : "Improve OCR models")
+                    </button>
+                    <span class="pill pill-muted" title="OCR profile; change it in the Credit squeeze plugin settings">@Settings.OcrProfile</span>
+                }
                 @if (_previewProblem is { } previewProblem)
                 {
                     <span class="hint warn" role="alert" style="margin:0;">@previewProblem</span>
@@ -303,6 +312,18 @@
                     <span class="hint" role="status" style="margin:0;">@previewNote</span>
                 }
             </div>
+            @if (_qualityPrompt)
+            {
+                <section class="studio-section" aria-label="Install higher-accuracy OCR models">
+                    <h3>Higher-accuracy OCR models</h3>
+                    <p class="hint">Download official tessdata_best language models for @Settings.Ocr.Language? They are larger and slower per image than the fast models, but can read difficult fonts more accurately. Balanced/accurate mode uses them for the transcript; boundary scanning stays single-pass. Tesseract itself will also be installed if needed and supported on this computer.</p>
+                    <div class="row row-wrap">
+                        <button type="button" class="btn btn-primary" disabled="@_installingOcr" @onclick="() => InstallQualityAndPreview(section)">@(_installingOcr ? "Downloading…" : "Download models & retry")</button>
+                        <button type="button" class="btn btn-sm" @onclick="() => { if (_installingOcr) _ocrInstallStop?.Cancel(); else _qualityPrompt = false; }">Cancel</button>
+                    </div>
+                    @if (_ocrProgress is not null) { <p class="hint" role="status">@_ocrProgress</p> }
+                </section>
+            }
             @if (_previewJob is { } inspected)
             {
                 <div class="cs-preview-source" role="status">
@@ -375,6 +396,18 @@
                     <p class="hint">This is the recognized source text, not generated copy. @transcript.RejectedDetections noisy or low-confidence detections were removed across the sampled frames. @transcript.UncertainLines retained lines have low OCR confidence.
                         Even high-confidence OCR can misread small or stylized names. Page size and the text layer's timing determine how it appears.</p>
                     <pre style="white-space:pre-wrap;max-height:360px;overflow:auto;">@string.Join("\n", transcript.Lines.Select(line => line.Text))</pre>
+                    @if (transcript.Statistics is { } stats)
+                    {
+                        <p class="hint">Recorded transcript scan: @stats.UniqueFrames unique frames from @stats.SampledFrames samples; @stats.RecognizerProcesses OCR process(es), @stats.RetryFrames retried frames, @stats.CachedFrames cached frame reads. @stats.Model · @((stats.ElapsedMilliseconds / 1000d).ToString("0.0"))s.</p>
+                        @if (stats.ConsensusCorrections > 0)
+                        {
+                            <p class="hint">@stats.ConsensusCorrections uncertain scrolling readings were replaced by clearer observations of the same moving rows.</p>
+                        }
+                    }
+                    @if (transcript.Samples is { } classified)
+                    {
+                        <p class="hint">Layout samples: @classified.Count(sample => sample.Layout == CreditsLayoutKind.Card) cards · @classified.Count(sample => sample.Layout == CreditsLayoutKind.Scroll) scrolling. Layout is evaluated per section, so either order is supported.</p>
+                    }
                     <p class="hint">Fixed-size pages are spread over the layer's duration. “Match original scans” keeps the original line groups and sampled timing. Compare the wording with the original ending above.</p>
                     @if (transcript.Pages is { Count: > 0 } pages)
                     {
@@ -470,12 +503,15 @@
             }
             <details class="studio-section">
             <summary><Icon Name="clock" /> Frequency &amp; detection · @(Block is null ? "channel" : "block")</summary>
+            <label class="check"><input type="checkbox" checked="@section.AutoDetectCredits" @onchange="e => Set(() => section.AutoDetectCredits = e.Value is true)" />Detect actual credits start and end with OCR</label>
+            <p class="hint">For episodes without a selected custom outro, automatic mode analyzes the ending in the background. No reliable interval means no squeeze. Post-credit footage is preserved. Fallback text is not evidence that credits exist.</p>
             <label class="field"><span>Episodes' end credits: @Percent(section.CreditsChance)</span>
                 <input type="range" min="0" max="1" step="0.05" value="@section.CreditsChance.ToString(CultureInfo.InvariantCulture)"
                        @onchange="e => Set(() => section.CreditsChance = Number(e, 1))" /></label>
             <div class="grid grid-2">
-                <label class="field"><span>Episodes without known credits: squeeze their last (seconds)</span>
+                <label class="field"><span>Manual fallback: squeeze last (seconds; only with detection off)</span>
                     <input type="number" min="0" max="600" step="5" value="@section.AssumedCreditsSeconds?.ToString(CultureInfo.InvariantCulture)" placeholder="@AssumedPlaceholder"
+                           disabled="@section.AutoDetectCredits"
                            @onchange="e => Set(() => section.AssumedCreditsSeconds = Seconds(e))" /></label>
                 <label class="field"><span>Leave credits longer than (minutes) as they are</span>
                     <input type="number" min="1" max="15" value="@section.LongestCredits.TotalMinutes.ToString("0.#", CultureInfo.InvariantCulture)"
@@ -523,6 +559,14 @@
 
     <div class="card studio-scope">
         <div class="card-head"><Icon Name="activity" /><h2>Rendering status</h2></div>
+        @if (Detection.Pending > 0)
+        {
+            <p class="hint" role="status">@Detection.Pending episode(s) waiting for credits-boundary detection.</p>
+        }
+        @if (Detection.LastProblem is { } detectionProblem)
+        {
+            <p class="hint warn">Credits detection: @detectionProblem</p>
+        }
         @{
             SqueezeQueueStatus status = Renderer.Status;
             (int marked, int asked) = Credits.Coverage();
@@ -616,6 +660,7 @@
         }
     }
     private bool _ocrPrompt, _installingOcr, _checkingOcr;
+    private bool _qualityPrompt;
     private string? _ocrProblem, _ocrProgress;
     private CancellationTokenSource? _ocrInstallStop;
 
@@ -640,6 +685,26 @@
         }
         finally { _installingOcr = false; _ocrInstallStop.Dispose(); _ocrInstallStop = null; }
         if (!_ocrPrompt && !_stop.IsCancellationRequested && ReferenceEquals(section, _section)) await RenderPreviewAsync(section);
+    }
+
+    private async Task InstallQualityAndPreview(CreditSqueezeSection section)
+    {
+        if (_installingOcr) return;
+        _installingOcr = true;
+        _ocrInstallStop = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
+        try
+        {
+            await OcrSetup.InstallQualityModelsAsync(new Progress<string>(message =>
+            {
+                if (!_stop.IsCancellationRequested) _ = InvokeAsync(() => { _ocrProgress = message; StateHasChanged(); });
+            }), _ocrInstallStop.Token);
+            _qualityPrompt = false; _ocrPrompt = false; _ocrProgress = null;
+        }
+        catch (OperationCanceledException) { _ocrProgress = "Model download cancelled."; }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidOperationException or UnauthorizedAccessException)
+        { _ocrProgress = $"Couldn't install accuracy models: {ex.Message}"; }
+        finally { _installingOcr = false; _ocrInstallStop.Dispose(); _ocrInstallStop = null; }
+        if (!_qualityPrompt && !_stop.IsCancellationRequested && ReferenceEquals(section, _section)) await RenderPreviewAsync(section);
     }
 
     private const string OwnMode = "own";
@@ -760,15 +825,20 @@
     /// <summary>Keeps the lookup and render status current while the tab is open.</summary>
     private async Task RefreshAsync()
     {
+        int detectionPending = -1;
+        string? detectionProblem = null;
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
         try
         {
             while (await timer.WaitForNextTickAsync(_stop.Token))
             {
                 CreditsLookupStatus now = Credits.Status();
-                if (now != _lookup || now.Waiting > 0 || Renderer.Status.Rendering is not null)
+                if (now != _lookup || now.Waiting > 0 || Renderer.Status.Rendering is not null || Detection.Pending > 0
+                    || detectionPending != Detection.Pending || detectionProblem != Detection.LastProblem)
                 {
                     _lookup = now;
+                    detectionPending = Detection.Pending;
+                    detectionProblem = Detection.LastProblem;
                     await InvokeAsync(StateHasChanged);
                 }
             }
@@ -794,7 +864,7 @@
     {
         if (!status.CanAsk)
         {
-            return "No media server is being asked where credits start (none that can say is set up, or asking is off in the plugin's settings), so only chapters named Credits are used.";
+            return "No media-server credits lookup is enabled. OCR auto-detection can still analyze source files; manual mode can use chapters named Credits.";
         }
 
         string known = $"Your media server knows where the credits start for {status.Marked} of the {status.Asked} episodes asked about.";
@@ -1387,7 +1457,7 @@
                 SqueezePlanner.PreviewSource.Outro => $"From {show}'s own outro.",
                 SqueezePlanner.PreviewSource.Credits => "From an episode's marked credits.",
                 SqueezePlanner.PreviewSource.Assumed => $"From the last {AssumedText(trial)} of an episode, as its credits aren't known.",
-                _ => Credits.Status().Waiting > 0
+                _ => section.AutoDetectCredits ? "No stored credits marker; OCR will search the source ending for the actual interval." : Credits.Status().Waiting > 0
                     ? "From the end of an episode: Jellyfin is still being asked where its credits start."
                     : "From the end of an episode: its credits aren't known, so it's only squeezed on air if you set how much of the end to squeeze (under How often)."
             };
@@ -1408,7 +1478,8 @@
                 }
 
                 plan = any.Plan;
-                _previewNote = $"No credits are known on the schedule yet, so this is the end of a {first} episode.";
+                _previewNote = section.AutoDetectCredits ? $"Searching the ending of {first} for its actual credits interval."
+                    : $"No credits are known on the schedule yet, so this is the end of a {first} episode.";
             }
         }
 
@@ -1445,7 +1516,9 @@
                 _sourcePreviewProblem = $"Couldn't prepare the original ending: {ex.Message}";
             }
             StateHasChanged();
-            if (readsCredits)
+            bool detectCredits = section.AutoDetectCredits && !plan.WholeEntry;
+            bool needsDetectionTools = detectCredits && Detection.Known(job.SourcePath, job.SourceDuration, job.Recognition) is null;
+            if (readsCredits || detectCredits)
             {
                 _checkingOcr = true;
                 try
@@ -1454,9 +1527,45 @@
                     if (generation != _previewGeneration) return;
                     _ocrPrompt = !availability.Ready;
                     _ocrProblem = availability.Problem;
-                    if (!availability.Ready && !trial.Canvases.Where(canvas => canvas.UsesCreditsText).All(canvas => canvas.HasCreditsTextFallback)) return;
+                    if (!availability.Ready && (needsDetectionTools || !trial.Canvases.Where(canvas => canvas.UsesCreditsText).All(canvas => canvas.HasCreditsTextFallback))) return;
                 }
                 finally { _checkingOcr = false; }
+            }
+            if (detectCredits)
+            {
+                _previewNote = "Detecting the source credits interval…";
+                StateHasChanged();
+                var detected = await Detection.DetectAsync(job.SourcePath, job.SourceDuration, job.Recognition, _stop.Token);
+                if (generation != _previewGeneration) return;
+                _previewNote = detected.Message;
+                if (detected.Interval is not { } interval)
+                {
+                    _previewProblem = $"{SourceLabel(job)}: {detected.Message}";
+                    if (job.SourceDuration > TimeSpan.Zero)
+                    {
+                        TimeSpan window = job.SourceDuration < Settings.DetectionWindow ? job.SourceDuration : Settings.DetectionWindow;
+                        var inspectedWindow = job with { SourceStart = job.SourceDuration - window, Length = window };
+                        _previewJob = inspectedWindow;
+                        _sourcePreviewUrl = null;
+                        StateHasChanged();
+                        try
+                        {
+                            string originalWindow = await Renderer.SourcePreviewAsync(inspectedWindow, Channel.Id, _stop.Token);
+                            if (generation != _previewGeneration) return;
+                            _sourcePreviewUrl = $"api/credit-squeeze/preview/{Uri.EscapeDataString(originalWindow)}";
+                        }
+                        catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+                        { _sourcePreviewProblem = $"Couldn't prepare the scanned ending: {ex.Message}"; }
+                    }
+                    return;
+                }
+                job = Renderer.ForChannel(job with { SourceStart = interval.Start, Length = interval.Length,
+                    DetectedCredits = true, MaxExtra = TimeSpan.Zero, Extra = TimeSpan.Zero, FitToPromo = false }, Channel);
+                _previewJob = job;
+                string original = await Renderer.SourcePreviewAsync(job, Channel.Id, _stop.Token);
+                if (generation != _previewGeneration) return;
+                _sourcePreviewUrl = $"api/credit-squeeze/preview/{Uri.EscapeDataString(original)}";
+                StateHasChanged();
             }
             CreditsOcrResult? creditsResult = null;
             string name = await Renderer.PreviewAsync(job, Channel.Id, _stop.Token, result => creditsResult = result);

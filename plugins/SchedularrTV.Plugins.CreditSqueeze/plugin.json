@@ -78,11 +78,26 @@
       "description": "Installed Tesseract language codes, for example eng or eng+fra. OCR preserves recognized wording; small or stylized text can be misread, so check a preview."
     },
     {
+      "key": "OcrProfile",
+      "label": "OCR quality / speed",
+      "type": "Choice",
+      "default": "balanced",
+      "options": [ "fast", "balanced", "accurate" ],
+      "description": "Fast uses one pass. Balanced uses higher-accuracy models when installed and retries weak frames once. Accurate also tries automatic page segmentation on weak frames. Install accuracy models from the channel's preview controls. Boundary scanning stays single-pass."
+    },
+    {
       "key": "OcrSampleSeconds",
       "label": "Read a credits frame every (seconds)",
       "type": "Number",
       "placeholder": "1",
-      "description": "1 to 5. Use 1 for scrolling or fast-changing credits. Larger values are faster but may miss brief text. Results are cached per source segment."
+      "description": "1 to 5 for manually selected segments. Use 1 for scrolling or fast-changing credits. Automatic boundary detection refines and reads its selected credits at one-second intervals. Results are cached per source segment."
+    },
+    {
+      "key": "DetectionWindowMinutes",
+      "label": "Search for credits in the last (minutes)",
+      "type": "Number",
+      "placeholder": "5",
+      "description": "1 to 15. Automatic detection uses a coarse ending scan, then refines a credible interval at one-second precision. Uncertain episodes are left unchanged."
     }
   ]
 }

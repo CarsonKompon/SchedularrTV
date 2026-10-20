@@ -77,6 +77,9 @@ public sealed record SqueezeJob(
     /// <summary>Human-readable source identity for editor diagnostics; not part of the render cache.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public string? SourceLabel { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public TimeSpan SourceDuration { get; init; }
+    public bool DetectedCredits { get; init; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
     public bool CanvasCrop { get; init; }
 
@@ -123,7 +126,8 @@ public static class SqueezePlanner
         Func<ScheduleEntry, CreditSqueezeSection?> settings,
         Func<MediaItem, TimeSpan?> creditsOf,
         CreditSqueezeSection? everywhere = null,
-        TimeSpan assumedCredits = default)
+        TimeSpan assumedCredits = default,
+        Func<ScheduleEntry, CreditSqueezeSection, CreditsInterval?>? detectedCredits = null)
     {
         List<SqueezePlan> plans = [];
         for (int index = 0; index < entries.Count; index++)
@@ -158,15 +162,18 @@ public static class SqueezePlanner
                 }
 
                 TimeSpan end = entry.InPoint + entry.Duration;
-                TimeSpan? known = creditsOf(item) ?? Assumed(entry, item, section.AssumedCredits(assumedCredits));
-                if (known is not { } credits || credits < entry.InPoint + LeastBefore || credits >= end
-                    || end - credits > section.LongestCredits || !Rolls(channelId, entry, "credits", section.CreditsChance))
+                bool automatic = section.AutoDetectCredits && detectedCredits is not null;
+                CreditsInterval? detected = automatic ? detectedCredits!(entry, section) : null;
+                TimeSpan? known = automatic ? detected?.Start : creditsOf(item) ?? Assumed(entry, item, section.AssumedCredits(assumedCredits));
+                TimeSpan finish = detected?.End ?? end;
+                if (known is not { } credits || credits < entry.InPoint + (automatic ? TimeSpan.Zero : LeastBefore) || credits >= finish || finish > end
+                    || finish - credits > section.LongestCredits || !Rolls(channelId, entry, "credits", section.CreditsChance))
                 {
                     continue;
                 }
 
                 from = credits;
-                length = end - credits;
+                length = finish - credits;
             }
 
             if (length < Shortest)
@@ -174,7 +181,10 @@ public static class SqueezePlanner
                 continue;
             }
 
-            plans.Add(Build(entries, index, next, from, length, whole, section, everywhere, channelId, channelName, zone));
+            var plan = Build(entries, index, next, from, length, whole, section, everywhere, channelId, channelName, zone);
+            if (!whole && section.AutoDetectCredits && detectedCredits is not null)
+                plan = plan with { Job = plan.Job with { DetectedCredits = true, MaxExtra = TimeSpan.Zero } };
+            plans.Add(plan);
         }
 
         return plans;
@@ -248,7 +258,7 @@ public static class SqueezePlanner
             make?.Select(made => look.HeadingFor(made)).ToList(),
             BreakRoom(entries, index, next), Panel: look.Panel, Commercials: commercials)
             { Canvases = look.UseCanvas ? look.Canvases.Select(canvas => canvas.Copy()).ToList() : null, Recognition = look.Recognition.Normalized(),
-                SourceLabel = DescribeSource(item, whole) }, pending);
+                SourceLabel = DescribeSource(item, whole), SourceDuration = item.Duration }, pending);
     }
 
     public static string DescribeSource(MediaItem item, bool outro = false)
@@ -458,6 +468,7 @@ public static class SqueezePlanner
         Dictionary<int, TimeSpan?> breakChanges = [];
         foreach (SqueezePlan plan in plans)
         {
+            if (plan.Job.DetectedCredits || plan.From + plan.Job.Length < entries[plan.Index].InPoint + entries[plan.Index].Duration) continue;
             TimeSpan extra = extraOf?.Invoke(plan) ?? TimeSpan.Zero;
             if (extra <= TimeSpan.Zero || rendered(plan) is null || NextProgramme(entries, plan.Index) is not { } next)
             {
@@ -550,12 +561,16 @@ public static class SqueezePlanner
                 Source = "credit squeeze"
             };
 
-            if (!plan.WholeEntry)
+            if (!plan.WholeEntry && plan.From > entry.InPoint)
             {
                 result.Add(entry with { Duration = plan.From - entry.InPoint, IsTrimmed = true, SourceDuration = entry.SourceDuration ?? item.Duration });
             }
 
             result.Add(squeeze);
+            TimeSpan resume = plan.From + plan.Job.Length;
+            TimeSpan remaining = entry.InPoint + entry.Duration - resume;
+            if (remaining > TimeSpan.Zero)
+                result.Add(entry with { Start = squeeze.End, InPoint = resume, Duration = remaining, IsTrimmed = true, SourceDuration = entry.SourceDuration ?? item.Duration });
         }
 
         return result;

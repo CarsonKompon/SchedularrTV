@@ -22,6 +22,77 @@ public sealed class CreditsOcrTests : IDisposable
     private static CreditsOcrLine[] Lines(params string[] lines) => lines.Select(line => new CreditsOcrLine(line, 95)).ToArray();
 
     [Fact]
+    public async Task Anamorphic_video_is_normalized_before_ocr_so_fonts_keep_their_display_shape()
+    {
+        string source = FilePath("anamorphic.mp4");
+        await Run("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=white:s=160x120:r=10:d=1",
+            "-vf", "setsar=2", "-pix_fmt", "yuv420p", source);
+        var engine = new RecordingEngine();
+        using var ocr = new CreditsOcr(Settings, engine);
+        await ocr.ReadAsync(Job(source) with { Length = TimeSpan.FromSeconds(1) }, CancellationToken.None);
+        Assert.Equal((640, 240), Assert.Single(engine.Dimensions));
+    }
+
+    [Fact]
+    public async Task Detection_refines_real_sample_boundaries_and_primes_the_transcript_cache()
+    {
+        string source = FilePath("detect.mp4");
+        await Run("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=160x100:r=10:d=20",
+            "-vf", "drawbox=color=white:t=fill:enable='between(t,5,14.9)'", "-pix_fmt", "yuv420p", source);
+        var engine = new SegmentEngine();
+        using var ocr = new CreditsOcr(Settings, engine);
+        using var detector = new CreditsDetection(Settings, ocr, TimeProvider.System, NullLogger<CreditsDetection>.Instance);
+        int detectedEvents = 0;
+        detector.Found += () => detectedEvents++;
+        var result = await detector.DetectAsync(source, TimeSpan.FromSeconds(20), new(), CancellationToken.None);
+        Assert.NotNull(result.Interval);
+        Assert.InRange(result.Interval.Start.TotalSeconds, 4, 6);
+        Assert.InRange(result.Interval.End.TotalSeconds, 14, 16);
+        int calls = engine.Calls;
+        Assert.Equal(result, await detector.DetectAsync(source, TimeSpan.FromSeconds(20), new(), CancellationToken.None));
+        Assert.Equal(calls, engine.Calls);
+        Assert.Equal(1, detectedEvents);
+        var job = Job(source) with { SourceStart = result.Interval.Start, Length = result.Interval.Length,
+            CreditsOcr = Settings.Ocr with { Recognition = new(), SampleSeconds = 1 } };
+        var transcript = await ocr.ReadAsync(job, CancellationToken.None);
+        Assert.Contains(transcript.Lines, line => line.Text == "Alex Smith");
+        Assert.Equal(calls, engine.Calls);
+        File.SetLastWriteTimeUtc(source, File.GetLastWriteTimeUtc(source).AddSeconds(1));
+        Assert.Null(detector.Known(source, TimeSpan.FromSeconds(20), new()));
+    }
+
+    private sealed class SegmentEngine : ICreditsOcrEngine
+    {
+        public int Calls { get; private set; }
+        public Task<IReadOnlyList<CreditsOcrLine>> ReadAsync(string image, CreditsOcrOptions options, CancellationToken cancellationToken)
+        {
+            Calls++;
+            using var bitmap = SKBitmap.Decode(image);
+            IReadOnlyList<CreditsOcrLine> lines = bitmap.GetPixel(bitmap.Width / 2, bitmap.Height / 2).Red > 200
+                ? [new("Directed by", 96, new(.2, .5, .4, .04)), new("Alex Smith", 96, new(.2, .56, .4, .04))] : [];
+            return Task.FromResult(lines);
+        }
+    }
+
+    [Fact]
+    public async Task A_single_recurring_fragment_is_not_cached_or_reported_as_success()
+    {
+        string source = await MakeSource();
+        using var ocr = new CreditsOcr(Settings, new FragmentEngine());
+        var job = Job(source) with { Length = TimeSpan.FromSeconds(1) };
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => ocr.ReadAsync(job, CancellationToken.None));
+        Assert.Contains("too little reliable text", error.Message);
+        Assert.Empty(Directory.GetFiles(Path.Combine(Settings.SaveFolder, "_credits-text"), "*.json"));
+        Assert.True((await ocr.ReadForCanvasAsync(job, FallbackCanvas(), CancellationToken.None)).UsedFallback);
+    }
+
+    private sealed class FragmentEngine : ICreditsOcrEngine
+    {
+        public Task<IReadOnlyList<CreditsOcrLine>> ReadAsync(string image, CreditsOcrOptions options, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<CreditsOcrLine>>([new("reg", 98)]);
+    }
+
+    [Fact]
     public async Task Canvas_file_video_preview_seeks_real_frames_caches_them_and_obeys_loop_and_hold()
     {
         string source = await MakeSource();
@@ -255,6 +326,7 @@ public sealed class CreditsOcrTests : IDisposable
     public void Credits_text_is_independent_of_video_and_does_not_interpret_recognized_tokens()
     {
         var canvas = SqueezeCanvas.Create("4:3");
+        canvas.TimelineSeconds = Job().Length.TotalSeconds;
         canvas.Layers.Clear();
         canvas.Layers.Add(new GeneratedLayer
         {
@@ -280,7 +352,10 @@ public sealed class CreditsOcrTests : IDisposable
         using var ocr = new CreditsOcr(Settings, engine);
         var job = Job(source) with { SourceStart = TimeSpan.FromSeconds(1.2), Length = TimeSpan.FromSeconds(1.6) };
         var results = await Task.WhenAll(ocr.ReadAsync(job, CancellationToken.None), ocr.ReadAsync(job, CancellationToken.None));
-        Assert.Equal(2, engine.Calls);
+        Assert.Equal(1, engine.Calls); // repeated static frames are recognized once
+        var statistics = Assert.IsType<CreditsOcrStatistics>(results[0].Statistics);
+        Assert.Equal(2, statistics.SampledFrames);
+        Assert.Equal(1, statistics.UniqueFrames);
         Assert.All(engine.Brightness, brightness => Assert.True(brightness > 240, "OCR must receive the white credits segment, not the earlier black programme."));
         Assert.Equal(["Cast", "Alex Doe"], results[0].Lines.Select(line => line.Text));
         Assert.Equal(results[0].Lines, results[1].Lines);
@@ -292,9 +367,9 @@ public sealed class CreditsOcrTests : IDisposable
 
         // A different layout must reuse OCR, while a different language must read it again.
         await ocr.ReadAsync(job with { Canvases = [SqueezeCanvas.Create("1:1")] }, CancellationToken.None);
-        Assert.Equal(2, engine.Calls);
+        Assert.Equal(1, engine.Calls);
         await ocr.ReadAsync(job with { CreditsOcr = Settings.Ocr with { Language = "fra" } }, CancellationToken.None);
-        Assert.Equal(4, engine.Calls);
+        Assert.Equal(2, engine.Calls);
     }
 
     [Fact]
@@ -403,12 +478,14 @@ public sealed class CreditsOcrTests : IDisposable
         public bool Empty { get; set; }
         public Action? OnRead { get; set; }
         public List<byte> Brightness { get; } = [];
+        public List<(int Width, int Height)> Dimensions { get; } = [];
         public async Task<IReadOnlyList<CreditsOcrLine>> ReadAsync(string image, CreditsOcrOptions options, CancellationToken cancellationToken)
         {
             Calls++;
             OnRead?.Invoke();
             cancellationToken.ThrowIfCancellationRequested();
             using var bitmap = SKBitmap.Decode(await File.ReadAllBytesAsync(image, cancellationToken));
+            Dimensions.Add((bitmap.Width, bitmap.Height));
             Brightness.Add(bitmap.GetPixel(bitmap.Width / 2, bitmap.Height / 2).Red);
             return Empty ? [] : Lines("Cast", "Alex Doe");
         }

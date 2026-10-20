@@ -15,6 +15,9 @@ public sealed class SqueezeCanvas
 
     public string AspectRatio { get; set; } = "16:9";
     public string BackgroundColor { get; set; } = "#000000";
+    /// <summary>Reference length used when authoring layer timings and keyframes; actual playback follows the source credits.</summary>
+    public double TimelineSeconds { get; set; } = 60;
+    public bool FitTimingToCredits { get; set; } = true;
     public List<GeneratedLayer> Layers { get; set; } = [];
     [System.Text.Json.Serialization.JsonIgnore, YamlDotNet.Serialization.YamlIgnore]
     public int Height => 720;
@@ -60,11 +63,11 @@ public sealed class SqueezeCanvas
         return result;
     }
 
-    private static IReadOnlyList<PromoTextPage> TextPages(GeneratedLayer layer, SqueezeJob job)
+    private static IReadOnlyList<PromoTextPage> TextPages(GeneratedLayer layer, SqueezeJob job, double timingScale)
     {
         var credits = layer.CreditsText!;
-        TimeSpan start = layer.Start > TimeSpan.Zero ? layer.Start : TimeSpan.Zero;
-        TimeSpan end = layer.End is { } stop && stop < job.Length ? stop : job.Length;
+        TimeSpan start = layer.Start > TimeSpan.Zero ? layer.Start * timingScale : TimeSpan.Zero;
+        TimeSpan end = layer.End is { } stop && stop * timingScale < job.Length ? stop * timingScale : job.Length;
         if (end <= start) return [];
         IReadOnlyList<PromoTextPage> pages;
         if (credits.MatchSourcePages && job.OcrTranscript is { UsedFallback: false, Pages.Count: > 0 } source)
@@ -100,6 +103,11 @@ public sealed class SqueezeCanvas
     }
 
     public SqueezeCanvas Copy() => JsonSerializer.Deserialize<SqueezeCanvas>(JsonSerializer.Serialize(this))!;
+    public double TimingScale(TimeSpan duration)
+    {
+        double reference = double.IsFinite(TimelineSeconds) ? Math.Clamp(TimelineSeconds, 1, 900) : 60;
+        return FitTimingToCredits ? duration.TotalSeconds / reference : 1;
+    }
 
     /// <summary>Prefer the source's shape; a lone canvas always wins, otherwise use the nearest shape.</summary>
     public static SqueezeCanvas? Select(IReadOnlyList<SqueezeCanvas>? canvases, double? sourceAspect) =>
@@ -107,6 +115,7 @@ public sealed class SqueezeCanvas
 
     public PromoComposition Compose(SqueezeJob job, int outputHeight = 720)
     {
+        double timingScale = TimingScale(job.Length);
         float scale = Math.Clamp(outputHeight, 144, 2160) / (float)Height;
         SKRect Bounds(float x, float y, float width, float height) => SKRect.Create(x * scale, y * scale, Math.Max(2, width * scale), Math.Max(2, height * scale));
         List<PromoLayer> layers = [];
@@ -127,7 +136,7 @@ public sealed class SqueezeCanvas
                 GeneratedLayerKind.Text => new PromoTextLayer
                 {
                     Bounds = bounds, Lines = item.CreditsText is null ? GeneratedTextStyle.Cased(Tokens(item.Text ?? "", job), item.TextCase).Split('\n') : [], Color = Color(item.Color),
-                    Pages = item.CreditsText is not null ? TextPages(item, job) : null,
+                    Pages = item.CreditsText is not null ? TextPages(item, job, timingScale) : null,
                     FontFamily = item.FontFamily, MaxFontSize = item.FontSize * scale, Bold = item.Bold,
                     FontWeight = item.FontWeight, Italic = item.Italic,
                     Shadow = item.Shadow ? new SKColor(0, 0, 0, 160) : null,
@@ -154,10 +163,10 @@ public sealed class SqueezeCanvas
             layer = layer with
             {
                 Id = index.ToString(CultureInfo.InvariantCulture),
-                Start = item.Start, End = item.End, In = (PromoTransition)item.TransitionIn, Out = (PromoTransition)item.TransitionOut,
-                TransitionDuration = item.TransitionDuration, TransitionOutDuration = item.TransitionOutDuration,
+                Start = item.Start * timingScale, End = item.End * timingScale, In = (PromoTransition)item.TransitionIn, Out = (PromoTransition)item.TransitionOut,
+                TransitionDuration = item.TransitionDuration * timingScale, TransitionOutDuration = item.TransitionOutDuration * timingScale,
                 Opacity = item.Opacity, Rotation = item.Rotation ?? 0,
-                Keyframes = item.Keyframes?.OrderBy(key => key.At).Select(key => new PromoKeyframe(key.At,
+                Keyframes = item.Keyframes?.OrderBy(key => key.At).Select(key => new PromoKeyframe(key.At * timingScale,
                     Bounds(key.X, key.Y, key.Width, key.Height), key.Opacity, (PromoEasing)key.Easing, key.Rotation)).ToList()
             };
             layers.Add(layer);

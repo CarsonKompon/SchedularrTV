@@ -41,8 +41,12 @@ public static class CreditsOcrAnalysis
         {
             // Alternative OCR engines and old transcripts without geometry retain confidence-only behaviour.
             if (item.Line.Box is not { IsValid: true } box) return true;
-            if (item.Supported) return true;
             Detection[] sameText = occurrences[item.Identity];
+            // Scrolling names cut by the frame edge often become plausible-looking fragments.
+            // Keep them only if a nearby scan also sees that wording fully inside the picture.
+            if ((box.Top <= .003 || box.Bottom >= .997) && !sameText.Any(other => Math.Abs(other.Frame - item.Frame) is > 0 and <= 2
+                && other.Line.Box is { IsValid: true } whole && whole.Top > .003 && whole.Bottom < .997 && Tracks(box, whole))) return false;
+            if (item.Supported) return true;
             int stationaryFrames = sameText.Where(other => other.Line.Box is { IsValid: true } otherBox && Stationary(box, otherBox))
                 .Select(other => other.Frame).Distinct().Count();
             // A fixed, isolated mark while other credit groups change elsewhere is usually a watermark.

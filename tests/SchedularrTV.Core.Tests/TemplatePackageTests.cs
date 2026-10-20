@@ -370,6 +370,7 @@ public sealed class TemplatePackageTests : IDisposable
             Canvases = [SqueezeCanvas.Create("16:9"), SqueezeCanvas.Create("4:3")]
         };
         template.Canvases[0].BackgroundColor = "#123456";
+        template.Canvases[0].TimelineSeconds = 90;
         template.Canvases[0].Layers[0].Keyframes = [new() { Width = 1280, Height = 720 }, new() { At = TimeSpan.FromSeconds(1), X = 40, Width = 400, Height = 600, Easing = GeneratedEasing.EaseInOut }];
         template.Canvases[0].Layers.Add(new() { Kind = GeneratedLayerKind.Text, Text = "{next}", FontSize = 48, FontWeight = 600, Italic = true, X = 500, Width = 600, Height = 400,
             CreditsText = new() { FallbackText = "Thanks for watching {show}.", LinesPerPage = 5, MatchSourcePages = true } });
@@ -384,6 +385,8 @@ public sealed class TemplatePackageTests : IDisposable
         Assert.True(loaded.UseCanvas);
         Assert.Equal(2, loaded.Canvases.Count);
         Assert.Equal("#123456", loaded.Canvases[0].BackgroundColor);
+        Assert.Equal(90, loaded.Canvases[0].TimelineSeconds);
+        Assert.True(loaded.Canvases[0].FitTimingToCredits);
         Assert.Equal(40, loaded.Canvases[0].Layers[0].Keyframes![1].X);
         Assert.Equal(GeneratedEasing.EaseInOut, loaded.Canvases[0].Layers[0].Keyframes![1].Easing);
         Assert.Equal(48, loaded.Canvases[0].Layers[1].FontSize);

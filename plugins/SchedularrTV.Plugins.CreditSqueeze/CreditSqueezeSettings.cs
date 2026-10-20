@@ -35,10 +35,22 @@ public sealed class CreditSqueezeSettings(IPluginContext context)
     /// or block can set its own.
     /// </summary>
     public TimeSpan AssumedCredits => TimeSpan.FromSeconds(Number("AssumedCreditsSeconds", 0, 0, 600));
+    public TimeSpan DetectionWindow => TimeSpan.FromMinutes(Number("DetectionWindowMinutes", 5, 1, 15));
 
     public (int Width, int Height) Size => Value("Resolution") == "1080p" ? (1920, 1080) : (1280, 720);
 
     public string ManagedTesseractFolder => Path.Combine(DataDirectory, "tools", "tesseract");
+    public string QualityModelsFolder => Path.Combine(DataDirectory, "tools", "tesseract-best");
+    public string OcrProfile => Value("OcrProfile") is "fast" or "accurate" ? Value("OcrProfile")! : "balanced";
+    public bool HasQualityModels
+    {
+        get
+        {
+            if (!File.Exists(Path.Combine(QualityModelsFolder, ".ready"))) return false;
+            try { return TesseractSetup.Languages(Value("OcrLanguage") ?? "eng").All(language => File.Exists(Path.Combine(QualityModelsFolder, language + ".traineddata"))); }
+            catch (InvalidOperationException) { return false; }
+        }
+    }
     public string? ConfiguredTesseract => Value("TesseractPath");
     public CreditsOcrOptions Ocr
     {
@@ -60,7 +72,8 @@ public sealed class CreditSqueezeSettings(IPluginContext context)
                     .FirstOrDefault(File.Exists) ?? executable;
             }
             return new(executable, Value("OcrLanguage") ?? "eng", Number("OcrSampleSeconds", 1, 1, 5),
-                DataDirectory: downloaded ? Path.Combine(ManagedTesseractFolder, "tessdata") : null);
+                DataDirectory: downloaded ? Path.Combine(ManagedTesseractFolder, "tessdata") : null,
+                QualityDataDirectory: HasQualityModels ? QualityModelsFolder : null, Profile: OcrProfile);
         }
     }
 

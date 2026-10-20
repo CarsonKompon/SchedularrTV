@@ -5,27 +5,35 @@ namespace SchedularrTV.CreditSqueeze;
 /// <summary>Alternate input for outlined/condensed credit fonts, without changing recognized wording.</summary>
 public static class CreditsOcrPreprocessing
 {
+    public static bool IsBlank(SKBitmap source)
+    {
+        var pixels = source.Pixels;
+        if (pixels.Length == 0) return true;
+        var first = pixels[0];
+        return pixels.All(pixel => Math.Abs(pixel.Red - first.Red) <= 3 && Math.Abs(pixel.Green - first.Green) <= 3 && Math.Abs(pixel.Blue - first.Blue) <= 3);
+    }
+
     public static SKBitmap Contrast(SKBitmap source)
     {
         int[] histogram = new int[256];
         byte[] gray = new byte[source.Width * source.Height];
-        for (int y = 0; y < source.Height; y++)
-        for (int x = 0; x < source.Width; x++)
+        var pixels = source.Pixels;
+        for (int index = 0; index < pixels.Length; index++)
         {
-            var pixel = source.GetPixel(x, y);
+            var pixel = pixels[index];
             byte value = (byte)((54 * pixel.Red + 183 * pixel.Green + 19 * pixel.Blue) >> 8);
-            gray[y * source.Width + x] = value;
+            gray[index] = value;
             histogram[value]++;
         }
         int threshold = Threshold(histogram);
         bool invert = histogram.Take(threshold + 1).Sum() > gray.Length * .55;
         using var binary = new SKBitmap(source.Width, source.Height);
-        for (int y = 0; y < source.Height; y++)
-        for (int x = 0; x < source.Width; x++)
+        for (int index = 0; index < pixels.Length; index++)
         {
-            bool dark = gray[y * source.Width + x] <= threshold;
-            binary.SetPixel(x, y, dark != invert ? SKColors.Black : SKColors.White);
+            bool dark = gray[index] <= threshold;
+            pixels[index] = dark != invert ? SKColors.Black : SKColors.White;
         }
+        binary.Pixels = pixels;
         // Widen narrow display fonts; page-relative TSV coordinates still map to the same source.
         int width = Math.Min(2880, (int)Math.Round(source.Width * 1.5));
         return binary.Resize(new SKImageInfo(width, source.Height), new SKSamplingOptions(SKFilterMode.Linear))
@@ -57,9 +65,19 @@ public static class CreditsOcrPreprocessing
     public static bool NeedsRetry(IReadOnlyList<CreditsOcrLine> lines, int confidence)
     {
         var useful = lines.Where(line => CreditsOcrFiltering.Keep(line, confidence)).ToArray();
-        return Score(lines, confidence) < 80 || useful.Length == 0 || useful.Average(line => line.Confidence) < 85;
+        if (useful.Length == 0) return true;
+        double mean = useful.Average(line => line.Confidence);
+        bool clearShortCard = useful.Sum(line => line.Text.Count(char.IsLetter)) >= 8 && mean >= 90;
+        return (!CreditsOcrFiltering.Usable(useful) && !clearShortCard) || useful.Length < lines.Count * .6 || mean < 85
+            || useful.Any(line => line.Confidence < 75 && line.Text.Count(char.IsLetter) >= 8);
     }
 
-    public static IReadOnlyList<CreditsOcrLine> Prefer(IReadOnlyList<CreditsOcrLine> current, IReadOnlyList<CreditsOcrLine> alternative, int confidence) =>
-        Score(alternative, confidence) > Score(current, confidence) * 1.1 + 4 ? alternative : current;
+    public static IReadOnlyList<CreditsOcrLine> Prefer(IReadOnlyList<CreditsOcrLine> current, IReadOnlyList<CreditsOcrLine> alternative, int confidence)
+    {
+        double Mean(IReadOnlyList<CreditsOcrLine> lines) => lines.Where(line => CreditsOcrFiltering.Keep(line, confidence)).Select(line => line.Confidence).DefaultIfEmpty(0).Average();
+        double before = Score(current, confidence), after = Score(alternative, confidence);
+        bool moreEvidence = after > before * 1.1 + 4 && Mean(alternative) >= Mean(current) - 3;
+        bool clearer = Mean(alternative) > Mean(current) + 8 && after >= before * .75;
+        return moreEvidence || clearer ? alternative : current;
+    }
 }

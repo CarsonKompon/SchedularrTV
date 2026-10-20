@@ -24,6 +24,9 @@ public sealed class TesseractSetup(CreditSqueezeSettings settings) : IDisposable
         {
             string version = await CreditsOcrTools.RunAsync(options.Executable, ["--version"], TimeSpan.FromSeconds(8), cancellationToken);
             if (!version.Contains("tesseract", StringComparison.OrdinalIgnoreCase)) return new(false, "The configured executable is not Tesseract.");
+            var major = Regex.Match(version, @"tesseract\s+v?(\d+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            if (major.Success && int.TryParse(major.Groups[1].Value, out int number) && number < 4)
+                return new(false, "Tesseract 4 or newer is required for LSTM recognition and accuracy models.");
             List<string> args = ["--list-langs"];
             if (options.DataDirectory is { } data) args.AddRange(["--tessdata-dir", data]);
             string output = await CreditsOcrTools.RunAsync(options.Executable, args, TimeSpan.FromSeconds(8), cancellationToken);
@@ -93,6 +96,43 @@ public sealed class TesseractSetup(CreditSqueezeSettings settings) : IDisposable
             if (Directory.Exists(destination)) { backup = Path.Combine(work, "previous"); Directory.Move(destination, backup); }
             try { Directory.Move(extracted, destination); }
             catch { if (backup is not null) Directory.Move(backup, destination); throw; }
+        }
+        finally
+        {
+            try { if (work is not null && Directory.Exists(work)) Directory.Delete(work, true); }
+            finally { _gate.Release(); }
+        }
+    }
+
+    /// <summary>Official higher-accuracy LSTM models, installed separately from the fast scan models.</summary>
+    public async Task InstallQualityModelsAsync(IProgress<string>? progress, CancellationToken cancellationToken)
+    {
+        if (!(await CheckAsync(cancellationToken)).Ready) await InstallAsync(progress, cancellationToken);
+        await _gate.WaitAsync(cancellationToken);
+        string? work = null;
+        try
+        {
+            if (settings.HasQualityModels) return;
+            string parent = Path.Combine(settings.DataDirectory, "tools");
+            Directory.CreateDirectory(parent);
+            work = Path.Combine(parent, ".ocr-quality-" + Guid.NewGuid().ToString("N"));
+            string models = Path.Combine(work, "models");
+            Directory.CreateDirectory(models);
+            foreach (string language in Languages(settings.Ocr.Language))
+            {
+                progress?.Report($"Downloading higher-accuracy OCR model: {language}…");
+                string target = Path.Combine(models, language.Replace('/', Path.DirectorySeparatorChar) + ".traineddata");
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                await Download($"https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/4.1.0/{language}.traineddata", target, null, cancellationToken);
+            }
+            var status = await CheckAsync(settings.Ocr with { DataDirectory = models }, cancellationToken);
+            if (!status.Ready) throw new InvalidOperationException(status.Problem);
+            await File.WriteAllTextAsync(Path.Combine(models, ".ready"), "tessdata_best 4.1.0", cancellationToken);
+            string? old = null;
+            if (Directory.Exists(settings.QualityModelsFolder)) { old = Path.Combine(work, "previous"); Directory.Move(settings.QualityModelsFolder, old); }
+            try { Directory.Move(models, settings.QualityModelsFolder); }
+            catch { if (old is not null) Directory.Move(old, settings.QualityModelsFolder); throw; }
+            progress?.Report("Higher-accuracy models are ready. New OCR results will use them in balanced/accurate mode.");
         }
         finally
         {

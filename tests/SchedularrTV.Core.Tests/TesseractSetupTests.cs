@@ -2,10 +2,11 @@ using Microsoft.Extensions.Configuration;
 using SchedularrTV.CreditSqueeze;
 using SchedularrTV.Plugins;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace SchedularrTV.Core.Tests;
 
-public sealed class TesseractSetupTests : IDisposable
+public sealed class TesseractSetupTests(ITestOutputHelper output) : IDisposable
 {
     private readonly string _folder = Path.Combine(Path.GetTempPath(), "tesseract-setup-test-" + Guid.NewGuid().ToString("N"));
     public void Dispose() { if (Directory.Exists(_folder)) Directory.Delete(_folder, true); }
@@ -97,6 +98,47 @@ public sealed class TesseractSetupTests : IDisposable
         Assert.Contains("Matt Brown", string.Join(' ', stylized.Select(line => line.Text)));
         Assert.Contains("Michelle Smith", string.Join(' ', stylized.Select(line => line.Text)));
         Assert.Empty(Directory.GetFiles(_folder, ".ocr-contrast-*"));
+        string secondPath = Path.Combine(_folder, "second card.png");
+        using (var surface = SkiaSharp.SKSurface.Create(new SkiaSharp.SKImageInfo(1000, 260)))
+        {
+            surface.Canvas.Clear(SkiaSharp.SKColors.Black);
+            using var font = new SkiaSharp.SKFont(SkiaSharp.SKTypeface.Default, 70);
+            using var paint = new SkiaSharp.SKPaint { Color = SkiaSharp.SKColors.White, IsAntialias = true };
+            surface.Canvas.DrawText("Alex Smith", 40, 100, SkiaSharp.SKTextAlign.Left, font, paint);
+            surface.Canvas.DrawText("Jamie Roe", 40, 200, SkiaSharp.SKTextAlign.Left, font, paint);
+            using var image = surface.Snapshot();
+            using var data = image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+            await File.WriteAllBytesAsync(secondPath, data.ToArray(), timeout.Token);
+        }
+        string[] frames = Enumerable.Range(0, 12).Select(index => index % 2 == 0 ? imagePath : secondPath).ToArray();
+        var fast = new CreditSqueezeSettings(context).Ocr with { Profile = "fast" };
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        List<string> baseline = [];
+        foreach (string frame in frames) baseline.Add(string.Join(' ', (await new TesseractCreditsOcr().ReadAsync(frame, fast, timeout.Token)).Select(line => line.Text)));
+        long individualMs = timer.ElapsedMilliseconds;
+        timer.Restart();
+        var batched = await new TesseractCreditsOcr().ReadBatchAsync(frames, fast, timeout.Token);
+        long batchMs = timer.ElapsedMilliseconds;
+        Assert.Equal(1, batched.Processes);
+        Assert.Equal(12, batched.Frames.Count);
+        for (int index = 0; index < frames.Length; index++)
+            Assert.Equal(baseline[index], string.Join(' ', batched.Frames[index].Select(line => line.Text)));
+        output.WriteLine($"12-frame CLI benchmark: individual={individualMs}ms; batch={batchMs}ms; processes=12 -> {batched.Processes}.");
+
+        await setup.InstallQualityModelsAsync(null, timeout.Token);
+        var enhanced = new CreditSqueezeSettings(context).Ocr;
+        Assert.NotNull(enhanced.QualityDataDirectory);
+        timer.Restart();
+        var qualityEngine = new TesseractCreditsOcr();
+        var quality = await qualityEngine.ReadBatchAsync([imagePath, secondPath], enhanced, timeout.Token);
+        Assert.Equal("tessdata_best", quality.Model);
+        Assert.Contains("Matt Brown", string.Join(' ', quality.Frames[0].Select(line => line.Text)));
+        Assert.Contains("Alex Smith", string.Join(' ', quality.Frames[1].Select(line => line.Text)));
+        output.WriteLine($"Accuracy-model benchmark: {timer.ElapsedMilliseconds}ms for two synthetic cards, {quality.Processes} process(es), {quality.RetriedFrames} retries.");
+        var cached = await qualityEngine.ReadBatchAsync([imagePath, secondPath], enhanced, timeout.Token);
+        Assert.Equal(0, cached.Processes);
+        Assert.Equal(2, cached.CachedFrames);
+        Assert.Empty(Directory.GetFiles(_folder, ".ocr-input-*"));
         Assert.Empty(Directory.GetDirectories(Path.Combine(_folder, "tools"), ".tesseract-*"));
     }
 
