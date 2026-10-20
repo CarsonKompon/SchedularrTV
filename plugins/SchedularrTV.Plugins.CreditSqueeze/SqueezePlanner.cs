@@ -73,6 +73,7 @@ public sealed record SqueezeJob(
 
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<SqueezeCanvas>? Canvases { get; init; }
+    public CreditsRecognition Recognition { get; init; } = new();
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
     public bool CanvasCrop { get; init; }
 
@@ -243,7 +244,7 @@ public static class SqueezePlanner
             make, make is null ? null : channelId, make is null ? null : entries[index].BlockName, make is null ? default : entries[next].Start,
             make?.Select(made => look.HeadingFor(made)).ToList(),
             BreakRoom(entries, index, next), Panel: look.Panel, Commercials: commercials)
-            { Canvases = look.UseCanvas ? look.Canvases.Select(canvas => canvas.Copy()).ToList() : null }, pending);
+            { Canvases = look.UseCanvas ? look.Canvases.Select(canvas => canvas.Copy()).ToList() : null, Recognition = look.Recognition.Normalized() }, pending);
     }
 
     // How far ahead commercials for the panel are gathered from, and how many.

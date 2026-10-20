@@ -3,6 +3,7 @@
 @inject CreditsMarkers Credits
 @inject ScheduleCoordinator Coordinator
 @inject CreditSqueezeSettings Settings
+@inject TesseractSetup OcrSetup
 @inject SchedularrTV.Service.Editor.TemplateAssets TemplateFiles
 @implements IDisposable
 
@@ -269,7 +270,7 @@
             </div>
             }
             <div class="cs-render-bar">
-                <button class="btn btn-sm btn-primary" type="button" title="@PreviewButton" disabled="@_previewing" @onclick="() => RenderPreviewAsync(section)">
+                <button class="btn btn-sm btn-primary" type="button" title="@PreviewButton" disabled="@(_previewing || _installingOcr || _checkingOcr)" @onclick="() => RenderPreviewAsync(section)">
                     <Icon Name="play" />@(_previewing ? (_makingPromo ? "Making panel promo…" : "Rendering…") : "Render preview")
                 </button>
                 @if (_previewProblem is { } previewProblem)
@@ -281,6 +282,34 @@
                     <span class="hint" role="status" style="margin:0;">@previewNote</span>
                 }
             </div>
+            @if (_ocrPrompt)
+            {
+                <section class="studio-section" role="region" aria-label="Set up credits text recognition">
+                    <h3><Icon Name="download" /> Set up credits text recognition</h3>
+                    <p class="hint">@_ocrProblem</p>
+                    @if (OcrSetup.CanDownload)
+                    {
+                        <p class="hint">Download Tesseract and the @Settings.Ocr.Language language data to the scheduler computer? This uses an app-local copy, then retries your preview.</p>
+                        <div class="row row-wrap">
+                            <button type="button" class="btn btn-primary" disabled="@_installingOcr" @onclick="() => InstallOcrAndPreview(section)"><Icon Name="download" />@(_installingOcr ? "Setting up…" : "Download & retry preview")</button>
+                            @if (_installingOcr)
+                            {
+                                <button type="button" class="btn btn-sm" @onclick="() => _ocrInstallStop?.Cancel()">Cancel</button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-sm" @onclick="() => _ocrPrompt = false">Not now</button>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="hint">@OcrSetup.ManualInstructions</p>
+                        <button type="button" class="btn btn-sm" @onclick="() => RenderPreviewAsync(section)">Check again</button>
+                    }
+                    @if (_ocrProgress is not null) { <p class="hint" role="status">@_ocrProgress</p> }
+                </section>
+            }
             @if (_previewUrl is { } previewUrl)
             {
                 <video class="cs-video" src="@previewUrl" controls autoplay muted></video>
@@ -289,7 +318,7 @@
             {
                 <details class="studio-section">
                     <summary>Review OCR credits text (@transcript.Lines.Count lines from @transcript.Frames frames)</summary>
-                    <p class="hint">This is the recognized source text, not generated copy. @transcript.UncertainLines lines have low OCR confidence.
+                    <p class="hint">This is the recognized source text, not generated copy. @transcript.RejectedDetections noisy or low-confidence detections were removed across the sampled frames. @transcript.UncertainLines retained lines have low OCR confidence.
                         Even high-confidence OCR can misread small or stylized names. Page size and the text layer's timing determine how it appears.</p>
                     <pre style="white-space:pre-wrap;max-height:360px;overflow:auto;">@string.Join("\n", transcript.Lines.Select(line => line.Text))</pre>
                 </details>
@@ -495,6 +524,32 @@
     private void CommitCanvas() => Commit();
     private string? _canvasPreviewRatio;
     private CreditsOcrResult? _creditsTextPreview;
+    private bool _ocrPrompt, _installingOcr, _checkingOcr;
+    private string? _ocrProblem, _ocrProgress;
+    private CancellationTokenSource? _ocrInstallStop;
+
+    private async Task InstallOcrAndPreview(CreditSqueezeSection section)
+    {
+        if (_installingOcr) return;
+        _installingOcr = true;
+        _ocrInstallStop = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
+        try
+        {
+            await OcrSetup.InstallAsync(new Progress<string>(message =>
+            {
+                if (!_stop.IsCancellationRequested) _ = InvokeAsync(() => { _ocrProgress = message; StateHasChanged(); });
+            }), _ocrInstallStop.Token);
+            _ocrPrompt = false;
+            _ocrProgress = null;
+        }
+        catch (OperationCanceledException) { _ocrProgress = "Setup cancelled. You can retry when ready."; }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            _ocrProgress = $"Setup failed: {ex.Message}";
+        }
+        finally { _installingOcr = false; _ocrInstallStop.Dispose(); _ocrInstallStop = null; }
+        if (!_ocrPrompt && !_stop.IsCancellationRequested && ReferenceEquals(section, _section)) await RenderPreviewAsync(section);
+    }
 
     private const string OwnMode = "own";
     private const string InheritMode = "inherit";
@@ -1165,6 +1220,7 @@
     /// </summary>
     private async Task RenderPreviewAsync(CreditSqueezeSection section)
     {
+        if (_checkingOcr || _previewing) return;
         _creditsTextPreview = null;
         _previewProblem = null;
         _previewNote = null;
@@ -1178,6 +1234,19 @@
         CreditSqueezeSection trial = section.WithOnly(Look(section));
         if (trial.UseCanvas && _canvasPreviewRatio is { } ratio)
             trial.Canvases = trial.Canvases.Where(canvas => canvas.AspectRatio == ratio).ToList();
+        if (trial.UseCanvas && trial.Canvases.Any(canvas => canvas.UsesCreditsText))
+        {
+            _checkingOcr = true;
+            try
+            {
+                var availability = await OcrSetup.CheckAsync(_stop.Token);
+                _ocrPrompt = !availability.Ready;
+                _ocrProblem = availability.Problem;
+                if (!availability.Ready) return;
+            }
+            catch (OperationCanceledException) { return; }
+            finally { _checkingOcr = false; }
+        }
         trial.Enabled = true;
         trial.CreditsChance = 1;
         trial.OutroChance = 1;

@@ -25,6 +25,7 @@ public class SqueezeLook
     /// <summary>Use the canvas designs instead of a preset layout.</summary>
     public bool UseCanvas { get; set; }
     public List<SqueezeCanvas> Canvases { get; set; } = [];
+    public CreditsRecognition Recognition { get; set; } = new();
 
     public SqueezeStyle Style { get; set; } = SqueezeStyle.SideBySide;
 
@@ -130,6 +131,7 @@ public class SqueezeLook
     {
         target.UseCanvas = UseCanvas;
         target.Canvases = [.. Canvases.Select(canvas => canvas.Copy())];
+        target.Recognition = Recognition with { };
         target.UseLayout(OwnLayout());
         target.Promos = [.. Promos];
         target.Panel = Panel;

@@ -21,6 +21,70 @@ public sealed class CreditsOcrTests : IDisposable
         new("Next", null, "8 PM", null), [], "Channel", "Next", "#FFFFFF", "#000000", 1, false);
     private static CreditsOcrLine[] Lines(params string[] lines) => lines.Select(line => new CreditsOcrLine(line, 95)).ToArray();
 
+    [Theory]
+    [InlineData("a", 99, false)]
+    [InlineData("3", 99, false)]
+    [InlineData("_", 99, false)]
+    [InlineData("Ba", 40, false)]
+    [InlineData("WINUTES:", 32, false)]
+    [InlineData("ary", 0, false)]
+    [InlineData("--|a|--", 95, false)]
+    [InlineData("J. K. Simmons", 92, true)]
+    [InlineData("Zoë O’Neil-Smith", 92, true)]
+    [InlineData("Li", 96, true)]
+    [InlineData("AND", 90, true)]
+    [InlineData("山", 95, true)]
+    [InlineData("김", 95, true)]
+    [InlineData("© 2025", 95, true)]
+    public void Noise_filter_keeps_names_and_legitimate_short_words(string text, double confidence, bool expected) =>
+        Assert.Equal(expected, CreditsOcrFiltering.Keep(new(text, confidence)));
+
+    [Fact]
+    public void Recognition_options_invalidate_transcripts_and_are_copied_with_looks()
+    {
+        var options = new CreditsOcrOptions("tesseract", "eng", 1);
+        Assert.NotEqual(CreditsOcr.Key(Job(), options), CreditsOcr.Key(Job(), options with { Recognition = new(65, 100) }));
+        Assert.NotEqual(CreditsOcr.Key(Job(), options), CreditsOcr.Key(Job(), options with { Recognition = new(MinimumConfidence: 85) }));
+        Assert.NotEqual(CreditsOcr.Key(Job(), options), CreditsOcr.Key(Job(), options with { Version = 1 }));
+        var section = new CreditSqueezeSection { Recognition = new(65, 100, 70) };
+        Assert.Equal(section.Recognition, section.WithOnly(section).Recognition);
+        Assert.Equal(new CreditsRecognition(95, 100, 95), new CreditsRecognition(999, -10, 300).Normalized());
+        Assert.True(CreditsOcrFiltering.Keep(new("Alex Doe", 50), 45));
+        Assert.False(CreditsOcrFiltering.Keep(new("Alex Doe", 50)));
+    }
+
+    [Fact]
+    public async Task Recognition_area_crops_the_source_before_ocr()
+    {
+        string source = FilePath("lower-third.mp4");
+        await Run("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=160x100:r=10:d=1",
+            "-vf", "drawbox=x=0:y=65:w=160:h=35:color=white:t=fill", "-pix_fmt", "yuv420p", source);
+        var engine = new RecordingEngine();
+        using var ocr = new CreditsOcr(Settings, engine);
+        var job = Job(source) with { Length = TimeSpan.FromSeconds(1), CreditsOcr = Settings.Ocr with { Recognition = new(65, 100) } };
+        await ocr.ReadAsync(job, CancellationToken.None);
+        Assert.True(Assert.Single(engine.Brightness) > 240, "The cropped OCR image must contain only the white bottom credits area.");
+        await ocr.ReadAsync(job with { CreditsOcr = Settings.Ocr }, CancellationToken.None);
+        Assert.True(engine.Brightness[1] < 20, "The whole-frame OCR sample still includes the black scene above the credits.");
+        Assert.Equal(2, engine.Calls);
+    }
+
+    [Fact]
+    public async Task Rejected_detections_never_enter_the_transcript_and_are_reported()
+    {
+        string source = await MakeSource();
+        using var ocr = new CreditsOcr(Settings, new NoisyEngine());
+        var result = await ocr.ReadAsync(Job(source) with { Length = TimeSpan.FromSeconds(1) }, CancellationToken.None);
+        Assert.Equal(["Written by", "Zoë O’Neil-Smith"], result.Lines.Select(line => line.Text));
+        Assert.Equal(4, result.RejectedDetections);
+    }
+
+    private sealed class NoisyEngine : ICreditsOcrEngine
+    {
+        public Task<IReadOnlyList<CreditsOcrLine>> ReadAsync(string image, CreditsOcrOptions options, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<CreditsOcrLine>>([new("a", 95), new("3", 95), new("_", 90), new("WINUTES:", 32), new("Written by", 97), new("Zoë O’Neil-Smith", 94)]);
+    }
+
     [Fact]
     public void Tsv_preserves_names_accents_punctuation_reading_order_and_uncertain_words()
     {
@@ -131,7 +195,8 @@ public sealed class CreditsOcrTests : IDisposable
     {
         var options = new CreditsOcrOptions(FilePath("no-such-tesseract"), "eng", 1);
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => new TesseractCreditsOcr().ReadAsync("frame.png", options, CancellationToken.None));
-        Assert.Contains("Install Tesseract", error.Message);
+        Assert.Contains("couldn't start", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("plugin settings", error.Message);
     }
 
     [Fact]

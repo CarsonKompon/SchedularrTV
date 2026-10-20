@@ -14,6 +14,52 @@ namespace SchedularrTV.Core.Tests;
 public sealed class SqueezeCanvasEditorTests
 {
     [Fact]
+    public async Task Interaction_previews_are_small_and_final_drag_uses_the_latest_absolute_delta()
+    {
+        var canvas = SqueezeCanvas.Create("16:9");
+        var activator = new CaptureEditor();
+        using var services = new ServiceCollection().AddLogging()
+            .AddSingleton<IComponentActivator>(activator)
+            .AddSingleton<IJSRuntime, NoJavaScript>()
+            .AddSingleton(provider => new SqueezeRenderer(null!, provider, TimeProvider.System, NullLogger<SqueezeRenderer>.Instance))
+            .BuildServiceProvider();
+        await using var renderer = new HtmlRenderer(services, services.GetRequiredService<ILoggerFactory>());
+        await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            var output = await renderer.RenderComponentAsync<SqueezeCanvasEditor>(ParameterView.FromDictionary(new Dictionary<string, object?>
+            {
+                [nameof(SqueezeCanvasEditor.Look)] = new SqueezeLook { UseCanvas = true, Canvases = [canvas] },
+                [nameof(SqueezeCanvasEditor.Channel)] = new ChannelConfig { Id = "test", Name = "Test" }
+            }));
+            await activator.Editor!.UpdateInteraction(new("drag", "16:9", 0, 1, 0, false, 200, 100, false));
+            Assert.Equal(480, PreviewWidth(output.ToHtmlString()));
+            await activator.Editor.UpdateInteraction(new("drag", "16:9", 0, 1, 0, false, 300, 150, true));
+            Assert.Equal((300f, 150f), (canvas.Layers[0].X, canvas.Layers[0].Y));
+            Assert.Equal(960, PreviewWidth(output.ToHtmlString()));
+            await activator.Editor.UpdateInteraction(new("drag", "4:3", 0, 2, 0, false, 999, 999, true));
+            Assert.Equal((300f, 150f), (canvas.Layers[0].X, canvas.Layers[0].Y));
+        });
+    }
+
+    private static int PreviewWidth(string html)
+    {
+        string data = System.Text.RegularExpressions.Regex.Match(html, "data:image/jpeg;base64,([^\"]+)").Groups[1].Value;
+        using var bitmap = SkiaSharp.SKBitmap.Decode(Convert.FromBase64String(System.Net.WebUtility.HtmlDecode(data)));
+        return bitmap.Width;
+    }
+
+    private sealed class CaptureEditor : IComponentActivator
+    {
+        public SqueezeCanvasEditor? Editor { get; private set; }
+        public IComponent CreateInstance(Type type)
+        {
+            var component = (IComponent)Activator.CreateInstance(type)!;
+            if (component is SqueezeCanvasEditor editor) Editor = editor;
+            return component;
+        }
+    }
+
+    [Fact]
     public async Task Empty_design_has_a_direct_create_action()
     {
         string html = await Render(new SqueezeLook { UseCanvas = true });

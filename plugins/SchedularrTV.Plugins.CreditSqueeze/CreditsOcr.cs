@@ -7,11 +7,41 @@ using SchedularrTV.Plugins.Performance;
 
 namespace SchedularrTV.CreditSqueeze;
 
-public sealed record CreditsOcrOptions(string Executable, string Language, int SampleSeconds, int Version = 1);
-public sealed record CreditsOcrLine(string Text, double Confidence);
-public sealed record CreditsOcrResult(IReadOnlyList<CreditsOcrLine> Lines, int Frames)
+/// <summary>Percentages refer to the original source, before the squeeze layout is applied.</summary>
+public sealed record CreditsRecognition(int TopPercent = 0, int BottomPercent = 100, int MinimumConfidence = 60)
+{
+    public CreditsRecognition Normalized() => new(Math.Clamp(TopPercent, 0, 95),
+        Math.Clamp(BottomPercent, Math.Clamp(TopPercent, 0, 95) + 5, 100), Math.Clamp(MinimumConfidence, 0, 95));
+}
+
+public sealed record CreditsOcrOptions(string Executable, string Language, int SampleSeconds, int Version = 3, string? DataDirectory = null,
+    CreditsRecognition? Recognition = null);
+public sealed record CreditsOcrLine(string Text, double Confidence, CreditsTextBox? Box = null);
+public sealed record CreditsOcrResult(IReadOnlyList<CreditsOcrLine> Lines, int Frames, int RejectedDetections = 0)
 {
     public int UncertainLines => Lines.Count(line => line.Confidence < 60);
+}
+
+/// <summary>Reject recognition noise, without guessing names or using a dictionary of common words.</summary>
+public static class CreditsOcrFiltering
+{
+    public static bool Keep(CreditsOcrLine line, int minimumConfidence = 60)
+    {
+        if (!double.IsFinite(line.Confidence) || line.Confidence < minimumConfidence || string.IsNullOrWhiteSpace(line.Text)) return false;
+        string text = line.Text.Trim();
+        var characters = text.EnumerateRunes().Where(rune => !Rune.IsWhiteSpace(rune)).ToArray();
+        if (characters.Any(rune => rune.Value == 0xfffd || Rune.IsControl(rune))) return false;
+        int letters = characters.Count(Rune.IsLetter);
+        // Years beside a copyright mark are useful; isolated numbers and punctuation aren't credits.
+        if (letters == 0) return text.Contains('©') && characters.Count(Rune.IsDigit) >= 4;
+        if (letters * 2 < characters.Length) return false;
+        // A single CJK ideograph or Hangul syllable can be a real word/name. Latin
+        // initials remain valid inside a line ("J. K. Simmons"), not as lone detections.
+        bool ideographic = characters.Any(rune => rune.Value is >= 0x3400 and <= 0x9fff or >= 0xac00 and <= 0xd7af or >= 0x20000 and <= 0x3134f);
+        if (letters == 1 && !ideographic) return false;
+        if (letters <= 2 && !ideographic && line.Confidence < Math.Max(minimumConfidence, 90)) return false;
+        return true;
+    }
 }
 
 public interface ICreditsOcrEngine
@@ -24,8 +54,10 @@ public sealed class TesseractCreditsOcr : ICreditsOcrEngine
 {
     public async Task<IReadOnlyList<CreditsOcrLine>> ReadAsync(string image, CreditsOcrOptions options, CancellationToken cancellationToken)
     {
-        string tsv = await CreditsOcrTools.RunAsync(options.Executable,
-            [image, "stdout", "-l", options.Language, "--psm", "11", "tsv"], TimeSpan.FromSeconds(45), cancellationToken).ConfigureAwait(false);
+        List<string> arguments = [image, "stdout", "-l", options.Language, "--psm", "11"];
+        if (options.DataDirectory is { } data) arguments.AddRange(["--tessdata-dir", data]);
+        arguments.Add("tsv");
+        string tsv = await CreditsOcrTools.RunAsync(options.Executable, arguments, TimeSpan.FromSeconds(45), cancellationToken).ConfigureAwait(false);
         return ParseTsv(tsv);
     }
 
@@ -33,17 +65,37 @@ public sealed class TesseractCreditsOcr : ICreditsOcrEngine
     public static IReadOnlyList<CreditsOcrLine> ParseTsv(string tsv)
     {
         Dictionary<string, List<(string Text, double Confidence)>> lines = new(StringComparer.Ordinal);
+        Dictionary<string, (int Width, int Height)> pages = new(StringComparer.Ordinal);
+        Dictionary<string, (string Page, int Left, int Top, int Right, int Bottom)> boxes = new(StringComparer.Ordinal);
         foreach (string row in tsv.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
             string[] cells = row.TrimEnd('\r').Split('\t', 12);
-            if (cells.Length != 12 || cells[0] != "5" || string.IsNullOrWhiteSpace(cells[11])) continue;
+            if (cells.Length != 12) continue;
+            bool coordinates = int.TryParse(cells[6], out int left) & int.TryParse(cells[7], out int top)
+                & int.TryParse(cells[8], out int width) & int.TryParse(cells[9], out int height);
+            if (cells[0] == "1" && coordinates && width > 0 && height > 0)
+                pages[cells[1]] = (width, height);
+            if (cells[0] != "5" || string.IsNullOrWhiteSpace(cells[11])) continue;
             if (!double.TryParse(cells[10], NumberStyles.Float, CultureInfo.InvariantCulture, out double confidence) || !double.IsFinite(confidence)) continue;
             string key = string.Join(':', cells[1..5]);
             if (!lines.TryGetValue(key, out var words)) lines[key] = words = [];
             words.Add((cells[11].Trim(), Math.Clamp(confidence, 0, 100)));
+            if (coordinates && width > 0 && height > 0 && left >= 0 && top >= 0)
+            {
+                var bounds = boxes.GetValueOrDefault(key, (cells[1], left, top, left + width, top + height));
+                boxes[key] = (cells[1], Math.Min(bounds.Item2, left), Math.Min(bounds.Item3, top), Math.Max(bounds.Item4, left + width), Math.Max(bounds.Item5, top + height));
+            }
         }
-        return lines.Values.Select(words => new CreditsOcrLine(string.Join(' ', words.Select(word => word.Text)),
-            words.Sum(word => word.Confidence * word.Text.Length) / words.Sum(word => word.Text.Length))).ToArray();
+        return lines.Select(pair =>
+        {
+            var words = pair.Value;
+            CreditsTextBox? box = null;
+            if (boxes.TryGetValue(pair.Key, out var bounds) && pages.TryGetValue(bounds.Page, out var page))
+                box = new((double)bounds.Left / page.Width, (double)bounds.Top / page.Height,
+                    (double)(bounds.Right - bounds.Left) / page.Width, (double)(bounds.Bottom - bounds.Top) / page.Height);
+            return new CreditsOcrLine(string.Join(' ', words.Select(word => word.Text)),
+                words.Sum(word => word.Confidence * word.Text.Length) / words.Sum(word => word.Text.Length), box);
+        }).ToArray();
     }
 }
 
@@ -97,7 +149,15 @@ public sealed class CreditsOcr(CreditSqueezeSettings settings, ICreditsOcrEngine
     }
 
     public static string Key(SqueezeJob job, CreditsOcrOptions options) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
-        JsonSerializer.Serialize(new { Path = Path.GetFullPath(job.SourcePath), Stamp = SourceStamp(job.SourcePath), job.SourceStart, job.Length, Options = options }))));
+        JsonSerializer.Serialize(new { PipelineVersion = 3, Path = Path.GetFullPath(job.SourcePath), Stamp = SourceStamp(job.SourcePath), job.SourceStart, job.Length, Options = options }))));
+
+    public static string FrameFilter(CreditsOcrOptions options)
+    {
+        var area = (options.Recognition ?? new()).Normalized();
+        string crop = area.TopPercent == 0 && area.BottomPercent == 100 ? "" :
+            $",crop=iw:'max(2,trunc(ih*{area.BottomPercent - area.TopPercent}/100/2)*2)':0:'trunc(ih*{area.TopPercent}/100/2)*2'";
+        return $"fps=1/{options.SampleSeconds}:start_time=0{crop},scale=w='trunc(min(1920,iw*sar*2)/2)*2':h=-2,setsar=1,format=gray";
+    }
 
     public async Task<CreditsOcrResult> ReadAsync(SqueezeJob job, CancellationToken cancellationToken)
     {
@@ -136,21 +196,27 @@ public sealed class CreditsOcr(CreditSqueezeSettings settings, ICreditsOcrEngine
                 int frames = (int)Math.Ceiling(job.Length.TotalSeconds / options.SampleSeconds);
                 await CreditsOcrTools.RunAsync(settings.Ffmpeg,
                     ["-y", "-hide_banner", "-loglevel", "error", "-nostdin", "-ss", N(job.SourceStart.TotalSeconds), "-t", N(job.Length.TotalSeconds), "-i", job.SourcePath,
-                     "-an", "-vf", $"fps=1/{options.SampleSeconds}:start_time=0,scale=w='trunc(min(1920,iw*sar*2)/2)*2':h=-2,setsar=1,format=gray",
+                     "-an", "-vf", FrameFilter(options),
                      "-frames:v", frames.ToString(CultureInfo.InvariantCulture), Path.Combine(work, "%06d.png")], TimeSpan.FromMinutes(5), cancellationToken).ConfigureAwait(false);
                 string[] images = Directory.GetFiles(work, "*.png").Order(StringComparer.Ordinal).ToArray();
                 var transcript = new CreditsTranscript();
+                int confidence = (options.Recognition ?? new()).Normalized().MinimumConfidence;
+                List<IReadOnlyList<CreditsOcrLine>> detections = [];
                 foreach (string image in images)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    transcript.Add(await engine.ReadAsync(image, options, cancellationToken).ConfigureAwait(false));
+                    detections.Add(await engine.ReadAsync(image, options, cancellationToken).ConfigureAwait(false));
                     File.Delete(image);
                 }
+                cancellationToken.ThrowIfCancellationRequested();
+                var cleaned = CreditsOcrAnalysis.Clean(detections, confidence);
+                int rejected = detections.Sum(frame => frame.Count) - cleaned.Sum(frame => frame.Count);
+                foreach (var frame in cleaned) transcript.Add(frame.Select(line => line with { Box = null }).ToArray());
                 if (transcript.Lines.Count == 0)
-                    throw new InvalidOperationException("Credits Text: OCR found no readable credits. Check the source segment, Tesseract language data and sampling interval. The original credits will keep playing until a squeeze is ready.");
+                    throw new InvalidOperationException("Credits Text: OCR found no readable credits after filtering. Check the recognition area, confidence threshold and source segment under Text recognition. The original credits will keep playing until a squeeze is ready.");
                 if (SourceStamp(job.SourcePath) != stamp)
                     throw new InvalidOperationException("Credits Text: the source video changed while OCR was reading it; try again.");
-                var result = new CreditsOcrResult(transcript.Lines.ToArray(), images.Length);
+                var result = new CreditsOcrResult(transcript.Lines.ToArray(), images.Length, rejected);
                 string temporary = Path.Combine(work, "result.json");
                 await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(result), cancellationToken).ConfigureAwait(false);
                 File.Move(temporary, cache, overwrite: true);
@@ -181,14 +247,15 @@ internal static class CreditsOcrTools
 {
     public static async Task<string> RunAsync(string executable, IReadOnlyList<string> arguments, TimeSpan timeout, CancellationToken cancellationToken)
     {
-        var info = new ProcessStartInfo(executable) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
+        var info = new ProcessStartInfo(executable) { RedirectStandardOutput = true, RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8, UseShellExecute = false, CreateNoWindow = true };
         foreach (string argument in arguments) info.ArgumentList.Add(argument);
         info.Environment["OMP_THREAD_LIMIT"] = "1";
         using var process = new Process { StartInfo = info };
         try { process.Start(); }
         catch (System.ComponentModel.Win32Exception ex)
         {
-            throw new InvalidOperationException($"Credits Text: couldn't start '{executable}'. Install Tesseract with its language data and set its executable in the Credit squeeze plugin settings (ffmpeg is also required).", ex);
+            throw new InvalidOperationException($"Couldn't start '{executable}'. Check that this tool is installed and its path is correct in the Credit squeeze plugin settings.", ex);
         }
         Work.Track(process, "Credit Squeeze", "Credits OCR");
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

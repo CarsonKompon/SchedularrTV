@@ -77,7 +77,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
         return job with
         {
             CanvasCrop = ErsatzTvEncoding.Resolve(global, channel.Encoding).ScalingMode == "crop",
-            CreditsOcr = readsCredits ? settings.Ocr : null,
+            CreditsOcr = readsCredits ? settings.Ocr with { Recognition = job.Recognition.Normalized() } : null,
             CreditsOcrSourceStamp = readsCredits ? CreditsOcr.SourceStamp(job.SourcePath) : null
         };
     }

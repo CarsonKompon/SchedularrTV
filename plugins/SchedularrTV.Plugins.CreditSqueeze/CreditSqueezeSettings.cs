@@ -38,7 +38,31 @@ public sealed class CreditSqueezeSettings(IPluginContext context)
 
     public (int Width, int Height) Size => Value("Resolution") == "1080p" ? (1920, 1080) : (1280, 720);
 
-    public CreditsOcrOptions Ocr => new(Value("TesseractPath") ?? "tesseract", Value("OcrLanguage") ?? "eng", Number("OcrSampleSeconds", 1, 1, 5));
+    public string ManagedTesseractFolder => Path.Combine(DataDirectory, "tools", "tesseract");
+    public string? ConfiguredTesseract => Value("TesseractPath");
+    public CreditsOcrOptions Ocr
+    {
+        get
+        {
+            string managed = Path.Combine(ManagedTesseractFolder, "tesseract.exe");
+            bool downloaded = false;
+            try
+            {
+                string marker = Path.Combine(ManagedTesseractFolder, ".ready");
+                downloaded = File.Exists(managed) && File.Exists(marker) && File.ReadAllText(marker) == (ConfiguredTesseract ?? "");
+            }
+            catch (IOException) { }
+            string executable = downloaded ? managed : ToolLocator.Resolve(ConfiguredTesseract, "tesseract");
+            if (!downloaded && executable == "tesseract" && OperatingSystem.IsWindows())
+            {
+                executable = new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.LocalApplicationData }
+                    .Select(folder => Path.Combine(Environment.GetFolderPath(folder), "Tesseract-OCR", "tesseract.exe"))
+                    .FirstOrDefault(File.Exists) ?? executable;
+            }
+            return new(executable, Value("OcrLanguage") ?? "eng", Number("OcrSampleSeconds", 1, 1, 5),
+                DataDirectory: downloaded ? Path.Combine(ManagedTesseractFolder, "tessdata") : null);
+        }
+    }
 
     public string Ffmpeg
     {

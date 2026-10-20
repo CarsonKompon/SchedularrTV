@@ -3,8 +3,9 @@
 @using SkiaSharp
 @inject IJSRuntime JS
 @inject SqueezeRenderer Renderer
+@implements IAsyncDisposable
 
-<div class="visual-editor">
+<div class="visual-editor" @ref="_element" data-canvas-width="@(Canvas?.Width ?? 1280)" data-canvas-ratio="@Canvas?.AspectRatio">
     <div class="cs-canvas-picker">
         <nav class="cs-ratios" aria-label="Canvas aspect ratios">
         @foreach (var design in Look.Canvases)
@@ -42,18 +43,18 @@
                         var pose = Pose(layer);
                         <div class="layer-box @(ReferenceEquals(_layer, layer) ? "selected" : "")" @key="layer"
                              style="left:@Pct(pose.Left, canvas.Width);top:@Pct(pose.Top, canvas.Height);width:@Pct(pose.Width, canvas.Width);height:@Pct(pose.Height, canvas.Height);"
-                             @onpointerdown="e => StartDrag(e, layer, false)" @onpointerdown:preventDefault="true">
+                             data-squeeze-layer="@canvas.Layers.IndexOf(layer)">
                             <span class="layer-tag">@layer.Name</span>
                             @if (ReferenceEquals(_layer, layer))
                             {
-                                <span class="handle handle-se" @onpointerdown="e => StartDrag(e, layer, true)" @onpointerdown:stopPropagation="true" @onpointerdown:preventDefault="true"></span>
+                                <span class="handle handle-se" data-squeeze-resize></span>
                             }
                         </div>
                     }
                 </CanvasViewport>
                 <div class="ed-timeline">
                     <CanvasTransport Time="_time" Duration="_previewSeconds" Frame="CurrentFrame" FrameCount="FrameCount" FramesPerSecond="PreviewFps" Step="StepFrames" KeyboardHints="false" />
-                    <input class="cs-playhead" type="range" aria-label="Preview time" aria-valuetext="@($"{_time:0.00} seconds")" min="0" max="@N(LastTime)" step="any" value="@N(_time)" @oninput="Scrub" />
+                    <input class="cs-playhead" data-squeeze-scrub type="range" aria-label="Preview time" aria-valuetext="@($"{_time:0.00} seconds")" min="0" max="@N(LastTime)" step="any" value="@N(_time)" />
                     <div class="cs-key-track" role="group" aria-label="Keyframes for selected layer">
                         <span class="ed-meta">0s</span><span class="spacer"></span><span class="ed-meta">@N(_previewSeconds)s</span>
                         @foreach (var key in _layer?.Keyframes ?? [])
@@ -157,7 +158,7 @@
                         <label class="field"><span>Text</span><textarea @bind="selected.Text" @bind:after="Commit"></textarea></label>
                         <p class="hint">Tokens: {show}, {next}, {time}, {channel}, {heading}.</p>
                         }
-                        <label class="field"><span>Font</span><select @bind="selected.FontFamily" @bind:after="Commit">@foreach (string font in PromoFonts.Installed()) { <option value="@font">@font</option> }</select></label>
+                        <label class="field"><span>Font</span><select @bind="selected.FontFamily" @bind:after="Commit">@foreach (string font in Fonts) { <option value="@font">@font</option> }</select></label>
                         <label class="field"><span>Font size</span><input type="number" min="1" max="400" @bind="selected.FontSize" @bind:after="Commit" /></label>
                         <div class="field"><span>Alignment</span><TextAlignPad Horizontal="selected.Align" Vertical="@(selected.VerticalAlign ?? GeneratedVerticalAlign.Top)" Changed="cell => SetAlign(cell.Vertical, cell.Horizontal)" /></div>
                         <label class="check"><input type="checkbox" @bind="selected.Bold" @bind:after="Commit" />Bold</label>
@@ -203,6 +204,27 @@
                 }
             </Inspector>
         </CanvasWorkspace>
+        @if (Look.Canvases.Any(design => design.UsesCreditsText))
+        {
+            <details class="studio-section">
+                <summary><Icon Name="type" /> Text recognition · @(RecognitionArea == "full" ? "automatic" : "area override")</summary>
+                <p class="hint">Automatic recognition reads the whole source and checks text groups and nearby frames for each show independently. Credits can move, change position, or use several columns; no fixed credits area is needed.</p>
+                <div class="grid grid-2">
+                    <label class="field"><span>Source area (optional override)</span>
+                        <select value="@RecognitionArea" @onchange="SetRecognitionArea">
+                            <option value="full">Automatic · whole frame</option><option value="lower-third">Override: lower third</option><option value="lower-half">Override: lower half</option><option value="custom">Override: custom vertical area</option>
+                        </select></label>
+                    <label class="field"><span>Minimum confidence · @Look.Recognition.MinimumConfidence%</span>
+                        <input type="range" min="0" max="95" step="5" value="@Look.Recognition.MinimumConfidence" @onchange="SetRecognitionConfidence" /></label>
+                    @if (RecognitionArea != "full")
+                    {
+                        <label class="field"><span>Top (% down the original picture)</span><input type="number" min="0" max="95" value="@Look.Recognition.TopPercent" @onchange="e => SetRecognitionEdge(e, true)" /></label>
+                        <label class="field"><span>Bottom (% down the original picture)</span><input type="number" min="5" max="100" value="@Look.Recognition.BottomPercent" @onchange="e => SetRecognitionEdge(e, false)" /></label>
+                    }
+                </div>
+                <p class="hint">Lower confidence keeps more uncertain names; higher confidence removes more noise. A source-area override is only for templates dedicated to a known layout; use Automatic for mixed shows. Render again to regenerate the transcript.</p>
+            </details>
+        }
         <details class="studio-section">
         <summary><Icon Name="tv" /> Panel content · @PanelName(Look.Panel)</summary>
         <label class="field"><span>Panel content (for panel video layers)</span><select @bind="Look.Panel" @bind:after="Commit">
@@ -221,11 +243,6 @@
         </details>
     }
 </div>
-@if (_drag is not null)
-{
-    <div class="drag-overlay" style="position:fixed;inset:0;z-index:1000;cursor:grabbing;touch-action:none;"
-         @onpointermove="Drag" @onpointerup="EndDrag" @onpointercancel="EndDrag" @onpointerleave="EndDrag"></div>
-}
 
 @code {
     [Parameter, EditorRequired] public SqueezeLook Look { get; set; } = default!;
@@ -238,8 +255,17 @@
     private readonly string _id = "squeeze-" + Guid.NewGuid().ToString("N");
     private CanvasViewport? _viewport;
     private double _time, _pixels = 640;
-    private (double X, double Y, SKRect Bounds, bool Resize)? _drag;
+    private ElementReference _element;
+    private IJSObjectReference? _interactions;
+    private DotNetObjectReference<SqueezeCanvasEditor>? _self;
+    private readonly PromoImageCache _images = new();
+    private bool _disposed, _interactive;
+    private int _gesture;
+    private SKRect _dragBounds;
+    private GeneratedLayer? _dragLayer;
     private PromoComposition? _composition;
+    private IReadOnlyList<string>? _fonts;
+    private IReadOnlyList<string> Fonts => _fonts ??= PromoFonts.Installed();
     private const int PreviewFps = 30;
     private double _previewSeconds = 60;
     private int FrameCount => Math.Max(1, (int)Math.Ceiling(_previewSeconds * PreviewFps));
@@ -263,6 +289,31 @@
         SqueezePromo.UpNext => "Up Next", SqueezePromo.ComingUp => "Coming Up", SqueezePromo.Eventually => "Eventually", _ => "Now Playing"
     };
     private Task CreateDefaultCanvas() { _ratio = "16:9"; return AddCanvas(); }
+    private bool _customRecognition;
+    private string RecognitionArea => _customRecognition ? "custom" : Look.Recognition switch
+    {
+        { TopPercent: 0, BottomPercent: 100 } => "full", { TopPercent: 65, BottomPercent: 100 } => "lower-third",
+        { TopPercent: 50, BottomPercent: 100 } => "lower-half", _ => "custom"
+    };
+    private async Task SetRecognitionArea(ChangeEventArgs e)
+    {
+        _customRecognition = e.Value?.ToString() == "custom";
+        if (_customRecognition) return;
+        Look.Recognition = Look.Recognition with { TopPercent = e.Value?.ToString() switch { "lower-third" => 65, "lower-half" => 50, _ => 0 }, BottomPercent = 100 };
+        await Commit();
+    }
+    private async Task SetRecognitionConfidence(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out int value)) return;
+        Look.Recognition = (Look.Recognition with { MinimumConfidence = value }).Normalized();
+        await Commit();
+    }
+    private async Task SetRecognitionEdge(ChangeEventArgs e, bool top)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out int value)) return;
+        Look.Recognition = (top ? Look.Recognition with { TopPercent = value } : Look.Recognition with { BottomPercent = value }).Normalized();
+        await Commit();
+    }
     private async Task AddPanel() { await AddLayer("video"); _layer!.Video!.Episode = SqueezeCanvas.Panel; _layer.Name = "Promo / commercials panel"; await Commit(); }
     private async Task SetBackground(string colour) { if (Canvas is not null && !string.IsNullOrWhiteSpace(colour)) Canvas.BackgroundColor = colour; await Commit(); }
     private async Task SetColour(string colour) { if (_layer is not null && !string.IsNullOrWhiteSpace(colour)) _layer.Color = colour; await Commit(); }
@@ -282,10 +333,52 @@
         await Commit();
     }
     private void StepFrames(int frames) => Seek(Math.Round((_time * PreviewFps) + frames) / PreviewFps);
-    private void Scrub(ChangeEventArgs e)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds) && double.IsFinite(seconds))
-            Seek(Math.Round(seconds * PreviewFps) / PreviewFps);
+        if (!firstRender) return;
+        _self = DotNetObjectReference.Create(this);
+        await using var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/canvas-interactions.js");
+        if (_disposed) return;
+        _interactions = await module.InvokeAsync<IJSObjectReference>("attach", _element, _self);
+        if (_disposed) { await _interactions.InvokeVoidAsync("dispose"); await _interactions.DisposeAsync(); }
+    }
+
+    public sealed record Interaction(string Kind, string Ratio, double Time, int Id, int Layer, bool Resize, double Dx, double Dy, bool Final);
+
+    [JSInvokable]
+    public async Task UpdateInteraction(Interaction update)
+    {
+        if (_disposed || Canvas is null || update.Ratio != Canvas.AspectRatio) return;
+        _interactive = !update.Final;
+        if (update.Kind == "scrub" && double.IsFinite(update.Time))
+            _time = Math.Clamp(Math.Round(update.Time * PreviewFps) / PreviewFps, 0, LastTime);
+        else if (update.Kind == "drag" && double.IsFinite(update.Dx) && double.IsFinite(update.Dy))
+        {
+            if (update.Layer < 0 || update.Layer >= Canvas.Layers.Count) return;
+            if (_gesture != update.Id || _dragLayer is null)
+            {
+                _gesture = update.Id;
+                _dragLayer = Canvas.Layers[update.Layer];
+                _dragBounds = Pose(_dragLayer);
+            }
+            if (!Canvas.Layers.Contains(_dragLayer)) return;
+            _layer = _dragLayer;
+            SetPose(update.Resize
+                ? SKRect.Create(_dragBounds.Left, _dragBounds.Top, Math.Max(2, _dragBounds.Width + (float)update.Dx), Math.Max(2, _dragBounds.Height + (float)update.Dy))
+                : SKRect.Create(_dragBounds.Left + (float)update.Dx, _dragBounds.Top + (float)update.Dy, _dragBounds.Width, _dragBounds.Height));
+        }
+        Refresh();
+        if (update.Final && update.Kind == "drag") { _dragLayer = null; await Changed.InvokeAsync(); }
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        try { if (_interactions is not null) { await _interactions.InvokeVoidAsync("dispose"); await _interactions.DisposeAsync(); } }
+        catch (JSDisconnectedException) { }
+        _self?.Dispose();
+        _images.Dispose();
     }
     private void SetPreviewLength(ChangeEventArgs e)
     {
@@ -338,6 +431,7 @@
     {
         bool changed = !ReferenceEquals(Canvas, canvas);
         Canvas = canvas; _layer = canvas?.Layers.LastOrDefault(); _time = 0;
+        _dragLayer = null;
         _sourceRatio = canvas?.AspectRatio ?? "16:9";
         Refresh();
         if (changed) _ = SelectedRatio.InvokeAsync(canvas?.AspectRatio);
@@ -458,20 +552,6 @@
             new GeneratedKeyframe { At = TimeSpan.FromSeconds(1), X = pose.Left, Y = pose.Top, Width = pose.Width, Height = pose.Height }];
         _time = 1; await Commit();
     }
-    private async Task StartDrag(PointerEventArgs e, GeneratedLayer layer, bool resize)
-    {
-        if (e.Button != 0) return;
-        await Measure();
-        _layer = layer; _drag = (e.ClientX, e.ClientY, Pose(layer), resize);
-    }
-    private void Drag(PointerEventArgs e)
-    {
-        if (_drag is not { } drag || Canvas is null) return;
-        float dx = (float)((e.ClientX - drag.X) * Canvas.Width / Math.Max(1, _pixels)), dy = (float)((e.ClientY - drag.Y) * Canvas.Width / Math.Max(1, _pixels));
-        SetPose(drag.Resize ? SKRect.Create(drag.Bounds.Left, drag.Bounds.Top, Math.Max(2, drag.Bounds.Width + dx), Math.Max(2, drag.Bounds.Height + dy))
-            : SKRect.Create(drag.Bounds.Left + dx, drag.Bounds.Top + dy, drag.Bounds.Width, drag.Bounds.Height)); Refresh();
-    }
-    private async Task EndDrag(PointerEventArgs _) { _drag = null; await Commit(); }
     private void Refresh()
     {
         if (Canvas is null) return;
@@ -482,12 +562,13 @@
             OcrTranscript = Canvas.UsesCreditsText ? new CreditsOcrResult(Enumerable.Range(1, 16).Select(index => new CreditsOcrLine($"Sample credits line {index}", 100)).ToArray(), 0) : null
         }, Channel);
         _composition = Canvas.Compose(job);
-        using var surface = SKSurface.Create(new SKImageInfo(Canvas.Width, Canvas.Height));
-        using var images = new PromoImageCache();
+        float scale = Math.Min(1, (_interactive ? 480f : 960f) / Math.Max(Canvas.Width, Canvas.Height));
+        using var surface = SKSurface.Create(new SKImageInfo(Math.Max(1, (int)(Canvas.Width * scale)), Math.Max(1, (int)(Canvas.Height * scale))));
+        surface.Canvas.Scale(scale);
         using var videos = new StandInFrames(SqueezeCanvas.ParseAspect(_sourceRatio));
-        PromoRenderer.DrawFrame(surface.Canvas, _composition, TimeSpan.FromSeconds(_time), images, videos: videos);
-        using var image = surface.Snapshot(); using var data = image.Encode(SKEncodedImageFormat.Png, 80);
-        _preview = "data:image/png;base64," + Convert.ToBase64String(data.ToArray());
+        PromoRenderer.DrawFrame(surface.Canvas, _composition, TimeSpan.FromSeconds(_time), _images, videos: videos);
+        using var image = surface.Snapshot(); using var data = image.Encode(SKEncodedImageFormat.Jpeg, _interactive ? 65 : 85);
+        _preview = "data:image/jpeg;base64," + Convert.ToBase64String(data.ToArray());
     }
 
     private sealed class StandInFrames(double sourceAspect) : IPromoVideoFrames, IDisposable
@@ -496,6 +577,8 @@
         public SKImage Frame(PromoVideoLayer layer, TimeSpan playback)
         {
             (int w, int h) = layer.FrameSize;
+            float scale = Math.Min(1, 480f / Math.Max(w, h));
+            w = Math.Max(1, (int)(w * scale)); h = Math.Max(1, (int)(h * scale));
             using var surface = SKSurface.Create(new SKImageInfo(w, h)); surface.Canvas.Clear(SKColors.Black);
             float width = w, height = h;
             if (layer.SourceAspect is { } aspect && !layer.SourceCrop)
