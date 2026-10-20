@@ -37,6 +37,13 @@ jobs:
         run: choco install ffmpeg --no-progress -y
       - name: Test
         run: dotnet test tests/SchedularrTV.Core.Tests/SchedularrTV.Core.Tests.csproj -c Release
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test video text removal
+        run: |
+          python -m pip install --only-binary=:all: -r plugins/SchedularrTV.Plugins.GeneratedPromos/assets/text-removal-requirements.txt
+          python tests/video_cleanup_worker_test.py
 
   build:
     needs: test

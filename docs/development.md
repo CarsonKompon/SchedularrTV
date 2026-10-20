@@ -32,6 +32,15 @@ dotnet test
 
 Rendering and probing tests need real **ffmpeg** and **ffprobe** executables on **PATH**.
 
+The optional video text-removal worker has end-to-end tests for tracking, scene cuts, manual corrections, alpha preservation, and active ranges. With Python 3.10–3.13 available, run these in an isolated environment:
+
+```sh
+python -m pip install -r plugins/SchedularrTV.Plugins.GeneratedPromos/assets/text-removal-requirements.txt
+python tests/video_cleanup_worker_test.py
+```
+
+CI runs these with Python 3.12 in addition to the .NET suite. Increment `PromoVideoCleanupService.EngineVersion` when changing the cleanup algorithm or output timing so saved recipes do not reuse an older processed result.
+
 ### Snapshot tests
 
 **EngineSnapshotTests** compares full schedule output with **`tests/SchedularrTV.Core.Tests/Snapshots/`**.

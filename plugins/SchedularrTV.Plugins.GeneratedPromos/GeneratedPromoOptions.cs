@@ -11,6 +11,9 @@ public sealed class GeneratedPromoOptions
 
     public string FfprobePath { get; set; } = "ffprobe";
 
+    /// <summary>Python 3.10+ used to create the optional isolated text-removal engine.</summary>
+    public string CleanupPython { get; set; } = OperatingSystem.IsWindows() ? "python" : "python3";
+
     /// <summary>Promos rendered at once; each render also keeps ffmpeg busy. Unset: 2, or 1 on a Raspberry Pi.</summary>
     public int Concurrency { get; set; } = HardwareProfile.Pick(2, 1);
 

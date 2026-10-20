@@ -50,6 +50,14 @@ public sealed record PromoVideoLayer : PromoLayer
     public TimeSpan PlaybackAt(TimeSpan time) =>
         StartsWithLayer ? (time > Start ? time - Start : TimeSpan.Zero) : time;
 
+    /// <summary>Source seek time for a still, including loop/hold behavior used by sequential decoding.</summary>
+    public double SourceSecond(TimeSpan playback, double sourceDuration, int fps)
+    {
+        double second = Math.Max(0, SourceStart.TotalSeconds) + Math.Max(0, Math.Round(playback.TotalSeconds * fps) / fps);
+        if (!double.IsFinite(sourceDuration) || sourceDuration <= 0) return second;
+        return Loop ? second % sourceDuration : Math.Min(second, Math.Max(0, sourceDuration - 1d / fps));
+    }
+
     /// <summary>The ffmpeg filters that size its frames to <see cref="FrameSize"/>, fitted or filled.</summary>
     public string SizeFilter(int fps)
     {

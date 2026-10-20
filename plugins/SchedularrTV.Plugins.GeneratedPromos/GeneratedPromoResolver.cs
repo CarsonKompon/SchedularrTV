@@ -197,6 +197,9 @@ public static partial class GeneratedPromoResolver
             : null;
 
         string identity = JsonSerializer.Serialize(new { Version = 1, Template = template, Lines = lines, Script = script }, KeyJson);
+        foreach (GeneratedVideoCleanup removal in template.VideoCleanup ?? [])
+            if (removal.Enabled && removal.Regions.Count > 0)
+                identity += $"|video-cleanup|{PromoVideoCleanupService.Identity(removal)}";
         if (ttsFallback)
         {
             // Recording what's missing later makes the promo again, with the recordings.

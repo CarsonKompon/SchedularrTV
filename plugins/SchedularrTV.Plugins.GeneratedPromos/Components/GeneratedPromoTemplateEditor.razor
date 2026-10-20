@@ -9,6 +9,11 @@
 @inject IEnumerable<IMusicLibrary> MusicLibraries
 @inject GeneratorSetup Setup
 
+@if (_cleanupOpen)
+{
+    <VideoCleanupDialog Template="Template" Source="@_cleanupSource" Changed="Commit" OnClose="() => _cleanupOpen = false" />
+}
+
 <div class="card promo-template visual-editor">
     <div class="card-head">
         <h2>@(string.IsNullOrWhiteSpace(Template.Name) ? "Untitled template" : Template.Name)</h2>
@@ -314,6 +319,7 @@
         </Tools>
         <Stage>
             <CanvasTools Width="Template.Width" Height="Template.Height" Fit="ResetZoom" Add="AddCanvasLayer">
+                <button class="btn btn-sm" type="button" @onclick="() => OpenCleanup(null)">Remove video text…</button>
                 <button class="btn btn-sm" type="button" title="@($"Add {KindName(RequiredKind)}")" @onclick="() => AddLayer(RequiredKind)"><Icon Name="tv" />@KindName(RequiredKind)</button>
             </CanvasTools>
             @if (!Template.Layers.Any(layer => layer.Kind == RequiredKind))
@@ -760,6 +766,7 @@
                                 <p class="hint warn">The scheduler can't find this file.</p>
                             }
                             @(LayerChoices(selected, "video"))
+                            <button class="btn btn-sm" type="button" disabled="@Missing(selected.Path)" @onclick="() => OpenCleanup(selected.Path)">Remove text from this video…</button>
                             <label class="field">
                                 <span>Start into the file (s)</span>
                                 <input type="number" min="0" step="0.1" value="@Number(video.FileStart.TotalSeconds)"
@@ -1335,6 +1342,9 @@
     [Parameter, EditorRequired] public GeneratedPromoTemplate Template { get; set; } = new();
     [Parameter, EditorRequired] public ChannelConfig Channel { get; set; } = new() { Id = "", Name = "" };
     [Parameter] public EventCallback Changed { get; set; }
+    private bool _cleanupOpen;
+    private string? _cleanupSource;
+    private void OpenCleanup(string? source) { _cleanupSource = source; _cleanupOpen = true; }
     [Parameter] public EventCallback OnRemove { get; set; }
     [Parameter] public string? ErrorScope { get; set; }
 
@@ -4820,6 +4830,10 @@
                         <div class="song-row">
                             <FilePathPicker Value="@background" ValueChanged="value => SetBackground(position, value)" KeepCopyIn="@GeneratedPromoPackages.AssetCategory"
                                             Extensions="BackgroundExtensions" Label="background image or video" Placeholder="D:\Media\Promos\Backgrounds\loop.mp4" />
+                            @if (!PromoRenderer.IsImage(background))
+                            {
+                                <button class="btn btn-sm" type="button" disabled="@Missing(background)" @onclick="() => OpenCleanup(background)">Remove text…</button>
+                            }
                             @if (BackgroundList.Count > 1 && Template.Generator is null)
                             {
                                 <button class="btn btn-sm" type="button" aria-pressed="@(previewing ? "true" : "false")"

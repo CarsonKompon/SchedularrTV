@@ -29,6 +29,7 @@ public sealed class GeneratedPromosPlugin : IPlugin, IPluginEndpoints
             options.KeepAudio = Days(context.Configuration["KeepAudioDays"]);
             options.FfmpegPath = ToolLocator.Resolve(options.FfmpegPath, "ffmpeg", context.AppDataDirectory);
             options.FfprobePath = ToolLocator.Resolve(options.FfprobePath, "ffprobe", context.AppDataDirectory);
+            if (context.Configuration["CleanupPython"]?.Trim() is { Length: > 0 } python) options.CleanupPython = python;
         });
 
         services.AddSingleton<TextToSpeechCatalog>();
@@ -37,6 +38,9 @@ public sealed class GeneratedPromosPlugin : IPlugin, IPluginEndpoints
         services.AddSingleton<GeneratedPromoService>();
         services.AddSingleton<IScheduleFinisher>(sp => sp.GetRequiredService<GeneratedPromoService>());
         services.AddSingleton<GeneratedPromoPreview>();
+        services.AddSingleton(sp => new PromoVideoCleanupService(
+            sp.GetRequiredService<IOptions<GeneratedPromoOptions>>(),
+            sp.GetRequiredService<ILogger<PromoVideoCleanupService>>(), context.PluginDirectory));
         services.AddSingleton<SchedularrTV.Plugins.Promos.IPromoMaker, GeneratedPromoMaker>();
         services.AddHostedService(sp => sp.GetRequiredService<GeneratedPromoService>());
         services.AddHostedService<GeneratedPromoRefresher>();

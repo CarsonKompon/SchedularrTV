@@ -9,6 +9,13 @@
   "lowPowerNotice": "each promo is encoded in software, one at a time (the default here): roughly 20 to 40 seconds per 10-second 1080p promo on a Pi 5, longer on a Pi 4. Keep \"only for watched channels\" on, make templates 720p, prefer picture backgrounds to video ones, and give renders a longer lead time. The encoder and preset are under App settings → Hardware and video encoding.",
   "settings": [
     {
+      "key": "CleanupPython",
+      "label": "Text removal: Python executable",
+      "type": "Text",
+      "placeholder": "python (Windows), python3 (Linux/macOS)",
+      "description": "Optional text-removal engine: Python 3.10 through 3.13. Use Install engine in the promo's Remove text editor to create an isolated environment with OpenCV. Other promo features do not require Python."
+    },
+    {
       "key": "SaveFolder",
       "label": "Save folder",
       "type": "Folder",

@@ -430,6 +430,10 @@ public sealed class GeneratedPromoVariant : IGeneratedBackgrounds, IGeneratedLay
 
 public sealed class GeneratedPromoTemplate : IGeneratedBackgrounds
 {
+    /// <summary>Source-local text removal; absent preserves old templates and their render keys.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedVideoCleanup>? VideoCleanup { get; set; }
+
     public string Name { get; set; } = string.Empty;
 
     public GeneratedPromoType Type { get; set; } = GeneratedPromoType.UpNext;

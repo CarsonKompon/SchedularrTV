@@ -46,6 +46,15 @@ public static class GeneratedPromoPackages
     /// </summary>
     public static async Task MapPathsAsync(GeneratedPromoTemplate template, Func<string?, Task<string?>> map)
     {
+        if (template.VideoCleanup is { } cleanups)
+        {
+            foreach (GeneratedVideoCleanup recipe in cleanups.ToList())
+            {
+                if (await map(recipe.Source).ConfigureAwait(false) is { Length: > 0 } moved) recipe.Source = moved;
+                else cleanups.Remove(recipe);
+            }
+            if (cleanups.Count == 0) template.VideoCleanup = null;
+        }
         template.Background = await map(template.Background).ConfigureAwait(false);
         if (template.Backgrounds is { } backgrounds)
         {

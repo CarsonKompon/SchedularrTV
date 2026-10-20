@@ -180,6 +180,49 @@ video:
 
 The editor shows each video's frame at the playhead. Before the channel's schedule is built, only the promo's own episode has a stand-in file for previews. In YAML, a video layer has `kind: video`, its file in `path`, and a `video` section with `episode` (`promoted`, `watching`, `next`, `next2`…), `clip_start`, `file_start`, `playback` (`with_layer` or `with_promo`), `loop`, `fill`, `include_audio`, `volume` and `duck_under_voice`.
 
+### Remove text from a video
+
+**Remove text** reconstructs the pixels behind unwanted lettering in a file-based video layer or background video. It runs locally, keeps the original file intact, and caches one cleaned source for both Canvas previews and final promo renders.
+
+1. Choose **Remove text from this video…** in a video layer, **Remove text…** beside a background, or **Remove video text…** above the Canvas.
+2. Select the source file. The window shows the **original source**, before the promo's crop, rotation, perspective, or group animation. Times are source-file seconds, independent of when the layer appears in the promo.
+3. Select **Install text-removal engine** once. The server needs **Python 3.10–3.13**, with `venv`/`pip` available. Set **Plugins → Generated promos → Text removal: Python executable** if it is not on PATH. Installation downloads pinned NumPy/OpenCV packages into an isolated environment; it does not upload footage or install packages into your system Python. A platform without compatible binary packages reports an installation error.
+4. Scrub to any clear frame, including the middle of the video, and drag a box around a complete word or line, with a little padding. Draw more boxes for separate titles or lines. This saves a reference at the displayed source time/frame; it does **not** start tracking yet.
+5. Set **Active from** and **Until** to the part of the source where each region exists. Keep its reference frame inside that range. Leave **Track backward AND forward from every reference frame** on for moving graphics; turn it off for stationary captions.
+6. Select **Analyze & preview**. Tracking goes **backward from the reference to Active from**, then **forward from the reference to Until**. The progress message names the direction, and the reference list shows how many frames were reached each way. Processing is queued one source at a time, with cancellation. Closing the window leaves the job running; reopening it in the same editing session restores the draft.
+7. Scrub the cleaned result and use **Show original / Show cleaned** to compare. The selected region's status identifies the reference used at this frame and the tracking direction. Its coverage bar is **green** for processed frames, **red** for untracked frames, and **grey** outside the active range, with white reference markers. Use **Jump to next untracked frame** to review gaps. Untracked frames retain their original pixels and do not display a guessed box as a successful track.
+8. Select **Apply to promo**, then use the channel's usual **Save changes**. **Remove this source's effect** restores the original source in the promo.
+
+- Correct a drifting or missing track by pausing at the problem frame, selecting the region, then choosing **Correct selected region at …**. Redraw the **entire text region**, not just a missing letter. This adds (or replaces) an anchor at that exact displayed time/frame. Re-run **Analyze & preview**: the worker tracks both ways from every anchor and uses the nearest successful anchor for each frame. Corrections are tracking references, not ordinary interpolated animation keyframes, and do not move the whole track. Scrubbing to another frame cancels an armed correction so it cannot accidentally be saved at a different time.
+- Enable **Show removal mask (pink)** after analysis to see the actual pixels selected for removal across all regions. A letter without pink coverage will remain. The tracking rectangle and the removal mask are different: a correctly tracked box does not guarantee that the letter detector selected everything inside it.
+- Increase **Detection sensitivity** for missing faint or connected letters, or choose **Dark text on a lighter surface / Light text on a darker surface** under **Lettering**. Higher sensitivity may also capture more of the surrounding artwork. Use **Removal margin** for thin fringes, antialiasing, outlines, and shadows around already-detected letters. Use **Remove entire box** for complete coverage inside the selection; it also reconstructs other details inside that box. Re-run analysis after changing these controls.
+- Wait for the requested frame to finish loading before drawing. After editing selections/settings, the window explicitly shows **Not analyzed for these settings**; dashed boxes mark saved reference selections only, not a tracking result.
+- Keep **Stable surface / paper card** on for flat graphics. It reuses repaired reference texture, adjusted for lighting, to reduce shimmer. Turn it off for changing scenery so each frame is repaired independently. This is CPU tracking and inpainting, not generative video reconstruction; complicated scenery, occlusions, and fast entrances may need corrections.
+- Use clips up to **2 minutes**, **3840 × 2160**, and **120 fps**. Processing is full-resolution and can be slow or use substantial temporary disk space on long/high-resolution clips.
+- Keep logos outside the removal boxes when their lettering should remain. This feature removes selected text; it does not automatically create transparent PIP windows.
+- Expect all uses of the **same source file in this template** to share its applied recipe, including variants and alternative video choices. Different files have separate recipes. Automatically selected episode clips and AI-curated episode footage have no selection entry point.
+- Reuse cleaned footage without processing it again when changing replacement text, fonts, voice-over, or layer placement. Changing source contents or removal settings creates a new cache entry. Source audio and alpha are preserved in the rendering pipeline.
+- Find lossless cleaned videos and tracking reports in `video-cleanup` under the plugin's save folder (or its configured output folder). They are separate from the short-lived `preview-frames` cache. Entries unused for 90 days are pruned when another cleanup job starts. The `engine` subfolder is retained. Applied recipes travel with template packages; cleaned caches regenerate on the destination machine, which also needs the engine installed. Draft edits are session-only until applied and saved.
+
+Recipes are stored as `video_cleanup` on the template. Region coordinates are fractions of the oriented source image; reference/correction `at`, `start`, and `end` values are source seconds:
+
+```yaml
+video_cleanup:
+  - source: 'D:\Media\Promos\bumper.mp4'
+    enabled: true
+    regions:
+      - name: Original title
+        start: 1.5
+        end: 5.1
+        track: true
+        margin: 3
+        sensitivity: 50 # 0–100; higher includes more faint/connected strokes
+        ink: auto       # auto, dark or light
+        stable_surface: true
+        keys:
+          - { at: 2.9, x: 0.1, y: 0.65, width: 0.5, height: 0.18 }
+```
+
 ### Clips curated by AI
 
 A video layer can play **Clips curated by AI**: the episode is transcribed, and the [Local AI writer](local-ai.md) picks its moments and writes the voice-over around them. The layer then cuts between those clips while the announcer talks about them, or lets a clip speak for itself and answers it:

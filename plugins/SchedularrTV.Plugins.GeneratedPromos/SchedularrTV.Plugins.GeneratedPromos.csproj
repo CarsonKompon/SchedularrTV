@@ -32,7 +32,7 @@
 
   <ItemGroup>
     <!-- plugin.json is copied by plugins/Directory.Build.targets. The stylesheet is served from wwwroot beside the .dll. -->
-    <None Include="assets\**" Link="wwwroot\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="assets\**" Exclude="assets\**\__pycache__\**;assets\**\*.pyc" Link="wwwroot\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

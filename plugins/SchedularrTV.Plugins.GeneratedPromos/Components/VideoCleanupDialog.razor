@@ -1,0 +1,433 @@
+@using System.Globalization
+@implements IAsyncDisposable
+@inject PromoVideoCleanupService Cleanup
+@inject IJSRuntime JS
+
+<div class="modal-backdrop">
+    <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="cleanup-title" style="max-width:1100px;">
+        <div class="modal-head">
+            <h2 id="cleanup-title">Remove text from video</h2>
+            <div class="spacer"></div>
+            <button class="btn btn-sm" type="button" @onclick="Close">Close</button>
+        </div>
+        <p class="hint">Pause on any clear frame and draw boxes around the text. Drawing a box saves a reference at that frame; <strong>Analyze &amp; preview</strong> then tracks it <strong>backward to Active from and forward to Until</strong>. Tracking does not run while you draw or scrub. Times here are source-video times, before the promo's crop or animation.</p>
+        <label class="field">
+            <span>Source video</span>
+            <select value="@_source" @onchange="SelectSource" disabled="@_busy">
+                @foreach (string source in Sources) { <option value="@source">@Path.GetFileName(source) — @source</option> }
+            </select>
+        </label>
+        @if (!Cleanup.Installed)
+        {
+            <p class="hint">The local engine needs Python 3.10–3.13 on the server. Installation downloads NumPy and OpenCV into an isolated environment; video files stay local. Set the Python executable under Plugins → Generated promos if necessary.</p>
+            <button class="btn btn-sm" type="button" disabled="@Cleanup.Installing" @onclick="Install">@(Cleanup.Installing ? "Installing engine…" : "Install text-removal engine")</button>
+            @if (Cleanup.InstallError is { } installError) { <p class="hint warn" role="alert">@installError</p> }
+        }
+        @if (_error is not null) { <p class="hint warn" role="alert">@_error</p> }
+        @if (_media is { } media)
+        {
+            <div class="row row-wrap">
+                <button class="btn btn-sm" type="button" disabled="@_busy" @onclick="NewSelection">Draw another region</button>
+                <button class="btn btn-sm" type="button" disabled="@(!CanCorrect)" @onclick="CorrectSelection">@($"Correct selected region at {Stamp(_time)}")</button>
+                @if (_correction) { <button class="btn btn-sm" type="button" @onclick="CancelCorrection">Cancel correction</button> }
+                <button class="btn btn-sm" type="button" disabled="@(!Ready)" @onclick="ToggleAfter">@(_after ? "Show original" : "Show cleaned")</button>
+                <label class="check"><input type="checkbox" @bind="_outlines" /> Show selection outlines</label>
+                <label class="check"><input type="checkbox" disabled="@(!Ready)" @bind="_showMask" @bind:after="RefreshFrame" /> Show removal mask (pink)</label>
+            </div>
+            <p class="hint">@(_correction ? $"CORRECTION: redraw all of '{_correctionTarget?.Name}' at {Stamp(_correctionAt)}. This adds or replaces an anchor at this exact frame." : "NEW REGION: drag a box around a complete word or line, with a little space around its letters.") @(_after ? "Showing cleaned footage." : "Showing original footage.")</p>
+            @if (_frameLoading) { <p role="status">Loading @Stamp(_time)… wait for the frame before drawing.</p> }
+            @if (_notice is not null) { <p class="hint" role="status">@_notice</p> }
+            @if (_recipe.Regions.Count > 0 && !Ready && !_busy)
+            {
+                <p class="hint warn" role="status">Not analyzed for these settings. Press Analyze &amp; preview to track both directions and rebuild the removal mask. Dashed boxes are reference selections, not a tracking result.</p>
+            }
+            <svg id="@_canvasId" viewBox="0 0 1000 1000" preserveAspectRatio="none" role="img" aria-label="Source video: drag to select text"
+                 style="display:block;width:100%;aspect-ratio:@media.Width / @media.Height;background:#222;touch-action:none;cursor:crosshair;">
+                @if (_frame is not null) { <image href="@_frame" x="0" y="0" width="1000" height="1000" preserveAspectRatio="none" /> }
+                @if (_showMask && Ready && _maskFrame is not null) { <image href="@_maskFrame" x="0" y="0" width="1000" height="1000" preserveAspectRatio="none" style="pointer-events:none;" /> }
+                @if (_outlines)
+                {
+                    @foreach (GeneratedRemovalRegion region in _recipe.Regions)
+                    {
+                        <polygon points="@Outline(region)" fill="none" stroke="@(Ready ? "#35d48e" : "#ffbd45")" stroke-dasharray="@(Ready ? "none" : "6 4")" stroke-width="@(ReferenceEquals(region, _selected) ? 3 : 1)" vector-effect="non-scaling-stroke" style="pointer-events:none;" />
+                    }
+                }
+            </svg>
+            <div class="row row-wrap">
+                <button class="btn btn-sm" type="button" @onclick="() => Step(-1)">Previous frame</button>
+                <input aria-label="Source playhead" type="range" style="flex:1;min-width:150px;" min="0" max="@N(LastTime)" step="@N(1 / media.Fps)" value="@N(_time)" @oninput="Scrub" />
+                <button class="btn btn-sm" type="button" @onclick="() => Step(1)">Next frame</button>
+                <span>@Stamp(_time) / @N(media.Duration)s</span>
+            </div>
+            @if (_selected is { } active)
+            {
+                <p role="status"><strong>@active.Name:</strong> @FrameStatus(active)</p>
+                @if (ReportFor(active) is { } coverage)
+                {
+                    <svg viewBox="0 0 1000 28" preserveAspectRatio="none" style="width:100%;height:28px;background:#555;" role="img" aria-label="Tracking coverage: green processed, red untracked, grey inactive, white reference markers">
+                        @foreach (var segment in coverage.Coverage)
+                        {
+                            <rect x="@N(segment.Start / (double)_tracking!.FrameCount * 1000)" y="0" width="@N((segment.End - segment.Start + 1) / (double)_tracking.FrameCount * 1000)" height="28"
+                                  fill="@(segment.Tracked ? "#248653" : "#c74949")" style="cursor:pointer;" @onclick="() => Jump(segment.Start / _tracking.Fps)">
+                                <title>@(segment.Tracked ? "Processed" : "Needs correction"): @Stamp(segment.Start / _tracking.Fps) – @Stamp(segment.End / _tracking.Fps)</title>
+                            </rect>
+                        }
+                        @foreach (var key in active.Keys)
+                        {
+                            <line x1="@N(key.At / media.Duration * 1000)" x2="@N(key.At / media.Duration * 1000)" y1="0" y2="28" stroke="white" stroke-width="3" />
+                        }
+                        <line x1="@N(_time / media.Duration * 1000)" x2="@N(_time / media.Duration * 1000)" y1="0" y2="28" stroke="#ffbd45" stroke-width="3" />
+                    </svg>
+                    <p class="hint">Green: tracked/processed · Red: no tracking, original pixels kept · Grey: inactive · White: your reference frames. Click a segment to inspect it.</p>
+                    @if (coverage.UntrackedFrames.Count > 0)
+                    {
+                        <button class="btn btn-sm" type="button" @onclick="() => JumpToGap(active)">Jump to next untracked frame</button>
+                    }
+                }
+            }
+            @if (_showMask && Ready) { <p class="hint">Pink shows the actual pixels selected for removal, not the whole tracking box. A letter without pink coverage will remain. Adjust detection or choose Remove entire box, then analyze again.</p> }
+            <div class="grid grid-2">
+                <div>
+                    <h3>Removal regions</h3>
+                    @foreach (GeneratedRemovalRegion region in _recipe.Regions)
+                    {
+                        <div class="row" @key="region.Id">
+                            <button class="btn btn-sm @(ReferenceEquals(region, _selected) ? "btn-primary" : "")" type="button" @onclick="() => SelectRegion(region)">@region.Name</button>
+                            <span class="hint">@N(region.Start)–@N(region.End)s</span>
+                            <button class="btn btn-sm btn-danger" type="button" disabled="@_busy" @onclick="() => Delete(region)">Delete</button>
+                        </div>
+                    }
+                    @if (_recipe.Regions.Count == 0) { <p class="hint">Pause on a clear frame and draw your first box.</p> }
+                </div>
+                @if (_selected is { } selected)
+                {
+                    <fieldset disabled="@_busy" style="border:0;padding:0;">
+                        <label class="field"><span>Name</span><input @bind="selected.Name" /></label>
+                        <div class="grid grid-2">
+                            <label class="field"><span>Active from (source seconds)</span><input type="number" min="0" max="@N(LastTime)" step="0.001" @bind="selected.Start" @bind:after="RegionChanged" /></label>
+                            <label class="field"><span>Until (source seconds)</span><input type="number" min="0" max="@N(media.Duration)" step="0.001" @bind="selected.End" @bind:after="RegionChanged" /></label>
+                        </div>
+                        <label class="check"><input type="checkbox" @bind="selected.Track" @bind:after="RegionChanged" /> Track backward AND forward from every reference frame</label>
+                        <label class="check"><input type="checkbox" @bind="selected.WholeRegion" @bind:after="RegionChanged" /> Remove entire box (otherwise detect lettering inside)</label>
+                        @if (!selected.WholeRegion)
+                        {
+                            <label class="field"><span>Lettering</span><select @bind="selected.Ink" @bind:after="RegionChanged"><option value="@GeneratedRemovalInk.Auto">Detect automatically</option><option value="@GeneratedRemovalInk.Dark">Dark text on a lighter surface</option><option value="@GeneratedRemovalInk.Light">Light text on a darker surface</option></select></label>
+                            <label class="field"><span>Detection sensitivity: @selected.Sensitivity (higher includes more faint/connected strokes)</span><input type="range" min="0" max="100" @bind="selected.Sensitivity" @bind:after="RegionChanged" /></label>
+                        }
+                        <label class="check"><input type="checkbox" @bind="selected.StableSurface" @bind:after="RegionChanged" /> Stable surface / paper card (reduce shimmer)</label>
+                        <label class="field"><span>Removal margin (source pixels)</span><input type="number" min="0" max="30" @bind="selected.Margin" @bind:after="RegionChanged" /></label>
+                        <p class="hint">Missing whole letters? Increase detection sensitivity or choose the correct lettering mode. Thin fringes/shadows? Increase the removal margin. Remove entire box guarantees coverage inside the box, but also replaces its other details. For changing scenery, turn off Stable surface.</p>
+                        <h4>Tracking reference frames (anchors)</h4>
+                        <p class="hint">A correction is anchored to the frame where you draw it. It does not move the whole track or simply affect one frame: after Analyze, tracking runs both ways from each anchor and uses the nearest successful anchor for each frame. These are not ordinary interpolated animation keyframes.</p>
+                        @foreach (GeneratedRemovalKey key in selected.Keys.OrderBy(k => k.At).ToList())
+                        {
+                            <div class="row">
+                                <button class="btn btn-sm" type="button" @onclick="() => Jump(key.At)">@(ReferenceEquals(key, selected.Keys[0]) ? "Initial reference" : "Correction") · @Stamp(key.At)</button>
+                                <button class="btn btn-sm" type="button" disabled="@(selected.Keys.Count == 1)" @onclick="() => RemoveKey(selected, key)">Remove correction</button>
+                            </div>
+                            @if (ReferenceReport(selected, key) is { } anchor)
+                            {
+                                <p class="hint">@anchor.BackwardFrames frames backward · @anchor.ForwardFrames frames forward · @anchor.MaskPixels source pixels selected for removal</p>
+                            }
+                        }
+                    </fieldset>
+                }
+            </div>
+            @if (_progress is { } status)
+            {
+                <p role="status">@status.State · @status.Fraction.ToString("P0")</p>
+                <progress value="@N(status.Fraction)" max="1" style="width:100%;"></progress>
+                @if (status.Error is not null) { <p class="hint warn" role="alert">@status.Error</p> }
+            }
+            @if (_trackingWarning is not null) { <p class="hint warn">@_trackingWarning</p> }
+            <div class="row row-wrap" style="margin-top:1rem;">
+                <button class="btn btn-primary" type="button" disabled="@(_busy || !Cleanup.Installed || _recipe.Regions.Count == 0)" @onclick="Analyze">Analyze &amp; preview</button>
+                @if (_busy) { <button class="btn btn-sm" type="button" @onclick="CancelJob">Cancel processing</button> }
+                <button class="btn btn-primary" type="button" disabled="@(_busy || !Ready)" @onclick="Apply">Apply to promo</button>
+                <button class="btn btn-sm btn-danger" type="button" @onclick="RemoveEffect">Remove this source's effect</button>
+            </div>
+            <p class="hint">Apply saves the recipe to this working template; use the channel's Save changes as usual. Processing continues if you close this window. Reopening the same selections reuses its result.</p>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public GeneratedPromoTemplate Template { get; set; } = default!;
+    [Parameter] public string? Source { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    private readonly string _canvasId = "cleanup-" + Guid.NewGuid().ToString("N");
+    private GeneratedVideoCleanup _recipe = new();
+    private GeneratedVideoCleanup? _runningRecipe;
+    private GeneratedRemovalRegion? _selected;
+    private CleanupMedia? _media;
+    private string? _source, _frame, _maskFrame, _error, _trackingWarning, _notice;
+    private double _time, _shownTime, _correctionAt;
+    private GeneratedRemovalRegion? _correctionTarget;
+    private bool _busy, _after, _correction, _disposed, _frameLoading, _showMask, _outlines = true;
+    private CleanupProgress? _progress;
+    private CleanupTrackingReport? _tracking;
+    private IJSObjectReference? _module, _drag;
+    private DotNetObjectReference<VideoCleanupDialog>? _self;
+    private CancellationTokenSource? _frameCancel;
+    private readonly CancellationTokenSource _life = new();
+    private IEnumerable<string> Sources => Template.BackgroundChoices.Concat((Template.Variants ?? []).SelectMany(v => v.BackgroundChoices))
+        .Concat(Template.Layers.Where(l => l.Kind == GeneratedLayerKind.Video && l.Video?.Episode is null)
+            .SelectMany(l => new[] { l.Path }.Concat(l.Alternatives?.Select(a => a.Value) ?? []))).OfType<string>()
+        .Where(s => !string.IsNullOrWhiteSpace(s) && !PromoRenderer.IsImage(s)).Distinct(StringComparer.OrdinalIgnoreCase);
+    private double LastTime => _media is { } m ? Math.Max(0, (Math.Ceiling(m.Duration * m.Fps - 1e-6) - 1) / m.Fps) : 0;
+    private bool Ready { get { try { return _recipe.Regions.Count > 0 && Cleanup.Cached(_recipe) is not null; } catch (ArgumentException) { return false; } } }
+    private static string N(double value) => value.ToString("0.######", CultureInfo.InvariantCulture);
+    private string Stamp(double at) => $"{at:0.000}s (frame {(int)Math.Round(at * (_media?.Fps ?? 30))})";
+    private bool CanCorrect => _selected is { } region && !_busy && !_frameLoading && _time >= region.Start && _time <= region.End;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Cleanup.Changed += OnProgress;
+        await LoadSource(Source ?? Sources.FirstOrDefault());
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_media is null || _drag is not null || _disposed) return;
+        _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/video-cleanup.js");
+        _self ??= DotNetObjectReference.Create(this);
+        _drag = await _module.InvokeAsync<IJSObjectReference>("attach", _canvasId, _self);
+    }
+    private async Task SelectSource(ChangeEventArgs e) => await LoadSource(e.Value?.ToString());
+    private async Task LoadSource(string? source)
+    {
+        if (_source is not null) Cleanup.KeepDraft(Template, _recipe);
+        _source = source; _media = null; _error = null; _frame = null; _maskFrame = null; _after = false; _progress = null; _trackingWarning = null;
+        _tracking = null; _notice = null; _runningRecipe = null; _busy = false; CancelCorrection();
+        if (_drag is not null) { await _drag.InvokeVoidAsync("dispose"); await _drag.DisposeAsync(); _drag = null; }
+        if (source is null) { _error = "Add a background video or a file-based video layer first."; return; }
+        _recipe = Cleanup.Draft(Template, source) ?? (Template.VideoCleanup?.FirstOrDefault(r => PromoVideoCleanupService.SameSource(r.Source, source)) is { } saved
+            ? GeneratedPromoEditing.Copy(saved) : new() { Source = source });
+        _recipe.Enabled = true;
+        _selected = _recipe.Regions.FirstOrDefault();
+        try
+        {
+            _media = await Cleanup.ProbeAsync(source, _life.Token);
+            if (_media.Duration > 120 || _media.Width > 3840 || _media.Height > 2160 || _media.Fps > 120)
+            {
+                _media = null;
+                _error = "Choose a clip up to 2 minutes, 3840×2160 and 120 fps. Trim longer footage first.";
+                return;
+            }
+            _time = Math.Round(Math.Min(LastTime, _media.Duration / 2) * _media.Fps) / _media.Fps;
+            ReadReport(); await RefreshFrame();
+            if (_recipe.Regions.Count > 0)
+            {
+                _progress = Cleanup.Status(_recipe);
+                _busy = _progress.State is not ("Ready" or "Failed" or "Cancelled" or "Not processed");
+                if (_busy) _runningRecipe = GeneratedPromoEditing.Copy(_recipe);
+            }
+        }
+        catch (Exception ex) when (!_disposed) { _error = ex.GetBaseException().Message; }
+    }
+    private async Task RefreshFrame()
+    {
+        if (_source is null) return;
+        _frameCancel?.Cancel(); _frameCancel?.Dispose();
+        _frameCancel = CancellationTokenSource.CreateLinkedTokenSource(_life.Token);
+        var token = _frameCancel.Token;
+        double at = _time;
+        _frameLoading = true; _maskFrame = null;
+        try
+        {
+            if (Ready && _tracking is null) ReadReport();
+            string path = _after && Ready ? Cleanup.Cached(_recipe)! : _source;
+            byte[] bytes = await Cleanup.FrameAsync(path, at, token);
+            byte[]? mask = _showMask && Ready ? await Cleanup.MaskFrameAsync(_recipe, at, token) : null;
+            if (!token.IsCancellationRequested)
+            {
+                _frame = "data:image/png;base64," + Convert.ToBase64String(bytes);
+                _maskFrame = mask is null ? null : "data:image/png;base64," + Convert.ToBase64String(mask);
+                _shownTime = at;
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) when (!_disposed) { _error = ex.GetBaseException().Message; }
+        finally { if (!token.IsCancellationRequested) _frameLoading = false; }
+    }
+    private Task Scrub(ChangeEventArgs e) => double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double at) ? Jump(at) : Task.CompletedTask;
+    private async Task Jump(double at)
+    {
+        if (_correction) { CancelCorrection(); _notice = "Correction mode cancelled because the playhead moved. Select Correct at the new frame when ready."; }
+        double fps = _media?.Fps ?? 30;
+        _time = Math.Clamp(Math.Round(at * fps) / fps, 0, LastTime);
+        await RefreshFrame();
+    }
+    private Task Step(int direction) => Jump(_time + direction / (_media?.Fps ?? 30));
+    private async Task ToggleAfter() { _after = !_after; await RefreshFrame(); }
+    private async Task NewSelection() { CancelCorrection(); _notice = null; _after = false; await RefreshFrame(); }
+    private async Task CorrectSelection()
+    {
+        if (!CanCorrect) return;
+        _correction = true; _correctionTarget = _selected; _correctionAt = _shownTime;
+        _notice = null; _after = false; await RefreshFrame();
+    }
+    private void CancelCorrection() { _correction = false; _correctionTarget = null; }
+    private void SelectRegion(GeneratedRemovalRegion region) { CancelCorrection(); _selected = region; }
+
+    [JSInvokable]
+    public async Task SelectionMade(double x, double y, double width, double height)
+    {
+        if (_busy || _frameLoading || _media is null || Math.Abs(_shownTime - _time) > .5 / _media.Fps || width < .003 || height < .003) return;
+        var key = new GeneratedRemovalKey { At = _correction ? _correctionAt : _shownTime, X = x, Y = y, Width = width, Height = height };
+        if (_correction && _correctionTarget is { } selected)
+        {
+            int existing = selected.Keys.FindIndex(k => Math.Abs(k.At - key.At) < .5 / _media.Fps);
+            if (existing >= 0) selected.Keys[existing] = key;
+            else selected.Keys.Add(key);
+            _notice = $"{(existing >= 0 ? "Replaced" : "Added")} tracking anchor for '{selected.Name}' at {Stamp(key.At)}. Press Analyze & preview to retrack backward and forward using this correction.";
+        }
+        else if (_recipe.Regions.Count < 32)
+        {
+            _selected = new() { Name = $"Text {_recipe.Regions.Count + 1}", End = _media.Duration, Keys = [key] };
+            _recipe.Regions.Add(_selected);
+            _notice = $"Added '{_selected.Name}' at {Stamp(key.At)}. Analyze will track backward to {Stamp(_selected.Start)} and forward to the end of its active range.";
+        }
+        CancelCorrection();
+        await RegionChanged();
+        await InvokeAsync(StateHasChanged);
+    }
+    private async Task Delete(GeneratedRemovalRegion region) { _recipe.Regions.Remove(region); _selected = _recipe.Regions.FirstOrDefault(); await RegionChanged(); }
+    private async Task RemoveKey(GeneratedRemovalRegion region, GeneratedRemovalKey key) { region.Keys.Remove(key); await RegionChanged(); }
+    private async Task RegionChanged()
+    {
+        _after = false; _tracking = null; _progress = null; _trackingWarning = null; _error = null;
+        _runningRecipe = null;
+        await RefreshFrame();
+    }
+    private async Task Install() { await Cleanup.InstallAsync(); }
+    private async Task Analyze()
+    {
+        CancelCorrection(); _notice = null; _error = null; _trackingWarning = null;
+        try
+        {
+            PromoVideoCleanupService.Validate(_recipe);
+            _runningRecipe = GeneratedPromoEditing.Copy(_recipe); _busy = true;
+            Cleanup.KeepDraft(Template, _recipe);
+            await Cleanup.StartAsync(_runningRecipe, _life.Token);
+            if (_disposed) return;
+            ReadReport(); _after = true; await RefreshFrame();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) when (!_disposed) { _error = ex.GetBaseException().Message; }
+        finally { _busy = false; }
+    }
+    private void CancelJob() { if (_runningRecipe is { } recipe) Cleanup.Cancel(recipe); }
+    private void OnProgress()
+    {
+        if (_disposed) return;
+        _ = InvokeAsync(async () =>
+        {
+            if (_runningRecipe is { } recipe)
+            {
+                _progress = Cleanup.Status(recipe);
+                if (_progress.State is "Ready" or "Failed" or "Cancelled") _busy = false;
+                if (_progress.State == "Ready" && _tracking is null) { ReadReport(); await RefreshFrame(); }
+            }
+            StateHasChanged();
+        });
+    }
+    private void ReadReport()
+    {
+        _tracking = null; _trackingWarning = null;
+        if (!Ready || Cleanup.TrackingReport(_recipe) is not { } json) return;
+        _tracking = CleanupTrackingReport.Parse(json);
+        var messages = new List<string>();
+        int regionIndex = 0;
+        foreach (var region in _tracking.Regions)
+        {
+            if (region.UntrackedFrames.Count > 0)
+                messages.Add($"{_recipe.Regions[regionIndex].Name}: {region.UntrackedFrames.Count} frames need review (first at {Stamp(region.UntrackedFrames[0] / _tracking.Fps)})");
+            if (region.References.Any(r => r.MaskPixels == 0))
+                messages.Add($"{_recipe.Regions[regionIndex].Name}: a reference detected no lettering; increase sensitivity, change Lettering mode, or enable Remove entire box");
+            regionIndex++;
+        }
+        if (messages.Count > 0) _trackingWarning = string.Join("; ", messages) + ". Untracked frames retain the original pixels. Add a correction there or shorten the region's active range, then analyze again.";
+    }
+    private string Outline(GeneratedRemovalRegion region)
+    {
+        if (_frameLoading) return "";
+        if (_time < region.Start || _time > region.End || region.Keys.Count == 0) return "";
+        var key = region.Keys.MinBy(k => Math.Abs(k.At - _time))!;
+        double[]? matrix = null;
+        if (ReportFor(region) is { } report && _media is { } media)
+        {
+            // Never display a stationary reference box as if it were a successful track.
+            if (report.At(CurrentFrame) is not { } frame) return "";
+            key = region.Keys.MinBy(k => Math.Abs(k.At * media.Fps - frame.Reference))!;
+            matrix = frame.Matrix.SelectMany(row => row).ToArray();
+        }
+        else if (region.Track && Math.Abs(key.At - _time) > .5 / (_media?.Fps ?? 30)) return "";
+        var corners = new[] { (key.X, key.Y), (key.X + key.Width, key.Y), (key.X + key.Width, key.Y + key.Height), (key.X, key.Y + key.Height) };
+        return string.Join(" ", corners.Select(p =>
+        {
+            var (x,y) = matrix is null || _media is null ? p : PromoPerspective.Apply(matrix, p.Item1 * _media.Width, p.Item2 * _media.Height);
+            if (matrix is not null && _media is not null) { x /= _media.Width; y /= _media.Height; }
+            return $"{N(x*1000)},{N(y*1000)}";
+        }));
+    }
+
+    private int CurrentFrame => (int)Math.Round(_time * (_tracking?.Fps ?? _media?.Fps ?? 30));
+    private CleanupRegionReport? ReportFor(GeneratedRemovalRegion region)
+    {
+        if (!Ready || _tracking is null) return null;
+        int index = _recipe.Regions.IndexOf(region);
+        return index >= 0 && index < _tracking.Regions.Count ? _tracking.Regions[index] : null;
+    }
+    private CleanupReferenceReport? ReferenceReport(GeneratedRemovalRegion region, GeneratedRemovalKey key) =>
+        ReportFor(region)?.References.FirstOrDefault(r => r.Frame == (int)Math.Round(key.At * (_tracking?.Fps ?? _media?.Fps ?? 30)));
+    private string FrameStatus(GeneratedRemovalRegion region)
+    {
+        if (_frameLoading) return "Loading source frame…";
+        if (_time < region.Start || _time > region.End) return "Inactive at this frame — outside its active range.";
+        if (ReportFor(region) is not { } report) return "Not analyzed here. Saving a box alone does not track it; press Analyze & preview.";
+        if (report.At(CurrentFrame) is not { } frame) return "UNTRACKED — original pixels kept here. Add a correction at this frame and analyze again.";
+        if (!region.Track) return "Processed as a stationary region (motion tracking is off).";
+        if (CurrentFrame == frame.Reference) return $"Your reference/correction frame at {Stamp(_time)} — this exact box anchors the track.";
+        return $"Tracked {(CurrentFrame < frame.Reference ? "BACKWARD" : "FORWARD")} from the reference at {Stamp(frame.Reference / _tracking!.Fps)}.";
+    }
+    private Task JumpToGap(GeneratedRemovalRegion region)
+    {
+        if (ReportFor(region) is not { UntrackedFrames.Count: > 0 } report) return Task.CompletedTask;
+        int next = report.UntrackedFrames.FirstOrDefault(f => f > CurrentFrame, report.UntrackedFrames[0]);
+        return Jump(next / _tracking!.Fps);
+    }
+    private async Task Apply()
+    {
+        if (!Ready) return;
+        Template.VideoCleanup ??= [];
+        Template.VideoCleanup.RemoveAll(r => PromoVideoCleanupService.SameSource(r.Source, _recipe.Source));
+        _recipe.Enabled = true;
+        Template.VideoCleanup.Add(GeneratedPromoEditing.Copy(_recipe));
+        await Changed.InvokeAsync(); await Close();
+    }
+    private async Task RemoveEffect()
+    {
+        Template.VideoCleanup?.RemoveAll(r => PromoVideoCleanupService.SameSource(r.Source, _recipe.Source));
+        if (Template.VideoCleanup is { Count: 0 }) Template.VideoCleanup = null;
+        _recipe.Regions.Clear(); Cleanup.ForgetDraft(Template, _recipe.Source);
+        await Changed.InvokeAsync(); await Close();
+    }
+    private Task Close()
+    {
+        if (_source is not null && _recipe.Regions.Count > 0) Cleanup.KeepDraft(Template, _recipe);
+        return OnClose.InvokeAsync();
+    }
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true; Cleanup.Changed -= OnProgress; _life.Cancel(); _frameCancel?.Cancel();
+        _tracking = null;
+        try
+        {
+            if (_drag is not null) { await _drag.InvokeVoidAsync("dispose"); await _drag.DisposeAsync(); }
+            if (_module is not null) await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException) { }
+        _self?.Dispose(); _frameCancel?.Dispose(); _life.Dispose();
+    }
+}

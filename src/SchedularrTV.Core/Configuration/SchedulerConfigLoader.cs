@@ -401,6 +401,13 @@ public static class SchedulerConfigLoader
         foreach (GeneratedPromoTemplate template in generated.Templates)
         {
             string templateScope = $"{scope}.templates.{template.Name}";
+            HashSet<string> cleanupSources = new(StringComparer.OrdinalIgnoreCase);
+            foreach (GeneratedVideoCleanup cleanup in template.VideoCleanup ?? [])
+            {
+                try { cleanup.Validate(); }
+                catch (ArgumentException ex) { errors.Add($"{templateScope}.video_cleanup: {ex.Message}"); }
+                if (!cleanupSources.Add(cleanup.Source)) errors.Add($"{templateScope}.video_cleanup: only one recipe per source file is allowed.");
+            }
             if (template.Duration <= TimeSpan.Zero || template.Duration > TimeSpan.FromMinutes(2))
             {
                 errors.Add($"{templateScope}: duration must be between 0 and 2 minutes.");

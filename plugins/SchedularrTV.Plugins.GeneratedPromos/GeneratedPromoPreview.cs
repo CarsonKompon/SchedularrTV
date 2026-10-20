@@ -17,11 +17,13 @@ public sealed class GeneratedPromoPreview(
     GeneratedPromoService promos,
     IOptions<GeneratedPromoOptions> options,
     TimeProvider clock,
-    IServiceProvider services)
+    IServiceProvider services,
+    PromoVideoCleanupService? cleanup = null)
 {
     private static readonly string[] SampleTitles = ["SpongeBob SquarePants", "The Fairly OddParents", "Hey Arnold!", "Rugrats"];
 
     private readonly ConcurrentDictionary<string, string?> _frames = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, double> _videoDurations = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, MediaItem?> _standIns = new(StringComparer.OrdinalIgnoreCase);
 
     private SchedulerConfig NamingConfig => services.GetService<ConfigEditor>()?.Working
@@ -179,6 +181,8 @@ public sealed class GeneratedPromoPreview(
         // background; until then it shows its one clip), placed for lines of about the length they'll be spoken.
         promo = promos.PeekCuration(promo);
         PromoComposition composition = GeneratedPromoResolver.Compose(promo);
+        if (cleanup is not null)
+            composition = await cleanup.PrepareAsync(composition, template, wait: false, cancellationToken).ConfigureAwait(false);
         if (composition.BackgroundPath is { } background && !PromoRenderer.IsImage(background))
         {
             composition = composition with { BackgroundPath = await FrameAsync(background, composition, time, cancellationToken).ConfigureAwait(false) };
@@ -235,7 +239,13 @@ public sealed class GeneratedPromoPreview(
         }
 
         int frame = (int)Math.Round(playback.TotalSeconds * Math.Max(1, fps));
-        double second = (video.SourceStart + TimeSpan.FromSeconds(frame / (double)Math.Max(1, fps))).TotalSeconds;
+        string durationKey = $"{Path.GetFullPath(video.Path)}|{File.GetLastWriteTimeUtc(video.Path).Ticks}";
+        if (!_videoDurations.TryGetValue(durationKey, out double duration))
+        {
+            duration = await PromoVideoDecoder.DurationAsync(options.Value.FfprobePath, video.Path, cancellationToken).ConfigureAwait(false);
+            _videoDurations[durationKey] = duration;
+        }
+        double second = video.SourceSecond(TimeSpan.FromSeconds(frame / (double)Math.Max(1, fps)), duration, Math.Max(1, fps));
         (int width, int height) = video.FrameSize;
         string filter = video.SizeFilter(Math.Max(1, fps));
         string key = $"{Path.GetFullPath(video.Path)}|{File.GetLastWriteTimeUtc(video.Path).Ticks}|{second.ToString("0.###", CultureInfo.InvariantCulture)}|{width}x{height}|{filter}|layer-alpha-v2";
@@ -250,9 +260,9 @@ public sealed class GeneratedPromoPreview(
         string output = Path.Combine(directory, Hash(key) + ".png");
         TrimSoon();
         string? decoder = await PromoVideoDecoder.FindAsync(options.Value.FfprobePath, video.Path, cancellationToken).ConfigureAwait(false);
-        // Past the end of the video (it would hold its last frame), its opening frame stands in.
+        // Loop or hold has already been resolved in source time; a failed seek gets one earlier frame.
         string? result = await ExtractFilteredAsync(video.Path, second, filter, output, cancellationToken, decoder).ConfigureAwait(false)
-            ?? await ExtractFilteredAsync(video.Path, video.SourceStart.TotalSeconds, filter, output, cancellationToken, decoder).ConfigureAwait(false);
+            ?? await ExtractFilteredAsync(video.Path, Math.Max(0, second - 1d / Math.Max(1, fps)), filter, output, cancellationToken, decoder).ConfigureAwait(false);
         _frames[key] = result;
         return result;
     }

@@ -19,3 +19,7 @@ publish/
 
 # Plugins installed from the Plugins page while running from a checkout (the repository's own load from their builds).
 .plugins/
+
+# Optional video-processing worker bytecode
+__pycache__/
+*.pyc

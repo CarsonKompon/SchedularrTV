@@ -44,7 +44,8 @@ public sealed partial class GeneratedPromoService(
     IEnumerable<IMusicLibrary>? musicLibraries = null,
     GeneratorSetup? generatorSetup = null,
     SchedularrTV.Service.Images.AutomaticImages? automaticImages = null,
-    IEnumerable<ISpeechTranscriber>? transcribers = null) : BackgroundService, IScheduleFinisher
+    IEnumerable<ISpeechTranscriber>? transcribers = null,
+    PromoVideoCleanupService? cleanup = null) : BackgroundService, IScheduleFinisher
 {
     private const double MaxTempo = 1.35;
 
@@ -407,6 +408,8 @@ public sealed partial class GeneratedPromoService(
             }
 
             PromoComposition composition = GeneratedPromoResolver.Compose(promo, audio, tempo, generated);
+            if (cleanup is not null)
+                composition = await cleanup.PrepareAsync(composition, template, wait: true, cancellationToken).ConfigureAwait(false);
             if (curated is not null)
             {
                 // The curated voice-over is already placed (and paced) in the promo's time.
@@ -1149,6 +1152,7 @@ public sealed partial class GeneratedPromoService(
         {
             // Transcripts take minutes to make and keep for months; they tidy themselves.
             if (file.StartsWith(previewFrames + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                || (cleanup is not null && file.StartsWith(cleanup.CacheDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 || file.StartsWith(TranscriptDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
