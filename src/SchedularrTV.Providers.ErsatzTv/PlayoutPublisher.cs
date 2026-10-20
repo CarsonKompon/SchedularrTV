@@ -21,7 +21,8 @@ namespace SchedularrTV.Providers.ErsatzTv;
 public sealed class PlayoutPublisher(
     IOptions<ErsatzTvOptions> options,
     ILogger<PlayoutPublisher> logger,
-    MediaTrackProbe? trackProbe = null) : IPlayoutPublisher
+    MediaTrackProbe? trackProbe = null,
+    IPlaybackUrlResolver? playbackUrls = null) : IPlayoutPublisher
 {
     internal static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -48,7 +49,7 @@ public sealed class PlayoutPublisher(
             string folder = ResolvePlayoutFolder(_options, schedule.ChannelNumber);
             Directory.CreateDirectory(folder);
 
-            PlayoutDocument document = Build(schedule, _options, streams);
+            PlayoutDocument document = Build(schedule, _options, streams, playbackUrls);
             string fileName = $"{FormatFileTimestamp(schedule.Start)}_{FormatFileTimestamp(schedule.End)}.json";
             string path = Path.Combine(folder, fileName);
             string temp = path + ".tmp";
@@ -116,7 +117,8 @@ public sealed class PlayoutPublisher(
         new Dictionary<string, IReadOnlyList<MediaStream>>();
 
     internal static PlayoutDocument Build(ChannelSchedule schedule, ErsatzTvOptions options,
-        IReadOnlyDictionary<string, IReadOnlyList<MediaStream>>? streams = null)
+        IReadOnlyDictionary<string, IReadOnlyList<MediaStream>>? streams = null,
+        IPlaybackUrlResolver? playbackUrls = null)
     {
         SchedularrTV.Core.Configuration.ChannelTracksConfig? tracks = ErsatzTvTracks.For(schedule);
         var document = new PlayoutDocument
@@ -140,7 +142,11 @@ public sealed class PlayoutPublisher(
                 Finish = entry.End.ToString("O", CultureInfo.InvariantCulture)
             };
 
-            if (entry.Item?.Path is { Length: > 0 } url && IsHttp(url))
+            if (entry.Item is { } media && playbackUrls?.Resolve(media, options) is { } remoteUrl)
+            {
+                item.Source = HttpSourceFor(entry, remoteUrl);
+            }
+            else if (entry.Item?.Path is { Length: > 0 } url && IsHttp(url))
             {
                 item.Source = IsLive(entry.Item) ? LiveSourceFor(entry.Item, url, options) : HttpSourceFor(entry, url);
             }
@@ -330,7 +336,7 @@ public sealed class PlayoutPublisher(
         }
     }
 
-    internal static string MapPath(string path, IReadOnlyList<PathMapping> mappings)
+    public static string MapPath(string path, IReadOnlyList<PathMapping> mappings)
     {
         foreach (PathMapping mapping in mappings)
         {

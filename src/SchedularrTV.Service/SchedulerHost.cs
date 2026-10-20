@@ -253,6 +253,11 @@ public static class SchedulerHost
             .AllowAnyHeader()
             .AllowAnyMethod()));
 
+        builder.Services.AddHttpClient(JellyfinPlayback.ClientName, http => http.Timeout = TimeSpan.FromSeconds(30))
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+        builder.Services.AddSingleton<JellyfinPlayback>();
+        builder.Services.AddSingleton<IPlaybackUrlResolver>(sp => sp.GetRequiredService<JellyfinPlayback>());
+
         configure?.Invoke(builder);
 
         // Plugins' contributions follow their switches from here on (everything is registered by now).
@@ -287,6 +292,8 @@ public static class SchedulerHost
 
         app.MapSchedulerApi();
         app.MapErsatzTvPreview();
+        app.MapMethods(JellyfinPlayback.Route, ["GET", "HEAD"],
+            (string token, HttpContext context, JellyfinPlayback playback) => playback.RelayAsync(token, context));
         MapPlugins(app, plugins, dataDirectory);
         app.MapRazorComponents<App>()
             .AddInteractiveServerRenderMode()

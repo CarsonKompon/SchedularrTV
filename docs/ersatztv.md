@@ -85,6 +85,16 @@ Tracks are read with ffprobe from the files SchedularrTV can see, just before a 
 
 ## Path mappings and guide options
 
+### Jellyfin on another computer — no shared drive required
+
+For the usual setup where SchedularrTV starts and stops ErsatzTV on the same computer, enter the remote Jellyfin server's address and API key in **App settings → Jellyfin**. Videos unavailable on the scheduler computer automatically stream from Jellyfin over HTTP. No SMB/NFS share or path mapping is required. After upgrading an existing installation, restart and rebuild the schedule so library items carry their Jellyfin playback identity.
+
+SchedularrTV relays the original file with byte-range support for seeking; ErsatzTV still handles channel encoding and scheduled mid-roll in/out points. The Jellyfin API key is sent only to Jellyfin in an authentication header. Generated playouts contain protected, item-specific relay URLs instead of the key. Keep both servers running during playback.
+
+Existing local files and explicit path mappings take precedence. Plugins that analyze or render local files still need access to those files; HTTP channel playback does not make remote media available as local files. Remote-file playback currently uses ErsatzTV's default audio/subtitle selection rather than the local track-probing preferences.
+
+If ErsatzTV runs separately on another machine or in a container, set **`ErsatzTv:JellyfinStreamBaseUrl`** to the scheduler's address reachable from that installation (for example `http://192.168.1.20:5252`) to enable this fallback. Otherwise unmanaged installations continue using their existing media paths.
+
 Merge required options into **`settings.json`**:
 
 ```json

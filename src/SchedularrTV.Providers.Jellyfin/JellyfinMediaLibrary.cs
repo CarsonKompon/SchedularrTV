@@ -231,6 +231,13 @@ public sealed class JellyfinMediaLibrary(
 
         versions.TryGetValue(item.Id, out JellyfinVersion? version);
 
+        // Preserve provider identity separately from Path: rendered replacements must not fall back
+        // to the original Jellyfin video, and credentials must never enter cached media metadata.
+        attributes ??= new(StringComparer.OrdinalIgnoreCase);
+        attributes[JellyfinPlaybackIdentity.ItemId] = item.Id;
+        attributes[JellyfinPlaybackIdentity.OriginalPath] = item.Path ?? string.Empty;
+        attributes[JellyfinPlaybackIdentity.Server] = _options.BaseUrl.TrimEnd('/');
+
         // A chapter named for the credits marks where they start (in the second half, so "Opening Credits" doesn't count).
         if (CreditsChapter(item) is { } credits)
         {

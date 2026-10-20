@@ -84,7 +84,12 @@ public sealed class JellyfinScanTests
         Assert.Equal([TimeSpan.Zero, TimeSpan.FromSeconds(90)], episode.Chapters);
         Assert.Equal("episode", episode.VersionGroupId);
         Assert.Equal("DVD", episode.VersionName);
-        Assert.Empty(Assert.Single(items, item => item.Id == "extra").Attributes);
+        var extra = Assert.Single(items, item => item.Id == "extra");
+        Assert.Equal("extra", extra.Attributes[JellyfinPlaybackIdentity.ItemId]);
+        Assert.Equal("", extra.Attributes[JellyfinPlaybackIdentity.OriginalPath]);
+        Assert.Equal("http://jellyfin.test", extra.Attributes[JellyfinPlaybackIdentity.Server]);
+        Assert.Equal("episode", episode.Attributes[JellyfinPlaybackIdentity.ItemId]);
+        Assert.Equal(episode.Path, episode.Attributes[JellyfinPlaybackIdentity.OriginalPath]);
     }
 
     [Fact]
