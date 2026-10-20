@@ -87,7 +87,10 @@ public sealed class LineupPublisher(
             string encoding = ErsatzTvEncoding.Overlay(ErsatzTvEncoding.Resolve(_options.Encoding, schedule),
                 copyVideo: IsPassthrough(schedule) && !ErsatzTvEncoding.HasOverrides(schedule),
                 channelDisabledFilters: await ReadDisabledFiltersAsync(channelConfigPath, cancellationToken).ConfigureAwait(false),
-                subtitleMode: ErsatzTvTracks.SubtitleMode(ErsatzTvTracks.For(schedule)));
+                subtitleMode: ErsatzTvTracks.SubtitleMode(ErsatzTvTracks.For(schedule)),
+                // Local tool paths are not valid for an unmanaged remote/container installation.
+                ffmpegPath: _options.ManageProcess ? _options.FfmpegPath : null,
+                ffprobePath: _options.ManageProcess ? _options.FfprobePath : null);
             string encodingPath = await EnsureOverlayAsync(root, ErsatzTvEncoding.FileName(encoding), encoding, cancellationToken).ConfigureAwait(false);
             encodingOverlays.Add(encodingPath);
             overlays.Add(encodingPath);

@@ -12,6 +12,8 @@
 
 The managed process starts after playouts exist, restarts after failure or lineup changes, and stops with the scheduler. Its output goes to **`logs/server.log`**.
 
+Managed channels automatically use the app's resolved **ffmpeg** and **ffprobe** paths, including Homebrew installations on Intel and Apple Silicon Macs launched from Finder. These paths are published in generated overlays for existing channels as well as new ones; changing a tool path updates the overlay and restarts managed ErsatzTV on publication. `ErsatzTv:FfmpegPath` and `ErsatzTv:FfprobePath` can override the app defaults. Unmanaged installations keep their own channel tool paths, since they may run on another computer or in a container.
+
 ## Use an unmanaged process
 
 Set **Lineup folder** to the directory containing the lineup ErsatzTV actually opens. Start ErsatzTV with **`ersatztv <lineup>`**:

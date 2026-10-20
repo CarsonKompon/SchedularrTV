@@ -196,7 +196,7 @@ public static class ErsatzTvEncoding
     /// null leaves channel.json's.
     /// </param>
     public static string Overlay(EffectiveEncoding encoding, bool copyVideo = false, IEnumerable<string>? channelDisabledFilters = null,
-        string? subtitleMode = null)
+        string? subtitleMode = null, string? ffmpegPath = null, string? ffprobePath = null)
     {
         var video = new JsonObject
         {
@@ -243,6 +243,16 @@ public static class ErsatzTvEncoding
             }
 
             overlay["ffmpeg"] = new JsonObject { ["disabled_filters"] = filters };
+        }
+
+        // Use absolute discovered/configured paths for managed desktop launches. Keep the filter
+        // overrides above, and omit unset paths rather than clearing channel.json's own settings.
+        if (!string.IsNullOrWhiteSpace(ffmpegPath) || !string.IsNullOrWhiteSpace(ffprobePath))
+        {
+            var tools = overlay["ffmpeg"] as JsonObject ?? new JsonObject();
+            if (!string.IsNullOrWhiteSpace(ffmpegPath)) tools["ffmpeg_path"] = ffmpegPath;
+            if (!string.IsNullOrWhiteSpace(ffprobePath)) tools["ffprobe_path"] = ffprobePath;
+            if (overlay["ffmpeg"] is null) overlay["ffmpeg"] = tools;
         }
 
         return overlay.ToJsonString(new JsonSerializerOptions { WriteIndented = true });

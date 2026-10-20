@@ -77,6 +77,12 @@ public sealed class ErsatzTvOptions
     /// </summary>
     public string? FfprobePath { get; set; }
 
+    /// <summary>
+    /// FFmpeg for managed local ErsatzTV. Unset uses the app's FFmpeg setting and desktop tool discovery.
+    /// Together with FfprobePath, published in managed channels' overlays so Finder's PATH is irrelevant.
+    /// </summary>
+    public string? FfmpegPath { get; set; }
+
     /// <summary>The streams read from each file, kept until the file changes.</summary>
     public string TrackProbeCachePath { get; set; } = "state/track-probe-cache.json";
 

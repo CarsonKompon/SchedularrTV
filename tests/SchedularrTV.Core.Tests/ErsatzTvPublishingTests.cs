@@ -81,6 +81,75 @@ public class ErsatzTvPublishingTests
     // --- Playout documents ----------------------------------------------------------------------
 
     [Theory]
+    [InlineData(true, false, "none")]
+    [InlineData(true, true, "videotoolbox")]
+    [InlineData(true, false, "cuda")]
+    [InlineData(false, false, "none")]
+    public async Task Managed_channels_receive_tool_paths_on_republish_without_rewriting_channel_config(
+        bool managed, bool copy, string hardware)
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"tool-lineup-{Guid.NewGuid():N}");
+        var settings = new ErsatzTvOptions
+        {
+            ConfigRoot = root, WriteLineup = true, ManageProcess = managed,
+            FfmpegPath = "/usr/local/bin/ffmpeg", FfprobePath = "/usr/local/bin/ffprobe",
+            Encoding = new() { Hardware = hardware }
+        };
+        var options = Microsoft.Extensions.Options.Options.Create(settings);
+        using var supervisor = new ErsatzTvProcessSupervisor(options,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ErsatzTvProcessSupervisor>.Instance);
+        var publisher = new LineupPublisher(options, supervisor,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<LineupPublisher>.Instance);
+        var schedule = Schedule() with
+        {
+            Annotations = new Dictionary<string, string> { [LineupPublisher.CopyAnnotation] = copy.ToString() }
+        };
+        try
+        {
+            await publisher.PublishAsync([schedule]);
+            string configPath = Path.Combine(root, "channels", "1", "channel.json");
+            string original = await File.ReadAllTextAsync(configPath);
+            string first = await OverlayPath();
+            using (JsonDocument overlay = JsonDocument.Parse(await File.ReadAllTextAsync(first)))
+            {
+                if (managed)
+                {
+                    JsonElement tools = overlay.RootElement.GetProperty("ffmpeg");
+                    Assert.Equal(settings.FfmpegPath, tools.GetProperty("ffmpeg_path").GetString());
+                    Assert.Equal(settings.FfprobePath, tools.GetProperty("ffprobe_path").GetString());
+                    if (hardware == "cuda")
+                        Assert.Contains("pad_cuda", tools.GetProperty("disabled_filters").EnumerateArray().Select(f => f.GetString()));
+                }
+                else
+                {
+                    Assert.False(overlay.RootElement.TryGetProperty("ffmpeg", out _));
+                }
+            }
+
+            settings.FfmpegPath = "/opt/homebrew/bin/ffmpeg";
+            await publisher.PublishAsync([schedule]);
+            Assert.Equal(original, await File.ReadAllTextAsync(configPath));
+            string second = await OverlayPath();
+            Assert.Equal(managed, first != second); // Content-addressed overlays trigger the supervisor's restart.
+            if (managed)
+            {
+                using JsonDocument overlay = JsonDocument.Parse(await File.ReadAllTextAsync(second));
+                Assert.Equal(settings.FfmpegPath, overlay.RootElement.GetProperty("ffmpeg").GetProperty("ffmpeg_path").GetString());
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+
+        async Task<string> OverlayPath()
+        {
+            using JsonDocument lineup = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(root, "lineup.json")));
+            return lineup.RootElement.GetProperty("channels")[0].GetProperty("overlays").EnumerateArray().Last().GetString()!;
+        }
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task Explicit_picture_settings_override_video_passthrough_in_the_published_lineup(bool explicitSettings)

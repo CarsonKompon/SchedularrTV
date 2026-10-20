@@ -325,10 +325,14 @@ public static class SchedulerHost
                 options.Folders = ReadFolders(folders);
             }
         });
-        services.AddOptions<ErsatzTvOptions>().PostConfigure<IOptions<FileSystemLibraryOptions>>((options, library) =>
+        services.AddOptions<ErsatzTvOptions>().PostConfigure<IOptions<FileSystemLibraryOptions>, IConfiguration>((options, library, configuration) =>
         {
             options.ConfigRoot = AppPaths.Rooted(data, options.ConfigRoot);
             options.TrackProbeCachePath = AppPaths.Rooted(data, options.TrackProbeCachePath);
+
+            options.FfmpegPath = ToolLocator.Resolve(
+                string.IsNullOrWhiteSpace(options.FfmpegPath) ? configuration["GeneratedPromos:FfmpegPath"] : options.FfmpegPath,
+                "ffmpeg", data);
 
             // The same ffprobe the media library reads files with, unless one is set for ErsatzTV.
             options.FfprobePath = string.IsNullOrWhiteSpace(options.FfprobePath)
