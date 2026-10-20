@@ -322,6 +322,7 @@ public sealed class TemplatePackageTests : IDisposable
         look.Canvases = [SqueezeCanvas.Create("4:3")];
         look.Canvases[0].Layers.Add(new GeneratedLayer { Kind = GeneratedLayerKind.Image, Path = bug });
         look.Canvases[0].Layers.Add(new GeneratedLayer { Kind = GeneratedLayerKind.Video, Path = Write("media/panel.mp4", "video"), Video = new() { Stretch = true } });
+        look.Canvases[0].Layers.Add(new GeneratedLayer { Kind = GeneratedLayerKind.Text, CreditsText = new() { LinesPerPage = 6 } });
 
         string overlayZip = await ExportAsync(_data, writer => OverlayPackages.ExportAsync(overlay, writer));
         string lookZip = await ExportAsync(_data, writer => SqueezePackages.ExportAsync(look, look.Name, writer));
@@ -351,6 +352,9 @@ public sealed class TemplatePackageTests : IDisposable
             Assert.Equal("bug", File.ReadAllText(imported.Canvases[0].Layers[1].Path!));
             Assert.Equal("video", File.ReadAllText(imported.Canvases[0].Layers[2].Path!));
             Assert.True(imported.Canvases[0].Layers[2].Video!.Stretch);
+            Assert.Equal(6, imported.Canvases[0].Layers[3].CreditsText!.LinesPerPage);
+            imported.Canvases[0].Layers[3].CreditsText!.LinesPerPage = 12;
+            Assert.Equal(6, look.Canvases[0].Layers[3].CreditsText!.LinesPerPage);
             Assert.Equal(bug, look.Canvases[0].Layers[1].Path);
         }
     }

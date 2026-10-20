@@ -1,0 +1,41 @@
+/* The viewport must work without any plugin-specific stylesheet. In particular,
+   absolute preview images and layer boxes must be contained by the canvas. */
+.ed-viewport { position: relative; overflow: hidden; border-radius: 8px; min-width: 0; }
+.ed-canvas {
+    position: relative; width: 100%; overflow: hidden; box-sizing: border-box;
+    border: 1px solid var(--line); border-radius: 8px; background-color: #000;
+    background-size: 100% 100%; background-repeat: no-repeat; touch-action: none; user-select: none;
+}
+.ed-still { position: absolute; inset: 0; background-size: 100% 100%; background-repeat: no-repeat; pointer-events: none; }
+.ed-viewport.zoomed .ed-canvas { border-radius: 0; }
+.ed-viewport.panning, .ed-viewport.panning ::deep * { cursor: grabbing !important; }
+.ed-zoom-badge {
+    position: absolute; right: 8px; top: 8px; z-index: 10; padding: 1px 7px; border-radius: 10px;
+    font-size: 11px; background: rgba(0,0,0,.65); color: #fff; pointer-events: none;
+}
+.ed-zoom-badge:empty { display: none; }
+.ed-canvas ::deep .layer-box {
+    position: absolute; border: calc(1px / var(--zoom, 1)) solid rgba(255,255,255,.35);
+    box-sizing: border-box; cursor: move; touch-action: none;
+}
+.ed-canvas ::deep .layer-box:hover { border-color: rgba(255,255,255,.75); }
+.ed-canvas ::deep .layer-box.selected { border: calc(2px / var(--zoom, 1)) solid var(--accent); z-index: 2; }
+.ed-canvas ::deep .layer-tag {
+    position: absolute; left: 0; top: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: calc(10px / var(--zoom, 1)); line-height: calc(16px / var(--zoom, 1)); padding: 0 calc(5px / var(--zoom, 1));
+    border-radius: 0 0 4px 0; background: rgba(0,0,0,.65); color: #fff; pointer-events: none;
+}
+.ed-canvas ::deep .layer-box.selected .layer-tag { background: var(--accent); }
+.ed-canvas ::deep .handle {
+    position: absolute; width: calc(12px / var(--zoom, 1)); height: calc(12px / var(--zoom, 1));
+    margin: calc(-6px / var(--zoom, 1)) 0 0 calc(-6px / var(--zoom, 1));
+    background: #fff; border: calc(2px / var(--zoom, 1)) solid var(--accent); border-radius: 3px;
+}
+.ed-canvas ::deep .handle-nw { left: 0; top: 0; cursor: nwse-resize; }
+.ed-canvas ::deep .handle-n { left: 50%; top: 0; cursor: ns-resize; }
+.ed-canvas ::deep .handle-ne { left: 100%; top: 0; cursor: nesw-resize; }
+.ed-canvas ::deep .handle-e { left: 100%; top: 50%; cursor: ew-resize; }
+.ed-canvas ::deep .handle-se { left: 100%; top: 100%; cursor: nwse-resize; }
+.ed-canvas ::deep .handle-s { left: 50%; top: 100%; cursor: ns-resize; }
+.ed-canvas ::deep .handle-sw { left: 0; top: 100%; cursor: nesw-resize; }
+.ed-canvas ::deep .handle-w { left: 0; top: 50%; cursor: ew-resize; }

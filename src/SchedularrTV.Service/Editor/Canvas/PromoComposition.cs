@@ -100,6 +100,19 @@ public sealed record PromoTextLayer : PromoLayer
 {
     public required IReadOnlyList<string> Lines { get; init; }
 
+    /// <summary>Timed pages, in composition time. Null is ordinary static text.</summary>
+    public IReadOnlyList<PromoTextPage>? Pages { get; init; }
+
+    public int PageAt(TimeSpan time)
+    {
+        if (Pages is not { Count: > 0 }) return -1;
+        for (int index = Pages.Count - 1; index >= 0; index--)
+            if (time >= Pages[index].At) return index;
+        return -1;
+    }
+
+    public IReadOnlyList<string> LinesAt(TimeSpan time) => PageAt(time) is var index && index >= 0 ? Pages![index].Lines : Lines;
+
     public SKColor Color { get; init; } = SKColors.White;
 
     /// <summary>Text shrinks from this size until every line fits the bounds.</summary>
@@ -129,6 +142,8 @@ public sealed record PromoImageLayer : PromoLayer
 {
     public required string Path { get; init; }
 }
+
+public sealed record PromoTextPage(TimeSpan At, IReadOnlyList<string> Lines);
 
 public sealed record PromoComposition
 {

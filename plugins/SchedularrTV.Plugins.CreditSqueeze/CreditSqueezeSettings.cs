@@ -38,6 +38,8 @@ public sealed class CreditSqueezeSettings(IPluginContext context)
 
     public (int Width, int Height) Size => Value("Resolution") == "1080p" ? (1920, 1080) : (1280, 720);
 
+    public CreditsOcrOptions Ocr => new(Value("TesseractPath") ?? "tesseract", Value("OcrLanguage") ?? "eng", Number("OcrSampleSeconds", 1, 1, 5));
+
     public string Ffmpeg
     {
         get

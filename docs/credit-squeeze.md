@@ -56,6 +56,23 @@ The editor shows labelled stand-in videos, with a selectable stand-in source rat
 
 Canvas designs run for the credits' duration and use their own layer timing/keyframes; the preset's automatic shrink/return and full-screen promo overrun do not apply. Show-specific preset-layout overrides apply to preset looks. Canvas designs and their image/video files are included when copying or exporting a look.
 
+### Credits Text: keep the names while replacing the video
+
+**Credits Text** is a movable, resizable text layer populated by OCR of the original source credits. It works even if the source-video layer ends, animates away, or is removed entirely, so a bumper or promo can replace the picture while the names stay on screen.
+
+1. Install **Tesseract OCR** and its language data on the machine running SchedularrTV. In the **Credit squeeze plugin settings**, set **Tesseract OCR executable**, or leave it empty when `tesseract` is on PATH. On Debian/Ubuntu the English packages are `tesseract-ocr` and `tesseract-ocr-eng`; on Windows select the installed `tesseract.exe`.
+2. Set **Credits OCR languages** to the installed language code(s), such as `eng` or `eng+fra`. **Read a credits frame every** defaults to **1 second**; keep that for scrolling or fast-changing credits.
+3. In a squeeze canvas, click **Credits Text**. Place its box, choose font, size, colour and alignment, and set **Source lines per page** (default **8**). Long lines can wrap to the box; the font shrinks when needed to keep a page inside it.
+4. Set the layer's **Starts** and **Ends** times if needed. All extracted lines are divided into pages that share that active interval equally. For example, three pages on a layer active from 2–20 seconds start at 2, 8 and 14 seconds. Leaving Ends blank uses the end of the squeeze. Layer keyframes animate the text box independently; changing pages does not restart its animation.
+5. End or animate away the original video and place the promo/bumper as desired. OCR still reads the original, unsqueezed source segment, not the composite or the replacement clip.
+6. **Render a preview video**, then expand **Review OCR credits text** to inspect the recognized lines and low-confidence count. Credits Text previews read the chosen credits segment rather than shortening it to the usual 20 seconds. The canvas itself shows clearly labelled sample lines over a 60-second demo.
+
+OCR preserves recognized wording, accents and punctuation; it does not generate copy or rewrite names. Repeated cards and overlapping scrolling lines are joined before pagination. OCR is not guaranteed to be an exact transcription: stylized fonts, poor footage, clipped lines, rapid rolls and incorrect credits markers can lead to mistakes or omissions. Check the preview; high OCR confidence is not a guarantee of correctness. Names shown only between sampled frames can be missed.
+
+Extraction runs only for canvases containing Credits Text. Successful transcripts are cached under the squeeze save folder's `_credits-text` directory by source file/version, source start, duration, OCR language and sampling settings. Changing layout or lines per page reuses the transcript; changing the source or OCR settings reads it again. The saved layer settings travel with copied/exported templates, while episode transcripts remain in the local cache.
+
+If Tesseract or its language data is unavailable, the scan times out, or no text is readable, the squeeze reports an error instead of silently rendering blank credits. On air the original credits remain in place until a replacement is ready.
+
 ## Save multiple looks
 
 1. Select **+ New from this one**.

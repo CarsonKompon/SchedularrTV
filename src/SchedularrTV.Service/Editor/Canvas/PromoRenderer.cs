@@ -146,6 +146,8 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
             using var pixels = new SKBitmap(output);
             Stream input = ffmpeg.StandardInput.BaseStream;
             PromoLayerFrame?[]? previous = null;
+            int[]? previousPages = null;
+            PromoTextLayer[] pagedText = [.. composition.Layers.OfType<PromoTextLayer>().Where(text => text.Pages is { Count: > 0 })];
             // Video layers' frames, each video decoded straight through by an ffmpeg of its own as the frames are drawn.
             Dictionary<string, string?> decoders = [];
             foreach (string path in composition.Layers.OfType<PromoVideoLayer>().Select(layer => layer.Path).Distinct())
@@ -163,9 +165,10 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
                 var time = TimeSpan.FromSeconds(index / (double)composition.Fps);
                 PromoLayerFrame?[] states = [.. composition.Layers.Select(layer => PromoAnimation.Evaluate(layer, time, composition.Duration, composition.Height))];
                 bool videoShowing = videoLayers.Any(video => PromoAnimation.EvaluateInGroups(video, time, composition.Duration, composition.Height) is not null);
+                int[] pages = [.. pagedText.Select(text => text.PageAt(time))];
 
                 // Held poses between transitions are identical, so resend the last frame unchanged (not while a video plays).
-                if (previous is null || videoShowing || animatedPictures || !states.SequenceEqual(previous))
+                if (previous is null || videoShowing || animatedPictures || !states.SequenceEqual(previous) || !pages.SequenceEqual(previousPages ?? []))
                 {
                     DrawFrame(surface.Canvas, composition, time, images, !videoBackground, videos);
                     if (!surface.ReadPixels(output, pixels.GetPixels(), pixels.RowBytes, 0, 0))
@@ -175,6 +178,7 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
 
                     pixels.GetPixelSpan().CopyTo(frame);
                     previous = states;
+                    previousPages = pages;
                 }
 
                 await input.WriteAsync(frame, cancellationToken).ConfigureAwait(false);
@@ -304,7 +308,7 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
                 DrawShape(canvas, rect, bounds);
                 break;
             case PromoTextLayer text:
-                DrawText(canvas, text, bounds, images);
+                DrawText(canvas, text.Pages is null ? text : text with { Lines = text.LinesAt(time) }, bounds, images);
                 break;
             // An animated picture (a GIF) plays from when its layer appears, looping.
             case PromoImageLayer picture when images.GetAt(picture.Path, time - layer.Start) is { } bitmap:

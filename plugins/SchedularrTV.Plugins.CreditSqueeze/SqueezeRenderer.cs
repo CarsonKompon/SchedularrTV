@@ -73,8 +73,18 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
     {
         if (job.Canvases is null) return job;
         var global = services.GetService<IOptions<ErsatzTvOptions>>()?.Value.Encoding ?? new ErsatzTvEncodingOptions();
-        return job with { CanvasCrop = ErsatzTvEncoding.Resolve(global, channel.Encoding).ScalingMode == "crop" };
+        bool readsCredits = job.Canvases.Any(canvas => canvas.UsesCreditsText);
+        return job with
+        {
+            CanvasCrop = ErsatzTvEncoding.Resolve(global, channel.Encoding).ScalingMode == "crop",
+            CreditsOcr = readsCredits ? settings.Ocr : null,
+            CreditsOcrSourceStamp = readsCredits ? CreditsOcr.SourceStamp(job.SourcePath) : null
+        };
     }
+
+    /// <summary>The source transcript, also used by the preview's review panel. Reuses the OCR cache.</summary>
+    public Task<CreditsOcrResult> ReadCreditsTextAsync(SqueezeJob job, CancellationToken cancellationToken) =>
+        services.GetRequiredService<CreditsOcr>().ReadAsync(job, cancellationToken);
 
     /// <summary>The squeeze's file when it's been made; null while it hasn't.</summary>
     public string? Ready(SqueezeJob job)
@@ -234,6 +244,8 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
             {
                 var canvas = SqueezeCanvas.Select(job.Canvases, job.CreditsAspect)
                     ?? throw new InvalidOperationException("Choose an aspect ratio and create a squeeze canvas first.");
+                if (canvas.UsesCreditsText)
+                    job = job with { OcrTranscript = await ReadCreditsTextAsync(job, cancellationToken).ConfigureAwait(false) };
                 string? picture = null;
                 if (job.PromoPath is null && canvas.Layers.Any(layer => layer.Video?.Episode == SqueezeCanvas.Panel)
                     && await ArtAsync(job.Next.ImageId, cancellationToken).ConfigureAwait(false) is { } art)

@@ -63,6 +63,26 @@
       "label": "ffmpeg",
       "type": "File",
       "description": "Leave empty to use the ffmpeg set under App settings."
+    },
+    {
+      "key": "TesseractPath",
+      "label": "Tesseract OCR executable",
+      "type": "File",
+      "description": "For Credits Text canvas layers. Install Tesseract and its language data; leave empty to find tesseract on PATH. OCR runs locally on the original credits before they are squeezed."
+    },
+    {
+      "key": "OcrLanguage",
+      "label": "Credits OCR languages",
+      "type": "Text",
+      "placeholder": "eng",
+      "description": "Installed Tesseract language codes, for example eng or eng+fra. OCR preserves recognized wording; small or stylized text can be misread, so check a preview."
+    },
+    {
+      "key": "OcrSampleSeconds",
+      "label": "Read a credits frame every (seconds)",
+      "type": "Number",
+      "placeholder": "1",
+      "description": "1 to 5. Use 1 for scrolling or fast-changing credits. Larger values are faster but may miss brief text. Results are cached per source segment."
     }
   ]
 }

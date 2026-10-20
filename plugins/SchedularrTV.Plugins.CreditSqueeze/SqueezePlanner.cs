@@ -76,6 +76,16 @@ public sealed record SqueezeJob(
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
     public bool CanvasCrop { get; init; }
 
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public CreditsOcrOptions? CreditsOcr { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? CreditsOcrSourceStamp { get; init; }
+
+    /// <summary>Resolved just before rendering; the source/options above identify this data in the render cache.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public CreditsOcrResult? OcrTranscript { get; init; }
+
     public SqueezeLayout Layout(int width = 1280, int height = 720) =>
         SqueezeLayout.Of(Style, Side, SplitPercent, width, height, CreditsFit, CreditsText, PanelText,
             CreditsAspect ?? SqueezeLayout.Widescreen, PromoAspect ?? SqueezeLayout.Widescreen);

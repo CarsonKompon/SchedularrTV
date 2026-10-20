@@ -22,6 +22,8 @@ public sealed class CreditSqueezePlugin : IPlugin, IPluginEndpoints
     public void ConfigureServices(IServiceCollection services, IPluginContext context)
     {
         services.AddSingleton(new CreditSqueezeSettings(context));
+        services.AddSingleton<ICreditsOcrEngine, TesseractCreditsOcr>();
+        services.AddSingleton<CreditsOcr>();
         services.AddSingleton<CreditsMarkers>();
         services.AddHostedService(sp => sp.GetRequiredService<CreditsMarkers>());
         services.AddSingleton(sp =>

@@ -1849,6 +1849,12 @@ public sealed class GeneratedLayerMask
     public string? Target { get; set; }
 }
 
+/// <summary>OCR-backed text in a credit-squeeze canvas; pages fill the layer's active time.</summary>
+public sealed class GeneratedCreditsTextOptions
+{
+    public int LinesPerPage { get; set; } = 8;
+}
+
 public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
 {
     /// <summary>
@@ -1963,6 +1969,10 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
 
     /// <summary>Literal text for <see cref="GeneratedLayerKind.Text"/>; newlines split lines.</summary>
     public string? Text { get; set; }
+
+    /// <summary>For a squeeze's text layer: use the source credits' OCR text rather than literal text.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedCreditsTextOptions? CreditsText { get; set; }
 
     /// <summary>Image file for <see cref="GeneratedLayerKind.Image"/>, or video file for <see cref="GeneratedLayerKind.Video"/>.</summary>
     public string? Path { get; set; }

@@ -279,6 +279,15 @@
             {
                 <video class="cs-video" src="@previewUrl" controls autoplay muted></video>
             }
+            @if (_previewUrl is not null && _creditsTextPreview is { } transcript)
+            {
+                <details>
+                    <summary>Review OCR credits text (@transcript.Lines.Count lines from @transcript.Frames frames)</summary>
+                    <p class="hint">This is the recognized source text, not generated copy. @transcript.UncertainLines lines have low OCR confidence.
+                        Even high-confidence OCR can misread small or stylized names. Page size and the text layer's timing determine how it appears.</p>
+                    <pre style="white-space:pre-wrap;max-height:360px;overflow:auto;">@string.Join("\n", transcript.Lines.Select(line => line.Text))</pre>
+                </details>
+            }
             <p class="hint cs-lookup">@LookupText(_lookup)</p>
             @if (_lookup.Problem is { } lookupProblem)
             {
@@ -457,6 +466,7 @@
 
     private void CommitCanvas() => Commit();
     private string? _canvasPreviewRatio;
+    private CreditsOcrResult? _creditsTextPreview;
 
     private const string OwnMode = "own";
     private const string InheritMode = "inherit";
@@ -1127,6 +1137,7 @@
     /// </summary>
     private async Task RenderPreviewAsync(CreditSqueezeSection section)
     {
+        _creditsTextPreview = null;
         _previewProblem = null;
         _previewNote = null;
         if (Schedule() is not { } schedule)
@@ -1215,11 +1226,14 @@
         try
         {
             // As long as its promo needs (the renderer knows once it has it, made or not), else the usual 20 seconds.
-            SqueezeJob job = plan.Job.PromoPath is not null || plan.Job.WantsMadePromo || plan.Job.Panel != SqueezePanel.Promo
+            bool readsCredits = plan.Job.Canvases?.Any(canvas => canvas.UsesCreditsText) == true;
+            SqueezeJob job = readsCredits ? plan.Job : plan.Job.PromoPath is not null || plan.Job.WantsMadePromo || plan.Job.Panel != SqueezePanel.Promo
                 ? plan.Job with { FitToPromo = true }
                 : plan.Job with { Length = plan.Job.Length < PreviewLength ? plan.Job.Length : PreviewLength };
-            string name = await Renderer.PreviewAsync(Renderer.ForChannel(job, Channel), Channel.Id, CancellationToken.None);
+            job = Renderer.ForChannel(job, Channel);
+            string name = await Renderer.PreviewAsync(job, Channel.Id, CancellationToken.None);
             _previewUrl = $"api/credit-squeeze/preview/{Uri.EscapeDataString(name)}";
+            if (readsCredits) _creditsTextPreview = await Renderer.ReadCreditsTextAsync(job, CancellationToken.None);
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
         {

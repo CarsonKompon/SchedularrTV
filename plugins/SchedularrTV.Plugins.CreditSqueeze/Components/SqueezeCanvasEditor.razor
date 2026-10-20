@@ -25,6 +25,7 @@
             <Stage>
                 <CanvasTools Width="canvas.Width" Height="canvas.Height" Add="AddLayer" Fit="Fit">
                     <button type="button" class="btn btn-sm" @onclick="AddSource">Source video</button>
+                    <button type="button" class="btn btn-sm" @onclick="AddCreditsText">Credits Text</button>
                 </CanvasTools>
                 <CanvasViewport @ref="_viewport" ViewportId="@(_id + "view")" CanvasId="@_id" StillId="@(_id + "still")"
                                 Width="canvas.Width" Height="canvas.Height" Label="Credits squeeze canvas" Measure="Measure">
@@ -47,6 +48,10 @@
                     <input type="range" min="0" max="60" step="0.1" @bind="_time" @bind:event="oninput" @bind:after="Refresh" /></label>
                 <p class="hint">Stand-in videos show the layout and channel fit. Use “Render a preview” below to see the actual credits and panel clips.
                     Keyframes are seconds from the start of the credits; the canvas runs for the full credits duration.</p>
+                @if (canvas.UsesCreditsText)
+                {
+                    <p class="hint">Credits Text here is sample text paged over a 60-second demo. Render a preview to read the source with OCR and review its extracted wording.</p>
+                }
                 <label class="field"><span>Stand-in source aspect ratio</span>
                     <select @bind="_sourceRatio" @bind:after="Refresh">@foreach (var ratio in SqueezeCanvas.Ratios) { <option value="@ratio">@ratio</option> }</select></label>
             </Stage>
@@ -87,10 +92,23 @@
                     }
                     @if (selected.Kind == GeneratedLayerKind.Text)
                     {
+                        @if (selected.CreditsText is { } credits)
+                        {
+                            <strong>Credits Text · source OCR</strong>
+                            <p class="hint">Reads the original credits, even when their video layer is hidden. Pages share this layer's active time equally.
+                                Set Tesseract and its languages in the Credit squeeze plugin settings. OCR can misread names; check the extracted text under the rendered preview.</p>
+                            <label class="field"><span>Source lines per page</span><input type="number" min="1" max="30" value="@credits.LinesPerPage" @onchange="SetLinesPerPage" /></label>
+                        }
+                        else
+                        {
                         <label class="field"><span>Text</span><textarea @bind="selected.Text" @bind:after="Commit"></textarea></label>
                         <p class="hint">Tokens: {show}, {next}, {time}, {channel}, {heading}.</p>
+                        }
                         <label class="field"><span>Font</span><select @bind="selected.FontFamily" @bind:after="Commit">@foreach (string font in PromoFonts.Installed()) { <option value="@font">@font</option> }</select></label>
                         <label class="field"><span>Font size</span><input type="number" min="1" max="400" @bind="selected.FontSize" @bind:after="Commit" /></label>
+                        <label class="field"><span>Alignment</span><select @bind="selected.Align" @bind:after="Commit">@foreach (var align in Enum.GetValues<GeneratedTextAlign>()) { <option value="@align">@align</option> }</select></label>
+                        <label class="check"><input type="checkbox" @bind="selected.Bold" @bind:after="Commit" />Bold</label>
+                        <label class="check"><input type="checkbox" checked="@(selected.WordWrap == true)" @onchange="e => SetWordWrap(e.Value is true)" />Wrap long lines to the box</label>
                     }
                     @if (selected.Kind is GeneratedLayerKind.Text or GeneratedLayerKind.Rect)
                     {
@@ -136,7 +154,8 @@
 </div>
 @if (_drag is not null)
 {
-    <div class="drag-overlay" @onpointermove="Drag" @onpointerup="EndDrag" @onpointercancel="EndDrag" @onpointerleave="EndDrag"></div>
+    <div class="drag-overlay" style="position:fixed;inset:0;z-index:1000;cursor:grabbing;touch-action:none;"
+         @onpointermove="Drag" @onpointerup="EndDrag" @onpointercancel="EndDrag" @onpointerleave="EndDrag"></div>
 }
 
 @code {
@@ -175,6 +194,26 @@
     private static string Pct(double number, double size) => N(number / size * 100) + "%";
     private async Task Measure() { _pixels = await JS.InvokeAsync<double>("eval", $"document.getElementById('{_id}')?.getBoundingClientRect().width || 640"); }
     private async Task AddSource() { await AddLayer("video"); _layer!.Video!.Episode = SqueezeCanvas.Credits; _layer.Name = "Source credits video"; await Commit(); }
+    private async Task AddCreditsText()
+    {
+        if (Canvas is null) return;
+        _layer = new GeneratedLayer
+        {
+            Name = "Credits Text", Kind = GeneratedLayerKind.Text, CreditsText = new(),
+            X = Math.Max(0, Canvas.Width - 460), Y = 100, Width = 420, Height = 500,
+            FontSize = 32, Bold = false, WordWrap = true, Align = GeneratedTextAlign.Center,
+            TransitionIn = GeneratedTransition.None, TransitionOut = GeneratedTransition.None
+        };
+        Canvas.Layers.Add(_layer);
+        await Commit();
+    }
+    private async Task SetLinesPerPage(ChangeEventArgs e)
+    {
+        if (_layer?.CreditsText is not { } credits || !int.TryParse(e.Value?.ToString(), out int lines)) return;
+        credits.LinesPerPage = Math.Clamp(lines, 1, 30);
+        await Commit();
+    }
+    private async Task SetWordWrap(bool wrap) { if (_layer is not null) _layer.WordWrap = wrap; await Commit(); }
     private async Task AddLayer(string kind)
     {
         if (Canvas is null) return;
@@ -269,8 +308,12 @@
     private void Refresh()
     {
         if (Canvas is null) return;
-        var job = Renderer.ForChannel(new SqueezeJob("__credits__", TimeSpan.Zero, TimeSpan.FromSeconds(600), new("Next programme", null, "8:30 PM", null), [],
-            Channel.Name, Look.Heading, Look.AccentColor, Canvas.BackgroundColor, 1, false, PromoPath: "__panel__", EndingShow: "Current programme") { Canvases = [Canvas] }, Channel);
+        var job = Renderer.ForChannel(new SqueezeJob("__credits__", TimeSpan.Zero, TimeSpan.FromSeconds(Canvas.UsesCreditsText ? 60 : 600), new("Next programme", null, "8:30 PM", null), [],
+            Channel.Name, Look.Heading, Look.AccentColor, Canvas.BackgroundColor, 1, false, PromoPath: "__panel__", EndingShow: "Current programme")
+        {
+            Canvases = [Canvas],
+            OcrTranscript = Canvas.UsesCreditsText ? new CreditsOcrResult(Enumerable.Range(1, 16).Select(index => new CreditsOcrLine($"Sample credits line {index}", 100)).ToArray(), 0) : null
+        }, Channel);
         _composition = Canvas.Compose(job);
         using var surface = SKSurface.Create(new SKImageInfo(Canvas.Width, Canvas.Height));
         using var images = new PromoImageCache();

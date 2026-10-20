@@ -23,6 +23,19 @@ public sealed class SqueezeCanvas
     [System.Text.Json.Serialization.JsonIgnore, YamlDotNet.Serialization.YamlIgnore]
     public double Aspect => ParseAspect(AspectRatio);
 
+    [System.Text.Json.Serialization.JsonIgnore, YamlDotNet.Serialization.YamlIgnore]
+    public bool UsesCreditsText => Layers.Any(layer => layer.Kind == GeneratedLayerKind.Text && layer.CreditsText is not null);
+
+    /// <summary>Every page gets an equal share of the text layer's visible time, without losing the last page.</summary>
+    public static IReadOnlyList<PromoTextPage> CreditsPages(IReadOnlyList<CreditsOcrLine> lines, int linesPerPage, TimeSpan start, TimeSpan end)
+    {
+        if (end <= start || lines.Count == 0) return [];
+        int size = Math.Clamp(linesPerPage, 1, 30);
+        int count = (lines.Count + size - 1) / size;
+        return Enumerable.Range(0, count).Select(index => new PromoTextPage(start + TimeSpan.FromTicks((end - start).Ticks * index / count),
+            lines.Skip(index * size).Take(size).Select(line => line.Text).ToArray())).ToArray();
+    }
+
     public static double ParseAspect(string value)
     {
         if (value.Split(':') is [var left, var right]
@@ -73,9 +86,12 @@ public sealed class SqueezeCanvas
                 GeneratedLayerKind.Rect => new PromoRectLayer { Bounds = bounds, Color = Color(item.Color), Shape = item.Shape ?? GeneratedShape.Rectangle, CornerRadius = item.CornerRadius * scale },
                 GeneratedLayerKind.Text => new PromoTextLayer
                 {
-                    Bounds = bounds, Lines = Tokens(item.Text ?? "", job).Split('\n'), Color = Color(item.Color),
+                    Bounds = bounds, Lines = item.CreditsText is null ? Tokens(item.Text ?? "", job).Split('\n') : [], Color = Color(item.Color),
+                    Pages = item.CreditsText is { } credits ? CreditsPages(job.OcrTranscript?.Lines ?? [], credits.LinesPerPage,
+                        item.Start > TimeSpan.Zero ? item.Start : TimeSpan.Zero, item.End is { } end && end < job.Length ? end : job.Length) : null,
                     FontFamily = item.FontFamily, MaxFontSize = item.FontSize * scale, Bold = item.Bold,
-                    Align = (SKTextAlign)item.Align, WordWrap = item.WordWrap == true
+                    Align = (SKTextAlign)item.Align, WordWrap = item.WordWrap == true,
+                    VerticalAlign = (PromoVerticalAlign)(item.VerticalAlign ?? GeneratedVerticalAlign.Top)
                 },
                 GeneratedLayerKind.Image when !string.IsNullOrWhiteSpace(path) => new PromoImageLayer { Bounds = bounds, Path = path },
                 GeneratedLayerKind.Video when options.Episode == Panel && path is not null && PromoRenderer.IsImage(path) => new PromoImageLayer { Bounds = bounds, Path = path },
