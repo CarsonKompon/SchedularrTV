@@ -316,12 +316,23 @@
             }
             @if (_previewUrl is not null && _creditsTextPreview is { } transcript)
             {
+                @if (transcript.UsedFallback)
+                {
+                    <div class="banner" role="status">
+                        <strong>Using your default credits text.</strong>
+                        <p class="hint">OCR couldn't read the source. The preview uses each Credits Text layer's fallback wording.</p>
+                        <details><summary>OCR details</summary><p class="hint">@transcript.Failure</p></details>
+                    </div>
+                }
+                else
+                {
                 <details class="studio-section">
                     <summary>Review OCR credits text (@transcript.Lines.Count lines from @transcript.Frames frames)</summary>
                     <p class="hint">This is the recognized source text, not generated copy. @transcript.RejectedDetections noisy or low-confidence detections were removed across the sampled frames. @transcript.UncertainLines retained lines have low OCR confidence.
                         Even high-confidence OCR can misread small or stylized names. Page size and the text layer's timing determine how it appears.</p>
                     <pre style="white-space:pre-wrap;max-height:360px;overflow:auto;">@string.Join("\n", transcript.Lines.Select(line => line.Text))</pre>
                 </details>
+                }
             }
             <p class="hint cs-lookup">@LookupText(_lookup)</p>
             @if (_lookup.Problem is { } lookupProblem)
@@ -1242,7 +1253,7 @@
                 var availability = await OcrSetup.CheckAsync(_stop.Token);
                 _ocrPrompt = !availability.Ready;
                 _ocrProblem = availability.Problem;
-                if (!availability.Ready) return;
+                if (!availability.Ready && !trial.Canvases.Where(canvas => canvas.UsesCreditsText).All(canvas => canvas.HasCreditsTextFallback)) return;
             }
             catch (OperationCanceledException) { return; }
             finally { _checkingOcr = false; }
@@ -1328,9 +1339,10 @@
                 ? plan.Job with { FitToPromo = true }
                 : plan.Job with { Length = plan.Job.Length < PreviewLength ? plan.Job.Length : PreviewLength };
             job = Renderer.ForChannel(job, Channel);
-            string name = await Renderer.PreviewAsync(job, Channel.Id, CancellationToken.None);
+            CreditsOcrResult? creditsResult = null;
+            string name = await Renderer.PreviewAsync(job, Channel.Id, CancellationToken.None, result => creditsResult = result);
             _previewUrl = $"api/credit-squeeze/preview/{Uri.EscapeDataString(name)}";
-            if (readsCredits) _creditsTextPreview = await Renderer.ReadCreditsTextAsync(job, CancellationToken.None);
+            _creditsTextPreview = creditsResult;
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
         {

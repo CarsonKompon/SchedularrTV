@@ -17,9 +17,10 @@ public sealed record CreditsRecognition(int TopPercent = 0, int BottomPercent = 
 public sealed record CreditsOcrOptions(string Executable, string Language, int SampleSeconds, int Version = 3, string? DataDirectory = null,
     CreditsRecognition? Recognition = null);
 public sealed record CreditsOcrLine(string Text, double Confidence, CreditsTextBox? Box = null);
-public sealed record CreditsOcrResult(IReadOnlyList<CreditsOcrLine> Lines, int Frames, int RejectedDetections = 0)
+public sealed record CreditsOcrResult(IReadOnlyList<CreditsOcrLine> Lines, int Frames, int RejectedDetections = 0, string? Failure = null)
 {
     public int UncertainLines => Lines.Count(line => line.Confidence < 60);
+    public bool UsedFallback => Failure is not null;
 }
 
 /// <summary>Reject recognition noise, without guessing names or using a dictionary of common words.</summary>
@@ -141,6 +142,21 @@ public sealed class CreditsOcr(CreditSqueezeSettings settings, ICreditsOcrEngine
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private string Folder => Path.Combine(settings.SaveFolder, "_credits-text");
+
+    /// <summary>Fallback is resolved per selected canvas and never saved as a successful OCR transcript.</summary>
+    public async Task<CreditsOcrResult> ReadForCanvasAsync(SqueezeJob job, SqueezeCanvas canvas, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ReadAsync(job, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (canvas.HasCreditsTextFallback &&
+            ex is InvalidOperationException or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return new([], 0, Failure: ex.Message);
+        }
+    }
 
     public static string SourceStamp(string path)
     {

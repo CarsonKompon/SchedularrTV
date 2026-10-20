@@ -196,7 +196,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
     private string PreviewFolder => Path.Combine(settings.SaveFolder, "_previews");
 
     /// <summary>Makes a preview of a squeeze for the editor, replacing the channel's last one; returns its file name.</summary>
-    public async Task<string> PreviewAsync(SqueezeJob job, string channelId, CancellationToken cancellationToken)
+    public async Task<string> PreviewAsync(SqueezeJob job, string channelId, CancellationToken cancellationToken, Action<CreditsOcrResult>? onCreditsRead = null)
     {
         string name = $"{new string([.. channelId.Where(char.IsAsciiLetterOrDigit)])}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}.mp4";
         Directory.CreateDirectory(PreviewFolder);
@@ -207,7 +207,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
 
         using (SchedularrTV.Plugins.Performance.Work.Begin("Credit Squeeze", "Generating preview"))
         {
-            await RenderAsync(job, Path.Combine(PreviewFolder, name), cancellationToken).ConfigureAwait(false);
+            await RenderAsync(job, Path.Combine(PreviewFolder, name), cancellationToken, onCreditsRead).ConfigureAwait(false);
         }
 
         return name;
@@ -224,7 +224,7 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
     public static byte[] SampleFrame(SqueezeJob job) => DrawFrame(job, 640, 360, art: null);
 
     /// <summary>Makes a squeeze into <paramref name="output"/>: animated in, or (if this ffmpeg can't) starting in its box.</summary>
-    public async Task RenderAsync(SqueezeJob job, string output, CancellationToken cancellationToken)
+    public async Task RenderAsync(SqueezeJob job, string output, CancellationToken cancellationToken, Action<CreditsOcrResult>? onCreditsRead = null)
     {
         using SchedularrTV.Plugins.Performance.WorkScope? work =
             SchedularrTV.Plugins.Performance.Work.BeginUnlessWithin("Credit Squeeze", "Rendering credits", Path.GetFileName(output));
@@ -245,7 +245,11 @@ public sealed class SqueezeRenderer(CreditSqueezeSettings settings, IServiceProv
                 var canvas = SqueezeCanvas.Select(job.Canvases, job.CreditsAspect)
                     ?? throw new InvalidOperationException("Choose an aspect ratio and create a squeeze canvas first.");
                 if (canvas.UsesCreditsText)
-                    job = job with { OcrTranscript = await ReadCreditsTextAsync(job, cancellationToken).ConfigureAwait(false) };
+                {
+                    var transcript = await services.GetRequiredService<CreditsOcr>().ReadForCanvasAsync(job, canvas, cancellationToken).ConfigureAwait(false);
+                    job = job with { OcrTranscript = transcript };
+                    onCreditsRead?.Invoke(transcript);
+                }
                 string? picture = null;
                 if (job.PromoPath is null && canvas.Layers.Any(layer => layer.Video?.Episode == SqueezeCanvas.Panel)
                     && await ArtAsync(job.Next.ImageId, cancellationToken).ConfigureAwait(false) is { } art)

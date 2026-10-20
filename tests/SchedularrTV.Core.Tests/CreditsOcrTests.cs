@@ -21,6 +21,89 @@ public sealed class CreditsOcrTests : IDisposable
         new("Next", null, "8 PM", null), [], "Channel", "Next", "#FFFFFF", "#000000", 1, false);
     private static CreditsOcrLine[] Lines(params string[] lines) => lines.Select(line => new CreditsOcrLine(line, 95)).ToArray();
 
+    private static SqueezeCanvas FallbackCanvas(string? fallback = "Thanks for watching {show}.") => new()
+    {
+        Layers = [new GeneratedLayer
+        {
+            Name = "Credits", Kind = GeneratedLayerKind.Text, CreditsText = new() { FallbackText = fallback, LinesPerPage = 1 },
+            Width = 1280, Height = 720, FontSize = 60, TransitionIn = GeneratedTransition.None, TransitionOut = GeneratedTransition.None
+        }]
+    };
+
+    [Fact]
+    public void Default_text_is_per_layer_paged_and_used_only_without_recognized_credits()
+    {
+        var canvas = FallbackCanvas("Thanks for watching {show}.\nUp next: {next} on {channel}.");
+        var job = Job() with { EndingShow = "Example", OcrTranscript = new([], 0, Failure: "No readable text") };
+        var text = Assert.IsType<PromoTextLayer>(Assert.Single(canvas.Compose(job).Layers));
+        Assert.Equal(["Thanks for watching Example."], text.LinesAt(TimeSpan.Zero));
+        Assert.Equal(["Up next: Next on Channel."], text.LinesAt(TimeSpan.FromSeconds(6)));
+        var actual = Assert.IsType<PromoTextLayer>(Assert.Single(canvas.Compose(job with { OcrTranscript = new(Lines("Original {channel}"), 1) }).Layers));
+        Assert.Equal(["Original {channel}"], actual.LinesAt(TimeSpan.Zero));
+        Assert.Equal(canvas.Layers[0].CreditsText!.FallbackText, canvas.Copy().Layers[0].CreditsText!.FallbackText);
+        Assert.NotEqual(SqueezeRenderer.Key(job with { Canvases = [canvas] }), SqueezeRenderer.Key(job with { Canvases = [FallbackCanvas("Other default")] }));
+    }
+
+    [Fact]
+    public async Task Empty_ocr_uses_default_without_caching_failure_and_success_is_retried()
+    {
+        string source = await MakeSource();
+        var engine = new RecordingEngine { Empty = true };
+        using var ocr = new CreditsOcr(Settings, engine);
+        var job = Job(source) with { Length = TimeSpan.FromSeconds(1) };
+        var result = await ocr.ReadForCanvasAsync(job, FallbackCanvas(), CancellationToken.None);
+        Assert.True(result.UsedFallback);
+        Assert.Contains("no readable credits", result.Failure);
+        Assert.Empty(result.Lines);
+        Assert.Empty(Directory.GetFiles(Path.Combine(Settings.SaveFolder, "_credits-text"), "*.json"));
+        engine.Empty = false;
+        var recovered = await ocr.ReadForCanvasAsync(job, FallbackCanvas(), CancellationToken.None);
+        Assert.False(recovered.UsedFallback);
+        Assert.NotEmpty(recovered.Lines);
+        Assert.Equal(2, engine.Calls);
+    }
+
+    [Fact]
+    public async Task Missing_ocr_tool_can_use_configured_default()
+    {
+        string source = await MakeSource();
+        using var ocr = new CreditsOcr(Settings, new TesseractCreditsOcr());
+        var job = Job(source) with { Length = TimeSpan.FromSeconds(1), CreditsOcr = new(FilePath("missing-tesseract.exe"), "eng", 1) };
+        Assert.True((await ocr.ReadForCanvasAsync(job, FallbackCanvas(), CancellationToken.None)).UsedFallback);
+    }
+
+    [Fact]
+    public async Task Missing_defaults_and_cancellation_still_fail_instead_of_silently_rendering_blank_text()
+    {
+        string source = await MakeSource();
+        var engine = new RecordingEngine { Empty = true };
+        using var ocr = new CreditsOcr(Settings, engine);
+        var job = Job(source) with { Length = TimeSpan.FromSeconds(1) };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => ocr.ReadForCanvasAsync(job, FallbackCanvas("  "), CancellationToken.None));
+        var partial = FallbackCanvas();
+        partial.Layers.Add(new() { Kind = GeneratedLayerKind.Text, CreditsText = new() });
+        await Assert.ThrowsAsync<InvalidOperationException>(() => ocr.ReadForCanvasAsync(job, partial, CancellationToken.None));
+        using var stop = new CancellationTokenSource();
+        engine.OnRead = stop.Cancel;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ocr.ReadForCanvasAsync(job, FallbackCanvas(), stop.Token));
+    }
+
+    [Fact]
+    public async Task Preview_renders_fallback_and_reports_the_same_ocr_attempt_once()
+    {
+        string source = await MakeSource();
+        var engine = new RecordingEngine { Empty = true };
+        using var ocr = new CreditsOcr(Settings, engine);
+        using var services = new ServiceCollection().AddSingleton(ocr).BuildServiceProvider();
+        using var renderer = new SqueezeRenderer(Settings, services, TimeProvider.System, NullLogger<SqueezeRenderer>.Instance);
+        var job = Job(source) with { Length = TimeSpan.FromSeconds(1), EndingShow = "Example", Canvases = [FallbackCanvas()] };
+        CreditsOcrResult? report = null;
+        string name = await renderer.PreviewAsync(job, "test", CancellationToken.None, result => report = result);
+        Assert.NotNull(renderer.PreviewFile(name));
+        Assert.True(report?.UsedFallback);
+        Assert.Equal(1, engine.Calls);
+    }
+
     [Theory]
     [InlineData("a", 99, false)]
     [InlineData("3", 99, false)]

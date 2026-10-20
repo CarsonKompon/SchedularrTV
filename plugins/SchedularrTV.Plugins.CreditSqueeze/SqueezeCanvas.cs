@@ -26,6 +26,18 @@ public sealed class SqueezeCanvas
     [System.Text.Json.Serialization.JsonIgnore, YamlDotNet.Serialization.YamlIgnore]
     public bool UsesCreditsText => Layers.Any(layer => layer.Kind == GeneratedLayerKind.Text && layer.CreditsText is not null);
 
+    [System.Text.Json.Serialization.JsonIgnore, YamlDotNet.Serialization.YamlIgnore]
+    public bool HasCreditsTextFallback => UsesCreditsText && Layers.Where(layer => layer.Kind == GeneratedLayerKind.Text && layer.CreditsText is not null)
+        .All(layer => !string.IsNullOrWhiteSpace(layer.CreditsText!.FallbackText));
+
+    private static IReadOnlyList<CreditsOcrLine> CreditLines(GeneratedCreditsTextOptions credits, SqueezeJob job)
+    {
+        if (job.OcrTranscript is { UsedFallback: false, Lines.Count: > 0 } transcript) return transcript.Lines;
+        return string.IsNullOrWhiteSpace(credits.FallbackText) ? [] : Tokens(credits.FallbackText, job)
+            .Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n')
+            .Where(line => !string.IsNullOrWhiteSpace(line)).Select(line => new CreditsOcrLine(line.Trim(), 100)).ToArray();
+    }
+
     /// <summary>Every page gets an equal share of the text layer's visible time, without losing the last page.</summary>
     public static IReadOnlyList<PromoTextPage> CreditsPages(IReadOnlyList<CreditsOcrLine> lines, int linesPerPage, TimeSpan start, TimeSpan end)
     {
@@ -87,7 +99,7 @@ public sealed class SqueezeCanvas
                 GeneratedLayerKind.Text => new PromoTextLayer
                 {
                     Bounds = bounds, Lines = item.CreditsText is null ? Tokens(item.Text ?? "", job).Split('\n') : [], Color = Color(item.Color),
-                    Pages = item.CreditsText is { } credits ? CreditsPages(job.OcrTranscript?.Lines ?? [], credits.LinesPerPage,
+                    Pages = item.CreditsText is { } credits ? CreditsPages(CreditLines(credits, job), credits.LinesPerPage,
                         item.Start > TimeSpan.Zero ? item.Start : TimeSpan.Zero, item.End is { } end && end < job.Length ? end : job.Length) : null,
                     FontFamily = item.FontFamily, MaxFontSize = item.FontSize * scale, Bold = item.Bold,
                     Align = (SKTextAlign)item.Align, WordWrap = item.WordWrap == true,

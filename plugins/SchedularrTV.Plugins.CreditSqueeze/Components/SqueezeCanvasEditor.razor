@@ -152,6 +152,12 @@
                             <p class="hint">Reads the original credits, even when their video layer is hidden. Pages share this layer's active time equally.
                                 Set Tesseract and its languages in the Credit squeeze plugin settings. OCR can misread names; check the extracted text under the rendered preview.</p>
                             <label class="field"><span>Source lines per page</span><input type="number" min="1" max="30" value="@credits.LinesPerPage" @onchange="SetLinesPerPage" /></label>
+                            <label class="field"><span>Default text if OCR fails</span>
+                                <textarea rows="3" placeholder="Thanks for watching {show}." @bind="credits.FallbackText" @bind:after="Commit"></textarea></label>
+                            <p class="hint" role="note">Used if credits can't be read. Supports {show}, {channel}, {next}, {time}, and {heading}. Leave empty to keep OCR failures from rendering this canvas.</p>
+                            <button type="button" class="btn btn-sm @(_previewFallback ? "btn-primary" : "")" aria-pressed="@_previewFallback"
+                                    disabled="@(string.IsNullOrWhiteSpace(credits.FallbackText) && !_previewFallback)" @onclick="ToggleFallbackPreview">
+                                <Icon Name="type" />@(_previewFallback ? "Show sample OCR text" : "Preview default text")</button>
                         }
                         else
                         {
@@ -264,6 +270,8 @@
     private SKRect _dragBounds;
     private GeneratedLayer? _dragLayer;
     private PromoComposition? _composition;
+    private bool _previewFallback;
+    private void ToggleFallbackPreview() { _previewFallback = !_previewFallback; Refresh(); }
     private IReadOnlyList<string>? _fonts;
     private IReadOnlyList<string> Fonts => _fonts ??= PromoFonts.Installed();
     private const int PreviewFps = 30;
@@ -559,7 +567,10 @@
             Channel.Name, Look.Heading, Look.AccentColor, Canvas.BackgroundColor, 1, false, PromoPath: "__panel__", EndingShow: "Current programme")
         {
             Canvases = [Canvas],
-            OcrTranscript = Canvas.UsesCreditsText ? new CreditsOcrResult(Enumerable.Range(1, 16).Select(index => new CreditsOcrLine($"Sample credits line {index}", 100)).ToArray(), 0) : null
+            OcrTranscript = Canvas.UsesCreditsText
+                ? _previewFallback ? new CreditsOcrResult([], 0, Failure: "Previewing default text")
+                    : new CreditsOcrResult(Enumerable.Range(1, 16).Select(index => new CreditsOcrLine($"Sample credits line {index}", 100)).ToArray(), 0)
+                : null
         }, Channel);
         _composition = Canvas.Compose(job);
         float scale = Math.Min(1, (_interactive ? 480f : 960f) / Math.Max(Canvas.Width, Canvas.Height));

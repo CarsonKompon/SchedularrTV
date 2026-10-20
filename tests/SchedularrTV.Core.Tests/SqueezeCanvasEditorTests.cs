@@ -1,18 +1,35 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.JSInterop;
 using SchedularrTV.Core.Configuration;
 using SchedularrTV.CreditSqueeze;
 using SchedularrTV.CreditSqueeze.Components;
+using SchedularrTV.Plugins;
 using Xunit;
 
 namespace SchedularrTV.Core.Tests;
 
 public sealed class SqueezeCanvasEditorTests
 {
+    [Fact]
+    public async Task Credits_text_exposes_the_saved_fallback_and_a_canvas_preview_action()
+    {
+        var canvas = SqueezeCanvas.Create("16:9");
+        canvas.Layers.Add(new GeneratedLayer
+        {
+            Kind = GeneratedLayerKind.Text, Width = 400, Height = 200,
+            CreditsText = new() { FallbackText = "Thanks for watching {show}." }
+        });
+        string html = await Render(new SqueezeLook { UseCanvas = true, Canvases = [canvas] });
+        Assert.Contains("Default text if OCR fails", html);
+        Assert.Contains("Thanks for watching {show}.</textarea>", html);
+        Assert.Contains("Preview default text", html);
+    }
+
     [Fact]
     public async Task Interaction_previews_are_small_and_final_drag_uses_the_latest_absolute_delta()
     {
@@ -21,7 +38,7 @@ public sealed class SqueezeCanvasEditorTests
         using var services = new ServiceCollection().AddLogging()
             .AddSingleton<IComponentActivator>(activator)
             .AddSingleton<IJSRuntime, NoJavaScript>()
-            .AddSingleton(provider => new SqueezeRenderer(null!, provider, TimeProvider.System, NullLogger<SqueezeRenderer>.Instance))
+            .AddSingleton(provider => new SqueezeRenderer(new CreditSqueezeSettings(new Context()), provider, TimeProvider.System, NullLogger<SqueezeRenderer>.Instance))
             .BuildServiceProvider();
         await using var renderer = new HtmlRenderer(services, services.GetRequiredService<ILoggerFactory>());
         await renderer.Dispatcher.InvokeAsync(async () =>
@@ -112,7 +129,7 @@ public sealed class SqueezeCanvasEditorTests
     {
         using var services = new ServiceCollection().AddLogging()
             .AddSingleton<IJSRuntime, NoJavaScript>()
-            .AddSingleton(provider => new SqueezeRenderer(null!, provider, TimeProvider.System, NullLogger<SqueezeRenderer>.Instance))
+            .AddSingleton(provider => new SqueezeRenderer(new CreditSqueezeSettings(new Context()), provider, TimeProvider.System, NullLogger<SqueezeRenderer>.Instance))
             .BuildServiceProvider();
         await using var renderer = new HtmlRenderer(services, services.GetRequiredService<ILoggerFactory>());
         return await renderer.Dispatcher.InvokeAsync(async () =>
@@ -124,6 +141,18 @@ public sealed class SqueezeCanvasEditorTests
             }));
             return output.ToHtmlString();
         });
+    }
+
+    private sealed class Context : IPluginContext
+    {
+        public PluginManifest Manifest { get; } = new() { Id = "credit-squeeze", Name = "Credit squeeze" };
+        public string? PluginDirectory => null;
+        public string DataDirectory => Path.GetTempPath();
+        public string AppDataDirectory => Path.GetTempPath();
+        public IConfiguration Configuration { get; } = new ConfigurationBuilder().Build();
+        public IConfiguration AppConfiguration { get; } = new ConfigurationBuilder().Build();
+        public bool IsLoaded(string pluginId) => false;
+        public string StaticFilesPath => "/plugins/credit-squeeze/";
     }
 
     private sealed class NoJavaScript : IJSRuntime

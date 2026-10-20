@@ -1853,6 +1853,8 @@ public sealed class GeneratedLayerMask
 public sealed class GeneratedCreditsTextOptions
 {
     public int LinesPerPage { get; set; } = 8;
+    /// <summary>User-authored text shown when source OCR fails or returns no readable credits.</summary>
+    public string? FallbackText { get; set; }
 }
 
 public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
