@@ -1,9 +1,9 @@
 <div class="ed-timeline-head">
     <div class="ed-frame-step" role="group" aria-label="Step through frames">
-        <EditorIconButton Icon="rewind" Label="Back a second (Shift + ←)" OnClick="() => Step.InvokeAsync(-FramesPerSecond)" />
-        <EditorIconButton Icon="arrow-left" Label="Previous frame (← or ,)" OnClick="() => Step.InvokeAsync(-1)" />
-        <EditorIconButton Icon="arrow-right" Label="Next frame (→ or .)" OnClick="() => Step.InvokeAsync(1)" />
-        <EditorIconButton Icon="forward" Label="Forward a second (Shift + →)" OnClick="() => Step.InvokeAsync(FramesPerSecond)" />
+        <EditorIconButton Icon="rewind" Label="@(KeyboardHints ? "Back a second (Shift + ←)" : "Back a second")" OnClick="() => Step.InvokeAsync(-FramesPerSecond)" />
+        <EditorIconButton Icon="arrow-left" Label="@(KeyboardHints ? "Previous frame (← or ,)" : "Previous frame")" OnClick="() => Step.InvokeAsync(-1)" />
+        <EditorIconButton Icon="arrow-right" Label="@(KeyboardHints ? "Next frame (→ or .)" : "Next frame")" OnClick="() => Step.InvokeAsync(1)" />
+        <EditorIconButton Icon="forward" Label="@(KeyboardHints ? "Forward a second (Shift + →)" : "Forward a second")" OnClick="() => Step.InvokeAsync(FramesPerSecond)" />
     </div>
     <strong title="Preview time">@Time.ToString("0.000")<span class="ed-meta"> / @Duration.ToString("0.##")s</span></strong>
     <div class="spacer"></div>
@@ -17,4 +17,5 @@
     [Parameter] public int FrameCount { get; set; }
     [Parameter] public int FramesPerSecond { get; set; }
     [Parameter] public EventCallback<int> Step { get; set; }
+    [Parameter] public bool KeyboardHints { get; set; } = true;
 }

@@ -35,6 +35,23 @@
 .canvas-studio ::deep .layer-tag { opacity: 0; }
 .canvas-studio ::deep .layer-box:is(:hover, .selected, .chosen) .layer-tag { opacity: 1; }
 .canvas-studio:not(.show-help) ::deep .hint:not(.warn):not([role]) { display: none; }
+/* Baseline editor chrome belongs to the workspace, not to an individual plugin. */
+.canvas-studio ::deep :where(.ed-meta) { color: var(--muted); font-size: 11.5px; font-weight: normal; }
+.canvas-studio ::deep :where(.ed-side) { background: var(--panel-2); }
+.canvas-studio ::deep :where(.ed-timeline-head, .ed-keybar, .layer-actions, .inspector-head) { display: flex; align-items: center; gap: 6px; }
+.canvas-studio ::deep :where(.ed-timeline-head, .ed-keybar) { flex-wrap: wrap; margin: 6px 0; }
+.canvas-studio ::deep :where(.spacer) { flex: 1; }
+.canvas-studio ::deep :where(.ed-frame-step) { display: inline-flex; gap: 2px; }
+.canvas-studio ::deep :where(.ed-timeline-head strong) { font-variant-numeric: tabular-nums; }
+.canvas-studio ::deep :where(.layer-list) { list-style: none; padding: 0; margin: 0 0 8px; overflow: auto; }
+.canvas-studio ::deep :where(.layer-row) { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+.canvas-studio ::deep :where(.layer-select) { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; text-align: left; }
+.canvas-studio ::deep :where(.layer-select > span) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.canvas-studio ::deep :where(.layer-select small) { color: var(--muted); }
+.canvas-studio ::deep :where(.layer-row.selected .layer-select) { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.canvas-studio ::deep :where(.inspector) { border-top: 1px solid var(--line); padding-top: 8px; }
+.canvas-studio ::deep :where(.inspector-head .ed-section) { margin: 0; }
+.canvas-studio ::deep :where(input[type=range]) { width: 100%; }
 @media (max-width: 1000px) {
     .canvas-studio .ed-workspace { grid-template-columns: minmax(0, 1fr); }
     .canvas-studio .ed-side { border-left: 0; border-top: 1px solid var(--line); max-height: 60vh; }

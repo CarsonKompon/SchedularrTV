@@ -8,13 +8,17 @@
 
 @if (Context.Channel is { } channel)
 {
-    <div class="card">
-        <div class="card-head"><h2>Credit Squeeze</h2></div>
-        <p class="hint" style="margin-top:0;">
+    <div class="cs-studio">
+    <div class="card studio-scope">
+        <div class="card-head"><Icon Name="film" /><h2>Credit Squeeze</h2></div>
+        <details class="studio-section">
+        <summary><Icon Name="book" /> How credit squeezes work</summary>
+        <p class="hint">
             As the end credits roll, they shrink into a box and the rest of the picture says what's on next, with its picture and time.
             Credits are found from chapters named for them, or Jellyfin's media segments (Jellyfin 10.10 and newer, with a segment provider such as
             Intro Skipper). A show's own outro (an end card played after its episode) can be squeezed too.
         </p>
+        </details>
         <div class="grid grid-2">
             <label class="field">
                 <span>Settings for</span>
@@ -63,23 +67,26 @@
             else
             {
             SqueezeLook look = Look(section);
-            <h3 class="cs-heading">Templates</h3>
-            <div class="cs-templates">
-                <button type="button" class="cs-template @(_template < 0 ? "active" : "")" @onclick="() => SelectTemplate(-1)">
+            <div class="card-head cs-template-heading"><h2>Templates</h2><div class="spacer"></div>
+                <EditorIconButton Icon="copy" Label="Create template from this look" OnClick="() => AddTemplate(section)" />
+            </div>
+            <nav class="cs-templates" aria-label="Credit squeeze templates">
+                <button type="button" class="cs-template @(_template < 0 ? "active" : "")" aria-pressed="@(_template < 0)" @onclick="() => SelectTemplate(-1)">
                     @CreditSqueezeSection.MainLook<span class="cs-weight">@WeightText(section, section)</span></button>
                 @for (int index = 0; index < section.Templates.Count; index++)
                 {
                     int at = index;
                     SqueezeTemplate template = section.Templates[at];
-                    <button type="button" class="cs-template @(_template == at ? "active" : "") @(template.Enabled ? "" : "off")" @onclick="() => SelectTemplate(at)">
+                    <button type="button" class="cs-template @(_template == at ? "active" : "") @(template.Enabled ? "" : "off")" aria-pressed="@(_template == at)" @onclick="() => SelectTemplate(at)">
                         @template.Name<span class="cs-weight">@WeightText(section, template)</span></button>
                 }
-                <button type="button" class="btn btn-sm" @onclick="() => AddTemplate(section)">+ New from this one</button>
-            </div>
+            </nav>
             <TemplatePackageButtons Kind="@SqueezePackages.Kind" What="look" ExportText="@($"Export “{LookName(section)}”")"
                                     ExportTitle="Save the selected look, with its background, as a .zip to share"
                                     OnExport="@(writer => SqueezePackages.ExportAsync(look, LookName(section), writer))"
                                     OnImport="@(reader => ImportLook(section, reader))" />
+            <details class="studio-section">
+            <summary><Icon Name="sliders" /> Template settings · @LookName(section)</summary>
             <div class="grid grid-3" style="align-items:end;">
                 @if (look is SqueezeTemplate editing)
                 {
@@ -94,18 +101,17 @@
                     <div class="row row-wrap" style="gap:10px;align-items:center;margin-bottom:10px;">
                         <label class="check" style="margin:0;"><input type="checkbox" checked="@current.Enabled" @onchange="e => Set(() => current.Enabled = e.Value is true)" />
                             <span>In use</span></label>
-                        <button type="button" class="btn btn-sm btn-ghost" @onclick="() => DeleteTemplate(section)">Delete</button>
+                        <EditorIconButton Icon="trash" Label="Delete template" Danger="true" OnClick="() => DeleteTemplate(section)" />
                     </div>
                 }
             </div>
             <p class="hint" style="margin-top:-4px;">Each squeeze picks one of these looks at random, by weight (the same airing always gets the same one). Layout and Look below are
                 the selected one's; a weight of 0 keeps it out. How often, and shows' own layouts, are the channel's whichever is picked.</p>
-
-            <label class="field"><span>Design the squeeze with</span>
-                <select value="@(look.UseCanvas ? "canvas" : "preset")" @onchange='e => Set(() => look.UseCanvas = e.Value?.ToString() == "canvas")'>
-                    <option value="preset">Preset layout</option>
-                    <option value="canvas">Canvas Editor</option>
-                </select></label>
+            </details>
+            <div class="cs-design-mode" role="group" aria-label="Design mode">
+                <button type="button" class="btn btn-sm @(!look.UseCanvas ? "btn-primary" : "")" aria-pressed="@(!look.UseCanvas)" @onclick="() => Set(() => look.UseCanvas = false)"><Icon Name="grid" />Preset layout</button>
+                <button type="button" class="btn btn-sm @(look.UseCanvas ? "btn-primary" : "")" aria-pressed="@look.UseCanvas" @onclick="() => Set(() => look.UseCanvas = true)"><Icon Name="pencil" />Canvas editor</button>
+            </div>
             @if (look.UseCanvas)
             {
                 <SqueezeCanvasEditor @key="look" Look="look" Channel="Channel" Changed="CommitCanvas" SelectedRatio="ratio => _canvasPreviewRatio = ratio" />
@@ -262,17 +268,17 @@
                 </div>
             </div>
             }
-            <div class="row row-wrap" style="gap:8px;align-items:center;margin-bottom:6px;">
-                <button class="btn btn-sm" type="button" disabled="@_previewing" @onclick="() => RenderPreviewAsync(section)">
-                    @(_previewing ? (_makingPromo ? "Making a promo for the panel, then the preview…" : "Making a preview…") : PreviewButton)
+            <div class="cs-render-bar">
+                <button class="btn btn-sm btn-primary" type="button" title="@PreviewButton" disabled="@_previewing" @onclick="() => RenderPreviewAsync(section)">
+                    <Icon Name="play" />@(_previewing ? (_makingPromo ? "Making panel promo…" : "Rendering…") : "Render preview")
                 </button>
                 @if (_previewProblem is { } previewProblem)
                 {
-                    <span class="hint warn" style="margin:0;">@previewProblem</span>
+                    <span class="hint warn" role="alert" style="margin:0;">@previewProblem</span>
                 }
                 else if (_previewNote is { } previewNote)
                 {
-                    <span class="hint" style="margin:0;">@previewNote</span>
+                    <span class="hint" role="status" style="margin:0;">@previewNote</span>
                 }
             </div>
             @if (_previewUrl is { } previewUrl)
@@ -281,7 +287,7 @@
             }
             @if (_previewUrl is not null && _creditsTextPreview is { } transcript)
             {
-                <details>
+                <details class="studio-section">
                     <summary>Review OCR credits text (@transcript.Lines.Count lines from @transcript.Frames frames)</summary>
                     <p class="hint">This is the recognized source text, not generated copy. @transcript.UncertainLines lines have low OCR confidence.
                         Even high-confidence OCR can misread small or stylized names. Page size and the text layer's timing determine how it appears.</p>
@@ -296,7 +302,8 @@
 
             @if (!look.UseCanvas)
             {
-            <h3 class="cs-heading">Look <span class="cs-of">(@LookName(section))</span></h3>
+            <details class="studio-section">
+            <summary><Icon Name="sliders" /> Appearance &amp; audio · @LookName(section)</summary>
             <div class="grid grid-3">
                 <label class="field"><span>Heading (next programme, Up Next)</span>
                     <input type="text" value="@look.Heading" @onchange="e => Set(() => look.Heading = Text(e, DefaultHeading))" /></label>
@@ -360,8 +367,10 @@
                 <LowPowerNotice Inline="true" Title="The shrinking animation rescales the credits on every frame, the slowest part of a squeeze here. Turn it off if squeezes aren't ready in time." />
             }
 
+            </details>
             }
-            <h3 class="cs-heading">How often <span class="cs-of">(@(Block is null ? "the channel" : "this block"), whichever template)</span></h3>
+            <details class="studio-section">
+            <summary><Icon Name="clock" /> Frequency &amp; detection · @(Block is null ? "channel" : "block")</summary>
             <label class="field"><span>Episodes' end credits: @Percent(section.CreditsChance)</span>
                 <input type="range" min="0" max="1" step="0.05" value="@section.CreditsChance.ToString(CultureInfo.InvariantCulture)"
                        @onchange="e => Set(() => section.CreditsChance = Number(e, 1))" /></label>
@@ -408,12 +417,13 @@
             {
                 <p class="hint">None of the channel's shows has an outro of its own (set under Titles, or on a collection with <em>Outro</em>).</p>
             }
+            </details>
             }
         }
     </div>
 
-    <div class="card">
-        <div class="card-head"><h2>Squeezes</h2></div>
+    <div class="card studio-scope">
+        <div class="card-head"><Icon Name="activity" /><h2>Rendering status</h2></div>
         @{
             SqueezeQueueStatus status = Renderer.Status;
             (int marked, int asked) = Credits.Coverage();
@@ -431,13 +441,14 @@
         }
     </div>
 
+    </div>
     <style>
         .cs-heading { font-size: 13px; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
         .cs-outros { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
         .cs-outro { display: grid; grid-template-columns: minmax(140px, 260px) 1fr 52px 64px; gap: 10px; align-items: center; }
         .cs-show { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .cs-value { text-align: right; font-variant-numeric: tabular-nums; }
-        .hint.warn { color: #ffd08a; }
+        .cs-studio .hint.warn { color: var(--warn, #ffd08a); }
         .cs-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
         @@media (max-width: 1100px) { .cs-layout { grid-template-columns: minmax(0, 1fr); } }
         .cs-preview img { width: 100%; border-radius: 8px; display: block; border: 1px solid var(--line); }
@@ -452,12 +463,29 @@
         .cs-for { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 12px; align-items: end; }
         .cs-owned { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: -2px 0 10px; }
         .cs-of { text-transform: none; letter-spacing: 0; font-weight: 400; }
-        .cs-templates { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
-        .cs-template { display: inline-flex; gap: 8px; align-items: center; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line);
+        .cs-templates { display: flex; overflow-x: auto; gap: 6px; align-items: center; margin-bottom: 10px; padding: 2px 0 6px; scrollbar-width: thin; }
+        .cs-template { display: inline-flex; flex: 0 0 auto; gap: 8px; align-items: center; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line);
             background: transparent; color: inherit; cursor: pointer; font: inherit; }
         .cs-template.active { border-color: var(--accent, #7aa2ff); background: color-mix(in srgb, var(--accent, #7aa2ff) 18%, transparent); }
         .cs-template.off { opacity: .55; }
         .cs-weight { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+        .cs-studio .cs-template-heading { margin: 12px 0 6px; }
+        .cs-design-mode, .cs-canvas-picker, .cs-ratios, .cs-render-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .cs-design-mode { margin: 12px 0; }
+        .cs-canvas-picker { padding: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
+        .cs-canvas-picker select { width: auto; min-width: 140px; font-size: 12px; padding: 6px 8px; }
+        .cs-canvas-picker .spacer { flex: 1; }
+        .cs-render-bar { margin: 12px 0; }
+        .cs-key-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) 30px; align-items: center; gap: 4px; margin: 4px 0; }
+        .cs-playhead { display: block; width: 100%; margin: 8px 0 0; }
+        .cs-key-track { display: flex; position: relative; height: 42px; margin: 0 12px; padding-top: 20px; }
+        .cs-key-marker { position: absolute; top: 0; width: 22px; height: 22px; transform: translateX(-50%); display: grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 4px; color: var(--muted); background: var(--panel-2); cursor: pointer; }
+        .cs-key-marker.active { color: var(--accent); border-color: var(--accent); }
+        @@media (max-width: 600px) {
+            .cs-for { grid-template-columns: minmax(0, 1fr); }
+            .cs-outro { grid-template-columns: minmax(70px, 1fr) minmax(70px, 1fr) 40px 44px; gap: 5px; }
+            .cs-canvas-picker .cs-ratios { width: 100%; }
+        }
     </style>
 }
 

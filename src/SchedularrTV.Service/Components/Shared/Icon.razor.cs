@@ -5,6 +5,8 @@ public partial class Icon
     private static readonly Dictionary<string, string> Paths = new(StringComparer.Ordinal)
     {
         ["type"] = """<path d="M4 7V4h16v3M12 4v16M8 20h8"/>""",
+        ["arrow-up"] = """<path d="m5 12 7-7 7 7M12 5v14"/>""",
+        ["arrow-down"] = """<path d="m5 12 7 7 7-7M12 5v14"/>""",
         ["cursor"] = """<path d="m4 3 7 18 2-8 8-2L4 3Z"/>""",
         ["perspective"] = """<path d="m4 6 16-3v18L4 18V6ZM4 12h16M12 5v15"/><path d="M3 5h2v2H3zM19 2h2v2h-2zM3 17h2v2H3zM19 20h2v2h-2z"/>""",
         ["group"] = """<rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 3"/><path d="M7 7h6v6H7zM11 11h6v6h-6z"/>""",
