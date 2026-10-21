@@ -57,15 +57,13 @@ internal static class UpdaterProgram
             {
                 applier.Log($"The update window failed ({ex.GetBaseException().Message}); carrying on without it.");
             }
-            finally
-            {
-                progress.Detach();
-            }
+
+            // Window gone (closed, failed, or never shown, like a stale DISPLAY over SSH): progress goes to the console.
+            progress.Attach(WriteToConsole);
         }
         else
         {
-            progress.Attach(step =>
-                Console.WriteLine(step.Fraction is { } fraction ? $"{step.Title} {step.Detail} {fraction:P0}" : $"{step.Title} {step.Detail}"));
+            progress.Attach(WriteToConsole);
         }
 
         // The window is gone (or there never was one): the install still runs to its end, relaunch included.
@@ -73,6 +71,9 @@ internal static class UpdaterProgram
         Console.WriteLine(outcome.Message);
         return outcome.Succeeded ? 0 : 1;
     }
+
+    private static void WriteToConsole(UpdateProgress step) =>
+        Console.WriteLine(step.Fraction is { } fraction ? $"{step.Title} {step.Detail} {fraction:P0}" : $"{step.Title} {step.Detail}");
 }
 
 /// <summary>
