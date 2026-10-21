@@ -56,7 +56,9 @@ else
         <TemplatePackageButtons Kind="@GeneratedPromoPackages.Kind" What="generated promo template"
                                 ExportText="@(_selected is null ? "Export" : $"Export “{(string.IsNullOrWhiteSpace(_selected.Name) ? "Untitled" : _selected.Name)}”")"
                                 ExportTitle="Save the selected template with its pictures, songs and generator folder as a .zip to share"
-                                CanExport="@(_selected is not null)" OnExport="ExportSelected" OnImport="ImportPackage" />
+                                CanExport="@(_selected is not null)" OnExport="ExportSelected" OnImport="ImportPackage"
+                                ExportOptions="ExportChoices" ChoiceTitle="Export with its voice pack?"
+                                ChoiceHint="This template's voice-over uses a voice pack. Include it so the template works anywhere, leave it out for a smaller file where the pack is installed already, or export the pack on its own." />
 
         <nav class="template-list" aria-label="Templates">
             @foreach (GeneratedPromoTemplate template in generated.Templates)
@@ -150,6 +152,12 @@ else
         _selected is { } template
             ? GeneratedPromoPackages.ExportAsync(template, writer, Editor.Working.Settings.GeneratedPromosSharedImages, Editor.Working.Settings.GeneratedPromosVoicePacks)
             : throw new InvalidOperationException("Choose a template to export.");
+
+    // A template whose voice-over uses a voice pack offers it with or without the pack, or the pack alone, with sizes.
+    private Task<IReadOnlyList<TemplateExportOption>?> ExportChoices() =>
+        _selected is { } template
+            ? GeneratedPromoPackages.ExportOptionsAsync(template, Editor.Working.Settings.GeneratedPromosSharedImages, Editor.Working.Settings.GeneratedPromosVoicePacks)
+            : Task.FromResult<IReadOnlyList<TemplateExportOption>?>(null);
 
     private async Task<string> ImportPackage(TemplatePackageReader reader)
     {

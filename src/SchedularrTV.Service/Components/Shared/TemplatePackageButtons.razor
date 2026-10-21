@@ -19,6 +19,44 @@
         </label>
     }
 </div>
+@if (_choices is { } choices)
+{
+    <div class="modal-backdrop" @onclick="CloseChoices">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="@_choiceTitleId" @onclick:stopPropagation="true">
+            <div class="modal-head">
+                <h2 id="@_choiceTitleId">@(ChoiceTitle ?? ExportText)</h2>
+                <div class="spacer"></div>
+                <button class="btn btn-sm btn-icon btn-ghost" type="button" aria-label="Close" @onclick="CloseChoices"><Icon Name="x" Size="15" /></button>
+            </div>
+            @if (ChoiceHint is not null)
+            {
+                <p class="hint">@ChoiceHint</p>
+            }
+            <div class="export-choices" style="display:flex;flex-direction:column;gap:10px;">
+                @foreach (TemplateExportOption option in choices)
+                {
+                    <div class="row row-wrap" style="gap:10px;align-items:center;">
+                        <button class="btn @(option.Primary ? "btn-primary" : "")" type="button" disabled="@_busy" @onclick="() => Choose(option)">
+                            <Icon Name="download" Size="14" /> @option.Label
+                        </button>
+                        @if (option.Detail is not null)
+                        {
+                            <span class="hint" style="margin:0;">@option.Detail</span>
+                        }
+                    </div>
+                }
+            </div>
+            @if (_exporting)
+            {
+                <p class="hint" role="status">Packing…</p>
+            }
+            else if (_message is not null && !_ok)
+            {
+                <p class="hint warn" role="status">@_message</p>
+            }
+        </div>
+    </div>
+}
 @if (_pending is { } pending)
 {
     <div class="banner banner-warn" role="alert" style="margin-top:8px;">
@@ -55,6 +93,19 @@
     /// <summary>Adds the package's template; returns what to tell the user.</summary>
     [Parameter] public Func<TemplatePackageReader, Task<string>>? OnImport { get; set; }
 
+    /// <summary>
+    /// Other ways to export, worked out when Export is clicked (sizes and all): when it gives any, a popup offers them
+    /// to choose from instead of exporting straight away with <see cref="OnExport"/>.
+    /// </summary>
+    [Parameter] public Func<Task<IReadOnlyList<TemplateExportOption>?>>? ExportOptions { get; set; }
+
+    /// <summary>The popup's heading; the export button's text when not given.</summary>
+    [Parameter] public string? ChoiceTitle { get; set; }
+
+    [Parameter] public string? ChoiceHint { get; set; }
+
+    private IReadOnlyList<TemplateExportOption>? _choices;
+    private readonly string _choiceTitleId = "export-choice-" + Guid.NewGuid().ToString("N")[..8];
     private bool _exporting;
     private bool _importing;
     private bool _busy => _exporting || _importing;
@@ -65,6 +116,59 @@
     private async Task Export()
     {
         if (OnExport is not { } export || _busy)
+        {
+            return;
+        }
+
+        if (ExportOptions is { } options)
+        {
+            _exporting = true;
+            _message = null;
+            try
+            {
+                // Measuring files can take a moment for big templates.
+                IReadOnlyList<TemplateExportOption>? offered = await Task.Run(options);
+                if (offered is { Count: > 0 })
+                {
+                    _choices = offered;
+                    return;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _message = $"Couldn't export it: {ex.GetBaseException().Message}";
+                _ok = false;
+                return;
+            }
+            finally
+            {
+                _exporting = false;
+            }
+        }
+
+        await ExportWith(export);
+    }
+
+    private async Task Choose(TemplateExportOption option)
+    {
+        await ExportWith(option.Export);
+        if (_ok)
+        {
+            _choices = null;
+        }
+    }
+
+    private void CloseChoices()
+    {
+        if (!_busy)
+        {
+            _choices = null;
+        }
+    }
+
+    private async Task ExportWith(Func<TemplatePackageWriter, Task<string>> export)
+    {
+        if (_exporting || _importing)
         {
             return;
         }

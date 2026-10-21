@@ -67,6 +67,10 @@ public static class VoicePackPackages
         return string.IsNullOrWhiteSpace(pack.Name) ? "Voice pack" : pack.Name;
     }
 
+    /// <summary>Every recording's file the pack has, for estimating an export's size.</summary>
+    public static IReadOnlyList<string> FilesUsed(GeneratedVoicePack pack) =>
+        [.. AllTakes(pack).Select(take => take.Path?.Trim()).OfType<string>().Where(path => path.Length > 0)];
+
     /// <summary>
     /// A copy of the pack for a package: every take's file copied in (its path now pointing into the package) and its
     /// content hash noted, so an installed copy can tell which recordings it already has.

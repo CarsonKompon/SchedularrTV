@@ -206,13 +206,16 @@ public static class GeneratedPromoPackages
     /// The voice packs; the one a pre-recorded voice-over uses goes in with its recordings, so importing the template
     /// installs it (or brings an installed copy up to date).
     /// </param>
+    /// <param name="includeVoicePack">
+    /// False leaves the voice pack out: the template still names it, and uses it where it's installed already (or once
+    /// it's imported on its own).
+    /// </param>
     public static async Task<string> ExportAsync(GeneratedPromoTemplate template, TemplatePackageWriter writer,
-        IEnumerable<GeneratedSharedImage>? sharedLibrary = null, IEnumerable<GeneratedVoicePack>? voiceLibrary = null)
+        IEnumerable<GeneratedSharedImage>? sharedLibrary = null, IEnumerable<GeneratedVoicePack>? voiceLibrary = null, bool includeVoicePack = true)
     {
         GeneratedPromoTemplate copy = GeneratedPromoEditing.Copy(template);
         copy.VoicePack = null;
-        if (template.Voice is { IsPrerecorded: true, Prerecorded: { } recorded }
-            && (GeneratedVoicePacks.Find(voiceLibrary, recorded.Pack) ?? recorded.Linked) is { } voicePack)
+        if (includeVoicePack && VoicePackOf(template, voiceLibrary) is { } voicePack)
         {
             copy.VoicePack = await VoicePackPackages.PackedAsync(voicePack, writer).ConfigureAwait(false);
         }
@@ -266,6 +269,77 @@ public static class GeneratedPromoPackages
 
         writer.Finish(Kind, template.Name, copy, runs);
         return template.Name;
+    }
+
+    /// <summary>The voice pack the template's pre-recorded voice-over uses, or null when it doesn't use one (or it's gone).</summary>
+    public static GeneratedVoicePack? VoicePackOf(GeneratedPromoTemplate template, IEnumerable<GeneratedVoicePack>? voiceLibrary) =>
+        template.Voice is { IsPrerecorded: true, Prerecorded: { } recorded }
+            ? GeneratedVoicePacks.Find(voiceLibrary, recorded.Pack) ?? recorded.Linked
+            : null;
+
+    /// <summary>
+    /// Every file an export of the template (without its voice pack) would carry: its own files, its shared images',
+    /// its fonts and its generator's folder. For estimating the package's size.
+    /// </summary>
+    public static async Task<IReadOnlyList<string>> FilesUsedAsync(GeneratedPromoTemplate template, IEnumerable<GeneratedSharedImage>? sharedLibrary = null)
+    {
+        List<string> files = [];
+        Task<string?> Note(string? path)
+        {
+            if (!string.IsNullOrWhiteSpace(path)) files.Add(path);
+            return Task.FromResult(path);
+        }
+
+        GeneratedPromoTemplate copy = GeneratedPromoEditing.Copy(template);
+        await MapPathsAsync(copy, Note).ConfigureAwait(false);
+        foreach (GeneratedVariableImage image in copy.VariableImages ?? [])
+        {
+            if (image.IsShared && (GeneratedSharedImages.Find(sharedLibrary, image.Shared) ?? image.Linked) is { } source)
+            {
+                await MapPathsAsync(GeneratedPromoEditing.Copy(source), Note).ConfigureAwait(false);
+            }
+        }
+
+        if (copy.Generator is null)
+        {
+            files.AddRange(FontsUsed(copy).SelectMany(family => FontFiles.FilesFor(family)));
+        }
+        else if (copy.Generator.WorkingDirectory is { Length: > 0 } folder && Directory.Exists(folder.Trim()))
+        {
+            string root = Path.GetFullPath(folder.Trim());
+            files.AddRange(GitIgnore.Files(root).Select(relative => Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar))));
+        }
+
+        return files;
+    }
+
+    /// <summary>
+    /// The ways to export a template that uses a voice pack, with estimated sizes: with the pack, without it, and the pack
+    /// on its own. Null for a template without one (it's exported straight away).
+    /// </summary>
+    public static async Task<IReadOnlyList<TemplateExportOption>?> ExportOptionsAsync(GeneratedPromoTemplate template,
+        IEnumerable<GeneratedSharedImage>? sharedLibrary, IEnumerable<GeneratedVoicePack>? voiceLibrary)
+    {
+        if (VoicePackOf(template, voiceLibrary) is not { } pack)
+        {
+            return null;
+        }
+
+        IReadOnlyList<string> own = await FilesUsedAsync(template, sharedLibrary).ConfigureAwait(false);
+        IReadOnlyList<string> recordings = VoicePackPackages.FilesUsed(pack);
+        string packName = string.IsNullOrWhiteSpace(pack.Name) ? "the voice pack" : $"“{pack.Name}”";
+        long with = TemplatePackages.EstimateBytes([.. own, .. recordings]);
+        long without = TemplatePackages.EstimateBytes(own);
+        long voiceOnly = TemplatePackages.EstimateBytes(recordings);
+        return
+        [
+            new TemplateExportOption("With the voice pack", $"{TemplatePackages.DescribeSize(with)} · works anywhere, installing {packName} on import",
+                writer => ExportAsync(template, writer, sharedLibrary, voiceLibrary, includeVoicePack: true), Primary: true),
+            new TemplateExportOption("Without the voice pack", $"{TemplatePackages.DescribeSize(without)} · uses {packName} where it's installed already",
+                writer => ExportAsync(template, writer, sharedLibrary, voiceLibrary, includeVoicePack: false)),
+            new TemplateExportOption("Just the voice pack", $"{TemplatePackages.DescribeSize(voiceOnly)} · {packName} and its recordings, imported under Voice packs",
+                writer => VoicePackPackages.ExportAsync(pack, writer))
+        ];
     }
 
     /// <summary>A default image's and overrides' files swapped through <paramref name="map"/>.</summary>

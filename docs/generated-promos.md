@@ -967,6 +967,14 @@ Each exported template also carries the [shared images](#shared-images) it uses,
 
 So importing several templates that share images gives one shared image, not one per template. Older versions that don't know shared images import the template with its own copy of the pictures.
 
+When the template's voice-over uses a [voice pack](#pre-recorded-lines-voice-packs), **Export** asks how to package it, with an estimated download size for each:
+
+- **With the voice pack**: the template and the pack with all its recordings. Importing it installs the pack, or adds what an installed copy lacks.
+- **Without the voice pack**: a smaller file. The template still names the pack and uses it wherever it's installed already, or once the pack is imported on its own.
+- **Just the voice pack**: the same package as **Export** under **Voice packs**.
+
+Sizes are estimates from the files on disk. Media goes in as it is, and fonts and generator folders are compressed, so the download can come out a little smaller.
+
 **Import…** adds a template from such a `.zip`. Its files are kept under **`assets/`** and a generator's folder is unpacked to **`assets/programs/`**; a package that runs a program shows the command and asks before importing. Overlays and Credit Squeeze looks export and import the same way.
 
 ## Command-line preview

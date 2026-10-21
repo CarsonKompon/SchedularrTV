@@ -524,6 +524,48 @@ public sealed class TemplatePackageTests : IDisposable
         Assert.Single(library);
     }
 
+    [Fact]
+    public async Task A_generated_promo_with_a_voice_pack_offers_it_with_or_without_the_pack_or_the_pack_alone()
+    {
+        GeneratedVoicePack pack = VoicePack();
+        var template = new GeneratedPromoTemplate
+        {
+            Name = "Up Next",
+            Background = Write("bg.png", new string('b', 3000)),
+            Voice = new GeneratedVoiceConfig
+            {
+                Mode = GeneratedVoiceMode.Prerecorded,
+                Prerecorded = new GeneratedPrerecordedVoiceConfig { Pack = pack.Id, Linked = pack }
+            }
+        };
+
+        IReadOnlyList<TemplateExportOption> options = (await GeneratedPromoPackages.ExportOptionsAsync(template, null, [pack]))!;
+        Assert.Equal(3, options.Count);
+        Assert.All(options, option => Assert.Contains("under 1 MB", option.Detail));
+
+        // Without the pack: nothing installed on import, but the template still names it.
+        string without = await ExportAsync(_data, options[1].Export);
+        List<GeneratedVoicePack> library = [];
+        GeneratedVoicePackImport report = new();
+        GeneratedPromoTemplate imported;
+        await using (FileStream stream = File.OpenRead(without))
+        using (TemplatePackageReader reader = await new TemplatePackages(_otherData).OpenAsync(stream))
+        {
+            imported = await GeneratedPromoPackages.ImportAsync(reader, new TemplateAssets(_otherData), [], null, null, library, report);
+        }
+
+        Assert.Empty(library);
+        Assert.Equal(pack.Id, imported.Voice!.Prerecorded!.Pack);
+
+        // Just the pack: a voice pack package.
+        string alone = await ExportAsync(_data, options[2].Export);
+        Assert.True((await ImportVoiceAsync(alone, _otherData, library)).Installed);
+
+        // A template without a voice pack is exported straight away.
+        template.Voice = null;
+        Assert.Null(await GeneratedPromoPackages.ExportOptionsAsync(template, null, [pack]));
+    }
+
     private static async Task<string> ExportAsync(string data, Func<TemplatePackageWriter, Task<string>> fill)
     {
         var packages = new TemplatePackages(data);

@@ -33,6 +33,13 @@ public sealed class TemplatePackageManifest
 }
 
 /// <summary>
+/// One way to export something, offered in a choice before the download (e.g. a template with or without the voice pack
+/// it uses): its button, a line under it (an estimated size, say), and what it writes.
+/// </summary>
+/// <param name="Export">Fills the package (and finishes it); returns the name for the download.</param>
+public sealed record TemplateExportOption(string Label, string? Detail, Func<TemplatePackageWriter, Task<string>> Export, bool Primary = false);
+
+/// <summary>
 /// Template packages: zips holding a template and every file it uses (pictures, videos, songs, and an external
 /// generator's folder), so templates can be shared between computers and keep working there.
 /// </summary>
@@ -87,6 +94,37 @@ public sealed partial class TemplatePackages(string dataDirectory)
 
     /// <summary>A file name for the download, from the template's name.</summary>
     public static string FileName(string name) => TemplateAssets.SafeName(name, "template") + ".zip";
+
+    /// <summary>
+    /// Roughly how big a package of these files would be: each existing file counted once, at its size on disk (media
+    /// isn't compressed in a package; fonts and program folders are, so they come out somewhat smaller).
+    /// </summary>
+    public static long EstimateBytes(IEnumerable<string?> files)
+    {
+        long total = 0;
+        foreach (string full in files.OfType<string>().Select(path => path.Trim().Trim('"'))
+                     .Where(path => path.Length > 0 && System.IO.Path.IsPathFullyQualified(path))
+                     .Select(System.IO.Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                if (File.Exists(full)) total += new FileInfo(full).Length;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+
+        return total;
+    }
+
+    /// <summary>A size for people: "about 12.3 MB", "under 1 MB".</summary>
+    public static string DescribeSize(long bytes) => bytes switch
+    {
+        < 1024L * 1024 => "under 1 MB",
+        < 1024L * 1024 * 1024 => $"about {bytes / 1024d / 1024:0.#} MB",
+        _ => $"about {bytes / 1024d / 1024 / 1024:0.##} GB"
+    };
 
     /// <summary>Reads an uploaded package (saved to a temporary file first, so it can be read in any order).</summary>
     public async Task<TemplatePackageReader> OpenAsync(Stream upload, CancellationToken cancellationToken = default)
