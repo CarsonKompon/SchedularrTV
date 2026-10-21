@@ -486,6 +486,11 @@
                                     <p class="hint warn">The scheduler can't find this file.</p>
                                 }
                             }
+                            @if (SchedularrTV.Service.Images.AnimatedImages.IsAnimated(selected.Path))
+                            {
+                                <label class="check"><input type="checkbox" checked="@selected.Loops" @onchange="e => Set(() => selected.Loop = e.Value is true)" />
+                                    <span>Loop the animated picture (otherwise it stays on its last frame)</span></label>
+                            }
                         }
                         else if (selected.Kind == OverlayLayerKinds.Video)
                         {
@@ -522,6 +527,8 @@
                             {
                                 <p class="hint">Couldn't read its length or take a still: that needs ffmpeg and ffprobe (as set for Generated promos, or on the PATH).</p>
                             }
+                            <label class="check"><input type="checkbox" checked="@selected.Loops" @onchange="e => Set(() => selected.Loop = e.Value is true)" />
+                                <span>Loop (otherwise it stays on its last frame)</span></label>
                             <p class="hint">A video with an alpha channel (ProRes 4444 .mov, or VP9 .webm) shows the programme through it. ErsatzTV sizes
                                 it by the box's width, keeping its shape, and can't turn, mask or animate it. It doesn't fade:
                                 its own animation brings it in and out, so time the other layers around it below.</p>
@@ -650,6 +657,11 @@
                 {
                     <p class="hint">Uses the variable's default or per-show image. Matching variants below take priority on air.</p>
                 }
+
+                <label class="check"><input type="checkbox" checked="@Overlay.Loops" @onchange="e => Set(() => Overlay.Loop = e.Value is true)" />
+                    <span>Loop (otherwise it stays on its last frame)</span></label>
+                <p class="hint">For a video or animated GIF (and the other pictures below). Played once, its last frame stays up until the appearance ends.
+                    ErsatzTV starts graphics videos as each part of the programme starts, so playing once lines up best with whole-programme overlays.</p>
 
                 <OverlayVariantsEditor Overlay="Overlay" HolidayNames="HolidayNames" Changed="CommitAsync" />
 
@@ -1162,7 +1174,7 @@
             double playing = Math.Max(0, clock.Seconds - OverlayHierarchy.EffectiveTiming(overlay, video).InSeconds);
             double needed = Math.Min(clock.Length, _videoInfo[path]?.Duration?.TotalSeconds ?? clock.Length);
             _ = _videos.PrepareFramesAsync(path, needed, Fps);
-            string? frame = await _videos.FrameAsync(path, playing, Fps, _life.Token);
+            string? frame = await _videos.FrameAsync(path, playing, Fps, _life.Token, video.Loops);
             if (frame is not null)
             {
                 posters[key] = frame;

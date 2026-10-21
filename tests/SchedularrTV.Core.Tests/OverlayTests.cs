@@ -504,6 +504,75 @@ public sealed class OverlayTests : IDisposable
     }
 
     [Fact]
+    public void A_video_played_once_runs_for_its_length_then_its_last_frame_holds_for_the_rest()
+    {
+        // An 8-second appearance 10 seconds in, fading for a second, of a 3-second video.
+        var appearance = new OverlayShowing(new GraphicsTiming(Wall: false, FrequencyMs: 23 * 60_000, PhaseMs: 10_000, FadeMs: 1000, HoldMs: 6000));
+        (OverlayShowing video, OverlayShowing? still) = OverlayTiming.PlayOnce(appearance, 22 * 60_000, 3000);
+
+        Assert.Equal((10_000L, 1000L, 1000L), (video.Timing!.PhaseMs, video.Timing.FadeMs, video.Timing.HoldMs));
+        // Fully in as the video starts fading out (at 12s), gone when the appearance ends (at 18s).
+        Assert.Equal((11_000L, 1000L, 5000L), (still!.Timing!.PhaseMs, still.Timing.FadeMs, still.Timing.HoldMs));
+        Assert.Equal(18_000L, still.Timing.PhaseMs + still.Timing.VisibleMs);
+
+        // All the way through, unfaded: the video, then the still for the rest of the part.
+        (video, still) = OverlayTiming.PlayOnce(new OverlayShowing(null), 60_000, 4000);
+        Assert.Equal((0L, 0L, 4000L), (video.Timing!.PhaseMs, video.Timing.FadeMs, video.Timing.HoldMs));
+        Assert.Equal((4000L, 0L, 56_000L), (still!.Timing!.PhaseMs, still.Timing.FadeMs, still.Timing.HoldMs));
+
+        // A video that outlasts the appearance is all there is.
+        (video, still) = OverlayTiming.PlayOnce(appearance, 22 * 60_000, 9000);
+        Assert.Same(appearance, video);
+        Assert.Null(still);
+    }
+
+    [Fact]
+    public async Task A_file_overlay_that_plays_once_airs_as_its_video_then_its_last_frame()
+    {
+        Directory.CreateDirectory(_folder);
+        string bug = Path.Combine(_folder, "bug.webm");
+        await File.WriteAllBytesAsync(bug, [0]);
+        string key = OverlayAnimations.HeldKey(bug);
+        string last = Path.Combine(_folder, key + ".png");
+        await File.WriteAllBytesAsync(last, [0]);
+        await File.WriteAllTextAsync(Path.Combine(_folder, key + ".seconds"), "5");
+
+        (SchedulerConfig config, ChannelConfig cartoons, _) = Channels();
+        cartoons.Plugins = Section(new OverlaysSection
+        {
+            Overlays = [new Overlay { Name = "Bug", Kind = OverlayKinds.File, File = bug, Loop = false, FadeSeconds = 0 }]
+        });
+        var schedule = new ChannelSchedule
+        {
+            ChannelId = "cartoons", ChannelName = "Cartoons", ChannelNumber = 1, Start = Eight, End = Eight.AddMinutes(22),
+            Entries = [Episode()]
+        };
+
+        using var animations = new OverlayAnimations(() => _folder, () => "ffmpeg");
+        var processor = new OverlayProcessor(new OverlayRenderer(_folder), NullLogger<OverlayProcessor>.Instance, animations: animations);
+        ChannelSchedule processed = await processor.ProcessAsync(new PlayoutContext(config, cartoons, schedule), CancellationToken.None);
+        JsonArray layers = (JsonArray)JsonNode.Parse(processed.Entries[0].Annotations![PlayoutPublisher.GraphicsAnnotation])!;
+
+        Assert.Equal(2, layers.Count);
+        Assert.Equal(bug, (string?)layers[0]!["source"]!["path"]);
+        Assert.Equal(5000, (long)layers[0]!["timing"]!["hold_ms"]!);
+        Assert.Equal(last, (string?)layers[1]!["source"]!["path"]);
+        Assert.Equal(5000, (long)layers[1]!["timing"]!["phase_offset_ms"]!);
+        Assert.Equal(22 * 60_000 - 5000, (long)layers[1]!["timing"]!["hold_ms"]!);
+        Assert.Equal((string?)layers[0]!["location"], (string?)layers[1]!["location"]);
+
+        // Looping, it's the video alone, always on.
+        cartoons.Plugins = Section(new OverlaysSection
+        {
+            Overlays = [new Overlay { Name = "Bug", Kind = OverlayKinds.File, File = bug, FadeSeconds = 0 }]
+        });
+        processed = await processor.ProcessAsync(new PlayoutContext(config, cartoons, schedule), CancellationToken.None);
+        layers = (JsonArray)JsonNode.Parse(processed.Entries[0].Annotations![PlayoutPublisher.GraphicsAnnotation])!;
+        Assert.Single(layers);
+        Assert.Null(layers[0]!["timing"]);
+    }
+
+    [Fact]
     public async Task An_AI_written_caption_shows_its_usual_text_until_it_is_written_and_then_its_own()
     {
         (SchedulerConfig config, ChannelConfig cartoons, _) = Channels();

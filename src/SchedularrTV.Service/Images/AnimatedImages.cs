@@ -35,10 +35,23 @@ public sealed class AnimatedImage
     /// <summary>One loop, in seconds.</summary>
     public double Duration { get; }
 
-    /// <summary>The frame showing <paramref name="seconds"/> after it starts playing (looping; before it starts, the first).</summary>
-    public SKImage FrameAt(double seconds)
+    /// <summary>
+    /// The frame showing <paramref name="seconds"/> after it starts playing (before it starts, the first): looping, or
+    /// without <paramref name="loop"/>, the last frame once it has played through.
+    /// </summary>
+    public SKImage FrameAt(double seconds, bool loop = true)
     {
-        if (_frames.Length == 1 || Duration <= 0 || seconds <= 0 || !double.IsFinite(seconds))
+        if (_frames.Length == 1 || Duration <= 0 || seconds <= 0 || double.IsNaN(seconds))
+        {
+            return _frames[0];
+        }
+
+        if (!loop && seconds >= Duration)
+        {
+            return _frames[^1];
+        }
+
+        if (!double.IsFinite(seconds))
         {
             return _frames[0];
         }
@@ -129,8 +142,9 @@ public static class AnimatedImages
     /// <summary>
     /// The picture to draw for <paramref name="path"/> <paramref name="seconds"/> into its playing: an animated one's
     /// frame then, else the picture itself (decoded now; the caller disposes what <paramref name="owned"/> says it owns).
+    /// Without <paramref name="loop"/>, an animated one holds its last frame once it has played through.
     /// </summary>
-    public static SKImage? FrameAt(string? path, double seconds, out bool owned)
+    public static SKImage? FrameAt(string? path, double seconds, out bool owned, bool loop = true)
     {
         owned = false;
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
@@ -140,7 +154,7 @@ public static class AnimatedImages
 
         if (Load(path) is { } animated)
         {
-            return animated.FrameAt(seconds);
+            return animated.FrameAt(seconds, loop);
         }
 
         owned = true;

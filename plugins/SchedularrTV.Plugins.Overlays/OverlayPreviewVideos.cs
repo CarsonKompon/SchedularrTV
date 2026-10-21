@@ -44,9 +44,10 @@ public sealed class OverlayPreviewVideos(string folder, Func<string> ffmpeg, Ove
         int frames = Math.Max(1, (int)Math.Ceiling(seconds * fps));
         var clock = new OverlayClock(0, seconds, Math.Max(0, overlay.FadeSeconds), FadeIn: true, FadeOut: !wholeProgramme, LayerOuts: !wholeProgramme);
         var clips = overlay.Kind == OverlayKinds.File
-            ? OverlayRenderer.IsVideo(overlay.File) ? new[] { (Key: overlay.File!, Path: overlay.File!, Start: 0d) } : []
+            ? OverlayRenderer.IsVideo(overlay.File) ? new[] { (Key: overlay.File!, Path: overlay.File!, Start: 0d, Loop: overlay.Loops) } : []
             : overlay.Layers.Where(layer => layer.Kind == OverlayLayerKinds.Video && !string.IsNullOrWhiteSpace(layer.Path))
-                .Select(layer => (Key: OverlayRenderer.FrameKey(overlay, layer), Path: layer.Path!, Start: OverlayHierarchy.EffectiveTiming(overlay, layer).InSeconds)).ToArray();
+                .Select(layer => (Key: OverlayRenderer.FrameKey(overlay, layer), Path: layer.Path!, Start: OverlayHierarchy.EffectiveTiming(overlay, layer).InSeconds,
+                    Loop: layer.Loops)).ToArray();
 
         progress?.Report(new("Preparing video frames…", 0));
         foreach (string path in clips.Select(clip => clip.Path).Distinct(StringComparer.Ordinal))
@@ -94,7 +95,7 @@ public sealed class OverlayPreviewVideos(string folder, Func<string> ffmpeg, Ove
                 foreach (var clip in clips)
                 {
                     if (at < clip.Start || stills.ContainsKey(clip.Key)) continue;
-                    string? image = await videos.FrameAsync(clip.Path, at - clip.Start, fps, token).ConfigureAwait(false);
+                    string? image = await videos.FrameAsync(clip.Path, at - clip.Start, fps, token, clip.Loop).ConfigureAwait(false);
                     if (image is null) throw new InvalidOperationException($"Couldn't decode a video frame: {clip.Path}");
                     stills[clip.Key] = image;
                 }

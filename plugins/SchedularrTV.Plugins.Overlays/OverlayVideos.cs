@@ -180,9 +180,10 @@ public sealed class OverlayVideos(Func<string> ffmpeg, string folder)
     /// <summary>
     /// The frame <paramref name="seconds"/> into the video at <paramref name="fps"/> (the timeline's frame rate), as a
     /// PNG keeping its transparency: one of those taken in the background by <see cref="PrepareFramesAsync"/> when it's
-    /// there, otherwise taken now on its own. Past the end it's the last frame. Null when ffmpeg can't take one.
+    /// there, otherwise taken now on its own. Past the end it's the last frame, or with <paramref name="loop"/> (and a
+    /// known length) the frame that far into it played over again. Null when ffmpeg can't take one.
     /// </summary>
-    public async Task<string?> FrameAsync(string path, double seconds, double fps, CancellationToken cancellationToken = default)
+    public async Task<string?> FrameAsync(string path, double seconds, double fps, CancellationToken cancellationToken = default, bool loop = false)
     {
         if (!File.Exists(path))
         {
@@ -191,6 +192,11 @@ public sealed class OverlayVideos(Func<string> ffmpeg, string folder)
 
         double Fps = Math.Clamp(fps, 1, 240);
         OverlayVideoInfo? info = await InfoAsync(path, cancellationToken).ConfigureAwait(false);
+        if (loop && info?.Duration is { TotalSeconds: > 0 } runs && seconds >= runs.TotalSeconds)
+        {
+            seconds %= runs.TotalSeconds;
+        }
+
         double last = info?.Duration is { } length ? Math.Max(0, length.TotalSeconds - 1.0 / Fps) : double.MaxValue;
         int index = (int)Math.Round(Math.Clamp(seconds, 0, last) * Fps);
         string frames = FramesFolder(path, Fps);

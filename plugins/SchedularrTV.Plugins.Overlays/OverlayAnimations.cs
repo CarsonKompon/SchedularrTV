@@ -8,6 +8,9 @@ using SkiaSharp;
 
 namespace SchedularrTV.Overlays;
 
+/// <summary>A video that plays once: a PNG of its last frame to hold after it, and how long it runs.</summary>
+public sealed record HeldVideo(string Still, double Seconds);
+
 /// <summary>
 /// Animated designs (layers moving by keyframes) as transparent videos for ErsatzTV to lay over the picture: one for each
 /// look (the design with its text filled in) and appearance length, drawn frame by frame and encoded with ffmpeg in the
@@ -44,7 +47,128 @@ public sealed class OverlayAnimations : IDisposable
     private static readonly TimeSpan RetryAfter = TimeSpan.FromHours(1);
 
     /// <param name="Source">For an animated picture made into a video as it is (a file overlay's GIF), the picture; null for a design.</param>
-    private sealed record Job(string Key, Overlay Design, Dictionary<string, string> Tokens, OverlayClock Clock, string? Source = null);
+    /// <param name="Hold">For a video that plays once, the video: its length is measured and its last frame taken.</param>
+    private sealed record Job(string Key, Overlay Design, Dictionary<string, string> Tokens, OverlayClock Clock, string? Source = null, string? Hold = null);
+
+    private readonly ConcurrentDictionary<string, HeldVideo> _held = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// For a video that plays once (ErsatzTV starts every graphics video over when it runs out): how long it runs, and
+    /// a PNG of its last frame, full size and keeping its transparency, to hold once it has. Made once, in the
+    /// background (when <paramref name="queue"/>); null until then.
+    /// </summary>
+    public HeldVideo? Held(string video, bool queue)
+    {
+        string key = HeldKey(video);
+        if (_held.TryGetValue(key, out HeldVideo? known) && File.Exists(known.Still))
+        {
+            Touch(known.Still);
+            return known;
+        }
+
+        string still = Path.Combine(Folder, key + ".png");
+        string length = Path.Combine(Folder, key + ".seconds");
+        try
+        {
+            if (File.Exists(still) && File.Exists(length)
+                && double.TryParse(File.ReadAllText(length).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds) && seconds > 0)
+            {
+                Touch(still);
+                Touch(length);
+                return _held[key] = new HeldVideo(still, seconds);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+
+        if (queue && File.Exists(video) && !(_failed.TryGetValue(key, out DateTime failedAt) && DateTime.UtcNow - failedAt < RetryAfter) && _queued.TryAdd(key, 0))
+        {
+            _jobs.Writer.TryWrite(new Job(key, new Overlay { Name = Path.GetFileName(video) }, new Dictionary<string, string>(), new OverlayClock(0, 1, 0), Hold: video));
+            EnsureWorker();
+        }
+
+        return null;
+    }
+
+    /// <summary>The name a held video's still (<c>.png</c>) and length (<c>.seconds</c>) are kept under.</summary>
+    public static string HeldKey(string video)
+    {
+        long stamp = File.Exists(video) ? File.GetLastWriteTimeUtc(video).Ticks : 0;
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{Path.GetFullPath(video)}|{stamp}|v1"));
+        return "held-" + Convert.ToHexString(hash, 0, 12).ToLowerInvariant();
+    }
+
+    /// <summary>Measures the video with ffprobe and takes its last frame with ffmpeg.</summary>
+    private async Task HoldAsync(Job job, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(Folder);
+        string video = job.Hold!;
+        double seconds = await LengthAsync(video, cancellationToken).ConfigureAwait(false)
+                         ?? throw new InvalidOperationException($"ffprobe couldn't tell how long {video} is.");
+
+        // ffmpeg's own VP9 decoder drops the alpha channel; libvpx keeps it. Each frame of the last few seconds is
+        // written over the one before, so the last frame is what's left.
+        string[] decoder = Path.GetExtension(video).Equals(".webm", StringComparison.OrdinalIgnoreCase) ? ["-c:v", "libvpx-vp9"] : [];
+        await RunToFileAsync(job.Key, ".png",
+            ["-hide_banner", "-loglevel", "error", "-y", "-sseof", "-3", .. decoder, "-i", video, "-an", "-pix_fmt", "rgba", "-update", "1",
+                "-f", "image2", "-c:v", "png"], cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(Folder, job.Key + ".seconds"), seconds.ToString("0.###", CultureInfo.InvariantCulture),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private string Ffprobe
+    {
+        get
+        {
+            string tool = _ffmpeg();
+            return Path.IsPathRooted(tool)
+                ? Path.Combine(Path.GetDirectoryName(tool)!, OperatingSystem.IsWindows() ? "ffprobe.exe" : "ffprobe")
+                : "ffprobe";
+        }
+    }
+
+    /// <summary>The video's length in seconds (the container's, else its picture's); null when ffprobe can't say.</summary>
+    private async Task<double?> LengthAsync(string video, CancellationToken cancellationToken)
+    {
+        var start = new ProcessStartInfo(Ffprobe) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+        foreach (string argument in (string[])["-v", "error", "-select_streams", "v:0", "-show_entries", "format=duration:stream=duration", "-of", "default=nw=1:nk=1", video])
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        using Process ffprobe = Process.Start(start) ?? throw new InvalidOperationException("ffprobe couldn't be started.");
+        Task<string> errors = ffprobe.StandardError.ReadToEndAsync(cancellationToken);
+        string output = await ffprobe.StandardOutput.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        limit.CancelAfter(TimeSpan.FromSeconds(30));
+        try
+        {
+            await ffprobe.WaitForExitAsync(limit.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!ffprobe.HasExited) ffprobe.Kill(entireProcessTree: true);
+            throw;
+        }
+
+        _ = await errors.ConfigureAwait(false);
+        return ffprobe.ExitCode != 0 ? null : ParseLength(output);
+    }
+
+    /// <summary>The first positive length among ffprobe's lines (<c>N/A</c> for one it doesn't know).</summary>
+    public static double? ParseLength(string output)
+    {
+        foreach (string line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (double.TryParse(line, NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds) && seconds > 0 && double.IsFinite(seconds))
+            {
+                return seconds;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// An animated picture (a GIF a file overlay shows) as a transparent video ErsatzTV plays, made once (in the
@@ -193,7 +317,8 @@ public sealed class OverlayAnimations : IDisposable
                 {
                     try
                     {
-                        await (job.Source is null ? RenderAsync(job, token) : ConvertAsync(job, token)).ConfigureAwait(false);
+                        await (job.Hold is not null ? HoldAsync(job, token)
+                            : job.Source is null ? RenderAsync(job, token) : ConvertAsync(job, token)).ConfigureAwait(false);
                         _failed.TryRemove(job.Key, out _);
                         Rendered?.Invoke();
                     }
@@ -204,7 +329,14 @@ public sealed class OverlayAnimations : IDisposable
                     catch (Exception ex)
                     {
                         _failed[job.Key] = DateTime.UtcNow;
-                        _logger?.LogWarning(ex, "The animated overlay {Overlay} couldn't be made into a video; it shows standing still.", job.Design.Name);
+                        if (job.Hold is not null)
+                        {
+                            _logger?.LogWarning(ex, "The last frame of {Video} couldn't be taken; it loops instead of playing once.", job.Design.Name);
+                        }
+                        else
+                        {
+                            _logger?.LogWarning(ex, "The animated overlay {Overlay} couldn't be made into a video; it shows standing still.", job.Design.Name);
+                        }
                     }
                     finally
                     {

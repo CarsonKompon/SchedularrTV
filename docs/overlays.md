@@ -46,7 +46,7 @@ The canvas editor works like the [Generated promos](generated-promos.md) one:
 - A shape or picture can be a **mask** instead of artwork: under **Use as**, choose **Add mask — reveal inside** or **Subtract mask — hide inside**, then the layer or **group** under **Mask target** beneath it. Picture masks use the picture's transparency. A group mask cuts its combined contents, including nested groups, after their own masks have been applied; partial opacity is applied once to that combined image. A mask inside a group can target that group too. Groups with timed contents are rendered together as an animation so their masks remain correct on air. Masks can't target other masks, videos, or groups containing videos, because ErsatzTV plays video layers separately.
 
 
-- **Animated GIFs** (and animated WebP) play in picture layers, variable images and file overlays. In a design, a GIF plays from when its layer comes in, looping, and makes the design animated: it airs as a transparent video of each appearance, like a keyframed one (a whole-programme overlay plays it for its **Animation length**, then holds). A file overlay's GIF is turned into a transparent video once, in the background, and shows as its still picture until then.
+- **Animated GIFs** (and animated WebP) play in picture layers, variable images and file overlays. In a design, a GIF plays from when its layer comes in, looping (or once, holding its last frame, with **Loop** off), and makes the design animated: it airs as a transparent video of each appearance, like a keyframed one (a whole-programme overlay plays it for its **Animation length**, then holds). A file overlay's GIF is turned into a transparent video once, in the background, and shows as its still picture until then.
 
 ### Render a preview video
 
@@ -57,7 +57,7 @@ At the bottom of the overlay editor, open **Preview video**:
 3. Set **Preview length** (up to 300 seconds). It starts with the editor's timeline length and renders from the beginning of one appearance; whole-programme overlays preview their opening animation without an end fade.
 4. Click **Render preview video**. Progress and **Cancel** are shown while it renders. When ready, play it in the editor or use **Download transparent WebM / MP4**.
 
-Previews use the current editor settings, its frame rate, sample text tokens, and **Preview show contexts** for variable images. Pending automatic-image lookups are awaited before rendering. Keyframes, masks, nested groups, GIFs, fades, and actual frames from video layers are included. Video layers play from their appearance time and hold their last frame after they end, as in canvas scrubbing. File overlays are anchored and sized as configured. These are **silent visual previews**; source-video audio is not included.
+Previews use the current editor settings, its frame rate, sample text tokens, and **Preview show contexts** for variable images. Pending automatic-image lookups are awaited before rendering. Keyframes, masks, nested groups, GIFs, fades, and actual frames from video layers are included. Video layers play from their appearance time and loop, or hold their last frame after they end when **Loop** is off, as in canvas scrubbing. File overlays are anchored and sized as configured. These are **silent visual previews**; source-video audio is not included.
 
 The WebM player has a checkerboard behind it to show transparency; that checkerboard is not part of the exported video. Browser support for WebM alpha varies. Rendering needs ffmpeg with `libvpx-vp9` for WebM or `libx264` for MP4. Completed previews are stored separately from on-air graphics in the Overlays plugin's `previews` folder. Each is a snapshot, so render again after editing the overlay.
 
@@ -65,7 +65,7 @@ The WebM player has a checkerboard behind it to show transparency; that checkerb
 
 Drag along the timeline under the canvas to scrub through one appearance: layers coming in late or going early fade as they will on air. For a whole-programme overlay, the timeline is its **Animation length** (10 seconds unless set under Timing). The **« ‹ › »** buttons and **← / →** (Shift for a second), **Home / End**, **[ / ]**, **K** and **Delete** work as in Generated promos.
 
-Video layers show their frame at the playhead, playing from when the layer comes in (as on air) and holding their last frame after they end. The first time a video is scrubbed, the frames the timeline covers are taken once in the background (kept under the plugin's `stills/frames` folder and cleared after a week unused); until then each frame is fetched as you land on it.
+Video layers show their frame at the playhead, playing from when the layer comes in. After they end they start over, or hold their last frame when **Loop** is off. The first time a video is scrubbed, the frames the timeline covers are taken once in the background (kept under the plugin's `stills/frames` folder and cleared after a week unused); until then each frame is fetched as you land on it.
 
 **Frame rate** (under Canvas) sets the timeline's frames, which keyframes land on, and the rate an animated design's video is made at. It's 30 unless set. Choosing the design's first video sets it to that video's rate, and **Match the video's … fps** sets it to another's, so keyframed layers line up frame for frame with the video under them. In YAML it's `fps: 25`.
 
@@ -133,6 +133,12 @@ Transparent **ProRes 4444 MOV** or **VP9 WebM** supports animated graphics over 
 Use **Comes in after** and **Goes before the end** to keep text clear of a video's entrance and exit animation. Video layers use their own animation rather than overlay fades.
 
 A **file overlay** places an existing image or video at a preset position with percentage sizing and margins. **Keep inside the picture** avoids letterbox bars.
+
+**Loop** is on a file overlay, each video layer, and each picture layer showing an animated GIF. It's on by default, as ErsatzTV always starts graphics videos over when they run out. Turn it off to play the video or GIF once and then keep its last frame on screen until the appearance ends. In YAML: `loop: false`.
+
+- **Editor and preview videos:** a looping video or GIF starts over; one that plays once holds its last frame.
+- **On air:** ErsatzTV can't stop a video looping, so a video that plays once is sent in two parts. The video shows for its own length, then a still of its last frame takes over. The still comes in over the video's final moments, so there's no gap. Measuring the video and taking its last frame happens once, in the background, and the schedule is published again when it's done. Until then the video loops.
+- **Timing:** ErsatzTV starts a graphics video when each part of the programme starts, not when a timed appearance begins. A video that plays once lines up exactly with whole-programme overlays. For an appearance later in the programme, the video is part-way through when it comes in.
 
 For a full-screen picture or video that already has its bug drawn in the right place (a 1920×1080 transparent bug video, say), tick **Fill the screen** under **Placement**. It then covers the whole frame from the top-left corner at full width, keeping its shape, and the position, width, margins and **Keep inside the picture** are ignored. Make the file the same shape as the channel's picture so it lines up exactly. In YAML: `fill_screen: true`.
 

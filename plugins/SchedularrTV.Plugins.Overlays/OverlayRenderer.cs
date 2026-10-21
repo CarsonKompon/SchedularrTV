@@ -94,7 +94,7 @@ public sealed class OverlayRenderer(Func<string> folder)
             bool owned = false;
             SKImage? picture = source is null ? null : IsVideo(source)
                 ? videos.TryGetValue(source, out string? frame) ? SKImage.FromEncodedData(frame) : null
-                : SchedularrTV.Service.Images.AnimatedImages.FrameAt(source, clock.Seconds, out owned);
+                : SchedularrTV.Service.Images.AnimatedImages.FrameAt(source, clock.Seconds, out owned, overlay.Loops);
             if (source is not null && IsVideo(source)) owned = true;
             try
             {
@@ -228,10 +228,11 @@ public sealed class OverlayRenderer(Func<string> folder)
                      || layer.SoftEdges is not null || layer.Rotation is not null || layer.Keyframes is { Count: > 0 };
         if (!newer)
         {
-            return basic;
+            // Only a picture that plays once hashes differently, so looping ones keep their videos.
+            return layer.Loops ? basic : (object)new { Basic = basic, Once = true };
         }
 
-        return new
+        object look = new
         {
             Basic = basic,
             layer.Id,
@@ -247,6 +248,7 @@ public sealed class OverlayRenderer(Func<string> folder)
                 At = key.At.TotalSeconds, key.X, key.Y, key.Width, key.Height, key.Opacity, key.Rotation, Easing = key.Easing.ToString()
             }).ToList()
         };
+        return layer.Loops ? look : new { Look = look, Once = true };
     }
 
     /// <param name="posters">For the preview, stills of its videos; null when drawing for ErsatzTV, which shows videos itself.</param>
@@ -409,9 +411,10 @@ public sealed class OverlayRenderer(Func<string> folder)
                 break;
             case OverlayLayerKinds.Image when layer.Path is { Length: > 0 } path && File.Exists(path):
                 {
-                    // An animated picture (a GIF) plays from when its layer comes in, looping; drawn still, its first frame.
+                    // An animated picture (a GIF) plays from when its layer comes in, looping or holding its last frame;
+                    // drawn still, its first frame.
                     double playing = clock is null ? 0 : clock.Seconds - OverlayHierarchy.EffectiveTiming(overlay, layer).InSeconds;
-                    SKImage? picture = SchedularrTV.Service.Images.AnimatedImages.FrameAt(path, playing, out bool owned);
+                    SKImage? picture = SchedularrTV.Service.Images.AnimatedImages.FrameAt(path, playing, out bool owned, layer.Loops);
                     try
                     {
                         if (picture is not null)
@@ -584,7 +587,7 @@ public sealed class OverlayRenderer(Func<string> folder)
     /// and when it starts playing (as it comes in), since layers playing one file from different moments show different frames.
     /// </summary>
     public static string FrameKey(Overlay overlay, OverlayLayer video) =>
-        $"{video.Path}|{OverlayHierarchy.EffectiveTiming(overlay, video).InSeconds.ToString("0.###", CultureInfo.InvariantCulture)}";
+        $"{video.Path}|{OverlayHierarchy.EffectiveTiming(overlay, video).InSeconds.ToString("0.###", CultureInfo.InvariantCulture)}{(video.Loops ? "" : "|once")}";
 
     /// <param name="frameKey">The layer's own frame among <paramref name="posters"/> (see <see cref="FrameKey"/>), else its file's still.</param>
     private static void DrawVideoStill(SKCanvas canvas, OverlayLayer layer, SKRect bounds, IReadOnlyDictionary<string, string>? posters, string frameKey)
@@ -730,7 +733,8 @@ public sealed class OverlayRenderer(Func<string> folder)
         // Drawings, and animated designs' videos.
         foreach (string file in Directory.EnumerateFiles(Folder, "*.png")
                      .Concat(Directory.EnumerateFiles(Folder, "anim-*.webm"))
-                     .Concat(Directory.EnumerateFiles(Folder, "anim-*.mov")))
+                     .Concat(Directory.EnumerateFiles(Folder, "anim-*.mov"))
+                     .Concat(Directory.EnumerateFiles(Folder, "held-*.seconds")))
         {
             try
             {

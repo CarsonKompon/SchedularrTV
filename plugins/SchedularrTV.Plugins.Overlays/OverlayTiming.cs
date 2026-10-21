@@ -163,6 +163,40 @@ public static class OverlayTiming
             : new OverlayShowing(new GraphicsTiming(Wall: false, FrequencyMs: Math.Max(partLength + 1000, length + 1), PhaseMs: 0, FadeMs: 0, HoldMs: length));
     }
 
+    /// <summary>
+    /// An appearance of a video that plays once, split in two: the video for its own length from the start of each
+    /// appearance (ErsatzTV starts graphics videos over when they run out, so it's taken off before it would), then a
+    /// still of its last frame for the rest. The still comes in (over the video) as the video's last moments play, so
+    /// the video can fade out under it without a dip. With a video at least as long as the appearance, it's all video.
+    /// </summary>
+    /// <param name="showing">The appearance; with no timing, the whole of this part of the programme.</param>
+    /// <param name="partMs">How long this part of the programme is.</param>
+    /// <param name="videoMs">How long the video runs.</param>
+    public static (OverlayShowing Video, OverlayShowing? Still) PlayOnce(OverlayShowing showing, long partMs, long videoMs)
+    {
+        GraphicsTiming timing = showing.Timing
+                                ?? new GraphicsTiming(Wall: false, FrequencyMs: Math.Max(partMs + 1000, 1), PhaseMs: 0, FadeMs: 0, HoldMs: Math.Max(partMs, 0));
+        long visible = timing.VisibleMs;
+        if (videoMs <= 0 || videoMs >= visible)
+        {
+            return (showing, null);
+        }
+
+        long fade = timing.FadeMs;
+        long videoFade = Math.Min(fade, videoMs / 3);
+        var video = timing with { FadeMs = videoFade, HoldMs = videoMs - 2 * videoFade };
+
+        // The still is fully in by the time the video starts fading out, and goes when the appearance does.
+        long stillFade = Math.Min(fade, (visible - videoMs + videoFade) / 3);
+        long from = Math.Max(0, videoMs - videoFade - stillFade);
+        long stillVisible = visible - from;
+        // A repeating appearance's still can start in the next cycle round; a single one's never does.
+        long phase = (timing.PhaseMs + from) % Math.Max(1, timing.FrequencyMs);
+
+        var still = timing with { PhaseMs = phase, FadeMs = stillFade, HoldMs = stillVisible - 2 * stillFade };
+        return (new OverlayShowing(video), new OverlayShowing(still));
+    }
+
     public static bool AppliesTo(Overlay overlay, ScheduleEntry entry) =>
         entry.Kind != ScheduleEntryKind.Padding && entry.Item is not null
         && (overlay.AppliesTo == OverlayAppliesTo.Everything

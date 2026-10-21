@@ -188,6 +188,16 @@ public sealed class Overlay
     [YamlDotNet.Serialization.YamlMember(DefaultValuesHandling = YamlDotNet.Serialization.DefaultValuesHandling.OmitDefaults)]
     public bool FillScreen { get; set; }
 
+    /// <summary>
+    /// For a video or animated picture: starts it over when it runs out; false plays it once and then holds its last
+    /// frame. Null (overlays saved before this setting) loops, as ErsatzTV always did.
+    /// </summary>
+    public bool? Loop { get; set; }
+
+    /// <summary><see cref="Loop"/> with its default.</summary>
+    [YamlDotNet.Serialization.YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public bool Loops => Loop ?? true;
+
     // --- Both ---
 
     /// <summary>0 to 100.</summary>
@@ -427,6 +437,16 @@ public sealed class OverlayLayer
 
     /// <summary>For an image or a video.</summary>
     public string? Path { get; set; }
+
+    /// <summary>
+    /// For a video, or an animated picture (GIF): starts it over when it runs out; false plays it once from when the
+    /// layer comes in and then holds its last frame. Null (layers saved before this setting) loops.
+    /// </summary>
+    public bool? Loop { get; set; }
+
+    /// <summary><see cref="Loop"/> with its default.</summary>
+    [YamlDotNet.Serialization.YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public bool Loops => Loop ?? true;
 
     /// <summary>For an image: a named variable image instead of Path.</summary>
     public string? VariableImage { get; set; }

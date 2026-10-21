@@ -227,6 +227,29 @@ public sealed class OverlayProcessor : IPlayoutProcessor
     {
         if (overlay.Kind == OverlayKinds.File)
         {
+            // A video (or GIF) that plays once: the video while it runs, then its last frame held.
+            if (!overlay.Loops && FileSource(overlay, prepare) is { } source && OverlayRenderer.IsVideo(source)
+                && animations?.Held(source, queue: prepare) is { } held)
+            {
+                (OverlayShowing video, OverlayShowing? still) = OverlayTiming.PlayOnce(showing, (long)entry.Duration.TotalMilliseconds, Ms(held.Seconds));
+                if (Layer(overlay, video, tokens, prepare) is { } playing)
+                {
+                    yield return playing;
+                }
+
+                if (still is not null)
+                {
+                    Overlay last = overlay.Copy();
+                    last.File = held.Still;
+                    if (Layer(last, still, tokens, prepare) is { } holding)
+                    {
+                        yield return holding;
+                    }
+                }
+
+                yield break;
+            }
+
             if (Layer(overlay, showing, tokens, prepare) is { } file)
             {
                 yield return file;
@@ -264,10 +287,17 @@ public sealed class OverlayProcessor : IPlayoutProcessor
                 continue;
             }
 
-            JsonObject? layer = parts.Count == 1 && parts[0].Kind == OverlayLayerKinds.Video
-                ? VideoLayer(overlay, parts[0], own)
-                : Layer(OverlayRenderer.Part(overlay, parts), own, tokens, prepare);
-            if (layer is not null)
+            if (parts.Count == 1 && parts[0].Kind == OverlayLayerKinds.Video)
+            {
+                foreach (JsonObject video in VideoLayers(overlay, parts[0], entry, own, prepare))
+                {
+                    yield return video;
+                }
+
+                continue;
+            }
+
+            if (Layer(OverlayRenderer.Part(overlay, parts), own, tokens, prepare) is { } layer)
             {
                 yield return layer;
             }
@@ -287,9 +317,12 @@ public sealed class OverlayProcessor : IPlayoutProcessor
         {
             if (parts.Count == 1 && parts[0].Kind == OverlayLayerKinds.Video)
             {
-                if (OverlayTiming.For(overlay, entry, OverlayHierarchy.EffectiveTiming(overlay, parts[0])) is { } own && VideoLayer(overlay, parts[0], own) is { } video)
+                if (OverlayTiming.For(overlay, entry, OverlayHierarchy.EffectiveTiming(overlay, parts[0])) is { } own)
                 {
-                    yield return video;
+                    foreach (JsonObject video in VideoLayers(overlay, parts[0], entry, own, prepare))
+                    {
+                        yield return video;
+                    }
                 }
 
                 continue;
@@ -407,21 +440,66 @@ public sealed class OverlayProcessor : IPlayoutProcessor
 
     private static double Round(double value) => Math.Round(value, 3);
 
+    private static long Ms(double seconds) => (long)Math.Round(Math.Max(0, seconds) * 1000);
+
+    /// <summary>
+    /// The file a file overlay airs: its own, or for an animated picture (a GIF) a video made from it, once made (its
+    /// still picture until then). Null when it has none.
+    /// </summary>
+    private string? FileSource(Overlay overlay, bool prepare)
+    {
+        if (overlay.File is not { Length: > 0 } file)
+        {
+            return null;
+        }
+
+        return SchedularrTV.Service.Images.AnimatedImages.IsAnimated(file) && animations?.Converted(file, queue: prepare) is { } video
+            ? video
+            : file;
+    }
+
+    /// <summary>
+    /// A design's video layer: as it is when it loops, else (once its length is known) the video while it runs and then
+    /// its last frame held, in the same place.
+    /// </summary>
+    private IEnumerable<JsonObject> VideoLayers(Overlay overlay, OverlayLayer video, ScheduleEntry entry, OverlayShowing showing, bool prepare)
+    {
+        if (!video.Loops && video.Path is { Length: > 0 } path && animations?.Held(path, queue: prepare) is { } held)
+        {
+            (OverlayShowing playing, OverlayShowing? still) = OverlayTiming.PlayOnce(showing, (long)entry.Duration.TotalMilliseconds, Ms(held.Seconds));
+            if (VideoLayer(overlay, video, playing) is { } moving)
+            {
+                yield return moving;
+            }
+
+            if (still is not null)
+            {
+                OverlayLayer last = video.Copy();
+                last.Path = held.Still;
+                if (VideoLayer(overlay, last, still) is { } holding)
+                {
+                    yield return holding;
+                }
+            }
+
+            yield break;
+        }
+
+        if (VideoLayer(overlay, video, showing) is { } layer)
+        {
+            yield return layer;
+        }
+    }
+
     /// <summary>One graphics layer in ErsatzTV's format: a design as a full-frame PNG, a file where it's anchored.</summary>
     internal JsonObject? Layer(Overlay overlay, OverlayShowing showing, IReadOnlyDictionary<string, string> tokens, bool prepare = true)
     {
         JsonObject layer;
         if (overlay.Kind == OverlayKinds.File)
         {
-            if (overlay.File is not { Length: > 0 } file)
+            if (FileSource(overlay, prepare) is not { } file)
             {
                 return null;
-            }
-
-            // An animated picture (a GIF) goes as a video made from it, once made (its still picture until then).
-            if (SchedularrTV.Service.Images.AnimatedImages.IsAnimated(file) && animations?.Converted(file, queue: prepare) is { } video)
-            {
-                file = video;
             }
 
             // Filling the screen: a full-frame picture or video with its bug already in place covers the frame, bars included.
