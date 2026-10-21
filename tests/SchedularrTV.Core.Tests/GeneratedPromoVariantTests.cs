@@ -182,6 +182,45 @@ public sealed class GeneratedPromoVariantTests
     }
 
     [Fact]
+    public void A_variant_plays_its_own_video_in_the_same_layer()
+    {
+        GeneratedPromoTemplate template = GeneratedPromoTemplates.UpNext();
+        GeneratedLayer sting = new() { Name = "Sting", Kind = GeneratedLayerKind.Video, Path = "day.mov", Width = 400, Height = 200, X = 50, Y = 60 };
+        template.Layers.Add(sting);
+        int index = template.Layers.Count - 1;
+        GeneratedPromoVariant night = new() { Name = "Night" };
+        template.Variants = [night];
+        template.DefaultWeight = 0; // only the variant is picked
+
+        // The first change starts from the default's file; the layer itself keeps it.
+        GeneratedLayerFiles own = GeneratedPromoEditing.Refile(template, night.Id, sting)!;
+        Assert.Equal("day.mov", own.Path);
+        own.Path = "night.mov";
+        Assert.Equal("day.mov", sting.Path);
+
+        ResolvedGeneratedPromo promo = Resolve(template);
+        Assert.Equal(night.Id, promo.Variant);
+        Assert.Equal("night.mov", promo.LayerVideos[index].Path);
+        PromoVideoLayer drawn = Assert.Single(GeneratedPromoResolver.Compose(promo).Layers.OfType<PromoVideoLayer>());
+        Assert.Equal("night.mov", drawn.Path);
+
+        // Its own files pick between themselves like a layer's.
+        own.ChoiceRule = new GeneratedBackgroundRule { MatchShows = false, TimeRange = new GeneratedBackgroundTimeRange { Start = TimeSpan.FromHours(1), End = TimeSpan.FromHours(2) } };
+        own.Alternatives = [new GeneratedLayerChoice { Value = "night-2.mov" }];
+        Assert.Equal("night-2.mov", Resolve(template).LayerVideos[index].Path);
+
+        // The default look plays the layer's own; going back to it, so does the variant.
+        template.DefaultWeight = null;
+        template.Variants = null;
+        Assert.Equal("day.mov", Resolve(template).LayerVideos[index].Path);
+        template.Variants = [night];
+        template.DefaultWeight = 0;
+        GeneratedPromoEditing.Unfile(template, night.Id, sting);
+        Assert.Null(night.Files);
+        Assert.Equal("day.mov", Resolve(template).LayerVideos[index].Path);
+    }
+
+    [Fact]
     public void Variants_survive_the_schedule_file()
     {
         GeneratedPromoTemplate template = GeneratedPromoTemplates.UpNext();

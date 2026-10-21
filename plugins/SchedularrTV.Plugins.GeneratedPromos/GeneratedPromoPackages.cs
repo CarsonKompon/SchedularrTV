@@ -95,12 +95,11 @@ public static class GeneratedPromoPackages
             template.BackgroundOverrides = overrides.Count == 0 ? null : overrides;
         }
 
-        foreach (GeneratedLayer layer in template.Layers)
+        // An image or video layer's file and its others to pick from (wordings aren't files), and variants' own in its place.
+        async Task MapFiles(IGeneratedLayerFiles files)
         {
-            layer.Path = await map(layer.Path).ConfigureAwait(false);
-
-            // An image or video layer's other files to pick from; wordings aren't files.
-            if (layer.Kind != GeneratedLayerKind.Text && layer.Alternatives is { } alternatives)
+            files.Path = await map(files.Path).ConfigureAwait(false);
+            if (files.Alternatives is { } alternatives)
             {
                 foreach (GeneratedLayerChoice choice in alternatives.ToList())
                 {
@@ -108,8 +107,24 @@ public static class GeneratedPromoPackages
                     else alternatives.Remove(choice);
                 }
 
-                layer.Alternatives = alternatives.Count == 0 ? null : alternatives;
+                files.Alternatives = alternatives.Count == 0 ? null : alternatives;
             }
+        }
+
+        foreach (GeneratedLayer layer in template.Layers)
+        {
+            if (layer.Kind == GeneratedLayerKind.Text)
+            {
+                layer.Path = await map(layer.Path).ConfigureAwait(false);
+                continue;
+            }
+
+            await MapFiles(layer).ConfigureAwait(false);
+        }
+
+        foreach (GeneratedLayerFiles files in (template.Variants ?? []).SelectMany(variant => variant.Files ?? []))
+        {
+            await MapFiles(files).ConfigureAwait(false);
         }
 
         // Each variant's own backgrounds, and their rules (kept by path).

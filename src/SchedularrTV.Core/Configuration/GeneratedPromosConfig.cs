@@ -432,6 +432,41 @@ public sealed class GeneratedPromoVariant : IGeneratedBackgrounds, IGeneratedLay
     /// <summary>Ids of the template's layers this variant doesn't show.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? Hidden { get; set; }
+
+    /// <summary>
+    /// The files the template's video (and image) layers play in this variant instead of their own, by layer id: the
+    /// same layer, placed and timed as it is, with another video. Null when it uses the layers' own.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedLayerFiles>? Files { get; set; }
+}
+
+/// <summary>A file layer's file, and others to pick from: a layer's own, or a variant's in its place.</summary>
+public interface IGeneratedLayerFiles
+{
+    /// <summary>The file (the first to pick from).</summary>
+    string? Path { get; set; }
+
+    /// <summary>Other files to pick from, one per promo; null when there are none.</summary>
+    List<GeneratedLayerChoice>? Alternatives { get; set; }
+
+    /// <summary>When <see cref="Path"/> is picked over <see cref="Alternatives"/>; null: always eligible, at normal chance.</summary>
+    GeneratedBackgroundRule? ChoiceRule { get; set; }
+}
+
+/// <summary>A layer's file (and others to pick from) in one variant, replacing the layer's own there.</summary>
+public sealed class GeneratedLayerFiles : IGeneratedLayerFiles
+{
+    /// <summary>The layer's <see cref="GeneratedLayer.Id"/>.</summary>
+    public string Layer { get; set; } = string.Empty;
+
+    public string? Path { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedLayerChoice>? Alternatives { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public GeneratedBackgroundRule? ChoiceRule { get; set; }
 }
 
 public sealed class GeneratedPromoTemplate : IGeneratedBackgrounds
@@ -1861,7 +1896,7 @@ public sealed class GeneratedCreditsTextOptions
     public string? FallbackText { get; set; }
 }
 
-public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
+public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming, IGeneratedLayerFiles
 {
     /// <summary>
     /// Stable identity for per-background placements (<see cref="GeneratedPromoTemplate.BackgroundOverrides"/>), groups,
@@ -1904,6 +1939,16 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming
         GeneratedLayer copy = (GeneratedLayer)MemberwiseClone();
         if (Kind == GeneratedLayerKind.Text) copy.Text = value;
         else copy.Path = value;
+        return copy;
+    }
+
+    /// <summary>A shallow copy with <paramref name="files"/>'s file and others to pick from instead of its own.</summary>
+    public GeneratedLayer WithFiles(IGeneratedLayerFiles files)
+    {
+        GeneratedLayer copy = (GeneratedLayer)MemberwiseClone();
+        copy.Path = files.Path;
+        copy.Alternatives = files.Alternatives;
+        copy.ChoiceRule = files.ChoiceRule;
         return copy;
     }
 

@@ -41,6 +41,20 @@ public static class GeneratedPromoVariants
     public static bool Hides(GeneratedPromoVariant? variant, GeneratedLayer layer) =>
         variant?.Hidden is { Count: > 0 } hidden && layer.Id is { Length: > 0 } id && hidden.Contains(id, StringComparer.Ordinal);
 
+    /// <summary>
+    /// The variant's own file (and others to pick from) for one of the template's video or image layers, or null when
+    /// it plays the layer's own (or <paramref name="variant"/> is null: the default look).
+    /// </summary>
+    public static GeneratedLayerFiles? Refiling(GeneratedPromoVariant? variant, GeneratedLayer layer) =>
+        variant?.Files is { Count: > 0 } files && layer.Id is { Length: > 0 } id && layer.Variant is null
+        && layer.Kind is GeneratedLayerKind.Video or GeneratedLayerKind.Image
+            ? files.FirstOrDefault(own => string.Equals(own.Layer, id, StringComparison.Ordinal))
+            : null;
+
+    /// <summary>The layer as <paramref name="variant"/> plays it: with the variant's own file(s), or as it is.</summary>
+    public static GeneratedLayer FilesFor(GeneratedPromoVariant? variant, GeneratedLayer layer) =>
+        Refiling(variant, layer) is { } own ? layer.WithFiles(own) : layer;
+
     private static GeneratedLayer? Parent(GeneratedPromoTemplate template, GeneratedLayer layer) =>
         layer.Parent is { Length: > 0 } id
             ? template.Layers.FirstOrDefault(candidate => candidate.Kind == GeneratedLayerKind.Group
@@ -54,7 +68,9 @@ public static class GeneratedPromoVariants
     public static IEnumerable<GeneratedBackgroundRule> AllRules(GeneratedPromoTemplate template) =>
         (template.BackgroundRules ?? [])
             .Concat((template.Variants ?? []).SelectMany(variant => variant.BackgroundRules ?? []))
-            .Concat(template.Layers.SelectMany(layer => (layer.Alternatives ?? []).Select(choice => choice.Rule).Prepend(layer.ChoiceRule)).OfType<GeneratedBackgroundRule>());
+            .Concat(template.Layers.Cast<IGeneratedLayerFiles>()
+                .Concat((template.Variants ?? []).SelectMany(variant => variant.Files ?? []))
+                .SelectMany(files => (files.Alternatives ?? []).Select(choice => choice.Rule).Prepend(files.ChoiceRule)).OfType<GeneratedBackgroundRule>());
 
     /// <summary>
     /// Turns an older template's per-background layouts (<see cref="GeneratedPromoTemplate.BackgroundOverrides"/>) into
@@ -203,6 +219,19 @@ public static class GeneratedPromoVariants
 
                 (layer.Start, layer.End, layer.TransitionIn, layer.TransitionOut) = (timed.Start, timed.End, timed.TransitionIn, timed.TransitionOut);
                 (layer.TransitionDuration, layer.TransitionOutDuration) = (timed.TransitionDuration, timed.TransitionOutDuration);
+            }
+
+            if (Refiling(variant, layer) is { } refiled)
+            {
+                foreach (GeneratedPromoVariant other in others.Where(other => Refiling(other, layer) is null))
+                {
+                    (other.Files ??= []).Add(new GeneratedLayerFiles
+                    {
+                        Layer = id, Path = layer.Path, Alternatives = layer.Alternatives, ChoiceRule = layer.ChoiceRule
+                    });
+                }
+
+                (layer.Path, layer.Alternatives, layer.ChoiceRule) = (refiled.Path, refiled.Alternatives, refiled.ChoiceRule);
             }
         }
 

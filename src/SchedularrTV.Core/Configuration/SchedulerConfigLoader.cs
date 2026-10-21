@@ -1147,6 +1147,13 @@ public static class SchedulerConfigLoader
                 variant.Id = string.IsNullOrWhiteSpace(variant.Id) ? Guid.NewGuid().ToString("N")[..8] : variant.Id.Trim();
                 variant.Layers ??= [];
                 if (variant.Hidden is { Count: 0 }) variant.Hidden = null;
+                variant.Files?.RemoveAll(files => string.IsNullOrWhiteSpace(files?.Layer));
+                if (variant.Files is { Count: 0 }) variant.Files = null;
+                foreach (GeneratedLayerFiles files in variant.Files ?? [])
+                {
+                    if (files.Alternatives is { Count: 0 }) files.Alternatives = null;
+                    foreach (GeneratedLayerChoice choice in files.Alternatives ?? []) choice.Value ??= string.Empty;
+                }
             }
 
             foreach (GeneratedLayer layer in template.Layers ?? [])

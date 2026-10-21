@@ -212,7 +212,8 @@
     private readonly CancellationTokenSource _life = new();
     private IEnumerable<string> Sources => Template.BackgroundChoices.Concat((Template.Variants ?? []).SelectMany(v => v.BackgroundChoices))
         .Concat(Template.Layers.Where(l => l.Kind == GeneratedLayerKind.Video && l.Video?.Episode is null)
-            .SelectMany(l => new[] { l.Path }.Concat(l.Alternatives?.Select(a => a.Value) ?? []))).OfType<string>()
+            .SelectMany(l => (Template.Variants ?? []).Select(v => GeneratedPromoVariants.Refiling(v, l)).OfType<IGeneratedLayerFiles>().Prepend(l))
+            .SelectMany(f => new[] { f.Path }.Concat(f.Alternatives?.Select(a => a.Value) ?? []))).OfType<string>()
         .Where(s => !string.IsNullOrWhiteSpace(s) && !PromoRenderer.IsImage(s)).Distinct(StringComparer.OrdinalIgnoreCase);
     private double LastTime => _media is { } m ? Math.Max(0, (Math.Ceiling(m.Duration * m.Fps - 1e-6) - 1) / m.Fps) : 0;
     private bool Ready { get { try { return _recipe.Regions.Count > 0 && Cleanup.Cached(_recipe) is not null; } catch (ArgumentException) { return false; } } }

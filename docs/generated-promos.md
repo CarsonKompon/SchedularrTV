@@ -159,7 +159,7 @@ layers:
 
 **+ Video** adds a box that plays a video. Under **Plays**, choose a video file, or a clip of an episode: the one the promo is for, what's on now (or before the break), the next episode, or one 2 to 10 shows ahead. An episode clip starts where you set it, or, left blank, somewhere in the middle that changes each airing. If there's no such show, or its file can't be read, the layer is left out.
 
-Video layers move, resize, turn, fade, group and keyframe like any other layer, and can be placed and timed per variant. A video layer can also pick from several files (see *Picking a layer's file or wording*).
+Video layers move, resize, turn, fade, group and keyframe like any other layer, and can be placed, timed and given its own video file(s) per variant (see *Variants*). A video layer can also pick from several files (see *Picking a layer's file or wording*).
 
 **Transparent video** works automatically: use MOV with ProRes 4444 or QuickTime Animation (QTRLE), or WebM with VP8/VP9 alpha. The file must actually contain an alpha channel; an ordinary MOV is not necessarily transparent. WebM decoding uses FFmpeg's `libvpx` / `libvpx-vp9` decoders, which must be included in the installed FFmpeg build. Transparent areas reveal the background and layers underneath in both the canvas preview and rendered promo.
 
@@ -380,7 +380,8 @@ Existing rectangle templates keep their appearance. In YAML, shapes retain `kind
 A template can have **variants**: versions of the same promo, each with its own backgrounds, its own placement, colour and timing of the template's layers, layers of its own, and its own availability. Each promo shows one look: the template's own (**Default**) or one of the variants that can air then.
 
 - **Switching.** The **Variant** bar under the canvas (in **Canvas**, above the backgrounds) lists **Default** and each variant; click one to edit it. **+ Variant** adds one starting from the default look; **Duplicate** copies the one you're editing (backgrounds, placements, hidden layers and its own layers).
-- **Editing the default's layers in a variant.** Move, resize, change opacity or keyframe layers as usual: the first change gives the variant its own copy of the layer's position, size, opacity and keyframes (⌖ marks it); layers you don't touch keep following the default. **Colour** and timing (**Appears at**, **Leaves at**, **Enter**, **Exit**, **Transition length**) are kept on their own the same way. **Use the default's** drops what the variant sets for a layer. Text, files and other settings of the default's layers apply to every variant.
+- **Editing the default's layers in a variant.** Move, resize, change opacity or keyframe layers as usual: the first change gives the variant its own copy of the layer's position, size, opacity and keyframes (⌖ marks it); layers you don't touch keep following the default. **Colour** and timing (**Appears at**, **Leaves at**, **Enter**, **Exit**, **Transition length**) are kept on their own the same way. **Use the default's** drops what the variant sets for a layer. Text and other settings of the default's layers apply to every variant.
+- **Another video in the same layer.** While editing a variant, a video (or image) layer shows the default's file. **Use a different video in this variant** gives the variant its own file, starting as a copy of the default's. You can then change it, and add other files to pick from with their own rules. The layer stays one layer: its place, timing, playback settings, loop and chroma key are shared, and only the file changes. **Use the default's video** (or **Use the default's** under ⌖) goes back to the default's file.
 - **Hiding.** 👁 in the layer list (or **Hide in this variant**) hides one of the default's layers in this variant only; hidden rows are struck through and can be shown again.
 - **Layers of its own.** Layers added while editing a variant belong to it: they're listed with an **only here** badge and a purple edge, are drawn only in that variant, and aren't listed for the default or other variants. Deleting a variant deletes its own layers.
 - **Backgrounds.** While a variant is being edited, the background list is the variant's own. A variant without backgrounds uses the default's. Each background still has its **Background selection** (show matching and daily time range), and a variant's matching background makes the variant itself likelier by the same weight.
@@ -401,6 +402,10 @@ variants:
       - { layer: a1b2c3d4, x: 900, y: 50, width: 400, height: 100, opacity: 1 }
     colors: [{ layer: e5f6a7b8, color: '#202020' }]
     hidden: [c9d0e1f2]        # the template's layers it doesn't show
+    files:                   # the template's video/image layers playing other files here, by id
+      - layer: b3c4d5e6
+        path: 'D:\Media\Promos\Clips\night-sting.mov'
+        alternatives: [{ value: 'D:\Media\Promos\Clips\night-sting-2.mov' }]   # optional, as on a layer
 layers:
   - name: Moon
     kind: image

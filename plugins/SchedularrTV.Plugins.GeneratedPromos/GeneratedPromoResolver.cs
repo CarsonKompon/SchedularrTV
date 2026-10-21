@@ -155,22 +155,26 @@ public static partial class GeneratedPromoResolver
         // The variant this promo shows (null: the template's default look), picked once per promo.
         GeneratedPromoVariant? variant = GeneratedPromoBackgrounds.SelectVariant(template, ruleSubjects, promoTime, variety, programme, nowPlaying, zone);
 
-        // Each layer's file or wording, for layers with others to pick from; the rest use their own.
+        // Each layer's file or wording, for layers with others to pick from (or, in the picked variant, files of its
+        // own); the rest use their own.
         Dictionary<int, string> choices = [];
         List<GeneratedLayer> effective = new(template.Layers.Count);
         for (int index = 0; index < template.Layers.Count; index++)
         {
-            GeneratedLayer layer = template.Layers[index];
-            string own = (layer.Kind == GeneratedLayerKind.Text ? layer.Text : layer.Path) ?? string.Empty;
-            if (GeneratedPromoBackgrounds.SelectChoice(layer, ruleSubjects, promoTime, $"{variety}|layer|{layer.Id ?? index.ToString(CultureInfo.InvariantCulture)}",
-                    nowPlaying, zone) is { } chosen && !string.Equals(chosen, own, StringComparison.Ordinal))
+            GeneratedLayer original = template.Layers[index];
+            string own = (original.Kind == GeneratedLayerKind.Text ? original.Text : original.Path) ?? string.Empty;
+            GeneratedLayer layer = GeneratedPromoVariants.FilesFor(variant, original);
+            string chosen = GeneratedPromoBackgrounds.SelectChoice(layer, ruleSubjects, promoTime, $"{variety}|layer|{layer.Id ?? index.ToString(CultureInfo.InvariantCulture)}",
+                                nowPlaying, zone)
+                            ?? (layer.Kind == GeneratedLayerKind.Text ? layer.Text : layer.Path) ?? string.Empty;
+            if (!string.Equals(chosen, own, StringComparison.Ordinal))
             {
                 choices[index] = chosen;
                 effective.Add(layer.WithChoice(chosen));
             }
             else
             {
-                effective.Add(layer);
+                effective.Add(original);
             }
         }
 

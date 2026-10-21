@@ -706,17 +706,7 @@
                         }
                         @if (string.IsNullOrWhiteSpace(selected.VariableImage))
                         {
-                        <div class="field">
-                            <span>Image file</span>
-                            <FilePathPicker Value="@selected.Path" ValueChanged="value => Set(() => selected.Path = value)" KeepCopyIn="@GeneratedPromoPackages.AssetCategory"
-                                            Extensions="FileBrowsing.Images" Label="image" StartIn="Environment.SpecialFolder.MyPictures"
-                                            Placeholder="D:\Media\Promos\Logos\channel.png" />
-                        </div>
-                        @if (Missing(selected.Path))
-                        {
-                            <p class="hint warn">The scheduler can't find this file.</p>
-                        }
-                        @(LayerChoices(selected, "image"))
+                        @(LayerFiles(selected, "image", FileBrowsing.Images, @"D:\Media\Promos\Logos\channel.png", Environment.SpecialFolder.MyPictures))
                         }
                     }
                     else if (selected.Kind == GeneratedLayerKind.Video)
@@ -741,17 +731,9 @@
                         }
                         @if (video.Episode is null)
                         {
-                            <div class="field">
-                                <span>Video file</span>
-                                <FilePathPicker Value="@selected.Path" ValueChanged="value => Set(() => selected.Path = value)" KeepCopyIn="@GeneratedPromoPackages.AssetCategory"
-                                                Extensions="FileBrowsing.Videos" Label="video" Placeholder="D:\Media\Promos\Clips\sting.mp4" />
-                            </div>
-                            @if (Missing(selected.Path))
-                            {
-                                <p class="hint warn">The scheduler can't find this file.</p>
-                            }
-                            @(LayerChoices(selected, "video"))
-                            <button class="btn btn-sm" type="button" disabled="@Missing(selected.Path)" @onclick="() => OpenCleanup(selected.Path)">Remove text from this video…</button>
+                            @(LayerFiles(selected, "video", FileBrowsing.Videos, @"D:\Media\Promos\Clips\sting.mp4", Environment.SpecialFolder.MyVideos))
+                            string? cleanupPath = OverridesFor(selected) ? GeneratedPromoVariants.FilesFor(EditingVariant, selected).Path : selected.Path;
+                            <button class="btn btn-sm" type="button" disabled="@Missing(cleanupPath)" @onclick="() => OpenCleanup(cleanupPath)">Remove text from this video…</button>
                             <label class="field">
                                 <span>Start into the file (s)</span>
                                 <input type="number" min="0" step="0.1" value="@Number(video.FileStart.TotalSeconds)"
@@ -969,7 +951,7 @@
                                 <span class="hint" style="margin:0;">
                                     ⌖ @CustomisedParts(selected, placingFor) its own way for @VariantLabel(placingFor).
                                 </span>
-                                <button class="btn btn-sm" type="button" title="Use the default's position, size, opacity, keyframes, timing and colour again in this variant"
+                                <button class="btn btn-sm" type="button" title="Use the default's position, size, opacity, keyframes, timing, colour and file again in this variant"
                                         @onclick="() => ResetPlacement(selected)">Use the default's</button>
                             }
                             else
@@ -2229,6 +2211,7 @@
         if (GeneratedPromoResolver.Placement(Template, background, layer) is not null) parts.Add("placed");
         if (GeneratedPromoResolver.Retiming(Template, background, layer) is not null) parts.Add("timed");
         if (GeneratedPromoResolver.Recolour(Template, background, layer) is not null) parts.Add("coloured");
+        if (GeneratedPromoVariants.Refiling(Template.Variant(background), layer) is not null) parts.Add("sourced"); // its file(s)
         string text = parts.Count switch
         {
             0 => "set",
@@ -3391,9 +3374,12 @@
     /// A layer's other files (image and video layers) or wordings (text layers), one picked per promo: each with the same
     /// "choose based on the shows / only during a daily time range" settings backgrounds have, and so does its own.
     /// </summary>
-    private RenderFragment LayerChoices(GeneratedLayer layer, string what) => __builder =>
+    private RenderFragment LayerChoices(GeneratedLayer layer, string what) => LayerChoices(layer, layer, what);
+
+    /// <param name="files">Where the files live: the layer itself, or the edited variant's own files for it.</param>
+    private RenderFragment LayerChoices(GeneratedLayer layer, IGeneratedLayerFiles files, string what) => __builder =>
     {
-        List<GeneratedLayerChoice> alternatives = layer.Alternatives ?? [];
+        List<GeneratedLayerChoice> alternatives = files.Alternatives ?? [];
         bool text = layer.Kind == GeneratedLayerKind.Text;
         <details class="vt-choices" open="@(alternatives.Count > 0)">
             <summary>
@@ -3402,7 +3388,7 @@
             @if (alternatives.Count > 0)
             {
                 <p class="hint">The one above is the first to pick from; each promo uses one of these by their settings (fixed by what the promo is, so a re-render looks the same).</p>
-                @(RuleEditor(OwnChoiceSlot(layer), $"The first {what}'s"))
+                @(RuleEditor(OwnChoiceSlot(files), $"The first {what}'s"))
             }
             <ol class="song-list vt-choice-list">
                 @for (int index = 0; index < alternatives.Count; index++)
@@ -3421,7 +3407,7 @@
                                                 Extensions="@(layer.Kind == GeneratedLayerKind.Video ? FileBrowsing.Videos : FileBrowsing.Images)" Label="@what" />
                             }
                             <button class="btn btn-sm btn-danger" type="button" aria-label="@($"Remove {what} {position + 2}")"
-                                    @onclick="() => RemoveChoice(layer, choice)">Remove</button>
+                                    @onclick="() => RemoveChoice(files, choice)">Remove</button>
                         </div>
                         @if (!text && Missing(choice.Value))
                         {
@@ -3434,26 +3420,26 @@
             <div class="row row-wrap">
                 @if (text)
                 {
-                    <button class="btn btn-sm" type="button" @onclick="() => AddChoices(layer, [string.Empty])">+ Another wording</button>
+                    <button class="btn btn-sm" type="button" @onclick="() => AddChoices(files, [string.Empty])">+ Another wording</button>
                 }
                 else
                 {
                     <FilePathPicker Multiple="true" ButtonText="@($"Add {what}s to pick from…")" Label="@($"{what}s")" KeepCopyIn="@GeneratedPromoPackages.AssetCategory"
-                                    Extensions="@(layer.Kind == GeneratedLayerKind.Video ? FileBrowsing.Videos : FileBrowsing.Images)" OnPicked="picked => AddChoices(layer, picked)" />
+                                    Extensions="@(layer.Kind == GeneratedLayerKind.Video ? FileBrowsing.Videos : FileBrowsing.Images)" OnPicked="picked => AddChoices(files, picked)" />
                 }
             </div>
         </details>
     };
 
-    private RuleSlot OwnChoiceSlot(GeneratedLayer layer) => new(() => layer.ChoiceRule, rule => layer.ChoiceRule = rule);
+    private RuleSlot OwnChoiceSlot(IGeneratedLayerFiles files) => new(() => files.ChoiceRule, rule => files.ChoiceRule = rule);
 
-    private Task AddChoices(GeneratedLayer layer, IReadOnlyList<string> values) => Set(() =>
+    private Task AddChoices(IGeneratedLayerFiles files, IReadOnlyList<string> values) => Set(() =>
     {
-        List<GeneratedLayerChoice> alternatives = layer.Alternatives ??= [];
+        List<GeneratedLayerChoice> alternatives = files.Alternatives ??= [];
         foreach (string value in values)
         {
             // Files already there aren't added twice; an empty wording is a new one to fill in.
-            if (value.Length > 0 && (string.Equals(value, layer.Path, StringComparison.OrdinalIgnoreCase)
+            if (value.Length > 0 && (string.Equals(value, files.Path, StringComparison.OrdinalIgnoreCase)
                     || alternatives.Any(choice => string.Equals(choice.Value, value, StringComparison.OrdinalIgnoreCase))))
             {
                 continue;
@@ -3462,18 +3448,59 @@
             alternatives.Add(new GeneratedLayerChoice { Value = value });
         }
 
-        if (alternatives.Count == 0) layer.Alternatives = null;
+        if (alternatives.Count == 0) files.Alternatives = null;
     });
 
-    private Task RemoveChoice(GeneratedLayer layer, GeneratedLayerChoice choice) => Set(() =>
+    private Task RemoveChoice(IGeneratedLayerFiles files, GeneratedLayerChoice choice) => Set(() =>
     {
-        layer.Alternatives?.Remove(choice);
-        if (layer.Alternatives is { Count: 0 })
+        files.Alternatives?.Remove(choice);
+        if (files.Alternatives is { Count: 0 })
         {
-            layer.Alternatives = null;
-            layer.ChoiceRule = null;
+            files.Alternatives = null;
+            files.ChoiceRule = null;
         }
     });
+
+    // ---- A layer's file(s) in the edited variant ----
+
+    /// <summary>
+    /// A video or image layer's file and the others it picks from. Editing a variant, a template layer plays the
+    /// default's file(s) until the variant is given its own: the same layer, placed and timed as it is, playing another.
+    /// </summary>
+    private RenderFragment LayerFiles(GeneratedLayer layer, string what, string[] extensions, string placeholder,
+        Environment.SpecialFolder startIn) => __builder =>
+    {
+        string variantId = _editVariant ?? string.Empty;
+        bool perVariant = OverridesFor(layer);
+        GeneratedLayerFiles? own = perVariant ? GeneratedPromoVariants.Refiling(EditingVariant, layer) : null;
+        if (perVariant && own is null)
+        {
+            <div class="field">
+                <span>@(char.ToUpperInvariant(what[0]) + what[1..]) file <span class="ed-meta">· the default's</span></span>
+                <p class="hint">@(string.IsNullOrWhiteSpace(layer.Path) ? "None set." : Path.GetFileName(layer.Path))@(layer.Alternatives is { Count: > 0 } picks ? $" (and {picks.Count} more to pick from)" : "")</p>
+                <button class="btn btn-sm" type="button" title="@($"This variant plays its own {what} in this layer; the default and other variants keep theirs")"
+                        @onclick="() => Set(() => GeneratedPromoEditing.Refile(Template, variantId, layer))">Use a different @what in this variant</button>
+            </div>
+            return;
+        }
+
+        IGeneratedLayerFiles files = (IGeneratedLayerFiles?)own ?? layer;
+        <div class="field">
+            <span>@(char.ToUpperInvariant(what[0]) + what[1..]) file@(own is not null ? " (this variant's)" : "")</span>
+            <FilePathPicker Value="@files.Path" ValueChanged="value => Set(() => files.Path = value)" KeepCopyIn="@GeneratedPromoPackages.AssetCategory"
+                            Extensions="extensions" Label="@what" StartIn="startIn" Placeholder="@placeholder" />
+        </div>
+        @if (Missing(files.Path))
+        {
+            <p class="hint warn">The scheduler can't find this file.</p>
+        }
+        @(LayerChoices(layer, files, what))
+        @if (own is not null)
+        {
+            <button class="btn btn-sm" type="button" title="@($"Play the default's {what} in this layer again")"
+                    @onclick="() => Set(() => GeneratedPromoEditing.Unfile(Template, variantId, layer))">Use the default's @what</button>
+        }
+    };
 
     // ---- Pick rules (backgrounds' and layers' files and wordings) ----
 

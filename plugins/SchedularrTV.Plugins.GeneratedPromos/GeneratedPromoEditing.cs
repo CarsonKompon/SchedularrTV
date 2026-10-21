@@ -325,7 +325,47 @@ public static class GeneratedPromoEditing
         return timed;
     }
 
-    /// <summary>Puts the layer back the way the template has it (place, keyframes, timing and colour), over <paramref name="background"/>.</summary>
+    /// <summary>
+    /// The variant's own file (and others to pick from) for one of the template's video or image layers, made on first
+    /// use as a copy of the layer's, so changing it starts from what the default plays. The layer is given an id if it
+    /// has none. Null when <paramref name="variantId"/> isn't a variant.
+    /// </summary>
+    public static GeneratedLayerFiles? Refile(GeneratedPromoTemplate template, string variantId, GeneratedLayer layer)
+    {
+        if (template.Variant(variantId) is not { } variant)
+        {
+            return null;
+        }
+
+        if (GeneratedPromoVariants.Refiling(variant, layer) is { } existing)
+        {
+            return existing;
+        }
+
+        layer.Id ??= NewLayerId(template);
+        var files = new GeneratedLayerFiles
+        {
+            Layer = layer.Id,
+            Path = layer.Path,
+            Alternatives = layer.Alternatives is { Count: > 0 } alternatives ? Copy(alternatives) : null,
+            ChoiceRule = layer.ChoiceRule is { } rule ? Copy(rule) : null
+        };
+        (variant.Files ??= []).Add(files);
+        return files;
+    }
+
+    /// <summary>The variant plays the layer's own file(s) again.</summary>
+    public static void Unfile(GeneratedPromoTemplate template, string variantId, GeneratedLayer layer)
+    {
+        if (template.Variant(variantId) is { } variant && GeneratedPromoVariants.Refiling(variant, layer) is { } own)
+        {
+            variant.Files!.Remove(own);
+        }
+
+        Tidy(template);
+    }
+
+    /// <summary>Puts the layer back the way the template has it (place, keyframes, timing, colour and files), over <paramref name="background"/>.</summary>
     public static void Unplace(GeneratedPromoTemplate template, string background, GeneratedLayer layer)
     {
         if (Entry(template, background) is { } tracked)
@@ -333,6 +373,11 @@ public static class GeneratedPromoEditing
             if (GeneratedPromoResolver.Placement(template, background, layer) is { } placed) tracked.Layers.Remove(placed);
             if (GeneratedPromoResolver.Recolour(template, background, layer) is { } colour) tracked.Colors?.Remove(colour);
             if (GeneratedPromoResolver.Retiming(template, background, layer) is { } timing) tracked.Timings?.Remove(timing);
+        }
+
+        if (template.Variant(background) is { } variant && GeneratedPromoVariants.Refiling(variant, layer) is { } files)
+        {
+            variant.Files!.Remove(files);
         }
 
         Tidy(template);
@@ -349,11 +394,12 @@ public static class GeneratedPromoEditing
         Tidy(template);
     }
 
-    /// <summary>Whether <paramref name="background"/> places, times or colours the layer its own way.</summary>
+    /// <summary>Whether <paramref name="background"/> places, times, colours or plays the layer its own way.</summary>
     public static bool Customised(GeneratedPromoTemplate template, string? background, GeneratedLayer layer) =>
         GeneratedPromoResolver.Placement(template, background, layer) is not null
         || GeneratedPromoResolver.Recolour(template, background, layer) is not null
-        || GeneratedPromoResolver.Retiming(template, background, layer) is not null;
+        || GeneratedPromoResolver.Retiming(template, background, layer) is not null
+        || GeneratedPromoVariants.Refiling(template.Variant(background), layer) is not null;
 
     /// <summary>How many layers <paramref name="background"/> places or colours its own way.</summary>
     public static int PlacedCount(GeneratedPromoTemplate template, string background) =>
@@ -417,6 +463,7 @@ public static class GeneratedPromoEditing
             foreach (GeneratedPromoVariant variant in template.Variants ?? [])
             {
                 variant.Hidden?.RemoveAll(hidden => string.Equals(hidden, id, StringComparison.Ordinal));
+                variant.Files?.RemoveAll(files => string.Equals(files.Layer, id, StringComparison.Ordinal));
             }
         }
 
@@ -435,6 +482,7 @@ public static class GeneratedPromoEditing
         foreach (GeneratedPromoVariant variant in template.Variants ?? [])
         {
             if (variant.Hidden is { Count: 0 }) variant.Hidden = null;
+            if (variant.Files is { Count: 0 }) variant.Files = null;
         }
 
         template.BackgroundOverrides?.RemoveAll(tracked => tracked.Layers.Count == 0 && tracked.Colors is null && tracked.Timings is null);
