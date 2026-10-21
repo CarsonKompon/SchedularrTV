@@ -127,7 +127,11 @@ internal sealed class UpdateApplier(UpdateRequest request, string requestPath, s
         {
             TryDelete(staging);
             TryDeleteFile(requestPath);
-            _log?.Dispose();
+            lock (_logGate)
+            {
+                _log?.Dispose();
+                _log = null;
+            }
         }
     }
 
@@ -137,30 +141,43 @@ internal sealed class UpdateApplier(UpdateRequest request, string requestPath, s
         try
         {
             using Process tray = Process.GetProcessById(waitForProcess);
+            Log($"Waiting for the tray (pid {waitForProcess}) to close.");
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(QuitTimeout);
             try
             {
                 await tray.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
+                Log("The tray has closed.");
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 Log("The tray didn't close in time; ending it.");
-                Stop(tray);
+                // Only the tray itself: this installer is one of its child processes, so ending its whole process
+                // tree would end the install too. Its server is dealt with below.
+                Stop(tray, entireProcessTree: false);
             }
         }
         catch (ArgumentException)
         {
-            // Already gone.
+            Log("The tray has already closed.");
         }
 
         DateTime until = DateTime.UtcNow + QuitTimeout;
-        while (ServersRunning().Count > 0 && DateTime.UtcNow < until)
+        while (DateTime.UtcNow < until)
         {
+            List<Process> running = ServersRunning();
+            int count = running.Count;
+            running.ForEach(process => process.Dispose());
+            if (count == 0)
+            {
+                break;
+            }
+
             await Task.Delay(500, cancellationToken).ConfigureAwait(false);
         }
 
         StopServers();
+        Log("SchedularrTV has closed; downloading the update.");
     }
 
     /// <summary>The app's servers still running from its folder.</summary>
@@ -199,7 +216,7 @@ internal sealed class UpdateApplier(UpdateRequest request, string requestPath, s
         }
     }
 
-    private static void Stop(Process? process)
+    private static void Stop(Process? process, bool entireProcessTree = true)
     {
         if (process is null)
         {
@@ -210,7 +227,7 @@ internal sealed class UpdateApplier(UpdateRequest request, string requestPath, s
         {
             if (!process.HasExited)
             {
-                process.Kill(entireProcessTree: true);
+                process.Kill(entireProcessTree);
                 process.WaitForExit(10_000);
             }
         }
@@ -612,15 +629,21 @@ internal sealed class UpdateApplier(UpdateRequest request, string requestPath, s
         }
     }
 
+    // Written from the install and, if the installer crashes, from the crash handler.
+    private readonly Lock _logGate = new();
+
     internal void Log(string line)
     {
         string stamped = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {line}";
-        try
+        lock (_logGate)
         {
-            _log?.WriteLine(stamped);
-        }
-        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
-        {
+            try
+            {
+                _log?.WriteLine(stamped);
+            }
+            catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+            {
+            }
         }
 
         Console.WriteLine(stamped);
