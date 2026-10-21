@@ -2796,7 +2796,8 @@
 
     // A copy of the layer, or of a group with everything inside it, with ids of its own (so the original's
     // per-background placements stay with the original).
-    private Task DuplicateLayer(GeneratedLayer layer) => Set(() => Select(GeneratedPromoHierarchy.Duplicate(Template, layer)));
+    // Duplicated while editing a variant, the copy is that variant's own (drawn only there), looking as the variant shows it.
+    private Task DuplicateLayer(GeneratedLayer layer) => Set(() => Select(GeneratedPromoHierarchy.Duplicate(Template, layer, _editVariant)));
 
     private Task RemoveLayer(GeneratedLayer layer) => Set(() =>
     {

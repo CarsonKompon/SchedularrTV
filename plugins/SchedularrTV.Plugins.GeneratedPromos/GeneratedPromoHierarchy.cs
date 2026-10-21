@@ -455,10 +455,24 @@ public static class GeneratedPromoHierarchy
     /// A copy of the layer (with everything inside it, for a group) just after it, nudged so it can be seen. Copies have
     /// ids of their own, so they're placed with the template's layout over every background.
     /// </summary>
-    public static GeneratedLayer Duplicate(GeneratedPromoTemplate template, GeneratedLayer layer)
+    /// <param name="variant">
+    /// The variant being edited, if any: the copies are then its own layers (drawn only in it), looking as it shows the
+    /// originals (its placement, timing, colour and file of the default's layers), and what it hides isn't copied.
+    /// </param>
+    public static GeneratedLayer Duplicate(GeneratedPromoTemplate template, GeneratedLayer layer, string? variant = null)
     {
-        List<GeneratedLayer> originals = Subtree(template, layer);
+        GeneratedPromoVariant? owner = template.Variant(variant);
+        List<GeneratedLayer> originals = owner is null ? Subtree(template, layer)
+            : [.. Subtree(template, layer).Where(candidate => ReferenceEquals(candidate, layer) || GeneratedPromoVariants.Visible(template, owner.Id, candidate))];
         List<GeneratedLayer> copies = [.. originals.Select(original => GeneratedPromoEditing.Copy(original))];
+        if (owner is not null)
+        {
+            for (int index = 0; index < copies.Count; index++)
+            {
+                AsShownIn(template, owner, originals[index], copies[index]);
+                copies[index].Variant = owner.Id;
+            }
+        }
         Dictionary<string, string> ids = new(StringComparer.Ordinal);
         List<string> names = [.. template.Layers.Select(existing => existing.Name)];
         foreach (GeneratedLayer copy in copies)
@@ -484,6 +498,42 @@ public static class GeneratedPromoHierarchy
         template.Layers.InsertRange(template.Layers.IndexOf(originals[^1]) + 1, copies);
         Tidy(template);
         return copies[0];
+    }
+
+    /// <summary>
+    /// Gives <paramref name="copy"/> (of one of the default's layers) the look <paramref name="variant"/> shows it with:
+    /// its own placement, timing, colour and file, where it has them. A variant's own layer is copied as it is.
+    /// </summary>
+    private static void AsShownIn(GeneratedPromoTemplate template, GeneratedPromoVariant variant, GeneratedLayer original, GeneratedLayer copy)
+    {
+        if (original.Variant is not null)
+        {
+            return;
+        }
+
+        if (GeneratedPromoResolver.Placement(template, variant.Id, original) is { } placed)
+        {
+            GeneratedLayerOverride pose = GeneratedPromoEditing.Copy(placed);
+            (copy.X, copy.Y, copy.Width, copy.Height, copy.Opacity) = (pose.X, pose.Y, pose.Width, pose.Height, pose.Opacity);
+            (copy.Rotation, copy.Corners, copy.Keyframes) = (pose.Rotation, pose.Corners, pose.Keyframes);
+        }
+
+        if (GeneratedPromoResolver.Retiming(template, variant.Id, original) is { } timed)
+        {
+            (copy.Start, copy.End, copy.TransitionIn, copy.TransitionOut) = (timed.Start, timed.End, timed.TransitionIn, timed.TransitionOut);
+            (copy.TransitionDuration, copy.TransitionOutDuration) = (timed.TransitionDuration, timed.TransitionOutDuration);
+        }
+
+        if (GeneratedPromoResolver.Recolour(template, variant.Id, original) is { } colour)
+        {
+            copy.Color = colour.Color;
+        }
+
+        if (GeneratedPromoVariants.Refiling(variant, original) is { } files)
+        {
+            GeneratedLayerFiles own = GeneratedPromoEditing.Copy(files);
+            (copy.Path, copy.Alternatives, copy.ChoiceRule) = (own.Path, own.Alternatives, own.ChoiceRule);
+        }
     }
 
     /// <summary>An id no layer in the template has (nor any of <paramref name="taken"/>).</summary>

@@ -221,6 +221,35 @@ public sealed class GeneratedPromoVariantTests
     }
 
     [Fact]
+    public void A_layer_duplicated_in_a_variant_is_that_variants_own_and_looks_as_the_variant_shows_it()
+    {
+        GeneratedPromoTemplate template = GeneratedPromoTemplates.UpNext();
+        GeneratedLayer heading = template.Layers[2];
+        GeneratedPromoVariant night = new() { Name = "Night" };
+        template.Variants = [night];
+        GeneratedLayerOverride placed = GeneratedPromoEditing.Place(template, night.Id, heading);
+        (placed.X, placed.Rotation) = (700, 30);
+        GeneratedPromoEditing.Recolour(template, night.Id, heading, "#ff0000");
+        float defaultX = heading.X;
+
+        GeneratedLayer copy = GeneratedPromoHierarchy.Duplicate(template, heading, night.Id);
+
+        Assert.Equal(night.Id, copy.Variant);
+        Assert.True(GeneratedPromoVariants.Visible(template, night.Id, copy));
+        Assert.False(GeneratedPromoVariants.Visible(template, null, copy));
+        Assert.Equal(720, copy.X); // the variant's place, nudged
+        Assert.Equal(30f, copy.Rotation);
+        Assert.Equal("#ff0000", copy.Color);
+
+        // The original is untouched in the default look.
+        Assert.Equal(defaultX, heading.X);
+        Assert.Null(heading.Rotation);
+
+        // Duplicated in the default look, it's still one of the default's.
+        Assert.Null(GeneratedPromoHierarchy.Duplicate(template, heading).Variant);
+    }
+
+    [Fact]
     public void Variants_survive_the_schedule_file()
     {
         GeneratedPromoTemplate template = GeneratedPromoTemplates.UpNext();
