@@ -48,7 +48,8 @@ internal sealed record LocalScan(IReadOnlyList<MediaItem> Items, IReadOnlyDictio
 /// Metadata comes from .nfo files where there are any, else from the names; folders between the root and a show or
 /// movie folder (<c>TV/Cartoons/Show</c>) become tags, as they do for commercials.
 /// </summary>
-internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaProbe probe, ILogger logger)
+internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaProbe probe, ILogger logger,
+    Action<string, int, int?>? progress = null)
 {
     private const string ItemPrefix = LocalLibraryIds.ItemPrefix;
     private const string SeriesPrefix = LocalLibraryIds.SeriesPrefix;
@@ -63,6 +64,10 @@ internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaP
 
     private HashSet<string> _extensions = [];
     private readonly Dictionary<string, string> _showFolders = new(StringComparer.Ordinal);
+    private int _discovered;
+
+    private void Discovering(DirectoryInfo directory) =>
+        progress?.Invoke($"Finding video files — {directory.Name}", _discovered, null);
 
     /// <summary>A file found, and how to describe it once it's been probed (null leaves it out).</summary>
     private sealed record Candidate(FileInfo File, Func<ProbeResult?, (MediaItem Item, LocalImages Images)?> Build);
@@ -96,16 +101,20 @@ internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaP
             return new LocalScan([], images, _showFolders);
         }
 
-        IReadOnlyDictionary<string, ProbeResult> probed = await probe.ProbeAllAsync([.. candidates.Select(c => c.File)], chapters: true, cancellationToken)
+        IReadOnlyDictionary<string, ProbeResult> probed = await probe.ProbeAllAsync([.. candidates.Select(c => c.File)], chapters: true, cancellationToken, progress)
             .ConfigureAwait(false);
 
         List<MediaItem> items = new(candidates.Count);
         int skipped = 0;
+        int processed = 0;
+        progress?.Invoke("Reading metadata and artwork", 0, candidates.Count);
         foreach (Candidate candidate in candidates)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (candidate.Build(probed.GetValueOrDefault(candidate.File.FullName)) is not { } built)
             {
                 skipped++;
+                progress?.Invoke("Reading metadata and artwork", ++processed, candidates.Count);
                 continue;
             }
 
@@ -114,6 +123,7 @@ internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaP
             {
                 images[built.Item.Id] = built.Images;
             }
+            progress?.Invoke("Reading metadata and artwork", ++processed, candidates.Count);
         }
 
         if (skipped > 0)
@@ -129,6 +139,7 @@ internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaP
     private void FindShows(DirectoryInfo root, DirectoryInfo directory, List<string> parents, MediaFolderOptions folder,
         List<Candidate> candidates, Dictionary<string, LocalImages> images)
     {
+        Discovering(directory);
         bool isRoot = directory.FullName == root.FullName;
         if (!isRoot && LocalNaming.IsSkippedFolder(directory))
         {
@@ -217,6 +228,8 @@ internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaP
         {
             candidates.Add(new Candidate(file, probed =>
                 Episode(file, folderSeason, directory, nfo, seriesId, seriesName, seriesYear, seriesIds, showTags, fanart, probed)));
+            _discovered++;
+            Discovering(new DirectoryInfo(directory));
         }
     }
 
@@ -299,6 +312,7 @@ internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaP
     /// </summary>
     private IEnumerable<(FileInfo File, int? Season, string Directory)> Episodes(DirectoryInfo directory, int? season)
     {
+        Discovering(directory);
         foreach (FileInfo file in Videos(directory))
         {
             yield return (file, season, directory.FullName);
@@ -334,6 +348,7 @@ internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaP
 
     private void FindMovies(DirectoryInfo root, DirectoryInfo directory, List<string> parents, MediaFolderOptions folder, List<Candidate> candidates)
     {
+        Discovering(directory);
         bool isRoot = directory.FullName == root.FullName;
         if (!isRoot && LocalNaming.IsSkippedFolder(directory))
         {
@@ -379,6 +394,8 @@ internal sealed class LocalVideoScanner(FileSystemLibraryOptions options, MediaP
         foreach (FileInfo file in files)
         {
             candidates.Add(new Candidate(file, probed => Movie(file, directory, ownFolder, pictures, parents, folder, groupId, probed)));
+            _discovered++;
+            Discovering(directory);
         }
     }
 

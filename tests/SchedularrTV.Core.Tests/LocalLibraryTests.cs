@@ -373,6 +373,42 @@ public sealed class LocalLibraryTests : IDisposable
         Assert.False(LocalLibraryIds.IsLocalId("fs:0123456789abcdef"));
     }
 
+    [Theory]
+    [InlineData(MediaKind.Episode)]
+    [InlineData(MediaKind.Movie)]
+    public async Task Progress_advances_inside_a_single_root_even_when_probes_fail(MediaKind kind)
+    {
+        string root = Path.Combine(_folder, "Library");
+        for (int i = 1; i <= 3; i++)
+        {
+            Video(Path.Combine(root, "Show", "Season 1", $"Show - S01E0{i}.mkv"),
+                kind == MediaKind.Episode
+                    ? "<episodedetails><runtime>22</runtime></episodedetails>"
+                    : "<movie><runtime>90</runtime></movie>");
+        }
+
+        FileSystemMediaLibrary library = Library(new MediaFolderOptions { Path = root, Kind = kind });
+        List<MediaSourceProgress> seen = [];
+        library.LoadingChanged += () =>
+        {
+            if (library.Loading is { } progress)
+            {
+                seen.Add(progress);
+            }
+        };
+
+        await library.SearchAsync(QueryExpression.All);
+
+        Assert.Contains(seen, p => p.Stage.Contains("Finding video files", StringComparison.Ordinal) && p.Items == 3 && p.Total is null);
+        MediaSourceProgress[] probing = [.. seen.Where(p => p.Stage.Contains("Reading video durations", StringComparison.Ordinal))];
+        Assert.Equal(new[] { 0, 1, 2, 3 }, probing.Select(p => p.Items));
+        Assert.All(probing, p => Assert.Equal(3, p.Total));
+        Assert.Contains(seen, p => p.Stage.Contains("Reading metadata and artwork", StringComparison.Ordinal) && p.Items == 3);
+        Assert.All(seen, p => Assert.Contains("folder 1 of 1", p.Stage));
+        Assert.Single(seen.Select(p => p.StartedAt).Distinct());
+        Assert.Null(library.Loading);
+    }
+
     private FileSystemMediaLibrary Library(MediaFolderOptions folder) => new(
         Options.Create(new FileSystemLibraryOptions
         {

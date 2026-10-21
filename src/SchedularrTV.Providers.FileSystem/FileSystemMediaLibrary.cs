@@ -184,8 +184,11 @@ public sealed class FileSystemMediaLibrary(
 
             foreach (MediaFolderOptions folder in _options.Folders)
             {
-                Report(new MediaSourceProgress($"Reading {Path.GetFileName(folder.Path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))}",
-                    done++, _options.Folders.Count, started));
+                string folderName = Path.GetFileName(folder.Path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                string context = $"{folderName} (folder {++done} of {_options.Folders.Count})";
+                void Progress(string stage, int count, int? total) =>
+                    Report(new MediaSourceProgress($"{context} — {stage}", count, total, started));
+                Progress("Finding video files", 0, null);
                 if (folder.Kind == MediaKind.Music)
                 {
                     // Songs aren't schedule items; radio channels read them through LocalMusicLibrary.
@@ -195,7 +198,7 @@ public sealed class FileSystemMediaLibrary(
                 if (folder.Kind is MediaKind.Episode or MediaKind.Movie)
                 {
                     // A TV or movie library: shows, seasons and movies read the way Sonarr, Radarr and Kodi lay them out.
-                    LocalScan scan = await new LocalVideoScanner(_options, probe, logger).ScanAsync(folder, cancellationToken).ConfigureAwait(false);
+                    LocalScan scan = await new LocalVideoScanner(_options, probe, logger, Progress).ScanAsync(folder, cancellationToken).ConfigureAwait(false);
                     items.AddRange(scan.Items);
                     foreach ((string id, LocalImages found) in scan.Images)
                     {
@@ -209,7 +212,7 @@ public sealed class FileSystemMediaLibrary(
                 }
                 else
                 {
-                    items.AddRange(await ScanFolderAsync(folder, probe, cancellationToken).ConfigureAwait(false));
+                    items.AddRange(await ScanFolderAsync(folder, probe, cancellationToken, Progress).ConfigureAwait(false));
                 }
             }
 
@@ -230,7 +233,8 @@ public sealed class FileSystemMediaLibrary(
     private async Task<IReadOnlyList<MediaItem>> ScanFolderAsync(
         MediaFolderOptions folder,
         MediaProbe probe,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<string, int, int?> progress)
     {
         string root = Path.GetFullPath(folder.Path);
 
@@ -245,10 +249,15 @@ public sealed class FileSystemMediaLibrary(
 
         // As in ErsatzTV: hidden (dot) folders, folders marked .etvignore (or .ignore) and macOS "._" files are left out.
         Dictionary<string, bool> ignored = new(StringComparer.OrdinalIgnoreCase);
-        List<FileInfo> files = new DirectoryInfo(root)
+        List<FileInfo> files = [];
+        foreach (FileInfo file in new DirectoryInfo(root)
             .EnumerateFiles("*", enumeration)
-            .Where(f => extensions.Contains(f.Extension) && !LocalNaming.IsResourceFork(f.Name) && !InIgnoredFolder(root, f.DirectoryName, ignored))
-            .ToList();
+            .Where(f => extensions.Contains(f.Extension) && !LocalNaming.IsResourceFork(f.Name) && !InIgnoredFolder(root, f.DirectoryName, ignored)))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            files.Add(file);
+            progress("Finding video files", files.Count, null);
+        }
 
         if (files.Count == 0)
         {
@@ -256,13 +265,14 @@ public sealed class FileSystemMediaLibrary(
             return [];
         }
 
-        IReadOnlyDictionary<string, TimeSpan> durations = await probe.ProbeAllAsync(files, cancellationToken).ConfigureAwait(false);
+        IReadOnlyDictionary<string, TimeSpan> durations = await probe.ProbeAllAsync(files, cancellationToken, progress).ConfigureAwait(false);
 
         List<MediaItem> items = new(files.Count);
         int skipped = 0;
 
         foreach (FileInfo file in files)
         {
+            progress("Building library items", items.Count + skipped, files.Count);
             if (!durations.TryGetValue(file.FullName, out TimeSpan duration) || duration < _options.MinDuration)
             {
                 skipped++;

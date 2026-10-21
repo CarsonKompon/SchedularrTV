@@ -30,9 +30,10 @@ internal sealed class MediaProbe(FileSystemLibraryOptions options, ILogger logge
 
     public async Task<IReadOnlyDictionary<string, TimeSpan>> ProbeAllAsync(
         IReadOnlyList<FileInfo> files,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<string, int, int?>? progress = null)
     {
-        IReadOnlyDictionary<string, ProbeResult> results = await ProbeAllAsync(files, chapters: false, cancellationToken).ConfigureAwait(false);
+        IReadOnlyDictionary<string, ProbeResult> results = await ProbeAllAsync(files, chapters: false, cancellationToken, progress).ConfigureAwait(false);
         return results.ToDictionary(pair => pair.Key, pair => pair.Value.Duration, StringComparer.OrdinalIgnoreCase);
     }
 
@@ -43,13 +44,17 @@ internal sealed class MediaProbe(FileSystemLibraryOptions options, ILogger logge
     public async Task<IReadOnlyDictionary<string, ProbeResult>> ProbeAllAsync(
         IReadOnlyList<FileInfo> files,
         bool chapters,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<string, int, int?>? progress = null)
     {
         ConcurrentDictionary<string, ProbeResult> results = new(StringComparer.OrdinalIgnoreCase);
         List<FileInfo> toProbe = [];
+        int checkedFiles = 0;
+        progress?.Invoke("Checking cached media information", 0, files.Count);
 
         foreach (FileInfo file in files)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (_cache.TryGetValue(file.FullName, out ProbeEntry? cached)
                 && cached.Length == file.Length
                 && cached.LastWriteTicks == file.LastWriteTimeUtc.Ticks
@@ -61,6 +66,8 @@ internal sealed class MediaProbe(FileSystemLibraryOptions options, ILogger logge
             {
                 toProbe.Add(file);
             }
+
+            progress?.Invoke("Checking cached media information", ++checkedFiles, files.Count);
         }
 
         if (toProbe.Count > 0)
@@ -68,6 +75,9 @@ internal sealed class MediaProbe(FileSystemLibraryOptions options, ILogger logge
             logger.LogInformation("Probing {Count} new or changed media files ({Cached} cached).", toProbe.Count, results.Count);
 
             int completed = 0;
+            object progressLock = new();
+            string stage = $"Reading video {(chapters ? "durations and chapters" : "durations")} ({results.Count:N0} cached)";
+            progress?.Invoke(stage, 0, toProbe.Count);
 
             await Parallel.ForEachAsync(
                 toProbe,
@@ -81,13 +91,20 @@ internal sealed class MediaProbe(FileSystemLibraryOptions options, ILogger logge
                         _cache[file.FullName] = probed;
                     }
 
-                    int done = Interlocked.Increment(ref completed);
+                    int done;
+                    // Publish in completion order even when several probes finish together.
+                    lock (progressLock)
+                    {
+                        done = ++completed;
+                        progress?.Invoke(stage, done, toProbe.Count);
+                    }
                     if (done % 500 == 0)
                     {
                         logger.LogInformation("Probed {Done}/{Total} files.", done, toProbe.Count);
                     }
                 }).ConfigureAwait(false);
 
+            progress?.Invoke("Saving media information cache", 0, null);
             await SaveAsync(cancellationToken).ConfigureAwait(false);
         }
 
