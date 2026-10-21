@@ -209,6 +209,7 @@ public static class SchedulerHost
         // working copy across tabs is what the user expects.
         builder.Services.AddSingleton<ConfigEditor>();
         builder.Services.AddSingleton<RotationResetter>();
+        builder.Services.AddSingleton<SchedularrTV.Service.Editor.DropManager>();
         builder.Services.AddSingleton<LibraryBrowser>();
         builder.Services.AddSingleton<CommercialTree>();
         builder.Services.AddHostedService<LibraryWarmup>();

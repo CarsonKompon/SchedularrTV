@@ -13,6 +13,16 @@ public enum DropReleaseOrder
     AirDate
 }
 
+/// <summary>What a show on <see cref="PlaybackOrder.Drop"/> does once its last episode has dropped.</summary>
+public enum DropEndAction
+{
+    /// <summary>No more drops: everything that dropped keeps playing as repeats.</summary>
+    Stop,
+
+    /// <summary>After the season break, the show starts dropping again from its first episode.</summary>
+    Restart
+}
+
 /// <summary>
 /// Settings for <see cref="PlaybackOrder.Drop"/>: a show releases new episodes on a cadence, and in
 /// between drops only episodes that have already dropped play (as repeats).
@@ -62,6 +72,28 @@ public sealed class DropConfig
     /// </summary>
     public PlaybackOrder Repeats { get; set; } = PlaybackOrder.Shuffle;
 
+    /// <summary>
+    /// A break between seasons, e.g. <c>4w</c>: once a season's last episode drops, the next season's first episode
+    /// drops at the first drop time at least this long after it. A drop never runs on into the next season while a
+    /// break is set. Null (the usual) carries straight on.
+    /// </summary>
+    public TimeSpan? SeasonBreak { get; set; }
+
+    /// <summary>
+    /// What happens once the last episode has dropped: <c>stop</c> (default) or <c>restart</c>, which starts dropping
+    /// from the first episode again after the <see cref="SeasonBreak"/>.
+    /// </summary>
+    [YamlMember(DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)]
+    public DropEndAction AtEnd { get; set; } = DropEndAction.Stop;
+
+    /// <summary>A season break is set.</summary>
+    [YamlIgnore]
+    public bool HasSeasonBreak => SeasonBreak is { } gap && gap > TimeSpan.Zero;
+
+    /// <summary>The pause after a season (or the whole show) ends; zero without one.</summary>
+    [YamlIgnore]
+    public TimeSpan Break => HasSeasonBreak ? SeasonBreak!.Value : TimeSpan.Zero;
+
     [YamlIgnore]
     public TimeSpan Interval => Every is { } every && every > TimeSpan.Zero ? every : TimeSpan.FromDays(7);
 
@@ -88,10 +120,12 @@ public sealed class DropConfig
         Start = Start,
         AlreadyOut = AlreadyOut,
         ReleaseOrder = ReleaseOrder,
-        Repeats = Repeats
+        Repeats = Repeats,
+        SeasonBreak = SeasonBreak,
+        AtEnd = AtEnd
     };
 
-    /// <summary>Short summary for editors, e.g. "1 episode Mondays at 20:00".</summary>
+    /// <summary>Short summary for editors, e.g. "1 episode Mondays at 20:00, 4 weeks off between seasons".</summary>
     public string Describe()
     {
         int count = Math.Max(1, Count);
@@ -100,7 +134,28 @@ public sealed class DropConfig
             ? string.Join(", ", DropDays.Distinct().OrderBy(d => ((int)d + 6) % 7).Select(d => d + "s"))
             : EveryText(Interval);
         string at = HasAirTime ? $" at {TimeOfDay:hh\\:mm}" : string.Empty;
-        return $"{what} {when}{at}";
+        string gap = HasSeasonBreak ? $", {GapText(Break)} off between seasons" : string.Empty;
+        string end = AtEnd == DropEndAction.Restart ? ", starting over after the last episode" : string.Empty;
+        return $"{what} {when}{at}{gap}{end}";
+    }
+
+    /// <summary>A break as people say it: "2 weeks", "10 days", "12 hours".</summary>
+    public static string GapText(TimeSpan gap)
+    {
+        double days = gap.TotalDays;
+        if (days >= 7 && Math.Abs(days / 7 - Math.Round(days / 7)) < 1e-9)
+        {
+            int weeks = (int)Math.Round(days / 7);
+            return weeks == 1 ? "1 week" : $"{weeks} weeks";
+        }
+
+        if (days >= 1 && Math.Abs(days - Math.Round(days)) < 1e-9)
+        {
+            int whole = (int)Math.Round(days);
+            return whole == 1 ? "1 day" : $"{whole} days";
+        }
+
+        return $"{gap.TotalHours:0.#} hours";
     }
 
     private static string EveryText(TimeSpan interval)

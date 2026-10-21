@@ -40,11 +40,19 @@ public sealed class PlaybackState
     /// <summary>For <see cref="PlaybackOrder.Drop"/> without a configured start: when drops began.</summary>
     public DateTimeOffset? DropOrigin { get; set; }
 
+    /// <summary>For <see cref="PlaybackOrder.Drop"/> shows that start over: how many times the show has started over.</summary>
+    public int? DropCycle { get; set; }
+
+    /// <summary>For <see cref="PlaybackOrder.Drop"/>: a manual reset from the channel page, which drops count from instead.</summary>
+    public DropReset? DropReset { get; set; }
+
     public PlaybackState Clone() => new()
     {
         Premiered = Premiered,
         LastPremieredId = LastPremieredId,
         DropOrigin = DropOrigin,
+        DropCycle = DropCycle,
+        DropReset = DropReset?.Copy(),
         Key = Key,
         Cursor = Cursor,
         Bag = [.. Bag],
@@ -54,6 +62,30 @@ public sealed class PlaybackState
         Titles = Titles?.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), StringComparer.OrdinalIgnoreCase),
         TitleCredits = TitleCredits is null ? null : new(TitleCredits, StringComparer.OrdinalIgnoreCase)
     };
+}
+
+/// <summary>
+/// A drop show put back to a chosen place by hand: <see cref="Out"/> episodes count as already out at <see cref="At"/>,
+/// and drops carry on from there on the show's cadence.
+/// </summary>
+public sealed class DropReset
+{
+    /// <summary>When the reset happened.</summary>
+    public DateTimeOffset At { get; set; }
+
+    /// <summary>Episodes (in release order) already out, as repeats.</summary>
+    public int Out { get; set; }
+
+    /// <summary>The next episode drops at <see cref="At"/> rather than at the next drop time.</summary>
+    public bool Immediate { get; set; }
+
+    /// <summary>
+    /// The drop's configured first-drop date when it was reset. Changing that date afterwards means the config is
+    /// meant to win, so the reset no longer applies.
+    /// </summary>
+    public string? Start { get; set; }
+
+    public DropReset Copy() => new() { At = At, Out = Out, Immediate = Immediate, Start = Start };
 }
 
 public interface IPlaybackStateStore

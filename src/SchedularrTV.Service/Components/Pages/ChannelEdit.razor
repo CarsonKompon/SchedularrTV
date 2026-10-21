@@ -427,6 +427,11 @@ else
             <MidRollEditor Config="_channel.MidRoll" Changed="Editor.MarkDirty" />
         }
     }
+    else if (_tab == "drops")
+    {
+        <ChannelDropsTab ChannelId="@_channel.Id" Unsaved="Editor.IsDirty"
+                         TimeZoneId="@(string.IsNullOrWhiteSpace(_channel.TimeZone) ? Editor.Working.Settings.TimeZone : _channel.TimeZone)" />
+    }
     else if (_tab == "stats")
     {
         <ChannelStatsTab Channel="_channel" Changed="Editor.MarkDirty" TimeZoneId="@(string.IsNullOrWhiteSpace(_channel.TimeZone) ? Editor.Working.Settings.TimeZone : _channel.TimeZone)" />
@@ -449,6 +454,7 @@ else
     [
         ("general", "General", "sliders", 0),
         ("schedule", "Blocks & anchors", "calendar", 10),
+        ("drops", "Drops", "calendar-clock", 15),
         ("breaks", "Ad breaks", "megaphone", 30),
         ("stats", "Stats", "chart", 90)
     ];
@@ -465,11 +471,19 @@ else
 
     private IEnumerable<(string Key, string Label, string Icon)> AllTabs =>
         CoreTabs
+            .Where(tab => tab.Key != "drops" || HasDrops)
             .Concat(ChannelSections.Select(section => (SectionTab(section), section.Title, section.Icon ?? "puzzle", section.Order)))
             .OrderBy(tab => tab.Item4)
             .Select(tab => (tab.Item1, tab.Item2, tab.Item3));
 
     private static string SectionTab(PluginEditorSection section) => $"plugin:{section.Id}";
+
+    // The Drops tab shows once any of the channel's programming (as edited, or as saved) puts a show on drops.
+    private bool HasDrops =>
+        _channel is not null
+        && (DropManager.UsesDrops(Editor.Working, _channel)
+            || SavedConfig.Current.Channels.FirstOrDefault(c => string.Equals(c.Id, _channel.Id, StringComparison.OrdinalIgnoreCase)) is { } saved
+               && DropManager.UsesDrops(SavedConfig.Current, saved));
 
     private Dictionary<string, object> SectionParameters(PluginEditorSection section) => new()
     {

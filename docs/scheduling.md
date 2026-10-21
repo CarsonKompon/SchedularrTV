@@ -59,6 +59,16 @@ global_collections:
 | **`repeats`** | How dropped episodes repeat between drops: `shuffle` (default), `random`, `season_episode` or `chronological` |
 | **`start`** | First drop date, `yyyy-MM-dd`. Without it, drops begin with the first build, and the latest drop time counts, so one episode is out straight away |
 | **`already_out`** | Episodes treated as already released (repeats only) before the first drop |
+| **`season_break`** | A break between seasons (`3w`, `10d`). After a season's last episode drops, the next season's first drops on the first drop day at least this long after it; a drop never runs on into the next season. Left out, seasons follow straight on |
+| **`at_end`** | Once the last episode has dropped: `stop` (default; everything keeps repeating) or `restart` (after the season break, start dropping again from the first episode) |
+
+```yaml
+      - show: Bluey
+        order: drop
+        drop: { days: [friday], season_break: 4w, at_end: restart }   # a month off between seasons, then round again
+```
+
+The channel page's **Drops** tab lists every show on drops on that channel: which episode is out, whether it's on a season break or finished, and when the next drop is. **Reset…** puts a show back to any episode: pick how many episodes are already out, and whether the next one drops now or at the next drop time. The channel is rebuilt from the next slot so the guide follows at once. A reset lasts until the show's first-drop date (`start`) is changed, or the channel is started over.
 
 Drops apply to each show on its own. A collection's **`drop`** settings are the default for every show in it on `drop`; a title's own **`drop`** overrides them. In a collection without **`title_order`**, shows not on `drop` keep the collection's order together, and shows come up in proportion to how many episodes each has out. With **`title_order`**, drop shows take their turns like any other title; only a show with an air `time` jumps the queue for its new episode.
 

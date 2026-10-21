@@ -1,0 +1,274 @@
+@* The channel page's Drops tab: where each show on drops is, and putting one back to a chosen episode. *@
+@inject DropManager Drops
+
+<div class="card">
+    <div class="card-head">
+        <h2>Drops</h2>
+        <span class="muted">Shows releasing new episodes on a schedule</span>
+        <div class="spacer"></div>
+        <button class="btn btn-sm btn-ghost" type="button" disabled="@_loading" @onclick="LoadAsync"><Icon Name="refresh" Size="14" /> Refresh</button>
+    </div>
+
+    @if (Unsaved)
+    {
+        <div class="banner banner-warn" role="status">This shows the saved channel. Save your changes for edited drop settings to show here.</div>
+    }
+
+    @if (_message is not null)
+    {
+        <div class="banner @(_messageOk ? "banner-ok" : "banner-warn")" role="status">@_message</div>
+    }
+
+    @if (_shows is null)
+    {
+        <p class="hint">@(_error ?? "Loading…")</p>
+    }
+    else if (_shows.Count == 0)
+    {
+        <p class="hint">
+            No show on this channel is on drops. Set a collection's or a show's order to <em>Drop</em> to release
+            its episodes on a schedule.
+        </p>
+    }
+    else
+    {
+        <div class="media-table-wrap">
+            <table class="media-table">
+                <thead>
+                    <tr>
+                        <th>Show</th>
+                        <th>Out now</th>
+                        <th>Status</th>
+                        <th>Next drop</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (DropShowStatus show in _shows)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@show.Title</strong>
+                                <div class="hint" style="margin:2px 0 0;">@show.Where · @show.Config.Describe()</div>
+                            </td>
+                            <td>
+                                @if (show.ReleasedNow == 0)
+                                {
+                                    <span class="muted">Nothing yet</span>
+                                }
+                                else
+                                {
+                                    <span>@show.Episodes[show.ReleasedNow - 1].Label</span>
+                                }
+                                <div class="hint" style="margin:2px 0 0;">@show.ReleasedNow of @show.Episodes.Count out</div>
+                            </td>
+                            <td>
+                                @if (show.Finished)
+                                {
+                                    <span class="pill pill-muted">Finished</span>
+                                }
+                                else if (show.OnSeasonBreak)
+                                {
+                                    <span class="pill pill-warn">Season break</span>
+                                }
+                                else
+                                {
+                                    <span class="pill pill-ok">Dropping</span>
+                                }
+                                @if (show.Cycle > 0)
+                                {
+                                    <span class="pill pill-accent" title="Times the show has started over">Run @(show.Cycle + 1)</span>
+                                }
+                                @if (show.Reset is { } reset)
+                                {
+                                    <div class="hint" style="margin:2px 0 0;">Reset @Local(reset.At)</div>
+                                }
+                            </td>
+                            <td>
+                                @if (show.NextDrop is { } next)
+                                {
+                                    <span>@Local(next)</span>
+                                    @if (show.ReleasedNow < show.Episodes.Count)
+                                    {
+                                        <div class="hint" style="margin:2px 0 0;">@show.Episodes[show.ReleasedNow].Label</div>
+                                    }
+                                    else if (show.Config.AtEnd == DropEndAction.Restart)
+                                    {
+                                        <div class="hint" style="margin:2px 0 0;">Starts over from @show.Episodes[0].Label</div>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="muted">No more drops</span>
+                                }
+                            </td>
+                            <td style="text-align:right;">
+                                <button class="btn btn-sm" type="button" disabled="@_resetting" @onclick="() => OpenReset(show)">Reset…</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="hint">
+            Times are in the channel's time zone. Resetting rebuilds this channel from the next slot, so the guide follows
+            straight away; what's on air now keeps playing.
+        </p>
+    }
+</div>
+
+@if (_resetFor is { } open)
+{
+    <div class="modal-backdrop">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Reset @open.Title">
+            <div class="modal-head">
+                <h2>Reset @open.Title</h2>
+                <div class="spacer"></div>
+                <button class="btn btn-sm btn-icon btn-ghost" type="button" aria-label="Close" @onclick="CloseReset"><Icon Name="x" Size="15" /></button>
+            </div>
+
+            <label class="field">
+                <span>Episodes out so far</span>
+                <select value="@_resetOut" @onchange="e => _resetOut = int.TryParse(e.Value?.ToString(), out int n) ? n : 0">
+                    <option value="0">None: start from the first episode</option>
+                    @for (int i = 0; i < open.Episodes.Count; i++)
+                    {
+                        int count = i + 1;
+                        <option value="@count">Up to @open.Episodes[i].Label (@count)</option>
+                    }
+                </select>
+            </label>
+
+            <label class="check">
+                <input type="checkbox" checked="@_dropNow" disabled="@(_resetOut >= open.Episodes.Count)"
+                       @onchange="e => _dropNow = (bool)(e.Value ?? false)" />
+                <span>Drop the next episode now</span>
+            </label>
+
+            <p class="hint">
+                @if (_resetOut >= open.Episodes.Count)
+                {
+                    @(open.Config.AtEnd == DropEndAction.Restart
+                        ? "Every episode will count as out, so only repeats play until the show starts over."
+                        : "Every episode will count as out, so only repeats play.")
+                }
+                else
+                {
+                    <text>
+                        @(_resetOut == 0 ? "Nothing will count as out yet." : $"Episodes up to {open.Episodes[_resetOut - 1].Label} will play as repeats.")
+                        @open.Episodes[_resetOut].Label drops @(_dropNow ? "now, as a new episode" : "at the next drop time"),
+                        and drops carry on from there.
+                    </text>
+                }
+                Changing the drop's first-drop date later replaces this reset.
+            </p>
+
+            <div class="row">
+                <button class="btn btn-primary btn-sm" type="button" disabled="@_resetting" @onclick="ApplyReset">
+                    @(_resetting ? "Resetting…" : "Reset and rebuild")
+                </button>
+                <button class="btn btn-sm" type="button" disabled="@_resetting" @onclick="CloseReset">Cancel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string ChannelId { get; set; } = "";
+
+    /// <summary>The channel's time zone, for showing drop times.</summary>
+    [Parameter] public string? TimeZoneId { get; set; }
+
+    /// <summary>The editor has changes that aren't saved yet.</summary>
+    [Parameter] public bool Unsaved { get; set; }
+
+    private IReadOnlyList<DropShowStatus>? _shows;
+    private string? _error;
+    private bool _loading;
+    private string? _message;
+    private bool _messageOk;
+
+    private DropShowStatus? _resetFor;
+    private int _resetOut;
+    private bool _dropNow;
+    private bool _resetting;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _shows = await Drops.ListAsync(ChannelId);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _shows = null;
+            _error = $"Couldn't read the drops: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OpenReset(DropShowStatus show)
+    {
+        _resetFor = show;
+        _resetOut = Math.Min(show.ReleasedNow, show.Episodes.Count);
+        _dropNow = false;
+        _message = null;
+    }
+
+    private void CloseReset() => _resetFor = null;
+
+    private async Task ApplyReset()
+    {
+        if (_resetFor is not { } show)
+        {
+            return;
+        }
+
+        _resetting = true;
+        try
+        {
+            bool dropNow = _dropNow && _resetOut < show.Episodes.Count;
+            ChannelBuildFailure? failure = await Drops.ResetAsync(ChannelId, show, _resetOut, dropNow);
+            _messageOk = failure is null;
+            _message = failure is null
+                ? $"{show.Title} reset: {(_resetOut == 0 ? "starting from the first episode" : $"{_resetOut} episode(s) out")}. The channel has been rebuilt."
+                : $"{show.Title} was reset, but the channel didn't rebuild: {failure.Message}";
+            _resetFor = null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _messageOk = false;
+            _message = $"Couldn't reset {show.Title}: {ex.Message}";
+        }
+        finally
+        {
+            _resetting = false;
+        }
+
+        await LoadAsync();
+    }
+
+    private TimeZoneInfo Zone
+    {
+        get
+        {
+            try
+            {
+                return string.IsNullOrWhiteSpace(TimeZoneId) ? TimeZoneInfo.Local : SchedulingEngine.ResolveTimeZone(TimeZoneId);
+            }
+            catch (Exception)
+            {
+                return TimeZoneInfo.Local;
+            }
+        }
+    }
+
+    private string Local(DateTimeOffset at) => TimeZoneInfo.ConvertTime(at, Zone).ToString("ddd d MMM yyyy, HH:mm");
+}

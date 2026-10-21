@@ -161,7 +161,12 @@ public sealed class ScheduleCoordinator(
     /// Rebuilds a single channel, leaving every other channel's plan alone. Used to retry a channel
     /// that failed once whatever broke it has been fixed.
     /// </summary>
-    public async Task<ChannelBuildFailure?> RebuildChannelAsync(string channelId, CancellationToken cancellationToken)
+    /// <param name="prepare">
+    /// Runs once no other build is running, before this one starts: for changing the channel's saved playback state
+    /// (a drop show's reset, say) without a build in progress writing over it.
+    /// </param>
+    public async Task<ChannelBuildFailure?> RebuildChannelAsync(string channelId, CancellationToken cancellationToken,
+        Func<CancellationToken, Task>? prepare = null)
     {
         Interlocked.Increment(ref _building);
         StateChanged?.Invoke();
@@ -171,6 +176,11 @@ public sealed class ScheduleCoordinator(
         {
             await _buildLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             lockTaken = true;
+            if (prepare is not null)
+            {
+                await prepare(cancellationToken).ConfigureAwait(false);
+            }
+
             SchedulerConfig config = configProvider.Current;
 
             ChannelConfig? channel = config.Channels

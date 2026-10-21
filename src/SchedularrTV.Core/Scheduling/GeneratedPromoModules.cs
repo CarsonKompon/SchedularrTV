@@ -77,8 +77,9 @@ internal sealed class GeneratedPromoSubstitute : IPromoSpotSubstitute
             return null;
         }
 
-        DateTimeOffset expected = drops.Min(plan => plan.NextDropAfter(cursor));
-        return (template, expected - cursor <= promos.Eventually.Horizon ? expected : null);
+        // Shows that have finished (or are on a season break) don't promise anything soon.
+        DateTimeOffset? expected = drops.Select(plan => plan.NextReleaseAfter(cursor)).Where(at => at is not null).Min();
+        return (template, expected is { } next && next - cursor <= promos.Eventually.Horizon ? next : null);
     }
 
     public MediaItem Placeholder(GeneratedPromoTemplate template) => GeneratedPromoPlanner.Placeholder(template);

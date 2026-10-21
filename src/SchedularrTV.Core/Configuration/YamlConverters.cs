@@ -8,7 +8,7 @@ namespace SchedularrTV.Core.Configuration;
 
 /// <summary>
 /// Accepts the human-friendly duration forms schedule authors actually write:
-/// <c>21:00</c>, <c>00:03:30</c>, <c>90s</c>, <c>5m</c>, <c>2h</c>, <c>1d</c>.
+/// <c>21:00</c>, <c>00:03:30</c>, <c>90s</c>, <c>5m</c>, <c>2h</c>, <c>1d</c>, <c>4w</c>.
 /// </summary>
 internal sealed partial class FlexibleTimeSpanConverter : IYamlTypeConverter
 {
@@ -46,6 +46,7 @@ internal sealed partial class FlexibleTimeSpanConverter : IYamlTypeConverter
                 "m" => TimeSpan.FromMinutes(amount),
                 "h" => TimeSpan.FromHours(amount),
                 "d" => TimeSpan.FromDays(amount),
+                "w" => TimeSpan.FromDays(amount * 7),
                 _ => TimeSpan.Zero
             };
         }
@@ -64,7 +65,7 @@ internal sealed partial class FlexibleTimeSpanConverter : IYamlTypeConverter
     }
 
     // A leading minus is a negative duration (a voice pack's overlapping pause, -80ms).
-    [GeneratedRegex(@"^(-?\d+(?:\.\d+)?)\s*(ms|s|m|h|d)$", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^(-?\d+(?:\.\d+)?)\s*(ms|s|m|h|d|w)$", RegexOptions.IgnoreCase)]
     private static partial Regex UnitPattern();
 }
 

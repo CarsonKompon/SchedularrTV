@@ -957,6 +957,11 @@ public static class SchedulerConfigLoader
             errors.Add($"{scope}.start '{drop.Start}' is not a date (use yyyy-MM-dd).");
         }
 
+        if (drop.SeasonBreak is { } gap && gap < TimeSpan.Zero)
+        {
+            errors.Add($"{scope}.season_break cannot be negative.");
+        }
+
         if (drop.Repeats == Ordering.PlaybackOrder.Drop)
         {
             errors.Add($"{scope}.repeats can't be drop; use shuffle, random, season_episode or chronological.");

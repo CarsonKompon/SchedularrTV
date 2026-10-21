@@ -60,12 +60,38 @@
             <span>Already out before the first drop</span>
             <input type="number" min="0" value="@Drop.AlreadyOut" @onchange="e => Set(() => Drop.AlreadyOut = Math.Max(0, Int(e, 0)))" />
         </label>
+        <label class="field">
+            <span>Break between seasons <span class="muted">(optional)</span></span>
+            <div style="display:flex;gap:6px;">
+                <input type="number" min="0" step="1" placeholder="None" value="@BreakAmount" style="max-width:110px;"
+                       @onchange="OnBreakAmountChanged" />
+                <select value="@_breakUnit" @onchange="OnBreakUnitChanged">
+                    <option value="days">days</option>
+                    <option value="weeks">weeks</option>
+                </select>
+            </div>
+        </label>
+        <label class="field">
+            <span>When the last episode has dropped</span>
+            <select value="@Drop.AtEnd" @onchange="e => Set(() => Drop.AtEnd = Enum.Parse<DropEndAction>(e.Value?.ToString() ?? nameof(DropEndAction.Stop)))">
+                <option value="@DropEndAction.Stop">Stop dropping (repeats carry on)</option>
+                <option value="@DropEndAction.Restart">Start over from the first episode@(Drop.HasSeasonBreak ? " after the break" : "")</option>
+            </select>
+        </label>
     </div>
     <p class="hint">
         @(Drop.Describe()). From each drop day, the show's first airings (at its normal times) are the new
         episodes@(ShowTime ? "; set a time to air them then instead, ahead of whatever else is due." : ".")
         Until the next drop only episodes that have already dropped play, as repeats. Leave <em>First drop</em>
         empty to start from the next build (the latest drop counts, so one is out straight away).
+        @if (Drop.HasSeasonBreak)
+        {
+            <text>
+                Once a season's last episode drops, the next season's first drops on the first drop day at least
+                @DropConfig.GapText(Drop.Break) later; a drop never runs on into the next season.
+            </text>
+        }
+        A drop show can be put back to any episode from the channel's <em>Drops</em> tab.
     </p>
 </div>
 
@@ -81,6 +107,63 @@
         [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday];
 
     private string TimeText => Drop.Time is { } time ? time.ToString(@"hh\:mm") : "";
+
+    // The break is kept as a duration; it's edited as a whole number of days or weeks.
+    private string _breakUnit = "weeks";
+
+    protected override void OnParametersSet()
+    {
+        if (Drop.HasSeasonBreak)
+        {
+            double days = Drop.Break.TotalDays;
+            _breakUnit = days >= 7 && Math.Abs(days / 7 - Math.Round(days / 7)) < 1e-9 ? "weeks" : "days";
+        }
+    }
+
+    private string BreakAmount
+    {
+        get
+        {
+            if (!Drop.HasSeasonBreak)
+            {
+                return "";
+            }
+
+            double amount = _breakUnit == "weeks" ? Drop.Break.TotalDays / 7 : Drop.Break.TotalDays;
+            return amount.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+        }
+    }
+
+    private Task OnBreakAmountChanged(ChangeEventArgs e) => Set(() =>
+    {
+        string text = e.Value?.ToString()?.Trim() ?? "";
+        if (!double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double amount)
+            || amount <= 0)
+        {
+            Drop.SeasonBreak = null;
+            return;
+        }
+
+        Drop.SeasonBreak = TimeSpan.FromDays(_breakUnit == "weeks" ? amount * 7 : amount);
+    });
+
+    private Task OnBreakUnitChanged(ChangeEventArgs e) => Set(() =>
+    {
+        string unit = e.Value?.ToString() == "days" ? "days" : "weeks";
+        if (unit == _breakUnit)
+        {
+            return;
+        }
+
+        // The number stays as typed; it now counts the other unit.
+        if (Drop.HasSeasonBreak)
+        {
+            double amount = _breakUnit == "weeks" ? Drop.Break.TotalDays / 7 : Drop.Break.TotalDays;
+            Drop.SeasonBreak = TimeSpan.FromDays(unit == "weeks" ? amount * 7 : amount);
+        }
+
+        _breakUnit = unit;
+    });
 
     private async Task Set(Action change)
     {

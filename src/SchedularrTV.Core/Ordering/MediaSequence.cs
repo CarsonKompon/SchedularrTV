@@ -21,8 +21,10 @@ public sealed class MediaSequence
     private Dictionary<string, long> _titleCredits = new(StringComparer.OrdinalIgnoreCase);
 
     // Drop: the cadence, and how many episodes (in release order) have had their new airing.
+    // The cycle counts how many times the show has started over; _premiered counts within it.
     private DropPlan? _drop;
     private int _premiered;
+    private int _cycle;
     private string? _lastPremieredId;
     private Dictionary<string, int>? _releaseIndex;
 
@@ -97,6 +99,18 @@ public sealed class MediaSequence
         }
     }
 
+    /// <summary>The shows in this sequence on <see cref="PlaybackOrder.Drop"/>, each with its own sequence.</summary>
+    public IEnumerable<(string Title, MediaSequence Sequence)> DropShows =>
+        _titles is null
+            ? []
+            : _titles.Where(title => title.Sequence._drop is not null).Select(title => (title.Title, title.Sequence));
+
+    /// <summary>For a drop show: how many episodes (in release order, this cycle) have had their new airing.</summary>
+    public int Premiered => _premiered;
+
+    /// <summary>For a drop show: how many times it has started over.</summary>
+    public int Cycle => _cycle;
+
     private string FingerprintOf() => Fingerprint(_pool);
 
     public static MediaSequence Create(string key, PlaybackOrder order, IEnumerable<MediaItem> items, PlaybackState? state) =>
@@ -110,11 +124,12 @@ public sealed class MediaSequence
     public static MediaSequence CreateDrop(string key, IEnumerable<MediaItem> items, DropConfig config, DropContext context, PlaybackState? state)
     {
         List<MediaItem> pool = Sort(items, config.ReleaseOrder == DropReleaseOrder.AirDate ? PlaybackOrder.Chronological : PlaybackOrder.SeasonEpisode);
-        DropPlan plan = DropPlan.Create(config, context, state?.DropOrigin);
-        return CreateDrop(key, pool, plan, state);
+        DropPlan plan = DropPlan.Create(config, context, state?.DropOrigin, pool, state?.DropReset);
+        return CreateDrop(key, pool, plan, state, resuming: false);
     }
 
-    private static MediaSequence CreateDrop(string key, List<MediaItem> pool, DropPlan plan, PlaybackState? state)
+    /// <param name="resuming">A copy of a sequence mid-build, rather than one loaded at the start of a build.</param>
+    private static MediaSequence CreateDrop(string key, List<MediaItem> pool, DropPlan plan, PlaybackState? state, bool resuming)
     {
         MediaSequence sequence = Create(key, PlaybackOrder.Drop, pool, state, preordered: false);
         sequence._drop = plan;
@@ -124,8 +139,8 @@ public sealed class MediaSequence
         {
             // First time on a drop: everything out before the latest drop counts as already aired, and the
             // latest drop's episodes are new.
-            int released = Math.Min(pool.Count, plan.ReleasedAt(plan.Now));
-            premiered = Math.Max(Math.Min(released, Math.Max(0, plan.Config.AlreadyOut)), released - plan.PerDrop);
+            premiered = plan.PremieredOnFirstBuild(pool.Count);
+            sequence._cycle = plan.CycleAt(plan.Now);
         }
         else if (state.PoolFingerprint == sequence.FingerprintOf() || string.IsNullOrEmpty(state.LastPremieredId))
         {
@@ -135,6 +150,19 @@ public sealed class MediaSequence
         {
             int index = pool.FindIndex(item => item.Id == state.LastPremieredId);
             premiered = index >= 0 ? index + 1 : saved;
+        }
+
+        if (state?.Premiered is not null)
+        {
+            sequence._cycle = Math.Max(0, state.DropCycle ?? 0);
+
+            // A saved cycle the plan hasn't reached means the cadence changed (starting over switched off, say); carry
+            // on from the plan's rather than waiting for it to catch up.
+            int planned = plan.CycleAt(plan.Now);
+            if (!resuming && sequence._cycle > planned)
+            {
+                sequence._cycle = planned;
+            }
         }
 
         sequence._premiered = Math.Clamp(premiered, 0, pool.Count);
@@ -393,11 +421,63 @@ public sealed class MediaSequence
     }
 
     /// <summary>How many items this sequence can play right now: a drop show counts only episodes that are out.</summary>
-    internal int Available => _drop is not null
-        ? Math.Min(_pool.Count, Math.Max(_premiered, Released()))
-        : _titles is not null ? _titles.Sum(title => title.Sequence.Available) : _pool.Count;
+    internal int Available
+    {
+        get
+        {
+            if (_drop is not null)
+            {
+                (int released, int premiered) = DropNow();
+                return Math.Min(_pool.Count, Math.Max(premiered, released));
+            }
 
-    private int Released() => _drop is null ? _pool.Count : Math.Min(_pool.Count, _drop.ReleasedAt(_at ?? _drop.Now));
+            return _titles is not null ? _titles.Sum(title => title.Sequence.Available) : _pool.Count;
+        }
+    }
+
+    /// <summary>
+    /// For a drop show at the next take: episodes out, and how many of them have premiered. Doesn't change anything, as
+    /// promos ask about other times than the next take: once the show has started over since the last take, nothing
+    /// of the new run has premiered yet; asked about a moment before a restart already taken, nothing new is due.
+    /// </summary>
+    private (int Released, int Premiered) DropNow()
+    {
+        DropRelease status = _drop!.StatusAt(_at ?? _drop.Now);
+        int released = Math.Min(_pool.Count, status.Released);
+        if (status.Cycle > _cycle)
+        {
+            return (released, 0);
+        }
+
+        if (status.Cycle < _cycle)
+        {
+            int premiered = Math.Min(_premiered, _pool.Count);
+            return (premiered, premiered);
+        }
+
+        return (released, _premiered);
+    }
+
+    /// <summary>Catches up with a restart that has happened by the next take: the new run starts with nothing aired.</summary>
+    private void SyncCycle()
+    {
+        if (_drop is null)
+        {
+            return;
+        }
+
+        int cycle = _drop.CycleAt(_at ?? _drop.Now);
+        if (cycle <= _cycle)
+        {
+            return;
+        }
+
+        _cycle = cycle;
+        _premiered = 0;
+        _lastPremieredId = null;
+        _bag.Clear();
+        _cursor = 0;
+    }
 
     /// <summary>The dropped episode waiting for its new airing (and fitting <paramref name="predicate"/>), if any.</summary>
     internal MediaItem? PendingPremiere(Func<MediaItem, bool>? predicate)
@@ -407,12 +487,18 @@ public sealed class MediaSequence
             return _titles.Select(title => title.Sequence.PendingPremiere(predicate)).FirstOrDefault(item => item is not null);
         }
 
-        if (_drop is null || _premiered >= Released())
+        if (_drop is null)
         {
             return null;
         }
 
-        MediaItem next = _pool[_premiered];
+        (int released, int premiered) = DropNow();
+        if (premiered >= released)
+        {
+            return null;
+        }
+
+        MediaItem next = _pool[premiered];
         return predicate is null || predicate(next) ? next : null;
     }
 
@@ -422,10 +508,11 @@ public sealed class MediaSequence
     public bool WouldPremiere(MediaItem item) =>
         _titles is not null
             ? _titles.Any(title => title.Sequence.WouldPremiere(item))
-            : _drop is not null && _premiered < Released() && _pool[_premiered].Id == item.Id;
+            : _drop is not null && DropNow() is var (released, premiered) && premiered < released && _pool[premiered].Id == item.Id;
 
     private bool TryTakeDrop(Func<MediaItem, bool>? predicate, out MediaItem item)
     {
+        SyncCycle();
         if (PendingPremiere(predicate) is { } premiere)
         {
             _premiered++;
@@ -522,7 +609,9 @@ public sealed class MediaSequence
         TitleCredits = _titles is null ? null : new(_titleCredits, StringComparer.OrdinalIgnoreCase),
         Premiered = _drop is null ? null : _premiered,
         LastPremieredId = _drop is null ? null : _lastPremieredId,
-        DropOrigin = _drop is { HasConfiguredStart: false } ? _drop.Origin : null
+        DropOrigin = _drop?.PersistedOrigin,
+        DropCycle = _drop is null || _cycle == 0 ? null : _cycle,
+        DropReset = _drop?.Reset?.Copy()
     };
 
     /// <summary>An independent copy at the same place, for looking ahead without consuming anything.</summary>
@@ -538,7 +627,7 @@ public sealed class MediaSequence
         }
         else if (_drop is not null)
         {
-            copy = CreateDrop(Key, _pool, _drop, ToState());
+            copy = CreateDrop(Key, _pool, _drop, ToState(), resuming: true);
         }
         else
         {
@@ -674,6 +763,7 @@ public sealed class MediaSequence
 
         if (_drop is not null)
         {
+            SyncCycle();
             if (_premiered < _pool.Count && _pool[_premiered].Id == id)
             {
                 _premiered++;
