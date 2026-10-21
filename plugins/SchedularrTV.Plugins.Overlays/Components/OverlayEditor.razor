@@ -654,25 +654,31 @@
                 <OverlayVariantsEditor Overlay="Overlay" HolidayNames="HolidayNames" Changed="CommitAsync" />
 
                 <h4>Placement</h4>
-                <div class="field"><span>Where</span>
-                    <div class="ov-anchors" role="radiogroup" aria-label="Where">
-                        @foreach (string anchor in OverlayAnchors.All)
-                        {
-                            <button type="button" class="ov-anchor @(Overlay.Anchor == anchor ? "on" : "")" title="@anchor.Replace('_', ' ')"
-                                    aria-checked="@(Overlay.Anchor == anchor ? "true" : "false")" role="radio" @onclick="() => Set(() => Overlay.Anchor = anchor)"></button>
-                        }
+                <label class="check"><input type="checkbox" checked="@Overlay.FillScreen" @onchange="e => Set(() => Overlay.FillScreen = e.Value is true)" />
+                    <span>Fill the screen</span></label>
+                <p class="hint">For a full-screen picture or video that already has its bug drawn in place: it covers the whole frame, keeping its shape.</p>
+                @if (!Overlay.FillScreen)
+                {
+                    <div class="field"><span>Where</span>
+                        <div class="ov-anchors" role="radiogroup" aria-label="Where">
+                            @foreach (string anchor in OverlayAnchors.All)
+                            {
+                                <button type="button" class="ov-anchor @(Overlay.Anchor == anchor ? "on" : "")" title="@anchor.Replace('_', ' ')"
+                                        aria-checked="@(Overlay.Anchor == anchor ? "true" : "false")" role="radio" @onclick="() => Set(() => Overlay.Anchor = anchor)"></button>
+                            }
+                        </div>
                     </div>
-                </div>
-                <label class="field"><span>Width: @Overlay.SizePercent.ToString("0.#", CultureInfo.InvariantCulture)% of the picture</span>
-                    <input type="range" min="2" max="60" step="0.5" value="@Number(Overlay.SizePercent)" @onchange="e => Set(() => Overlay.SizePercent = Number(e, 10))" /></label>
-                <div class="grid grid-2">
-                    <label class="field"><span>Margin across (%)</span>
-                        <input type="number" min="0" max="40" step="0.5" value="@Number(Overlay.MarginXPercent)" @onchange="e => Set(() => Overlay.MarginXPercent = Number(e, 3))" /></label>
-                    <label class="field"><span>Margin up/down (%)</span>
-                        <input type="number" min="0" max="40" step="0.5" value="@Number(Overlay.MarginYPercent)" @onchange="e => Set(() => Overlay.MarginYPercent = Number(e, 4))" /></label>
-                </div>
-                <label class="check"><input type="checkbox" checked="@Overlay.InsidePicture" @onchange="e => Set(() => Overlay.InsidePicture = e.Value is true)" />
-                    <span>Keep inside the picture of letterboxed or 4:3 shows</span></label>
+                    <label class="field"><span>Width: @Overlay.SizePercent.ToString("0.#", CultureInfo.InvariantCulture)% of the picture</span>
+                        <input type="range" min="2" max="60" step="0.5" value="@Number(Overlay.SizePercent)" @onchange="e => Set(() => Overlay.SizePercent = Number(e, 10))" /></label>
+                    <div class="grid grid-2">
+                        <label class="field"><span>Margin across (%)</span>
+                            <input type="number" min="0" max="40" step="0.5" value="@Number(Overlay.MarginXPercent)" @onchange="e => Set(() => Overlay.MarginXPercent = Number(e, 3))" /></label>
+                        <label class="field"><span>Margin up/down (%)</span>
+                            <input type="number" min="0" max="40" step="0.5" value="@Number(Overlay.MarginYPercent)" @onchange="e => Set(() => Overlay.MarginYPercent = Number(e, 4))" /></label>
+                    </div>
+                    <label class="check"><input type="checkbox" checked="@Overlay.InsidePicture" @onchange="e => Set(() => Overlay.InsidePicture = e.Value is true)" />
+                        <span>Keep inside the picture of letterboxed or 4:3 shows</span></label>
+                }
             }
         </Inspector>
     </CanvasWorkspace>

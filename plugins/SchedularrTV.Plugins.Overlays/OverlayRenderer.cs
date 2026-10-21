@@ -673,6 +673,12 @@ public sealed class OverlayRenderer(Func<string> folder)
     /// <summary>Where a file overlay lands on a frame: ErsatzTV's anchors, width as a percent, margins as percents.</summary>
     public static SKRect FileBox(Overlay overlay, float frameWidth, float frameHeight, float? aspect)
     {
+        if (overlay.FillScreen)
+        {
+            // As ErsatzTV places it: the full width from the top-left corner, keeping the file's shape.
+            return SKRect.Create(0, 0, frameWidth, frameWidth * (aspect ?? frameHeight / frameWidth));
+        }
+
         float width = (float)(frameWidth * Math.Clamp(overlay.SizePercent, 1, 100) / 100);
         float height = width * (aspect ?? 9f / 16f);
         float marginX = (float)(frameWidth * Math.Clamp(overlay.MarginXPercent, 0, 100) / 100);

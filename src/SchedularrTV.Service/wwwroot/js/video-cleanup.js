@@ -11,7 +11,7 @@ export function attach(id, receiver) {
     };
     const reset = () => { start = null; rect?.remove(); rect = null; };
     svg.addEventListener('pointerdown', e => {
-        if (e.button !== 0) return;
+        if (e.button !== 0 || svg.dataset.drawingDisabled === 'true') return;
         e.preventDefault(); reset(); start = point(e);
         rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         rect.setAttribute('fill', '#45dbff22'); rect.setAttribute('stroke', '#45dbff');

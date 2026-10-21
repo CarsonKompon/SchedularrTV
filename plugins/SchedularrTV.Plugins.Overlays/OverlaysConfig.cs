@@ -181,6 +181,13 @@ public sealed class Overlay
     /// <summary>Keeps the file inside the programme's picture when it's letterboxed or pillarboxed.</summary>
     public bool InsidePicture { get; set; } = true;
 
+    /// <summary>
+    /// Covers the whole frame instead of sitting at <see cref="Anchor"/>: for a full-screen picture or video that already
+    /// has its bug drawn where it belongs. The anchor, size, margins and <see cref="InsidePicture"/> are then ignored.
+    /// </summary>
+    [YamlDotNet.Serialization.YamlMember(DefaultValuesHandling = YamlDotNet.Serialization.DefaultValuesHandling.OmitDefaults)]
+    public bool FillScreen { get; set; }
+
     // --- Both ---
 
     /// <summary>0 to 100.</summary>

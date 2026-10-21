@@ -1,6 +1,54 @@
 /* The Generated promos editor. Served at /plugins/generated-promos/generated-promos.css and scoped under .gp-scope,
    which the channel tab wraps around the editor (these were the editor's scoped Razor styles). */
 
+/* Text removal: preview-first workspace with persistent actions. */
+.gp-scope .cleanup-dialog { display: flex; flex-direction: column; width: 94vw; max-width: 1240px; max-height: 92vh; max-height: 92dvh; padding: 0; overflow: hidden; }
+.gp-scope .cleanup-dialog .modal-head { flex: none; padding: 18px 22px; margin: 0; border-bottom: 1px solid var(--line); }
+.gp-scope .cleanup-body { padding: 18px 22px; overflow-y: auto; min-height: 0; }
+.gp-scope .cleanup-dialog .hint { margin: 6px 0; overflow-wrap: anywhere; }
+.gp-scope .cleanup-source { margin-bottom: 16px; }
+.gp-scope .cleanup-source select { text-overflow: ellipsis; }
+.gp-scope .cleanup-setup { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; padding: 14px; margin-bottom: 16px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; }
+.gp-scope .cleanup-setup > div { flex: 1; }
+.gp-scope .cleanup-setup details { flex-basis: 100%; font-size: 12px; }
+.gp-scope .cleanup-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+.gp-scope .cleanup-preview, .gp-scope .cleanup-inspector { min-width: 0; }
+.gp-scope .cleanup-preview-tools, .gp-scope .cleanup-transport, .gp-scope .cleanup-view-options, .gp-scope .cleanup-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.gp-scope .cleanup-compare { display: flex; gap: 3px; padding: 3px; background: var(--panel-2); border-radius: 8px; }
+.gp-scope .cleanup-instruction { margin: 10px 0; color: var(--muted); font-size: 12.5px; min-height: 20px; }
+.gp-scope .cleanup-canvas { display: block; height: auto; margin: 0 auto; background: #111; touch-action: none; border: 1px solid var(--line); border-radius: 8px; }
+.gp-scope .cleanup-transport { margin-top: 10px; }
+.gp-scope .cleanup-coverage { display: block; width: 100%; height: 16px; margin-top: 8px; border-radius: 4px; background: #555; }
+.gp-scope .cleanup-time { font: 11px var(--mono); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gp-scope .cleanup-view-options { gap: 8px 16px; margin: 8px 0; font-size: 12px; }
+.gp-scope .cleanup-view-options .check { margin: 0; }
+.gp-scope .cleanup-view-options > .hint { margin-left: auto; font-size: 11px; }
+.gp-scope .cleanup-inspector { padding: 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; }
+.gp-scope .cleanup-inspector h3 { display: flex; justify-content: space-between; margin: 0 0 10px; font-size: 13px; }
+.gp-scope .cleanup-region-list { display: grid; gap: 6px; max-height: 180px; overflow-y: auto; }
+.gp-scope .cleanup-region { display: flex; align-items: center; gap: 6px; }
+.gp-scope .cleanup-region-select { flex: 1; min-width: 0; justify-content: space-between; text-align: left; }
+.gp-scope .cleanup-region-select > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gp-scope .cleanup-region-select small { flex: none; font-size: 10px; opacity: .8; }
+.gp-scope .cleanup-empty { display: grid; justify-items: center; gap: 8px; padding: 28px 10px; text-align: center; color: var(--muted); }
+.gp-scope .cleanup-settings { min-width: 0; border: 0; border-top: 1px solid var(--line); padding: 14px 0 0; margin: 14px 0 0; }
+.gp-scope .cleanup-settings-legend { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.gp-scope .cleanup-settings .grid { gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.gp-scope .cleanup-settings .field { min-width: 0; }
+.gp-scope .cleanup-settings .check { font-size: 12px; }
+.gp-scope .cleanup-details { border-top: 1px solid var(--line); padding: 12px 0 0; margin-top: 12px; font-size: 12px; }
+.gp-scope .cleanup-details > summary, .gp-scope .cleanup-setup summary { cursor: pointer; color: var(--muted); }
+.gp-scope .cleanup-details[open] > summary { margin-bottom: 12px; }
+.gp-scope .cleanup-details .row { flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.gp-scope .cleanup-footer { flex: none; padding: 12px 22px 16px; border-top: 1px solid var(--line); background: var(--panel); max-height: 32vh; overflow-y: auto; }
+.gp-scope .cleanup-footer > p { margin: 0 0 8px; font-size: 12px; }
+.gp-scope .cleanup-footer progress { width: 100%; margin-bottom: 10px; }
+.gp-scope .cleanup-footer > .hint:last-child { margin: 8px 0 0; text-align: right; font-size: 11px; }
+@media (max-width: 850px) {
+    .gp-scope .cleanup-workspace { grid-template-columns: minmax(0, 1fr); }
+    .gp-scope .cleanup-dialog .modal-head, .gp-scope .cleanup-body, .gp-scope .cleanup-footer { padding: 14px; }
+}
+
 /* Template list */
 .gp-scope .generated-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 12px; }
 .gp-scope .generated-heading h2 { margin: 0; }

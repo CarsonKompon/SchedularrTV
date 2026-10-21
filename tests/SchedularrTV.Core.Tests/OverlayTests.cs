@@ -474,6 +474,36 @@ public sealed class OverlayTests : IDisposable
     }
 
     [Fact]
+    public async Task A_file_overlay_set_to_fill_the_screen_covers_the_whole_frame()
+    {
+        var overlay = new Overlay
+        {
+            Name = "Full-frame bug", Kind = OverlayKinds.File, File = "bug-1080p.mov", FillScreen = true, FadeSeconds = 0,
+            Anchor = "bottom_right", SizePercent = 10, MarginXPercent = 5, MarginYPercent = 10, InsidePicture = true
+        };
+
+        SkiaSharp.SKRect box = OverlayRenderer.FileBox(overlay, 1920, 1080, aspect: 9f / 16f);
+        Assert.Equal((0f, 0f, 1920f, 1080f), (box.Left, box.Top, box.Width, box.Height));
+
+        (SchedulerConfig config, ChannelConfig cartoons, _) = Channels();
+        cartoons.Plugins = Section(new OverlaysSection { Overlays = [overlay] });
+        var schedule = new ChannelSchedule
+        {
+            ChannelId = "cartoons", ChannelName = "Cartoons", ChannelNumber = 1, Start = Eight, End = Eight.AddMinutes(22),
+            Entries = [Episode()]
+        };
+
+        ChannelSchedule processed = await Processor().ProcessAsync(new PlayoutContext(config, cartoons, schedule), CancellationToken.None);
+        JsonNode layer = ((JsonArray)JsonNode.Parse(processed.Entries[0].Annotations![PlayoutPublisher.GraphicsAnnotation])!)[0]!;
+
+        Assert.Equal("top_left", (string?)layer["location"]);
+        Assert.Equal(100, (double)layer["width_percent"]!);
+        Assert.Equal(0, (double)layer["horizontal_margin_percent"]!);
+        Assert.Equal(0, (double)layer["vertical_margin_percent"]!);
+        Assert.False((bool)layer["within_source_content"]!);
+    }
+
+    [Fact]
     public async Task An_AI_written_caption_shows_its_usual_text_until_it_is_written_and_then_its_own()
     {
         (SchedulerConfig config, ChannelConfig cartoons, _) = Channels();

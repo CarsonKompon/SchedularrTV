@@ -134,6 +134,8 @@ Use **Comes in after** and **Goes before the end** to keep text clear of a video
 
 A **file overlay** places an existing image or video at a preset position with percentage sizing and margins. **Keep inside the picture** avoids letterbox bars.
 
+For a full-screen picture or video that already has its bug drawn in the right place (a 1920×1080 transparent bug video, say), tick **Fill the screen** under **Placement**. It then covers the whole frame from the top-left corner at full width, keeping its shape, and the position, width, margins and **Keep inside the picture** are ignored. Make the file the same shape as the channel's picture so it lines up exactly. In YAML: `fill_screen: true`.
+
 ## Variable images for overlays and screenbugs
 
 Use **Variable images → + Variable image** to create an image slot, then choose its **Shared image**, or **New shared image…**. Shared images are the same ones [Generated promos](generated-promos.md#shared-images) use, kept once for the whole schedule: **Edit shared images…** sets each one's **default image**, **per-show and per-block overrides**, and an optional [automatic picture](generated-promos.md#automatic-pictures-for-shared-images) found with a picture search (such as `{show} main character png`) for shows without an override. Show titles match loosely. A variable from before shared images keeps its own pictures until **Move to a shared image**.

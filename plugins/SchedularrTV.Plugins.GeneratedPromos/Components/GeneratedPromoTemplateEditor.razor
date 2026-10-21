@@ -315,11 +315,12 @@
     {
     <CanvasWorkspace>
         <Tools>
-            <CanvasToolRail SupportsPerspective="true" @bind-Perspective="_pinTool" />
+            <CanvasToolRail SupportsPerspective="true" @bind-Perspective="_pinTool">
+                <EditorIconButton Icon="eraser" Label="Remove text from video" OnClick="() => OpenCleanup(null)" />
+            </CanvasToolRail>
         </Tools>
         <Stage>
             <CanvasTools Width="Template.Width" Height="Template.Height" Fit="ResetZoom" Add="AddCanvasLayer">
-                <button class="btn btn-sm" type="button" @onclick="() => OpenCleanup(null)">Remove video text…</button>
                 <button class="btn btn-sm" type="button" title="@($"Add {KindName(RequiredKind)}")" @onclick="() => AddLayer(RequiredKind)"><Icon Name="tv" />@KindName(RequiredKind)</button>
             </CanvasTools>
             @if (!Template.Layers.Any(layer => layer.Kind == RequiredKind))

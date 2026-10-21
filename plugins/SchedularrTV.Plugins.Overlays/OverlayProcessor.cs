@@ -424,14 +424,16 @@ public sealed class OverlayProcessor : IPlayoutProcessor
                 file = video;
             }
 
+            // Filling the screen: a full-frame picture or video with its bug already in place covers the frame, bars included.
+            bool fill = overlay.FillScreen;
             layer = new JsonObject
             {
                 ["source"] = new JsonObject { ["source_type"] = "local", ["path"] = file },
-                ["location"] = OverlayAnchors.All.Contains(overlay.Anchor) ? overlay.Anchor : "bottom_right",
-                ["width_percent"] = Math.Clamp(overlay.SizePercent, 1, 100),
-                ["horizontal_margin_percent"] = Math.Clamp(overlay.MarginXPercent, 0, 100),
-                ["vertical_margin_percent"] = Math.Clamp(overlay.MarginYPercent, 0, 100),
-                ["within_source_content"] = overlay.InsidePicture
+                ["location"] = fill ? "top_left" : OverlayAnchors.All.Contains(overlay.Anchor) ? overlay.Anchor : "bottom_right",
+                ["width_percent"] = fill ? 100 : Math.Clamp(overlay.SizePercent, 1, 100),
+                ["horizontal_margin_percent"] = fill ? 0 : Math.Clamp(overlay.MarginXPercent, 0, 100),
+                ["vertical_margin_percent"] = fill ? 0 : Math.Clamp(overlay.MarginYPercent, 0, 100),
+                ["within_source_content"] = !fill && overlay.InsidePicture
             };
         }
         else
