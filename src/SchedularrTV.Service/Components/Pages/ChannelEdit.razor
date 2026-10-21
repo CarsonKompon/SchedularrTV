@@ -478,12 +478,9 @@ else
 
     private static string SectionTab(PluginEditorSection section) => $"plugin:{section.Id}";
 
-    // The Drops tab shows once any of the channel's programming (as edited, or as saved) puts a show on drops.
-    private bool HasDrops =>
-        _channel is not null
-        && (DropManager.UsesDrops(Editor.Working, _channel)
-            || SavedConfig.Current.Channels.FirstOrDefault(c => string.Equals(c.Id, _channel.Id, StringComparison.OrdinalIgnoreCase)) is { } saved
-               && DropManager.UsesDrops(SavedConfig.Current, saved));
+    // The Drops tab only shows while some of the channel's programming (as it is on screen) puts a show on drops:
+    // its base rotation, a block or an anchor, directly or through a global collection.
+    private bool HasDrops => _channel is not null && DropManager.UsesDrops(Editor.Working, _channel);
 
     private Dictionary<string, object> SectionParameters(PluginEditorSection section) => new()
     {
