@@ -40,6 +40,30 @@ A channel anchor applies independently of a block; a block anchor applies within
 
 For a weekly marathon, use **Recurrence → Certain days** instead. A show-specific pool keeps the marathon within one title; **Order** determines episode order.
 
+## Play holiday episodes for a season
+
+**Holidays**, at the bottom of **Blocks & anchors**, change *which episodes* play on certain days of the year without changing *which shows* play. A block (or the base rotation outside blocks) keeps its shows, but plays only their episodes that match the holiday's query: Christmas episodes in Christmas week, Halloween episodes through October.
+
+1. Select **Add a holiday**.
+2. Under **Days**, choose either:
+    - **The same days every year**, with **From** and **To** as `MM-DD` (`05-01` to `05-05`). A **To** before **From** runs into the new year (`12-26` to `01-02`).
+    - **The week of a day**, with a date as `MM-DD` (`12-25`). This is always the whole Sunday-to-Saturday week holding that day that year, whatever day of the week it falls on.
+3. Optionally add **Weeks before** and **Weeks after**. The editor shows this year's and next year's days.
+4. Enter **Holiday episodes**, a [query](scheduling.md#query-language) that picks them out, such as `plot:'christmas' OR plot:'xmas'`. `plot:` finds the words anywhere in an episode's description.
+5. Tick **Search the whole library** to look for holiday episodes everywhere instead of only in what the block plays.
+6. Set **Minimum shows** and **Fill in from**, described below.
+7. Select **Save changes**.
+
+**Minimum shows** is how many different shows the holiday needs. With fewer, each show that has holiday episodes still gets its share of the slots (one show of a minimum of three plays a third of them, spread evenly). The rest come from **Fill in from**: a collection, or by default the usual episodes of what the block plays. The same happens when a holiday episode can't fit before the next block or anchor.
+
+Notes:
+
+- Holiday episodes play in their own order (shuffled unless set otherwise), so each show's usual run picks up where it left off once the holiday ends.
+- Days are in the channel's time zone, and a programme counts by when it starts.
+- When holidays overlap, the first one in the list applies; use **Move up** and **Move down** to order them.
+- Anchors and Archive Follow slots aren't changed.
+- **On** turns a holiday off without deleting it.
+
 ## Override the channel inside a block
 
 | Control | Use |

@@ -99,6 +99,18 @@ In every mode, the second Up Next text entry, variable-image `next2`, and TTS `{
 
 In YAML, set `upcoming_grouping: timeslot` (default) or `upcoming_grouping: show` directly on the template. The former voice-only `use_individual_episodes` option is no longer used; old files containing it still load and use the shared setting, defaulting to timeslots/episodes.
 
+### Name other blocks instead of their shows
+
+Up Next, Coming Up, Eventually and New Episode templates have **Name other blocks instead of their shows**, off by default. Turned on, a show coming up in a different [block](scheduling.md) from the one the promo airs in is named by its block instead: "Up next: Toonami" rather than "Up next: Dragon Ball Z". That block's shows in a row are named once, starting when its first show does.
+
+- **Where it applies.** It covers everything that reads the upcoming shows: text and Up Next layers, the voice-over, external program arguments, and background and variant rules. It also counts toward how many shows ahead a layer looks.
+- **Variable images.** These show the block's picture. Give the shared image a **block override** for that block (an automatic picture searches with the block's name as `{show}`).
+- **Pre-recorded voice-overs.** Record the block's name as one of the show-name phrase's shows.
+- **What isn't changed.** Shows outside any block, and shows in the promo's own block, are named as usual. A promo airing outside any block names every block it looks ahead to.
+- **Previews.** The editor preview takes the promo's block to be the block of what's on before it.
+
+In YAML: `name_other_blocks: true`.
+
 ### Perspective (corner pin)
 
 The **⬚ Perspective** tool (or **P** after clicking the timeline or a box) swaps the selected layer's resize handles for four round corners. Drag them to stretch the layer with true perspective, for text on the side of a building, a picture on a screen in the background video, or a label on one face of a box. It works on text, shapes, pictures, videos and groups; pinning a group stretches everything inside it.

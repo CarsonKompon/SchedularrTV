@@ -140,6 +140,32 @@ blocks:
 
 **`time`** without **`end_time`** creates an anchor slot. A window can cross midnight, and **`blocks[].anchors`** adds fixed starts inside it; see [Layer precedence](scheduling.md#layer-precedence).
 
+## Holidays
+
+A channel's **`holidays`** narrow what its blocks and base rotation play to holiday episodes on certain days of the year (see [Play holiday episodes for a season](web-ui-scheduling.md#play-holiday-episodes-for-a-season)):
+
+```yaml
+holidays:
+  - name: Christmas
+    dates: week_of          # the Sunday-to-Saturday week holding `date`
+    date: "12-25"
+    weeks_before: 1
+    query: "plot:'christmas' OR plot:'xmas'"
+    minimum_shows: 3        # fewer: the rest is filled in
+    fallback: winter_specials   # a collection; omit for the usual episodes
+  - name: May Day
+    dates: range            # the default
+    start: "05-01"
+    end: "05-05"
+    weeks_after: 1
+    query: "plot CONTAINS 'may day'"
+    global: true            # search the whole library
+    order: season_episode   # holiday episodes shuffle unless set
+    enabled: false
+```
+
+The first enabled holiday whose days hold a programme's start applies to it.
+
 ## Breaks
 
 Add this fragment inside a channel, or put **`interstitials`** under **`settings`** for defaults:

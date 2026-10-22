@@ -265,6 +265,12 @@ public sealed class ChannelConfig
     public List<AnchorConfig> Anchors { get; set; } = [];
 
     /// <summary>
+    /// Days of the year when what plays is narrowed to holiday episodes (see <see cref="ChannelHoliday"/>). The first
+    /// one whose days include a programme's start applies to it.
+    /// </summary>
+    public List<ChannelHoliday> Holidays { get; set; } = [];
+
+    /// <summary>
     /// Per-channel settings of installed plugins, keyed by plugin id; each plugin reads its own section. Promos,
     /// generated promos and Archive Follow live in their typed properties and are only written here in YAML.
     /// </summary>

@@ -136,6 +136,18 @@ public static partial class GeneratedPromoResolver
             return null;
         }
 
+        // Shows coming up in another block are named by that block, when the template says so: the block the promo
+        // airs in is where's (the break it's in), or for a preview without one, the block of what's on before it.
+        if (template.NameOtherBlocks == true && GeneratedPromoBlocks.LooksAhead(template.Type) && (where is not null || imageSubjects?.Current is not null))
+        {
+            string? here = where is not null ? where.Block : imageSubjects!.Current!.Block;
+            listings = GeneratedPromoBlocks.AsBlocks(listings, here);
+            if (imageSubjects is not null)
+            {
+                imageSubjects = imageSubjects with { Upcoming = GeneratedPromoBlocks.AsBlocks(imageSubjects.Upcoming, here) };
+            }
+        }
+
         IReadOnlyList<UpNextListing> upcoming = imageSubjects?.Upcoming
             ?? (template.Type is GeneratedPromoType.UpNext or GeneratedPromoType.NowPlaying ? listings : []);
         List<UpNextListing> used = [.. (template.Type == GeneratedPromoType.UpNext && upcoming.Count > 0 ? upcoming : listings)

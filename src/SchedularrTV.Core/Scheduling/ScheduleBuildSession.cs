@@ -33,6 +33,18 @@ internal sealed class ScheduleBuildSession(
 
     public SchedulerConfig Config => config;
 
+    /// <summary>The channel's time zone, for what day of the year a moment is.</summary>
+    public TimeZoneInfo TimeZone => timeZone;
+
+    /// <summary>The query a selector plays from (its collection, query and picked titles, filtered as set).</summary>
+    public QueryExpression ExpressionOf(ContentSelector selector) => ResolveExpression(selector, 0);
+
+    /// <summary>Holidays' turns so far, by holiday and block, for sharing time with what fills in for them.</summary>
+    public Dictionary<string, int> HolidayTurns { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Selectors made for holidays (their fallback collections, their own query), kept so their sequences are too.</summary>
+    public Dictionary<string, ContentSelector> HolidaySelectors { get; } = new(StringComparer.Ordinal);
+
     public int InterstitialShowsInSlot { get; set; }
 
     /// <summary>Viewer-aware scheduling's factors by show title for this build; null when it isn't in effect.</summary>

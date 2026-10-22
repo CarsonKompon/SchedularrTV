@@ -1,0 +1,203 @@
+@* A channel's holidays: days of the year when what plays is narrowed to holiday episodes found by a query. *@
+@using SchedularrTV.Core.Ordering
+@using SchedularrTV.Core.Scheduling
+@inject ConfigEditor Editor
+
+<div class="card">
+    <div class="card-head">
+        <h2>Holidays</h2>
+        <div class="spacer"></div>
+        <button class="btn btn-sm" type="button" @onclick="Add"><Icon Name="plus" Size="15" />Add a holiday</button>
+    </div>
+    <p class="hint">
+        On a holiday's days, whatever would play (the block's shows, or the base rotation outside blocks) plays only its episodes that match the
+        holiday's query, such as <code>plot:'christmas'</code>. The shows' usual runs pick up where they left off afterwards. Anchors aren't changed.
+        The first holiday in the list whose days include a programme's start applies to it.
+    </p>
+
+    @if (Holidays.Count == 0)
+    {
+        <p class="hint">No holidays yet.</p>
+    }
+
+    @foreach (ChannelHoliday holiday in Holidays.ToList())
+    {
+        string? problem = ChannelHolidays.Problem(holiday, Editor.Working);
+        <details class="card" @key="holiday" open="@_open.Contains(holiday)">
+            <summary style="cursor:pointer;">
+                <strong>@(string.IsNullOrWhiteSpace(holiday.Name) ? "Untitled holiday" : holiday.Name)</strong>
+                <span class="hint" style="margin-left:8px;">
+                    @(holiday.Enabled ? ChannelHolidays.Describe(holiday, DateTime.Today.Year) ?? "dates not set" : "off")@(problem is not null && holiday.Enabled ? " · needs attention" : "")
+                </span>
+            </summary>
+
+            <div class="grid grid-2">
+                <label class="field">
+                    <span>Name</span>
+                    <input type="text" value="@holiday.Name" @onchange="e => Set(() => holiday.Name = Text(e))" />
+                </label>
+                <label class="check" style="align-self:end;">
+                    <input type="checkbox" checked="@holiday.Enabled" @onchange="e => Set(() => holiday.Enabled = e.Value is true)" />
+                    <span>On</span>
+                </label>
+            </div>
+
+            <h3>When</h3>
+            <label class="field">
+                <span>Days</span>
+                <select value="@holiday.Dates" @onchange="e => Set(() => holiday.Dates = Enum.Parse<HolidayDates>(Text(e)))">
+                    <option value="@HolidayDates.Range">The same days every year</option>
+                    <option value="@HolidayDates.WeekOf">The week of a day (Sunday to Saturday)</option>
+                </select>
+            </label>
+            @if (holiday.Dates == HolidayDates.WeekOf)
+            {
+                <label class="field">
+                    <span>The week of (MM-DD)</span>
+                    <input type="text" value="@holiday.Date" placeholder="12-25" @onchange="e => Set(() => holiday.Date = Text(e))" />
+                </label>
+            }
+            else
+            {
+                <div class="grid grid-2">
+                    <label class="field">
+                        <span>From (MM-DD)</span>
+                        <input type="text" value="@holiday.Start" placeholder="05-01" @onchange="e => Set(() => holiday.Start = Text(e))" />
+                    </label>
+                    <label class="field">
+                        <span>To (MM-DD, may run into the new year)</span>
+                        <input type="text" value="@holiday.End" placeholder="05-05" @onchange="e => Set(() => holiday.End = Text(e))" />
+                    </label>
+                </div>
+            }
+            <div class="grid grid-2">
+                <label class="field">
+                    <span>Weeks before</span>
+                    <input type="number" min="0" max="52" value="@holiday.WeeksBefore" @onchange="e => Set(() => holiday.WeeksBefore = Weeks(e))" />
+                </label>
+                <label class="field">
+                    <span>Weeks after</span>
+                    <input type="number" min="0" max="52" value="@holiday.WeeksAfter" @onchange="e => Set(() => holiday.WeeksAfter = Weeks(e))" />
+                </label>
+            </div>
+            @if (ChannelHolidays.Describe(holiday, DateTime.Today.Year) is { } thisYear)
+            {
+                <p class="hint">
+                    This year: @thisYear@(ChannelHolidays.Describe(holiday, DateTime.Today.Year + 1) is { } nextYear ? $" · next year: {nextYear}" : "").
+                    Days are in the channel's time zone.
+                </p>
+            }
+
+            <h3>What plays</h3>
+            <label class="field">
+                <span>Holiday episodes</span>
+                <input type="text" value="@holiday.Query" placeholder="plot:'christmas' OR plot:'xmas'"
+                       @onchange="e => Set(() => holiday.Query = Text(e))" />
+            </label>
+            <p class="hint">
+                A query in the library query language, e.g. <code>plot:'christmas' OR plot:'xmas'</code> &middot;
+                <code>plot CONTAINS 'halloween' OR tag:'Halloween'</code>. <code>plot:</code> finds the words anywhere in the episode's description.
+            </p>
+            <label class="check">
+                <input type="checkbox" checked="@holiday.Global" @onchange="e => Set(() => holiday.Global = e.Value is true)" />
+                <span>Search the whole library, not only what the block plays</span>
+            </label>
+            <div class="grid grid-2">
+                <label class="field">
+                    <span>Minimum shows</span>
+                    <input type="number" min="1" max="100" value="@holiday.MinimumShows"
+                           @onchange="e => Set(() => holiday.MinimumShows = int.TryParse(Text(e), out int value) ? Math.Clamp(value, 1, 100) : 1)" />
+                </label>
+                <label class="field">
+                    <span>Fill in from</span>
+                    <select value="@(holiday.Fallback ?? "")" @onchange="e => Set(() => holiday.Fallback = Text(e) is { Length: > 0 } key ? key : null)">
+                        <option value="">The usual episodes of what the block plays</option>
+                        @foreach (string key in Editor.Working.GlobalCollections.Keys.OrderBy(key => key, StringComparer.OrdinalIgnoreCase))
+                        {
+                            <option value="@key">Collection: @key</option>
+                        }
+                    </select>
+                </label>
+            </div>
+            <p class="hint">
+                With fewer shows that have holiday episodes than the minimum, each one still gets its share of the time (one show of a minimum
+                of three plays a third of the slots) and the rest is filled in from here.
+            </p>
+            <label class="field">
+                <span>Holiday episodes play</span>
+                <select value="@(holiday.Order?.ToString() ?? "")" @onchange="e => Set(() => holiday.Order = Enum.TryParse(Text(e), out PlaybackOrder order) ? order : null)">
+                    <option value="">Shuffled</option>
+                    <option value="@PlaybackOrder.Random">At random</option>
+                    <option value="@PlaybackOrder.Chronological">In air-date order</option>
+                    <option value="@PlaybackOrder.SeasonEpisode">In season and episode order</option>
+                </select>
+            </label>
+
+            @if (problem is not null && holiday.Enabled)
+            {
+                <p class="hint warn">This holiday @problem</p>
+            }
+
+            <div class="row">
+                <button class="btn btn-sm" type="button" disabled="@(Holidays.IndexOf(holiday) == 0)" @onclick="() => Move(holiday, -1)">Move up</button>
+                <button class="btn btn-sm" type="button" disabled="@(Holidays.IndexOf(holiday) == Holidays.Count - 1)" @onclick="() => Move(holiday, 1)">Move down</button>
+                <div class="spacer"></div>
+                <button class="btn btn-sm btn-danger" type="button" @onclick="() => Remove(holiday)">Delete holiday</button>
+            </div>
+        </details>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<ChannelHoliday> Holidays { get; set; } = [];
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private readonly HashSet<ChannelHoliday> _open = new(ReferenceEqualityComparer.Instance);
+
+    private static string Text(ChangeEventArgs e) => e.Value?.ToString()?.Trim() ?? string.Empty;
+
+    private static int Weeks(ChangeEventArgs e) => int.TryParse(Text(e), out int weeks) ? Math.Clamp(weeks, 0, 52) : 0;
+
+    private Task Set(Action change)
+    {
+        change();
+        return Changed.InvokeAsync();
+    }
+
+    private Task Add()
+    {
+        var holiday = new ChannelHoliday
+        {
+            Name = UniqueName("Christmas"), Dates = HolidayDates.WeekOf, Date = "12-25", Query = "plot:'christmas' OR plot:'xmas'"
+        };
+        Holidays.Add(holiday);
+        _open.Add(holiday);
+        return Changed.InvokeAsync();
+    }
+
+    private Task Remove(ChannelHoliday holiday)
+    {
+        Holidays.Remove(holiday);
+        _open.Remove(holiday);
+        return Changed.InvokeAsync();
+    }
+
+    private Task Move(ChannelHoliday holiday, int by)
+    {
+        int at = Holidays.IndexOf(holiday), to = Math.Clamp(at + by, 0, Holidays.Count - 1);
+        if (at < 0 || at == to) return Task.CompletedTask;
+        Holidays.RemoveAt(at);
+        Holidays.Insert(to, holiday);
+        return Changed.InvokeAsync();
+    }
+
+    private string UniqueName(string name)
+    {
+        HashSet<string> taken = new(Holidays.Select(holiday => holiday.Name), StringComparer.OrdinalIgnoreCase);
+        if (!taken.Contains(name)) return name;
+        for (int index = 2; ; index++)
+        {
+            if (!taken.Contains($"{name} {index}")) return $"{name} {index}";
+        }
+    }
+}

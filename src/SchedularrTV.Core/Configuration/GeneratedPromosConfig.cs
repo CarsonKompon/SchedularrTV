@@ -482,6 +482,14 @@ public sealed class GeneratedPromoTemplate : IGeneratedBackgrounds
     /// <summary>Shared upcoming sequence for text, images, voice-over, generators and background rules.</summary>
     public GeneratedUpcomingGrouping UpcomingGrouping { get; set; } = GeneratedUpcomingGrouping.Timeslot;
 
+    /// <summary>
+    /// A show coming up in another block than the one the promo airs in is named by that block instead ("Up next:
+    /// Toonami"), its shows in a row there named once; variable images then use the block's picture (its block
+    /// override). Null (off) names every show, and keeps render keys of templates without it.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? NameOtherBlocks { get; set; }
+
     public bool Enabled { get; set; } = true;
 
     /// <summary>Fixed so breaks can be packed before anything is rendered.</summary>

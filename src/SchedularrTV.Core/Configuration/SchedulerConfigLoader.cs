@@ -305,6 +305,14 @@ public static class SchedulerConfigLoader
                 ValidateAnchor(anchor, $"{scope}.anchors[{anchor.Name ?? anchor.Time.ToString()}]", config, errors);
             }
 
+            foreach (ChannelHoliday holiday in channel.Holidays ?? [])
+            {
+                if (holiday.Enabled && Scheduling.ChannelHolidays.Problem(holiday, config) is { } problem)
+                {
+                    errors.Add($"{scope}.holidays.{holiday.Name}: {problem}");
+                }
+            }
+
             foreach (BlockConfig block in channel.Blocks)
             {
                 string blockScope = $"{scope}.blocks.{block.Name}";
@@ -1077,6 +1085,17 @@ public static class SchedulerConfigLoader
             foreach (AnchorConfig anchor in channel.Anchors)
             {
                 NormalizeSelector(anchor.Show);
+            }
+
+            channel.Holidays ??= [];
+            foreach (ChannelHoliday holiday in channel.Holidays)
+            {
+                holiday.Name = string.IsNullOrWhiteSpace(holiday.Name) ? "Holiday" : holiday.Name.Trim();
+                holiday.Query = holiday.Query?.Trim() ?? string.Empty;
+                holiday.Fallback = string.IsNullOrWhiteSpace(holiday.Fallback) ? null : holiday.Fallback.Trim();
+                holiday.MinimumShows = Math.Max(1, holiday.MinimumShows);
+                holiday.WeeksBefore = Math.Max(0, holiday.WeeksBefore);
+                holiday.WeeksAfter = Math.Max(0, holiday.WeeksAfter);
             }
 
             foreach (BlockConfig block in channel.Blocks)

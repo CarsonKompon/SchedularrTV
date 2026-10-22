@@ -640,12 +640,24 @@ public sealed class SchedulingEngine(
             selectors = overlaid.Fallback;
         }
 
+        string rotationKey = activeBlock?.Block.Name ?? "__base__";
+
+        // A holiday narrows what plays to its episodes (or fills in for them); without a pick, the usual programming.
+        if (ChannelHolidays.At(channel, at, session.TimeZone) is { } holiday && (selectors.Count > 0 || holiday.Global))
+        {
+            ProgramPick? holidayPick = await HolidayProgramming.TakeAsync(session, holiday, rotationKey, selectors, at, gap, cancellationToken)
+                .ConfigureAwait(false);
+            if (holidayPick is not null)
+            {
+                return holidayPick;
+            }
+        }
+
         if (selectors.Count == 0)
         {
             return null;
         }
 
-        string rotationKey = activeBlock?.Block.Name ?? "__base__";
         rotationIndex.TryGetValue(rotationKey, out int offset);
 
         if (selectors.Count > 1 && session.TitleFactors is { Count: > 0 })
@@ -749,7 +761,7 @@ public sealed class SchedulingEngine(
     private static readonly HashSet<string> NoPremieres = [];
 
     /// <summary>A pick that remembers whether its programme is a new episode (a drop's first airing).</summary>
-    private static ProgramPick Picked(MediaItem chosen, MediaSequence sequence, ContentSelector selector)
+    internal static ProgramPick Picked(MediaItem chosen, MediaSequence sequence, ContentSelector selector)
     {
         ProgramPick pick = new(chosen, sequence, selector);
         if (sequence.LastTakeWasPremiere)

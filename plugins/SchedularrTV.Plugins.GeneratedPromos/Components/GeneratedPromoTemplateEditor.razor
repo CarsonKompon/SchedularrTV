@@ -106,6 +106,17 @@
         </select>
     </label>
     <p class="hint">Shared by Up Next text, variable images, voice-over, external generators, and background rules. Timeslot / episode counts episodes packed into one channel slot together; when packing is disabled, each episode counts separately. Mid-roll segments never count as new programmes.</p>
+    @if (GeneratedPromoBlocks.LooksAhead(Template.Type))
+    {
+        <label class="check">
+            <input type="checkbox" checked="@(Template.NameOtherBlocks == true)" @onchange="e => Set(() => Template.NameOtherBlocks = e.Value is true ? true : null)" />
+            <span>Name other blocks instead of their shows</span>
+        </label>
+        <p class="hint">A show coming up in a different block from the one this promo airs in is named by its block instead ("Up next: Toonami"), and
+            that block's shows in a row are named once. Variable images show the block's picture: give the shared image a <strong>block override</strong>
+            for it. Text, voice-over, external programs and background rules all see the block's name; for a pre-recorded voice-over, record the block's
+            name as a show name. Shows outside any block are still named.</p>
+    }
 
     <details class="ed-plain">
         <summary>Promo availability · @(Template.Availability?.TimeRange is { } summaryHours ? $"{BackgroundTime(summaryHours.Start)}–{BackgroundTime(summaryHours.End)}" : "any time") · @(Template.Availability?.DateRange is { } summaryDates ? $"{summaryDates.Start} through {summaryDates.End} each year" : "all year")@(string.IsNullOrWhiteSpace(Template.Availability?.Query) ? "" : " · some programmes")</summary>
