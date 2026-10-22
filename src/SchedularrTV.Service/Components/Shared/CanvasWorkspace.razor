@@ -1,7 +1,16 @@
-<div class="canvas-studio @(_help ? "show-help" : "") @(_focus ? "focus-canvas" : "")">
+@using Microsoft.JSInterop
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div class="canvas-studio @(_help ? "show-help" : "") @(_focus ? "focus-canvas" : "")" @ref="_root">
     <div class="studio-heading">
         <Icon Name="layers" /><strong>Design</strong>
         <span class="spacer"></span>
+        @if (History is { } history)
+        {
+            <EditorIconButton Icon="undo" Label="@($"Undo (Ctrl/⌘ + Z){Steps(history.UndoCount)}")" Disabled="@(!history.CanUndo)" OnClick="Undo" />
+            <EditorIconButton Icon="redo" Label="@($"Redo (Ctrl/⌘ + Shift + Z){Steps(history.RedoCount)}")" Disabled="@(!history.CanRedo)" OnClick="Redo" />
+        }
         <EditorIconButton Icon="book" Label="Show editing help" Active="_help" OnClick="() => _help = !_help" />
         <EditorIconButton Icon="sliders" Label="Toggle layer inspector" Active="@(!_focus)" OnClick="() => _focus = !_focus" />
     </div>
@@ -14,6 +23,10 @@
         else
         {
             <p class="studio-help">Drag to move · handles to resize · Shift to constrain · Alt to bypass snapping.<br />Ctrl/⌘ + scroll to zoom · middle-drag to pan · Ctrl/⌘ + 0 to fit.<br />Select multiple layers or keyframes with Ctrl/⌘ or Shift.</p>
+        }
+        @if (History is not null)
+        {
+            <p class="studio-help">Ctrl/⌘ + Z undoes · Ctrl/⌘ + Shift + Z (or Ctrl + Y) redoes, outside text boxes.</p>
         }
     }
     <div class="ed-workspace">
@@ -33,6 +46,80 @@
     [Parameter, EditorRequired] public RenderFragment? Inspector { get; set; }
     [Parameter] public RenderFragment? Tools { get; set; }
     [Parameter] public string? Help { get; set; }
+
+    /// <summary>The editor's undo history: with it, Undo and Redo buttons and Ctrl/⌘ + Z shortcuts.</summary>
+    [Parameter] public SchedularrTV.Service.Editor.CanvasHistory? History { get; set; }
+
     private bool _help;
     private bool _focus;
+    private ElementReference _root;
+    private DotNetObjectReference<CanvasWorkspace>? _self;
+    private IJSObjectReference? _shortcuts;
+    private SchedularrTV.Service.Editor.CanvasHistory? _watched;
+    private bool _disposed;
+
+    private static string Steps(int count) => count == 0 ? "" : count == 1 ? " · 1 step" : $" · {count} steps";
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(_watched, History))
+        {
+            return;
+        }
+
+        if (_watched is not null) _watched.Changed -= HistoryChanged;
+        _watched = History;
+        if (_watched is not null) _watched.Changed += HistoryChanged;
+    }
+
+    private void HistoryChanged() => _ = InvokeAsync(StateHasChanged);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || History is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _self = DotNetObjectReference.Create(this);
+            await using IJSObjectReference module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/canvas-history.js");
+            if (_disposed) return;
+            _shortcuts = await module.InvokeAsync<IJSObjectReference>("attach", _root, _self);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException)
+        {
+            // Prerendering or disconnected: the buttons still work.
+        }
+    }
+
+    private Task Undo() => History?.UndoAsync() ?? Task.FromResult(false);
+
+    private Task Redo() => History?.RedoAsync() ?? Task.FromResult(false);
+
+    [JSInvokable]
+    public Task UndoShortcut() => InvokeAsync(Undo);
+
+    [JSInvokable]
+    public Task RedoShortcut() => InvokeAsync(Redo);
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        if (_watched is not null) _watched.Changed -= HistoryChanged;
+        try
+        {
+            if (_shortcuts is not null)
+            {
+                await _shortcuts.InvokeVoidAsync("dispose");
+                await _shortcuts.DisposeAsync();
+            }
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException)
+        {
+        }
+
+        _self?.Dispose();
+    }
 }

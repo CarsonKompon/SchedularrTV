@@ -43,7 +43,7 @@
     }
 
     </details>
-    <CanvasWorkspace>
+    <CanvasWorkspace History="_history">
         <Tools>
             @if (IsDesign)
             {
@@ -912,6 +912,7 @@
 
         // Part-way in, where everything that comes in has.
         _time = SnapToFrame(TimelineLength / 2);
+        _history = new CanvasHistory(() => CanvasSnapshots.Capture(Overlay), RestoreSnapshot);
         RequestPreview();
     }
 
@@ -990,10 +991,52 @@
     {
         PruneSelection();
         await Changed.InvokeAsync();
+        _history.Record();
         RequestPreview();
     }
 
-    private Task ConditionsChanged() => Changed.InvokeAsync();
+    private async Task ConditionsChanged()
+    {
+        await Changed.InvokeAsync();
+        _history.Record();
+    }
+
+    // ---- Undo and redo ----
+
+    // Every change committed to the overlay, to step back and forward through (the editor is made anew for each overlay).
+    private CanvasHistory _history = null!;
+
+    /// <summary>
+    /// Puts an earlier (or undone) state of the overlay back: the overlay itself changes, its variable images are linked
+    /// to their shared images again, and the same layers stay selected (by their place in the list) where they still exist.
+    /// </summary>
+    private async Task RestoreSnapshot(string snapshot)
+    {
+        List<OverlayLayer> before = Overlay.Layers;
+        int selected = _layer is null ? -1 : before.IndexOf(_layer);
+        int[] chosen = [.. _chosen.Select(layer => before.IndexOf(layer)).Where(index => index >= 0)];
+        int[] folded = [.. _folded.Select(layer => before.IndexOf(layer)).Where(index => index >= 0)];
+
+        CanvasSnapshots.RestoreInto(Overlay, snapshot);
+        OverlayImages.Link(Overlay, Editor.Working.Settings.GeneratedPromosSharedImages);
+
+        OverlayLayer? At(int index) => index >= 0 && index < Overlay.Layers.Count ? Overlay.Layers[index] : null;
+        _drag = null;
+        _listDrag = null;
+        _dropOn = null;
+        _keys.Clear();
+        _chosen.Clear();
+        _folded.Clear();
+        foreach (OverlayLayer layer in folded.Select(At).OfType<OverlayLayer>()) _folded.Add(layer);
+        _layer = At(selected) ?? Overlay.Layers.LastOrDefault();
+        foreach (OverlayLayer layer in chosen.Select(At).OfType<OverlayLayer>()) _chosen.Add(layer);
+        if (_layer is not null) _chosen.Add(_layer);
+        _time = SnapToFrame(Math.Min(_time, TimelineLength));
+
+        await Changed.InvokeAsync();
+        RequestPreview();
+        StateHasChanged();
+    }
 
     // Changing when it shows can change the timeline's length.
     private Task TimingChanged()

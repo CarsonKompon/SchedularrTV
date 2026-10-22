@@ -27,7 +27,7 @@
     }
     @if (Canvas is { } canvas)
     {
-        <CanvasWorkspace Help="Drag to move; use the corner handle or numeric bounds to resize. Hold Shift while resizing to keep the starting aspect ratio. Ctrl/⌘ + scroll to zoom, middle-drag to pan, Ctrl/⌘ + 0 to fit. Add keyframes to animate the selected layer at the playhead.">
+        <CanvasWorkspace History="_history" Help="Drag to move; use the corner handle or numeric bounds to resize. Hold Shift while resizing to keep the starting aspect ratio. Ctrl/⌘ + scroll to zoom, middle-drag to pan, Ctrl/⌘ + 0 to fit. Add keyframes to animate the selected layer at the playhead.">
             <Tools><CanvasToolRail /></Tools>
             <Stage>
                 <CanvasTools Width="canvas.Width" Height="canvas.Height" Add="AddLayer" Fit="Fit">
@@ -506,8 +506,8 @@
                 : SKRect.Create(_dragBounds.Left + (float)dx, _dragBounds.Top + (float)dy, _dragBounds.Width, _dragBounds.Height));
         }
         Refresh();
-        if (update.Final && update.Kind == "drag") { _dragLayer = null; await Changed.InvokeAsync(); }
-        if (update.Final && update.Kind == "keys") { if (_keyChanged) await Changed.InvokeAsync(); _keyLayer = null; }
+        if (update.Final && update.Kind == "drag") { _dragLayer = null; await Saved(); }
+        if (update.Final && update.Kind == "keys") { if (_keyChanged) await Saved(); _keyLayer = null; }
         StateHasChanged();
     }
 
@@ -531,7 +531,7 @@
             _previewSeconds = Math.Clamp(seconds, 1, 900);
             if (Canvas is not null) Canvas.TimelineSeconds = _previewSeconds;
             Seek(_time);
-            await Changed.InvokeAsync();
+            await Saved();
         }
     }
     private IEnumerable<GeneratedKeyframe> AdjacentKeys(int direction) => (_layer?.Keyframes ?? [])
@@ -545,7 +545,7 @@
         {
             _previewSeconds = Math.Min(900, key.At.TotalSeconds + 1);
             if (Canvas is not null) Canvas.TimelineSeconds = _previewSeconds;
-            _ = Changed.InvokeAsync();
+            _ = Saved();
         }
         Seek(key.At.TotalSeconds);
     }
@@ -594,7 +594,40 @@
         var canvas = SqueezeCanvas.Create(_ratio); Look.Canvases.Add(canvas); _ratio = ""; Select(canvas); await Commit();
     }
     private async Task RemoveCanvas() { if (Canvas is not null) Look.Canvases.Remove(Canvas); Select(Look.Canvases.FirstOrDefault()); await Commit(); }
-    private async Task Commit() { Refresh(); await Changed.InvokeAsync(); }
+    private async Task Commit() { Refresh(); await Changed.InvokeAsync(); _history?.Record(); }
+    private async Task Saved() { await Changed.InvokeAsync(); _history?.Record(); }
+
+    // ---- Undo and redo ----
+
+    // Every change committed to the look, to step back and forward through (the editor is made anew for each look).
+    private SchedularrTV.Service.Editor.CanvasHistory? _history;
+
+    protected override void OnInitialized() =>
+        _history = new SchedularrTV.Service.Editor.CanvasHistory(() => SchedularrTV.Service.Editor.CanvasSnapshots.Capture<SqueezeLook>(Look), RestoreSnapshot);
+
+    /// <summary>
+    /// Puts an earlier (or undone) state of the look back, keeping the same canvas and layer selected (by their place)
+    /// where they still exist.
+    /// </summary>
+    private async Task RestoreSnapshot(string snapshot)
+    {
+        int canvasIndex = Canvas is null ? -1 : Look.Canvases.IndexOf(Canvas);
+        int layerIndex = Canvas is null || _layer is null ? -1 : Canvas.Layers.IndexOf(_layer);
+        SchedularrTV.Service.Editor.CanvasSnapshots.RestoreInto<SqueezeLook>(Look, snapshot);
+
+        SqueezeCanvas? canvas = canvasIndex >= 0 && canvasIndex < Look.Canvases.Count ? Look.Canvases[canvasIndex] : Look.Canvases.FirstOrDefault();
+        bool changed = !string.Equals(canvas?.AspectRatio, Canvas?.AspectRatio, StringComparison.Ordinal);
+        Canvas = canvas;
+        _layer = canvas is null ? null : layerIndex >= 0 && layerIndex < canvas.Layers.Count ? canvas.Layers[layerIndex] : canvas.Layers.LastOrDefault();
+        _dragLayer = null; _keyLayer = null; _listDrag = null;
+        _keys.Clear();
+        if (canvas is not null && double.IsFinite(canvas.TimelineSeconds)) _previewSeconds = Math.Clamp(canvas.TimelineSeconds, 1, 900);
+        _time = Math.Clamp(_time, 0, LastTime);
+        if (changed) _ = SelectedRatio.InvokeAsync(canvas?.AspectRatio);
+        Refresh();
+        await Changed.InvokeAsync();
+        StateHasChanged();
+    }
     private async Task Fit() { if (_viewport is not null) await _viewport.ResetAsync(); await Measure(); }
     private static string N(double number) => number.ToString("0.####", CultureInfo.InvariantCulture);
     private static string Pct(double number, double size) => N(number / size * 100) + "%";

@@ -313,7 +313,7 @@
     }
     else
     {
-    <CanvasWorkspace>
+    <CanvasWorkspace History="_history">
         <Tools>
             <CanvasToolRail SupportsPerspective="true" @bind-Perspective="_pinTool">
                 <EditorIconButton Icon="eraser" Label="Remove text from video" OnClick="() => OpenCleanup(null)" />
@@ -1500,8 +1500,49 @@
         _layer =Template.Layers.FirstOrDefault(layer => layer.Kind == GeneratedPromoKinds.RequiredLayer(Template.Type)) ?? Template.Layers.FirstOrDefault();
         if (_layer is not null) _chosen.Add(_layer);
         _time = SnapToFrame(Math.Min(2, Template.Duration.TotalSeconds));
+        _history = new CanvasHistory(() => CanvasSnapshots.Capture(Template), RestoreSnapshot);
         _ = RefreshStill();
         _ = PrepareStandIn();
+    }
+
+    // ---- Undo and redo ----
+
+    // Every change committed to the template, to step back and forward through (the editor is made anew for each template).
+    private CanvasHistory _history = null!;
+
+    /// <summary>
+    /// Puts an earlier (or undone) state of the template back: the template itself changes, its shared images and voice
+    /// pack are linked again, and the same layers stay selected (by their place in the list) where they still exist.
+    /// </summary>
+    private async Task RestoreSnapshot(string snapshot)
+    {
+        List<GeneratedLayer> before = Template.Layers;
+        int selected = _layer is null ? -1 : before.IndexOf(_layer);
+        int[] chosen = [.. _chosen.Select(layer => before.IndexOf(layer)).Where(index => index >= 0)];
+        int[] folded = [.. _folded.Select(layer => before.IndexOf(layer)).Where(index => index >= 0)];
+
+        CanvasSnapshots.RestoreInto(Template, snapshot);
+        GeneratedSharedImages.Link(Template, Editor.Working.Settings.GeneratedPromosSharedImages);
+        GeneratedVoicePacks.Link(Template, VoicePacks);
+
+        GeneratedLayer? At(int index) => index >= 0 && index < Template.Layers.Count ? Template.Layers[index] : null;
+        _drag = null;
+        _listDrag = null;
+        _dropOn = null;
+        _keys.Clear();
+        _chosen.Clear();
+        _folded.Clear();
+        foreach (GeneratedLayer layer in folded.Select(At).OfType<GeneratedLayer>()) _folded.Add(layer);
+        if (_editVariant is not null && Template.Variant(_editVariant) is null) _editVariant = null;
+        _layer = At(selected);
+        if (_layer is null || !VisibleHere(_layer)) _layer = Template.Layers.LastOrDefault(VisibleHere);
+        foreach (GeneratedLayer layer in chosen.Select(At).OfType<GeneratedLayer>().Where(VisibleHere)) _chosen.Add(layer);
+        if (_layer is not null) _chosen.Add(_layer);
+        _time = Math.Min(_time, LastTime);
+
+        await Changed.InvokeAsync();
+        _ = RefreshStill();
+        StateHasChanged();
     }
 
     protected override void OnParametersSet()
@@ -1563,6 +1604,7 @@
     private async Task Commit()
     {
         await Changed.InvokeAsync();
+        _history.Record();
         _ = RefreshStill();
         _ = PrepareStandIn();
     }
@@ -4016,10 +4058,11 @@
     }
 
     // Like a voice pack edit, an inline template's changes nothing on screen, so only the edit is recorded.
-    private Task InlineTemplateChanged()
+    private async Task InlineTemplateChanged()
     {
         ClearSay();
-        return Changed.InvokeAsync();
+        await Changed.InvokeAsync();
+        _history.Record();
     }
 
     private void ClearSay()

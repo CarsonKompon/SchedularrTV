@@ -48,6 +48,8 @@ Choose **Design the squeeze with → Preset layout** for the controls below, or 
 5. For motion, resize the source to its destination and select **Animate from full screen to this box**. Or add keyframes at the playhead and edit their bounds. Keyframe times are seconds from the start of the credits; the last pose holds for the rest of the credits.
 6. Render a preview, then save the channel. The preview uses the canvas currently selected in the editor.
 
+**Undo** and **Redo** above the canvas (or **Ctrl/⌘ + Z** and **Ctrl/⌘ + Shift + Z** / **Ctrl + Y**, outside text boxes) step through every change to the look, including adding or deleting canvases. A drag is one step. History lasts while the look is open, up to 100 steps.
+
 Each look can have **16:9**, **4:3**, **16:10**, **1:1**, **21:9**, and **9:16** canvases. At render time the show's display aspect ratio (including anamorphic pixels) selects the closest canvas. A single canvas is always used, even if the show or channel output has a different shape. Unknown source shapes are treated as 16:9.
 
 Before squeezing, the source is fitted to the canvas shape using the channel's **encoding scaling mode**, inheriting the app-wide setting when unset: fit keeps the whole picture with black bars; crop fills the picture. Those bars are part of the source layer and resize with it. The canvas keeps its authored aspect ratio; the playout encoder handles conversion to the channel's final output shape. For example, a sole 4:3 canvas still renders for a 16:9 channel.

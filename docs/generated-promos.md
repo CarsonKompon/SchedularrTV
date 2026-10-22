@@ -443,6 +443,10 @@ backgrounds:
   - 'D:\Media\Promos\Backgrounds\stars.png'
 ```
 
+### Undo and redo
+
+**Undo** and **Redo**, the arrows above the canvas, step back and forward through every change to the template: layers, variants, backgrounds, voice-over and all other settings. The keys are **Ctrl/⌘ + Z** to undo and **Ctrl/⌘ + Shift + Z** or **Ctrl + Y** to redo. Inside a text box the keys undo your typing instead. A drag, or several changes made together, is one step, and the same layers stay selected where they still exist. History lasts while the template is open in the editor (up to 100 steps), and saving doesn't clear it. Changes to shared images and voice packs belong to the whole schedule, so they aren't undone here.
+
 ### Keyframes
 
 Select a layer and choose **◆ Animate with keyframes** under the timeline. Its position, size and opacity then come from keyframes, shown as diamonds on the timeline while the layer is selected:
