@@ -168,6 +168,12 @@ public sealed class Overlay
     /// <summary>Only in an exported package: the shared images its variable images use, so it works on its own.</summary>
     public List<GeneratedSharedImage>? SharedImages { get; set; }
 
+    /// <summary>
+    /// Only in an exported package: the pictures its variable images' automatic pictures had found where it was
+    /// exported, so they show where it's imported without searching again.
+    /// </summary>
+    public List<GeneratedFoundPicture>? FoundPictures { get; set; }
+
     /// <summary><see cref="OverlayAnchors"/>.</summary>
     public string Anchor { get; set; } = "bottom_right";
 

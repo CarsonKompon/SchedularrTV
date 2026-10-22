@@ -210,8 +210,13 @@ public static class GeneratedPromoPackages
     /// False leaves the voice pack out: the template still names it, and uses it where it's installed already (or once
     /// it's imported on its own).
     /// </param>
+    /// <param name="automaticImages">
+    /// This computer's automatic pictures: the ones already found for the template's variable images go in too, so they
+    /// show where it's imported without a picture search (or before one has found them).
+    /// </param>
     public static async Task<string> ExportAsync(GeneratedPromoTemplate template, TemplatePackageWriter writer,
-        IEnumerable<GeneratedSharedImage>? sharedLibrary = null, IEnumerable<GeneratedVoicePack>? voiceLibrary = null, bool includeVoicePack = true)
+        IEnumerable<GeneratedSharedImage>? sharedLibrary = null, IEnumerable<GeneratedVoicePack>? voiceLibrary = null, bool includeVoicePack = true,
+        SchedularrTV.Service.Images.AutomaticImages? automaticImages = null)
     {
         GeneratedPromoTemplate copy = GeneratedPromoEditing.Copy(template);
         copy.VoicePack = null;
@@ -239,6 +244,9 @@ public static class GeneratedPromoPackages
         }
 
         copy.SharedImages = shared.Count == 0 ? null : shared;
+        List<GeneratedFoundPicture> found = SharedImagePackages.FoundPictures(
+            shared.Cast<IGeneratedImageChoices>().Concat((copy.VariableImages ?? []).Where(image => !image.IsShared)), automaticImages, writer.Asset);
+        copy.FoundPictures = found.Count == 0 ? null : found;
         await MapPathsAsync(copy, path => Task.FromResult(writer.Asset(path))).ConfigureAwait(false);
         foreach (GeneratedSharedImage image in shared)
         {
@@ -318,7 +326,8 @@ public static class GeneratedPromoPackages
     /// on its own. Null for a template without one (it's exported straight away).
     /// </summary>
     public static async Task<IReadOnlyList<TemplateExportOption>?> ExportOptionsAsync(GeneratedPromoTemplate template,
-        IEnumerable<GeneratedSharedImage>? sharedLibrary, IEnumerable<GeneratedVoicePack>? voiceLibrary)
+        IEnumerable<GeneratedSharedImage>? sharedLibrary, IEnumerable<GeneratedVoicePack>? voiceLibrary,
+        SchedularrTV.Service.Images.AutomaticImages? automaticImages = null)
     {
         if (VoicePackOf(template, voiceLibrary) is not { } pack)
         {
@@ -334,9 +343,9 @@ public static class GeneratedPromoPackages
         return
         [
             new TemplateExportOption("With the voice pack", $"{TemplatePackages.DescribeSize(with)} · works anywhere, installing {packName} on import",
-                writer => ExportAsync(template, writer, sharedLibrary, voiceLibrary, includeVoicePack: true), Primary: true),
+                writer => ExportAsync(template, writer, sharedLibrary, voiceLibrary, includeVoicePack: true, automaticImages), Primary: true),
             new TemplateExportOption("Without the voice pack", $"{TemplatePackages.DescribeSize(without)} · uses {packName} where it's installed already",
-                writer => ExportAsync(template, writer, sharedLibrary, voiceLibrary, includeVoicePack: false)),
+                writer => ExportAsync(template, writer, sharedLibrary, voiceLibrary, includeVoicePack: false, automaticImages)),
             new TemplateExportOption("Just the voice pack", $"{TemplatePackages.DescribeSize(voiceOnly)} · {packName} and its recordings, imported under Voice packs",
                 writer => VoicePackPackages.ExportAsync(pack, writer))
         ];
@@ -368,9 +377,14 @@ public static class GeneratedPromoPackages
     /// </param>
     public static async Task<GeneratedPromoTemplate> ImportAsync(TemplatePackageReader reader, TemplateAssets assets, IEnumerable<string> existingNames,
         List<GeneratedSharedImage>? sharedLibrary = null, GeneratedSharedImport? report = null,
-        List<GeneratedVoicePack>? voiceLibrary = null, GeneratedVoicePackImport? voiceReport = null, CancellationToken cancellationToken = default)
+        List<GeneratedVoicePack>? voiceLibrary = null, GeneratedVoicePackImport? voiceReport = null, CancellationToken cancellationToken = default,
+        SchedularrTV.Service.Images.AutomaticImages? automaticImages = null)
     {
         GeneratedPromoTemplate template = reader.Item<GeneratedPromoTemplate>();
+        // Automatic pictures found where it was made: this computer's searches take them, so they show straight away.
+        List<GeneratedFoundPicture>? found = template.FoundPictures;
+        template.FoundPictures = null;
+        await SharedImagePackages.AdoptFoundAsync(found, reader, automaticImages, cancellationToken).ConfigureAwait(false);
         Func<string?, Task<string?>> keep = path => reader.AssetAsync(path, assets, AssetCategory, cancellationToken);
         // Packages from before variants: their per-background layouts become variants, as the schedule's do.
         GeneratedPromoVariants.Convert(template);
@@ -463,58 +477,13 @@ public static class GeneratedPromoPackages
     /// to those it does; what's already there is never changed. Files come through <paramref name="keep"/> only for
     /// what's added.
     /// </summary>
+    /// <remarks>A default or override whose file is gone on this computer is mended with the package's.</remarks>
     public static async Task MergeSharedAsync(List<GeneratedSharedImage> library, IEnumerable<GeneratedSharedImage> incoming,
         Func<string?, Task<string?>> keep, GeneratedSharedImport? report = null)
     {
-        foreach (GeneratedSharedImage image in incoming)
-        {
-            if (string.IsNullOrWhiteSpace(image.Id))
-            {
-                continue;
-            }
-
-            image.Id = image.Id.Trim();
-            image.Shows ??= [];
-            if (GeneratedSharedImages.Find(library, image.Id) is not { } mine)
-            {
-                // Names are only labels; one already taken gets a number so the two can be told apart.
-                image.Name = GeneratedPromoEditing.UniqueName(library.Select(existing => existing.Name),
-                    string.IsNullOrWhiteSpace(image.Name) ? "Shared image" : image.Name.Trim());
-                image.Shows = [.. image.Shows.Where(show => !string.IsNullOrWhiteSpace(show.Show))];
-                await MapPathsAsync(image, keep).ConfigureAwait(false);
-                library.Add(image);
-                report?.Added.Add(image.Name);
-                continue;
-            }
-
-            if (string.IsNullOrWhiteSpace(mine.DefaultPath) && !string.IsNullOrWhiteSpace(image.DefaultPath))
-            {
-                mine.DefaultPath = await keep(image.DefaultPath).ConfigureAwait(false);
-            }
-
-            // An automatic picture it lacks is added too; one it has is kept.
-            mine.Automatic ??= image.Automatic;
-
-            HashSet<string> have = new(mine.Shows.Where(show => !string.IsNullOrWhiteSpace(show.Show)).Select(GeneratedImageChoices.Key),
-                StringComparer.OrdinalIgnoreCase);
-            int added = 0;
-            foreach (GeneratedShowImage show in image.Shows)
-            {
-                if (string.IsNullOrWhiteSpace(show.Show) || !have.Add(GeneratedImageChoices.Key(show)))
-                {
-                    continue;
-                }
-
-                show.Path = await keep(show.Path).ConfigureAwait(false);
-                mine.Shows.Add(show);
-                added++;
-            }
-
-            if (added > 0)
-            {
-                report?.Extended.Add($"{mine.Name} (+{added})");
-            }
-        }
+        (List<string> added, List<string> extended) = await SharedImagePackages.MergeAsync(library, incoming, keep).ConfigureAwait(false);
+        report?.Added.AddRange(added);
+        report?.Extended.AddRange(extended);
     }
 
     /// <summary>The font families the template's text layers are drawn with.</summary>

@@ -35,11 +35,16 @@ public static class OverlayPackages
     /// Writes a copy of the overlay and its files into the package; returns its name. The shared images its variable
     /// images use (from <paramref name="sharedLibrary"/>) go in with it, so the package works on its own.
     /// </summary>
-    public static async Task<string> ExportAsync(Overlay overlay, TemplatePackageWriter writer, IEnumerable<GeneratedSharedImage>? sharedLibrary = null)
+    /// <param name="automaticImages">This computer's automatic pictures: those already found for its variable images go in too.</param>
+    public static async Task<string> ExportAsync(Overlay overlay, TemplatePackageWriter writer, IEnumerable<GeneratedSharedImage>? sharedLibrary = null,
+        SchedularrTV.Service.Images.AutomaticImages? automaticImages = null)
     {
         Overlay copy = overlay.Copy();
         List<GeneratedSharedImage> shared = SharedImagePackages.Collect(copy.VariableImages, sharedLibrary);
         copy.SharedImages = shared.Count == 0 ? null : shared;
+        List<GeneratedFoundPicture> found = SharedImagePackages.FoundPictures(
+            shared.Cast<IGeneratedImageChoices>().Concat(copy.VariableImages.Where(image => !image.IsShared)), automaticImages, writer.Asset);
+        copy.FoundPictures = found.Count == 0 ? null : found;
         await MapPathsAsync(copy, path => Task.FromResult(writer.Asset(path))).ConfigureAwait(false);
         foreach (GeneratedSharedImage image in shared)
         {
@@ -56,9 +61,14 @@ public static class OverlayPackages
     /// null turns its shared variable images into ones with their own pictures.
     /// </summary>
     public static async Task<(Overlay Overlay, string Summary)> ImportAsync(TemplatePackageReader reader, TemplateAssets assets,
-        List<GeneratedSharedImage>? sharedLibrary = null, CancellationToken cancellationToken = default)
+        List<GeneratedSharedImage>? sharedLibrary = null, CancellationToken cancellationToken = default,
+        SchedularrTV.Service.Images.AutomaticImages? automaticImages = null)
     {
         Overlay overlay = reader.Item<Overlay>();
+        // Automatic pictures found where it was made: this computer's searches take them, so they show straight away.
+        List<GeneratedFoundPicture>? found = overlay.FoundPictures;
+        overlay.FoundPictures = null;
+        await SharedImagePackages.AdoptFoundAsync(found, reader, automaticImages, cancellationToken).ConfigureAwait(false);
         Func<string?, Task<string?>> keep = path => reader.AssetAsync(path, assets, AssetCategory, cancellationToken);
         List<GeneratedSharedImage> packaged = overlay.SharedImages ?? [];
         overlay.SharedImages = null;

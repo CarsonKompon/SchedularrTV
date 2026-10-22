@@ -105,24 +105,41 @@ public static class SharedImagePackages
                 continue;
             }
 
-            if (string.IsNullOrWhiteSpace(mine.DefaultPath) && !string.IsNullOrWhiteSpace(image.DefaultPath))
+            // A default it lacks, or one whose file is gone here, comes from the package.
+            if (Gone(mine.DefaultPath) && !string.IsNullOrWhiteSpace(image.DefaultPath)
+                && await keep(image.DefaultPath).ConfigureAwait(false) is { Length: > 0 } defaultPath && !Gone(defaultPath))
             {
-                mine.DefaultPath = await keep(image.DefaultPath).ConfigureAwait(false);
+                mine.DefaultPath = defaultPath;
             }
 
             mine.Automatic ??= image.Automatic;
-            HashSet<string> have = new(mine.Shows.Where(show => !string.IsNullOrWhiteSpace(show.Show)).Select(GeneratedImageChoices.Key),
-                StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, GeneratedShowImage> have = mine.Shows.Where(show => !string.IsNullOrWhiteSpace(show.Show))
+                .GroupBy(GeneratedImageChoices.Key, StringComparer.OrdinalIgnoreCase).ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
             int added = 0;
             foreach (GeneratedShowImage show in image.Shows)
             {
-                if (string.IsNullOrWhiteSpace(show.Show) || !have.Add(GeneratedImageChoices.Key(show)))
+                if (string.IsNullOrWhiteSpace(show.Show))
                 {
+                    continue;
+                }
+
+                string key = GeneratedImageChoices.Key(show);
+                if (have.TryGetValue(key, out GeneratedShowImage? existing))
+                {
+                    // An override whose file is gone here is mended with the package's.
+                    if (Gone(existing.Path) && !string.IsNullOrWhiteSpace(show.Path)
+                        && await keep(show.Path).ConfigureAwait(false) is { Length: > 0 } mended && !Gone(mended))
+                    {
+                        existing.Path = mended;
+                        added++;
+                    }
+
                     continue;
                 }
 
                 show.Path = await keep(show.Path).ConfigureAwait(false);
                 mine.Shows.Add(show);
+                have[key] = show;
                 added++;
             }
 
@@ -133,6 +150,79 @@ public static class SharedImagePackages
         }
 
         return (addedNames, extendedNames);
+    }
+
+    /// <summary>No picture: nothing set, or a file on this computer that isn't there (a web address counts as there).</summary>
+    private static bool Gone(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return true;
+        string trimmed = path.Trim().Trim('"');
+        return Path.IsPathFullyQualified(trimmed) && !File.Exists(trimmed);
+    }
+
+    /// <summary>
+    /// The pictures already found (on this computer) for the automatic pictures of <paramref name="images"/>, each with
+    /// its search, to carry in a package; <paramref name="map"/> puts each file in it. Nothing is searched for.
+    /// </summary>
+    public static List<GeneratedFoundPicture> FoundPictures(IEnumerable<IGeneratedImageChoices> images, Images.AutomaticImages? automatic,
+        Func<string, string?> map)
+    {
+        List<GeneratedFoundPicture> found = [];
+        if (automatic is null)
+        {
+            return found;
+        }
+
+        HashSet<string> seen = new(StringComparer.Ordinal);
+        foreach (AutomaticImageConfig config in images.Select(image => image.Automatic).OfType<AutomaticImageConfig>())
+        {
+            foreach ((Images.AutomaticImageRequest request, string picture) in automatic.Found(config))
+            {
+                if (!seen.Add(request.Key) || map(picture) is not { Length: > 0 } packed || string.Equals(packed, picture, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                found.Add(new GeneratedFoundPicture
+                {
+                    Query = request.Query, Result = request.Result, Transparent = request.Transparent, Animated = request.Animated,
+                    Provider = request.Provider, Path = packed
+                });
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// Gives this computer's automatic pictures the ones a package carries (<see cref="FoundPictures"/>), so they show
+    /// without searching; a search that already has a picture here keeps it. Returns how many were taken.
+    /// </summary>
+    public static async Task<int> AdoptFoundAsync(IEnumerable<GeneratedFoundPicture>? found, TemplatePackageReader reader, Images.AutomaticImages? automatic,
+        CancellationToken cancellationToken = default)
+    {
+        if (automatic is null || found is null)
+        {
+            return 0;
+        }
+
+        int taken = 0;
+        foreach (GeneratedFoundPicture picture in found)
+        {
+            if (string.IsNullOrWhiteSpace(picture.Query) || reader.OpenAsset(picture.Path) is not { } stream)
+            {
+                continue;
+            }
+
+            var request = new Images.AutomaticImageRequest(picture.Query.Trim(), Math.Clamp(picture.Result, 1, 50), picture.Transparent,
+                string.IsNullOrWhiteSpace(picture.Provider) ? null : picture.Provider, picture.Animated);
+            await using (stream)
+            {
+                if (await automatic.AdoptAsync(request, stream, cancellationToken).ConfigureAwait(false)) taken++;
+            }
+        }
+
+        return taken;
     }
 
     private static GeneratedSharedImage Copy(GeneratedSharedImage image) => new()

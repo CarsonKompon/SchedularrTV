@@ -95,6 +95,90 @@ public sealed partial class AutomaticImages
         return searches.OrderByDescending(search => search.At).ToArray();
     }, cancellationToken);
 
+    /// <summary>
+    /// The pictures already found for searches made with <paramref name="config"/> (its query filled in for each show it
+    /// was asked about), for carrying in a package. Only what's been found and is still there; nothing is searched.
+    /// </summary>
+    public IReadOnlyList<(AutomaticImageRequest Request, string Picture)> Found(global::SchedularrTV.Core.Configuration.AutomaticImageConfig? config)
+    {
+        if (config is null || string.IsNullOrWhiteSpace(config.Query))
+        {
+            return [];
+        }
+
+        int result = Math.Clamp(config.Result, 1, 50);
+        string? provider = string.IsNullOrWhiteSpace(config.Provider) ? null : config.Provider;
+        List<(AutomaticImageRequest, string)> found = [];
+        foreach (RequestFile record in ReadRequests())
+        {
+            AutomaticImageRequest request = record.Request;
+            if (request.Result != result || request.Transparent != config.Transparent || request.Animated != config.Animated
+                || !string.Equals(request.Provider, provider, StringComparison.OrdinalIgnoreCase)
+                || !global::SchedularrTV.Core.Configuration.AutomaticImageQuery.Matches(config.Query, request.Query))
+            {
+                continue;
+            }
+
+            if (Picked(request) is { } picture)
+            {
+                found.Add((request, picture));
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// Takes a picture found elsewhere (carried in a package) as <paramref name="request"/>'s, so it shows without a
+    /// search. A request that already has a picture here keeps it. The picture is checked like a download (and kept as
+    /// a PNG unless it's animated). Returns whether it was taken.
+    /// </summary>
+    public async Task<bool> AdoptAsync(AutomaticImageRequest request, Stream picture, CancellationToken cancellationToken = default)
+    {
+        if (Picked(request) is not null)
+        {
+            return false;
+        }
+
+        using var buffer = new MemoryStream();
+        byte[] chunk = new byte[81920];
+        int read;
+        while ((read = await picture.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            buffer.Write(chunk, 0, read);
+            if (buffer.Length > MaxDownloadBytes) return false;
+        }
+
+        byte[] data = buffer.ToArray();
+        string? animated = AnimatedFormat(data);
+        byte[]? kept = animated is not null ? data : Normalise(data);
+        if (kept is null)
+        {
+            return false;
+        }
+
+        // Named by its content, so the same picture carried twice is kept once.
+        string file = Path.Combine(_folder, "pictures", "carried-" + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(kept))[..32] + (animated ?? ".png"));
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        if (!File.Exists(file))
+        {
+            string temp = $"{file}.{Guid.NewGuid():N}.tmp";
+            try
+            {
+                await File.WriteAllBytesAsync(temp, kept, cancellationToken).ConfigureAwait(false);
+                File.Move(temp, file, overwrite: true);
+            }
+            finally { if (File.Exists(temp)) File.Delete(temp); }
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(PickFile(request))!);
+        await File.WriteAllTextAsync(PickFile(request), Path.GetFileName(file), cancellationToken).ConfigureAwait(false);
+        _failed.TryRemove(request.Key, out _);
+        RememberRequest(request);
+        Fetched?.Invoke(request);
+        return true;
+    }
+
     /// <summary>Downloads one cached candidate for inspection, without performing a provider search or changing the pick.</summary>
     public async Task<string?> PreviewCachedAsync(string searchId, string url, CancellationToken cancellationToken = default)
     {

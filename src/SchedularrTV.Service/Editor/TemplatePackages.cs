@@ -417,6 +417,22 @@ public sealed class TemplatePackageReader : IDisposable
     }
 
     /// <summary>
+    /// Opens a file in the package (a <see cref="TemplatePackages.Prefix"/> path) to read, without keeping it anywhere;
+    /// null for any other value, or a file the package doesn't have.
+    /// </summary>
+    public Stream? OpenAsset(string? path)
+    {
+        if (path is null || !path.StartsWith(TemplatePackages.Prefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        string name = path[TemplatePackages.Prefix.Length..];
+        ZipArchiveEntry? entry = name.StartsWith("assets/", StringComparison.Ordinal) ? _zip.GetEntry(name) : null;
+        return entry is null || entry.FullName.EndsWith('/') ? null : entry.Open();
+    }
+
+    /// <summary>
     /// Keeps the package's fonts in the data folder (<c>assets/fonts</c>), where renderers find families that aren't
     /// installed. Returns the font files kept.
     /// </summary>

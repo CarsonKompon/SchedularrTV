@@ -566,6 +566,98 @@ public sealed class TemplatePackageTests : IDisposable
         Assert.Null(await GeneratedPromoPackages.ExportOptionsAsync(template, null, [pack]));
     }
 
+    private sealed class NoSearch : SchedularrTV.Plugins.Images.IImageSearchProvider
+    {
+        public string Id => "fake";
+        public string DisplayName => "Fake";
+        public Task<IReadOnlyList<SchedularrTV.Plugins.Images.ImageSearchResult>> SearchAsync(SchedularrTV.Plugins.Images.ImageSearchRequest request,
+            CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<SchedularrTV.Plugins.Images.ImageSearchResult>>([]);
+    }
+
+    private static byte[] Png(SkiaSharp.SKColor colour)
+    {
+        using var bitmap = new SkiaSharp.SKBitmap(8, 8);
+        bitmap.Erase(colour);
+        using SkiaSharp.SKData data = SkiaSharp.SKImage.FromBitmap(bitmap).Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
+    }
+
+    [Fact]
+    public async Task Automatic_pictures_found_where_a_template_was_made_show_where_it_is_imported_without_searching()
+    {
+        var automatic = new AutomaticImageConfig { Query = "{show} main character png" };
+        var cards = new GeneratedSharedImage { Name = "Characters", Automatic = automatic };
+        var template = new GeneratedPromoTemplate
+        {
+            Name = "Up Next",
+            VariableImages = [new GeneratedVariableImage { Name = "variable_image_01", Shared = cards.Id }]
+        };
+
+        // Where it's made, a picture search found one for Rugrats (and one for another search, which isn't carried).
+        var made = new SchedularrTV.Service.Images.AutomaticImages([new NoSearch()], null, Path.Combine(_data, "automatic"));
+        var rugrats = SchedularrTV.Service.Images.AutomaticImageRequest.For(automatic, "Rugrats main character png")!;
+        await using (var picture = new MemoryStream(Png(SkiaSharp.SKColors.Orange))) Assert.True(await made.AdoptAsync(rugrats, picture));
+        var other = new SchedularrTV.Service.Images.AutomaticImageRequest("Rugrats logo", 1, false, null);
+        await using (var picture = new MemoryStream(Png(SkiaSharp.SKColors.Blue))) await made.AdoptAsync(other, picture);
+
+        string zip = await ExportAsync(_data, writer => GeneratedPromoPackages.ExportAsync(template, writer, [cards], automaticImages: made));
+
+        // Where it's imported there's no picture search at all.
+        var importing = new SchedularrTV.Service.Images.AutomaticImages([], null, Path.Combine(_otherData, "automatic"));
+        List<GeneratedSharedImage> library = [];
+        GeneratedPromoTemplate imported;
+        await using (FileStream stream = File.OpenRead(zip))
+        using (TemplatePackageReader reader = await new TemplatePackages(_otherData).OpenAsync(stream))
+        {
+            imported = await GeneratedPromoPackages.ImportAsync(reader, new TemplateAssets(_otherData), [], library, automaticImages: importing);
+        }
+
+        Assert.Null(imported.FoundPictures);
+        string shown = imported.VariableImages![0].PathFor("Rugrats", null, importing.Lookup(queue: false));
+        Assert.True(File.Exists(shown));
+        Assert.Equal(string.Empty, imported.VariableImages[0].PathFor("Doug", null, importing.Lookup(queue: false)));
+        Assert.Null(importing.Peek(other, queue: false));
+    }
+
+    [Fact]
+    public async Task A_shared_image_whose_files_are_gone_is_mended_from_the_package()
+    {
+        string card = Write("cards/default.png", "default");
+        string rugrats = Write("cards/rugrats.png", "rugrats");
+        var cards = new GeneratedSharedImage { Name = "Title cards", DefaultPath = card, Shows = [new GeneratedShowImage { Show = "Rugrats", Path = rugrats }] };
+        var template = new GeneratedPromoTemplate { Name = "Up Next", VariableImages = [new GeneratedVariableImage { Name = "variable_image_01", Shared = cards.Id }] };
+        string zip = await ExportAsync(_data, writer => GeneratedPromoPackages.ExportAsync(template, writer, [cards]));
+
+        // The importing side has this shared image already (from an earlier import), but its files have gone.
+        var mine = new GeneratedSharedImage
+        {
+            Id = cards.Id, Name = "Title cards", DefaultPath = Path.Combine(_otherData, "gone", "default.png"),
+            Shows = [new GeneratedShowImage { Show = "Rugrats", Path = Path.Combine(_otherData, "gone", "rugrats.png") }]
+        };
+        List<GeneratedSharedImage> library = [mine];
+        var assets = new TemplateAssets(_otherData);
+        await using (FileStream stream = File.OpenRead(zip))
+        using (TemplatePackageReader reader = await new TemplatePackages(_otherData).OpenAsync(stream))
+        {
+            await GeneratedPromoPackages.ImportAsync(reader, assets, [], library);
+        }
+
+        Assert.Single(library);
+        Assert.True(assets.IsKept(mine.DefaultPath));
+        Assert.Equal("default", File.ReadAllText(mine.DefaultPath!));
+        Assert.Equal("rugrats", File.ReadAllText(Assert.Single(mine.Shows).Path!));
+    }
+
+    [Theory]
+    [InlineData("{show} main character png", "Rugrats main character png", true)]
+    [InlineData("{show}  main character png", "the fairly oddparents  MAIN character png", true)]
+    [InlineData("{block} {title} logo", "Nicktoons Doug logo", true)]
+    [InlineData("{show} main character png", "Rugrats logo", false)]
+    [InlineData("{show} (1990s) [cartoon]", "Doug (1990s) [cartoon]", true)]
+    [InlineData("{other} {show}", "{other} Doug", true)]
+    public void Automatic_queries_tell_their_own_filled_in_searches(string query, string filled, bool matches) =>
+        Assert.Equal(matches, AutomaticImageQuery.Matches(query, filled));
+
     private static async Task<string> ExportAsync(string data, Func<TemplatePackageWriter, Task<string>> fill)
     {
         var packages = new TemplatePackages(data);

@@ -971,6 +971,9 @@ Each exported template also carries the [shared images](#shared-images) it uses,
 
 So importing several templates that share images gives one shared image, not one per template. Older versions that don't know shared images import the template with its own copy of the pictures.
 
+- **Missing files are mended.** If a shared image you already have points at a default or override file that's no longer on this computer, that file is replaced with the package's copy.
+- **Automatic pictures come along.** A shared image (or variable) that uses an [automatic picture](#automatic-pictures-for-shared-images) carries the pictures it has already found for each show. On import they go into this computer's automatic-picture cache, so they show straight away without searching, even with no picture search set up. A show that wasn't searched for where the template was made is still searched for here, which needs a picture search such as SerpApi. A picture this computer already found for the same search is kept.
+
 When the template's voice-over uses a [voice pack](#pre-recorded-lines-voice-packs), **Export** asks how to package it, with an estimated download size for each:
 
 - **With the voice pack**: the template and the pack with all its recordings. Importing it installs the pack, or adds what an installed copy lacks.

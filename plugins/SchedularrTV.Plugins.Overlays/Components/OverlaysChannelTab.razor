@@ -1,5 +1,6 @@
 @* Channel tab: the overlays the channel and each of its blocks show (their own, another channel's, or none), and their editor. *@
 @inject TemplateAssets TemplateFiles
+@inject IServiceProvider Services
 
 @if (Context.Channel is { } channel)
 {
@@ -338,7 +339,8 @@
 
     private Task<string> ExportSelected(TemplatePackageWriter writer) =>
         _selected is { } overlay
-            ? OverlayPackages.ExportAsync(overlay, writer, Context.Config.Settings.GeneratedPromosSharedImages)
+            ? OverlayPackages.ExportAsync(overlay, writer, Context.Config.Settings.GeneratedPromosSharedImages,
+                Services.GetService<SchedularrTV.Service.Images.AutomaticImages>())
             : throw new InvalidOperationException("Choose an overlay to export.");
 
     private async Task<string> ImportPackage(TemplatePackageReader reader)
@@ -348,7 +350,8 @@
             throw new InvalidOperationException("Choose this channel's own overlays first.");
         }
 
-        (Overlay overlay, string shared) = await OverlayPackages.ImportAsync(reader, TemplateFiles, Context.Config.Settings.GeneratedPromosSharedImages);
+        (Overlay overlay, string shared) = await OverlayPackages.ImportAsync(reader, TemplateFiles, Context.Config.Settings.GeneratedPromosSharedImages,
+            automaticImages: Services.GetService<SchedularrTV.Service.Images.AutomaticImages>());
         string name = string.IsNullOrWhiteSpace(overlay.Name) ? "Overlay" : overlay.Name;
         overlay.Name = name;
         for (int number = 2; section.Overlays.Any(other => string.Equals(other.Name, overlay.Name, StringComparison.OrdinalIgnoreCase)); number++)

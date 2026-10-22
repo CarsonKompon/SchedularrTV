@@ -1,6 +1,7 @@
 @* Generated promo templates for a channel or block, with one template open for editing. *@
 @inject TemplateAssets TemplateFiles
 @inject ConfigEditor Editor
+@inject GeneratedPromoPreview Preview
 
 @if (Config is not { } generated)
 {
@@ -148,15 +149,20 @@ else
         await Changed.InvokeAsync();
     }
 
+    // Automatic pictures already found go out with an export, and an import's are taken in (when picture searches are on here).
+    private SchedularrTV.Service.Images.AutomaticImages? AutomaticImages => Preview.AutomaticImages;
+
     private Task<string> ExportSelected(TemplatePackageWriter writer) =>
         _selected is { } template
-            ? GeneratedPromoPackages.ExportAsync(template, writer, Editor.Working.Settings.GeneratedPromosSharedImages, Editor.Working.Settings.GeneratedPromosVoicePacks)
+            ? GeneratedPromoPackages.ExportAsync(template, writer, Editor.Working.Settings.GeneratedPromosSharedImages, Editor.Working.Settings.GeneratedPromosVoicePacks,
+                automaticImages: AutomaticImages)
             : throw new InvalidOperationException("Choose a template to export.");
 
     // A template whose voice-over uses a voice pack offers it with or without the pack, or the pack alone, with sizes.
     private Task<IReadOnlyList<TemplateExportOption>?> ExportChoices() =>
         _selected is { } template
-            ? GeneratedPromoPackages.ExportOptionsAsync(template, Editor.Working.Settings.GeneratedPromosSharedImages, Editor.Working.Settings.GeneratedPromosVoicePacks)
+            ? GeneratedPromoPackages.ExportOptionsAsync(template, Editor.Working.Settings.GeneratedPromosSharedImages, Editor.Working.Settings.GeneratedPromosVoicePacks,
+                AutomaticImages)
             : Task.FromResult<IReadOnlyList<TemplateExportOption>?>(null);
 
     private async Task<string> ImportPackage(TemplatePackageReader reader)
@@ -165,7 +171,7 @@ else
         GeneratedVoicePackImport voice = new();
         GeneratedPromoTemplate template = await GeneratedPromoPackages.ImportAsync(reader, TemplateFiles,
             Config?.Templates.Select(existing => existing.Name) ?? [], Editor.Working.Settings.GeneratedPromosSharedImages, shared,
-            Editor.Working.Settings.GeneratedPromosVoicePacks, voice);
+            Editor.Working.Settings.GeneratedPromosVoicePacks, voice, automaticImages: AutomaticImages);
         string sharedNote = (shared.Summary.Length == 0 ? "" : " " + shared.Summary) + (voice.Pack is null ? "" : " " + voice.Summary);
         if (Config is { } config)
         {

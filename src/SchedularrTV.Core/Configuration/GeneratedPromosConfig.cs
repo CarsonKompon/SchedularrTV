@@ -604,6 +604,14 @@ public sealed class GeneratedPromoTemplate : IGeneratedBackgrounds
     public List<GeneratedSharedImage>? SharedImages { get; set; }
 
     /// <summary>
+    /// Only in template packages: the pictures its variable images' automatic pictures had found where it was exported,
+    /// so they show where it's imported without searching again (or with no picture search set up there).
+    /// </summary>
+    [YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedFoundPicture>? FoundPictures { get; set; }
+
+    /// <summary>
     /// Only in template packages: the voice pack the template's pre-recorded voice-over uses, so importing it installs
     /// (or brings up to date) that pack. Never in the schedule file, where packs are kept once under the plugin's settings.
     /// </summary>
@@ -785,6 +793,25 @@ public static class AutomaticImageQuery
         return missing || string.IsNullOrWhiteSpace(filled)
             ? null
             : string.Join(' ', filled.Split((char[])[' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    /// <summary>
+    /// Whether <paramref name="filled"/> could be <paramref name="query"/> filled in for some show (and block): the same
+    /// words around its <c>{show}</c>, <c>{title}</c> and <c>{block}</c>, ignoring case and spacing.
+    /// </summary>
+    public static bool Matches(string? query, string? filled)
+    {
+        if (string.IsNullOrWhiteSpace(query) || string.IsNullOrWhiteSpace(filled))
+        {
+            return false;
+        }
+
+        static string Tidy(string text) => string.Join(' ', text.Split((char[])[' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
+        string pattern = Token.Replace(System.Text.RegularExpressions.Regex.Escape(Tidy(query)).Replace(@"\{", "{", StringComparison.Ordinal),
+            match => match.Groups[1].Value.ToLowerInvariant() is "show" or "title" or "block" ? "(.+?)" : System.Text.RegularExpressions.Regex.Escape(match.Value));
+        return System.Text.RegularExpressions.Regex.IsMatch(Tidy(filled), $"^{pattern}$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+            TimeSpan.FromSeconds(1));
     }
 
     /// <summary>A variable image's query for a show: <c>{show}</c> (or <c>{title}</c>) is its title, <c>{block}</c> the block it airs in.</summary>
@@ -1872,6 +1899,28 @@ public sealed class AutomaticImageConfig
     public string? Provider { get; set; }
 
     public AutomaticImageConfig Copy() => (AutomaticImageConfig)MemberwiseClone();
+}
+
+/// <summary>
+/// A picture an automatic image found for one search (its query filled in for a show), carried in a template package
+/// so the importing side has it without searching. Only in packages.
+/// </summary>
+public sealed class GeneratedFoundPicture
+{
+    /// <summary>The search, filled in for a show (e.g. <c>Rugrats main character png</c>).</summary>
+    public string Query { get; set; } = string.Empty;
+
+    public int Result { get; set; } = 1;
+
+    public bool Transparent { get; set; }
+
+    public bool Animated { get; set; }
+
+    /// <summary>The picture search named by the automatic image; null for "the first one set up".</summary>
+    public string? Provider { get; set; }
+
+    /// <summary>The picture, as a file in the package.</summary>
+    public string Path { get; set; } = string.Empty;
 }
 
 /// <summary>Add reveals inside the combined masks; subtract hides inside them, after any add masks.</summary>
