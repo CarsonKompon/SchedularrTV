@@ -26,8 +26,48 @@ public sealed class ChapterRecord
     /// <summary>Why it couldn't be analysed; null when it was.</summary>
     public string? Error { get; set; }
 
+    /// <summary>What ffmpeg printed when it failed, for the curious (shown on hover).</summary>
+    public string? ErrorDetail { get; set; }
+
+    /// <summary>Where it is in the review queue.</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter<ReviewState>))]
+    public ReviewState Review { get; set; }
+
+    public DateTimeOffset? ReviewedAt { get; set; }
+
+    /// <summary>The markers as analysis found them, kept once they're edited in review so they can be put back.</summary>
+    public List<double>? Detected { get; set; }
+
+    /// <summary>What happened when the review was approved (written to the file, or why it wasn't).</summary>
+    public string? ReviewNote { get; set; }
+
     [JsonIgnore]
     public IReadOnlyList<TimeSpan> MarkerTimes => [.. Markers.Select(TimeSpan.FromSeconds)];
+
+    /// <summary>A short id for the record in URLs, so the video endpoints never take a file path from the browser.</summary>
+    [JsonIgnore]
+    public string Key => ChapterStore.KeyFor(Path);
+
+    public ChapterRecord Copy()
+    {
+        var copy = (ChapterRecord)MemberwiseClone();
+        copy.Markers = [.. Markers];
+        copy.Detected = Detected is null ? null : [.. Detected];
+        return copy;
+    }
+}
+
+/// <summary>A programme's place in the review queue.</summary>
+public enum ReviewState
+{
+    /// <summary>Analysed and waiting to be looked at.</summary>
+    Pending,
+
+    /// <summary>Markers checked (and perhaps edited); used for mid-rolls but not written into the file.</summary>
+    Approved,
+
+    /// <summary>Markers checked and written into the video file as chapters.</summary>
+    Applied
 }
 
 /// <summary>
@@ -90,6 +130,58 @@ public sealed class ChapterStore
         lock (_gate)
         {
             return [.. _records.Values.OrderByDescending(record => record.AnalysedAt).Take(count)];
+        }
+    }
+
+    /// <summary>The short id used in URLs for a library path.</summary>
+    public static string KeyFor(string path) =>
+        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(path)))[..20];
+
+    /// <summary>The record with this <see cref="ChapterRecord.Key"/>, if any.</summary>
+    public ChapterRecord? FindByKey(string? key)
+    {
+        if (string.IsNullOrEmpty(key))
+        {
+            return null;
+        }
+
+        lock (_gate)
+        {
+            int version = Volatile.Read(ref _version);
+            if (_keys is null || _keysVersion != version)
+            {
+                _keys = _records.Values.ToDictionary(record => record.Key, record => record.Path, StringComparer.Ordinal);
+                _keysVersion = version;
+            }
+
+            return _keys.TryGetValue(key, out string? path) ? _records.GetValueOrDefault(path) : null;
+        }
+    }
+
+    private Dictionary<string, string>? _keys;
+    private int _keysVersion = -1;
+
+    /// <summary>
+    /// Programmes analysed without trouble and not yet reviewed, oldest analysis first. With <paramref name="withMarkersOnly"/>,
+    /// only those where break points were found.
+    /// </summary>
+    public IReadOnlyList<ChapterRecord> ReviewQueue(bool withMarkersOnly = false)
+    {
+        lock (_gate)
+        {
+            return [.. _records.Values
+                .Where(record => record.Error is null && record.Review == ReviewState.Pending && (!withMarkersOnly || record.Markers.Count > 0))
+                .OrderBy(record => record.AnalysedAt)];
+        }
+    }
+
+    /// <summary>The most recently reviewed programmes, newest first.</summary>
+    public IReadOnlyList<ChapterRecord> RecentlyReviewed(int count)
+    {
+        lock (_gate)
+        {
+            return [.. _records.Values.Where(record => record.Review != ReviewState.Pending)
+                .OrderByDescending(record => record.ReviewedAt).Take(count)];
         }
     }
 

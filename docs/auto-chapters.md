@@ -58,10 +58,24 @@ New plans use detected markers like chapters. Already-planned breaks can move to
 
 If no suitable fade exists, **Auto** mid-roll mode retains cadence-based breaks. The **Mid-roll breaks coming up** summary distinguishes detected fades, embedded chapters, pending analysis, and unmatched cadence breaks.
 
+## Review markers
+
+The **Review queue** tab plays each analysed programme in turn, oldest analysis first, with its break points on the scrub bar.
+
+- Click a marker (on the bar or in the thumbnails below) to jump to it; drag it along the bar to move it
+- Nudge the selected marker one frame with **,** / **.** (or **Alt**+arrows), one second with **Shift** added
+- Step the playhead one frame with **←** / **→**, jump between markers with **[** / **]**
+- **M** adds a marker at the playhead, **Delete** removes the selected one, **Reset** puts back what analysis found
+
+**Approve** keeps the markers (edited or not) for mid-roll breaks and moves on to the next programme. The arrow beside it switches the button to **Approve and apply to video file**, which also writes the markers into the file as chapters without re-encoding: MKV and WebM in place with `mkvpropedit` when MKVToolNix is installed, otherwise (and for MP4, M4V and MOV) by copying the streams into a new file that's checked before it replaces the original. Other formats (AVI, TS, MPEG…) can't hold chapters; those are approved and left as they are, with a notice saying so. **Skip** leaves a programme waiting at the back of the queue, and **Re-open** under **Recently reviewed** puts one back.
+
+Files a browser can play (H.264, VP9 or AV1 with AAC, Opus or MP3 sound) play as they are. Anything else (AC-3 sound, MPEG-2, older formats) plays as a converted 540p preview, and stepping while paused shows exact frames from the file.
+
 ## Resolve unreadable files
 
 - Verify the scheduler account can read the reported path
 - Configure **`ErsatzTv:PathMappings`** for container or remote-library paths
 - Select **Try failed ones again** after correcting access
+- *This ffmpeg couldn't decode the video*: turn off **Decode only what's needed** or **Hardware decoding** in the plugin's settings (a file that refuses frame skipping is already retried without it). Hover the message for ffmpeg's own words
 
 See [Path mappings](ersatztv.md#path-mappings-and-guide-options).

@@ -123,6 +123,52 @@ public sealed class AutoChaptersSettings(IPluginContext context)
     }
 
     /// <summary>
+    /// MKVToolNix's mkvpropedit, which writes chapters into MKV and WebM files in place (in a moment, without copying
+    /// the file): the plugin's own choice, else on the PATH, else where MKVToolNix installs itself. Null when there isn't
+    /// one; ffmpeg copies the file instead.
+    /// </summary>
+    public string? Mkvpropedit
+    {
+        get
+        {
+            if (Value("MkvpropeditPath") is { } own)
+            {
+                return File.Exists(own) ? own : null;
+            }
+
+            string name = OperatingSystem.IsWindows() ? "mkvpropedit.exe" : "mkvpropedit";
+            IEnumerable<string> folders = (Environment.GetEnvironmentVariable("PATH") ?? "")
+                .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (OperatingSystem.IsWindows())
+            {
+                folders = folders.Append(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "MKVToolNix"))
+                    .Append(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "MKVToolNix"));
+            }
+            else if (OperatingSystem.IsMacOS())
+            {
+                folders = folders.Append("/opt/homebrew/bin").Append("/usr/local/bin");
+            }
+
+            foreach (string folder in folders)
+            {
+                try
+                {
+                    string candidate = Path.Combine(folder.Trim('"'), name);
+                    if (File.Exists(candidate))
+                    {
+                        return candidate;
+                    }
+                }
+                catch (ArgumentException)
+                {
+                }
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Where a library path is on this computer. The media server may report paths as it sees them (another machine
     /// or a container), so ErsatzTV's path mappings are tried when the path doesn't exist here.
     /// </summary>

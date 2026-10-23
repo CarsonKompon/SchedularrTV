@@ -294,8 +294,9 @@ public sealed class ChapterScanner(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             record.Error = ex.Message;
+            record.ErrorDetail = (ex as AnalysisException)?.Detail;
             LastError = $"{request.Title}: {ex.Message}";
-            logger.LogWarning("Auto Chapters couldn't analyse {Title}: {Message}", request.Title, ex.Message);
+            logger.LogWarning("Auto Chapters couldn't analyse {Title}: {Message} {Detail}", request.Title, ex.Message, record.ErrorDetail);
         }
 
         store.Save(record);

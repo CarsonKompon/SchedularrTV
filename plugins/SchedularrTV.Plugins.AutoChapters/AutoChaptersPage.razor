@@ -6,6 +6,7 @@
 @inject AutoChaptersSettings Settings
 @inject MidRollAligner Aligner
 @inject IServiceProvider Services
+@inject NavigationManager Nav
 
 <div class="page-header">
     <div>
@@ -18,13 +19,31 @@
     </div>
 </div>
 
-@if (!Settings.UseForMidRolls)
+@{ int waiting = Store.ReviewQueue().Count; }
+<nav class="tabs" aria-label="Auto chapters sections">
+    <a class="tab @(Reviewing ? "" : "active")" aria-current="@(Reviewing ? null : "page")" href="@Nav.GetUriWithQueryParameter("tab", (string?)null)">Overview</a>
+    <a class="tab @(Reviewing ? "active" : "")" aria-current="@(Reviewing ? "page" : null)" href="@Nav.GetUriWithQueryParameter("tab", "review")">
+        Review queue
+        @if (waiting > 0)
+        {
+            <span class="pill pill-accent" style="margin-left:6px;">@waiting.ToString("N0")</span>
+        }
+    </a>
+</nav>
+
+@if (Reviewing)
+{
+    <ChapterReview />
+}
+else
+{
+if (!Settings.UseForMidRolls)
 {
     <div class="banner banner-warn" role="status">
         Markers are being found but not used: <em>Use the markers found for mid-roll breaks</em> is off in this plugin's settings.
     </div>
 }
-@if (_message is not null)
+if (_message is not null)
 {
     <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status">@_message</div>
 }
@@ -185,7 +204,7 @@
                         <td>
                             @if (record.Error is { } problem)
                             {
-                                <span class="hint warn" style="margin:0;">@problem</span>
+                                <span class="hint warn" style="margin:0;" title="@(record.ErrorDetail ?? problem)">@problem</span>
                             }
                             else if (record.Markers.Count == 0)
                             {
@@ -203,6 +222,7 @@
         </table>
     }
 </div>
+}
 
 <style>
     .ac-bar { display: flex; height: 10px; border-radius: 6px; overflow: hidden; background: rgba(255,255,255,.07); }
@@ -214,6 +234,11 @@
 </style>
 
 @code {
+    [SupplyParameterFromQuery(Name = "tab")]
+    public string? Tab { get; set; }
+
+    private bool Reviewing => string.Equals(Tab, "review", StringComparison.OrdinalIgnoreCase);
+
     private string? _message;
     private bool _messageOk;
     private bool _confirmForget;

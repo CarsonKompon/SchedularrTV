@@ -156,7 +156,7 @@ public class LowPowerTests
         List<string> arguments = [.. BlackDetector.Arguments("file.mkv", DetectionOptions.Default with { FastDecode = true, MaxSpeed = 20 })];
         int input = arguments.IndexOf("-i");
 
-        Assert.Equal("nonref", arguments[arguments.IndexOf("-skip_frame") + 1]);
+        Assert.Equal("noref", arguments[arguments.IndexOf("-skip_frame") + 1]);
         Assert.True(arguments.IndexOf("-skip_frame") < input);
         if (BlackDetector.ReadRateSupported)
         {

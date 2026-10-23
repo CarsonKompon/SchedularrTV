@@ -60,6 +60,12 @@ public readonly record struct TimeRange(TimeSpan Start, TimeSpan End)
     public bool Overlaps(TimeRange other, TimeSpan slack) => Start - slack < other.End && other.Start < End + slack;
 }
 
+/// <summary>ffmpeg failed on a file: <see cref="Exception.Message"/> says why in words, <see cref="Detail"/> is what ffmpeg printed.</summary>
+public sealed class AnalysisException(string message, string detail) : InvalidOperationException(message)
+{
+    public string Detail { get; } = detail;
+}
+
 /// <summary>What analysing one file found.</summary>
 public sealed record Detection(IReadOnlyList<TimeSpan> Markers, TimeSpan? Duration, int BlackSpans, int SilentSpans);
 
@@ -119,7 +125,9 @@ public static partial class BlackDetector
 
         if (options.FastDecode)
         {
-            arguments.AddRange(["-skip_frame", "nonref", "-skip_loop_filter", "all"]);
+            // "noref" (not "nonref"): ffmpeg's AVDiscard names are none, default, noref, bidir, nointra, nokey and all.
+            // Anything else fails every file with "Error applying decoder options: Invalid argument".
+            arguments.AddRange(["-skip_frame", "noref", "-skip_loop_filter", "all"]);
         }
 
         if (options.MaxSpeed > 0 && ReadRateSupported)
@@ -166,6 +174,21 @@ public static partial class BlackDetector
     /// it fails with the hardware decoder at all, the file is read again in software.
     /// </summary>
     public static async Task<Detection> AnalyseAsync(string ffmpeg, string file, TimeSpan? knownDuration, DetectionOptions options, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await AnalyseWithFallbacksAsync(ffmpeg, file, knownDuration, options, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException) when (options.FastDecode && !cancellationToken.IsCancellationRequested)
+        {
+            // Some decoders (or ffmpeg builds) refuse to skip frames: decode everything rather than not at all.
+            return await AnalyseWithFallbacksAsync(ffmpeg, file, knownDuration, options with { FastDecode = false }, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<Detection> AnalyseWithFallbacksAsync(string ffmpeg, string file, TimeSpan? knownDuration, DetectionOptions options,
+        CancellationToken cancellationToken)
     {
         if (options.GpuScaler is not null && GpuScaleWorks)
         {
@@ -259,10 +282,45 @@ public static partial class BlackDetector
             }
 
             string tail = string.Join(" ", lines.TakeLast(3)).Trim();
-            throw new InvalidOperationException($"ffmpeg couldn't read the file (exit code {process.ExitCode}): {tail}");
+            throw new AnalysisException(Explain(process.ExitCode, lines), $"ffmpeg exit code {process.ExitCode}: {tail}");
         }
 
         return Parse(lines, knownDuration, options);
+    }
+
+    /// <summary>What went wrong, in words, from ffmpeg's exit code and what it printed.</summary>
+    public static string Explain(int exitCode, IReadOnlyCollection<string> lines)
+    {
+        bool Said(string text) => lines.Any(line => line.Contains(text, StringComparison.OrdinalIgnoreCase));
+
+        if (Said("No such file or directory"))
+        {
+            return "The file couldn't be found (moved, renamed or deleted since the library was read).";
+        }
+
+        if (Said("Permission denied"))
+        {
+            return "SchedularrTV isn't allowed to read the file.";
+        }
+
+        if (Said("moov atom not found") || Said("Invalid data found when processing input") || Said("EBML header parsing failed"))
+        {
+            return "The file looks damaged or incomplete: ffmpeg couldn't read what's in it.";
+        }
+
+        if (Said("matches no streams") || Said("does not contain any stream"))
+        {
+            return "The file has no video to analyse.";
+        }
+
+        if (Said("Error applying decoder options") || Said("Error while opening decoder") || Said("Decoder (codec") || Said("Unknown decoder"))
+        {
+            return "This ffmpeg couldn't decode the video (its format or the decoding settings aren't supported by this build). Try turning off Decode only what's needed or Hardware decoding in the plugin's settings.";
+        }
+
+        return exitCode == -22 || exitCode == 234
+            ? "ffmpeg rejected the settings it was given for this file."
+            : $"ffmpeg couldn't read the file (exit code {exitCode}).";
     }
 
     /// <summary>Turns ffmpeg's report into chapter markers: the middle of each fade to black (with silence, if required).</summary>

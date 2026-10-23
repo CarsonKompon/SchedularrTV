@@ -93,6 +93,12 @@
       "label": "ffmpeg",
       "type": "File",
       "description": "Leave empty to use the ffmpeg set under App settings."
+    },
+    {
+      "key": "MkvpropeditPath",
+      "label": "mkvpropedit (MKVToolNix)",
+      "type": "File",
+      "description": "Used by the review queue's Approve and apply to video file: writes chapters into MKV and WebM files in place, in a moment. Leave empty to find it on the PATH or where MKVToolNix installs; without it, ffmpeg copies the file with the chapters added (nothing is re-encoded either way)."
     }
   ],
   "pages": [

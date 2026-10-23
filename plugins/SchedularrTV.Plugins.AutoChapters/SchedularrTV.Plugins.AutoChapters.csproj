@@ -22,6 +22,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The review queue's player, evaluated in the page once (see ChapterReview.razor). -->
+    <EmbeddedResource Include="ReviewPlayer.js" LogicalName="ReviewPlayer.js" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="SchedularrTV.Plugins" />
     <Using Include="SchedularrTV.Core.Media" />
     <Using Include="Microsoft.Extensions.DependencyInjection" />

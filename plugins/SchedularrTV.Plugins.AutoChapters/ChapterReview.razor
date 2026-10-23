@@ -1,0 +1,557 @@
+@* The review queue: every analysed programme in turn, played with its break points on the scrub bar to check, move,
+   add or remove, then approved (and optionally written into the file as chapters) on to the next. *@
+@implements IAsyncDisposable
+@inject ChapterStore Store
+@inject ChapterWriter Writer
+@inject ReviewMedia Media
+@inject AutoChaptersSettings Settings
+@inject IJSRuntime JS
+
+@if (_message is not null)
+{
+    <div class="banner @(_messageOk ? "banner-ok" : "banner-warn")" role="status">@_message</div>
+}
+
+@{
+    IReadOnlyList<ChapterRecord> queue = Queue();
+    ChapterRecord? current = Current(queue);
+    IReadOnlyList<string> writing = Writer.Writing;
+}
+
+<div class="acr-layout">
+    <aside class="card acr-side">
+        <div class="card-head"><h2>Queue</h2><span class="muted" style="font-size:12px;">@queue.Count waiting</span></div>
+        <label class="acr-filter">
+            <input type="checkbox" checked="@_withMarkersOnly" @onchange="e => ToggleFilter(e.Value is true)" />
+            Only programmes where break points were found
+        </label>
+        @if (queue.Count == 0)
+        {
+            <p class="hint" style="margin:8px 0 0;">Nothing waiting. Programmes join the queue as they're analysed.</p>
+        }
+        else
+        {
+            <ol class="acr-queue">
+                @foreach (ChapterRecord item in queue.Take(200))
+                {
+                    <li>
+                        <button type="button" class="acr-q @(item.Path == current?.Path ? "active" : "")" title="@item.Path" @onclick="() => Open(item)">
+                            <span class="acr-q-title">@Name(item)</span>
+                            <span class="acr-q-sub">
+                                @(item.Markers.Count == 0 ? "none found" : item.Markers.Count == 1 ? "1 break point" : $"{item.Markers.Count} break points")
+                                @(_skipped.Contains(item.Path) ? " · skipped" : "")
+                            </span>
+                        </button>
+                    </li>
+                }
+            </ol>
+            @if (queue.Count > 200)
+            {
+                <p class="hint" style="margin:6px 0 0;">…and @(queue.Count - 200) more.</p>
+            }
+        }
+
+        @{ IReadOnlyList<ChapterRecord> reviewed = Store.RecentlyReviewed(15); }
+        @if (reviewed.Count > 0)
+        {
+            <div class="card-head" style="margin-top:18px;"><h2>Recently reviewed</h2></div>
+            <ul class="acr-reviewed">
+                @foreach (ChapterRecord done in reviewed)
+                {
+                    <li>
+                        <div class="acr-q-title" title="@done.Path">@Name(done)</div>
+                        <div class="row" style="gap:6px;align-items:center;">
+                            @if (writing.Contains(done.Title))
+                            {
+                                <span class="pill pill-accent">Writing to file…</span>
+                            }
+                            else if (done.Review == ReviewState.Applied)
+                            {
+                                <span class="pill pill-ok">Applied to file</span>
+                            }
+                            else
+                            {
+                                <span class="pill pill-muted">Approved</span>
+                            }
+                            <div class="spacer"></div>
+                            <button type="button" class="btn btn-sm btn-ghost" @onclick="() => Reopen(done)">Re-open</button>
+                        </div>
+                        @if (done.ReviewNote is { } note && !writing.Contains(done.Title))
+                        {
+                            <div class="hint" style="margin:2px 0 0;">@note</div>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+    </aside>
+
+    <section class="card acr-main">
+        @if (current is null)
+        {
+            <div class="empty">
+                @(_finished ? "Queue finished: everything analysed so far has been reviewed." : "Nothing to review yet.")
+            </div>
+        }
+        else
+        {
+            <div class="acr-head">
+                <div style="min-width:0;">
+                    <h2 class="acr-title">@Name(current)</h2>
+                    <div class="muted acr-path" title="@current.Path">@current.Path</div>
+                </div>
+                <div class="row row-wrap" style="gap:6px;justify-content:flex-end;">
+                    <span class="pill pill-muted">@MarkerCount(_markerCount ?? current.Markers.Count)</span>
+                    @if (_edited)
+                    {
+                        <span class="pill pill-accent">Edited</span>
+                    }
+                    @if (current.Detected is not null)
+                    {
+                        <span class="pill pill-muted" title="Markers were edited in an earlier review">Previously edited</span>
+                    }
+                </div>
+            </div>
+            @if (_problem is not null)
+            {
+                <p class="hint warn" style="margin:0 0 10px;">@_problem</p>
+            }
+        }
+
+        @* Always here (hidden when there's nothing to show) so the player keeps its element from one programme to the next. *@
+        <div class="acr-player" @ref="_player" hidden="@(current is null)"></div>
+
+        @if (current is not null)
+        {
+            <div class="acr-actions">
+                <button type="button" class="btn" title="Leave it in the queue and go on to the next" @onclick="() => Skip(queue, current)">Skip</button>
+                <div class="spacer"></div>
+                <div class="dropdown acr-approve">
+                    <button type="button" class="btn btn-primary acr-approve-main" disabled="@_busy" @onclick="() => Approve(queue, current, _applyMode)">
+                        @(_applyMode ? "Approve and apply to video file" : "Approve")
+                    </button>
+                    <button type="button" class="btn btn-primary acr-approve-more" disabled="@_busy" aria-label="Other ways to approve" aria-haspopup="menu"
+                            aria-expanded="@(_menuOpen ? "true" : "false")" @onclick="() => _menuOpen = !_menuOpen">▾</button>
+                    @if (_menuOpen)
+                    {
+                        <div class="dropdown-scrim" @onclick="() => _menuOpen = false"></div>
+                        <div class="dropdown-menu acr-menu" role="menu">
+                            <button type="button" class="dropdown-item" role="menuitemradio" aria-checked="@(!_applyMode ? "true" : "false")" @onclick="() => ChooseMode(false)">
+                                <span class="acr-check">@(!_applyMode ? "✓" : "")</span>
+                                <span>Approve<small>Keep these markers for mid-roll breaks. The video file isn't touched.</small></span>
+                            </button>
+                            <button type="button" class="dropdown-item" role="menuitemradio" aria-checked="@(_applyMode ? "true" : "false")" @onclick="() => ChooseMode(true)">
+                                <span class="acr-check">@(_applyMode ? "✓" : "")</span>
+                                <span>
+                                    Approve and apply to video file
+                                    <small>
+                                        Also write them into the file as chapters, losslessly (streams copied, nothing re-encoded). MKV, WebM, MP4, M4V and MOV;
+                                        @(Settings.Mkvpropedit is null ? "MKVToolNix isn't installed, so files are copied with ffmpeg." : "MKV and WebM are edited in place with mkvpropedit.")
+                                    </small>
+                                </span>
+                            </button>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </section>
+</div>
+
+<style>
+    .acr-layout { display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); gap: 16px; align-items: start; }
+    @@media (max-width: 900px) { .acr-layout { grid-template-columns: 1fr; } .acr-side { order: 2; } }
+    .acr-side { max-height: calc(100vh - 140px); overflow: auto; position: sticky; top: 12px; }
+    .acr-filter { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); margin-bottom: 8px; }
+    .acr-queue, .acr-reviewed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+    .acr-q { display: flex; flex-direction: column; width: 100%; text-align: left; gap: 2px; padding: 8px 10px; border-radius: 8px;
+             border: 1px solid transparent; background: transparent; color: var(--text); font: inherit; cursor: pointer; }
+    .acr-q:hover { background: rgba(255,255,255,.05); }
+    .acr-q.active { background: var(--accent-dim, rgba(120,140,255,.15)); border-color: var(--accent); }
+    .acr-q-title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .acr-q-sub { font-size: 12px; color: var(--muted); }
+    .acr-reviewed li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .acr-head { display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+    .acr-title { margin: 0; font-size: 18px; }
+    .acr-path { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .acr-actions { display: flex; gap: 8px; align-items: center; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+    .acr-approve { gap: 0; }
+    .acr-approve-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+    .acr-approve-more { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 1px solid rgba(0,0,0,.25); padding: 0 10px; }
+    .acr-menu { min-width: 340px; }
+    .acr-check { width: 14px; flex: none; color: var(--accent); font-weight: 700; }
+
+    .acr { outline: none; }
+    .acr-stage { position: relative; background: #000; border-radius: 10px; overflow: hidden; aspect-ratio: 16 / 9; cursor: pointer; }
+    .acr-stage video, .acr-still { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+    .acr-badge { position: absolute; top: 8px; left: 8px; font-size: 11px; padding: 3px 8px; border-radius: 999px; background: rgba(0,0,0,.6); color: #ddd; }
+    .acr-spinner { position: absolute; top: 50%; left: 50%; width: 34px; height: 34px; margin: -17px; border-radius: 50%;
+                   border: 3px solid rgba(255,255,255,.25); border-top-color: #fff; animation: acr-spin .8s linear infinite; }
+    @@keyframes acr-spin { to { transform: rotate(360deg); } }
+    .acr-timeline { position: relative; height: 44px; margin: 10px 0 4px; cursor: pointer; touch-action: none; user-select: none; outline: none; }
+    .acr-timeline:focus-visible { box-shadow: 0 0 0 2px var(--accent); border-radius: 6px; }
+    .acr-track { position: absolute; left: 0; right: 0; top: 18px; height: 8px; border-radius: 4px; background: rgba(255,255,255,.12); overflow: hidden; }
+    .acr-played { height: 100%; width: 0; background: rgba(255,255,255,.35); }
+    .acr-marker-layer { position: absolute; inset: 0; }
+    .acr-marker { position: absolute; top: 0; bottom: 0; width: 14px; margin-left: -7px; cursor: ew-resize; display: flex; justify-content: center; }
+    .acr-marker::before { content: ""; position: absolute; top: 10px; bottom: 6px; width: 3px; border-radius: 2px; background: var(--warn, #f3b74f); }
+    .acr-marker-flag { position: absolute; top: -2px; font-size: 10px; line-height: 14px; min-width: 14px; padding: 0 3px; text-align: center; border-radius: 4px;
+                       background: var(--warn, #f3b74f); color: #1a1a1a; font-weight: 700; }
+    .acr-marker.selected::before, .acr-marker.selected .acr-marker-flag { background: var(--accent); color: #fff; }
+    .acr-marker.selected::before { width: 4px; box-shadow: 0 0 0 2px rgba(0,0,0,.4); }
+    .acr-playhead { position: absolute; top: 12px; bottom: 2px; width: 2px; margin-left: -1px; background: #fff; pointer-events: none; box-shadow: 0 0 4px rgba(0,0,0,.6); }
+    .acr-hover { position: absolute; bottom: 100%; transform: translateX(-50%); font-size: 11px; padding: 2px 6px; border-radius: 4px; background: rgba(0,0,0,.8); color: #fff; pointer-events: none; white-space: nowrap; }
+    .acr-controls, .acr-selected { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .acr-controls { margin-top: 4px; }
+    .acr-play { min-width: 44px; }
+    .acr-time { font-variant-numeric: tabular-nums; font-size: 13px; margin-left: 8px; }
+    .acr-selected { margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: rgba(255,255,255,.04); min-height: 48px; }
+    .acr-selected-label { margin-right: 6px; font-variant-numeric: tabular-nums; }
+    .acr-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 10px; }
+    .acr-chip { position: relative; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; cursor: pointer; background: rgba(255,255,255,.03); }
+    .acr-chip:hover { border-color: var(--muted); }
+    .acr-chip.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .acr-thumb { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #000; }
+    .acr-chip-label { padding: 5px 8px; font-size: 12px; font-variant-numeric: tabular-nums; display: flex; gap: 6px; }
+    .acr-chip-remove { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; border: 0; cursor: pointer;
+                       background: rgba(0,0,0,.65); color: #fff; font-size: 15px; line-height: 22px; padding: 0; }
+    .acr-chip-remove:hover { background: #92333b; }
+    .acr-none { grid-column: 1 / -1; margin: 0; }
+    .acr-help { margin: 10px 0 0; }
+    .acr-help kbd { font-size: 11px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line-strong, rgba(255,255,255,.2)); background: rgba(255,255,255,.05); }
+</style>
+
+@code {
+    private static readonly Lazy<string> PlayerScript = new(() =>
+    {
+        using Stream stream = typeof(ChapterReview).Assembly.GetManifestResourceStream("ReviewPlayer.js")
+                              ?? throw new InvalidOperationException("The review player script is missing from the plugin.");
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    });
+
+    private ElementReference _player;
+    private DotNetObjectReference<ChapterReview>? _self;
+    private bool _mounted;
+    private string? _currentPath;
+    private string? _loadedPath;
+    private readonly List<string> _skipped = [];
+    private bool _withMarkersOnly;
+    private bool _applyMode;
+    private bool _menuOpen;
+    private bool _busy;
+    private bool _finished;
+    private bool _edited;
+    private int? _markerCount;
+    private string? _problem;
+    private string? _message;
+    private bool _messageOk;
+
+    protected override void OnInitialized()
+    {
+        Store.Changed += OnChanged;
+        Writer.Finished += OnWritten;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("eval", PlayerScript.Value);
+                _self = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("schedularrChapterReview.mount", _player, _self);
+                _mounted = true;
+                _applyMode = await JS.InvokeAsync<string?>("schedularrChapterReview.pref", "applyMode") == "apply";
+                _withMarkersOnly = await JS.InvokeAsync<string?>("schedularrChapterReview.pref", "withMarkersOnly") == "true";
+            }
+            catch (JSException ex)
+            {
+                _problem = $"The player couldn't start: {ex.Message}";
+            }
+
+            StateHasChanged();
+            return;
+        }
+
+        // Whichever programme is showing now is loaded into the player once.
+        if (_mounted && Current(Queue()) is { } current && current.Path != _loadedPath)
+        {
+            // Pinned, so programmes analysed meanwhile don't swap it out from under the edits.
+            _currentPath = current.Path;
+            _loadedPath = current.Path;
+            await LoadAsync(current);
+        }
+    }
+
+    private IReadOnlyList<ChapterRecord> Queue()
+    {
+        IReadOnlyList<ChapterRecord> pending = Store.ReviewQueue(_withMarkersOnly);
+        if (_skipped.Count == 0)
+        {
+            return pending;
+        }
+
+        // Skipped ones go to the back, in the order they were skipped.
+        return [.. pending.Where(record => !_skipped.Contains(record.Path)),
+            .. _skipped.Select(path => pending.FirstOrDefault(record => record.Path == path)).OfType<ChapterRecord>()];
+    }
+
+    private ChapterRecord? Current(IReadOnlyList<ChapterRecord> queue) =>
+        _currentPath is not null && Store.Find(_currentPath) is { Error: null, Review: ReviewState.Pending } chosen
+            ? chosen
+            : queue.FirstOrDefault();
+
+    private async Task LoadAsync(ChapterRecord record)
+    {
+        _problem = null;
+        _edited = false;
+        _markerCount = null;
+        string key = record.Key;
+        string api = $"{AutoChaptersPlugin.ApiPrefix.TrimStart('/')}/review/{key}";
+        double duration = 0;
+        double frame = 1 / 25.0;
+        bool direct = true;
+        string? file = Settings.LocalPath(record.Path);
+        if (file is null)
+        {
+            _problem = "The file isn't reachable from this computer, so it can't be played (check ErsatzTV's path mappings in settings.json). It can still be approved.";
+        }
+        else
+        {
+            try
+            {
+                MediaInfo info = await Media.ProbeAsync(file, CancellationToken.None);
+                duration = info.Duration;
+                frame = info.FrameSeconds;
+                direct = info.MaybePlayable(file);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or IOException or System.ComponentModel.Win32Exception)
+            {
+                _problem = $"Couldn't read the file's details ({ex.Message}); trying to play it anyway.";
+            }
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("schedularrChapterReview.load", _player, new
+            {
+                urls = new { video = api + "/video", stream = api + "/stream", frame = api + "/frame" },
+                duration,
+                frame,
+                direct,
+                markers = record.Markers,
+                detected = record.Detected ?? record.Markers
+            });
+        }
+        catch (JSException ex)
+        {
+            _problem = $"The player couldn't load it: {ex.Message}";
+        }
+
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public Task MarkersChanged(double[] markers) => InvokeAsync(() =>
+    {
+        ChapterRecord? current = _currentPath is null ? Current(Queue()) : Store.Find(_currentPath);
+        _markerCount = markers.Length;
+        _edited = current is not null && !Same(markers, current.Markers);
+        StateHasChanged();
+    });
+
+    private void Open(ChapterRecord record)
+    {
+        _currentPath = record.Path;
+        _finished = false;
+        _menuOpen = false;
+    }
+
+    private void Skip(IReadOnlyList<ChapterRecord> queue, ChapterRecord current)
+    {
+        ChapterRecord? next = After(queue, current);
+        _skipped.Remove(current.Path);
+        _skipped.Add(current.Path);
+        _currentPath = next?.Path;
+    }
+
+    private async Task ToggleFilter(bool withMarkersOnly)
+    {
+        _withMarkersOnly = withMarkersOnly;
+        _currentPath = null;
+        await Pref("withMarkersOnly", withMarkersOnly ? "true" : "false");
+    }
+
+    private async Task ChooseMode(bool apply)
+    {
+        _applyMode = apply;
+        _menuOpen = false;
+        await Pref("applyMode", apply ? "apply" : "approve");
+    }
+
+    private async Task Approve(IReadOnlyList<ChapterRecord> queue, ChapterRecord shown, bool apply)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        _menuOpen = false;
+        try
+        {
+            double[] markers;
+            try
+            {
+                markers = await JS.InvokeAsync<double[]>("schedularrChapterReview.markers", _player);
+            }
+            catch (JSException)
+            {
+                markers = [.. shown.Markers];
+            }
+
+            ChapterRecord? next = After(queue, shown);
+            ChapterRecord record = (Store.Find(shown.Path) ?? shown).Copy();
+            List<double> chosen = [.. markers.Where(double.IsFinite).Select(marker => Math.Round(Math.Max(0, marker), 3)).Distinct().Order()];
+            if (!Same(chosen, record.Markers))
+            {
+                record.Detected ??= [.. record.Markers];
+                record.Markers = chosen;
+            }
+
+            record.Review = ReviewState.Approved;
+            record.ReviewedAt = DateTimeOffset.UtcNow;
+            record.ReviewNote = apply ? null : "Approved; the file wasn't changed.";
+            string name = Name(record);
+
+            if (apply)
+            {
+                // The preview lets go of the file before it's rewritten.
+                try
+                {
+                    await JS.InvokeVoidAsync("schedularrChapterReview.release", _player);
+                }
+                catch (JSException)
+                {
+                }
+
+                Store.Save(record);
+                if (Writer.Queue(record) is { } notApplied)
+                {
+                    record = record.Copy();
+                    record.ReviewNote = $"Approved, not applied: {notApplied}";
+                    Store.Save(record);
+                    Say($"{name} was approved but not applied to the video file: {notApplied}", ok: false);
+                }
+                else
+                {
+                    Say($"{name} approved. Writing its chapters into the file in the background…", ok: true);
+                }
+            }
+            else
+            {
+                Store.Save(record);
+                Say($"{name} approved{(record.Detected is not null && !Same(record.Detected, record.Markers) ? " with your changes" : "")}.", ok: true);
+            }
+
+            _skipped.Remove(shown.Path);
+            _currentPath = next?.Path;
+            _finished = next is null;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Reopen(ChapterRecord done)
+    {
+        ChapterRecord record = done.Copy();
+        record.Review = ReviewState.Pending;
+        record.ReviewNote = null;
+        Store.Save(record);
+        _currentPath = record.Path;
+        _loadedPath = null;
+        _finished = false;
+    }
+
+    private static ChapterRecord? After(IReadOnlyList<ChapterRecord> queue, ChapterRecord current)
+    {
+        int index = -1;
+        for (int i = 0; i < queue.Count; i++)
+        {
+            if (queue[i].Path == current.Path)
+            {
+                index = i;
+                break;
+            }
+        }
+
+        if (index >= 0 && index + 1 < queue.Count)
+        {
+            return queue[index + 1];
+        }
+
+        // At the end: back round to the first one still waiting (other than this).
+        return queue.FirstOrDefault(record => record.Path != current.Path);
+    }
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void OnWritten(ChapterRecord record, WriteResult result) => _ = InvokeAsync(() =>
+    {
+        Say(result.Applied
+            ? $"Chapters written into {Name(record)}: {result.Message}"
+            : $"{Name(record)} was approved but not applied to the video file: {result.Message}", result.Applied);
+        StateHasChanged();
+    });
+
+    private async Task Pref(string name, string value)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("schedularrChapterReview.pref", name, value);
+        }
+        catch (JSException)
+        {
+        }
+    }
+
+    private void Say(string message, bool ok)
+    {
+        _message = message;
+        _messageOk = ok;
+    }
+
+    private static bool Same(IReadOnlyList<double> left, IReadOnlyList<double> right) =>
+        left.Count == right.Count && left.Order().Zip(right.Order()).All(pair => Math.Abs(pair.First - pair.Second) < 0.0005);
+
+    private static string MarkerCount(int count) => count switch
+    {
+        0 => "No markers",
+        1 => "1 marker",
+        _ => $"{count} markers"
+    };
+
+    private static string Name(ChapterRecord record) => record.Title.Length > 0 ? record.Title : Path.GetFileName(record.Path);
+
+    public async ValueTask DisposeAsync()
+    {
+        Store.Changed -= OnChanged;
+        Writer.Finished -= OnWritten;
+        if (_mounted)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("schedularrChapterReview.dispose", _player);
+            }
+            catch (Exception ex) when (ex is JSDisconnectedException or JSException or TaskCanceledException or ObjectDisposedException)
+            {
+            }
+        }
+
+        _self?.Dispose();
+    }
+}
