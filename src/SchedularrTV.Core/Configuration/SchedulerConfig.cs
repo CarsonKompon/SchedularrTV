@@ -40,11 +40,36 @@ public sealed class TitleDefaults
     public List<TitleAlias> Aliases { get; set; } = [];
 
     public Dictionary<int, SeasonDefaults> Seasons { get; set; } = [];
+
+    /// <summary>
+    /// The recordings have a channel's screen bug burned in, so overlays marked as screen bugs stand down while they
+    /// air. A season or episode setting wins over this. Null is no.
+    /// </summary>
+    public bool? ScreenBug { get; set; }
 }
 
 public sealed class SeasonDefaults
 {
     public List<TitleAlias> Aliases { get; set; } = [];
+
+    /// <summary>Overrides the show's <see cref="TitleDefaults.ScreenBug"/> for this season; null follows the show.</summary>
+    public bool? ScreenBug { get; set; }
+
+    /// <summary>Per-episode settings, keyed by episode number within the season.</summary>
+    public Dictionary<int, EpisodeDefaults> Episodes { get; set; } = [];
+
+    /// <summary>Whether anything here differs from the defaults (an empty season isn't kept in the YAML).</summary>
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public bool HasSettings => Aliases.Count > 0 || ScreenBug is not null || Episodes.Values.Any(episode => episode.HasSettings);
+}
+
+public sealed class EpisodeDefaults
+{
+    /// <summary>Overrides the season's (and show's) screen bug setting for this episode; null follows the season.</summary>
+    public bool? ScreenBug { get; set; }
+
+    [YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public bool HasSettings => ScreenBug is not null;
 }
 
 public sealed class TitleAlias

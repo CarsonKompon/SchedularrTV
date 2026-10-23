@@ -232,6 +232,31 @@ overlays:
       query: genre:'Comedy'
 ```
 
+## Skip screen bugs on recordings that already have one
+
+Recordings taken off air often have the original network's bug burned in. Tick **This is a screen bug** on an overlay, then on the show's page under **TV Shows** tick **Recordings have a screen bug burned in**. Screen bug overlays stand down while those episodes play (breaks between them still get the bug). A season or a single episode can override the show: choose Yes or No, or leave it following the level above. The most specific setting wins.
+
+```yaml
+titles:
+  Rugrats:
+    screen_bug: true
+    seasons:
+      4:
+        screen_bug: false      # season 4 is clean
+        episodes:
+          12:
+            screen_bug: true   # …except this one
+channels:
+  - id: cartoons
+    plugins:
+      overlays:
+        overlays:
+          - name: Bug
+            kind: file
+            file: D:\Media\Logos\bug.png
+            screen_bug: true
+```
+
 ## Share or override designs
 
 **Same as another channel** follows that channel's current overlays. **Copy in another channel's** creates independent copies.

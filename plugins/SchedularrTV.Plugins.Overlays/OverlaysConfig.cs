@@ -264,6 +264,13 @@ public sealed class Overlay
     /// </summary>
     public bool? Additive { get; set; }
 
+    /// <summary>
+    /// This is a screen bug: it stands down on episodes whose recordings already have one burned in (set for a show,
+    /// season or episode on the TV Shows page), so two bugs aren't on screen at once.
+    /// </summary>
+    [YamlDotNet.Serialization.YamlMember(DefaultValuesHandling = YamlDotNet.Serialization.DefaultValuesHandling.OmitDefaults)]
+    public bool ScreenBug { get; set; }
+
     public Overlay Copy()
     {
         var copy = (Overlay)MemberwiseClone();

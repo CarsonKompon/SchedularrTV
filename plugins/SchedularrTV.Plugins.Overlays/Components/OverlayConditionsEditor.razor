@@ -10,6 +10,15 @@
     lower thirds and Up Next cards usually aren't, so variations of one can share its spot.
 </p>
 
+<label class="check">
+    <input type="checkbox" checked="@Overlay.ScreenBug" @onchange="e => Set(() => Overlay.ScreenBug = e.Value is true)" />
+    <span>This is a screen bug</span>
+</label>
+<p class="hint" style="margin-top:0;">
+    Screen bugs stand down on episodes whose recordings already have a bug burned in. Mark those shows, seasons or
+    episodes on their page under <a href="library/shows">TV Shows</a>.
+</p>
+
 <div class="field">
     <span>Only on <span class="muted">(any of; none ticked means wherever “On” above allows)</span></span>
     <div class="row row-wrap" style="gap:6px;">

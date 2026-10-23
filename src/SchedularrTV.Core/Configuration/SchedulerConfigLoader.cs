@@ -146,6 +146,8 @@ public static class SchedulerConfigLoader
             {
                 if (number < 0) errors.Add($"titles.{name}.seasons: season numbers must be zero or greater.");
                 ValidateAliases(season.Aliases, $"titles.{name}.seasons.{number}.aliases", errors);
+                if (season.Episodes.Keys.Any(episode => episode < 0))
+                    errors.Add($"titles.{name}.seasons.{number}.episodes: episode numbers must be zero or greater.");
             }
         }
 

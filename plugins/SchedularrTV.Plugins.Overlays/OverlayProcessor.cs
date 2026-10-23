@@ -119,11 +119,14 @@ public sealed class OverlayProcessor : IPlayoutProcessor
             ScheduleEntry? next = Next(ordered, index);
             ScheduleEntry? programme = Programme(ordered, index);
 
+            // A recording with its own bug burned in: screen bugs stand down for as long as it plays.
+            bool hasOwnBug = ShowScreenBugs.HasScreenBug(context.Config, entry.Item);
+
             // Each overlay whose conditions hold and that shows on this entry, with its rules' appearances…
             List<OverlayContention.Candidate> candidates = [];
             foreach (Overlay candidate in resolved.Overlays)
             {
-                if (!OverlayConditionMatcher.Matches(candidate, entry, programme, next))
+                if ((candidate.ScreenBug && hasOwnBug) || !OverlayConditionMatcher.Matches(candidate, entry, programme, next))
                 {
                     continue;
                 }
