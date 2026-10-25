@@ -7,6 +7,28 @@ namespace SchedularrTV.Core.Tests;
 
 public class ConfigLoaderTests
 {
+    [Fact]
+    public void Missing_promo_layers_validate_like_an_empty_layer_list()
+    {
+        var template = new GeneratedPromoTemplate { Name = "Empty promo", Layers = [] };
+        var config = new SchedulerConfig
+        {
+            Channels = [new ChannelConfig
+            {
+                Id = "test", Name = "Test", Number = 1,
+                BaseRotation = new ContentSelector { Query = "*" },
+                GeneratedPromos = new GeneratedPromosConfig { Templates = [template] }
+            }]
+        };
+        ConfigValidationResult expected = SchedulerConfigLoader.Validate(config);
+
+        template.Layers = null!;
+        ConfigValidationResult actual = SchedulerConfigLoader.Validate(config);
+
+        Assert.Equal(expected.Errors, actual.Errors);
+        Assert.Equal(expected.Warnings, actual.Warnings);
+    }
+
   [Theory]
   [InlineData(false)]
   [InlineData(true)]

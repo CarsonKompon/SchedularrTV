@@ -474,7 +474,8 @@ public static class SchedulerConfigLoader
                 && allVariants.All(variant => !variant.Enabled))
                 warnings.Add($"{templateScope}: every variant is off and the default look is only a fallback, so the default look is always used.");
 
-            foreach (GeneratedLayer orphan in (template.Layers ?? []).Where(layer => layer.Variant is { Length: > 0 } owner && template.Variant(owner) is null))
+            List<GeneratedLayer> layers = template.Layers ?? [];
+            foreach (GeneratedLayer orphan in layers.Where(layer => layer.Variant is { Length: > 0 } owner && template.Variant(owner) is null))
                 warnings.Add($"{templateScope}: layer '{orphan.Name}' belongs to a variant that no longer exists, so it's never drawn.");
 
             if (template.Voice is { Enabled: true, IsPrerecorded: true } recordedVoice)
@@ -644,11 +645,11 @@ public static class SchedulerConfigLoader
             // A template doesn't have to name the show in text: it can show it with variable images alone.
 
             // Groups: each needs an id for its layers to name, and a layer can't end up inside itself.
-            foreach (var duplicate in template.Layers.Where(layer => !string.IsNullOrWhiteSpace(layer.Id))
+            foreach (var duplicate in layers.Where(layer => !string.IsNullOrWhiteSpace(layer.Id))
                          .GroupBy(layer => layer.Id, StringComparer.Ordinal).Where(group => group.Count() > 1))
                 errors.Add($"{templateScope}.layers: layer id '{duplicate.Key}' must be unique.");
             Dictionary<string, GeneratedLayer> groups = new(StringComparer.Ordinal);
-            foreach (GeneratedLayer group in template.Layers.Where(layer => layer.Kind == GeneratedLayerKind.Group))
+            foreach (GeneratedLayer group in layers.Where(layer => layer.Kind == GeneratedLayerKind.Group))
             {
                 if (string.IsNullOrWhiteSpace(group.Id) || !groups.TryAdd(group.Id, group))
                 {
@@ -656,7 +657,7 @@ public static class SchedulerConfigLoader
                 }
             }
 
-            foreach (GeneratedLayer layer in template.Layers.Where(layer => layer.Parent is not null))
+            foreach (GeneratedLayer layer in layers.Where(layer => layer.Parent is not null))
             {
                 HashSet<string> seen = new(StringComparer.Ordinal);
                 GeneratedLayer? current = layer;
@@ -678,7 +679,7 @@ public static class SchedulerConfigLoader
                 }
             }
 
-            foreach (GeneratedLayer layer in template.Layers)
+            foreach (GeneratedLayer layer in layers)
             {
                 string layerScope = $"{templateScope}.layers.{(string.IsNullOrWhiteSpace(layer.Name) ? layer.Kind.ToString() : layer.Name)}";
                 if (layer.Mask is { } mask)
@@ -688,9 +689,9 @@ public static class SchedulerConfigLoader
                     if (!Enum.IsDefined(mask.Mode))
                         errors.Add($"{layerScope}: mask.mode must be add or subtract.");
                     GeneratedLayer? target = string.IsNullOrWhiteSpace(mask.Target) ? null
-                        : template.Layers.FirstOrDefault(candidate => candidate.Id == mask.Target);
+                        : layers.FirstOrDefault(candidate => candidate.Id == mask.Target);
                     if (target is null || target.Mask is not null
-                        || template.Layers.IndexOf(target) >= template.Layers.IndexOf(layer))
+                        || layers.IndexOf(target) >= layers.IndexOf(layer))
                         errors.Add($"{layerScope}: mask.target must name the id of a non-mask layer or group beneath this mask.");
                 }
                 if (layer.Width <= 0 || layer.Height <= 0 || layer.Opacity is < 0 or > 1)

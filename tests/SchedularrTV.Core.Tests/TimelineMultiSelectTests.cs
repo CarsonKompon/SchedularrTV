@@ -7,6 +7,7 @@ using SchedularrTV.GeneratedPromos;
 using SchedularrTV.GeneratedPromos.Components;
 using SchedularrTV.Overlays;
 using SchedularrTV.Overlays.Components;
+using SchedularrTV.Service.Editor;
 using Xunit;
 
 namespace SchedularrTV.Core.Tests;
@@ -126,10 +127,12 @@ public sealed class TimelineMultiSelectTests
                 var layer = new OverlayLayer { Keyframes = [.. new[] { 1, 3, 5 }.Select(at => new OverlayKeyframe { At = TimeSpan.FromSeconds(at) })] };
                 Layer = layer;
                 _component = new OverlayEditor();
-                ParameterView.FromDictionary(new Dictionary<string, object?> { ["Overlay"] = new Overlay
+                var model = new Overlay
                 {
                     Layers = [layer], AnimationSeconds = 10, Fps = 30, Schedule = new() { Always = true }
-                } }).SetParameterProperties(_component);
+                };
+                ParameterView.FromDictionary(new Dictionary<string, object?> { ["Overlay"] = model }).SetParameterProperties(_component);
+                Field("_history", new CanvasHistory(() => CanvasSnapshots.Capture(model), snapshot => Call("RestoreSnapshot", snapshot)));
                 Field("_previewRunning", true);
             }
             else
@@ -143,6 +146,8 @@ public sealed class TimelineMultiSelectTests
                 };
                 _component = new GeneratedPromoTemplateEditor();
                 ParameterView.FromDictionary(new Dictionary<string, object?> { ["Template"] = _template }).SetParameterProperties(_component);
+                // These handler tests skip OnInitialized to avoid starting preview services, but commits still need real undo history.
+                Field("_history", new CanvasHistory(() => CanvasSnapshots.Capture(_template), snapshot => Call("RestoreSnapshot", snapshot)));
                 Field("_stillRunning", true);
                 if (background) Field("_editVariant", "v1");
             }
