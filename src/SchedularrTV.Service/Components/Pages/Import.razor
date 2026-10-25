@@ -27,12 +27,12 @@ else
     {
         <div class="banner banner-ok" role="status">
             @_done
-            <a class="btn btn-sm btn-primary" style="margin-left:10px;" href="channels">See the channels</a>
+            <a class="btn btn-sm btn-primary" style="margin-left:10px;" href="channels">View channels</a>
         </div>
     }
 
     <div class="card">
-        <div class="card-head"><h2>1. Where from</h2></div>
+        <div class="card-head"><h2>1. Choose a source</h2></div>
         <div class="import-sources" role="radiogroup" aria-label="Import from">
             @foreach ((ImportSource source, string name, string blurb) in Sources)
             {
@@ -66,7 +66,7 @@ else
 
         <div class="row" style="gap:8px;">
             <button class="btn btn-primary" type="button" disabled="@(_reading || string.IsNullOrWhiteSpace(_path))" @onclick="ReadAsync">
-                @(_reading ? "Reading…" : _plan is null ? "Read its channels" : "Read again")
+                @(_reading ? "Reading…" : _plan is null ? "Find channels" : "Scan again")
             </button>
         </div>
     </div>
@@ -75,7 +75,7 @@ else
     {
         <div class="card">
             <div class="card-head">
-                <h2>2. Channels to bring over</h2>
+                <h2>2. Select channels</h2>
                 <span class="pill pill-muted">@plan.Channels.Count found</span>
                 <div class="spacer"></div>
                 <button class="btn btn-sm btn-ghost" type="button" @onclick="() => SelectAll(true)">All</button>
@@ -111,7 +111,7 @@ else
                     @if (channel.Notes.Count > 0 || channel.Channel is not null)
                     {
                         <button class="btn btn-sm btn-ghost" type="button" aria-expanded="@(open ? "true" : "false")" @onclick="() => _open = open ? null : channel.Source.SourceId">
-                            @(open ? "Less" : "More")
+                            @(open ? "Hide details" : "Details")
                         </button>
                     }
                 </div>
@@ -148,13 +148,13 @@ else
         </div>
 
         <div class="card">
-            <div class="card-head"><h2>3. Bring them over</h2></div>
+            <div class="card-head"><h2>3. Import</h2></div>
             <p class="hint">
                 The channels are added to your schedule@(Editor.IsDirty ? " along with your other unsaved changes; save them from the bar below" : " and saved")
                 (the schedule is backed up first, under Backups). Commercials and promos follow your usual settings; numbers already in use move up.
             </p>
             <button class="btn btn-primary" type="button" disabled="@(_importing || _chosen.Count == 0)" @onclick="ImportAsync">
-                @(_importing ? "Bringing them over…" : $"Import {_chosen.Count} channel{(_chosen.Count == 1 ? "" : "s")}")
+                @(_importing ? "Importing…" : $"Import {_chosen.Count} channel{(_chosen.Count == 1 ? "" : "s")}")
             </button>
         </div>
     }

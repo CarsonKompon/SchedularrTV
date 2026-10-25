@@ -3,7 +3,7 @@
 @inject SchedulerConfigProvider Provider
 @using SchedularrTV.Core.Configuration
 
-<PageHeader Title="YAML" Eyebrow="System">
+<PageHeader Title="YAML editor" Eyebrow="Advanced">
     <ChildContent>Edit schedule.yaml. Apply to the editor, then save.</ChildContent>
     <Actions>
         <a class="btn" href="backups"><Icon Name="history" Size="15" />Backups</a>
@@ -15,11 +15,11 @@
 
 @if (_error is not null)
 {
-    <div class="banner banner-error">@_error</div>
+    <div class="banner banner-error" role="alert">@_error</div>
 }
 @if (_ok is not null)
 {
-    <div class="banner banner-ok">@_ok</div>
+    <div class="banner banner-ok" role="status">@_ok</div>
 }
 
 <textarea class="yaml-editor" rows="34" spellcheck="false" aria-label="schedule.yaml" value="@_yaml" @onchange="e => _yaml = e.Value?.ToString() ?? string.Empty"></textarea>
@@ -64,7 +64,7 @@
             Editor.Working.Channels = parsed.Channels;
             Editor.MarkDirty();
 
-            _ok = "Applied. Save to write it out.";
+            _ok = "Applied to the editor. Select Save changes to publish.";
         }
         catch (Exception ex) when (ex is SchedulerConfigException or YamlDotNet.Core.YamlException)
         {

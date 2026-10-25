@@ -48,7 +48,7 @@ else
         </ChildContent>
         <Actions>
             <button class="btn" type="button" disabled="@(Editor.Working.Channels.Count < 2)"
-                    aria-expanded="@(_copyOpen ? "true" : "false")" @onclick="OpenCopy"><Icon Name="copy" Size="15" />Copy From</button>
+                    aria-expanded="@(_copyOpen ? "true" : "false")" @onclick="OpenCopy"><Icon Name="copy" Size="15" />Copy settings</button>
         </Actions>
     </PageHeader>
 
@@ -93,8 +93,10 @@ else
     </nav>
 
     <div @key="_tab">
-    @if (_tab == "general")
+    @if (_tab is "general" or "playback")
     {
+        @if (_tab == "general")
+        {
         <div class="card">
             <div class="grid grid-3">
                 <label class="field">
@@ -162,7 +164,7 @@ else
                             </p>
                         }
 
-                        <input type="text" value="@_channel.Logo" placeholder="…or paste an image URL"
+                        <input type="text" value="@_channel.Logo" aria-label="Logo URL" placeholder="Or paste an image URL"
                                @onchange="e => { _channel.Logo = Text(e); Editor.MarkDirty(); }" />
 
                         @if (!string.IsNullOrWhiteSpace(_channel.Logo))
@@ -173,6 +175,8 @@ else
                 </div>
             </div>
         </div>
+
+        }
 
         RenderFragment playback = @<div class="card">
             <div class="card-head"><h2>Playback</h2></div>
@@ -187,7 +191,7 @@ else
             @if (_channel.AlwaysOn == true)
             {
                 <label class="field" style="max-width:420px;">
-                    <span>For promos, credit squeezing and chapter scanning, treat it as</span>
+                    <span>Watched-only features</span>
                     <select value="@WatchedChoice" @onchange="SetWatchedChoice">
                         <option value="watched">Always watched</option>
                         <option value="unwatched">Never watched</option>
@@ -244,8 +248,7 @@ else
                 {
                     <text>Output: @(SelectedEncoding.Width)×@(SelectedEncoding.Height) pixels.</text>
                 }
-                480p is a height, not an aspect ratio. Use 640×480 for 4:3 or 854×480 for widescreen.
-                Dimensions are rounded down to even pixels. Blank dimensions use source size on source-based channels, otherwise app defaults.
+                Blank dimensions use the source size or app defaults. Dimensions round down to even pixels.
             </p>
             <p class="hint">
                 Overrides <a href="settings/app">app encoding defaults</a>. Explicit overrides re-encode video, including passthrough channels.
@@ -265,14 +268,13 @@ else
                     <span>Subtitles</span>
                     <select value="@(_channel.Tracks?.EffectiveSubtitles ?? SubtitleMode.Off)" @onchange="SetSubtitleMode">
                         <option value="@SubtitleMode.Off">Off</option>
-                        <option value="@SubtitleMode.Selectable">Include as a track viewers can turn on</option>
-                        <option value="@SubtitleMode.BurnIn">Burn into the picture</option>
+                        <option value="@SubtitleMode.Selectable">Optional in player</option>
+                        <option value="@SubtitleMode.BurnIn">Always visible (burn in)</option>
                     </select>
                 </label>
             </div>
             <p class="hint">
-                Languages in order of preference, separated by commas: names or codes (English, Japanese or en, ja).
-                A programme without any of them plays its default audio.
+                Enter languages in order, separated by commas (English, Japanese or en, ja). Falls back to the file's default audio.
             </p>
             @if ((_channel.Tracks?.EffectiveSubtitles ?? SubtitleMode.Off) != SubtitleMode.Off)
             {
@@ -322,9 +324,9 @@ else
         RenderFragment grid = @<div class="card">
             <div class="card-head"><h2>Scheduling grid</h2></div>
             <div class="grid grid-2">
-                <DurationInput Label="Start programmes on a boundary of" Value="_channel.PadToNearest"
+                <DurationInput Label="Programme start interval" Value="_channel.PadToNearest"
                                ValueChanged="v => { _channel.PadToNearest = v; Editor.MarkDirty(); }" />
-                <DurationInput Label="Longest advert break" Value="_channel.MaxBreak"
+                <DurationInput Label="Maximum ad break" Value="_channel.MaxBreak"
                                ValueChanged="v => { _channel.MaxBreak = v; Editor.MarkDirty(); }" />
             </div>
             <p class="hint">
@@ -363,12 +365,12 @@ else
         </div>;
 
         RenderFragment rotation = @<div class="card">
-            <div class="card-head"><h2>Base rotation</h2></div>
-            <p class="hint">Plays whenever no block or anchor claims the time.</p>
+            <div class="card-head"><h2>Default programming</h2></div>
+            <p class="hint">Plays between scheduled blocks and fixed starts.</p>
             @if (_channel.BaseRotation is null)
             {
                 <button class="btn btn-sm" @onclick="() => { _channel.BaseRotation = new ContentSelector(); Editor.MarkDirty(); }">
-                    Add a base rotation
+                    Choose what plays
                 </button>
             }
             else
@@ -378,11 +380,17 @@ else
                                 OnRemove="() => { _channel.BaseRotation = null; Editor.MarkDirty(); }" />
             }
         </div>;
-        @rotation
-        @grid
-        @encoding
-        @tracks
-        @playback
+        @if (_tab == "general")
+        {
+            @rotation
+            @grid
+        }
+        else
+        {
+            @playback
+            @tracks
+            @encoding
+        }
     }
     else if (_tab == "schedule")
     {
@@ -402,13 +410,11 @@ else
         <div class="card">
             <div class="card-head">
                 <h2>Ad breaks</h2>
-                <span class="muted">Where this channel's ads, bumpers, filler and promos come from</span>
             </div>
             <AdBreakPicker Values="_channel.AdBreaks" ValuesChanged="SetAdBreaks"
                            EmptyText="@(Editor.Working.Settings.DefaultAdBreaks is { Count: > 0 } defaults ? $"None chosen: uses the defaults ({string.Join(", ", defaults)})" : "None chosen: breaks stay empty")" />
             <p class="hint">
-                Pick one or more from <a href="ad-breaks">Ad Breaks</a>, e.g. an "Any channel" set and a "Kids channel" set;
-                their clips are pooled. Blocks can pick their own on the Blocks &amp; anchors tab.
+                Combine sets from <a href="ad-breaks">Ad breaks</a>. Individual blocks can override these on the Schedule tab.
             </p>
         </div>
 
@@ -455,7 +461,8 @@ else
     private static readonly (string Key, string Label, string Icon, int Order)[] CoreTabs =
     [
         ("general", "General", "sliders", 0),
-        ("schedule", "Blocks & anchors", "calendar", 10),
+        ("schedule", "Schedule", "calendar", 10),
+        ("playback", "Playback", "play", 15),
         ("drops", "Drops", "calendar-clock", 15),
         ("breaks", "Ad breaks", "megaphone", 30),
         ("stats", "Stats", "chart", 90)

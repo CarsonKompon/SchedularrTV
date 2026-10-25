@@ -9,8 +9,7 @@
 @inject ScheduleCoordinator Coordinator
 @inject IEnumerable<PluginEditorSection> EditorSections
 
-<PageHeader Title="Channel settings" Eyebrow="System">Global defaults for channels and blocks.</PageHeader>
-<UpdateBanner />
+<PageHeader Title="Channel defaults" Eyebrow="System">Used unless a channel or block overrides them.</PageHeader>
 
 <div class="card">
     <div class="card-head"><h2>General</h2></div>
@@ -31,10 +30,80 @@
 </div>
 
 <div class="card">
-    <div class="card-head"><h2>Seasonal tags</h2></div>
+    <div class="card-head"><h2>Local media status</h2></div>
     <p class="hint">
-        What seasonal folders in <a href="ad-breaks">ad breaks</a> (and their tag rules) are matched against: the month,
-        season, date and holiday names below.
+        Manage folders in <a href="settings/app#local-library">App settings</a>.
+    </p>
+
+    @if (MediaFolders.Value.Folders.Count == 0)
+    {
+        <div class="empty">
+            No local folders yet. Add them under <a href="settings/app">App settings</a>.
+        </div>
+    }
+    else
+    {
+        @foreach (MediaFolderOptions folder in MediaFolders.Value.Folders)
+        {
+            <div class="list-row">
+                <div>
+                    <div class="title"><code>@folder.Path</code></div>
+                    <div class="meta">
+                        @(folder.Kind switch
+                        {
+                            SchedularrTV.Core.Media.MediaKind.Episode => "TV shows",
+                            SchedularrTV.Core.Media.MediaKind.Movie => "Movies",
+                            SchedularrTV.Core.Media.MediaKind.Music => "Music (radio channels)",
+                            _ => "Commercials"
+                        })
+                        @if (folder.Tags.Count > 0)
+                        {
+                            <text> · tagged @string.Join(", ", folder.Tags)</text>
+                        }
+                        @if (!folder.IsLibrary && !string.IsNullOrWhiteSpace(folder.PromoFolder))
+                        {
+                            <text> · promos under <code>@folder.PromoFolder</code></text>
+                        }
+                        @if (!Directory.Exists(folder.Path))
+                        {
+                            <text> · </text><span class="pill pill-error">folder not found</span>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="row row-wrap">
+            <button class="btn btn-sm" disabled="@_rescanning" @onclick="RescanCommercials">
+                @(_rescanning ? "Rescanning…" : "Rescan and rebuild")
+            </button>
+            @if (_rescanMessage is not null)
+            {
+                <span class="hint inline">@_rescanMessage</span>
+            }
+        </div>
+        <p class="hint">
+            Cached for @Humanise(MediaFolders.Value.CacheDuration). Rescan to find new media now.
+        </p>
+    }
+</div>
+
+<div class="card">
+    <div class="card-head"><h2>Default ad breaks</h2></div>
+    <div class="field">
+        <span>Default ad breaks</span>
+        <AdBreakPicker Values="Global.DefaultAdBreaks" ValuesChanged="v => { Global.DefaultAdBreaks = v; Editor.MarkDirty(); }"
+                       EmptyText="None — breaks stay empty unless a channel selects its own" />
+    </div>
+    <p class="hint">
+        Channels and blocks can override these. Manage sets in <a href="ad-breaks">Ad breaks</a>.
+    </p>
+</div>
+
+<details class="card">
+    <summary>Seasonal tags and holidays</summary>
+    <p class="hint">
+        Match seasonal <a href="ad-breaks">ad breaks</a> to months, dates and holidays.
     </p>
     <label class="field field-narrow">
         <span>"Any time" tag</span>
@@ -93,81 +162,7 @@
             <button class="btn btn-sm btn-ghost" @onclick="LoadDefaultHolidays">Load defaults to edit</button>
         }
     </div>
-</div>
-
-<div class="card">
-    <div class="card-head"><h2>Local folders</h2></div>
-    <p class="hint">
-        Folders on disk holding TV shows, movies, adverts, bumpers and promos. Add or change them under
-        <a href="settings/app">App settings</a>.
-    </p>
-
-    @if (MediaFolders.Value.Folders.Count == 0)
-    {
-        <div class="empty">
-            No local folders yet. Add them under <a href="settings/app">App settings</a>.
-        </div>
-    }
-    else
-    {
-        @foreach (MediaFolderOptions folder in MediaFolders.Value.Folders)
-        {
-            <div class="list-row">
-                <div>
-                    <div class="title"><code>@folder.Path</code></div>
-                    <div class="meta">
-                        @(folder.Kind switch
-                        {
-                            SchedularrTV.Core.Media.MediaKind.Episode => "TV shows",
-                            SchedularrTV.Core.Media.MediaKind.Movie => "Movies",
-                            SchedularrTV.Core.Media.MediaKind.Music => "Music (radio channels)",
-                            _ => "Commercials"
-                        })
-                        @if (folder.Tags.Count > 0)
-                        {
-                            <text> · tagged @string.Join(", ", folder.Tags)</text>
-                        }
-                        @if (!folder.IsLibrary && !string.IsNullOrWhiteSpace(folder.PromoFolder))
-                        {
-                            <text> · promos under <code>@folder.PromoFolder</code></text>
-                        }
-                        @if (!Directory.Exists(folder.Path))
-                        {
-                            <text> · </text><span class="pill pill-error">folder not found</span>
-                        }
-                    </div>
-                </div>
-            </div>
-        }
-
-        <div class="row row-wrap">
-            <button class="btn btn-sm" disabled="@_rescanning" @onclick="RescanCommercials">
-                @(_rescanning ? "Rescanning…" : "Rescan and rebuild")
-            </button>
-            @if (_rescanMessage is not null)
-            {
-                <span class="hint inline">@_rescanMessage</span>
-            }
-        </div>
-        <p class="hint">
-            Scans are cached for @Humanise(MediaFolders.Value.CacheDuration), so new clips, episodes and movies need a
-            rescan to show up.
-        </p>
-    }
-</div>
-
-<div class="card">
-    <div class="card-head"><h2>Ads, bumpers, filler and promos</h2></div>
-    <div class="field">
-        <span>Default ad breaks</span>
-        <AdBreakPicker Values="Global.DefaultAdBreaks" ValuesChanged="v => { Global.DefaultAdBreaks = v; Editor.MarkDirty(); }"
-                       EmptyText="None: channels without their own have empty breaks" />
-    </div>
-    <p class="hint">
-        Used by every channel that doesn't pick its own on its <strong>Ad breaks</strong> tab (and by their blocks that don't
-        either). Set them up in <a href="ad-breaks">Ad Breaks</a>.
-    </p>
-</div>
+</details>
 
 @* Promos, Generated promos and any installed plugin's schedule-wide settings. *@
 @foreach (PluginEditorSection section in EditorSections.Where(section => section.Surface == EditorSurface.ScheduleSettings).OrderBy(section => section.Order))

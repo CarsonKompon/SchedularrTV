@@ -3,10 +3,10 @@
 @inject CommercialTree Tree
 @inject NavigationManager Nav
 
-<PageHeader Title="Ad Breaks" Eyebrow="Programming">
-    <ChildContent>Sets of ads, bumpers, filler and promos from your commercials libraries, for channels to pick from.</ChildContent>
+<PageHeader Title="Ad breaks" Eyebrow="Programming">
+    <ChildContent>Reusable sets of ads, bumpers and promos.</ChildContent>
     <Actions>
-        <button class="btn btn-primary" type="button" @onclick="OpenCreate"><Icon Name="plus" Size="15" />Create</button>
+        <button class="btn btn-primary" type="button" @onclick="OpenCreate"><Icon Name="plus" Size="15" />New ad break</button>
     </Actions>
 </PageHeader>
 
@@ -21,8 +21,9 @@
         <Icon Name="megaphone" Size="32" StrokeWidth="1.5" />
         <div class="empty-title">No ad breaks yet</div>
         <div>
-            Create one from the folder that holds its commercials, then channels pick it on their <strong>Ad breaks</strong> tab.
+            Choose a commercials folder, then assign the set to a channel.
         </div>
+        <button class="btn btn-primary" @onclick="OpenCreate">New ad break</button>
     </div>
 }
 else

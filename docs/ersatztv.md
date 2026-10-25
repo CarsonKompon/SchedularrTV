@@ -38,7 +38,7 @@ The **Channels** play button proxies a live preview through SchedularrTV. It cou
 
 ## Keep a channel running
 
-Enable **General → Play around the clock (24/7)**, or set **`always_on: true`** on the channel. The scheduler requests playlists every 20 seconds to keep ErsatzTV encoding without downloading video.
+Enable **Playback → Play around the clock (24/7)**, or set **`always_on: true`** on the channel. The scheduler requests playlists every 20 seconds to keep ErsatzTV encoding without downloading video.
 
 **`always_on_counts_as_watched`** defaults to `true` for watched-only rendering features; set it to `false` to exclude the keepalive from those decisions. Keepalives never count as direct viewers in statistics.
 
@@ -46,7 +46,7 @@ Continuous playback consumes resources without viewers. Only schedule-defined ch
 
 ## Encoding and hardware acceleration
 
-**App settings → Hardware and video encoding → ErsatzTV channels** controls the default encoder, picture size, and bitrate. Channel **General → Encoding** overrides individual fields.
+**App settings → Video encoding → ErsatzTV channels** controls the default encoder, picture size, and bitrate. Channel **Playback → Encoding** overrides individual fields.
 
 ```yaml
 encoding:
@@ -65,7 +65,7 @@ On NVIDIA (`cuda`) channels the overlay also disables ErsatzTV's `pad_cuda` filt
 
 ## Audio and subtitles
 
-Channel **General → Audio and subtitles** picks each programme's audio track and adds subtitles:
+Channel **Playback → Audio and subtitles** picks each programme's audio track and adds subtitles:
 
 ```yaml
 tracks:

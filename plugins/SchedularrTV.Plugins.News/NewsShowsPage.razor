@@ -11,10 +11,9 @@
 
 <div class="page-header">
     <div>
-        <div class="eyebrow">News shows</div>
+        <div class="eyebrow">Plugins</div>
         <h1>News shows</h1>
-        <p class="muted">Local news breaks from your own feeds, with the weather, the markets, scores, a local map and lottery results, in a
-            teletext, news desk, cable news or 80s/90s local station look, and read out by any voice you have installed.</p>
+        <p class="muted">Build news shows with headlines, weather, scores and voice-over.</p>
     </div>
 </div>
 
@@ -23,8 +22,7 @@
 @if (BrowserLocator.Find(Settings.BrowserPath) is null)
 {
     <div class="banner banner-error" role="alert">
-        No Chrome, Edge or Chromium was found on this computer. The news is drawn by one running hidden; install one, or choose it
-        in this plugin's settings (its gear on the Plugins page).
+        A browser is required. Install Chrome, Edge or Chromium, or select its path in <a href="settings/plugins">plugin settings</a>.
     </div>
 }
 @if (_message is not null)
@@ -430,17 +428,17 @@
           Problem="@(_shows.FirstOrDefault(show => SaveProblem(show) is not null) is { } unfinished ? $"{Title(unfinished)}: {SaveProblem(unfinished)}" : null)"
           OnSave="Save" OnDiscard="Discard" />
 
-<div class="card" style="margin-top:16px;">
-    <div class="card-head"><h2>How it works</h2></div>
+<details class="card" style="margin-top:16px;">
+    <summary>Scheduling news shows</summary>
     <ul class="hint" style="margin:0;padding-left:18px;line-height:1.6;">
         <li>Each news show is a show (under TV Shows and in collection pickers), with one "episode" per length.</li>
-        <li><strong>A 24/7 news channel:</strong> make the show a channel's base rotation, with long lengths (30, 60).</li>
+        <li><strong>24/7 news:</strong> use the show as a channel's default programming, with 30- or 60-minute lengths.</li>
         <li><strong>News breaks:</strong> add it to a channel's interstitial shows with short lengths (2–5 minutes). A break starts from the top of the news.</li>
         <li>The stories and data are fetched again every @((int)Settings.RefreshEvery.TotalMinutes) minutes while a show is in use; the new rundown takes over when the current one finishes.</li>
         <li>Data comes from free sources: Open-Meteo (weather), Yahoo Finance (markets), ESPN (scores), New York State open data (lottery), OpenStreetMap
             and RainViewer (map and radar), and TomTom (traffic, with a key).</li>
     </ul>
-</div>
+</details>
 
 <style>
     .news-editor { display: grid; grid-template-columns: minmax(0, 1fr) 660px; gap: 22px; align-items: start; }

@@ -280,16 +280,16 @@
 
 <SaveDock Dirty="Dirty" Label="Unsaved guides" OnSave="Save" OnDiscard="Discard" />
 
-<div class="card" style="margin-top:16px;">
-    <div class="card-head"><h2>How it works</h2></div>
+<details class="card" style="margin-top:16px;">
+    <summary>Scheduling guide shows</summary>
     <ul class="hint" style="margin:0;padding-left:18px;line-height:1.6;">
         <li>Each guide is a show (under TV Shows and in collection pickers), with one "episode" per length.</li>
-        <li><strong>24/7 guide channel:</strong> make the guide a channel's base rotation, with long lengths (30, 60).</li>
+        <li><strong>24/7 guide:</strong> use the guide as a channel's default programming, with 30- or 60-minute lengths.</li>
         <li><strong>Between programmes:</strong> add it to a channel's interstitial shows with short lengths (2–5 minutes).</li>
         <li>The listings come from the schedules as last published; untick the guide's own channel so it doesn't list itself.</li>
         <li>On air, a hidden browser shows the guide and ffmpeg streams it with the sound you chose, and the window's channel laid in.</li>
     </ul>
-</div>
+</details>
 
 <style>
     .tvg-editor { display: grid; grid-template-columns: minmax(0, 1fr) 660px; gap: 22px; align-items: start; }

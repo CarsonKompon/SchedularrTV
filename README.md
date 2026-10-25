@@ -9,7 +9,7 @@
 3. Run **SchedularrTV** and open <http://localhost:5252>.
 4. Connect **Jellyfin** or add local media folders in the setup guide.
 5. Select the **ErsatzTV Next** executable and verify **ffmpeg** and **ffprobe**.
-6. Create a channel through **Channels → New channel → Channel Creation Wizard**.
+6. Create a channel through **Channels → New channel → Guided setup**.
 7. Add the playlist and guide below to your IPTV player.
 
 | Player setting | Default URL |

@@ -12,7 +12,7 @@
         @if (Editor.Working.Channels.Count > 0)
         {
             <button class="btn" @onclick="() => { _menuOpen = false; _numbersOpen = true; }">
-                <Icon Name="hash" Size="15" />Edit channel numbers
+                <Icon Name="hash" Size="15" />Renumber
             </button>
         }
         <div class="dropdown">
@@ -25,15 +25,15 @@
                 <div class="dropdown-menu" role="menu">
                     <button class="dropdown-item" role="menuitem" @onclick="OpenWizard">
                         <Icon Name="sparkles" Size="15" />
-                        <span>Channel Creation Wizard<small>Guided: pick what plays, slots, ad breaks and a block.</small></span>
+                        <span>Guided setup<small>Choose content, timing and ad breaks.</small></span>
                     </button>
                     <button class="dropdown-item" role="menuitem" @onclick="AddChannel">
                         <Icon Name="plus" Size="15" />
-                        <span>New empty channel<small>Start from a blank channel in the editor.</small></span>
+                        <span>Empty channel<small>Configure it yourself.</small></span>
                     </button>
                     <a class="dropdown-item" role="menuitem" href="import">
                         <Icon Name="download" Size="15" />
-                        <span>Import from ErsatzTV or Tunarr<small>Bring over another app's channels and schedules.</small></span>
+                        <span>Import channels<small>From ErsatzTV or Tunarr.</small></span>
                     </a>
                 </div>
             }
@@ -116,10 +116,9 @@
                     }
                 </div>
                 <div style="flex:1;min-width:0;">
-                    <h2>@channel.Name</h2>
+                    <h2><a href="@($"channels/{Uri.EscapeDataString(channel.Id)}")" @onclick:stopPropagation="true">@channel.Name</a></h2>
                     <div class="row">
                         <span class="channel-number">@channel.Number</span>
-                        <span class="pill pill-muted">@channel.TvgId</span>
                         @if (Coordinator.PluginFaultsFor(channel.Id) is { Count: > 0 } channelFaults)
                         {
                             <span class="pill pill-warn" title="@FaultSummary(channelFaults)"><Icon Name="alert" Size="12" />Plugin error</span>
@@ -154,8 +153,8 @@
             </div>
 
             <div class="meta-row">
-                <span class="meta-chip"><Icon Name="layers" Size="13" /><strong>@channel.Blocks.Count</strong> block(s)</span>
-                <span class="meta-chip"><Icon Name="clock" Size="13" /><strong>@channel.Anchors.Count</strong> anchor(s)</span>
+                <span class="meta-chip"><Icon Name="layers" Size="13" /><strong>@channel.Blocks.Count</strong> @(channel.Blocks.Count == 1 ? "block" : "blocks")</span>
+                <span class="meta-chip"><Icon Name="clock" Size="13" /><strong>@channel.Anchors.Count</strong> fixed starts</span>
                 <span class="meta-chip">Grid <strong>@(channel.PadToNearest is { } p ? DurationText.Format(p) : "off")</strong></span>
                 <span class="meta-chip">Mid-roll <strong>@(channel.MidRoll?.Mode.ToString().ToLowerInvariant() ?? "off")</strong></span>
             </div>
@@ -194,13 +193,13 @@
 {
     <div class="section-title">
         <Icon Name="sparkles" Size="16" />
-        <h2>Suggested Channels</h2>
+        <h2>Suggested channels</h2>
         @if (!_suggestionsLoading)
         {
             <span class="count">@suggestions.Count</span>
         }
     </div>
-    <p class="hint" style="margin-top:-6px;">Networks your shows originally aired on. Each starts with every show from that network.</p>
+    <p class="hint" style="margin-top:-6px;">Create a channel from the networks in your library.</p>
 
     @if (_suggestionsLoading)
     {
@@ -242,7 +241,7 @@
                                 </button>
                             }
                             <button class="btn btn-sm btn-primary" @onclick="() => OpenSuggestion(suggestion)">
-                                <Icon Name="plus" Size="14" />Create Channel
+                                <Icon Name="plus" Size="14" />Create channel
                             </button>
                         </div>
                     </div>

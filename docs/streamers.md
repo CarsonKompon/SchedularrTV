@@ -55,7 +55,7 @@ History is retained for **10 weeks** in **`plugin-data/streamers/history.json`**
 | **Decode streams on the graphics chip** | Optional hardware decoding |
 | **Keep a channel running after its last viewer** | 60 seconds |
 
-Select hardware encoding under **App settings → Hardware and video encoding → Live page channels**. Lower stream quality and capture rate for constrained systems.
+Select hardware encoding under **App settings → Video encoding → Live page channels**. Lower stream quality and capture rate for constrained systems.
 
 Status polling requires two offline checks before switching away. Changing the active streamer restarts the outgoing stream; players briefly reconnect.
 

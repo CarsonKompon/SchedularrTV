@@ -5,12 +5,17 @@
 
 <PageHeader Title="Backups" Eyebrow="System">
     <ChildContent>
-        Keeps the latest @Provider.Backups.Keep versions of schedule.yaml in <code>@Provider.Backups.Folder</code>.
+        Review or restore the last @Provider.Backups.Keep saved schedules.
     </ChildContent>
     <Actions>
         <button class="btn" type="button" disabled="@(!Provider.Backups.Enabled)" @onclick="BackUpNow"><Icon Name="save" Size="15" />Back up now</button>
     </Actions>
 </PageHeader>
+
+<details class="help-details">
+    <summary>Backup location</summary>
+    <p class="hint"><code>@Provider.Backups.Folder</code></p>
+</details>
 
 @if (!Provider.Backups.Enabled)
 {
@@ -27,7 +32,7 @@
 @if (Editor.IsDirty)
 {
     <div class="banner banner-warn" role="status">
-        The editor has unsaved changes. Restoring a backup replaces them; opening one in the editor does too.
+        Restoring or opening a backup replaces your unsaved changes.
     </div>
 }
 
@@ -71,7 +76,7 @@ else
                     @if (_confirmRestore)
                     {
                         <button class="btn btn-sm btn-danger confirm" type="button" @onclick="Restore"><Icon Name="undo" Size="14" />Restore this version?</button>
-                        <button class="btn btn-sm" type="button" @onclick="() => _confirmRestore = false">Keep the current one</button>
+                        <button class="btn btn-sm" type="button" @onclick="() => _confirmRestore = false">Cancel</button>
                     }
                     else
                     {
@@ -93,12 +98,12 @@ else
                 <div class="row row-wrap" style="gap:12px;align-items:center;margin-bottom:8px;">
                     @if (_same)
                     {
-                        <span class="hint" style="margin:0;">The same as the schedule now.</span>
+                        <span class="hint" style="margin:0;">Matches the current schedule.</span>
                     }
                     else if (_diff is not null)
                     {
                         <span class="hint" style="margin:0;">
-                            Restoring it would change the schedule now by
+                            Changes on restore:
                             <span class="diff-count added">+@_diff.Count(line => line.Kind == DiffKind.Added)</span>
                             <span class="diff-count removed">−@_diff.Count(line => line.Kind == DiffKind.Removed)</span> lines:
                         </span>

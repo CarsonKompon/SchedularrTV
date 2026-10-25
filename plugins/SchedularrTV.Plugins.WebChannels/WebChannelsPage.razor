@@ -9,10 +9,9 @@
 
 <div class="page-header">
     <div>
-        <div class="eyebrow">Web page shows</div>
+        <div class="eyebrow">Plugins</div>
         <h1>Web shows</h1>
-        <p class="muted">Live web pages scheduled like shows: retro WeatherStar, Weatherscan and IntelliStar forecasts with their own music,
-            a time-and-temperature clock, or any page you like. Run one around the clock, or in short segments between programmes.</p>
+        <p class="muted">Schedule weather, clocks or any web page as a live show.</p>
     </div>
 </div>
 
@@ -21,8 +20,7 @@
 @if (BrowserLocator.Find(Settings.BrowserPath) is null)
 {
     <div class="banner banner-error" role="alert">
-        No Chrome, Edge or Chromium was found on this computer. Pages are drawn by one running hidden; install one, or choose it
-        in this plugin's settings (its gear on the Plugins page).
+        A browser is required. Install Chrome, Edge or Chromium, or select its path in <a href="settings/plugins">plugin settings</a>.
     </div>
 }
 @if (_message is not null)
@@ -441,16 +439,16 @@
           Problem="@(_channels.FirstOrDefault(channel => !CanShow(channel)) is { } unfinished ? $"{Title(unfinished)} isn't finished" : null)"
           OnSave="Save" OnDiscard="Discard" />
 
-<div class="card" style="margin-top:16px;">
-    <div class="card-head"><h2>How it works</h2></div>
+<details class="card" style="margin-top:16px;">
+    <summary>Scheduling web shows</summary>
     <ul class="hint" style="margin:0;padding-left:18px;line-height:1.6;">
         <li>Each one appears as a show (under TV Shows and in collection pickers) with one "episode" per length, so the scheduler picks whichever fits.</li>
-        <li><strong>Round the clock:</strong> make it a channel's base rotation, with long lengths (30, 60).</li>
-        <li><strong>Between shows:</strong> on a channel's Breaks tab, add it to the interstitial shows with short lengths (2–5 minutes), one per slot.</li>
+        <li><strong>24/7:</strong> use the show as a channel's default programming, with 30- or 60-minute lengths.</li>
+        <li><strong>Between shows:</strong> on a channel's Ad breaks tab, add it to the interstitial shows with 2–5 minute lengths.</li>
         <li>When it airs, ErsatzTV plays it live: a hidden browser shows the page and its picture is streamed with your music, so it's always current.</li>
         <li>New or renamed shows reach the schedule on its next rebuild (Dashboard → Rebuild).</li>
     </ul>
-</div>
+</details>
 
 <style>
     .wc-section { font-size: 13px; margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }

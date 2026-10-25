@@ -33,7 +33,7 @@ Install optional features through [Plugins](plugins.md). Plugin pages and channe
 
 ## Save and inspect changes
 
-**Save changes** validates and writes schedule edits; **Discard** reloads the saved schedule. **App settings** and plugin dialogs use their own **Save** buttons.
+**Save changes** validates and writes schedule edits; **Discard** reloads the saved schedule. **App settings** has its own **Save changes** bar; plugin dialogs have a **Save** button.
 
 After saving, inspect **Dashboard → Guide** and test the channel's play button on **Channels**. See [Settings and maintenance](web-ui-maintenance.md) for recovery and [Troubleshooting](troubleshooting.md) for failures.
 

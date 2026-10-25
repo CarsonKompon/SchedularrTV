@@ -1,0 +1,9 @@
+.system-controls { display: grid; grid-template-columns: minmax(120px, 180px) minmax(0, 1fr); gap: 12px 24px; align-items: center; margin-bottom: 12px; }
+.system-controls .field, .system-options .check:last-child { margin-bottom: 0; }
+.system-options .hint { margin: 0 0 8px; }
+.system-paths { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; align-items: center; font-size: 12.5px; }
+.system-paths .row { gap: 8px; }
+.system-settings .help-details { margin: 8px 0 0; }
+@media (max-width: 560px) {
+    .system-controls, .system-paths { grid-template-columns: minmax(0, 1fr); }
+}

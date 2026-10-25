@@ -13,18 +13,16 @@
 
 <div class="page-header">
     <div>
-        <div class="eyebrow">Twitch and YouTube live</div>
+        <div class="eyebrow">Plugins</div>
         <h1>Streamer channels</h1>
-        <p class="muted">A channel of Twitch and YouTube streamers in priority order: whoever is live is on (the highest in the list wins), with
-            their chat; while nobody is, a countdown to the next stream, predicted from their past ones.</p>
+        <p class="muted">Air Twitch and YouTube streams in priority order, with chat and an offline countdown.</p>
     </div>
 </div>
 
 @if (BrowserLocator.Find(Settings.BrowserPath) is null)
 {
     <div class="banner banner-error" role="alert">
-        No Chrome, Edge or Chromium was found on this computer. The countdown, chat and pop-ups are drawn by one running hidden; install
-        one, or choose it in this plugin's settings (its gear on the Plugins page).
+        A browser is required. Install Chrome, Edge or Chromium, or select its path in <a href="settings/plugins">plugin settings</a>.
     </div>
 }
 
@@ -431,8 +429,8 @@
           Problem="@(_channels.FirstOrDefault(channel => !CanSave(channel)) is { } unfinished ? $"{Title(unfinished)} isn't finished" : null)"
           OnSave="Save" OnDiscard="Discard" />
 
-<div class="card" style="margin-top:16px;">
-    <div class="card-head"><h2>How it works</h2></div>
+<details class="card" style="margin-top:16px;">
+    <summary>Stream priority and offline behaviour</summary>
     <ul class="hint" style="margin:0;padding-left:18px;line-height:1.6;">
         <li>Each streamer channel is its own channel in ErsatzTV and Jellyfin's guide, alongside your others.</li>
         <li>Streamers are checked every minute. The first one in the list who's live is shown; when they finish, the next one live takes over.
@@ -442,7 +440,7 @@
         <li>The guide shows who's live and who's expected when.</li>
         <li>No API keys: the plugin reads Twitch and YouTube the way their own sites do, so a change on their side can break it until an update.</li>
     </ul>
-</div>
+</details>
 
 <style>
     .streamer-editor { display: grid; grid-template-columns: minmax(0, 1fr) 660px; gap: 22px; align-items: start; }

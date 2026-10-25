@@ -53,7 +53,7 @@ Internet sources accept direct streams and **`.m3u`/`.pls`** playlists. Stations
 | **Keep a station running after it goes off air** | Idle timeout; default 90 seconds |
 | **Draw animations at the capture rate** | Reduce browser work; disable for animation problems |
 
-The live endpoint is **`/plugins/radio/live/<station>.ts`**. Viewers share one running station; live encoding defaults come from **App settings → Hardware and video encoding**.
+The live endpoint is **`/plugins/radio/live/<station>.ts`**. Viewers share one running station; live encoding defaults come from **App settings → Video encoding**.
 
 ## Troubleshooting
 

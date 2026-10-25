@@ -17,7 +17,7 @@
 
 @if (Editor.Working.GlobalCollections.Count == 0)
 {
-    <div class="banner banner-warn">Create a collection first on the <a href="collections">Collections</a> page, then add movies to it here.</div>
+    <p class="hint"><a href="collections">Create a collection</a> to group movies for your channels.</p>
 }
 
 @if (_message is not null)
@@ -68,7 +68,7 @@
         }
     </select>
     <button class="btn btn-primary" disabled="@(_selected.Count == 0 || _targetCollection.Length == 0)" @onclick="AddSelected">
-        <Icon Name="plus" Size="15" />Add @(_selected.Count > 0 ? _selected.Count.ToString() : "")
+        <Icon Name="plus" Size="15" />Add to collection
     </button>
     </div>
 </div>
@@ -87,8 +87,15 @@ else if (!Visible.Any())
 {
     <div class="empty">
         <Icon Name="film" Size="30" StrokeWidth="1.5" />
-        <div class="empty-title">No movies match</div>
-        <div>Try a different title.</div>
+        <div class="empty-title">@(_movies.Count == 0 ? "No movies yet" : "No movies match")</div>
+        @if (_movies.Count == 0)
+        {
+            <a class="btn btn-primary" href="settings/app#local-library">Add media sources</a>
+        }
+        else
+        {
+            <button class="btn" @onclick="() => _filter = string.Empty">Clear search</button>
+        }
     </div>
 }
 else if (Grid)

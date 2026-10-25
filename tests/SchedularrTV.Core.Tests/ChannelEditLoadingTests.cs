@@ -140,7 +140,7 @@ public sealed class ChannelEditLoadingTests
         services.AddSingleton<ScheduleBuilder>();
         services.AddSingleton<ScheduleCoordinator>();
         services.AddSingleton<RotationResetter>();
-        // The General tab shows whether a 24/7 channel is playing (never started here, so it has nothing to say).
+        // Playback status is injected by the editor, but displayed on its dedicated tab.
         services.AddHttpClient();
         services.AddSingleton<SchedularrTV.Core.Publishing.AlwaysOnChannels>();
         services.AddSingleton<AlwaysOnKeeper>();
@@ -173,10 +173,12 @@ public sealed class ChannelEditLoadingTests
                 if (exists)
                 {
                     Assert.Contains("Configured Channel", html);
-                    Assert.True(html.IndexOf("Base rotation", StringComparison.Ordinal) < html.IndexOf("Scheduling grid", StringComparison.Ordinal));
+                    Assert.Contains("Default programming", html);
+                    Assert.True(html.IndexOf("Default programming", StringComparison.Ordinal) < html.IndexOf("Scheduling grid", StringComparison.Ordinal));
                     Assert.True(html.IndexOf("Scheduling grid", StringComparison.Ordinal) < html.IndexOf("Start this channel over", StringComparison.Ordinal));
-                    Assert.True(html.IndexOf("Start this channel over", StringComparison.Ordinal) < html.IndexOf("<h2>Encoding", StringComparison.Ordinal));
-                    Assert.True(html.IndexOf("<h2>Encoding", StringComparison.Ordinal) < html.IndexOf("<h2>Playback", StringComparison.Ordinal));
+                    Assert.DoesNotContain("<h2>Encoding", html);
+                    Assert.DoesNotContain("<h2>Audio and subtitles", html);
+                    Assert.Contains("?tab=playback", html);
                     Assert.DoesNotContain("Rotation position", html);
                     Assert.Contains("Follow", html);
                     Assert.Contains("?tab=schedule", html);

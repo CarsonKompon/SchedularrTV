@@ -1,10 +1,10 @@
 # Schedule blocks and anchors
 
-**Blocks** reserve programming windows; **anchors** pin programmes to clock times. Configure both under a channel's **Blocks & anchors** tab.
+**Blocks** reserve programming windows; **anchors** pin programmes to clock times. Configure both under a channel's **Schedule** tab.
 
 ## Add a programming window
 
-1. Open **Blocks & anchors** and add a block.
+1. Open **Schedule** and add a block.
 2. Set **Name**, **Starts**, and **Ends**.
 3. Choose **Recurrence** and any required days.
 4. Select **Add a pool** under **What plays**.
@@ -42,7 +42,7 @@ For a weekly marathon, use **Recurrence → Certain days** instead. A show-speci
 
 ## Play holiday episodes for a season
 
-**Holidays**, at the bottom of **Blocks & anchors**, change *which episodes* play on certain days of the year without changing *which shows* play. A block (or the base rotation outside blocks) keeps its shows, but plays only their episodes that match the holiday's query: Christmas episodes in Christmas week, Halloween episodes through October.
+**Holidays**, at the bottom of **Schedule**, change *which episodes* play on certain days of the year without changing *which shows* play. A block (or the base rotation outside blocks) keeps its shows, but plays only their episodes that match the holiday's query: Christmas episodes in Christmas week, Halloween episodes through October.
 
 1. Select **Add a holiday**.
 2. Under **Days**, choose either:

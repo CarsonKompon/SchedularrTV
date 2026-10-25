@@ -14,7 +14,7 @@ Music pickers share folder and library sources across **Web shows**, **Guide sho
 | **No music** | Silence |
 | **Folder** | Audio files in the folder and subfolders, shuffled and looped |
 | **Jellyfin** | Songs streamed through the configured library connection |
-| **Local music folders** | Tagged files added through **App settings → Local TV and movies** |
+| **Local music folders** | Tagged files added through **App settings → Media library** |
 | **Plugin music library** | Songs from an enabled `IMusicLibrary` provider |
 
 A disabled or missing library produces silence rather than selecting another library.

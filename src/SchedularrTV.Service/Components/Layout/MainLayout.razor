@@ -9,7 +9,7 @@
 
 <a class="skip-link" href="#main-content">Skip to content</a>
 <div class="shell">
-    <nav class="sidebar" aria-label="Main">
+    <nav class="sidebar @(_navOpen ? "mobile-open" : "")" aria-label="Main">
         <a class="brand" href="" aria-label="SchedularrTV dashboard">
             <span class="brand-mark">
                 <Icon Name="tv" Size="18" />
@@ -20,8 +20,13 @@
             </span>
         </a>
 
+        <button class="btn mobile-menu-toggle" type="button" aria-expanded="@(_navOpen ? "true" : "false")"
+                aria-controls="main-navigation" @onclick="() => _navOpen = !_navOpen">
+            <Icon Name="@(_navOpen ? "x" : "list")" Size="18" />@(_navOpen ? "Close menu" : "Menu")
+        </button>
+
         @* Only the links scroll; the brand above and the status below stay put. *@
-        <div class="sidebar-nav">
+        <div class="sidebar-nav" id="main-navigation" @onclick="() => _navOpen = false">
             <div class="nav-section">Overview</div>
             <NavLink class="nav-item" href="" Match="NavLinkMatch.All">
                 <Icon Name="dashboard" /><span>Dashboard</span>
@@ -35,12 +40,12 @@
                 <Icon Name="layers" /><span>Collections</span>
             </NavLink>
             <NavLink class="nav-item" href="ad-breaks">
-                <Icon Name="megaphone" /><span>Ad Breaks</span>
+                <Icon Name="megaphone" /><span>Ad breaks</span>
             </NavLink>
 
             <div class="nav-section">Library</div>
             <NavLink class="nav-item" href="library/shows">
-                <Icon Name="tv" /><span>TV Shows</span>
+                <Icon Name="tv" /><span>TV shows</span>
             </NavLink>
             <NavLink class="nav-item" href="library/movies">
                 <Icon Name="film" /><span>Movies</span>
@@ -48,20 +53,20 @@
 
             <div class="nav-section">System</div>
             <NavLink class="nav-item" href="settings" Match="NavLinkMatch.All">
-                <Icon Name="sliders" /><span>Channel settings</span>
+                <Icon Name="sliders" /><span>Channel defaults</span>
+            </NavLink>
+            <NavLink class="nav-item" href="settings/app">
+                <Icon Name="plug" /><span>App settings</span>
                 @if (Updates.Available is { } update)
                 {
                     <span class="nav-update-dot" title="@($"SchedularrTV {update.Label} is available")" aria-label="Update available"></span>
                 }
             </NavLink>
-            <NavLink class="nav-item" href="settings/app">
-                <Icon Name="plug" /><span>App settings</span>
-            </NavLink>
             <NavLink class="nav-item" href="settings/plugins">
                 <Icon Name="puzzle" /><span>Plugins</span>
             </NavLink>
             <NavLink class="nav-item" href="stats">
-                <Icon Name="chart" /><span>Stats</span>
+                <Icon Name="chart" /><span>Viewing stats</span>
             </NavLink>
             <NavLink class="nav-item" href="performance">
                 <Icon Name="activity" /><span>Performance</span>
@@ -70,7 +75,7 @@
                 <Icon Name="history" /><span>Backups</span>
             </NavLink>
             <NavLink class="nav-item" href="yaml">
-                <Icon Name="code" /><span>YAML</span>
+                <Icon Name="code" /><span>YAML editor</span>
             </NavLink>
 
             @if (PluginPages.Any())
@@ -167,6 +172,7 @@
     private string? _saveMessage;
     private CancellationTokenSource? _toast;
     private bool _showSetup;
+    private bool _navOpen;
 
     private IEnumerable<(SchedularrTV.Service.Plugins.PluginDescriptor Plugin, PluginPage Page)> PluginPages => Plugins.Pages;
 
@@ -204,7 +210,7 @@
         Editor.Errors.Count > 0 ? $"{Editor.Errors.Count} config problem(s)"
         : Coordinator.IsBuilding ? "Building schedules"
         : Editor.IsDirty ? "Unsaved changes"
-        : "On air";
+        : Coordinator.LastBuiltAt is not null ? "Schedules ready" : "Ready to set up";
 
     private string StatusDetail =>
         Coordinator.IsBuilding && Coordinator.Progress is { } progress ? $"{progress.Percent:0}% complete"

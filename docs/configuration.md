@@ -47,7 +47,7 @@ Merge the required sections into **`settings.json`**:
 }
 ```
 
-Restart after manual edits to ensure startup-bound options are reloaded. For local TV, movie, and music folders, use **App settings → Local TV and movies** to generate the folder entries.
+Restart after manual edits to ensure startup-bound options are reloaded. For local TV, movie, and music folders, use **App settings → Media library** to generate the folder entries.
 
 ## App settings reference
 

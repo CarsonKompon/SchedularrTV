@@ -4,7 +4,7 @@ Local folders supply TV, movies, and music without Jellyfin. The scanner support
 
 ## Add folders
 
-1. Open **App settings → Local TV and movies**.
+1. Open **App settings → Media library**.
 2. Select **Add a TV folder**, **Add a movies folder**, or **Add a music folder**.
 3. Choose a path readable by the scheduler.
 4. Select **Save**.
@@ -105,6 +105,6 @@ Open **Intros/outros** on **TV Shows** or a collection to select show extras. **
 
 ## Rescan
 
-Use **TV Shows → Rescan** for new media, or **Channel settings → Rescan and rebuild** to refresh local folders and replan.
+Use **TV shows → Rescan** for new media, or **Channel defaults → Local media status → Rescan and rebuild** to refresh local folders and replan.
 
 Scans cache for **30 minutes**, or **2 hours** with low-power defaults. Video runtimes and chapters cache in **`state/probe-cache.json`** until file size or modification time changes; music metadata caches in **`state/music-cache.json`**.

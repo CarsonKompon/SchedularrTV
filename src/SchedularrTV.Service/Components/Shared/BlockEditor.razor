@@ -141,13 +141,14 @@
         <AnchorListEditor Anchors="Block.Anchors" Label="Anchors inside this block" Changed="Changed" />
     }
 
-    <h3>Overrides</h3>
-    <p class="hint">Anything left blank inherits from the channel.</p>
+    <details class="help-details">
+    <summary>Override channel settings</summary>
+    <p class="hint">Leave blank to use the channel's settings.</p>
 
     <div class="grid grid-2">
-        <DurationInput Label="Pad programmes to" Value="Block.PadToNearest"
+        <DurationInput Label="Programme start interval" Value="Block.PadToNearest"
                        ValueChanged="v => { Block.PadToNearest = v; Changed.InvokeAsync(); }" />
-        <DurationInput Label="Longest break" Value="Block.MaxBreak"
+        <DurationInput Label="Maximum ad break" Value="Block.MaxBreak"
                        ValueChanged="v => { Block.MaxBreak = v; Changed.InvokeAsync(); }" />
     </div>
 
@@ -167,6 +168,8 @@
                        EmptyText="@(ChannelAdBreaks is { Count: > 0 } inherited ? $"Same as the channel ({string.Join(", ", inherited)})" : "Same as the channel")" />
     </div>
 
+    </details>
+
     @* Any installed plugin's block settings. *@
     @foreach (PluginEditorSection section in BlockSections)
     {
@@ -176,7 +179,7 @@
 
     <details>
         <summary style="cursor:pointer;color:var(--muted);font-size:12px;margin:8px 0;">
-            Block-specific interstitial shows and mid-rolls
+            Break content and mid-rolls
         </summary>
 
         @if (Block.Interstitials is null)

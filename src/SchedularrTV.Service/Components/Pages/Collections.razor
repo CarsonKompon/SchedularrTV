@@ -4,9 +4,9 @@
 @inject IJSRuntime JS
 
 <PageHeader Title="Collections" Eyebrow="Programming">
-    <ChildContent>Shared programming for channels.</ChildContent>
+    <ChildContent>Group shows and movies to reuse across channels.</ChildContent>
     <Actions>
-        <button class="btn btn-primary" @onclick="OpenCreate"><Icon Name="plus" Size="15" />Create</button>
+        <button class="btn btn-primary" @onclick="OpenCreate"><Icon Name="plus" Size="15" />New collection</button>
     </Actions>
 </PageHeader>
 
@@ -38,7 +38,8 @@
     <div class="empty">
         <Icon Name="layers" Size="32" StrokeWidth="1.5" />
         <div class="empty-title">No collections yet</div>
-        <div>Create one above, then add titles to it from the TV Shows or Movies pages.</div>
+        <div>Create a collection, then choose its shows and movies.</div>
+        <button class="btn btn-primary" @onclick="OpenCreate">New collection</button>
     </div>
 }
 
@@ -46,9 +47,7 @@
 {
     bool open = _expanded.Contains(key);
     <div class="card" @key="key">
-        <div class="card-head collapsible @(open ? "" : "collapsed")" @onclick="() => Toggle(key)"
-             role="button" aria-expanded="@(open ? "true" : "false")">
-            <Icon Name="@(open ? "chevron-down" : "chevron-right")" Size="16" Class="muted" />
+        <div class="card-head collapsible @(open ? "" : "collapsed")">
             <div class="poster-stack">
                 @foreach (ContentInclude include in selector.Include.Take(6))
                 {
@@ -59,8 +58,11 @@
                     <span class="more">+@(selector.Include.Count - 6)</span>
                 }
             </div>
-            <h2>@key</h2>
+            <button class="heading-toggle" type="button" @onclick="() => Toggle(key)" aria-expanded="@(open ? "true" : "false")">
+            <Icon Name="@(open ? "chevron-down" : "chevron-right")" Size="16" Class="muted" />
+            <span class="collection-title">@key</span>
             <span class="pill pill-muted">@Summarise(selector)</span>
+            </button>
             <div class="spacer"></div>
             <div class="row" @onclick:stopPropagation="true">
                 @if (_confirmDelete == key)

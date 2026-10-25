@@ -10,15 +10,15 @@
 @inject TimeProvider Clock
 @implements IDisposable
 
-<PageHeader Title="Stats" Eyebrow="System">
-    <ChildContent>Viewing across all channels. Each channel's own stats are on its Stats tab.</ChildContent>
+<PageHeader Title="Viewing stats" Eyebrow="System">
+    <ChildContent>Audience and watch time across all channels.</ChildContent>
 </PageHeader>
 
 <div class="stats-bar">
     <div class="stats-periods" role="group" aria-label="Period">
         @foreach (StatsPeriod period in StatsPeriod.All)
         {
-            <button type="button" class="btn btn-sm @(_period == period ? "btn-primary" : "")" @onclick="() => Pick(period)">@period.Label</button>
+            <button type="button" class="btn btn-sm @(_period == period ? "btn-primary" : "")" aria-pressed="@(_period == period ? "true" : "false")" @onclick="() => Pick(period)">@period.Label</button>
         }
     </div>
     <div class="stats-now">
@@ -80,7 +80,7 @@ else
             <span class="kpi-sub">of @Duration(report.AiredMinutes) on air</span>
         </div>
         <div class="kpi">
-            <span class="kpi-label">Peak at once</span>
+            <span class="kpi-label">Peak viewers</span>
             <span class="kpi-value">@report.PeakViewers</span>
             <span class="kpi-sub">@(report.PeakAt is { } at ? at.ToString("ddd d MMM, HH:mm", CultureInfo.CurrentCulture) : "Nobody yet")</span>
         </div>

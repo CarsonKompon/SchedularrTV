@@ -154,7 +154,7 @@ Use the **linux-arm64** build on a 64-bit OS. Install **ffmpeg**, your distribut
 sudo apt install ffmpeg libicu72 chromium
 ```
 
-**App settings → Hardware and video encoding** shows the detected hardware profile. **LowPower** lowers default picture sizes, bitrates, capture rates, and rendering concurrency; explicit settings take precedence.
+**App settings → Video encoding** shows the detected hardware profile. **LowPower** lowers default picture sizes, bitrates, capture rates, and rendering concurrency; explicit settings take precedence.
 
 - Prefer **4 GB RAM** or more for plugins
 - Lower **Live page channels** resolution and capture rates for browser-heavy channels

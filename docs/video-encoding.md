@@ -1,7 +1,7 @@
 # Channel video sizing
 
 Set defaults in **App settings → ErsatzTV channels**, or override them in a channel's
-**General → Encoding** section. The channel wizard offers the same controls.
+**Playback → Encoding** section. The channel wizard offers the same controls.
 
 - **Resolution:** choose 480p, 540p, 720p, 1080p, 1440p or 2160p.
 - **Aspect ratio:** choose 16:9, 4:3, 16:10, 1:1, 21:9 or 9:16. The width is

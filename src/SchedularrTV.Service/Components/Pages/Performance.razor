@@ -8,7 +8,6 @@
 <PageHeader Title="Performance" Eyebrow="System">
     <ChildContent>
         Last @((int)ResourceMonitor.HistoryLength.TotalMinutes) minutes · updated every @((int)ResourceMonitor.Interval.TotalSeconds)s.
-        CPU is measured across all cores, and put down to the plugin and job that used it.
     </ChildContent>
 </PageHeader>
 
@@ -25,7 +24,7 @@ else
 
     <div class="stat-grid dash-stats">
         <div class="stat @(latest.SetupCpuPercent > 70 ? "warn" : "")">
-            <div class="stat-label"><Icon Name="activity" Size="14" />CPU, this setup</div>
+            <div class="stat-label"><Icon Name="activity" Size="14" />App CPU</div>
             <div class="stat-value">@Pct(latest.SetupCpuPercent)</div>
             <div class="stat-sub">
                 @(latest.SystemCpuPercent is not null ? $"{Maybe(latest.SystemCpuPercent)} for the whole computer · " : "")@latest.Cores cores
@@ -41,11 +40,11 @@ else
             else
             {
                 <div class="stat-value">–</div>
-                <div class="stat-sub">Nothing's working hard</div>
+                <div class="stat-sub">Low activity</div>
             }
         </div>
         <div class="stat">
-            <div class="stat-label"><Icon Name="layers" Size="14" />Memory, this setup</div>
+            <div class="stat-label"><Icon Name="layers" Size="14" />App memory</div>
             <div class="stat-value">@ResourceMonitor.Bytes(latest.SetupMemoryBytes)</div>
             <div class="stat-sub">
                 @if (latest.SystemMemoryTotalBytes is not null)
@@ -128,16 +127,16 @@ else
 
     <div class="card">
         <div class="card-head">
-            <h2>Where it's going</h2>
+            <h2>Usage by task</h2>
             <div class="segmented perf-toggle" role="group" aria-label="Sort by">
                 <button type="button" class="@(_sourcesByPeak ? "on" : "")" @onclick="() => _sourcesByPeak = true">Biggest spikes</button>
                 <button type="button" class="@(_sourcesByPeak ? "" : "on")" @onclick="() => _sourcesByPeak = false">Right now</button>
             </div>
         </div>
-        <p class="hint" style="margin-top:0;">
-            Each plugin and what it was doing. Processes it started (ffmpeg, browsers, Piper) are measured exactly; work done inside
-            SchedularrTV itself (Whisper, the AI writer, drawing promo frames) is its share of the app's CPU above its usual idle level, so it's an estimate.
-        </p>
+        <details class="help-details">
+            <summary>How usage is measured</summary>
+            <p class="hint">CPU covers all cores. Child processes are measured directly; tasks inside SchedularrTV are estimated from CPU above idle.</p>
+        </details>
         @{
             List<SourceStats> shown = [.. (_sourcesByPeak
                     ? _sources.OrderByDescending(source => source.Peak).ThenByDescending(source => source.Average)

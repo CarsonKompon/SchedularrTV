@@ -27,7 +27,7 @@ Folders inside a chosen folder follow along unless you pick otherwise. Folders n
 
 ## Open and close a block
 
-Assign folders the **Block start** and **Block end** jobs, then select the ad break collection on the block under **Blocks & anchors → Ad breaks**. Blocks with no collection selected inherit the channel's collections.
+Assign folders the **Block start** and **Block end** jobs, then select the ad break collection under **Schedule → [block] → Override channel settings → Ad breaks**. Blocks with no collection selected inherit the channel's collections.
 
 One clip is chosen from each role's pooled folders per block occurrence. For a timed block, the opening clip starts at the block boundary and the closing clip ends at the block's end; its time is reserved before scheduling programmes and ads. A start-only (anchor-slot) block plays the opener before its programme and the closer immediately afterwards. Ordinary base rotation and individual mid-roll breaks don't trigger these clips.
 
@@ -43,7 +43,7 @@ Block start/end clips are outside this per-show preview; inspect a built block i
 
 ## Match seasonal commercials
 
-Turn on **Seasonal folders** in the ad break's settings. Clips inside a folder named for a month, season, holiday or date (`December`, `Winter`, `Christmas`, `12-25`, `2026-12-25`) then only play at that time; everything else (including an `Any Time` folder) plays all year. The tree shows greyed-out example folders under each ads, bumpers or filler folder. Holidays come from **Channel settings → Seasonal tags**.
+Turn on **Seasonal folders** in the ad break's settings. Clips inside a folder named for a month, season, holiday or date (`December`, `Winter`, `Christmas`, `12-25`, `2026-12-25`) then only play at that time; everything else (including an `Any Time` folder) plays all year. The tree shows greyed-out example folders under each ads, bumpers or filler folder. Holidays come from **Channel defaults → Seasonal tags and holidays**.
 
 ## Set up promos
 
@@ -67,7 +67,7 @@ With seasonal folders on, a promo under a month, season, holiday or date folder 
 3. Add interstitial shows and mid-rolls on the same tab if wanted.
 4. Select **Save changes**.
 
-A block can use its own ad breaks: open it under **Blocks & anchors** and pick them under **Ad breaks**; left empty, it uses the channel's. A channel that picks none uses the **Default ad breaks** set under **Channel settings → Ads, bumpers, filler and promos**; with no defaults either, its breaks are empty (black).
+A block can use its own ad breaks: open it under **Schedule** and pick them under **Override channel settings → Ad breaks**; left empty, it uses the channel's. A channel that picks none uses **Channel defaults → Default ad breaks**; with no defaults either, its breaks are empty (black).
 
 ## Fine tuning
 

@@ -160,7 +160,7 @@ With **`auto_temporal_tags: true`**, eligible commercial tags include:
 | **Full date**, when enabled | `2026-01-10` |
 | **Holiday window** | `Christmas` |
 
-Configure matching under **Channel settings → Seasonal tags**, or **`settings.temporal_tags`**. Holiday windows support fixed date ranges, including year-wrapping ranges, and nth-weekday rules.
+Configure matching under **Channel defaults → Seasonal tags and holidays**, or **`settings.temporal_tags`**. Holiday windows support fixed date ranges, including year-wrapping ranges, and nth-weekday rules.
 
 ## Determinism
 

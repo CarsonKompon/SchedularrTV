@@ -9,13 +9,11 @@
 @implements IDisposable
 
 <PageHeader Title="App settings" Eyebrow="System">
-    <ChildContent>Connections and tools · <code>@Form.SettingsPath</code></ChildContent>
+    <ChildContent>Media sources, playback tools and system preferences.</ChildContent>
     <Actions>
-        <button class="btn" type="button" @onclick="Onboarding.Open"><Icon Name="sparkles" Size="15" />Run setup guide</button>
+        <button class="btn" type="button" @onclick="Onboarding.Open"><Icon Name="sparkles" Size="15" />Setup guide</button>
     </Actions>
 </PageHeader>
-
-<p class="hint">Jellyfin connections and library selection are in <a href="@($"settings/plugins?plugin={SchedularrTV.Providers.Jellyfin.JellyfinPlugin.PluginId}")">Jellyfin plugin settings</a>.</p>
 
 <UpdateBanner />
 @if (_restarting)
@@ -27,7 +25,7 @@
 else if (Form.NeedsRestart)
 {
     <div class="banner banner-ok" role="status">
-        Saved. The port and network access change when the scheduler restarts; everything else is already in use.
+        Saved. Restart to apply port and network changes.
         <button class="btn btn-sm btn-primary" style="margin-left:10px;" @onclick="Restart">Restart now</button>
     </div>
 }
@@ -42,67 +40,64 @@ else if (_saved && !Form.IsDirty)
 
 <UpdateSettings />
 
-<div class="card">
-    <div class="card-head"><h2>This computer</h2></div>
-    <div class="grid grid-3">
+<div class="card system-settings" id="system">
+    <div class="card-head"><h2>System and startup</h2><span class="muted">v@AppRuntime.Version</span></div>
+    <div class="system-controls">
         <label class="field">
             <span>Web UI port</span>
             <input type="number" min="1" max="65535" value="@Form.Port"
                    @onchange="e => { Form.Port = int.TryParse(e.Value?.ToString(), out int port) && port is > 0 and < 65536 ? port : Form.Port; Form.IsDirty = true; }" />
         </label>
-        <div class="field">
-            <span>Version</span>
-            <code style="padding:8px 0;">@AppRuntime.Version</code>
+        <div class="system-options">
+            <label class="check">
+                <input type="checkbox" checked="@Form.AllowRemote" @onchange="e => { Form.AllowRemote = e.Value is true; Form.IsDirty = true; }" />
+                <span>Allow access from other devices</span>
+            </label>
+            @if (Form.AllowRemote)
+            {
+                <p class="hint warn">The web UI has no password. Only turn this on for a network you trust.</p>
+            }
+
+            @if (Autostart.IsSupported)
+            {
+                <label class="check">
+                    <input type="checkbox" checked="@_autostart" @onchange="ToggleAutostart" />
+                    <span>Start when I sign in</span>
+                </label>
+                @if (_autostartError is not null)
+                {
+                    <p class="hint warn">@_autostartError</p>
+                }
+                else if (!Runtime.UnderTray && OperatingSystem.IsWindows())
+                {
+                    <p class="hint">Started without the tray app, so this opens the server in a console window. Use the tray app to start quietly.</p>
+                }
+            }
         </div>
     </div>
-    <label class="check">
-        <input type="checkbox" checked="@Form.AllowRemote" @onchange="e => { Form.AllowRemote = e.Value is true; Form.IsDirty = true; }" />
-        <span>Allow other devices on the network to open the web UI</span>
-    </label>
-    @if (Form.AllowRemote)
-    {
-        <p class="hint warn">The web UI has no password. Only turn this on for a network you trust.</p>
-    }
 
-    @if (Autostart.IsSupported)
-    {
-        <label class="check">
-            <input type="checkbox" checked="@_autostart" @onchange="ToggleAutostart" />
-            <span>Start SchedularrTV when I sign in to this computer</span>
-        </label>
-        @if (_autostartError is not null)
-        {
-            <p class="hint warn">@_autostartError</p>
-        }
-        else if (!Runtime.UnderTray && OperatingSystem.IsWindows())
-        {
-            <p class="hint">Started without the tray app, so this opens the server in a console window. Use the tray app to start quietly.</p>
-        }
-        else
-        {
-            <p class="hint">Applies right away.</p>
-        }
-    }
-
-    <div class="field">
-        <span>Data folder</span>
-        <div class="row row-wrap" style="gap:8px;align-items:center;">
+    <div class="system-paths">
+        <span class="muted">Data folder</span>
+        <div class="row row-wrap">
             <code>@Runtime.DataDirectory</code>
             <button class="btn btn-sm" type="button" @onclick="OpenDataFolder"><Icon Name="folder" Size="14" />Open</button>
         </div>
+        <span class="muted">Settings file</span>
+        <code>@Form.SettingsPath</code>
     </div>
-    <p class="hint">
-        Schedule, playback state, rendered promos and these settings. Start with <code>--data-dir &lt;folder&gt;</code>
-        (or set <code>@AppPaths.DataDirectoryVariable</code>) to keep them somewhere else.
-    </p>
+    <details class="help-details">
+        <summary>Move the data folder</summary>
+        <p class="hint">Start with <code>--data-dir &lt;folder&gt;</code> or set <code>@AppPaths.DataDirectoryVariable</code>.</p>
+    </details>
 </div>
 
 <div class="card" id="local-library">
-    <div class="card-head"><h2>Local TV and movies</h2><span class="pill pill-muted">Optional with Jellyfin</span></div>
+    <div class="card-head"><h2>Media library</h2></div>
+    <p class="hint">Add local folders below, or <a href="@($"settings/plugins?plugin={SchedularrTV.Providers.Jellyfin.JellyfinPlugin.PluginId}")">connect Jellyfin</a>.</p>
     <LibraryFolderSettings Form="Form" Changed="Edited" />
 </div>
 
-<div class="card">
+<div class="card" id="playout">
     <div class="card-head"><h2>ErsatzTV Next</h2></div>
     <ErsatzSettings Form="Form" Changed="Edited" />
 </div>
@@ -112,13 +107,13 @@ else if (_saved && !Form.IsDirty)
     <ToolSettings Form="Form" Changed="Edited" />
 </div>
 
-<div class="card">
+<div class="card" id="commercials">
     <div class="card-head"><h2>Commercials library</h2></div>
     <FolderSettings Form="Form" Changed="Edited" />
 </div>
 
 <div class="card" id="hardware">
-    <div class="card-head"><h2>Hardware and video encoding</h2></div>
+    <div class="card-head"><h2>Video encoding</h2></div>
     <PerformanceSettings Form="Form" Changed="Edited" />
 </div>
 
@@ -128,7 +123,7 @@ else if (_saved && !Form.IsDirty)
         <span>Unsaved app settings</span>
     </div>
     <button class="btn btn-sm btn-ghost" @onclick="Discard"><Icon Name="undo" Size="14" />Discard</button>
-    <button class="btn btn-sm btn-primary" @onclick="Save"><Icon Name="save" Size="14" />Save</button>
+    <button class="btn btn-sm btn-primary" @onclick="Save"><Icon Name="save" Size="14" />Save changes</button>
 </div>
 
 @code {

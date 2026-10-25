@@ -9,7 +9,7 @@
 @inject NavigationManager Navigation
 
 <PageHeader Title="Plugins" Eyebrow="System">
-    <ChildContent>Settings apply immediately. Installs and removals require a restart.</ChildContent>
+    <ChildContent>Add features and manage connections.</ChildContent>
     <Actions>
         @if (Local.IsLocal)
         {
@@ -34,15 +34,15 @@ else if (Registry.RestartRequired)
     <div class="banner @(_messageOk ? "banner-ok" : "banner-error")" role="status">@_message</div>
 }
 
-<div class="card">
-    <div class="card-head"><h2>Install a plugin</h2></div>
+<details class="card">
+    <summary>Install a plugin</summary>
     @if (Local.IsLocal)
     {
         <p class="hint">
             Upload a plugin or all-plugins <code>.zip</code>. Only install trusted plugins; they have the scheduler's system access.
         </p>
         <div class="row row-wrap" style="gap:10px;align-items:center;">
-            <InputFile OnChange="Install" accept=".zip" disabled="@_installing" />
+            <InputFile OnChange="Install" accept=".zip" disabled="@_installing" aria-label="Plugin ZIP file" />
             @if (_installing)
             {
                 <span class="hint" style="margin:0;">Unpacking…</span>
@@ -58,9 +58,18 @@ else if (Registry.RestartRequired)
     <p class="hint" style="margin-top:10px;">
         Folder: <code>@Registry.UserDirectory</code>. Replace a plugin's folder and restart to update it.
     </p>
-</div>
+</details>
 
-@foreach (IGrouping<PluginSource, PluginDescriptor> group in Registry.Plugins.GroupBy(plugin => plugin.Source).OrderBy(group => group.Key))
+<div class="search-field plugin-search">
+    <Icon Name="search" Size="15" />
+    <input type="search" placeholder="Find a plugin…" aria-label="Find a plugin" @bind="_search" @bind:event="oninput" />
+</div>
+@if (!FilteredPlugins.Any())
+{
+    <div class="empty">No plugins match “@_search”. <button class="btn btn-sm" @onclick="() => _search = string.Empty">Clear search</button></div>
+}
+
+@foreach (IGrouping<PluginSource, PluginDescriptor> group in FilteredPlugins.GroupBy(plugin => plugin.Source).OrderBy(group => group.Key))
 {
     <h3 style="margin:18px 0 8px;">@(group.Key switch { PluginSource.BuiltIn => "Built in", PluginSource.Bundled => "Included", _ => "Installed" })</h3>
     @foreach (PluginDescriptor plugin in group)
@@ -126,8 +135,8 @@ else if (Registry.RestartRequired)
                     }
                     @if (Local.IsLocal && HasSettings(plugin))
                     {
-                        <button class="btn btn-sm btn-icon" type="button" aria-label="@plugin.Manifest.Name settings" title="Settings"
-                                @onclick="() => OpenSettings(plugin)"><Icon Name="gear" Size="15" /></button>
+                        <button class="btn btn-sm" type="button" aria-label="@plugin.Manifest.Name settings" title="Settings"
+                                @onclick="() => OpenSettings(plugin)"><Icon Name="gear" Size="15" />Settings</button>
                     }
                     <label class="switch" title="@(plugin.Manifest.Required ? "Always on: the rest of the app relies on it for now" : wanted ? "On" : "Off")">
                         <input type="checkbox" role="switch" checked="@wanted" disabled="@(plugin.Manifest.Required || !Local.IsLocal)"
@@ -198,6 +207,13 @@ else if (Registry.RestartRequired)
     [CascadingParameter] private LocalAccess Local { get; set; } = new(false);
 
     private PluginRegistry Registry => Manager.Registry;
+    private string _search = string.Empty;
+    private IEnumerable<PluginDescriptor> FilteredPlugins => Registry.Plugins
+        .Where(plugin => string.IsNullOrWhiteSpace(_search)
+            || plugin.Manifest.Name.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase)
+            || plugin.Id.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase)
+            || (plugin.Manifest.Description?.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false))
+        .OrderBy(plugin => plugin.Manifest.Name);
 
     private bool _installing;
     private bool _restarting;

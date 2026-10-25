@@ -9,10 +9,9 @@
 
 <div class="page-header">
     <div>
-        <div class="eyebrow">Radio shows</div>
+        <div class="eyebrow">Plugins</div>
         <h1>Radio stations</h1>
-        <p class="muted">Music as a channel: songs from your music library (Jellyfin, or music folders), or an internet station, with the cover, the lyrics and a
-            visualizer that moves with the sound.</p>
+        <p class="muted">Play your music or internet radio with artwork, lyrics and a visualizer.</p>
     </div>
 </div>
 
@@ -21,8 +20,7 @@
 @if (BrowserLocator.Find(Settings.BrowserPath) is null)
 {
     <div class="banner banner-error" role="alert">
-        No Chrome, Edge or Chromium was found on this computer. Stations are drawn by one running hidden; install one, or choose it
-        in this plugin's settings (its gear on the Plugins page).
+        A browser is required. Install Chrome, Edge or Chromium, or select its path in <a href="settings/plugins">plugin settings</a>.
     </div>
 }
 @if (_message is not null)
@@ -287,18 +285,18 @@
           Problem="@(_stations.FirstOrDefault(station => !CanSave(station)) is { } unfinished ? $"{Title(unfinished)} isn't finished" : null)"
           OnSave="Save" OnDiscard="Discard" />
 
-<div class="card" style="margin-top:16px;">
-    <div class="card-head"><h2>How it works</h2></div>
+<details class="card" style="margin-top:16px;">
+    <summary>Scheduling radio stations</summary>
     <ul class="hint" style="margin:0;padding-left:18px;line-height:1.6;">
         <li>Each station is a show (under TV Shows and in collection pickers), with one "episode" per length.</li>
-        <li><strong>A 24/7 music channel:</strong> make the station a channel's base rotation, with long lengths (30, 60).</li>
+        <li><strong>24/7 music:</strong> use the station as a channel's default programming, with 30- or 60-minute lengths.</li>
         <li><strong>Between programmes:</strong> add it to a channel's interstitial shows with short lengths (3–5 minutes).</li>
         <li>On air, the songs play one after another from the music library (or the station is relayed), a hidden browser draws the page, and
             ffmpeg draws the visualizer from the sound itself, so it's always in step.</li>
         <li>Lyrics come from the library (Jellyfin's, or <code>.lrc</code> files beside songs in a music folder; timed where they are), else from LRCLIB online.</li>
-        <li>Music folders are added under App settings → Local TV and movies (<strong>Add a music folder</strong>).</li>
+        <li>Add music folders in <a href="settings/app#local-library">App settings → Media library</a>.</li>
     </ul>
-</div>
+</details>
 
 <style>
     .radio-editor { display: grid; grid-template-columns: minmax(0, 1fr) 660px; gap: 22px; align-items: start; }

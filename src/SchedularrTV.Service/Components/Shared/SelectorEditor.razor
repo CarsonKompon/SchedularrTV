@@ -17,7 +17,7 @@
             <span>Source</span>
             <select value="@_mode" @onchange="OnModeChanged">
                 <option value="collection">Collection</option>
-                <option value="query">Query</option>
+                <option value="query">Search rule (advanced)</option>
                 <option value="include">Picked titles</option>
             </select>
         </label>
@@ -40,12 +40,12 @@
         {
             <label class="check">
                 <input type="checkbox" checked="@(Selector.Drop is not null)" @onchange="OnOwnDropChanged" />
-                <span>Give this its own drop schedule (otherwise the collection's)</span>
+                <span>Override the collection's release schedule</span>
             </label>
         }
         if (Selector.Drop is { } drop)
         {
-            <DropEditor Drop="drop" Title="New episodes drop for every show here (a title can set its own below)" Changed="OnDropChanged" />
+            <DropEditor Drop="drop" Title="Episode release schedule" Changed="OnDropChanged" />
         }
         else if (!Inherits)
         {
@@ -73,12 +73,10 @@
     {
         <label class="check">
             <input type="checkbox" checked="@Selector.ExcludeSeasons.Contains(0)" @onchange="OnExcludeSpecialsChanged" />
-            <span>Skip specials and extras in every title</span>
+            <span>Skip specials and extras</span>
         </label>
         <p class="hint">
-            Drops season 0 and anything in an unnumbered folder (Specials, Commentaries, Behind the
-            Scenes), without pinning a season list, so new seasons are picked up on their own.
-            A title that names its own seasons is left exactly as written. Films are unaffected.
+            Excludes season 0 and unnumbered extras. Explicit season selections and movies are unchanged.
         </p>
     }
 
@@ -98,7 +96,7 @@
         </label>
         @if (Editor.Working.GlobalCollections.Count == 0)
         {
-            <p class="hint">No collections yet — create one on the Collections page.</p>
+            <p class="hint"><a href="collections">Create a collection</a> or switch to Picked titles.</p>
         }
     }
     else if (_mode == "query")
@@ -116,7 +114,7 @@
     }
 
     <details>
-        <summary style="cursor:pointer;color:var(--muted);font-size:12px;margin:8px 0;">Advanced</summary>
+        <summary style="cursor:pointer;color:var(--muted);font-size:12px;margin:8px 0;">Filters, duration and versions</summary>
 
         <label class="field">
             <span>Filter (extra condition)</span>
@@ -145,13 +143,13 @@
                            Available="_versionLabels"
                            Selected="NullIfEmpty(Selector.Versions?.Exclude)"
                            SelectedChanged="OnExcludeVersionsChanged"
-                           Hint="For titles held in more than one release. Ignored when it would block every version of an episode, so nothing is ever lost." />
+                           Hint="Falls back to these versions if no others are available." />
 
             <TagChipPicker Label="Prefer these versions"
                            Available="_versionLabels"
                            Selected="NullIfEmpty(Selector.Versions?.Prefer)"
                            SelectedChanged="OnPreferVersionsChanged"
-                           Hint="Picked first when a title has several versions. Only one version of a title ever airs, with or without these rules." />
+                           Hint="Used first when multiple versions are available." />
         }
     </details>
 </div>

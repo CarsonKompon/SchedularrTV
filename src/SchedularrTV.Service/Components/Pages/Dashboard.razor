@@ -27,7 +27,6 @@
     <section class="dashboard-panel player-panel" aria-labelledby="player-heading">
         <div class="panel-heading">
             <h2 id="player-heading"><Icon Name="tv" Size="17" />IPTV player links</h2>
-            <span class="panel-caption">Playlist + programme guide</span>
         </div>
         <div class="player-addresses">
             @foreach ((string label, string url) in WatchLinks)
@@ -96,7 +95,7 @@
             <p class="audience-empty">@(_statsError is not null ? "Viewing history unavailable" : _statsLoaded ? "No viewing recorded in the last 24 hours" : "Loading viewing history…")</p>
         }
         <div class="history-leader" title="Based on retained viewing history">
-            <span>All-history leader</span>
+            <span>Most watched overall</span>
             @if (_allTime.FirstOrDefault() is { } leader)
             {
                 <strong title="@ChannelName(leader.ChannelId)">@ChannelName(leader.ChannelId)</strong>
@@ -115,15 +114,15 @@
             <dd><strong>@OnAirCount</strong><span>/ @(Editor.Working.Channels.Count + Coordinator.External.Count) channels</span></dd>
         </div>
         <div title="@SampleDescription">
-            <dt>Viewers · latest sample</dt>
+            <dt>Current viewers</dt>
             <dd><strong>@(HasRecentSample ? Recorder.Now.Values.Sum(viewers => viewers.Count).ToString("N0") : "—")</strong><span>@(HasRecentSample ? "watching" : "awaiting sample")</span></dd>
         </div>
         <div>
-            <dt>Total TV shows</dt>
+            <dt>TV shows</dt>
             <dd><strong>@(_showCount?.ToString("N0") ?? "—")</strong><span>@(_episodeCount is { } episodes ? $"{episodes:N0} episodes" : "loading library")</span></dd>
         </div>
         <div>
-            <dt>Total movies</dt>
+            <dt>Movies</dt>
             <dd><strong>@(_movieCount?.ToString("N0") ?? "—")</strong><span>in library</span></dd>
         </div>
     </dl>
