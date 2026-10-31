@@ -373,7 +373,7 @@
     }
 
     private static string Category(ScheduleEntry entry) =>
-        entry.Kind == ScheduleEntryKind.Interstitial || entry.IsSlotIntro || entry.IsSlotOutro ? "interstitial"
+        entry.Kind == ScheduleEntryKind.Interstitial ? "interstitial"
         : entry.ProgramOrigin == ProgramOrigin.Anchor ? "anchor"
         : entry.ProgramOrigin == ProgramOrigin.ArchiveRandom ? "archive-random"
         : entry.ProgramOrigin == ProgramOrigin.Archive ? "archive"
@@ -404,6 +404,9 @@
         List<Block> blocks = [];
         ScheduleEntry? runStart = null;
         ScheduleEntry? runEnd = null;
+        DateTimeOffset runFrom = default;
+        // A show's intro is part of its listing: its block starts where the intro does.
+        DateTimeOffset? introFrom = null;
         bool stacked = false;
 
         void Flush()
@@ -413,7 +416,7 @@
                 return;
             }
 
-            DateTimeOffset start = runStart.Start.ToLocalTime();
+            DateTimeOffset start = runFrom.ToLocalTime();
             DateTimeOffset end = runEnd.End.ToLocalTime();
 
             if (end > start)
@@ -435,6 +438,24 @@
 
         foreach (ScheduleEntry entry in schedule.Entries.Where(e => e.Kind is ScheduleEntryKind.Program or ScheduleEntryKind.Interstitial).OrderBy(e => e.Start))
         {
+            // Intro and outro clips (theme songs, end cards) belong to the show they open or close, not a listing of their own.
+            if (entry.IsSlotIntro)
+            {
+                Flush();
+                introFrom ??= entry.Start;
+                continue;
+            }
+
+            if (entry.IsSlotOutro)
+            {
+                if (runStart is not null)
+                {
+                    runEnd = entry;
+                }
+
+                continue;
+            }
+
             // Same episode split by mid-roll, or a later episode stacked into the same slot: one block.
             if (runStart is not null && runStart.BlockName == entry.BlockName
                 && Category(runStart) == Category(entry)
@@ -448,6 +469,8 @@
             Flush();
             runStart = entry;
             runEnd = entry;
+            runFrom = introFrom ?? entry.Start;
+            introFrom = null;
             stacked = false;
         }
 
