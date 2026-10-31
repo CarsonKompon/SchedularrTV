@@ -71,15 +71,55 @@ public sealed class OverlayRenderer(Func<string> folder)
     /// </summary>
     /// <param name="posters">A still from each video layer's file (by its path), drawn in its box; one without shows as a marked box.</param>
     /// <param name="clock">The moment of an appearance to draw (keyframes, layers coming and going); null draws it as it stands.</param>
+    /// <param name="reference">
+    /// A picture to draw underneath instead of the stand-in (a screenshot of a broadcast, to line the overlay up with),
+    /// stretched to the canvas. Only the editor's preview uses it; it's never part of the overlay.
+    /// </param>
+    /// <param name="referenceOpacity">How strongly the reference picture shows, 0 to 1, over black.</param>
     public static byte[] Preview(Overlay overlay, IReadOnlyDictionary<string, string> tokens, float scale, IReadOnlyDictionary<string, string>? posters = null,
-        OverlayClock? clock = null)
+        OverlayClock? clock = null, string? reference = null, float referenceOpacity = 1)
     {
+        Backdrop backdrop = new(reference, Math.Clamp(referenceOpacity, 0, 1));
         if (overlay.Kind == OverlayKinds.File)
         {
-            return DrawFile(overlay, scale);
+            return DrawFile(overlay, scale, backdrop);
         }
 
-        return Draw(overlay, tokens, scale, backdrop: true, posters ?? new Dictionary<string, string>(), clock);
+        return Draw(overlay, tokens, scale, backdrop: true, posters ?? new Dictionary<string, string>(), clock, backdrop);
+    }
+
+    /// <summary>What goes under the preview: the stand-in, or the editor's reference picture.</summary>
+    private readonly record struct Backdrop(string? Reference, float Opacity);
+
+    private static readonly Lock ReferenceLock = new();
+    private static (string Path, DateTime Written, SKImage Image)? _reference;
+
+    /// <summary>The reference picture, decoded once and kept while it's unchanged (the preview redraws as the playhead moves).</summary>
+    private static SKImage? ReferenceImage(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return null;
+        }
+
+        DateTime written = File.GetLastWriteTimeUtc(path);
+        lock (ReferenceLock)
+        {
+            if (_reference is { } cached && cached.Path == path && cached.Written == written)
+            {
+                return cached.Image;
+            }
+
+            SKImage? image = SKImage.FromEncodedData(path);
+            if (image is null)
+            {
+                return null;
+            }
+
+            // The previous picture isn't disposed here: another editor's preview may be drawing it. It's let go instead.
+            _reference = (path, written, image);
+            return image;
+        }
     }
 
     /// <summary>A video-preview frame, with optional test backdrop. Video frames use the same placement as canvas stills.</summary>
@@ -253,7 +293,7 @@ public sealed class OverlayRenderer(Func<string> folder)
 
     /// <param name="posters">For the preview, stills of its videos; null when drawing for ErsatzTV, which shows videos itself.</param>
     private static byte[] Draw(Overlay overlay, IReadOnlyDictionary<string, string> tokens, float scale, bool backdrop,
-        IReadOnlyDictionary<string, string>? posters, OverlayClock? clock = null)
+        IReadOnlyDictionary<string, string>? posters, OverlayClock? clock = null, Backdrop under = default)
     {
         int width = Math.Max(16, (int)Math.Round(Math.Clamp(overlay.Width, 64, 7680) * scale));
         int height = Math.Max(16, (int)Math.Round(Math.Clamp(overlay.Height, 64, 4320) * scale));
@@ -263,7 +303,7 @@ public sealed class OverlayRenderer(Func<string> folder)
         canvas.Clear(SKColors.Transparent);
         if (backdrop)
         {
-            DrawBackdrop(canvas, width, height);
+            DrawBackdrop(canvas, width, height, under);
         }
 
         canvas.Scale(scale);
@@ -493,6 +533,24 @@ public sealed class OverlayRenderer(Func<string> folder)
     }
 
     /// <summary>A stand-in for the programme underneath, so the preview shows how the overlay reads over a picture.</summary>
+    private static void DrawBackdrop(SKCanvas canvas, int width, int height, Backdrop under)
+    {
+        if (ReferenceImage(under.Reference) is { } reference)
+        {
+            // Stretched to the canvas, as a full-frame screenshot of the channel lines up with it; dimmed over black.
+            using (var black = new SKPaint { Color = SKColors.Black })
+            {
+                canvas.DrawRect(0, 0, width, height, black);
+            }
+
+            using var dim = new SKPaint { Color = SKColors.White.WithAlpha((byte)Math.Round(under.Opacity * 255)), IsAntialias = true };
+            canvas.DrawImage(reference, new SKRect(0, 0, width, height), new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear), dim);
+            return;
+        }
+
+        DrawBackdrop(canvas, width, height);
+    }
+
     private static void DrawBackdrop(SKCanvas canvas, int width, int height)
     {
         using var shader = SKShader.CreateLinearGradient(new SKPoint(0, 0), new SKPoint(width, height),
@@ -634,14 +692,14 @@ public sealed class OverlayRenderer(Func<string> folder)
     }
 
     /// <summary>A file overlay previewed where ErsatzTV will put it: anchored, sized and inset as set.</summary>
-    private static byte[] DrawFile(Overlay overlay, float scale)
+    private static byte[] DrawFile(Overlay overlay, float scale, Backdrop under = default)
     {
         int width = (int)Math.Round(1920 * scale);
         int height = (int)Math.Round(1080 * scale);
         var info = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul);
         using SKSurface surface = SKSurface.Create(info);
         SKCanvas canvas = surface.Canvas;
-        DrawBackdrop(canvas, width, height);
+        DrawBackdrop(canvas, width, height, under);
 
         SKRect box = FileBox(overlay, width, height, aspect: null);
         SKImage? picture = overlay.File is { Length: > 0 } file && File.Exists(file) && IsImage(file) ? SKImage.FromEncodedData(file) : null;

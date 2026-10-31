@@ -43,6 +43,32 @@
     }
 
     </details>
+
+    <details class="studio-section" open="@(_reference is not null)">
+        <summary><Icon Name="image" /> Reference picture@(_reference is null ? "" : " (on)")</summary>
+        <p class="hint">
+            A picture shown behind the canvas instead of the stand-in, such as a screenshot of a broadcast with its own bug or lower third,
+            so you can line yours up with it. It's only for this preview: it isn't saved with the overlay or shown on air.
+            It's stretched to fill the canvas, so a full-frame screenshot lines up exactly.
+        </p>
+        <div class="grid grid-2">
+            <div class="field"><span>Picture</span>
+                <FilePathPicker Value="@_reference" ValueChanged="SetReference" Extensions="FileBrowsing.Images"
+                                Label="reference picture" StartIn="Environment.SpecialFolder.MyPictures" Placeholder="D:\Screenshots\broadcast.png" /></div>
+            <label class="field"><span>Strength (@_referenceOpacity%)</span>
+                <input type="range" min="10" max="100" step="5" value="@_referenceOpacity" disabled="@(_reference is null)"
+                       @oninput="e => SetReferenceOpacity(e, fast: true)" @onchange="e => SetReferenceOpacity(e, fast: false)" /></label>
+        </div>
+        @if (_reference is not null)
+        {
+            @if (Missing(_reference))
+            {
+                <p class="hint warn">That picture can't be found.</p>
+            }
+            <button class="btn btn-sm" type="button" @onclick="() => SetReference(null)">Stop showing it</button>
+        }
+    </details>
+
     <CanvasWorkspace History="_history">
         <Tools>
             @if (IsDesign)
@@ -894,8 +920,45 @@
     /// <summary>Screen pixels per canvas pixel: the canvas fills the editor's width, so this follows the window.</summary>
     private double Scale => (_canvasPixels > 0 ? _canvasPixels : 640) / CanvasWidth;
 
+    // ---- The reference picture (preview only) ----
+
+    // Remembered per overlay while the app runs, so it's still there after switching overlays or reloading the page,
+    // without ever being written into the overlay or the schedule file.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string? Path, int Opacity)> References = new(StringComparer.OrdinalIgnoreCase);
+
+    private string? _reference;
+    private int _referenceOpacity = 100;
+
+    private string ReferenceKey => $"{ChannelName}|{Overlay.Name}";
+
+    private void RememberReference() => References[ReferenceKey] = (_reference, _referenceOpacity);
+
+    private Task SetReference(string? path)
+    {
+        _reference = string.IsNullOrWhiteSpace(path) ? null : path;
+        RememberReference();
+        RequestPreview();
+        return Task.CompletedTask;
+    }
+
+    // Drawn quickly while the slider moves, then in full once it's let go.
+    private void SetReferenceOpacity(ChangeEventArgs e, bool fast)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int value))
+        {
+            _referenceOpacity = Math.Clamp(value, 10, 100);
+            RememberReference();
+            RequestPreview(fast);
+        }
+    }
+
     protected override void OnInitialized()
     {
+        if (References.TryGetValue(ReferenceKey, out var remembered))
+        {
+            (_reference, _referenceOpacity) = remembered;
+        }
+
         _fonts = InstalledFonts();
         _videos = Services.GetService<OverlayVideos>();
         _automatic = Services.GetService<SchedularrTV.Service.Images.AutomaticImages>();
@@ -1108,7 +1171,9 @@
                     };                    float scale = Math.Min(1f, (fast ? FastPreviewPixels : PreviewPixels) / CanvasWidth);
                     OverlayClock? clock = IsDesign ? PreviewClock : null;
                     Dictionary<string, string> posters = await PostersAsync(snapshot, clock);
-                    byte[] png = await Task.Run(() => OverlayRenderer.Preview(snapshot, tokens, scale, posters, clock));
+                    string? reference = _reference;
+                    float referenceOpacity = _referenceOpacity / 100f;
+                    byte[] png = await Task.Run(() => OverlayRenderer.Preview(snapshot, tokens, scale, posters, clock, reference, referenceOpacity));
                     _preview = "data:image/png;base64," + Convert.ToBase64String(png);
                     _previewError = null;
                     await ShowPreview();
