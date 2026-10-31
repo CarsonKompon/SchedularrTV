@@ -22,7 +22,9 @@ public sealed class GapShuffleTests
         sequence.Consume("short");
         Assert.Empty(sequence.PreviewForGap(256, item => item.Duration.TotalSeconds < 10));
         Assert.Equal("short", Assert.Single(sequence.PreviewForGap(256, item => item.Duration.TotalSeconds <= 60)).Id);
-        Assert.Equal(301, sequence.ToState().Bag.Distinct().Count());
+        // Offered again, but not put back in the bag: it has had its turn this cycle.
+        Assert.Equal(300, sequence.ToState().Bag.Distinct().Count());
+        Assert.Equal(new[] { "short" }, sequence.ToState().Played);
         Assert.Contains(sequence.PreviewForGap(256, item => item.Duration.TotalMinutes <= 40), item => item.Id.StartsWith("long-"));
     }
 

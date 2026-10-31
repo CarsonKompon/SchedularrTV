@@ -15,6 +15,9 @@ public sealed class MediaSequence
     private readonly Dictionary<string, MediaItem> _byId;
     private readonly DeterministicRandom _random;
     private readonly List<string> _bag;
+    // Shuffle: what has had its turn this cycle (the pool minus the bag, as it was when each was played).
+    private List<string> _played = [];
+    private HashSet<string>? _playedLookup;
     private int _cursor;
     private string? _lastItemId;
     private List<(string Title, int Weight, MediaSequence Sequence)>? _titles;
@@ -258,11 +261,31 @@ public sealed class MediaSequence
         DeterministicRandom random = DeterministicRandom.Deserialize(state?.RandomState, DeterministicRandom.Hash(key));
 
         List<string> bag = samePool ? [.. state!.Bag] : [];
+        List<string> played = samePool ? [.. state!.Played ?? []] : [];
         int cursor = samePool ? state!.Cursor : Resume(pool, state?.LastItemId);
+
+        // A shuffle whose pool changed (a clip added or removed, a seasonal folder coming into or out of season) carries
+        // on with its cycle: what's left stays left, what already played stays played, and newcomers are dealt into the
+        // rest at random. Without this every change started the cycle over and ads repeated long before all had aired.
+        if (!samePool && !preordered && order == PlaybackOrder.Shuffle && state?.Played is { } wasPlayed
+            && (state.Bag.Count > 0 || wasPlayed.Count > 0))
+        {
+            HashSet<string> ids = new(pool.Select(item => item.Id), StringComparer.Ordinal);
+            bag = [.. state.Bag.Where(ids.Contains).Distinct(StringComparer.Ordinal)];
+            played = [.. wasPlayed.Where(ids.Contains).Distinct(StringComparer.Ordinal)];
+            HashSet<string> known = new(bag.Concat(played), StringComparer.Ordinal);
+            List<string> fresh = [.. pool.Select(item => item.Id).Distinct(StringComparer.Ordinal).Where(id => !known.Contains(id))];
+            random.Shuffle(fresh);
+            foreach (string id in fresh)
+            {
+                bag.Insert(random.Next(bag.Count + 1), id);
+            }
+        }
 
         var sequence = new MediaSequence(key, order, pool, random, bag, cursor, preordered)
         {
-            _lastItemId = state?.LastItemId
+            _lastItemId = state?.LastItemId,
+            _played = played
         };
 
         if (!preordered && order == PlaybackOrder.Shuffle && bag.Count == 0)
@@ -597,11 +620,30 @@ public sealed class MediaSequence
         return _releaseIndex.TryGetValue(id, out int index) && index < aired;
     }
 
+    /// <summary>A plain shuffle (not a show rotation, mixed collection or drop), whose cycle <see cref="_played"/> tracks.</summary>
+    private bool IsShuffleBag => Order == PlaybackOrder.Shuffle && !IsPreordered && _titles is null && _drop is null;
+
+    /// <summary>Records that <paramref name="id"/> has had its turn this cycle.</summary>
+    private void MarkPlayed(string id)
+    {
+        if (!IsShuffleBag || !_byId.ContainsKey(id))
+        {
+            return;
+        }
+
+        _playedLookup ??= new HashSet<string>(_played, StringComparer.Ordinal);
+        if (_playedLookup.Add(id))
+        {
+            _played.Add(id);
+        }
+    }
+
     public PlaybackState ToState() => new()
     {
         Key = Key,
         Cursor = _cursor,
         Bag = [.. _bag],
+        Played = IsShuffleBag ? [.. _played] : null,
         RandomState = _random.Serialize(),
         PoolFingerprint = Fingerprint(_pool),
         LastItemId = _lastItemId,
@@ -683,7 +725,7 @@ public sealed class MediaSequence
                 break;
 
             case PlaybackOrder.Random:
-                preview.AddRange(_pool.Take(max));
+                preview.AddRange(RandomDraw().Take(max));
                 break;
 
             default:
@@ -703,13 +745,17 @@ public sealed class MediaSequence
         if (max <= 0) return [];
         if (_titles is not null || _drop is not null)
             return PreviewOrder(_pool.Count).Where(predicate).Take(max).ToArray();
+        if (Order == PlaybackOrder.Random && !IsPreordered)
+        {
+            return RandomDraw().Where(predicate).Take(max).ToArray();
+        }
         if (Order != PlaybackOrder.Shuffle)
         {
             // Walk only as far as the requested window needs, without copying the entire library.
             List<MediaItem> preview = new(Math.Min(max, _pool.Count));
             for (int i = 0; i < _pool.Count && preview.Count < max; i++)
             {
-                MediaItem candidate = _pool[Order == PlaybackOrder.Random ? i : (_cursor + i) % _pool.Count];
+                MediaItem candidate = _pool[(_cursor + i) % _pool.Count];
                 if (predicate(candidate)) preview.Add(candidate);
             }
             return preview;
@@ -722,11 +768,12 @@ public sealed class MediaSequence
             .Where(predicate).Take(max).ToList();
         if (candidates.Count > 0) return candidates;
 
+        // Nothing left this cycle fits, so something that already played has to. It's offered (in a fresh random order)
+        // but not put back in the bag: putting it back would play it a second time in this cycle as well.
         HashSet<string> remaining = new(_bag, StringComparer.Ordinal);
         List<string> recycled = _pool.Where(item => !remaining.Contains(item.Id) && predicate(item))
-            .Select(item => item.Id).ToList();
+            .Select(item => item.Id).Distinct(StringComparer.Ordinal).ToList();
         _random.Shuffle(recycled);
-        _bag.AddRange(recycled);
         return recycled.Take(max).Select(id => _byId[id]).ToArray();
     }
 
@@ -783,6 +830,7 @@ public sealed class MediaSequence
         {
             case PlaybackOrder.Shuffle when !IsPreordered:
                 _bag.Remove(id);
+                MarkPlayed(id);
                 if (_bag.Count == 0)
                 {
                     RefillBag();
@@ -791,7 +839,8 @@ public sealed class MediaSequence
                 break;
 
             case PlaybackOrder.Random when !IsPreordered:
-                // Repeats are allowed; nothing to track.
+                // Repeats are allowed, but the next preview must be a fresh draw (previews read a copy of the generator).
+                _random.NextUInt64();
                 break;
 
             default:
@@ -855,6 +904,7 @@ public sealed class MediaSequence
             if (predicate is null || predicate(candidate))
             {
                 _bag.RemoveAt(i);
+                MarkPlayed(candidate.Id);
                 item = candidate;
                 return true;
             }
@@ -866,8 +916,23 @@ public sealed class MediaSequence
         return false;
     }
 
+    /// <summary>
+    /// The pool in a random order drawn from a copy of the generator, so previewing doesn't move it: two previews agree
+    /// until something is taken (taking moves the generator on, so the next draw differs). Previously a Random pool
+    /// previewed in its sorted order, so the packer always chose from the same first few hundred items.
+    /// </summary>
+    private IEnumerable<MediaItem> RandomDraw()
+    {
+        DeterministicRandom draw = DeterministicRandom.Deserialize(_random.Serialize(), 0);
+        List<MediaItem> order = [.. _pool];
+        draw.Shuffle(order);
+        return order;
+    }
+
     private void RefillBag()
     {
+        _played.Clear();
+        _playedLookup = null;
         _bag.Clear();
         _bag.AddRange(_pool.Select(p => p.Id));
         _random.Shuffle(_bag);

@@ -27,6 +27,21 @@ public sealed class PlaybackState
     /// </summary>
     public string? LastItemId { get; set; }
 
+    /// <summary>
+    /// For <see cref="PlaybackOrder.Shuffle"/>: item ids already played this cycle. With <see cref="Bag"/> it tells a
+    /// changed pool's newcomers apart from items that have had their turn, so the cycle carries on instead of starting over.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Played { get; set; }
+
+    /// <summary>For a channel's air log: when each item last aired there (planned time).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, DateTimeOffset>? Aired { get; set; }
+
+    /// <summary>When the store last saved this state; old states of regenerable pools are pruned by it.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? UpdatedAt { get; set; }
+
     public Dictionary<string, PlaybackState>? Titles { get; set; }
 
     public Dictionary<string, long>? TitleCredits { get; set; }
@@ -56,6 +71,9 @@ public sealed class PlaybackState
         Key = Key,
         Cursor = Cursor,
         Bag = [.. Bag],
+        Played = Played is null ? null : [.. Played],
+        Aired = Aired is null ? null : new(Aired, StringComparer.Ordinal),
+        UpdatedAt = UpdatedAt,
         RandomState = RandomState,
         PoolFingerprint = PoolFingerprint,
         LastItemId = LastItemId,

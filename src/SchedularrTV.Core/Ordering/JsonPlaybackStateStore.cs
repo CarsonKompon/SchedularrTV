@@ -27,7 +27,7 @@ public sealed class JsonPlaybackStateStore : IPlaybackStateStore, IAsyncDisposab
 
     public async ValueTask SaveAsync(PlaybackState state, CancellationToken cancellationToken = default)
     {
-        _states[state.Key] = state.Clone();
+        _states[state.Key] = Stamped(state);
         _dirty = true;
         await FlushAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -40,7 +40,7 @@ public sealed class JsonPlaybackStateStore : IPlaybackStateStore, IAsyncDisposab
     {
         foreach (PlaybackState state in states)
         {
-            _states[state.Key] = state.Clone();
+            _states[state.Key] = Stamped(state);
             _dirty = true;
         }
 
@@ -95,6 +95,27 @@ public sealed class JsonPlaybackStateStore : IPlaybackStateStore, IAsyncDisposab
         _writeLock.Dispose();
     }
 
+    private static PlaybackState Stamped(PlaybackState state)
+    {
+        PlaybackState copy = state.Clone();
+        copy.UpdatedAt = DateTimeOffset.UtcNow;
+        return copy;
+    }
+
+    /// <summary>How long an ad or filler pool's state is kept after it was last used.</summary>
+    private static readonly TimeSpan PoolStateLifetime = TimeSpan.FromDays(30);
+
+    /// <summary>
+    /// Whether a state can go: an ad or filler pool's (which a build recreates whenever it's needed) that hasn't been
+    /// saved for a month, or was saved before saves were dated. Those pools used to be keyed by the day's query, so
+    /// the file collected a new state for each of them every day; none of those are read again.
+    /// </summary>
+    private static bool Stale(string key, PlaybackState state, DateTimeOffset now) =>
+        PoolScopes.Any(scope => key.Contains(scope, StringComparison.Ordinal))
+        && (state.UpdatedAt is not { } saved || now - saved > PoolStateLifetime);
+
+    private static readonly string[] PoolScopes = ["|commercials|", "|filler|", "|bumpers-opening|", "|bumpers-closing|", "|block-Block"];
+
     private static ConcurrentDictionary<string, PlaybackState> Load(string path)
     {
         if (!File.Exists(path))
@@ -106,7 +127,9 @@ public sealed class JsonPlaybackStateStore : IPlaybackStateStore, IAsyncDisposab
         {
             using FileStream stream = File.OpenRead(path);
             Dictionary<string, PlaybackState>? loaded = JsonSerializer.Deserialize<Dictionary<string, PlaybackState>>(stream, JsonOptions);
-            return new ConcurrentDictionary<string, PlaybackState>(loaded ?? [], StringComparer.Ordinal);
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            return new ConcurrentDictionary<string, PlaybackState>(
+                (loaded ?? []).Where(pair => !Stale(pair.Key, pair.Value, now)), StringComparer.Ordinal);
         }
         catch (JsonException)
         {

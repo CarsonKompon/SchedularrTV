@@ -50,7 +50,7 @@ internal sealed class BumperBreakContributor : IBreakContributor
         }
 
         MediaSequence sequence = await context.Session
-            .GetPoolSequenceAsync(pool, PlaybackOrder.Shuffle, null, null, scope, cancellationToken)
+            .GetPoolSequenceAsync(pool, PlaybackOrder.Shuffle, null, null, scope, cancellationToken, AdBreakCompiler.PoolIdentity(sources, null))
             .ConfigureAwait(false);
 
         return sequence.TryTakeForGap(item => item.Duration > TimeSpan.Zero && item.Duration <= room, out MediaItem clip) ? clip : null;

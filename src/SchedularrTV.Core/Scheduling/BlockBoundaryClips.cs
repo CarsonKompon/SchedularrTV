@@ -16,7 +16,7 @@ internal static class BlockBoundaryClips
         if (sources.Count == 0) return null;
         QueryExpression pool = AdBreakCompiler.Pool(sources, null, at, session.Config.Settings.TemporalTags);
         MediaSequence sequence = await session.GetPoolSequenceAsync(pool, PlaybackOrder.Shuffle, null, null,
-            $"block-{role}-{block.Name}", cancellationToken).ConfigureAwait(false);
+            $"block-{role}-{block.Name}", cancellationToken, AdBreakCompiler.PoolIdentity(sources, null)).ConfigureAwait(false);
         return sequence.TryTakeForGap(item => item.Duration > TimeSpan.Zero && item.Duration <= room, out MediaItem clip) ? clip : null;
     }
 

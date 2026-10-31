@@ -1014,8 +1014,17 @@ public sealed class SchedulingEngine(
                 commercials.MinItemDuration,
                 commercials.MaxItemDuration,
                 "commercials",
-                cancellationToken)
+                cancellationToken,
+                InterstitialQueryBuilder.CommercialsIdentity(commercials))
             .ConfigureAwait(false);
+
+        // Ads that aired on this channel lately (from any block's pool) are passed over while others fit. Each block's ad
+        // breaks keep their own shuffle and the shared folders are in several, so without this a clip could come round
+        // again within the hour in the next block. When nothing else fits, they're allowed rather than leave dead air.
+        IReadOnlyDictionary<string, DateTimeOffset> aired = await session.AiredAsync(cancellationToken).ConfigureAwait(false);
+        DateTimeOffset airedSince = cursor - ScheduleBuildSession.AiredWindow;
+        bool AiredLately(MediaItem item) => aired.TryGetValue(item.Id, out DateTimeOffset at) && at >= airedSince;
+        bool preferUnaired = true;
 
         List<PackedItem> packedItems = [];
         Dictionary<string, int> repeats = new(StringComparer.Ordinal);
@@ -1023,12 +1032,23 @@ public sealed class SchedulingEngine(
         TimeSpan available = packTo - cursor;
         while (available > TimeSpan.Zero)
         {
+            bool unairedOnly = preferUnaired;
             IReadOnlyList<MediaItem> candidates = commercialSequence.PreviewForGap(256,
                 item => item.Duration > TimeSpan.Zero && item.Duration <= available
-                    && repeats.GetValueOrDefault(item.Id) < maxRepeats);
+                    && repeats.GetValueOrDefault(item.Id) < maxRepeats
+                    && !(unairedOnly && AiredLately(item)));
             PackResult pass = KnapsackPacker.Pack(candidates, available,
                 commercials.Granularity ?? TimeSpan.FromMilliseconds(250), 1);
-            if (pass.Items.Count == 0) break;
+            if (pass.Items.Count == 0)
+            {
+                if (preferUnaired)
+                {
+                    preferUnaired = false;
+                    continue;
+                }
+
+                break;
+            }
             foreach (PackedItem item in pass.Items)
             {
                 commercialSequence.Consume(item.Item.Id);
@@ -1053,7 +1073,8 @@ public sealed class SchedulingEngine(
                         fillerTier.MinItemDuration,
                         fillerTier.MaxItemDuration,
                         "filler",
-                        cancellationToken)
+                        cancellationToken,
+                        InterstitialQueryBuilder.FillerIdentity(fillerTier))
                     .ConfigureAwait(false);
 
                 fillerCandidates.AddRange(fillerSequence.PreviewForGap(128,
@@ -1088,6 +1109,7 @@ public sealed class SchedulingEngine(
             // The two pools can overlap, so mark the item played in whichever sequence holds it.
             if (item.IsFiller) commercialSequence.Consume(item.Item.Id);
             fillerSequence?.Consume(item.Item.Id);
+            session.RecordAired(item.Item.Id, cursor);
 
             entries.Add(new ScheduleEntry
             {

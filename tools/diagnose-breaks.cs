@@ -141,7 +141,7 @@ foreach (var channel in config.Channels.Where(channel => channels.Contains(chann
         DateTimeOffset moment = schedule.Entries.FirstOrDefault(entry => entry.BlockName == name && entry.Kind == "Padding")?.Start ?? schedule.Start;
         var query = InterstitialQueryBuilder.BuildCommercials(resolved.Commercials!, moment, config.Settings.TemporalTags);
         var commercials = resolved.Commercials!;
-        string key = $"{channel.Id}|commercials|{DeterministicRandom.Hash($"{query.ToQueryString()}|{commercials.Order ?? PlaybackOrder.Shuffle}|{commercials.MinItemDuration}|{commercials.MaxItemDuration}"):x16}";
+        string key = $"{channel.Id}|commercials|{DeterministicRandom.Hash($"{InterstitialQueryBuilder.CommercialsIdentity(commercials)}|{commercials.Order ?? PlaybackOrder.Shuffle}|{commercials.MinItemDuration}|{commercials.MaxItemDuration}"):x16}";
         currentKeys.Add(key);
         var pool = QueryEvaluator.Filter(media, query);
         var eligible = pool.Where(item => item.Duration >= (resolved.Commercials!.MinItemDuration ?? TimeSpan.Zero)

@@ -43,6 +43,23 @@ public static class InterstitialQueryBuilder
             temporalOptions);
 
     /// <summary>
+    /// What the commercial pool is, the same on every day (see <see cref="AdBreakCompiler.PoolIdentity"/>): its shuffle
+    /// state is kept under this. Without temporal tags it's the pool's query, as the state was keyed before.
+    /// </summary>
+    public static string CommercialsIdentity(CommercialsConfig commercials) =>
+        commercials.Sources is { } sources
+            ? AdBreakCompiler.PoolIdentity(sources, commercials.Filter, (commercials.TagPools ?? []).Select(CommercialsIdentity))
+            : Build(commercials.Query, commercials.BaseQuery, commercials.BaseTags, commercials.Types, false, commercials.Filter,
+                default, new TemporalTagOptions()).ToQueryString() + (commercials.AutoTemporalTags == true ? "|temporal" : "");
+
+    /// <summary>What the filler pool is, the same on every day (see <see cref="CommercialsIdentity"/>).</summary>
+    public static string FillerIdentity(FillerTierConfig filler) =>
+        filler.Sources is { } sources
+            ? AdBreakCompiler.PoolIdentity(sources, filler.Filter, (filler.TagPools ?? []).Select(FillerIdentity))
+            : Build(filler.Query, filler.BaseQuery, filler.BaseTags, filler.Types, false, filler.Filter,
+                default, new TemporalTagOptions()).ToQueryString() + (filler.AutoTemporalTags == true ? "|temporal" : "");
+
+    /// <summary>
     /// Promos for the programme starting the instant this break ends. Accepts either the
     /// <c>promo_type</c> attribute or an "Up Next" tag, so libraries can use whichever convention
     /// they already have.

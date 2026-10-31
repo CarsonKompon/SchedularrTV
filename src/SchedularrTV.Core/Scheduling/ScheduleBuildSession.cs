@@ -292,22 +292,69 @@ internal sealed class ScheduleBuildSession(
         return titles;
     }
 
+    /// <param name="identity">
+    /// What the pool is, independent of the day: its shuffle state is kept under it. A seasonal pool's query names
+    /// today's date, so keying on the query gave every day a new, empty state and the "no repeats until everything has
+    /// played" cycle started over each midnight. Null keys on the query.
+    /// </param>
     public async ValueTask<MediaSequence> GetPoolSequenceAsync(
         QueryExpression expression,
         PlaybackOrder order,
         TimeSpan? minDuration,
         TimeSpan? maxDuration,
         string scope,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? identity = null)
     {
-        // Temporal tags change the pool from day to day, so the resolved query is part of the key.
-        string key = $"{channel.Id}|{scope}|{Fingerprint($"{expression.ToQueryString()}|{order}|{minDuration}|{maxDuration}")}";
+        string resolved = expression.ToQueryString();
+        string key = $"{channel.Id}|{scope}|{Fingerprint($"{identity ?? resolved}|{order}|{minDuration}|{maxDuration}")}";
 
-        if (_sequences.TryGetValue(key, out MediaSequence? cached))
+        // Within a build the same pool can resolve differently (breaks either side of midnight hold different seasonal
+        // clips), so the cache also keys on the query. Only one sequence stands for the pool at a time: switching day
+        // hands the current one's place to the next, and only that one is saved.
+        string cacheKey = identity is null ? key : $"{key}|{Fingerprint(resolved)}";
+        if (_sequences.TryGetValue(cacheKey, out MediaSequence? cached))
         {
             return cached;
         }
 
+        if (identity is not null && _poolsByKey.TryGetValue(key, out MediaSequence? earlier))
+        {
+            // The same pool on another day of this build: carry on from where that one is now.
+            PlaybackState carried = earlier.ToState();
+            _sequences.Remove(_poolCacheKeys[key]);
+            MediaSequence next = await CreatePoolAsync(expression, order, minDuration, maxDuration, key, carried, cancellationToken).ConfigureAwait(false);
+            _sequences[cacheKey] = next;
+            _poolsByKey[key] = next;
+            _poolCacheKeys[key] = cacheKey;
+            return next;
+        }
+
+        PlaybackState? state = await stateStore.GetAsync(key, cancellationToken).ConfigureAwait(false);
+        MediaSequence sequence = await CreatePoolAsync(expression, order, minDuration, maxDuration, key, state, cancellationToken).ConfigureAwait(false);
+        _sequences[cacheKey] = sequence;
+        if (identity is not null)
+        {
+            _poolsByKey[key] = sequence;
+            _poolCacheKeys[key] = cacheKey;
+        }
+
+        return sequence;
+    }
+
+    // Pools keyed by identity: the sequence currently standing for each, and the cache entry it's under.
+    private readonly Dictionary<string, MediaSequence> _poolsByKey = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _poolCacheKeys = new(StringComparer.Ordinal);
+
+    private async ValueTask<MediaSequence> CreatePoolAsync(
+        QueryExpression expression,
+        PlaybackOrder order,
+        TimeSpan? minDuration,
+        TimeSpan? maxDuration,
+        string key,
+        PlaybackState? state,
+        CancellationToken cancellationToken)
+    {
         IReadOnlyList<MediaItem> items = await SearchAsync(expression, cancellationToken).ConfigureAwait(false);
 
         if (minDuration is { } min)
@@ -321,22 +368,68 @@ internal sealed class ScheduleBuildSession(
         }
 
         items = VersionCollapser.Collapse(items, null);
+        return MediaSequence.Create(key, order, items, state);
+    }
 
-        PlaybackState? state = await stateStore.GetAsync(key, cancellationToken).ConfigureAwait(false);
-        MediaSequence sequence = MediaSequence.Create(key, order, items, state);
-        _sequences[key] = sequence;
-        return sequence;
+    // ---- The channel's air log ----
+
+    /// <summary>How long an ad that aired on the channel is passed over for others, while others fit.</summary>
+    public static readonly TimeSpan AiredWindow = TimeSpan.FromHours(6);
+
+    private PlaybackState? _airLog;
+
+    /// <summary>
+    /// When each ad last aired on this channel, across every pool (each block's ad breaks have their own shuffle, and the
+    /// same clip can be in several). Times at or after this build's start belong to a plan being replaced, so they're dropped.
+    /// </summary>
+    public async ValueTask<IReadOnlyDictionary<string, DateTimeOffset>> AiredAsync(CancellationToken cancellationToken)
+    {
+        if (_airLog is null)
+        {
+            string key = $"{channel.Id}|aired|commercials";
+            PlaybackState? saved = await stateStore.GetAsync(key, cancellationToken).ConfigureAwait(false);
+            DateTimeOffset oldest = planStart - AiredWindow;
+            _airLog = new PlaybackState
+            {
+                Key = key,
+                Aired = (saved?.Aired ?? []).Where(pair => pair.Value < planStart && pair.Value >= oldest)
+                    .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
+            };
+        }
+
+        return _airLog.Aired!;
+    }
+
+    /// <summary>Notes that <paramref name="id"/> airs on this channel at <paramref name="at"/>.</summary>
+    public void RecordAired(string id, DateTimeOffset at)
+    {
+        if (_airLog?.Aired is { } aired && (!aired.TryGetValue(id, out DateTimeOffset before) || before < at))
+        {
+            aired[id] = at;
+        }
     }
 
     /// <summary>Saves every sequence's place together (one write of the state file for the whole channel).</summary>
     public async ValueTask FlushAsync(CancellationToken cancellationToken)
     {
-        if (_sequences.Count == 0)
+        List<PlaybackState> states = [.. _sequences.Values.Select(sequence => sequence.ToState())];
+        if (_airLog?.Aired is { Count: > 0 } aired)
+        {
+            // Only what's still inside the window from the end of what was planned is worth keeping.
+            DateTimeOffset oldest = aired.Values.Max() - AiredWindow;
+            states.Add(new PlaybackState
+            {
+                Key = _airLog.Key,
+                Aired = aired.Where(pair => pair.Value >= oldest).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
+            });
+        }
+
+        if (states.Count == 0)
         {
             return;
         }
 
-        await stateStore.SaveAllAsync([.. _sequences.Values.Select(sequence => sequence.ToState())], cancellationToken).ConfigureAwait(false);
+        await stateStore.SaveAllAsync(states, cancellationToken).ConfigureAwait(false);
     }
 
     // Shared with the editors (ContentSelectorQuery), so what they list is what a build plays.

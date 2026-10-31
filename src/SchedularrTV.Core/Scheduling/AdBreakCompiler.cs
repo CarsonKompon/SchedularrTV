@@ -315,6 +315,20 @@ public static class AdBreakCompiler
         return QueryExpression.And([pool, QueryParser.Parse(filter)]);
     }
 
+    /// <summary>
+    /// What <see cref="Pool"/> is drawn from, the same on every day: the folders (and what each leaves out, and whether
+    /// it's seasonal), the filter and the tag pools. A pool's shuffle state is kept under this rather than under the
+    /// day's query, which names today's date.
+    /// </summary>
+    public static string PoolIdentity(IReadOnlyList<AdPoolSource> sources, string? filter, IEnumerable<string>? tagPools = null)
+    {
+        List<string> parts = [.. sources.Select(source =>
+            $"{AdBreakPaths.Key(source.Folder)}|{string.Join(",", source.Excluded.Select(AdBreakPaths.Key))}|{source.Seasonal}")];
+        parts.Add($"filter:{filter}");
+        parts.AddRange((tagPools ?? []).Select(pool => $"tags:{pool}"));
+        return string.Join("||", parts);
+    }
+
     private static QueryExpression Source(AdPoolSource source, DateTimeOffset moment, TemporalTagOptions options)
     {
         List<QueryExpression> clauses = [PathMatches(AdBreakPaths.Inside(source.Folder))];
