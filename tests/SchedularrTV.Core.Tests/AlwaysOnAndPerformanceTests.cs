@@ -218,14 +218,14 @@ public sealed class AlwaysOnAndPerformanceTests
     }
 
     [Fact]
-    public void Nvidia_channels_pad_in_software_so_letterboxed_programmes_get_no_green_line()
+    public void Nvidia_channels_pad_and_overlay_in_software_so_programmes_get_no_green_line()
     {
         using var cuda = System.Text.Json.JsonDocument.Parse(
             ErsatzTvEncoding.Overlay(new EffectiveEncoding("cuda", 1080, 6000, null, null), channelDisabledFilters: ["scale_cuda", " ", "pad_cuda"]));
         string[] disabled = cuda.RootElement.GetProperty("ffmpeg").GetProperty("disabled_filters")
             .EnumerateArray().Select(f => f.GetString()!).ToArray();
         // The channel's own choices survive (an overlay replaces the list), without duplicates or blanks.
-        Assert.Equal(new[] { "pad_cuda", "scale_cuda" }, disabled);
+        Assert.Equal(new[] { "overlay_cuda", "pad_cuda", "scale_cuda" }, disabled);
 
         // Other accelerations, and the processor, leave channel.json's ffmpeg settings alone.
         foreach (string hardware in new[] { "none", "qsv", "amf", "vaapi" })

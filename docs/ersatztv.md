@@ -61,7 +61,12 @@ SchedularrTV writes generated encoding overlays referenced by the lineup. They o
 
 Changing these overlays restarts managed ErsatzTV and briefly interrupts viewers. IPTV preserves source dimensions where known; streamer output follows the live-page encoding dimensions.
 
-On NVIDIA (`cuda`) channels the overlay also disables ErsatzTV's `pad_cuda` filter, which left a green line under letterboxed programmes; padding is done in software instead. Filters a channel's own `channel.json` disables are kept.
+On NVIDIA (`cuda`) channels the overlay also disables two of ErsatzTV's filters that put a green line along the bottom of the picture; each step is done in software instead, with decoding, scaling and encoding still on the card:
+
+- `pad_cuda`, which left the line under letterboxed and pillarboxed programmes.
+- `overlay_cuda`, used for graphics (overlays, screen bugs, burned-in picture subtitles). From the start of a programme it made the stream 1920x1088 with the extra 8 rows green ([ffmpeg #11674](https://trac.ffmpeg.org/ticket/11674)). Overlaying in software costs some processor time, on programmes that carry graphics.
+
+Filters a channel's own `channel.json` disables are kept.
 
 ## Audio and subtitles
 

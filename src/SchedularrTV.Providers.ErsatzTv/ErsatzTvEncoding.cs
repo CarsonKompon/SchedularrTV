@@ -175,14 +175,19 @@ public static class ErsatzTvEncoding
     }
 
     /// <summary>
-    /// ffmpeg filters a hardware acceleration must not use. <c>pad_cuda</c> leaves rows of the padded picture
-    /// unwritten, which show as a green line along the bottom of letterboxed or pillarboxed programmes (anything not
-    /// already the channel's size; ads usually are, so they look fine). Without it ErsatzTV pads in software, with real
-    /// black, and keeps decoding, scaling and encoding on the card.
+    /// ffmpeg filters a hardware acceleration must not use. Both of these put a green line along the bottom on NVIDIA,
+    /// and without them ErsatzTV does that one step in software and keeps decoding, scaling and encoding on the card:
+    /// <list type="bullet">
+    /// <item><c>pad_cuda</c> leaves rows of the padded picture unwritten, under letterboxed or pillarboxed programmes
+    /// (anything not already the channel's size; ads usually are, so they look fine).</item>
+    /// <item><c>overlay_cuda</c> (graphics: overlays, bugs, burned-in picture subtitles) hands NVENC its frames at the
+    /// GPU's padded height, so from the start of a programme the stream comes out 1920x1088 with no crop, the extra 8 rows
+    /// green (ffmpeg trac #11674; Tunarr #2393). The software overlay path comes out a proper 1080.</item>
+    /// </list>
     /// </summary>
     public static IReadOnlyList<string> DisabledFilters(string hardware) => hardware switch
     {
-        "cuda" => ["pad_cuda"],
+        "cuda" => ["overlay_cuda", "pad_cuda"],
         _ => []
     };
 
