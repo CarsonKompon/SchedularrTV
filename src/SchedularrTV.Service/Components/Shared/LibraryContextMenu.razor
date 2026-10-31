@@ -1,0 +1,170 @@
+@* The right-click menu on the TV shows and Movies library lists: take the items out of collections, or open a show's
+   intros and outros. Acts on the right-clicked item, or on the whole selection when one of the selected was clicked. *@
+@inject IJSRuntime JS
+
+<div class="ctx-backdrop" @onclick="Close" @oncontextmenu="Close" @oncontextmenu:preventDefault="true"></div>
+<div class="ctx-menu" role="menu" aria-label="@Heading" tabindex="-1" @ref="_menu"
+     style="left:@Px(_left);top:@Px(_top);" @onkeydown="OnKey" @oncontextmenu:preventDefault="true">
+    <div class="ctx-heading" title="@Heading">@Heading</div>
+
+    <div class="ctx-item has-sub @(_subOpen ? "open" : "") @(Collections.Count == 0 ? "disabled" : "")" role="menuitem"
+         aria-haspopup="true" aria-expanded="@(_subOpen ? "true" : "false")" aria-disabled="@(Collections.Count == 0 ? "true" : "false")"
+         tabindex="0" @onclick="ToggleSub" @onmouseenter="() => _subOpen = Collections.Count > 0">
+        <Icon Name="trash" Size="14" />
+        <span>Remove from collection</span>
+        <span class="ctx-caret" aria-hidden="true">›</span>
+
+        @if (_subOpen && Collections.Count > 0)
+        {
+            <div class="ctx-menu ctx-sub @(_flip ? "flip" : "")" role="menu" aria-label="Collections" @onclick:stopPropagation="true">
+                @foreach (string collection in Collections)
+                {
+                    <button class="ctx-item" type="button" role="menuitem" @onclick="() => Pick(OnRemove, collection)">
+                        <span>@collection</span>
+                    </button>
+                }
+                <div class="ctx-sep" role="separator"></div>
+                <button class="ctx-item danger" type="button" role="menuitem" @onclick="() => Pick(OnRemoveAll)">
+                    <span>Remove from all</span>
+                </button>
+            </div>
+        }
+    </div>
+    @if (Collections.Count == 0)
+    {
+        <div class="ctx-note">@(Count == 1 ? "Not in any collection" : "None of these are in a collection")</div>
+    }
+
+    @if (OnIntros.HasDelegate)
+    {
+        <div class="ctx-sep" role="separator"></div>
+        <button class="ctx-item" type="button" role="menuitem" disabled="@(Count != 1)" @onmouseenter="() => _subOpen = false"
+                title="@(Count == 1 ? null : "Pick one show to set its intros and outros")" @onclick="() => Pick(OnIntros)">
+            <Icon Name="film" Size="14" />
+            <span>Intros/outros…</span>
+        </button>
+    }
+</div>
+
+@code {
+    /// <summary>Where the right-click was, in the window (client coordinates).</summary>
+    [Parameter, EditorRequired] public double X { get; set; }
+    [Parameter, EditorRequired] public double Y { get; set; }
+
+    /// <summary>What the menu acts on, as its heading says ("Rugrats", "3 shows").</summary>
+    [Parameter, EditorRequired] public string Heading { get; set; } = "";
+
+    /// <summary>How many items it acts on.</summary>
+    [Parameter] public int Count { get; set; } = 1;
+
+    /// <summary>The collections any of the items are in.</summary>
+    [Parameter] public IReadOnlyList<string> Collections { get; set; } = [];
+
+    [Parameter] public EventCallback<string> OnRemove { get; set; }
+    [Parameter] public EventCallback OnRemoveAll { get; set; }
+
+    /// <summary>Opens the show's intros and outros; leave unset where there are none (movies).</summary>
+    [Parameter] public EventCallback OnIntros { get; set; }
+
+    [Parameter, EditorRequired] public EventCallback OnClose { get; set; }
+
+    private const double MenuWidth = 240;
+    private const double SubWidth = 240;
+
+    private ElementReference _menu;
+    private double _left;
+    private double _top;
+    private bool _flip;
+    private bool _subOpen;
+    private bool _placed;
+
+    private (double X, double Y)? _openedAt;
+
+    // Placed afresh only when opened somewhere new, not each time the page behind it redraws.
+    protected override void OnParametersSet()
+    {
+        if (_openedAt == (X, Y))
+        {
+            return;
+        }
+
+        _openedAt = (X, Y);
+        _left = X;
+        _top = Y;
+        _placed = false;
+        _subOpen = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_placed)
+        {
+            return;
+        }
+
+        _placed = true;
+        try
+        {
+            // Kept inside the window: moved left or up when it would run off, and the collections open to the left
+            // when there's no room for them on the right.
+            double[] size = await JS.InvokeAsync<double[]>("eval",
+                "(m => [window.innerWidth, window.innerHeight, m ? m.offsetHeight : 0])(document.querySelector('.ctx-menu'))");
+            double width = size[0], height = size[1], menuHeight = size[2];
+            double left = Math.Max(4, Math.Min(X, width - MenuWidth - 4));
+            double top = Math.Max(4, Math.Min(Y, height - menuHeight - 4));
+            bool flip = left + MenuWidth + SubWidth > width;
+            if (left != _left || top != _top || flip != _flip)
+            {
+                (_left, _top, _flip) = (left, top, flip);
+                StateHasChanged();
+            }
+
+            await _menu.FocusAsync();
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException)
+        {
+            // Left where it was clicked.
+        }
+    }
+
+    private void ToggleSub()
+    {
+        if (Collections.Count > 0)
+        {
+            _subOpen = !_subOpen;
+        }
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            await Close();
+        }
+        else if (e.Key is "ArrowRight" or "Enter" && Collections.Count > 0)
+        {
+            _subOpen = true;
+        }
+        else if (e.Key == "ArrowLeft")
+        {
+            _subOpen = false;
+        }
+    }
+
+    // The action runs before the menu closes, so the page still knows what it was opened on.
+    private async Task Pick(EventCallback action)
+    {
+        await action.InvokeAsync();
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task Pick(EventCallback<string> action, string value)
+    {
+        await action.InvokeAsync(value);
+        await OnClose.InvokeAsync();
+    }
+
+    private Task Close() => OnClose.InvokeAsync();
+
+    private static string Px(double value) => $"{value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}px";
+}

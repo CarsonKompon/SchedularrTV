@@ -126,7 +126,8 @@ else if (Grid)
             bool selected = _selected.Contains(show.Id);
             <div class="media-card @(selected ? "selected" : "")" @key="show.Id" tabindex="0" role="checkbox"
                  aria-checked="@(selected ? "true" : "false")" aria-label="@show.Name"
-                 @onclick="() => Toggle(show.Id)" @onkeydown="e => OnCardKey(e, show.Id)">
+                 @onclick="() => Toggle(show.Id)" @onkeydown="e => OnCardKey(e, show.Id)"
+                 @oncontextmenu="e => OpenMenu(e, show.Id)" @oncontextmenu:preventDefault="true">
                 <span class="media-card-check" aria-hidden="true"><Icon Name="check" Size="14" StrokeWidth="3" /></span>
                 <div class="media-card-poster">
                     <Artwork Id="@show.Id" Title="@show.Name" Width="320" />
@@ -185,7 +186,8 @@ else
                 @foreach (LibraryShow show in VisibleShows.Take(_limit))
                 {
                     bool selected = _selected.Contains(show.Id);
-                    <tr class="selectable @(selected ? "selected" : "")" @key="show.Id" @onclick="() => Toggle(show.Id)">
+                    <tr class="selectable @(selected ? "selected" : "")" @key="show.Id" @onclick="() => Toggle(show.Id)"
+                        @oncontextmenu="e => OpenMenu(e, show.Id)" @oncontextmenu:preventDefault="true">
                         <td>
                             <input type="checkbox" aria-label="@($"Select {show.Name}")" checked="@selected"
                                    @onclick:stopPropagation="true" @onchange="() => Toggle(show.Id)" />
@@ -248,7 +250,78 @@ else
     </div>
 }
 
+@if (_menu is { } menu)
+{
+    <LibraryContextMenu X="menu.X" Y="menu.Y" Count="menu.Shows.Count"
+                        Heading="@(menu.Shows.Count == 1 ? menu.Shows[0].Name : $"{menu.Shows.Count} shows")"
+                        Collections="CollectionsOf(menu.Shows)" OnRemove="RemoveFrom" OnRemoveAll="RemoveFromAll"
+                        OnIntros="OpenIntros" OnClose="() => _menu = null" />
+}
+
+@if (_bumpers is { } bumpers)
+{
+    <BumperEditor Include="bumpers" ShowWide="true" Changed="Editor.MarkDirty" OnClose="() => _bumpers = null" />
+}
+
 @code {
+    // ---- The right-click menu ----
+
+    private sealed record MenuTarget(double X, double Y, IReadOnlyList<LibraryShow> Shows);
+
+    private MenuTarget? _menu;
+    private ContentInclude? _bumpers;
+
+    /// <summary>On the right-clicked show, or on every selected show when the right-clicked one is selected.</summary>
+    private void OpenMenu(MouseEventArgs e, string id)
+    {
+        List<LibraryShow> shows = _selected.Contains(id)
+            ? [.. _shows.Where(show => _selected.Contains(show.Id))]
+            : [.. _shows.Where(show => show.Id == id)];
+        _menu = shows.Count == 0 ? null : new MenuTarget(e.ClientX, e.ClientY, shows);
+    }
+
+    /// <summary>The collections listing any of the shows (whole, or some of their seasons or episodes), by name.</summary>
+    private IReadOnlyList<string> CollectionsOf(IReadOnlyList<LibraryShow> shows) =>
+        [.. Editor.Working.GlobalCollections
+            .Where(collection => collection.Value.Include.Any(include => shows.Any(show => Matches(include, show))))
+            .Select(collection => collection.Key)
+            .Order(StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>Takes the shows out of the collection: every entry for them, whole or seasons and episodes.</summary>
+    private int Remove(string collection, IReadOnlyList<LibraryShow> shows) =>
+        Editor.Working.GlobalCollections.TryGetValue(collection, out ContentSelector? selector)
+            ? selector.Include.RemoveAll(include => shows.Any(show => Matches(include, show)))
+            : 0;
+
+    private void RemoveFrom(string collection)
+    {
+        if (_menu is not { } menu) return;
+        int removed = Remove(collection, menu.Shows);
+        if (removed == 0) return;
+        _message = $"Removed {Describe(menu.Shows)} from \"{collection}\".";
+        Editor.MarkDirty();
+    }
+
+    private void RemoveFromAll()
+    {
+        if (_menu is not { } menu) return;
+        List<string> from = [.. CollectionsOf(menu.Shows).Where(collection => Remove(collection, menu.Shows) > 0)];
+        if (from.Count == 0) return;
+        _message = $"Removed {Describe(menu.Shows)} from {(from.Count == 1 ? $"\"{from[0]}\"" : $"{from.Count} collections")}.";
+        Editor.MarkDirty();
+    }
+
+    private void OpenIntros()
+    {
+        if (_menu is { Shows: [LibraryShow show] })
+        {
+            _bumpers = new ContentInclude { Show = show.Name, ShowId = show.Id };
+        }
+    }
+
+    private static string Describe(IReadOnlyList<LibraryShow> shows) =>
+        shows.Count == 1 ? $"\"{shows[0].Name}\"" : $"{shows.Count} shows";
+
     private static string ShowUrl(LibraryShow show) => $"library/show?id={Uri.EscapeDataString(show.Id)}";
     private const int PageSize = 120;
 

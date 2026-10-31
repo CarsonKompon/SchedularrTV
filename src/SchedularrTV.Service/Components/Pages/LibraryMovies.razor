@@ -106,7 +106,8 @@ else if (Grid)
             bool selected = _selected.Contains(movie.Title);
             <div class="media-card @(selected ? "selected" : "")" @key="movie.Title" tabindex="0" role="checkbox"
                  aria-checked="@(selected ? "true" : "false")" aria-label="@movie.Title"
-                 @onclick="() => Toggle(movie.Title)" @onkeydown="e => OnCardKey(e, movie.Title)">
+                 @onclick="() => Toggle(movie.Title)" @onkeydown="e => OnCardKey(e, movie.Title)"
+                 @oncontextmenu="e => OpenMenu(e, movie.Title)" @oncontextmenu:preventDefault="true">
                 <span class="media-card-check" aria-hidden="true"><Icon Name="check" Size="14" StrokeWidth="3" /></span>
                 <div style="position:relative;">
                     <Artwork Id="@movie.Id" Title="@movie.Title" Width="320" />
@@ -154,7 +155,8 @@ else
                 @foreach (LibraryMovie movie in Visible.Take(_limit))
                 {
                     bool selected = _selected.Contains(movie.Title);
-                    <tr class="selectable @(selected ? "selected" : "")" @key="movie.Title" @onclick="() => Toggle(movie.Title)">
+                    <tr class="selectable @(selected ? "selected" : "")" @key="movie.Title" @onclick="() => Toggle(movie.Title)"
+                        @oncontextmenu="e => OpenMenu(e, movie.Title)" @oncontextmenu:preventDefault="true">
                         <td>
                             <input type="checkbox" aria-label="@($"Select {movie.Title}")" checked="@selected"
                                    @onclick:stopPropagation="true" @onchange="() => Toggle(movie.Title)" />
@@ -193,7 +195,61 @@ else
     </div>
 }
 
+@if (_menu is { } menu)
+{
+    <LibraryContextMenu X="menu.X" Y="menu.Y" Count="menu.Titles.Count"
+                        Heading="@(menu.Titles.Count == 1 ? menu.Titles[0] : $"{menu.Titles.Count} movies")"
+                        Collections="CollectionsOf(menu.Titles)" OnRemove="RemoveFrom" OnRemoveAll="RemoveFromAll"
+                        OnClose="() => _menu = null" />
+}
+
 @code {
+    // ---- The right-click menu ----
+
+    private sealed record MenuTarget(double X, double Y, IReadOnlyList<string> Titles);
+
+    private MenuTarget? _menu;
+
+    /// <summary>On the right-clicked movie, or on every selected movie when the right-clicked one is selected.</summary>
+    private void OpenMenu(MouseEventArgs e, string title)
+    {
+        List<string> titles = _selected.Contains(title) ? [.. _selected.Order(StringComparer.OrdinalIgnoreCase)] : [title];
+        _menu = new MenuTarget(e.ClientX, e.ClientY, titles);
+    }
+
+    private static bool IsMovie(ContentInclude include, IReadOnlyList<string> titles) =>
+        titles.Any(title => string.Equals(include.Movie, title, StringComparison.OrdinalIgnoreCase));
+
+    private IReadOnlyList<string> CollectionsOf(IReadOnlyList<string> titles) =>
+        [.. Editor.Working.GlobalCollections
+            .Where(collection => collection.Value.Include.Any(include => IsMovie(include, titles)))
+            .Select(collection => collection.Key)
+            .Order(StringComparer.OrdinalIgnoreCase)];
+
+    private int Remove(string collection, IReadOnlyList<string> titles) =>
+        Editor.Working.GlobalCollections.TryGetValue(collection, out ContentSelector? selector)
+            ? selector.Include.RemoveAll(include => IsMovie(include, titles))
+            : 0;
+
+    private void RemoveFrom(string collection)
+    {
+        if (_menu is not { } menu || Remove(collection, menu.Titles) == 0) return;
+        _message = $"Removed {Describe(menu.Titles)} from \"{collection}\".";
+        Editor.MarkDirty();
+    }
+
+    private void RemoveFromAll()
+    {
+        if (_menu is not { } menu) return;
+        List<string> from = [.. CollectionsOf(menu.Titles).Where(collection => Remove(collection, menu.Titles) > 0)];
+        if (from.Count == 0) return;
+        _message = $"Removed {Describe(menu.Titles)} from {(from.Count == 1 ? $"\"{from[0]}\"" : $"{from.Count} collections")}.";
+        Editor.MarkDirty();
+    }
+
+    private static string Describe(IReadOnlyList<string> titles) =>
+        titles.Count == 1 ? $"\"{titles[0]}\"" : $"{titles.Count} movies";
+
     private const int PageSize = 120;
 
     [SupplyParameterFromQuery(Name = "view")] public string? ViewMode { get; set; }
