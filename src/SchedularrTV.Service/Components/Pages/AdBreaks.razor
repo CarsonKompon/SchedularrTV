@@ -32,7 +32,7 @@ else
         @foreach ((string key, AdBreakConfig adBreak) in Editor.Working.AdBreaks.OrderBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase))
         {
             int users = UsedBy(key);
-            <div class="list-row" @key="key">
+            <div class="list-row" @key="key" @oncontextmenu="e => _menu = (e.ClientX, e.ClientY, key)" @oncontextmenu:preventDefault="true">
                 <a class="ab-list-main" href="@Href(key)">
                     <Icon Name="megaphone" Size="18" />
                     <div>
@@ -56,6 +56,7 @@ else
                 else
                 {
                     <a class="btn btn-sm" href="@Href(key)"><Icon Name="pencil" Size="14" />Edit</a>
+                    <button class="btn btn-sm" type="button" @onclick="() => _renaming = key">Rename</button>
                     <button class="btn btn-sm btn-icon btn-danger" title="Delete" aria-label="@($"Delete {key}")" @onclick="() => _confirmDelete = key"><Icon Name="trash" Size="14" /></button>
                 }
             </div>
@@ -63,7 +64,49 @@ else
     </div>
 }
 
+@if (_menu is { } menu)
+{
+    <ContextMenu X="menu.X" Y="menu.Y" Heading="@menu.Key" OnClose="() => _menu = null">
+        <a class="ctx-item" role="menuitem" href="@Href(menu.Key)" @onclick="() => _menu = null">
+            <Icon Name="pencil" Size="14" /><span>Edit</span>
+        </a>
+        <button class="ctx-item" type="button" role="menuitem" @onclick="() => { _renaming = menu.Key; _menu = null; }">
+            <Icon Name="type" Size="14" /><span>Rename…</span>
+        </button>
+        <div class="ctx-sep" role="separator"></div>
+        <button class="ctx-item danger" type="button" role="menuitem" @onclick="() => { _confirmDelete = menu.Key; _menu = null; }">
+            <Icon Name="trash" Size="14" /><span>Delete…</span>
+        </button>
+    </ContextMenu>
+}
+
+@if (_renaming is { } renaming)
+{
+    <RenamePopup Title="Rename ad break" Label="Ad break name" Name="@renaming"
+                 Hint="Channels and blocks that use it, and the default ad breaks, are updated to the new name."
+                 Apply="name => Rename(renaming, name)" OnClose="() => _renaming = null" />
+}
+
 @code {
+    private (double X, double Y, string Key)? _menu;
+    private string? _renaming;
+
+    private string? Rename(string from, string to)
+    {
+        if (string.Equals(from, to.Trim(), StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        string? problem = AdBreakNames.Rename(Editor.Working, from, to);
+        if (problem is null)
+        {
+            Editor.MarkDirty();
+        }
+
+        return problem;
+    }
+
     private IReadOnlyList<CommercialFolder> _roots = [];
     private bool _wizardOpen;
     private string? _confirmDelete;

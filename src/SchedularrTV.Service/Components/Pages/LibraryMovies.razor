@@ -205,6 +205,8 @@ else
     <LibraryContextMenu X="menu.X" Y="menu.Y" Count="menu.Titles.Count"
                         Heading="@(menu.Titles.Count == 1 ? menu.Titles[0] : $"{menu.Titles.Count} movies")"
                         Collections="CollectionsOf(menu.Titles)" OnRemove="RemoveFrom" OnRemoveAll="RemoveFromAll"
+                        Addable="AddableFor(menu.Titles)" OnAdd="AddTo"
+                        AddUnavailable="@(Editor.Working.GlobalCollections.Count == 0 ? "No collections yet" : "Already in every collection")"
                         OnClose="() => _menu = null" />
 }
 
@@ -230,6 +232,26 @@ else
             .Where(collection => collection.Value.Include.Any(include => IsMovie(include, titles)))
             .Select(collection => collection.Key)
             .Order(StringComparer.OrdinalIgnoreCase)];
+
+    private IReadOnlyList<string> AddableFor(IReadOnlyList<string> titles) =>
+        [.. Editor.Working.GlobalCollections
+            .Where(collection => !titles.All(title => collection.Value.Include.Any(include => IsMovie(include, [title]))))
+            .Select(collection => collection.Key)
+            .Order(StringComparer.OrdinalIgnoreCase)];
+
+    private void AddTo(string collection)
+    {
+        if (_menu is not { } menu || !Editor.Working.GlobalCollections.TryGetValue(collection, out ContentSelector? target)) return;
+        List<string> adding = [.. menu.Titles.Where(title => !target.Include.Any(include => IsMovie(include, [title])))];
+        foreach (string title in adding)
+        {
+            target.Include.Add(new ContentInclude { Movie = title });
+        }
+
+        if (adding.Count == 0) return;
+        _message = $"Added {Describe(adding)} to \"{collection}\".";
+        Editor.MarkDirty();
+    }
 
     private int Remove(string collection, IReadOnlyList<string> titles) =>
         Editor.Working.GlobalCollections.TryGetValue(collection, out ContentSelector? selector)

@@ -831,7 +831,8 @@ a.stat-link:hover { text-decoration: none; border-color: var(--accent); backgrou
 
 /* Show and movie pages: the poster in the header, metadata read-only and its edit history. */
 .library-detail-poster { width: 96px; flex: none; }
-.library-detail-poster img, .library-detail-poster .art { width: 100%; height: auto; aspect-ratio: 2 / 3; object-fit: cover; display: block; }
+/* Only the size: the artwork centres its monogram (display: grid) and places its own picture. */
+.library-detail-poster .art { width: 100%; border-radius: var(--r); }
 .meta-list { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
 .meta-list dt { color: var(--muted); }
 .meta-list dd { margin: 0; white-space: pre-line; }
@@ -849,7 +850,7 @@ a.stat-link:hover { text-decoration: none; border-color: var(--accent); backgrou
 .ctx-heading { padding: 6px 10px 6px; color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     border-bottom: 1px solid var(--line); margin-bottom: 4px; }
 .ctx-item { position: relative; display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: 0; background: none;
-    color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+    color: var(--text); font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
 .ctx-item:hover:not(:disabled):not(.disabled), .ctx-item.open, .ctx-item:focus-visible { background: var(--accent-dim); }
 .ctx-item:disabled, .ctx-item.disabled { color: var(--faint); cursor: default; }
 .ctx-item.danger { color: var(--error); }
@@ -859,7 +860,7 @@ a.stat-link:hover { text-decoration: none; border-color: var(--accent); backgrou
 .ctx-sep { height: 1px; margin: 4px 0; background: var(--line); }
 /* The collections open beside the menu: to the right, or to the left near the window's edge. */
 .ctx-sub { position: absolute; top: -5px; left: 100%; max-height: 60vh; overflow-y: auto; }
-.ctx-sub.flip { left: auto; right: 100%; }
+.ctx-sub.flip, .flip-subs .ctx-sub { left: auto; right: 100%; }
 .media-card-poster { position: relative; }
 .media-card-actions {
     position: absolute; bottom: 8px; left: 8px; right: 8px; z-index: 3;

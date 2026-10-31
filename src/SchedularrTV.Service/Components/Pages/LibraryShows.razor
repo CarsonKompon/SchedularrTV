@@ -255,6 +255,8 @@ else
     <LibraryContextMenu X="menu.X" Y="menu.Y" Count="menu.Shows.Count"
                         Heading="@(menu.Shows.Count == 1 ? menu.Shows[0].Name : $"{menu.Shows.Count} shows")"
                         Collections="CollectionsOf(menu.Shows)" OnRemove="RemoveFrom" OnRemoveAll="RemoveFromAll"
+                        Addable="AddableFor(menu.Shows)" OnAdd="AddTo"
+                        AddUnavailable="@(Editor.Working.GlobalCollections.Count == 0 ? "No collections yet" : "Already in every collection")"
                         OnIntros="OpenIntros" OnClose="() => _menu = null" />
 }
 
@@ -286,6 +288,31 @@ else
             .Where(collection => collection.Value.Include.Any(include => shows.Any(show => Matches(include, show))))
             .Select(collection => collection.Key)
             .Order(StringComparer.OrdinalIgnoreCase)];
+
+    private static bool HasWhole(ContentSelector collection, LibraryShow show) =>
+        collection.Include.Any(include => Matches(include, show) && include.Seasons.Count == 0 && include.Episodes.Count == 0);
+
+    /// <summary>The collections that don't yet have every one of the shows whole.</summary>
+    private IReadOnlyList<string> AddableFor(IReadOnlyList<LibraryShow> shows) =>
+        [.. Editor.Working.GlobalCollections
+            .Where(collection => !shows.All(show => HasWhole(collection.Value, show)))
+            .Select(collection => collection.Key)
+            .Order(StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>Adds each show whole (keeping an entry's own settings when it only had some seasons or episodes).</summary>
+    private void AddTo(string collection)
+    {
+        if (_menu is not { } menu || !Editor.Working.GlobalCollections.TryGetValue(collection, out ContentSelector? target)) return;
+        List<LibraryShow> adding = [.. menu.Shows.Where(show => !HasWhole(target, show))];
+        foreach (LibraryShow show in adding)
+        {
+            ShowCollectionEditor.Add(target, show);
+        }
+
+        if (adding.Count == 0) return;
+        _message = $"Added {Describe(adding)} to \"{collection}\".";
+        Editor.MarkDirty();
+    }
 
     /// <summary>Takes the shows out of the collection: every entry for them, whole or seasons and episodes.</summary>
     private int Remove(string collection, IReadOnlyList<LibraryShow> shows) =>

@@ -13,6 +13,10 @@
 
 Changing a collection affects every selector referencing it. Use a separate collection for independent programming.
 
+To rename or delete a collection, use the pencil and bin buttons on its row, or right-click it. **Rename** opens a popup, and everything that uses the collection (channels' rotations, blocks, anchors, holidays' fill-ins, other collections) switches to the new name. Like other edits, it's kept once you **Save changes**.
+
+On **TV Shows** and **Movies**, right-click a title (or one of several selected) for **Add to collection** and **Remove from collection**; shows also have **Intros/outros**.
+
 ## Choose a source
 
 | **Source** | Use |

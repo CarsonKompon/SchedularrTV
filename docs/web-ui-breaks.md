@@ -25,6 +25,8 @@ Folders inside a chosen folder follow along unless you pick otherwise. Folders n
 
 6. Select **Save changes**.
 
+On the **Ad Breaks** list, each ad break has **Edit**, **Rename** and delete buttons, and the same three on right-click. **Rename** opens a popup; channels, blocks and the default ad breaks that use it switch to the new name.
+
 ## Open and close a block
 
 Assign folders the **Block start** and **Block end** jobs, then select the ad break collection under **Schedule → [block] → Override channel settings → Ad breaks**. Blocks with no collection selected inherit the channel's collections.

@@ -33,6 +33,11 @@
     </form>
 </dialog>
 
+@if (_message is not null)
+{
+    <div class="banner banner-ok" role="status">@_message</div>
+}
+
 @if (Editor.Working.GlobalCollections.Count == 0)
 {
     <div class="empty">
@@ -47,7 +52,8 @@
 {
     bool open = _expanded.Contains(key);
     <div class="card" @key="key">
-        <div class="card-head collapsible @(open ? "" : "collapsed")">
+        <div class="card-head collapsible @(open ? "" : "collapsed")"
+             @oncontextmenu="e => _menu = (e.ClientX, e.ClientY, key)" @oncontextmenu:preventDefault="true">
             <div class="poster-stack">
                 @foreach (ContentInclude include in selector.Include.Take(6))
                 {
@@ -72,6 +78,7 @@
                 }
                 else
                 {
+                    <button class="btn btn-sm btn-icon" title="Rename" aria-label="@($"Rename {key}")" @onclick="() => _renaming = key"><Icon Name="pencil" Size="14" /></button>
                     <button class="btn btn-sm btn-icon btn-danger" title="Delete" aria-label="@($"Delete {key}")" @onclick="() => _confirmDelete = key"><Icon Name="trash" Size="14" /></button>
                 }
             </div>
@@ -84,7 +91,54 @@
     </div>
 }
 
+@if (_menu is { } menu)
+{
+    <ContextMenu X="menu.X" Y="menu.Y" Heading="@menu.Key" OnClose="() => _menu = null">
+        <button class="ctx-item" type="button" role="menuitem" @onclick="() => { _renaming = menu.Key; _menu = null; }">
+            <Icon Name="pencil" Size="14" /><span>Rename…</span>
+        </button>
+        <div class="ctx-sep" role="separator"></div>
+        <button class="ctx-item danger" type="button" role="menuitem" @onclick="() => { _confirmDelete = menu.Key; _menu = null; }">
+            <Icon Name="trash" Size="14" /><span>Delete…</span>
+        </button>
+    </ContextMenu>
+}
+
+@if (_renaming is { } renaming)
+{
+    <RenamePopup Title="Rename collection" Label="Collection name" Name="@renaming"
+                 Hint="Channels, blocks, anchors, holidays and other collections that use it are updated to the new name."
+                 Apply="name => Rename(renaming, name)" OnClose="() => _renaming = null" />
+}
+
 @code {
+    private (double X, double Y, string Key)? _menu;
+    private string? _renaming;
+    private string? _message;
+
+    private string? Rename(string from, string to)
+    {
+        string? problem = CollectionNames.Rename(Editor.Working, from, to, out int references);
+        if (problem is not null)
+        {
+            return problem;
+        }
+
+        string renamed = to.Trim();
+        if (renamed != from)
+        {
+            if (_expanded.Remove(from))
+            {
+                _expanded.Add(renamed);
+            }
+
+            _message = $"Renamed \"{from}\" to \"{renamed}\"{(references > 0 ? $", and updated {references} place(s) that use it" : "")}.";
+            Editor.MarkDirty();
+        }
+
+        return null;
+    }
+
     private string _newName = "";
     private ElementReference _createDialog;
     private string? _error;

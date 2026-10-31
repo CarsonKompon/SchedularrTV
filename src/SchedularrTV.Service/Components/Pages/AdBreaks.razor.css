@@ -1,4 +1,7 @@
 .ab-list { padding: 0; }
-.ab-list .list-row { padding: 10px 14px; }
+/* One continuous list: no gaps (which showed the card's darker grey between rows) and no tint of their own; a row is
+   picked out only while hovered. */
+.ab-list .list-row { padding: 10px 14px; margin-bottom: 0; background: transparent; border-radius: 0; }
+.ab-list .list-row:hover { background: rgba(255, 255, 255, .04); }
 .ab-list-main { display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; min-width: 0; }
 .ab-list-main:hover .title { text-decoration: underline; }

@@ -1,0 +1,101 @@
+@* A right-click menu: opens where it was clicked (kept inside the window), closes on Escape or a click elsewhere.
+   Its items are the content: buttons with class "ctx-item" (add "danger" for destructive ones), "ctx-sep" rules, and
+   submenus (an item with class "has-sub" holding a "ctx-menu ctx-sub"), which open to the left near the window's edge. *@
+@inject IJSRuntime JS
+
+<div class="ctx-backdrop" @onclick="Close" @oncontextmenu="Close" @oncontextmenu:preventDefault="true"></div>
+<div class="ctx-menu @(_flip ? "flip-subs" : "")" id="@_id" role="menu" aria-label="@(Heading ?? "Menu")" tabindex="-1" @ref="_menu"
+     style="left:@Px(_left);top:@Px(_top);" @onkeydown="OnKey" @oncontextmenu:preventDefault="true">
+    @if (!string.IsNullOrEmpty(Heading))
+    {
+        <div class="ctx-heading" title="@Heading">@Heading</div>
+    }
+    @ChildContent
+</div>
+
+@code {
+    /// <summary>Where the right-click was, in the window (client coordinates).</summary>
+    [Parameter, EditorRequired] public double X { get; set; }
+    [Parameter, EditorRequired] public double Y { get; set; }
+
+    /// <summary>What the menu is for, shown at its top: "Rugrats", "3 shows".</summary>
+    [Parameter] public string? Heading { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    [Parameter, EditorRequired] public EventCallback OnClose { get; set; }
+
+    /// <summary>Keys the content handles itself (arrows for a submenu); Escape always closes.</summary>
+    [Parameter] public EventCallback<KeyboardEventArgs> OnKeyDown { get; set; }
+
+    private const double MenuWidth = 240;
+    private const double SubWidth = 240;
+
+    private readonly string _id = $"ctx-{Guid.NewGuid():N}";
+    private ElementReference _menu;
+    private double _left;
+    private double _top;
+    private bool _flip;
+    private bool _placed;
+    private (double X, double Y)? _openedAt;
+
+    // Placed afresh only when opened somewhere new, not each time the page behind it redraws.
+    protected override void OnParametersSet()
+    {
+        if (_openedAt == (X, Y))
+        {
+            return;
+        }
+
+        _openedAt = (X, Y);
+        _left = X;
+        _top = Y;
+        _placed = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_placed)
+        {
+            return;
+        }
+
+        _placed = true;
+        try
+        {
+            // Moved left or up when it would run off the window; submenus open to the left when there's no room on the right.
+            double[] size = await JS.InvokeAsync<double[]>("eval",
+                $"(m => [window.innerWidth, window.innerHeight, m ? m.offsetHeight : 0])(document.getElementById('{_id}'))");
+            double width = size[0], height = size[1], menuHeight = size[2];
+            double left = Math.Max(4, Math.Min(X, width - MenuWidth - 4));
+            double top = Math.Max(4, Math.Min(Y, height - menuHeight - 4));
+            bool flip = left + MenuWidth + SubWidth > width;
+            if (left != _left || top != _top || flip != _flip)
+            {
+                (_left, _top, _flip) = (left, top, flip);
+                StateHasChanged();
+            }
+
+            await _menu.FocusAsync();
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException)
+        {
+            // Left where it was clicked.
+        }
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            await Close();
+            return;
+        }
+
+        await OnKeyDown.InvokeAsync(e);
+    }
+
+    private Task Close() => OnClose.InvokeAsync();
+
+    private static string Px(double value) => $"{value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}px";
+}

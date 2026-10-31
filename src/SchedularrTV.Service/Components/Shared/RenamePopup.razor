@@ -1,0 +1,86 @@
+@* A small popup for renaming something: the new name, and why it can't be used when it can't. *@
+
+<div class="modal-backdrop" @onclick="Cancel">
+    <div class="modal rename-popup" role="dialog" aria-modal="true" aria-labelledby="rename-title" @onclick:stopPropagation="true">
+        <form @onsubmit="Save" @onsubmit:preventDefault="true">
+            <div class="modal-head">
+                <h2 id="rename-title">@Title</h2>
+                <div class="spacer"></div>
+                <button class="btn btn-sm btn-icon btn-ghost" type="button" aria-label="Cancel" @onclick="Cancel"><Icon Name="x" Size="15" /></button>
+            </div>
+            <label class="field">
+                <span>@Label</span>
+                <input type="text" @ref="_input" @bind="_name" @bind:event="oninput" required
+                       aria-invalid="@(_error is not null ? "true" : "false")" @onkeydown="OnKey" />
+            </label>
+            @if (_error is not null)
+            {
+                <p class="field-error" role="alert">@_error</p>
+            }
+            @if (Hint is not null)
+            {
+                <p class="hint">@Hint</p>
+            }
+            <div class="row" style="gap:8px;margin-top:12px;">
+                <div class="spacer"></div>
+                <button class="btn btn-ghost" type="button" @onclick="Cancel">Cancel</button>
+                <button class="btn btn-primary" type="submit" disabled="@(_name.Trim().Length == 0)">Rename</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Rename";
+    [Parameter] public string Label { get; set; } = "Name";
+    [Parameter] public string? Hint { get; set; }
+
+    /// <summary>The current name, which the box starts with.</summary>
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+
+    /// <summary>Renames it; returns why the name can't be used, or null when it's done (the popup then closes).</summary>
+    [Parameter, EditorRequired] public Func<string, string?> Apply { get; set; } = _ => null;
+
+    [Parameter, EditorRequired] public EventCallback OnClose { get; set; }
+
+    private ElementReference _input;
+    private string _name = "";
+    private string? _error;
+    private bool _focused;
+
+    protected override void OnInitialized() => _name = Name;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focused)
+        {
+            _focused = true;
+            try
+            {
+                await _input.FocusAsync();
+            }
+            catch (Exception ex) when (ex is Microsoft.JSInterop.JSException or InvalidOperationException)
+            {
+            }
+        }
+    }
+
+    private async Task Save()
+    {
+        _error = Apply(_name);
+        if (_error is null)
+        {
+            await OnClose.InvokeAsync();
+        }
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+        {
+            await Cancel();
+        }
+    }
+
+    private Task Cancel() => OnClose.InvokeAsync();
+}

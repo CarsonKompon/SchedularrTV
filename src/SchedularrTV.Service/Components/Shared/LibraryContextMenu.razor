@@ -1,22 +1,40 @@
-@* The right-click menu on the TV shows and Movies library lists: take the items out of collections, or open a show's
-   intros and outros. Acts on the right-clicked item, or on the whole selection when one of the selected was clicked. *@
-@inject IJSRuntime JS
+@* The right-click menu on the TV shows and Movies library lists: put the items in a collection or take them out, or
+   open a show's intros and outros. Acts on the right-clicked item, or on the whole selection when one of the selected
+   was clicked. *@
 
-<div class="ctx-backdrop" @onclick="Close" @oncontextmenu="Close" @oncontextmenu:preventDefault="true"></div>
-<div class="ctx-menu" role="menu" aria-label="@Heading" tabindex="-1" @ref="_menu"
-     style="left:@Px(_left);top:@Px(_top);" @onkeydown="OnKey" @oncontextmenu:preventDefault="true">
-    <div class="ctx-heading" title="@Heading">@Heading</div>
+<ContextMenu X="X" Y="Y" Heading="@Heading" OnClose="OnClose" OnKeyDown="OnKey">
+    <div class="ctx-item has-sub @(_open == AddMenu ? "open" : "") @(Addable.Count == 0 ? "disabled" : "")" role="menuitem"
+         aria-haspopup="true" aria-expanded="@(_open == AddMenu ? "true" : "false")" aria-disabled="@(Addable.Count == 0 ? "true" : "false")"
+         title="@(Addable.Count == 0 ? AddUnavailable : null)"
+         tabindex="0" @onclick="() => Toggle(AddMenu, Addable.Count)" @onmouseenter="() => Hover(AddMenu, Addable.Count)">
+        <Icon Name="plus" Size="14" />
+        <span>Add to collection</span>
+        <span class="ctx-caret" aria-hidden="true">›</span>
 
-    <div class="ctx-item has-sub @(_subOpen ? "open" : "") @(Collections.Count == 0 ? "disabled" : "")" role="menuitem"
-         aria-haspopup="true" aria-expanded="@(_subOpen ? "true" : "false")" aria-disabled="@(Collections.Count == 0 ? "true" : "false")"
-         tabindex="0" @onclick="ToggleSub" @onmouseenter="() => _subOpen = Collections.Count > 0">
+        @if (_open == AddMenu && Addable.Count > 0)
+        {
+            <div class="ctx-menu ctx-sub" role="menu" aria-label="Collections to add to" @onclick:stopPropagation="true">
+                @foreach (string collection in Addable)
+                {
+                    <button class="ctx-item" type="button" role="menuitem" @onclick="() => Pick(OnAdd, collection)">
+                        <span>@collection</span>
+                    </button>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="ctx-item has-sub @(_open == RemoveMenu ? "open" : "") @(Collections.Count == 0 ? "disabled" : "")" role="menuitem"
+         aria-haspopup="true" aria-expanded="@(_open == RemoveMenu ? "true" : "false")" aria-disabled="@(Collections.Count == 0 ? "true" : "false")"
+         title="@(Collections.Count == 0 ? (Count == 1 ? "Not in any collection" : "None of these are in a collection") : null)"
+         tabindex="0" @onclick="() => Toggle(RemoveMenu, Collections.Count)" @onmouseenter="() => Hover(RemoveMenu, Collections.Count)">
         <Icon Name="trash" Size="14" />
         <span>Remove from collection</span>
         <span class="ctx-caret" aria-hidden="true">›</span>
 
-        @if (_subOpen && Collections.Count > 0)
+        @if (_open == RemoveMenu && Collections.Count > 0)
         {
-            <div class="ctx-menu ctx-sub @(_flip ? "flip" : "")" role="menu" aria-label="Collections" @onclick:stopPropagation="true">
+            <div class="ctx-menu ctx-sub" role="menu" aria-label="Collections to remove from" @onclick:stopPropagation="true">
                 @foreach (string collection in Collections)
                 {
                     <button class="ctx-item" type="button" role="menuitem" @onclick="() => Pick(OnRemove, collection)">
@@ -30,21 +48,17 @@
             </div>
         }
     </div>
-    @if (Collections.Count == 0)
-    {
-        <div class="ctx-note">@(Count == 1 ? "Not in any collection" : "None of these are in a collection")</div>
-    }
 
     @if (OnIntros.HasDelegate)
     {
         <div class="ctx-sep" role="separator"></div>
-        <button class="ctx-item" type="button" role="menuitem" disabled="@(Count != 1)" @onmouseenter="() => _subOpen = false"
+        <button class="ctx-item" type="button" role="menuitem" disabled="@(Count != 1)" @onmouseenter="() => _open = null"
                 title="@(Count == 1 ? null : "Pick one show to set its intros and outros")" @onclick="() => Pick(OnIntros)">
             <Icon Name="film" Size="14" />
             <span>Intros/outros…</span>
         </button>
     }
-</div>
+</ContextMenu>
 
 @code {
     /// <summary>Where the right-click was, in the window (client coordinates).</summary>
@@ -57,9 +71,16 @@
     /// <summary>How many items it acts on.</summary>
     [Parameter] public int Count { get; set; } = 1;
 
-    /// <summary>The collections any of the items are in.</summary>
+    /// <summary>The collections any of the items are in, to remove them from.</summary>
     [Parameter] public IReadOnlyList<string> Collections { get; set; } = [];
 
+    /// <summary>The collections that don't yet hold all of the items, to add them to.</summary>
+    [Parameter] public IReadOnlyList<string> Addable { get; set; } = [];
+
+    /// <summary>Why nothing can be added (no collections, or they're in every one).</summary>
+    [Parameter] public string AddUnavailable { get; set; } = "Already in every collection";
+
+    [Parameter] public EventCallback<string> OnAdd { get; set; }
     [Parameter] public EventCallback<string> OnRemove { get; set; }
     [Parameter] public EventCallback OnRemoveAll { get; set; }
 
@@ -68,86 +89,24 @@
 
     [Parameter, EditorRequired] public EventCallback OnClose { get; set; }
 
-    private const double MenuWidth = 240;
-    private const double SubWidth = 240;
+    private const string AddMenu = "add";
+    private const string RemoveMenu = "remove";
 
-    private ElementReference _menu;
-    private double _left;
-    private double _top;
-    private bool _flip;
-    private bool _subOpen;
-    private bool _placed;
+    private string? _open;
 
-    private (double X, double Y)? _openedAt;
+    private void Toggle(string menu, int entries) => _open = _open == menu || entries == 0 ? null : menu;
 
-    // Placed afresh only when opened somewhere new, not each time the page behind it redraws.
-    protected override void OnParametersSet()
+    private void Hover(string menu, int entries) => _open = entries > 0 ? menu : null;
+
+    private void OnKey(KeyboardEventArgs e)
     {
-        if (_openedAt == (X, Y))
+        if (e.Key == "ArrowLeft")
         {
-            return;
+            _open = null;
         }
-
-        _openedAt = (X, Y);
-        _left = X;
-        _top = Y;
-        _placed = false;
-        _subOpen = false;
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (_placed)
+        else if (e.Key == "ArrowRight" && _open is null)
         {
-            return;
-        }
-
-        _placed = true;
-        try
-        {
-            // Kept inside the window: moved left or up when it would run off, and the collections open to the left
-            // when there's no room for them on the right.
-            double[] size = await JS.InvokeAsync<double[]>("eval",
-                "(m => [window.innerWidth, window.innerHeight, m ? m.offsetHeight : 0])(document.querySelector('.ctx-menu'))");
-            double width = size[0], height = size[1], menuHeight = size[2];
-            double left = Math.Max(4, Math.Min(X, width - MenuWidth - 4));
-            double top = Math.Max(4, Math.Min(Y, height - menuHeight - 4));
-            bool flip = left + MenuWidth + SubWidth > width;
-            if (left != _left || top != _top || flip != _flip)
-            {
-                (_left, _top, _flip) = (left, top, flip);
-                StateHasChanged();
-            }
-
-            await _menu.FocusAsync();
-        }
-        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException)
-        {
-            // Left where it was clicked.
-        }
-    }
-
-    private void ToggleSub()
-    {
-        if (Collections.Count > 0)
-        {
-            _subOpen = !_subOpen;
-        }
-    }
-
-    private async Task OnKey(KeyboardEventArgs e)
-    {
-        if (e.Key == "Escape")
-        {
-            await Close();
-        }
-        else if (e.Key is "ArrowRight" or "Enter" && Collections.Count > 0)
-        {
-            _subOpen = true;
-        }
-        else if (e.Key == "ArrowLeft")
-        {
-            _subOpen = false;
+            _open = Addable.Count > 0 ? AddMenu : Collections.Count > 0 ? RemoveMenu : null;
         }
     }
 
@@ -163,8 +122,4 @@
         await action.InvokeAsync(value);
         await OnClose.InvokeAsync();
     }
-
-    private Task Close() => OnClose.InvokeAsync();
-
-    private static string Px(double value) => $"{value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}px";
 }
