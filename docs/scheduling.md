@@ -140,7 +140,7 @@ See [YAML breaks](yaml.md#breaks) for an example and [Auto Chapters](auto-chapte
 
 ## Season-specific intros and outros
 
-1. Open the show's **Intros/outros** editor.
+1. Open the show's **Intros & outros** tab and choose **Edit intros & outros**.
 2. Assign seasons to each opening or closing bumper block.
 3. Select **All seasons** to clear a restriction.
 4. Select **Save changes**.

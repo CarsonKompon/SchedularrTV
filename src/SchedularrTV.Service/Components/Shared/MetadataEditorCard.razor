@@ -1,0 +1,272 @@
+@* A show's or movie's metadata, edited and written back to its source (Jellyfin, an .nfo file, or whatever plugin
+   owns it) after an "are you sure?" step. Every write is kept in the item's history for reverting. *@
+@using SchedularrTV.Core.Media
+@inject LibraryMetadata Metadata
+
+<div class="card">
+    <div class="card-head">
+        <h2>Metadata</h2>
+        @if (_editor is not null)
+        {
+            <span class="pill pill-muted">@_editor.Name</span>
+        }
+        <div class="spacer"></div>
+        @if (_editor is not null)
+        {
+            <button class="btn btn-sm btn-ghost" type="button" disabled="@_busy" @onclick="LoadAsync"
+                    title="@($"Read it from {_editor.Name} again")"><Icon Name="refresh" Size="14" />Reload</button>
+        }
+    </div>
+
+    @if (_editor is null)
+    {
+        <p class="hint">This item's source can't be edited from SchedularrTV, so its metadata is shown as the library reports it.</p>
+        @if (Fallback is { } fallback)
+        {
+            <dl class="meta-list">
+                @foreach (MetadataFields field in Shown)
+                {
+                    <dt>@LibraryMetadata.Label(field)</dt><dd>@LibraryMetadata.Value(fallback, field)</dd>
+                }
+            </dl>
+        }
+    }
+    else if (_loading)
+    {
+        <p class="muted"><span class="spinner spinner-sm"></span> Reading from @_editor.Name…</p>
+    }
+    else if (_current is null)
+    {
+        <p class="hint warn">@(_error ?? $"{_editor.Name} doesn't have this item any more. Rescan the library.")</p>
+    }
+    else
+    {
+        <div class="grid grid-2">
+            <label class="field"><span>Title</span>
+                <input type="text" value="@_draft.Title" disabled="@(!Can(MetadataFields.Title))"
+                       @onchange="e => Edit(d => d with { Title = Text(e) })" /></label>
+            <label class="field"><span>Sort title <span class="opt">(optional)</span></span>
+                <input type="text" value="@_draft.SortTitle" disabled="@(!Can(MetadataFields.SortTitle))" placeholder="Worked out from the title"
+                       @onchange="e => Edit(d => d with { SortTitle = Text(e) })" /></label>
+        </div>
+        <div class="grid grid-3">
+            <label class="field"><span>Year</span>
+                <input type="number" min="1800" max="2200" value="@_draft.Year" disabled="@(!Can(MetadataFields.Year))"
+                       @onchange="e => Edit(d => d with { Year = int.TryParse(Text(e), out int year) ? year : null })" /></label>
+            <label class="field"><span>Rating</span>
+                <input type="text" value="@_draft.Rating" disabled="@(!Can(MetadataFields.Rating))" placeholder="TV-Y7, PG…"
+                       @onchange="e => Edit(d => d with { Rating = Text(e) })" /></label>
+            <label class="field"><span>@(Kind == MetadataItemKind.Show ? "Networks" : "Studios") <span class="opt">(comma-separated)</span></span>
+                <input type="text" value="@Join(_draft.Studios)" disabled="@(!Can(MetadataFields.Studios))"
+                       @onchange="e => Edit(d => d with { Studios = Split(e) })" /></label>
+        </div>
+        <label class="field"><span>Overview</span>
+            <textarea rows="4" disabled="@(!Can(MetadataFields.Overview))" value="@_draft.Overview"
+                      @onchange="e => Edit(d => d with { Overview = Text(e) })"></textarea></label>
+        <div class="grid grid-2">
+            <label class="field"><span>Genres <span class="opt">(comma-separated)</span></span>
+                <input type="text" value="@Join(_draft.Genres)" disabled="@(!Can(MetadataFields.Genres))"
+                       @onchange="e => Edit(d => d with { Genres = Split(e) })" /></label>
+            <label class="field"><span>Tags <span class="opt">(comma-separated)</span></span>
+                <input type="text" value="@Join(_draft.Tags)" disabled="@(!Can(MetadataFields.Tags))"
+                       @onchange="e => Edit(d => d with { Tags = Split(e) })" /></label>
+        </div>
+
+        @if (_error is not null)
+        {
+            <p class="hint warn" role="alert">@_error</p>
+        }
+        @if (_saved is not null)
+        {
+            <div class="banner banner-ok" role="status">@_saved</div>
+        }
+
+        <div class="row" style="gap:8px;">
+            <button class="btn btn-primary" type="button" disabled="@(Changed == MetadataFields.None || _busy)" @onclick="AskAsync">
+                <Icon Name="check" Size="15" />@_editor.WriteLabel…
+            </button>
+            <button class="btn" type="button" disabled="@(Changed == MetadataFields.None || _busy)" @onclick="Discard">Discard changes</button>
+            @if (Changed != MetadataFields.None)
+            {
+                <span class="hint inline">Changed: @LibraryMetadata.Describe(Changed)</span>
+            }
+        </div>
+        <p class="hint">Edits aren't part of the schedule: nothing changes until you choose @_editor.WriteLabel. Each change is kept on the History tab, where it can be reverted.</p>
+    }
+</div>
+
+@if (_confirming && _editor is not null && _current is not null)
+{
+    <div class="modal-backdrop">
+        <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="metadata-confirm-title">
+            <div class="modal-head">
+                <h2 id="metadata-confirm-title">Are you sure?</h2>
+                <div class="spacer"></div>
+                <button class="btn btn-sm btn-icon btn-ghost" type="button" aria-label="Cancel" @onclick="() => _confirming = false"><Icon Name="x" Size="15" /></button>
+            </div>
+            <p>@(_target ?? $"This writes the change to {_editor.Name}.")</p>
+            <table class="media-table meta-diff">
+                <thead><tr><th>Field</th><th>Now</th><th>After</th></tr></thead>
+                <tbody>
+                    @foreach (MetadataFields field in Each(Changed))
+                    {
+                        <tr><td>@LibraryMetadata.Label(field)</td>
+                            <td class="muted">@LibraryMetadata.Value(_current, field)</td>
+                            <td>@LibraryMetadata.Value(_draft.Normalized(), field)</td></tr>
+                    }
+                </tbody>
+            </table>
+            <div class="row" style="gap:8px;margin-top:12px;">
+                <div class="spacer"></div>
+                <button class="btn btn-ghost" type="button" @onclick="() => _confirming = false">Cancel</button>
+                <button class="btn btn-primary" type="button" disabled="@_busy" @onclick="WriteAsync">
+                    @(_busy ? "Writing…" : $"Yes, {_editor.WriteLabel.ToLowerInvariant()}")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>The series' or movie's id, as the library reports it.</summary>
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    [Parameter, EditorRequired] public MetadataItemKind Kind { get; set; }
+
+    /// <summary>What the library reports, shown when the source can't be edited.</summary>
+    [Parameter] public EditableMetadata? Fallback { get; set; }
+
+    /// <summary>After a change has been written (the page refreshes its title and history).</summary>
+    [Parameter] public EventCallback<MetadataHistoryEntry> Written { get; set; }
+
+    private static readonly MetadataFields[] Shown =
+        [MetadataFields.Title, MetadataFields.Year, MetadataFields.Rating, MetadataFields.Studios, MetadataFields.Genres, MetadataFields.Overview];
+
+    private IMetadataEditor? _editor;
+    private EditableMetadata? _current;
+    private EditableMetadata _draft = new();
+    private string? _loadedFor;
+    private string? _target;
+    private string? _error;
+    private string? _saved;
+    private bool _loading;
+    private bool _busy;
+    private bool _confirming;
+
+    private MetadataFields Changed => _current is null ? MetadataFields.None : _current.Differences(_draft) & (_editor?.Supported ?? MetadataFields.None);
+
+    private bool Can(MetadataFields field) => _editor?.Supported.HasFlag(field) == true && !_busy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == Id)
+        {
+            return;
+        }
+
+        _loadedFor = Id;
+        _editor = Metadata.EditorFor(Id);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_editor is null)
+        {
+            return;
+        }
+
+        _loading = true;
+        _error = null;
+        try
+        {
+            _current = await _editor.ReadAsync(Id, Kind);
+            _draft = _current ?? new EditableMetadata();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _current = null;
+            _error = $"Couldn't read it from {_editor.Name}: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void Edit(Func<EditableMetadata, EditableMetadata> change)
+    {
+        _draft = change(_draft);
+        _saved = null;
+    }
+
+    private void Discard()
+    {
+        _draft = _current ?? new EditableMetadata();
+        _error = null;
+    }
+
+    private async Task AskAsync()
+    {
+        if (_editor is null)
+        {
+            return;
+        }
+
+        _error = null;
+        _busy = true;
+        try
+        {
+            _target = await _editor.DescribeTargetAsync(Id, Kind);
+            _confirming = true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task WriteAsync()
+    {
+        if (_editor is null || _current is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            if (await Metadata.WriteAsync(_editor, Id, Kind, _current, _draft) is { } entry)
+            {
+                _saved = $"Saved to {_editor.Name}: {LibraryMetadata.Describe(entry.Fields)}.";
+                await Written.InvokeAsync(entry);
+            }
+
+            _confirming = false;
+            await LoadAsync();
+        }
+        catch (MetadataWriteException ex)
+        {
+            _error = ex.Message;
+            _confirming = false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static IEnumerable<MetadataFields> Each(MetadataFields fields) =>
+        Enum.GetValues<MetadataFields>().Where(field => field is not MetadataFields.None and not MetadataFields.All && fields.HasFlag(field));
+
+    private static string? Text(ChangeEventArgs e) => e.Value?.ToString();
+
+    private static string Join(IReadOnlyList<string> values) => string.Join(", ", values);
+
+    private static IReadOnlyList<string> Split(ChangeEventArgs e) =>
+        [.. (e.Value?.ToString() ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+}

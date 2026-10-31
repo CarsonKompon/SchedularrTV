@@ -36,7 +36,7 @@ The reference path above assumes a project under **`samples/<project>`**. Regist
   "id": "acme.screen-bug",
   "name": "Screen bug",
   "version": "1.0.0",
-  "apiVersion": "1.10",
+  "apiVersion": "1.11",
   "entryAssembly": "Acme.ScreenBug.dll",
   "enabledByDefault": true,
   "dependencies": [],
@@ -77,6 +77,7 @@ Required dependencies must be available and meet minimum versions. Dependencies 
 | Source setup, activity, library lists | **`AddMediaSourceInfo<T>()`** · `IMediaSourceInfo` |
 | Artwork | **`AddArtworkSource<T>()`** · `IArtworkSource` |
 | Intros and outros | **`AddExtrasSource<T>()`** · `IExtrasSource` |
+| Editing show and movie metadata (API 1.11) | **`AddMetadataEditor<T>()`** · `IMetadataEditor`: reads a show's or movie's metadata from your source and writes edits back (your API, your metadata files) for the ids it `Owns`. Name the write button after where it goes (`WriteLabel`, e.g. "Push to Plex") and describe exactly what will change (`DescribeTargetAsync`) for the confirmation step. Write only the fields you're handed and keep the rest. The library pages, edit history and revert are the host's; without an editor your items' metadata is read-only |
 | Credit boundaries | **`AddCreditsSource<T>()`** · `ICreditsSource` |
 | Media-server viewing sessions | **`AddLiveViewerSource<T>()`** · `ILiveViewerSource` |
 | Music | **`AddMusicLibrary<T>()`** · `IMusicLibrary` |

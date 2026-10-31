@@ -98,9 +98,38 @@ All aliases match show folders for promos in **Ad Breaks**. A season alias match
 
 Check **Preferred name** to use an alias for generated promo speech, Up Next text, and variable-image matching. Each show and season can have one preferred alias. The season's preference takes precedence over the show's; otherwise the original library title is used. Adding an alias without selecting it as preferred only adds a matching name. Use the editor's usual **Save** action to persist changes.
 
+## Show and movie pages
+
+Open a show from **TV Shows**, or a movie from **Movies** (**View show** / **View movie**), for its page. Like a channel's page it has tabs:
+
+| Tab | Shows | Movies | What it's for |
+| --- | --- | --- | --- |
+| **Overview** | ✓ | ✓ | Its metadata, editable (below). Shows also have their aliases and the screen bug setting here. |
+| **Seasons & episodes** | ✓ | | Season aliases, screen bug per season and episode, adding seasons or episodes to a collection. |
+| **Intros & outros** | ✓ | | The show's intro and outro blocks, and **Edit intros & outros**. |
+| **Collections** | ✓ | ✓ | The collections that list it, with what each takes; add it to another, or take it out. |
+| **History** | ✓ | ✓ | Its last metadata changes, each revertible. |
+
+### Edit metadata
+
+Change the title, sort title, year, rating, networks (studios for movies), overview, genres or tags on **Overview**, then choose the button named for where the change goes:
+
+- **Push to Jellyfin** for Jellyfin items: the item is changed on your Jellyfin server, for every app that uses it. The changed fields are locked there, so Jellyfin's next metadata refresh doesn't download them again.
+- **Update NFO file** for local folders: the show's `tvshow.nfo`, or the movie's `.nfo`, is updated, or created when there isn't one. Everything else in the file is kept, and the file as it was is kept beside it as `.nfo.bak`. The folders are rescanned afterwards.
+
+Nothing is written until you confirm on the **Are you sure?** step, which says exactly what will change and lists each field's value now and after. Metadata edits don't go through **Save changes**; they're written straight to the source.
+
+Renaming a show moves its settings (aliases, intros and outros, screen bug) and its collection entries to the new name; renaming a movie moves its collection entries. Those moves are schedule changes, so **Save changes** afterwards.
+
+Other sources can be edited when their plugin supports it; otherwise the metadata is shown read-only.
+
+### Edit history and revert
+
+**History** keeps the last 20 metadata changes written from the page (kept in the data folder's `metadata-history` folder, so they survive restarts), each with every changed field's value before and after. **Revert** puts that change's fields back as they were before it, after an **Are you sure?** step. Only the fields that still differ at the source are written, and the revert is itself kept in the history, so it can be undone.
+
 ## Add intros and outros
 
-1. Open a show from **TV Shows**, then click **Intros/outros** on its detail page. Collection-specific overrides are also available from a collection.
+1. Open a show from **TV Shows**, then choose **Edit intros & outros** on its **Intros & outros** tab. Collection-specific overrides are also available from a collection.
 2. Choose extras or **Browse files on disk**.
 3. Set opening or closing placement and clip order.
 4. Restrict bumper blocks to specific seasons when needed.

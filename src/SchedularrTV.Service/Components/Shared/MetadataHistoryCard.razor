@@ -1,0 +1,144 @@
+@* The last metadata changes written for a show or movie, newest first, each revertible (after an "are you sure?"). *@
+@using SchedularrTV.Core.Media
+@inject LibraryMetadata Metadata
+
+<div class="card">
+    <div class="card-head">
+        <h2>Edit history</h2>
+        <span class="muted">The last @MetadataHistory.Limit metadata changes written from here</span>
+    </div>
+
+    @if (_message is not null)
+    {
+        <div class="banner banner-ok" role="status">@_message</div>
+    }
+    @if (_error is not null)
+    {
+        <p class="hint warn" role="alert">@_error</p>
+    }
+
+    @if (_entries.Count == 0)
+    {
+        <div class="empty">
+            <Icon Name="history" Size="28" StrokeWidth="1.5" />
+            <div class="empty-title">No changes yet</div>
+            <div>Changes written from the Overview tab show here, and can be reverted.</div>
+        </div>
+    }
+    else
+    {
+        <ol class="meta-history">
+            @foreach (MetadataHistoryEntry entry in _entries)
+            {
+                <li @key="entry.Id">
+                    <div class="row" style="gap:8px;align-items:baseline;">
+                        <strong>@entry.At.LocalDateTime.ToString("ddd d MMM yyyy, h:mm tt")</strong>
+                        <span class="pill pill-muted">@entry.Source</span>
+                        @if (entry.Note is not null)
+                        {
+                            <span class="muted">@entry.Note</span>
+                        }
+                        <div class="spacer"></div>
+                        <button class="btn btn-sm" type="button" disabled="@(_busy || _editor is null)" @onclick="() => _reverting = entry"
+                                title="@(_editor is null ? "This item's source can't be edited" : "Put these fields back as they were before this change")">
+                            <Icon Name="undo" Size="14" />Revert
+                        </button>
+                    </div>
+                    <table class="media-table meta-diff">
+                        <thead><tr><th>Field</th><th>Before</th><th>After</th></tr></thead>
+                        <tbody>
+                            @foreach (MetadataFields field in Each(entry.Fields))
+                            {
+                                <tr><td>@LibraryMetadata.Label(field)</td>
+                                    <td class="muted">@LibraryMetadata.Value(entry.Before, field)</td>
+                                    <td>@LibraryMetadata.Value(entry.After, field)</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </li>
+            }
+        </ol>
+    }
+</div>
+
+@if (_reverting is { } reverting && _editor is not null)
+{
+    <div class="modal-backdrop">
+        <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="metadata-revert-title">
+            <div class="modal-head">
+                <h2 id="metadata-revert-title">Revert this change?</h2>
+                <div class="spacer"></div>
+                <button class="btn btn-sm btn-icon btn-ghost" type="button" aria-label="Cancel" @onclick="() => _reverting = null"><Icon Name="x" Size="15" /></button>
+            </div>
+            <p>
+                @LibraryMetadata.Describe(reverting.Fields) go back to how they were before
+                @reverting.At.LocalDateTime.ToString("d MMM, h:mm tt"), written to @_editor.Name
+                (@_editor.WriteLabel). Fields changed since then are compared against what @_editor.Name has now, and only those
+                that still differ are written. The revert is kept in this history too, so it can be undone.
+            </p>
+            <div class="row" style="gap:8px;margin-top:12px;">
+                <div class="spacer"></div>
+                <button class="btn btn-ghost" type="button" @onclick="() => _reverting = null">Cancel</button>
+                <button class="btn btn-primary" type="button" disabled="@_busy" @onclick="() => RevertAsync(reverting)">@(_busy ? "Reverting…" : "Yes, revert")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    [Parameter, EditorRequired] public MetadataItemKind Kind { get; set; }
+
+    /// <summary>After a revert has been written.</summary>
+    [Parameter] public EventCallback<MetadataHistoryEntry> Written { get; set; }
+
+    private IReadOnlyList<MetadataHistoryEntry> _entries = [];
+    private IMetadataEditor? _editor;
+    private MetadataHistoryEntry? _reverting;
+    private string? _message;
+    private string? _error;
+    private bool _busy;
+
+    protected override void OnParametersSet()
+    {
+        _editor = Metadata.EditorFor(Id);
+        _entries = Metadata.History(Id);
+    }
+
+    private async Task RevertAsync(MetadataHistoryEntry entry)
+    {
+        if (_editor is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        _message = null;
+        try
+        {
+            if (await Metadata.RevertAsync(_editor, Id, Kind, entry) is { } reverted)
+            {
+                _message = $"Reverted: {LibraryMetadata.Describe(reverted.Fields)} written to {_editor.Name}.";
+                await Written.InvokeAsync(reverted);
+            }
+            else
+            {
+                _message = $"Nothing to revert: {_editor.Name} already has those values.";
+            }
+        }
+        catch (MetadataWriteException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+            _reverting = null;
+            _entries = Metadata.History(Id);
+        }
+    }
+
+    private static IEnumerable<MetadataFields> Each(MetadataFields fields) =>
+        Enum.GetValues<MetadataFields>().Where(field => field is not MetadataFields.None and not MetadataFields.All && fields.HasFlag(field));
+}

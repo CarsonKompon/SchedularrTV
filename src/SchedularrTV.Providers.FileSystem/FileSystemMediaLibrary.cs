@@ -133,6 +133,14 @@ public sealed class FileSystemMediaLibrary(
                 .Any(LocalNaming.IsExtrasFolder);
     }
 
+    /// <summary>A local show's folder (by its series id), or null.</summary>
+    internal async ValueTask<string?> ShowFolderAsync(string seriesId, CancellationToken cancellationToken = default) =>
+        (await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false)).ShowFolders.GetValueOrDefault(seriesId);
+
+    /// <summary>The items of the last scan, for finding a movie's file or a show's episodes by id.</summary>
+    internal async ValueTask<IReadOnlyList<MediaItem>> ItemsAsync(CancellationToken cancellationToken = default) =>
+        (await EnsureSnapshotAsync(cancellationToken).ConfigureAwait(false)).Items;
+
     /// <summary>The pictures found beside a TV show, episode or movie in a local library (by its id), or null.</summary>
     public async ValueTask<LocalImages?> ImagesAsync(string id, CancellationToken cancellationToken = default)
     {

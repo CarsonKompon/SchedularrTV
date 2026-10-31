@@ -1,0 +1,210 @@
+@page "/library/movie"
+@implements IDisposable
+@using SchedularrTV.Core.Media
+@inject ConfigEditor Editor
+@inject LibraryBrowser Library
+@inject LibraryMetadata Metadata
+@inject NavigationManager Nav
+
+<a class="back-link" href="library/movies"><Icon Name="arrow-left" Size="14" />All movies</a>
+
+@if (_loading)
+{
+    <LibraryProgress />
+}
+else if (_movie is not { } movie)
+{
+    <PageHeader Title="Movie not found" Eyebrow="Movie" />
+    <div class="empty"><div class="empty-title">Movie not found</div><div>Return to Movies or rescan your library.</div></div>
+}
+else
+{
+    <PageHeader Title="@movie.Title" Eyebrow="Movie">
+        <Leading>
+            <div class="library-detail-poster"><Artwork Id="@movie.Id" Title="@movie.Title" Width="160" /></div>
+        </Leading>
+        <ChildContent>
+            <span class="row row-wrap">
+                <span class="pill pill-muted">@(movie.Year?.ToString() ?? "Unknown year")</span>
+                <span class="pill pill-muted">@movie.Runtime</span>
+                @if (Metadata.EditorFor(movie.Id) is { } source)
+                {
+                    <span class="pill pill-accent" title="Where its metadata is kept">@source.Name</span>
+                }
+            </span>
+        </ChildContent>
+    </PageHeader>
+
+    @if (_message is not null)
+    {
+        <div class="banner banner-ok" role="status">@_message</div>
+    }
+
+    <div @key="movie.Title">
+    <nav class="tabs channel-tabs" aria-label="Movie sections">
+        @foreach ((string key, string label, string icon) in Tabs)
+        {
+            <a class="tab @(_tab == key ? "active" : "")" aria-current="@(_tab == key ? "page" : null)"
+               href="@Nav.GetUriWithQueryParameter("tab", key == "overview" ? null : key)"><Icon Name="@icon" Size="15" />@label@(key == "collections" && Memberships(movie).Count > 0 ? $" ({Memberships(movie).Count})" : "")</a>
+        }
+    </nav>
+
+    <div @key="_tab">
+    @if (_tab == "overview")
+    {
+        @if (movie.Id is { Length: > 0 } id)
+        {
+            <MetadataEditorCard Id="@id" Kind="MetadataItemKind.Movie" Fallback="@(new EditableMetadata { Title = movie.Title, Year = movie.Year })" Written="Written" />
+        }
+        else
+        {
+            <div class="card"><p class="hint">This movie's source doesn't give it an id, so its metadata can't be edited from here.</p></div>
+        }
+    }
+    else if (_tab == "collections")
+    {
+        <div class="card">
+            <div class="card-head">
+                <h2>Collections</h2>
+                <div class="spacer"></div>
+                <select aria-label="Collection to add to" @bind="_target">
+                    <option value="">Choose a collection…</option>
+                    @foreach (string key in Editor.Working.GlobalCollections.Keys.OrderBy(key => key))
+                    {
+                        <option value="@key">@key</option>
+                    }
+                </select>
+                <button class="btn btn-primary" disabled="@(!HasTarget || Memberships(movie).Contains(_target, StringComparer.OrdinalIgnoreCase))" @onclick="Add">
+                    <Icon Name="plus" Size="15" />Add to collection
+                </button>
+            </div>
+            @if (Memberships(movie) is { Count: > 0 } memberships)
+            {
+                <div class="media-table-wrap">
+                    <table class="media-table">
+                        <thead><tr><th>Collection</th><th style="width:120px;"></th></tr></thead>
+                        <tbody>
+                            @foreach (string collection in memberships)
+                            {
+                                <tr @key="collection">
+                                    <td><a href="collections">@collection</a></td>
+                                    <td><button class="btn btn-sm btn-danger" type="button" @onclick="() => RemoveFrom(collection)">Remove</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="empty"><Icon Name="layers" Size="28" StrokeWidth="1.5" /><div class="empty-title">Not in any collection</div></div>
+            }
+        </div>
+    }
+    else if (_tab == "history" && movie.Id is { Length: > 0 } historyId)
+    {
+        <MetadataHistoryCard Id="@historyId" Kind="MetadataItemKind.Movie" Written="Written" />
+    }
+    </div>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "id")] public string? Id { get; set; }
+    [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
+
+    private static readonly (string Key, string Label, string Icon)[] Tabs =
+    [
+        ("overview", "Overview", "film"),
+        ("collections", "Collections", "layers"),
+        ("history", "History", "history")
+    ];
+
+    private string _tab => Tabs.Any(tab => tab.Key == Tab) ? Tab! : "overview";
+
+    private LibraryMovie? _movie;
+    private string _target = "";
+    private string? _message;
+    private string? _loadedId;
+    private bool _loading = true;
+    private bool HasTarget => Editor.Working.GlobalCollections.ContainsKey(_target);
+
+    protected override void OnInitialized() => Library.Changed += LibraryChanged;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedId == Id && !_loading)
+        {
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        string? requested = Id;
+        IReadOnlyList<LibraryMovie> movies = await Library.GetMoviesAsync();
+        if (requested != Id) return;
+        // By id; a link from before movies had ids may name the title instead.
+        _movie = movies.FirstOrDefault(movie => movie.Id == requested)
+                 ?? movies.FirstOrDefault(movie => string.Equals(movie.Title, requested, StringComparison.OrdinalIgnoreCase));
+        _loadedId = requested;
+        _loading = false;
+    }
+
+    private void LibraryChanged() => _ = InvokeAsync(async () => { if (!Library.Updating) await LoadAsync(); StateHasChanged(); });
+    public void Dispose() => Library.Changed -= LibraryChanged;
+
+    /// <summary>Collections list movies by title, so a new title is carried over to them.</summary>
+    private void Written(MetadataHistoryEntry entry)
+    {
+        if (_movie is null || !entry.Fields.HasFlag(MetadataFields.Title) || entry.After.Title is not { } renamed
+            || string.Equals(renamed, _movie.Title, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        string old = _movie.Title;
+        int entries = 0;
+        foreach (ContentInclude include in Editor.Working.GlobalCollections.Values.SelectMany(collection => collection.Include)
+                     .Where(include => string.Equals(include.Movie, old, StringComparison.OrdinalIgnoreCase)))
+        {
+            include.Movie = renamed;
+            entries++;
+        }
+
+        if (entries > 0)
+        {
+            Editor.MarkDirty();
+            _message = $"Renamed to “{renamed}”. {entries} collection {(entries == 1 ? "entry was" : "entries were")} moved to the new title; save changes to keep them. Rescan the library to see the new title everywhere.";
+        }
+    }
+
+    private List<string> Memberships(LibraryMovie movie) =>
+        [.. Editor.Working.GlobalCollections
+            .Where(collection => collection.Value.Include.Any(include => string.Equals(include.Movie, movie.Title, StringComparison.OrdinalIgnoreCase)))
+            .Select(collection => collection.Key)
+            .Order(StringComparer.OrdinalIgnoreCase)];
+
+    private void Add()
+    {
+        if (_movie is null || !Editor.Working.GlobalCollections.TryGetValue(_target, out ContentSelector? target)) return;
+        if (target.Include.Any(include => string.Equals(include.Movie, _movie.Title, StringComparison.OrdinalIgnoreCase))) return;
+        target.Include.Add(new ContentInclude { Movie = _movie.Title });
+        _message = $"Added “{_movie.Title}” to \"{_target}\".";
+        Editor.MarkDirty();
+    }
+
+    private void RemoveFrom(string collection)
+    {
+        if (_movie is null || !Editor.Working.GlobalCollections.TryGetValue(collection, out ContentSelector? selector)) return;
+        string title = _movie.Title;
+        if (selector.Include.RemoveAll(include => string.Equals(include.Movie, title, StringComparison.OrdinalIgnoreCase)) > 0)
+        {
+            _message = $"Removed “{title}” from \"{collection}\".";
+            Editor.MarkDirty();
+        }
+    }
+}

@@ -21,6 +21,9 @@ public static class FileSystemServiceCollectionExtensions
         services.AddSingleton<IExtrasSource>(sp => sp.GetRequiredService<FileSystemMediaLibrary>());
         services.AddSingleton<LocalMusicLibrary>();
         services.AddSingleton<IMusicLibrary>(sp => sp.GetRequiredService<LocalMusicLibrary>());
+        // Edited show and movie metadata, written into their .nfo files.
+        services.AddSingleton<NfoMetadataEditor>();
+        services.AddSingleton<IMetadataEditor>(sp => sp.GetRequiredService<NfoMetadataEditor>());
 
         return services;
     }

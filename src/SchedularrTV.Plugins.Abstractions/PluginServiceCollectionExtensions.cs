@@ -121,6 +121,18 @@ public static class PluginServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// Writes edited show and movie metadata back to the source (a media server's API, or metadata files) for the ids it
+    /// owns; see <see cref="IMetadataEditor"/>. Without one, the source's items are shown read-only.
+    /// </summary>
+    public static IServiceCollection AddMetadataEditor<TEditor>(this IServiceCollection services)
+        where TEditor : class, IMetadataEditor
+    {
+        services.TryAddSingleton<TEditor>();
+        services.AddSingleton<IMetadataEditor>(provider => provider.GetRequiredService<TEditor>());
+        return services;
+    }
+
     /// <summary>Says where items' end credits start; see <see cref="ICreditsSource"/>.</summary>
     public static IServiceCollection AddCreditsSource<TSource>(this IServiceCollection services)
         where TSource : class, ICreditsSource

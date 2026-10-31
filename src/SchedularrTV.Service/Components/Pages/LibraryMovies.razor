@@ -124,6 +124,9 @@ else if (Grid)
                             }
                         </div>
                     }
+                    <div class="media-card-actions" @onkeydown:stopPropagation="true">
+                        <a class="btn btn-sm" href="@MovieUrl(movie)" @onclick:stopPropagation="true">View movie</a>
+                    </div>
                 </div>
                 <div class="media-card-title" title="@movie.Title">@movie.Title</div>
                 <div class="media-card-meta">
@@ -149,6 +152,7 @@ else
                     <LibrarySortHeader Sort="_sort" Column="LibrarySortColumn.Year" Label="Year" Width="85px" OnSort="_sort.Toggle" />
                     <LibrarySortHeader Sort="_sort" Column="LibrarySortColumn.Runtime" Label="Runtime" Width="110px" OnSort="_sort.Toggle" />
                     <th style="width:170px;">In collections</th>
+                    <th style="width:110px;">Details</th>
                 </tr>
             </thead>
             <tbody>
@@ -177,6 +181,7 @@ else
                                 }
                             </div>
                         </td>
+                        <td><a class="btn btn-sm" href="@MovieUrl(movie)" @onclick:stopPropagation="true">View movie</a></td>
                     </tr>
                 }
             </tbody>
@@ -249,6 +254,8 @@ else
 
     private static string Describe(IReadOnlyList<string> titles) =>
         titles.Count == 1 ? $"\"{titles[0]}\"" : $"{titles.Count} movies";
+
+    private static string MovieUrl(LibraryMovie movie) => $"library/movie?id={Uri.EscapeDataString(movie.Id ?? movie.Title)}";
 
     private const int PageSize = 120;
 

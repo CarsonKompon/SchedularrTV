@@ -33,6 +33,7 @@ public static class PluginServiceGate
         typeof(IArtworkSource),
         typeof(IMediaSourceInfo),
         typeof(IExtrasSource),
+        typeof(IMetadataEditor),
         typeof(ICreditsSource),
         typeof(ILiveViewerSource),
         typeof(IMusicLibrary),

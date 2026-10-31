@@ -19,9 +19,11 @@ public static class PluginApi
     /// <c>RenderEncodingSettings</c>), the <c>LowPowerNotice</c> component, and the manifest's <c>lowPowerNotice</c>
     /// and settings' <c>lowPowerNote</c>, <c>lowPowerPlaceholder</c> and <c>lowPowerDefault</c>. 1.9 added picture
     /// search services (<c>AddImageSearchProvider</c>), for automatic image layers. 1.10 added speech transcribers
-    /// (<c>AddSpeechTranscriber</c>), for promos whose clips are curated by AI.
+    /// (<c>AddSpeechTranscriber</c>), for promos whose clips are curated by AI. 1.11 added metadata editors
+    /// (<c>AddMetadataEditor</c>, <c>IMetadataEditor</c>), so a media source's shows and movies can be edited from their
+    /// library pages and written back to it.
     /// </remarks>
-    public static readonly Version Version = new(1, 10);
+    public static readonly Version Version = new(1, 11);
 
     public static bool IsCompatible(Version wanted) => wanted.Major == Version.Major && wanted.Minor <= Version.Minor;
 }

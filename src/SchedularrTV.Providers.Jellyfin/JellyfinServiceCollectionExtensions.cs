@@ -33,6 +33,9 @@ public static class JellyfinServiceCollectionExtensions
         services.AddSingleton<ILiveViewerSource>(sp => sp.GetRequiredService<JellyfinLiveViewers>());
         services.AddSingleton<JellyfinMusicLibrary>();
         services.AddSingleton<IMusicLibrary>(sp => sp.GetRequiredService<JellyfinMusicLibrary>());
+        // Edited show and movie metadata, pushed back to the server.
+        services.AddSingleton<JellyfinMetadataEditor>();
+        services.AddSingleton<IMetadataEditor>(sp => sp.GetRequiredService<JellyfinMetadataEditor>());
 
         return services;
     }

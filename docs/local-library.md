@@ -94,7 +94,7 @@ Artwork includes **`poster`**, **`folder`**, **`cover`**, **`fanart`**, **`backd
 
 ## Intros, outros, and excluded files
 
-Open **Intros/outros** on **TV Shows** or a collection to select show extras. **Browse files on disk** accepts other clips.
+Open a show's **Intros & outros** tab on **TV Shows** (or a collection) to select show extras. **Browse files on disk** accepts other clips.
 
 | Content | Scanner behavior |
 | --- | --- |

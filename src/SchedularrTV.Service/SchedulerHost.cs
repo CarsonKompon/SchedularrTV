@@ -222,6 +222,9 @@ public static class SchedulerHost
         // Fonts that came with imported templates; renderers fall back to them for families that aren't installed.
         FontFiles.KeptFolder = Path.Combine(templateAssets.Root, FontFiles.Category);
         builder.Services.AddSingleton(new TemplatePackages(dataDirectory));
+        // The last few metadata edits made to each show and movie, for reverting a wrong one.
+        builder.Services.AddSingleton(new MetadataHistory(dataDirectory));
+        builder.Services.AddSingleton<LibraryMetadata>();
         builder.Services.AddSingleton<SuggestionStore>();
         // Installed fonts, for the font pickers of the live page channels (news, radio, guide).
         builder.Services.AddSingleton<SchedularrTV.Plugins.Editor.IFontCatalog, SystemFontCatalog>();
