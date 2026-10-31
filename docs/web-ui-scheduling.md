@@ -64,6 +64,11 @@ Notes:
 - Anchors and Archive Follow slots aren't changed.
 - **On** turns a holiday off without deleting it.
 
+### Share holidays between channels
+
+- **Copy from**, next to **Add a holiday**: pick another channel in the window that opens and select **Copy** to bring in all of its holidays. A holiday with the same name as one already on this channel replaces it. The copies are separate, so editing one doesn't change the other channel.
+- **Global holidays**, under **Channel defaults**, apply to every channel, after each channel's own holidays: a channel holiday on the same days wins. They're edited the same way, and can be copied from a channel too. Untick **Also use the global holidays** on a channel's **Schedule** tab to leave them off that channel.
+
 ## Override the channel inside a block
 
 | Control | Use |

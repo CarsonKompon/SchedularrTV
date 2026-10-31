@@ -64,4 +64,7 @@ public sealed class ChannelHoliday
 
     /// <summary>The order the holiday episodes play in; null shuffles them.</summary>
     public PlaybackOrder? Order { get; set; }
+
+    /// <summary>A separate copy, for copying holidays between channels and the global list.</summary>
+    public ChannelHoliday Clone() => (ChannelHoliday)MemberwiseClone();
 }

@@ -166,6 +166,20 @@ holidays:
 
 The first enabled holiday whose days hold a programme's start applies to it.
 
+Top-level **`global_holidays`** take the same fields and apply to every channel, after the channel's own (a channel holiday on the same days wins). A channel sets **`ignore_global_holidays: true`** to leave them off:
+
+```yaml
+global_holidays:
+  - name: Halloween
+    start: "10-01"
+    end: "10-31"
+    query: "plot:'halloween'"
+
+channels:
+  - id: news
+    ignore_global_holidays: true
+```
+
 ## Breaks
 
 Add this fragment inside a channel, or put **`interstitials`** under **`settings`** for defaults:

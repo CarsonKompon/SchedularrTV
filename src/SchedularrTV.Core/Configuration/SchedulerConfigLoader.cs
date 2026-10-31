@@ -166,6 +166,14 @@ public static class SchedulerConfigLoader
             ValidateSelector(selector, $"global_collections.{key}", config, errors);
         }
 
+        foreach (ChannelHoliday holiday in config.GlobalHolidays ?? [])
+        {
+            if (holiday.Enabled && Scheduling.ChannelHolidays.Problem(holiday, config) is { } problem)
+            {
+                errors.Add($"global_holidays.{holiday.Name}: {problem}");
+            }
+        }
+
         ValidateAdBreakNames(config.Settings.DefaultAdBreaks, "settings.default_ad_breaks", config, errors);
 
         foreach ((string key, AdBreakConfig adBreak) in config.AdBreaks)
@@ -1020,6 +1028,16 @@ public static class SchedulerConfigLoader
         }
     }
 
+    private static void NormalizeHoliday(ChannelHoliday holiday)
+    {
+        holiday.Name = string.IsNullOrWhiteSpace(holiday.Name) ? "Holiday" : holiday.Name.Trim();
+        holiday.Query = holiday.Query?.Trim() ?? string.Empty;
+        holiday.Fallback = string.IsNullOrWhiteSpace(holiday.Fallback) ? null : holiday.Fallback.Trim();
+        holiday.MinimumShows = Math.Max(1, holiday.MinimumShows);
+        holiday.WeeksBefore = Math.Max(0, holiday.WeeksBefore);
+        holiday.WeeksAfter = Math.Max(0, holiday.WeeksAfter);
+    }
+
     private static void Normalize(SchedulerConfig config)
     {
         // Rebuild with a case-insensitive comparer; YamlDotNet constructs an ordinal dictionary.
@@ -1052,6 +1070,12 @@ public static class SchedulerConfigLoader
         foreach (ContentSelector selector in config.GlobalCollections.Values)
         {
             NormalizeSelector(selector);
+        }
+
+        config.GlobalHolidays ??= [];
+        foreach (ChannelHoliday holiday in config.GlobalHolidays)
+        {
+            NormalizeHoliday(holiday);
         }
 
         foreach (ChannelConfig channel in config.Channels)
@@ -1093,13 +1117,11 @@ public static class SchedulerConfigLoader
             channel.Holidays ??= [];
             foreach (ChannelHoliday holiday in channel.Holidays)
             {
-                holiday.Name = string.IsNullOrWhiteSpace(holiday.Name) ? "Holiday" : holiday.Name.Trim();
-                holiday.Query = holiday.Query?.Trim() ?? string.Empty;
-                holiday.Fallback = string.IsNullOrWhiteSpace(holiday.Fallback) ? null : holiday.Fallback.Trim();
-                holiday.MinimumShows = Math.Max(1, holiday.MinimumShows);
-                holiday.WeeksBefore = Math.Max(0, holiday.WeeksBefore);
-                holiday.WeeksAfter = Math.Max(0, holiday.WeeksAfter);
+                NormalizeHoliday(holiday);
             }
+
+            // Only written when it leaves them off.
+            channel.IgnoreGlobalHolidays = channel.IgnoreGlobalHolidays == true ? true : null;
 
             foreach (BlockConfig block in channel.Blocks)
             {

@@ -45,14 +45,26 @@ public static class ChannelHolidays
         return false;
     }
 
-    /// <summary>The first of the channel's holidays (on, with a usable query) whose days hold <paramref name="at"/> in the channel's time.</summary>
-    public static ChannelHoliday? At(ChannelConfig channel, DateTimeOffset at, TimeZoneInfo timeZone)
-    {
-        if (channel.Holidays is not { Count: > 0 } holidays)
-        {
-            return null;
-        }
+    /// <summary>The first of the channel's own holidays (on, with a usable query) whose days hold <paramref name="at"/> in the channel's time.</summary>
+    public static ChannelHoliday? At(ChannelConfig channel, DateTimeOffset at, TimeZoneInfo timeZone) =>
+        First(channel.Holidays ?? [], at, timeZone);
 
+    /// <summary>
+    /// The holiday that applies at <paramref name="at"/>: the first of the channel's own, else the first of the global
+    /// holidays (unless the channel leaves them off).
+    /// </summary>
+    public static ChannelHoliday? At(SchedulerConfig config, ChannelConfig channel, DateTimeOffset at, TimeZoneInfo timeZone) =>
+        First(Effective(config, channel), at, timeZone);
+
+    /// <summary>Every holiday that can apply to the channel, in the order they're tried: its own, then the global ones.</summary>
+    public static IEnumerable<ChannelHoliday> Effective(SchedulerConfig config, ChannelConfig channel)
+    {
+        IEnumerable<ChannelHoliday> own = channel.Holidays ?? [];
+        return channel.IgnoreGlobalHolidays == true ? own : own.Concat(config.GlobalHolidays ?? []);
+    }
+
+    private static ChannelHoliday? First(IEnumerable<ChannelHoliday> holidays, DateTimeOffset at, TimeZoneInfo timeZone)
+    {
         DateOnly day = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(at, timeZone).DateTime);
         return holidays.FirstOrDefault(holiday => holiday.Enabled && !string.IsNullOrWhiteSpace(holiday.Query) && Contains(holiday, day));
     }

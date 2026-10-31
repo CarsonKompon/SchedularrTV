@@ -1,19 +1,90 @@
-@* A channel's holidays: days of the year when what plays is narrowed to holiday episodes found by a query. *@
+@* Holidays: days of the year when what plays is narrowed to holiday episodes found by a query. A channel's own list
+   (Channel set) or the global list every channel uses (Channel null). *@
 @using SchedularrTV.Core.Ordering
 @using SchedularrTV.Core.Scheduling
 @inject ConfigEditor Editor
 
-<div class="card">
+<div class="card" id="@(Channel is null ? "global-holidays" : null)">
     <div class="card-head">
-        <h2>Holidays</h2>
+        <h2>@(Channel is null ? "Global holidays" : "Holidays")</h2>
         <div class="spacer"></div>
+        <button class="btn btn-sm" type="button" disabled="@(CopySources.Count == 0)" @onclick="OpenCopy"
+                title="@(CopySources.Count == 0 ? "No other channel has holidays to copy" : "Copy holidays from another channel")">
+            <Icon Name="copy" Size="15" />Copy from
+        </button>
         <button class="btn btn-sm" type="button" @onclick="Add"><Icon Name="plus" Size="15" />Add a holiday</button>
     </div>
+
+    @if (_copying)
+    {
+        <div class="modal-backdrop" @onclick="CloseCopy">
+            <div class="modal" role="dialog" aria-modal="true" aria-label="Copy holidays from a channel" @onclick:stopPropagation="true">
+                <div class="modal-head">
+                    <h2>Copy holidays from a channel</h2>
+                    <div class="spacer"></div>
+                    <button class="btn btn-sm btn-icon btn-ghost" type="button" aria-label="Close" @onclick="CloseCopy"><Icon Name="x" Size="15" /></button>
+                </div>
+                <label class="field">
+                    <span>Channel</span>
+                    <select value="@_copyFrom" @onchange="e => _copyFrom = Text(e)">
+                        <option value="">Choose a channel&hellip;</option>
+                        @foreach (ChannelConfig source in CopySources)
+                        {
+                            <option value="@source.Id">@source.Number · @source.Name (@source.Holidays.Count)</option>
+                        }
+                    </select>
+                </label>
+                @if (CopySources.FirstOrDefault(source => source.Id == _copyFrom) is { } chosen)
+                {
+                    <p class="hint">Holidays: @(string.Join(", ", chosen.Holidays.Select(holiday => holiday.Name))).</p>
+                }
+                <p class="hint">Copies every holiday on that channel into this list. One with the same name as a holiday here replaces it.</p>
+                <div class="row" style="gap:8px;margin-top:8px;">
+                    <div class="spacer"></div>
+                    <button class="btn btn-sm btn-ghost" type="button" @onclick="CloseCopy">Cancel</button>
+                    <button class="btn btn-sm btn-primary" type="button" disabled="@(string.IsNullOrEmpty(_copyFrom))" @onclick="CopyFromChannel">Copy</button>
+                </div>
+            </div>
+        </div>
+    }
     <p class="hint">
         On a holiday's days, whatever would play (the block's shows, or the base rotation outside blocks) plays only its episodes that match the
         holiday's query, such as <code>plot:'christmas'</code>. The shows' usual runs pick up where they left off afterwards. Anchors aren't changed.
         The first holiday in the list whose days include a programme's start applies to it.
+        @if (Channel is null)
+        {
+            <text>These apply to every channel, after the channel's own holidays: a channel holiday on the same days wins. A channel can turn them off.</text>
+        }
     </p>
+
+    @if (_copyMessage is not null)
+    {
+        <p class="hint">@_copyMessage</p>
+    }
+
+    @if (Channel is { } channel)
+    {
+        List<ChannelHoliday> global = Editor.Working.GlobalHolidays;
+        <label class="check">
+            <input type="checkbox" checked="@(channel.IgnoreGlobalHolidays != true)"
+                   @onchange="e => Set(() => channel.IgnoreGlobalHolidays = e.Value is true ? null : true)" />
+            <span>Also use the global holidays</span>
+        </label>
+        <p class="hint">
+            @if (global.Count == 0)
+            {
+                <text>No global holidays yet.</text>
+            }
+            else
+            {
+                <text>
+                    @(channel.IgnoreGlobalHolidays == true ? "Not used here: " : "After this channel's own: ")
+                    @(string.Join(", ", global.Select(holiday => holiday.Enabled ? holiday.Name : $"{holiday.Name} (off)"))).
+                </text>
+            }
+            Manage them under <a href="settings#global-holidays">Channel defaults</a>.
+        </p>
+    }
 
     @if (Holidays.Count == 0)
     {
@@ -152,7 +223,56 @@
     [Parameter, EditorRequired] public List<ChannelHoliday> Holidays { get; set; } = [];
     [Parameter] public EventCallback Changed { get; set; }
 
+    /// <summary>The channel whose holidays these are; null edits the global holidays.</summary>
+    [Parameter] public ChannelConfig? Channel { get; set; }
+
     private readonly HashSet<ChannelHoliday> _open = new(ReferenceEqualityComparer.Instance);
+    private string _copyFrom = string.Empty;
+    private string? _copyMessage;
+    private bool _copying;
+
+    private void OpenCopy()
+    {
+        _copyFrom = string.Empty;
+        _copyMessage = null;
+        _copying = true;
+    }
+
+    private void CloseCopy() => _copying = false;
+
+    /// <summary>Other channels that have holidays to copy.</summary>
+    private List<ChannelConfig> CopySources =>
+        [.. Editor.Working.Channels.Where(channel => !ReferenceEquals(channel, Channel) && channel.Holidays is { Count: > 0 }).OrderBy(channel => channel.Number)];
+
+    private Task CopyFromChannel()
+    {
+        if (Editor.Working.Channels.FirstOrDefault(channel => channel.Id == _copyFrom) is not { } source)
+        {
+            return Task.CompletedTask;
+        }
+
+        int added = 0, replaced = 0;
+        foreach (ChannelHoliday copy in source.Holidays.Select(holiday => holiday.Clone()))
+        {
+            int at = Holidays.FindIndex(holiday => string.Equals(holiday.Name, copy.Name, StringComparison.OrdinalIgnoreCase));
+            if (at >= 0)
+            {
+                _open.Remove(Holidays[at]);
+                Holidays[at] = copy;
+                replaced++;
+            }
+            else
+            {
+                Holidays.Add(copy);
+                added++;
+            }
+        }
+
+        _copyMessage = $"Copied from {source.Name}: {added} added" + (replaced > 0 ? $", {replaced} replaced." : ".");
+        _copyFrom = string.Empty;
+        _copying = false;
+        return Changed.InvokeAsync();
+    }
 
     private static string Text(ChangeEventArgs e) => e.Value?.ToString()?.Trim() ?? string.Empty;
 

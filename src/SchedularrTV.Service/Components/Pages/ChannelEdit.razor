@@ -403,7 +403,7 @@ else
 
         <AnchorListEditor Anchors="_channel.Anchors" Label="Channel anchors" Changed="Editor.MarkDirty" />
 
-        <HolidayListEditor Holidays="_channel.Holidays" Changed="Editor.MarkDirty" />
+        <HolidayListEditor Holidays="_channel.Holidays" Channel="_channel" Changed="Editor.MarkDirty" />
     }
     else if (_tab == "breaks")
     {

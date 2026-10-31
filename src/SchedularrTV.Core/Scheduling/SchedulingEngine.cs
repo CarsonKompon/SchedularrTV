@@ -643,7 +643,7 @@ public sealed class SchedulingEngine(
         string rotationKey = activeBlock?.Block.Name ?? "__base__";
 
         // A holiday narrows what plays to its episodes (or fills in for them); without a pick, the usual programming.
-        if (ChannelHolidays.At(channel, at, session.TimeZone) is { } holiday && (selectors.Count > 0 || holiday.Global))
+        if (ChannelHolidays.At(session.Config, channel, at, session.TimeZone) is { } holiday && (selectors.Count > 0 || holiday.Global))
         {
             ProgramPick? holidayPick = await HolidayProgramming.TakeAsync(session, holiday, rotationKey, selectors, at, gap, cancellationToken)
                 .ConfigureAwait(false);

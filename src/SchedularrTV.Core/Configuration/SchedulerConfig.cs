@@ -21,6 +21,12 @@ public sealed class SchedulerConfig
     /// </summary>
     public Dictionary<string, AdBreakConfig> AdBreaks { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Holidays that apply to every channel (<c>global_holidays:</c>), after the channel's own: a channel holiday whose
+    /// days hold a moment wins over these. A channel can turn them off (<see cref="ChannelConfig.IgnoreGlobalHolidays"/>).
+    /// </summary>
+    public List<ChannelHoliday> GlobalHolidays { get; set; } = [];
+
     public List<ChannelConfig> Channels { get; set; } = [];
 
     /// <summary>
@@ -294,6 +300,9 @@ public sealed class ChannelConfig
     /// one whose days include a programme's start applies to it.
     /// </summary>
     public List<ChannelHoliday> Holidays { get; set; } = [];
+
+    /// <summary>Leaves the global holidays (<see cref="SchedulerConfig.GlobalHolidays"/>) off this channel. Null is no.</summary>
+    public bool? IgnoreGlobalHolidays { get; set; }
 
     /// <summary>
     /// Per-channel settings of installed plugins, keyed by plugin id; each plugin reads its own section. Promos,

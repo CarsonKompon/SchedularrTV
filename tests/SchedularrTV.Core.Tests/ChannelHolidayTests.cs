@@ -183,6 +183,73 @@ public sealed class ChannelHolidayTests
         Assert.All(played.Where(item => !Festive(item)), item => Assert.Equal("Winter Specials", item.SeriesName));
     }
 
+    // ---- Global holidays ----
+
+    [Fact]
+    public async Task A_global_holiday_applies_to_a_channel_without_its_own()
+    {
+        ChannelConfig channel = Channel();
+        SchedulerConfig config = Config(channel);
+        config.GlobalHolidays.Add(Christmas());
+
+        var engine = new SchedulingEngine(new FakeMediaLibrary(Library()), new InMemoryPlaybackStateStore());
+        ChannelSchedule schedule = await engine.BuildAsync(config, channel, ChristmasWeek, ChristmasWeek + TimeSpan.FromHours(12));
+        List<MediaItem> played = [.. schedule.Entries.Where(entry => entry.Kind == ScheduleEntryKind.Program && !entry.IsSlotIntro && !entry.IsSlotOutro)
+            .Select(entry => entry.Item).OfType<MediaItem>()];
+
+        Assert.NotEmpty(played);
+        Assert.All(played, item => Assert.True(Festive(item), item.Title));
+    }
+
+    [Fact]
+    public void A_channels_own_holiday_wins_over_a_global_one_and_a_channel_can_leave_them_off()
+    {
+        ChannelHoliday own = Christmas();
+        own.Name = "Own";
+        ChannelHoliday global = Christmas();
+        global.Name = "Global";
+        ChannelConfig channel = Channel(own);
+        SchedulerConfig config = Config(channel);
+        config.GlobalHolidays.Add(global);
+
+        Assert.Same(own, ChannelHolidays.At(config, channel, ChristmasWeek, TimeZoneInfo.Utc));
+
+        channel.Holidays.Clear();
+        Assert.Same(global, ChannelHolidays.At(config, channel, ChristmasWeek, TimeZoneInfo.Utc));
+
+        channel.IgnoreGlobalHolidays = true;
+        Assert.Null(ChannelHolidays.At(config, channel, ChristmasWeek, TimeZoneInfo.Utc));
+    }
+
+    [Fact]
+    public void Global_holidays_survive_the_schedule_file_and_are_validated()
+    {
+        ChannelConfig channel = Channel();
+        channel.IgnoreGlobalHolidays = true;
+        SchedulerConfig config = Config(channel);
+        config.GlobalHolidays.Add(Christmas());
+
+        SchedulerConfig read = SchedulerConfigLoader.Parse(SchedulerConfigLoader.Serialize(config));
+        Assert.Equal("Christmas", Assert.Single(read.GlobalHolidays).Name);
+        Assert.True(read.Channels[0].IgnoreGlobalHolidays);
+
+        config.GlobalHolidays.Add(new ChannelHoliday { Name = "No query", Dates = HolidayDates.WeekOf, Date = "12-25" });
+        Assert.Contains(SchedulerConfigLoader.Validate(config).Errors,
+            error => error.StartsWith("global_holidays.No query", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_copied_holiday_is_separate_from_the_original()
+    {
+        ChannelHoliday original = Christmas();
+        ChannelHoliday copy = original.Clone();
+        copy.Query = "plot:'xmas'";
+
+        Assert.NotSame(original, copy);
+        Assert.Equal("plot:'christmas'", original.Query);
+        Assert.Equal(original.Date, copy.Date);
+    }
+
     [Fact]
     public void Too_few_shows_get_their_share_of_turns_spread_evenly()
     {
