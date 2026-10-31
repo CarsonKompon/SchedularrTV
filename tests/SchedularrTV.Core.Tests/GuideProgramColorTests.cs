@@ -22,13 +22,16 @@ public sealed class GuideProgramColorTests
         };
         var schedule = new ChannelSchedule
         {
-            ChannelId = "test", ChannelName = "Test", Start = start, End = start.AddMinutes(70),
+            ChannelId = "test", ChannelName = "Test", Start = start, End = start.AddMinutes(90),
             Entries = [Entry(0, ScheduleEntryKind.Program), Entry(10, ScheduleEntryKind.Interstitial),
                 Entry(20, ScheduleEntryKind.Program, ProgramOrigin.Anchor),
                 Entry(30, ScheduleEntryKind.Program, ProgramOrigin.Archive),
                 Entry(40, ScheduleEntryKind.Program, ProgramOrigin.ArchiveRandom) with { ContinuesSlot = true },
-                Entry(50, ScheduleEntryKind.Program, ProgramOrigin.ArchiveRandom) with { IsSlotIntro = true },
-                Entry(60, ScheduleEntryKind.Commercial)]
+                // A show's intro and outro are part of its listing, not interstitials of their own.
+                Entry(50, ScheduleEntryKind.Program) with { IsSlotIntro = true },
+                Entry(60, ScheduleEntryKind.Program),
+                Entry(70, ScheduleEntryKind.Program) with { IsSlotOutro = true },
+                Entry(80, ScheduleEntryKind.Commercial)]
         };
         var services = new ServiceCollection().AddLogging();
         await using ServiceProvider provider = services.BuildServiceProvider();
@@ -39,8 +42,10 @@ public sealed class GuideProgramColorTests
                 new Dictionary<string, object?> { [nameof(GuideGrid.Schedules)] = new[] { schedule } }));
             string html = rendered.ToHtmlString();
             Assert.Equal(6, html.Split("class=\"guide-prog ").Length - 1);
-            Assert.Contains("guide-prog normal", html);
-            Assert.Equal(2, html.Split("guide-prog interstitial").Length - 1);
+            // The opening show, and the one with its intro and outro folded in.
+            Assert.Equal(2, html.Split("guide-prog normal").Length - 1);
+            // Only the real interstitial.
+            Assert.Equal(1, html.Split("guide-prog interstitial").Length - 1);
             Assert.Contains("guide-prog anchor", html);
             Assert.Contains("guide-prog archive", html);
             Assert.Contains("guide-prog archive-random", html);
