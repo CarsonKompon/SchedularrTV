@@ -21,6 +21,24 @@ public static class ChannelHolidays
             start = day.AddDays(-(int)day.DayOfWeek);
             end = start.AddDays(6);
         }
+        else if (holiday.Dates is HolidayDates.NthWeekday or HolidayDates.Easter)
+        {
+            if (Anchor(holiday, year) is not { } day) return null;
+            switch (SpanOf(holiday))
+            {
+                case HolidaySpan.Week:
+                    start = day.AddDays(-(int)day.DayOfWeek);
+                    end = start.AddDays(6);
+                    break;
+                case HolidaySpan.LongWeekend:
+                    (start, end) = LongWeekend(day);
+                    break;
+                default:
+                    start = day;
+                    end = day.AddDays(Math.Clamp(holiday.Length ?? 1, 1, 366) - 1);
+                    break;
+            }
+        }
         else
         {
             if (!TryDay(holiday.Start, year, out start) || !TryDay(holiday.End, year, out end)) return null;
@@ -75,14 +93,103 @@ public static class ChannelHolidays
             ? $"{days.Start.ToString("ddd d MMM", culture ?? CultureInfo.InvariantCulture)} – {days.End.ToString("ddd d MMM yyyy", culture ?? CultureInfo.InvariantCulture)}"
             : null;
 
+    /// <summary>
+    /// The day a moving holiday is counted from in <paramref name="year"/>: the nth weekday of its month, or Easter Sunday
+    /// plus its offset. Null for other kinds, or when its rule isn't complete.
+    /// </summary>
+    public static DateOnly? Anchor(ChannelHoliday holiday, int year)
+    {
+        if (year is < 1 or > 9998) return null;
+
+        if (holiday.Dates == HolidayDates.NthWeekday)
+        {
+            if (holiday.Month is not (>= 1 and <= 12) || holiday.Weekday is not { } weekday || !ValidOrdinal(holiday.Ordinal))
+            {
+                return null;
+            }
+
+            var rule = new Temporal.NthWeekdayRule { Month = holiday.Month.Value, DayOfWeek = weekday, Ordinal = holiday.Ordinal ?? 1 };
+            return DateOnly.FromDateTime(Temporal.TemporalTagResolver.ResolveNthWeekday(year, rule));
+        }
+
+        if (holiday.Dates == HolidayDates.Easter)
+        {
+            return EasterSunday(year, holiday.Orthodox == true).AddDays(holiday.EasterOffset ?? 0);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Easter Sunday in <paramref name="year"/>, on the Gregorian calendar: the Western date (the anonymous Gregorian
+    /// algorithm), or the Orthodox one (Meeus' Julian algorithm, moved onto the Gregorian calendar).
+    /// </summary>
+    public static DateOnly EasterSunday(int year, bool orthodox = false)
+    {
+        if (orthodox)
+        {
+            int a = year % 4, b = year % 7, c = year % 19;
+            int d = (19 * c + 15) % 30;
+            int e = (2 * a + 4 * b - d + 34) % 7;
+            int month = (d + e + 114) / 31, day = (d + e + 114) % 31 + 1;
+            // The Julian date is this many days behind the Gregorian one (13 from 1900 to 2099).
+            int behind = year / 100 - year / 400 - 2;
+            return new DateOnly(year, month, day).AddDays(behind);
+        }
+
+        int g = year % 19, century = year / 100, y = year % 100;
+        int h = (19 * g + century - century / 4 - (century - (century + 8) / 25 + 1) / 3 + 15) % 30;
+        int l = (32 + 2 * (century % 4) + 2 * (y / 4) - h - y % 4) % 7;
+        int m = (g + 11 * h + 22 * l) / 451;
+        int n = h + l - 7 * m + 114;
+        return new DateOnly(year, n / 31, n % 31 + 1);
+    }
+
+    /// <summary>The span a moving holiday covers, taking the older <c>whole_week</c> into account.</summary>
+    public static HolidaySpan SpanOf(ChannelHoliday holiday) =>
+        holiday.Span ?? (holiday.WholeWeek == true ? HolidaySpan.Week : HolidaySpan.Days);
+
+    /// <summary>
+    /// The Friday-to-Monday long weekend holding <paramref name="day"/>: the weekend nearest it (a Wednesday takes the one
+    /// before), stretched to take in the day when it falls mid-week.
+    /// </summary>
+    public static (DateOnly Start, DateOnly End) LongWeekend(DateOnly day)
+    {
+        int toSaturday = day.DayOfWeek switch
+        {
+            DayOfWeek.Sunday => -1,
+            DayOfWeek.Monday => -2,
+            DayOfWeek.Tuesday => -3,
+            DayOfWeek.Wednesday => -4,
+            DayOfWeek.Thursday => 2,
+            DayOfWeek.Friday => 1,
+            _ => 0
+        };
+        DateOnly saturday = day.AddDays(toSaturday);
+        DateOnly friday = saturday.AddDays(-1), monday = saturday.AddDays(2);
+        return (day < friday ? day : friday, day > monday ? day : monday);
+    }
+
+    private static bool ValidOrdinal(int? ordinal) => ordinal is null || ordinal == -1 || ordinal is >= 1 and <= 4;
+
     /// <summary>Why the holiday can't be used as written, or null.</summary>
     public static string? Problem(ChannelHoliday holiday, SchedulerConfig config)
     {
-        if (holiday.Dates == HolidayDates.WeekOf ? !TryDay(holiday.Date, 2000, out _) : !TryDay(holiday.Start, 2000, out _) || !TryDay(holiday.End, 2000, out _))
+        string? dates = holiday.Dates switch
         {
-            return holiday.Dates == HolidayDates.WeekOf
-                ? "needs the day whose week it is, as MM-DD (12-25)."
-                : "needs a first and last day, as MM-DD (05-01 to 05-05).";
+            HolidayDates.WeekOf when !TryDay(holiday.Date, 2000, out _) => "needs the day whose week it is, as MM-DD (12-25).",
+            HolidayDates.NthWeekday when holiday.Month is not (>= 1 and <= 12) || holiday.Weekday is null =>
+                "needs a month and a day of the week (the 4th Thursday of November).",
+            HolidayDates.NthWeekday when !ValidOrdinal(holiday.Ordinal) => "needs which one in the month: 1 to 4, or -1 for the last.",
+            HolidayDates.Easter when holiday.EasterOffset is < -366 or > 366 => "days from Easter must be -366 to 366.",
+            HolidayDates.NthWeekday or HolidayDates.Easter when holiday.Length is < 1 or > 366 => "must last 1 to 366 days.",
+            HolidayDates.Range when !TryDay(holiday.Start, 2000, out _) || !TryDay(holiday.End, 2000, out _) =>
+                "needs a first and last day, as MM-DD (05-01 to 05-05).",
+            _ => null
+        };
+        if (dates is not null)
+        {
+            return dates;
         }
 
         if (string.IsNullOrWhiteSpace(holiday.Query))

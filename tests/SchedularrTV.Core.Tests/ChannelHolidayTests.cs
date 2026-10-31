@@ -48,6 +48,112 @@ public sealed class ChannelHolidayTests
         Assert.Equal(new DateOnly(2028, 2, 29), ChannelHolidays.In(leap, 2028)!.Value.Start);
     }
 
+    [Theory]
+    [InlineData(2024, 3, 31, 5, 5)]
+    [InlineData(2025, 4, 20, 4, 20)]
+    [InlineData(2026, 4, 5, 4, 12)]
+    [InlineData(2027, 3, 28, 5, 2)]
+    [InlineData(2038, 4, 25, 4, 25)]
+    public void Easter_falls_on_the_right_sunday(int year, int month, int day, int orthodoxMonth, int orthodoxDay)
+    {
+        Assert.Equal(new DateOnly(year, month, day), ChannelHolidays.EasterSunday(year));
+        Assert.Equal(new DateOnly(year, orthodoxMonth, orthodoxDay), ChannelHolidays.EasterSunday(year, orthodox: true));
+        Assert.Equal(DayOfWeek.Sunday, ChannelHolidays.EasterSunday(year).DayOfWeek);
+    }
+
+    [Fact]
+    public void A_holiday_can_be_counted_from_easter()
+    {
+        // Good Friday to Easter Monday.
+        var easter = new ChannelHoliday { Dates = HolidayDates.Easter, EasterOffset = -2, Length = 4, Query = "plot:'easter'" };
+        Assert.Equal((new DateOnly(2026, 4, 3), new DateOnly(2026, 4, 6)), ChannelHolidays.In(easter, 2026));
+        Assert.Equal((new DateOnly(2027, 3, 26), new DateOnly(2027, 3, 29)), ChannelHolidays.In(easter, 2027));
+
+        easter.Orthodox = true;
+        Assert.Equal((new DateOnly(2026, 4, 10), new DateOnly(2026, 4, 13)), ChannelHolidays.In(easter, 2026));
+    }
+
+    [Fact]
+    public void A_holiday_can_be_a_weekday_of_a_month()
+    {
+        var thanksgiving = new ChannelHoliday
+        {
+            Dates = HolidayDates.NthWeekday, Month = 11, Weekday = DayOfWeek.Thursday, Ordinal = 4, Length = 4, Query = "plot:'thanksgiving'"
+        };
+        Assert.Equal((new DateOnly(2026, 11, 26), new DateOnly(2026, 11, 29)), ChannelHolidays.In(thanksgiving, 2026));
+        Assert.Equal((new DateOnly(2027, 11, 25), new DateOnly(2027, 11, 28)), ChannelHolidays.In(thanksgiving, 2027));
+
+        // The whole week holding it, with a week before.
+        thanksgiving.Span = HolidaySpan.Week;
+        thanksgiving.WeeksBefore = 1;
+        Assert.Equal((new DateOnly(2026, 11, 15), new DateOnly(2026, 11, 28)), ChannelHolidays.In(thanksgiving, 2026));
+
+        // The last Monday of May.
+        var memorial = new ChannelHoliday { Dates = HolidayDates.NthWeekday, Month = 5, Weekday = DayOfWeek.Monday, Ordinal = -1, Query = "plot:'memorial'" };
+        Assert.Equal((new DateOnly(2026, 5, 25), new DateOnly(2026, 5, 25)), ChannelHolidays.In(memorial, 2026));
+    }
+
+    [Fact]
+    public void A_moving_holiday_can_cover_the_long_weekend_holding_it()
+    {
+        // Canadian Thanksgiving: the 2nd Monday of October, Friday to Monday.
+        var thanksgiving = new ChannelHoliday
+        {
+            Dates = HolidayDates.NthWeekday, Month = 10, Weekday = DayOfWeek.Monday, Ordinal = 2, Span = HolidaySpan.LongWeekend, Query = "plot:'thanksgiving'"
+        };
+        Assert.Equal((new DateOnly(2026, 10, 9), new DateOnly(2026, 10, 12)), ChannelHolidays.In(thanksgiving, 2026));
+        Assert.Equal((new DateOnly(2027, 10, 8), new DateOnly(2027, 10, 11)), ChannelHolidays.In(thanksgiving, 2027));
+
+        // Easter Sunday: Good Friday to Easter Monday.
+        var easter = new ChannelHoliday { Dates = HolidayDates.Easter, Span = HolidaySpan.LongWeekend, Query = "plot:'easter'" };
+        Assert.Equal((new DateOnly(2026, 4, 3), new DateOnly(2026, 4, 6)), ChannelHolidays.In(easter, 2026));
+
+        // A Thursday stretches it: Thursday to Monday. A Friday holiday runs Friday to Monday.
+        Assert.Equal((new DateOnly(2026, 11, 26), new DateOnly(2026, 11, 30)), ChannelHolidays.LongWeekend(new DateOnly(2026, 11, 26)));
+        Assert.Equal((new DateOnly(2026, 11, 27), new DateOnly(2026, 11, 30)), ChannelHolidays.LongWeekend(new DateOnly(2026, 11, 27)));
+    }
+
+    [Fact]
+    public void The_older_whole_week_setting_is_read_as_a_week_span()
+    {
+        const string yaml = """
+            channels:
+              - id: kids
+                name: Kids
+                number: 1
+                holidays:
+                  - name: Thanksgiving
+                    dates: nth_weekday
+                    month: 11
+                    weekday: Thursday
+                    ordinal: 4
+                    whole_week: true
+                    query: "plot:'thanksgiving'"
+            """;
+        ChannelHoliday read = Assert.Single(SchedulerConfigLoader.Parse(yaml).Channels[0].Holidays);
+        Assert.Equal(HolidaySpan.Week, read.Span);
+        Assert.Null(read.WholeWeek);
+    }
+
+    [Fact]
+    public void Moving_holidays_survive_the_schedule_file_and_incomplete_rules_are_reported()
+    {
+        ChannelConfig channel = Channel(
+            new ChannelHoliday { Name = "Thanksgiving", Dates = HolidayDates.NthWeekday, Month = 11, Weekday = DayOfWeek.Thursday, Ordinal = 4, Span = HolidaySpan.LongWeekend, Query = "plot:'thanksgiving'" },
+            new ChannelHoliday { Name = "Easter", Dates = HolidayDates.Easter, EasterOffset = -2, Length = 4, Orthodox = true, Query = "plot:'easter'" });
+
+        List<ChannelHoliday> read = SchedulerConfigLoader.Parse(SchedulerConfigLoader.Serialize(Config(channel))).Channels[0].Holidays;
+        Assert.Equal((HolidayDates.NthWeekday, 11, DayOfWeek.Thursday, 4, HolidaySpan.LongWeekend),
+            (read[0].Dates, read[0].Month, read[0].Weekday, read[0].Ordinal, read[0].Span));
+        Assert.Equal((HolidayDates.Easter, -2, 4, true), (read[1].Dates, read[1].EasterOffset, read[1].Length, read[1].Orthodox));
+
+        ChannelConfig broken = Channel(new ChannelHoliday { Name = "No month", Dates = HolidayDates.NthWeekday, Weekday = DayOfWeek.Monday, Query = "plot:'x'" },
+            new ChannelHoliday { Name = "Fifth", Dates = HolidayDates.NthWeekday, Month = 5, Weekday = DayOfWeek.Monday, Ordinal = 5, Query = "plot:'x'" });
+        ConfigValidationResult result = SchedulerConfigLoader.Validate(Config(broken));
+        Assert.Contains(result.Errors, error => error.StartsWith("channels.kids.holidays.No month", StringComparison.Ordinal));
+        Assert.Contains(result.Errors, error => error.StartsWith("channels.kids.holidays.Fifth", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void Holidays_that_cant_be_used_are_reported()
     {

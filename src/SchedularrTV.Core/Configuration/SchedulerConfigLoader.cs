@@ -1036,6 +1036,21 @@ public static class SchedulerConfigLoader
         holiday.MinimumShows = Math.Max(1, holiday.MinimumShows);
         holiday.WeeksBefore = Math.Max(0, holiday.WeeksBefore);
         holiday.WeeksAfter = Math.Max(0, holiday.WeeksAfter);
+
+        // Only the fields the holiday's kind of dates uses are kept, and only when they differ from their defaults.
+        bool nth = holiday.Dates == HolidayDates.NthWeekday, easter = holiday.Dates == HolidayDates.Easter;
+        if (!nth)
+        {
+            holiday.Month = null;
+            holiday.Weekday = null;
+        }
+        holiday.Ordinal = nth && holiday.Ordinal is { } ordinal and not 1 ? ordinal : null;
+        holiday.EasterOffset = easter && holiday.EasterOffset is { } offset and not 0 ? offset : null;
+        holiday.Orthodox = easter && holiday.Orthodox == true ? true : null;
+        HolidaySpan span = Scheduling.ChannelHolidays.SpanOf(holiday);
+        holiday.Span = (nth || easter) && span != HolidaySpan.Days ? span : null;
+        holiday.WholeWeek = null;
+        holiday.Length = (nth || easter) && span == HolidaySpan.Days && holiday.Length is { } length and not 1 ? length : null;
     }
 
     private static void Normalize(SchedulerConfig config)

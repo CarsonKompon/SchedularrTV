@@ -166,6 +166,36 @@ holidays:
 
 The first enabled holiday whose days hold a programme's start applies to it.
 
+Holidays whose dates move each year are worked out for each year, with no internet lookup:
+
+```yaml
+holidays:
+  - name: Thanksgiving
+    dates: nth_weekday
+    month: 11
+    weekday: Thursday
+    ordinal: 4              # 1 to 4, or -1 for the last; 1 if left out
+    length: 4               # Thursday to Sunday; 1 if left out
+    query: "plot:'thanksgiving'"
+  - name: Canadian Thanksgiving
+    dates: nth_weekday
+    month: 10
+    weekday: Monday
+    ordinal: 2
+    span: long_weekend      # Friday to Monday
+    query: "plot:'thanksgiving'"
+  - name: Easter
+    dates: easter
+    easter_offset: -2       # days from Easter Sunday: -2 Good Friday, -47 Mardi Gras, 49 Pentecost
+    span: week              # the Sunday-to-Saturday week holding the day, instead of `length`
+    orthodox: false         # true for the Orthodox Easter
+    query: "plot:'easter'"
+```
+
+**`span`** is `days` (the default: `length` days from the day), `week` (Sunday to Saturday) or `long_weekend`: Friday to Monday around the nearest weekend, stretched to take in the day when it falls mid-week (a Thursday runs Thursday to Monday).
+
+`weeks_before` and `weeks_after` work with these too.
+
 Top-level **`global_holidays`** take the same fields and apply to every channel, after the channel's own (a channel holiday on the same days wins). A channel sets **`ignore_global_holidays: true`** to leave them off:
 
 ```yaml

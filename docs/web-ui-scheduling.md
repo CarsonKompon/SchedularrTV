@@ -48,6 +48,10 @@ For a weekly marathon, use **Recurrence → Certain days** instead. A show-speci
 2. Under **Days**, choose either:
     - **The same days every year**, with **From** and **To** as `MM-DD` (`05-01` to `05-05`). A **To** before **From** runs into the new year (`12-26` to `01-02`).
     - **The week of a day**, with a date as `MM-DD` (`12-25`). This is always the whole Sunday-to-Saturday week holding that day that year, whatever day of the week it falls on.
+    - **A weekday of a month**, such as the 4th Thursday of November (Thanksgiving) or the last Monday of May (Memorial Day).
+    - **Days from Easter**: Easter Sunday plus or minus a number of days (`-2` Good Friday, `-47` Mardi Gras, `49` Pentecost), Western or Orthodox.
+
+    For the last two, choose what it **Covers**: a number of days from that day (Thanksgiving to Sunday is 4), **The long weekend holding it** (Friday to Monday, such as the 2nd Monday of October for Canadian Thanksgiving), or **The whole week holding it** (Sunday to Saturday). These dates are worked out for each year, with no internet lookup.
 3. Optionally add **Weeks before** and **Weeks after**. The editor shows this year's and next year's days.
 4. Enter **Holiday episodes**, a [query](scheduling.md#query-language) that picks them out, such as `plot:'christmas' OR plot:'xmas'`. `plot:` finds the words anywhere in an episode's description.
 5. Tick **Search the whole library** to look for holiday episodes everywhere instead of only in what the block plays.

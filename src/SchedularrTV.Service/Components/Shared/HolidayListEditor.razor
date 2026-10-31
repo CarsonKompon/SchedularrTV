@@ -116,9 +116,11 @@
             <h3>When</h3>
             <label class="field">
                 <span>Days</span>
-                <select value="@holiday.Dates" @onchange="e => Set(() => holiday.Dates = Enum.Parse<HolidayDates>(Text(e)))">
+                <select value="@holiday.Dates" @onchange="e => Set(() => SetDates(holiday, Enum.Parse<HolidayDates>(Text(e))))">
                     <option value="@HolidayDates.Range">The same days every year</option>
                     <option value="@HolidayDates.WeekOf">The week of a day (Sunday to Saturday)</option>
+                    <option value="@HolidayDates.NthWeekday">A weekday of a month (4th Thursday of November)</option>
+                    <option value="@HolidayDates.Easter">Days from Easter</option>
                 </select>
             </label>
             @if (holiday.Dates == HolidayDates.WeekOf)
@@ -127,6 +129,59 @@
                     <span>The week of (MM-DD)</span>
                     <input type="text" value="@holiday.Date" placeholder="12-25" @onchange="e => Set(() => holiday.Date = Text(e))" />
                 </label>
+            }
+            else if (holiday.Dates == HolidayDates.NthWeekday)
+            {
+                <div class="grid grid-3">
+                    <label class="field">
+                        <span>Which</span>
+                        <select value="@(holiday.Ordinal ?? 1)" @onchange="e => Set(() => holiday.Ordinal = int.TryParse(Text(e), out int value) ? value : 1)">
+                            <option value="1">1st</option>
+                            <option value="2">2nd</option>
+                            <option value="3">3rd</option>
+                            <option value="4">4th</option>
+                            <option value="-1">Last</option>
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span>Day of the week</span>
+                        <select value="@(holiday.Weekday?.ToString() ?? "")" @onchange="e => Set(() => holiday.Weekday = Enum.TryParse(Text(e), out DayOfWeek day) ? day : null)">
+                            <option value="">Choose&hellip;</option>
+                            @foreach (DayOfWeek day in Enum.GetValues<DayOfWeek>())
+                            {
+                                <option value="@day">@day</option>
+                            }
+                        </select>
+                    </label>
+                    <label class="field">
+                        <span>Of</span>
+                        <select value="@(holiday.Month?.ToString() ?? "")" @onchange="e => Set(() => holiday.Month = int.TryParse(Text(e), out int month) ? month : null)">
+                            <option value="">Choose&hellip;</option>
+                            @for (int month = 1; month <= 12; month++)
+                            {
+                                <option value="@month">@System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(month)</option>
+                            }
+                        </select>
+                    </label>
+                </div>
+            }
+            else if (holiday.Dates == HolidayDates.Easter)
+            {
+                <div class="grid grid-2">
+                    <label class="field">
+                        <span>Days from Easter Sunday</span>
+                        <input type="number" min="-366" max="366" value="@(holiday.EasterOffset ?? 0)"
+                               @onchange="e => Set(() => holiday.EasterOffset = int.TryParse(Text(e), out int days) ? Math.Clamp(days, -366, 366) : 0)" />
+                    </label>
+                    <label class="field">
+                        <span>Easter</span>
+                        <select value="@(holiday.Orthodox == true ? "orthodox" : "western")" @onchange="e => Set(() => holiday.Orthodox = IsOrthodox(e))">
+                            <option value="western">Western</option>
+                            <option value="orthodox">Orthodox</option>
+                        </select>
+                    </label>
+                </div>
+                <p class="hint">0 is Easter Sunday, -2 Good Friday, 1 Easter Monday, -47 Mardi Gras, -46 Ash Wednesday, 49 Pentecost.</p>
             }
             else
             {
@@ -140,6 +195,32 @@
                         <input type="text" value="@holiday.End" placeholder="05-05" @onchange="e => Set(() => holiday.End = Text(e))" />
                     </label>
                 </div>
+            }
+            @if (holiday.Dates is HolidayDates.NthWeekday or HolidayDates.Easter)
+            {
+                HolidaySpan span = ChannelHolidays.SpanOf(holiday);
+                <div class="grid grid-2">
+                    <label class="field">
+                        <span>Covers</span>
+                        <select value="@span" @onchange="e => Set(() => SetSpan(holiday, Enum.Parse<HolidaySpan>(Text(e))))">
+                            <option value="@HolidaySpan.Days">A number of days from that day</option>
+                            <option value="@HolidaySpan.LongWeekend">The long weekend holding it (Friday to Monday)</option>
+                            <option value="@HolidaySpan.Week">The whole week holding it (Sunday to Saturday)</option>
+                        </select>
+                    </label>
+                    @if (span == HolidaySpan.Days)
+                    {
+                        <label class="field">
+                            <span>Lasts (days)</span>
+                            <input type="number" min="1" max="366" value="@(holiday.Length ?? 1)"
+                                   @onchange="e => Set(() => holiday.Length = int.TryParse(Text(e), out int days) ? Math.Clamp(days, 1, 366) : 1)" />
+                        </label>
+                    }
+                </div>
+                @if (span == HolidaySpan.LongWeekend)
+                {
+                    <p class="hint">The weekend nearest the day, Friday to Monday. A day in the middle of the week stretches it (a Thursday runs Thursday to Monday).</p>
+                }
             }
             <div class="grid grid-2">
                 <label class="field">
@@ -276,7 +357,27 @@
 
     private static string Text(ChangeEventArgs e) => e.Value?.ToString()?.Trim() ?? string.Empty;
 
+    private static bool IsOrthodox(ChangeEventArgs e) => Text(e) == "orthodox";
+
     private static int Weeks(ChangeEventArgs e) => int.TryParse(Text(e), out int weeks) ? Math.Clamp(weeks, 0, 52) : 0;
+
+    /// <summary>Changes how the days are given, starting a weekday-of-a-month rule at Thanksgiving so it's usable straight away.</summary>
+    private static void SetDates(ChannelHoliday holiday, HolidayDates dates)
+    {
+        holiday.Dates = dates;
+        if (dates == HolidayDates.NthWeekday && holiday.Month is null && holiday.Weekday is null)
+        {
+            holiday.Month = 11;
+            holiday.Weekday = DayOfWeek.Thursday;
+            holiday.Ordinal = 4;
+        }
+    }
+
+    private static void SetSpan(ChannelHoliday holiday, HolidaySpan span)
+    {
+        holiday.Span = span == HolidaySpan.Days ? null : span;
+        holiday.WholeWeek = null;
+    }
 
     private Task Set(Action change)
     {
