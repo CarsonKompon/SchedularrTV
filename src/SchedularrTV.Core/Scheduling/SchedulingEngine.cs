@@ -1018,13 +1018,13 @@ public sealed class SchedulingEngine(
                 InterstitialQueryBuilder.CommercialsIdentity(commercials))
             .ConfigureAwait(false);
 
-        // Ads that aired on this channel lately (from any block's pool) are passed over while others fit. Each block's ad
+        // Ads that aired on this channel lately (from any block's pool) go to the back of the candidates. Each block's ad
         // breaks keep their own shuffle and the shared folders are in several, so without this a clip could come round
-        // again within the hour in the next block. When nothing else fits, they're allowed rather than leave dead air.
+        // again within the hour in the next block. The packer prefers earlier candidates among equally good fills, so the
+        // others win wherever they fill the break as well, and a break is never filled worse to avoid a repeat.
         IReadOnlyDictionary<string, DateTimeOffset> aired = await session.AiredAsync(cancellationToken).ConfigureAwait(false);
         DateTimeOffset airedSince = cursor - ScheduleBuildSession.AiredWindow;
         bool AiredLately(MediaItem item) => aired.TryGetValue(item.Id, out DateTimeOffset at) && at >= airedSince;
-        bool preferUnaired = true;
 
         List<PackedItem> packedItems = [];
         Dictionary<string, int> repeats = new(StringComparer.Ordinal);
@@ -1032,23 +1032,18 @@ public sealed class SchedulingEngine(
         TimeSpan available = packTo - cursor;
         while (available > TimeSpan.Zero)
         {
-            bool unairedOnly = preferUnaired;
-            IReadOnlyList<MediaItem> candidates = commercialSequence.PreviewForGap(256,
-                item => item.Duration > TimeSpan.Zero && item.Duration <= available
-                    && repeats.GetValueOrDefault(item.Id) < maxRepeats
-                    && !(unairedOnly && AiredLately(item)));
+            bool Fits(MediaItem item) => item.Duration > TimeSpan.Zero && item.Duration <= available
+                && repeats.GetValueOrDefault(item.Id) < maxRepeats;
+            List<MediaItem> candidates = [.. commercialSequence.PreviewForGap(256, item => Fits(item) && !AiredLately(item))];
+            if (candidates.Count < 256)
+            {
+                HashSet<string> taken = new(candidates.Select(item => item.Id), StringComparer.Ordinal);
+                candidates.AddRange(commercialSequence.PreviewForGap(256, Fits).Where(item => taken.Add(item.Id)).Take(256 - candidates.Count));
+            }
+
             PackResult pass = KnapsackPacker.Pack(candidates, available,
                 commercials.Granularity ?? TimeSpan.FromMilliseconds(250), 1);
-            if (pass.Items.Count == 0)
-            {
-                if (preferUnaired)
-                {
-                    preferUnaired = false;
-                    continue;
-                }
-
-                break;
-            }
+            if (pass.Items.Count == 0) break;
             foreach (PackedItem item in pass.Items)
             {
                 commercialSequence.Consume(item.Item.Id);

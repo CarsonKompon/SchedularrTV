@@ -90,25 +90,30 @@ public class PlaybackOrderTests
     }
 
     [Fact]
-    public void A_changed_pool_invalidates_stale_state()
+    public void A_changed_pool_carries_on_the_cycle_with_the_newcomer_dealt_in()
     {
         MediaSequence first = MediaSequence.Create("k", PlaybackOrder.Shuffle, Pool(), null);
-        first.TryTake(null, out _);
+        Assert.True(first.TryTake(null, out MediaItem played));
         PlaybackState state = first.ToState();
 
         List<MediaItem> grown = Pool();
-        grown.Add(TestMedia.Episode("Show", 3, 1, TimeSpan.FromMinutes(22)));
+        MediaItem newcomer = TestMedia.Episode("Show", 3, 1, TimeSpan.FromMinutes(22));
+        grown.Add(newcomer);
 
         MediaSequence resumed = MediaSequence.Create("k", PlaybackOrder.Shuffle, grown, state);
 
-        List<string> cycle = [];
-        for (int i = 0; i < 5; i++)
+        // The rest of the cycle: everything but what already played, the newcomer included, each once.
+        int left = grown.Count - 1;
+        List<string> rest = [];
+        for (int i = 0; i < left; i++)
         {
             Assert.True(resumed.TryTake(null, out MediaItem item));
-            cycle.Add(item.Id);
+            rest.Add(item.Id);
         }
 
-        Assert.Equal(5, cycle.Distinct().Count());
+        Assert.Equal(left, rest.Distinct().Count());
+        Assert.DoesNotContain(played.Id, rest);
+        Assert.Contains(newcomer.Id, rest);
     }
 
     [Fact]
