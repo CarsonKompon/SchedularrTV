@@ -48,7 +48,10 @@ public static class AdBreakPreview
 
         InterstitialsConfig breaks = SchedulingEngine.ResolvedBreaks(config, channel);
         (PromoConfig promos, List<string>? promoBrands) = SchedulingEngine.ResolvedPromos(config, channel);
-        Pools pools = new(breaks, promos, promoBrands, settings, clips, now, new Random(seed));
+        Pools pools = new(breaks, promos, promoBrands, settings, clips, now, new Random(seed))
+        {
+            BumperFolders = [.. adBreak.Folders.Where(folder => folder.Role == AdFolderRole.Bumpers).Select(folder => folder.Path)]
+        };
 
         List<PreviewSegment> segments = [];
         TimeSpan part = TimeSpan.FromTicks(ShowLength.Ticks / Parts);
@@ -164,8 +167,12 @@ public static class AdBreakPreview
 
             foreach (PackedItem item in packed.Items)
             {
-                middle.Add(new PreviewItem(item.IsFiller ? PreviewKind.Filler : PreviewKind.Ad, Label(item.Item), item.Duration,
-                    item.IsFiller ? item.Trimmed ? "Filler, cut short to fit" : "Filler" : null));
+                // Bumpers placed "mixed in" share the ads' pool, but they're still bumpers.
+                bool bumper = !item.IsFiller && pools.IsBumper(item.Item);
+                middle.Add(new PreviewItem(
+                    item.IsFiller ? PreviewKind.Filler : bumper ? PreviewKind.Bumper : PreviewKind.Ad,
+                    Label(item.Item), item.Duration,
+                    item.IsFiller ? item.Trimmed ? "Filler, cut short to fit" : "Filler" : bumper ? "Bumper, mixed in with the ads" : null));
             }
 
             free -= packed.Filled;
@@ -251,6 +258,13 @@ public static class AdBreakPreview
         public List<(List<MediaItem> Pool, string Label)> Windows { get; }
 
         public List<MediaItem> Eventually { get; }
+
+        /// <summary>The ad break's bumper folders.</summary>
+        public IReadOnlyList<string> BumperFolders { get; init; } = [];
+
+        /// <summary>Whether a clip is from one of the ad break's bumper folders.</summary>
+        public bool IsBumper(MediaItem item) =>
+            item.Path is { } path && BumperFolders.Any(folder => AdBreakPaths.IsUnder(path, folder));
 
         /// <summary>The clips one promo spot can play, for any show.</summary>
         public List<MediaItem> Spot(PromoSpotConfig spot) =>
