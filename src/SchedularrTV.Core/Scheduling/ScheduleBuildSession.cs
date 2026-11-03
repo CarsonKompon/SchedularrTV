@@ -98,7 +98,8 @@ internal sealed class ScheduleBuildSession(
         items = ApplyDurationBounds(items, selector);
         items = VersionCollapser.Collapse(items, ResolveVersions(selector, 0));
 
-        PlaybackState? state = await stateStore.GetAsync(key, cancellationToken).ConfigureAwait(false);
+        PlaybackState? state = await stateStore.GetAsync(key, cancellationToken).ConfigureAwait(false)
+                               ?? await InheritAsync(key, scope, items, titleOrder is not null, order, cancellationToken).ConfigureAwait(false);
         MediaSequence sequence;
         if (titleOrder is { } rotation)
         {
@@ -586,10 +587,74 @@ internal sealed class ScheduleBuildSession(
     private string BuildKey(ContentSelector selector, string scope, QueryExpression expression)
     {
         // Ordering is deliberately not part of the identity: it is still the same collection, so
-        // changing how it is ordered should not lose the viewer's place in it.
+        // changing how it is ordered should not lose the viewer's place in it. Nor is what a collection holds: a
+        // selector that plays a collection is that collection by name, so adding or removing one of its shows keeps
+        // every other show's place (the pool changing is handled where the sequence is made).
         string identity = selector.StateKey ?? Fingerprint(
-            $"{expression.ToQueryString()}|{selector.MinDuration}|{selector.MaxDuration}");
+            CollectionIdentity(selector) ?? $"{expression.ToQueryString()}|{selector.MinDuration}|{selector.MaxDuration}");
         return $"{channel.Id}|{scope}|{identity}";
+    }
+
+    /// <summary>
+    /// What a selector that only plays a collection is, independent of the collection's contents; null for any other
+    /// selector (a query or titles of its own, which are its identity).
+    /// </summary>
+    private static string? CollectionIdentity(ContentSelector selector) =>
+        !string.IsNullOrWhiteSpace(selector.Collection) && string.IsNullOrWhiteSpace(selector.Query) && selector.Include.Count == 0
+            ? $"collection:{selector.Collection.Trim().ToLowerInvariant()}|filter:{selector.Filter}|{selector.FilterScope}"
+              + $"|exclude:{string.Join(',', selector.ExcludeSeasons)}|{selector.MinDuration}|{selector.MaxDuration}"
+            : null;
+
+    /// <summary>
+    /// A starting place for a sequence that has no saved state of its own because its key changed (a selector's own
+    /// titles were edited, its collection renamed, or it was saved before collections were keyed by name): each show's
+    /// place from the most recent sequence on this channel that played the same shows, so they carry on rather than
+    /// starting again from the first episode. Null when there's nothing to carry on from.
+    /// </summary>
+    private async ValueTask<PlaybackState?> InheritAsync(string key, string scope, IReadOnlyList<MediaItem> items, bool rotation,
+        PlaybackOrder order, CancellationToken cancellationToken)
+    {
+        if (items.Count == 0)
+        {
+            return null;
+        }
+
+        IReadOnlyList<PlaybackState> saved = await stateStore.FindAsync($"{channel.Id}|{scope}|", cancellationToken).ConfigureAwait(false);
+        IEnumerable<PlaybackState> others = saved
+            .Where(state => state.Key != key && !state.Key.Contains("|title|", StringComparison.Ordinal))
+            .OrderByDescending(state => state.UpdatedAt ?? DateTimeOffset.MinValue);
+
+        if (rotation)
+        {
+            // The most recent rotation sharing at least half of its shows with this one (so an unrelated block's
+            // rotation, which happens to share a show, isn't taken for it).
+            HashSet<string> titles = new(items.Select(TitleRotation.TitleOf), StringComparer.OrdinalIgnoreCase);
+            PlaybackState? from = others.FirstOrDefault(state => state.Titles is { Count: > 0 } shows
+                && shows.Keys.Count(titles.Contains) is var shared and > 0
+                && shared * 2 >= Math.Min(titles.Count, shows.Count));
+            return from is null
+                ? null
+                : new PlaybackState
+                {
+                    Key = key,
+                    RandomState = from.RandomState,
+                    Titles = from.Titles!.Where(pair => titles.Contains(pair.Key))
+                        .ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), StringComparer.OrdinalIgnoreCase),
+                    TitleCredits = from.TitleCredits is null
+                        ? null
+                        : from.TitleCredits.Where(pair => titles.Contains(pair.Key)).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase)
+                };
+        }
+
+        // An ordered run (no shuffle to keep) carries on after the last thing it played, wherever that now sits.
+        if (order is PlaybackOrder.Shuffle or PlaybackOrder.Random)
+        {
+            return null;
+        }
+
+        HashSet<string> ids = new(items.Select(item => item.Id), StringComparer.Ordinal);
+        PlaybackState? last = others.FirstOrDefault(state => state.Titles is null && state.LastItemId is { } id && ids.Contains(id));
+        return last is null ? null : new PlaybackState { Key = key, LastItemId = last.LastItemId, RandomState = last.RandomState };
     }
 
     private static string Fingerprint(string text) => DeterministicRandom.Hash(text).ToString("x16");

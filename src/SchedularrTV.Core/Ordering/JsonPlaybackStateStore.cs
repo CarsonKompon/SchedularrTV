@@ -47,6 +47,10 @@ public sealed class JsonPlaybackStateStore : IPlaybackStateStore, IAsyncDisposab
         await FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public ValueTask<IReadOnlyList<PlaybackState>> FindAsync(string keyPrefix, CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult<IReadOnlyList<PlaybackState>>(
+            [.. _states.Where(pair => pair.Key.StartsWith(keyPrefix, StringComparison.Ordinal)).Select(pair => pair.Value.Clone())]);
+
     public async ValueTask ResetAsync(string keyPrefix, CancellationToken cancellationToken = default)
     {
         foreach (string key in _states.Keys.Where(k => k.StartsWith(keyPrefix, StringComparison.Ordinal)))

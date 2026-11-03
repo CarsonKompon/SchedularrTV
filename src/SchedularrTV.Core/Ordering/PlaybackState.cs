@@ -125,4 +125,11 @@ public interface IPlaybackStateStore
     }
 
     ValueTask ResetAsync(string keyPrefix, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every saved state whose key starts with <paramref name="keyPrefix"/>, for carrying a show's place over to a
+    /// sequence whose key changed. A store that can't list its states finds none.
+    /// </summary>
+    ValueTask<IReadOnlyList<PlaybackState>> FindAsync(string keyPrefix, CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult<IReadOnlyList<PlaybackState>>([]);
 }
