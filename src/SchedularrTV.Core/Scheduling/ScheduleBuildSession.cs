@@ -646,13 +646,30 @@ internal sealed class ScheduleBuildSession(
                 };
         }
 
-        // An ordered run (no shuffle to keep) carries on after the last thing it played, wherever that now sits.
-        if (order is PlaybackOrder.Shuffle or PlaybackOrder.Random)
+        HashSet<string> ids = new(items.Select(item => item.Id), StringComparer.Ordinal);
+
+        // A shuffle carries on with its cycle: what's left stays left and what played stays played (newcomers are
+        // dealt in where the sequence is made), from the most recent shuffle of mostly the same things.
+        if (order == PlaybackOrder.Shuffle)
+        {
+            PlaybackState? cycle = others.FirstOrDefault(state => state.Titles is null && state.Played is not null
+                && state.Bag.Concat(state.Played).Distinct(StringComparer.Ordinal).ToList() is { Count: > 0 } known
+                && known.Count(ids.Contains) * 2 >= Math.Min(ids.Count, known.Count));
+            return cycle is null
+                ? null
+                : new PlaybackState
+                {
+                    Key = key, Bag = [.. cycle.Bag], Played = [.. cycle.Played!], RandomState = cycle.RandomState,
+                    PoolFingerprint = cycle.PoolFingerprint, LastItemId = cycle.LastItemId
+                };
+        }
+
+        // Random keeps nothing; an ordered run carries on after the last thing it played, wherever that now sits.
+        if (order == PlaybackOrder.Random)
         {
             return null;
         }
 
-        HashSet<string> ids = new(items.Select(item => item.Id), StringComparer.Ordinal);
         PlaybackState? last = others.FirstOrDefault(state => state.Titles is null && state.LastItemId is { } id && ids.Contains(id));
         return last is null ? null : new PlaybackState { Key = key, LastItemId = last.LastItemId, RandomState = last.RandomState };
     }

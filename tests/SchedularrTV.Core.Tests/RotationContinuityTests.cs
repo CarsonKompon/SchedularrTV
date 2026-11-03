@@ -89,6 +89,44 @@ public sealed class RotationContinuityTests
     }
 
     [Fact]
+    public async Task Renaming_a_collection_keeps_every_shows_place()
+    {
+        var engine = new SchedulingEngine(new FakeMediaLibrary(Library()), new InMemoryPlaybackStateStore());
+        SchedulerConfig config = Config(Channel(new ContentSelector { Collection = "Kids" }), Show("Alpha"), Show("Bravo"));
+
+        List<int> first = await EpisodesAsync(engine, config, "Alpha", Start, TimeSpan.FromHours(6));
+
+        Assert.Null(SchedularrTV.Service.Editor.CollectionNames.Rename(config, "Kids", "Cartoons", out _));
+        Assert.Equal("Cartoons", config.Channels[0].BaseRotation!.Collection);
+        List<int> after = await EpisodesAsync(engine, config, "Alpha", Start.AddHours(6), TimeSpan.FromHours(6));
+
+        Assert.Equal(first.Max() + 1, after[0]);
+    }
+
+    [Fact]
+    public async Task Renaming_a_shuffled_collection_carries_on_its_cycle()
+    {
+        var engine = new SchedulingEngine(new FakeMediaLibrary(Library()), new InMemoryPlaybackStateStore());
+        SchedulerConfig config = Config(Channel(new ContentSelector { Collection = "Kids" }), Show("Alpha"), Show("Bravo"), Show("Charlie"));
+        // A plain shuffle of every episode, no title rotation.
+        config.GlobalCollections["Kids"].Order = PlaybackOrder.Shuffle;
+        config.GlobalCollections["Kids"].TitleOrder = null;
+
+        async Task<List<string>> PlayedAsync(DateTimeOffset from)
+        {
+            ChannelSchedule schedule = await engine.BuildAsync(config, config.Channels[0], from, from.AddHours(12));
+            return [.. schedule.Entries.Where(entry => entry.Kind == ScheduleEntryKind.Program).Select(entry => entry.Item!.Id)];
+        }
+
+        List<string> before = await PlayedAsync(Start);
+        Assert.Null(SchedularrTV.Service.Editor.CollectionNames.Rename(config, "Kids", "Cartoons", out _));
+        List<string> after = await PlayedAsync(Start.AddHours(12));
+
+        // 90 episodes, 24 a window: nothing comes round again until the cycle is through.
+        Assert.Empty(before.Intersect(after));
+    }
+
+    [Fact]
     public async Task An_unrelated_rotation_on_the_channel_is_not_taken_for_a_new_one()
     {
         var store = new InMemoryPlaybackStateStore();
