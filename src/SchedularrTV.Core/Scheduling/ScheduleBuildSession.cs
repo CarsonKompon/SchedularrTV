@@ -556,6 +556,69 @@ internal sealed class ScheduleBuildSession(
 
     private readonly Dictionary<string, MediaItem?> _extras = new(StringComparer.OrdinalIgnoreCase);
 
+    private readonly Dictionary<ContentSelector, List<ContentInclude>> _timeslotted = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// Which of a selector's items may start at <paramref name="at"/>, by their titles' timeslots
+    /// (<see cref="ContentInclude.Timeslots"/>, in the channel's time); null when none of its titles has any, so
+    /// nothing needs checking.
+    /// </summary>
+    public Func<MediaItem, bool>? TimeslotFilter(ContentSelector selector, DateTimeOffset at)
+    {
+        // The selector's entries when any has slots; empty when none does (so the common case costs one lookup).
+        if (!_timeslotted.TryGetValue(selector, out List<ContentInclude>? entries))
+        {
+            List<ContentInclude> all = ResolveIncludes(selector, 0);
+            entries = all.Any(include => include.Timeslots.Count > 0) ? all : [];
+            _timeslotted[selector] = entries;
+        }
+
+        if (entries.Count == 0)
+        {
+            return null;
+        }
+
+        DateTime local = TimeZoneInfo.ConvertTime(at, timeZone).DateTime;
+        return item =>
+        {
+            // A title listed more than once (some seasons here, some there) may play when any of its entries allows it;
+            // an entry without slots allows any time.
+            bool listed = false;
+            foreach (ContentInclude include in entries)
+            {
+                if (!Names(include, item))
+                {
+                    continue;
+                }
+
+                listed = true;
+                if (TitleTimeslot.AnyAllows(include.Timeslots, local))
+                {
+                    return true;
+                }
+            }
+
+            return !listed;
+        };
+    }
+
+    /// <summary>Whether an include entry is the title <paramref name="item"/> belongs to (its show, or the movie itself).</summary>
+    private static bool Names(ContentInclude include, MediaItem item)
+    {
+        if (!string.IsNullOrWhiteSpace(include.ShowId))
+        {
+            return string.Equals(include.ShowId, item.SeriesId, StringComparison.Ordinal);
+        }
+
+        if (!string.IsNullOrWhiteSpace(include.Show))
+        {
+            return string.Equals(include.Show.Trim(), item.SeriesName?.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
+        return !string.IsNullOrWhiteSpace(include.Movie) && item.Kind == MediaKind.Movie
+            && string.Equals(include.Movie.Trim(), item.Title?.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>Per-title rules live on whichever selector actually names the titles.</summary>
     private List<ContentInclude> ResolveIncludes(ContentSelector selector, int depth)
     {

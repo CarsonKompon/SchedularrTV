@@ -139,6 +139,40 @@ public sealed class ScheduleCoordinator(
         StateChanged?.Invoke();
     }
 
+    /// <summary>
+    /// How many channels are planned at once: one core is left for the web UI and ErsatzTV, and a few at a time is
+    /// plenty (more mostly waits on memory).
+    /// </summary>
+    private static int BuildParallelism => Math.Clamp(Environment.ProcessorCount - 1, 1, 6);
+
+    /// <summary>Progress over the channels being planned side by side: those done, plus how far each running one has got.</summary>
+    private sealed class ParallelProgress(int total, Action<ScheduleRebuildProgress?> report)
+    {
+        private readonly Lock _gate = new();
+        private readonly Dictionary<string, (string Stage, int Percent)> _running = new(StringComparer.Ordinal);
+        private int _completed;
+        private string? _latest;
+
+        public void Start(string channel) => Set(() => { _running[channel] = ("Preparing channel", 0); _latest = channel; });
+
+        public void Update(string channel, string stage, int percent) => Set(() => { _running[channel] = (stage, Math.Clamp(percent, 0, 100)); _latest = channel; });
+
+        public void Finish(string channel) => Set(() => { _running.Remove(channel); _completed++; });
+
+        // Reported under the lock, so a slower thread can't put back an older (lower) figure after a newer one.
+        private void Set(Action change)
+        {
+            lock (_gate)
+            {
+                change();
+                string? name = _latest is not null && _running.ContainsKey(_latest) ? _latest : _running.Keys.FirstOrDefault();
+                string? label = name is null ? null : _running.Count > 1 ? $"{name} +{_running.Count - 1} more" : name;
+                string stage = name is null ? "Channel complete" : _running[name].Stage;
+                report(new ScheduleRebuildProgress(_completed, total, label, stage, _running.Values.Sum(value => value.Percent)));
+            }
+        }
+    }
+
     /// <summary>Raised when a build starts or finishes, so a UI can follow along.</summary>
     public event Action? StateChanged;
 
@@ -198,7 +232,8 @@ public sealed class ScheduleCoordinator(
 
             try
             {
-                ChannelSchedule rebuilt = await BuildChannelAsync(config, channel, now, replan: true, cancellationToken)
+                ChannelSchedule rebuilt = await BuildChannelAsync(config, channel, now, replan: true, cancellationToken,
+                        progress => ReportProgress(new ScheduleRebuildProgress(0, 1, channel.Name, progress.Stage, progress.Percent)))
                     .ConfigureAwait(false);
 
                 await _publishLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -331,43 +366,68 @@ public sealed class ScheduleCoordinator(
             }
 
             _pluginInputs = pluginInputs;
-            int completed = 0;
+            long buildStarted = System.Diagnostics.Stopwatch.GetTimestamp();
 
-            foreach (ChannelConfig channel in config.Channels)
+            // Channels are planned side by side: each keeps its own playback state (every key starts with its id), so
+            // none waits on another. The results keep the lineup's order whatever order they finish in.
+            var slots = new ChannelSchedule?[config.Channels.Count];
+            var timings = new TimeSpan[config.Channels.Count];
+            var tracker = new ParallelProgress(affected.Count, ReportProgress);
+            var parallel = new ParallelOptions { MaxDegreeOfParallelism = BuildParallelism, CancellationToken = cancellationToken };
+            var builtLock = new Lock();
+
+            // A build shares its library searches between channels: most of them ask for the same ads, bumpers and promos.
+            using (library is ISearchScopeSource scoped ? scoped.BeginSearchScope() : null)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (!affected.Contains(channel.Id))
+                await Parallel.ForEachAsync(Enumerable.Range(0, config.Channels.Count), parallel, async (index, token) =>
                 {
-                    schedules.Add(previousById[channel.Id]);
-                    continue;
-                }
-                ReportProgress(new ScheduleRebuildProgress(completed, affected.Count, channel.Name, "Preparing channel", 0));
-
-                try
-                {
-                    bool channelReplan = replan || !_builtInputs.TryGetValue(channel.Id, out string? previousInputs)
-                        || previousInputs != inputs[channel.Id];
-                    schedules.Add(await BuildChannelAsync(config, channel, now, channelReplan, cancellationToken).ConfigureAwait(false));
-                    builtInputs[channel.Id] = inputs[channel.Id];
-                    _failures.TryRemove(channel.Id, out _);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    // One channel must not cost every other channel its playout: a renamed file or a
-                    // collection that no longer resolves would otherwise take the whole build down.
-                    logger.LogError(ex, "Channel {ChannelId} failed to build: {Message}", channel.Id, ex.Message);
-
-                    _failures[channel.Id] = new ChannelBuildFailure(channel.Id, channel.Name, Describe(ex), now);
-
-                    if (_latest.FirstOrDefault(s => string.Equals(s.ChannelId, channel.Id, StringComparison.OrdinalIgnoreCase)) is { } previous)
+                    ChannelConfig channel = config.Channels[index];
+                    if (!affected.Contains(channel.Id))
                     {
-                        logger.LogWarning("Keeping the previous playout for {ChannelId}.", channel.Id);
-                        schedules.Add(previous);
+                        slots[index] = previousById[channel.Id];
+                        return;
                     }
-                }
-                completed++;
-                ReportProgress(new ScheduleRebuildProgress(completed, affected.Count, null, "Channel complete", 0));
+
+                    tracker.Start(channel.Name);
+                    long started = System.Diagnostics.Stopwatch.GetTimestamp();
+                    try
+                    {
+                        bool channelReplan = replan || !_builtInputs.TryGetValue(channel.Id, out string? previousInputs)
+                            || previousInputs != inputs[channel.Id];
+                        slots[index] = await BuildChannelAsync(config, channel, now, channelReplan, token,
+                            progress => tracker.Update(channel.Name, progress.Stage, progress.Percent)).ConfigureAwait(false);
+                        lock (builtLock)
+                        {
+                            builtInputs[channel.Id] = inputs[channel.Id];
+                        }
+
+                        _failures.TryRemove(channel.Id, out _);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        // One channel must not cost every other channel its playout: a renamed file or a
+                        // collection that no longer resolves would otherwise take the whole build down.
+                        logger.LogError(ex, "Channel {ChannelId} failed to build: {Message}", channel.Id, ex.Message);
+
+                        _failures[channel.Id] = new ChannelBuildFailure(channel.Id, channel.Name, Describe(ex), now);
+
+                        if (_latest.FirstOrDefault(s => string.Equals(s.ChannelId, channel.Id, StringComparison.OrdinalIgnoreCase)) is { } previous)
+                        {
+                            logger.LogWarning("Keeping the previous playout for {ChannelId}.", channel.Id);
+                            slots[index] = previous;
+                        }
+                    }
+                    finally
+                    {
+                        timings[index] = System.Diagnostics.Stopwatch.GetElapsedTime(started);
+                        tracker.Finish(channel.Name);
+                    }
+                }).ConfigureAwait(false);
             }
+
+            schedules.AddRange(slots.OfType<ChannelSchedule>());
+            var timingById = config.Channels.Select((channel, index) => (channel.Id, timings[index]))
+                .ToDictionary(pair => pair.Id, pair => pair.Item2, StringComparer.OrdinalIgnoreCase);
 
             await _publishLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
@@ -381,12 +441,16 @@ public sealed class ScheduleCoordinator(
                 foreach (ChannelSchedule schedule in prepared.Where(schedule => affected.Contains(schedule.ChannelId)))
                 {
                     logger.LogInformation(
-                        "Built {Entries} entries for {ChannelName} ({Padding:g} padding, {Warnings} warning(s)).",
+                        "Built {Entries} entries for {ChannelName} in {Seconds:0.0}s ({Padding:g} padding, {Warnings} warning(s)).",
                         schedule.Entries.Count,
                         schedule.ChannelName,
+                        timingById.GetValueOrDefault(schedule.ChannelId).TotalSeconds,
                         schedule.TotalPadding,
                         schedule.Diagnostics.Count(d => d.Level >= DiagnosticLevel.Warning));
                 }
+
+                logger.LogInformation("Planned {Count} channel(s) in {Seconds:0.0}s, {Parallel} at a time.",
+                    affected.Count, System.Diagnostics.Stopwatch.GetElapsedTime(buildStarted).TotalSeconds, BuildParallelism);
 
                 if (publish)
                 {
@@ -747,7 +811,8 @@ public sealed class ScheduleCoordinator(
         ChannelConfig channel,
         DateTimeOffset now,
         bool replan,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<ScheduleBuildProgress>? onProgress = null)
     {
         using SchedularrTV.Plugins.Performance.WorkScope work = SchedularrTV.Plugins.Performance.Work.Begin("SchedularrTV", "Building schedule", channel.Name);
         ChannelSchedule? previous = _latest
@@ -792,13 +857,7 @@ public sealed class ScheduleCoordinator(
         }
 
         ChannelSchedule built = await builder
-            .BuildChannelAsync(config, channel, start, end, cancellationToken, progress =>
-            {
-                if (Progress is { } current)
-                {
-                    ReportProgress(current with { Stage = progress.Stage, ChannelPercent = progress.Percent });
-                }
-            })
+            .BuildChannelAsync(config, channel, start, end, cancellationToken, onProgress)
             .ConfigureAwait(false);
 
         if (carryOver.Count == 0)

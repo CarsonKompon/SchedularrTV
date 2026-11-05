@@ -108,6 +108,27 @@ An omitted **`order`** inherits from a referenced collection, otherwise defaults
 
 A show's **`include`** entry picks its seasons one of two ways: **`seasons: [1, 2]`** plays only those, and **`exclude_seasons: [5]`** plays every season but those, so seasons added to the library later join the rotation without being picked. (In the editor, the show's **Seasons…** popup has a **Ticked seasons are** choice for this.) When both are set, `seasons` wins; picked **`episodes`** win over either.
 
+A show or movie entry's **`timeslots`** limit when it's considered for a programme, in the channel's time zone. Outside every slot, the collection's other titles play instead. Inside a slot it's considered as usual, which doesn't mean it's guaranteed to air. With no slots it can play any time.
+
+```yaml
+include:
+  - show: Saturday Morning Toons
+    timeslots:
+      - days: [Saturday, Sunday]   # empty or left out: every day
+        start: "07:00"             # left out: from midnight
+        end: "12:00"               # left out: until midnight; earlier than start runs past midnight
+  - show: Late Night Anime
+    timeslots:                     # one slot per day gives each day its own times
+      - days: [Friday]
+        start: "22:00"
+        end: "02:00"
+      - days: [Saturday]
+        start: "23:00"
+        end: "03:00"
+```
+
+If nothing in a block may play at a moment, the slots are set aside rather than leave the time to adverts.
+
 ```yaml
 include:
   - show: Rugrats

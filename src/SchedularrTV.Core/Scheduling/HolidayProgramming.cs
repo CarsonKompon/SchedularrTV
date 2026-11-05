@@ -73,7 +73,10 @@ internal static class HolidayProgramming
             if (sequence is { IsEmpty: false })
             {
                 sequence.At = at;
-                if (sequence.TryTake(fits, out MediaItem chosen))
+                // Its titles' timeslots count as they do anywhere, unless nothing in it could play here otherwise.
+                Func<MediaItem, bool>? slots = session.TimeslotFilter(fill, at);
+                if ((slots is not null && sequence.TryTake(item => fits(item) && slots(item), out MediaItem chosen))
+                    || sequence.TryTake(fits, out chosen))
                 {
                     return SchedulingEngine.Picked(chosen, sequence, fill);
                 }

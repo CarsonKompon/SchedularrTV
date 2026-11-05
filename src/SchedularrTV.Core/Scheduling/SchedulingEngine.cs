@@ -660,36 +660,51 @@ public sealed class SchedulingEngine(
 
         rotationIndex.TryGetValue(rotationKey, out int offset);
 
-        if (selectors.Count > 1 && session.TitleFactors is { Count: > 0 })
+        // Titles with timeslots are only considered inside them. Should that leave nothing at all that can play here,
+        // every title is considered rather than leave the slot to adverts.
+        bool slotted = selectors.Any(selector => session.TimeslotFilter(selector, at) is not null);
+        foreach (bool honourSlots in slotted ? [true, false] : new[] { false })
         {
-            ProgramPick? weighted = await TakeWeightedAsync(session, selectors, rotationKey, offset, at, gap, cancellationToken).ConfigureAwait(false);
-            if (weighted is not null)
+            if (selectors.Count > 1 && session.TitleFactors is { Count: > 0 })
             {
-                return weighted;
-            }
-        }
-
-        // Round-robin across the pool's selectors so multi-show blocks interleave rather than
-        // draining the first show completely.
-        for (int i = 0; i < selectors.Count; i++)
-        {
-            ContentSelector selector = selectors[(offset + i) % selectors.Count];
-            MediaSequence? sequence = await session.GetSequenceAsync(selector, "shared", cancellationToken).ConfigureAwait(false);
-
-            if (sequence is null || sequence.IsEmpty)
-            {
-                continue;
+                ProgramPick? weighted = await TakeWeightedAsync(session, selectors, rotationKey, offset, at, gap, honourSlots, cancellationToken).ConfigureAwait(false);
+                if (weighted is not null)
+                {
+                    return weighted;
+                }
             }
 
-            sequence.At = at;
-            if (sequence.TryTake(item => item.Duration > TimeSpan.Zero && item.Duration <= gap, out MediaItem chosen))
+            // Round-robin across the pool's selectors so multi-show blocks interleave rather than
+            // draining the first show completely.
+            for (int i = 0; i < selectors.Count; i++)
             {
-                rotationIndex[rotationKey] = (offset + i + 1) % selectors.Count;
-                return Picked(chosen, sequence, selector);
+                ContentSelector selector = selectors[(offset + i) % selectors.Count];
+                MediaSequence? sequence = await session.GetSequenceAsync(selector, "shared", cancellationToken).ConfigureAwait(false);
+
+                if (sequence is null || sequence.IsEmpty)
+                {
+                    continue;
+                }
+
+                sequence.At = at;
+                if (sequence.TryTake(Fits(session, selector, at, gap, honourSlots), out MediaItem chosen))
+                {
+                    rotationIndex[rotationKey] = (offset + i + 1) % selectors.Count;
+                    return Picked(chosen, sequence, selector);
+                }
             }
         }
 
         return null;
+    }
+
+    /// <summary>What a programme starting at <paramref name="at"/> may be: it fits the gap, and (when honoured) its title's timeslots allow it.</summary>
+    private static Func<MediaItem, bool> Fits(ScheduleBuildSession session, ContentSelector selector, DateTimeOffset at, TimeSpan gap, bool honourSlots)
+    {
+        Func<MediaItem, bool>? slots = honourSlots ? session.TimeslotFilter(selector, at) : null;
+        return slots is null
+            ? item => item.Duration > TimeSpan.Zero && item.Duration <= gap
+            : item => item.Duration > TimeSpan.Zero && item.Duration <= gap && slots(item);
     }
 
     /// <summary>
@@ -705,6 +720,7 @@ public sealed class SchedulingEngine(
         int offset,
         DateTimeOffset at,
         TimeSpan gap,
+        bool honourSlots,
         CancellationToken cancellationToken)
     {
         double[] weights = new double[selectors.Count];
@@ -745,7 +761,7 @@ public sealed class SchedulingEngine(
             }
 
             if (sequence is null || sequence.IsEmpty
-                || !sequence.TryTake(item => item.Duration > TimeSpan.Zero && item.Duration <= gap, out MediaItem chosen))
+                || !sequence.TryTake(Fits(session, selector, at, gap, honourSlots), out MediaItem chosen))
             {
                 continue;
             }

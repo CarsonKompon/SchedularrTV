@@ -45,7 +45,10 @@ public sealed class ScheduleProgressTests
         var updates = new List<ScheduleRebuildProgress>();
         fixture.Coordinator.StateChanged += () =>
         {
-            if (fixture.Coordinator.Progress is { } progress) updates.Add(progress);
+            lock (updates)
+            {
+                if (fixture.Coordinator.Progress is { } progress) updates.Add(progress);
+            }
         };
         fixture.Save(config => config.Channels[0].MaxBreak = TimeSpan.FromMinutes(2));
 
@@ -220,15 +223,19 @@ public sealed class ScheduleProgressTests
     {
         using var fixture = new Fixture(new ControlledLibrary(failSecond));
         List<ScheduleRebuildProgress> updates = [];
+        // Channels are planned side by side, so updates arrive from more than one thread.
         fixture.Coordinator.StateChanged += () =>
         {
-            if (fixture.Coordinator.Progress is { } progress) updates.Add(progress);
+            lock (updates)
+            {
+                if (fixture.Coordinator.Progress is { } progress) updates.Add(progress);
+            }
         };
 
         await fixture.Coordinator.RebuildAsync(true, true, CancellationToken.None);
 
-        Assert.Contains(updates, progress => progress.ChannelName == "First" && progress.CompletedChannels == 0);
-        Assert.Contains(updates, progress => progress.ChannelName == "Second" && progress.CompletedChannels == 1);
+        Assert.Contains(updates, progress => progress.ChannelName?.StartsWith("First", StringComparison.Ordinal) == true && progress.CompletedChannels == 0);
+        Assert.Contains(updates, progress => progress.ChannelName?.StartsWith("Second", StringComparison.Ordinal) == true);
         Assert.Contains(updates, progress => progress.Stage == "Scheduling programmes" && progress.ChannelPercent is > 0 and < 100);
         Assert.Contains(updates, progress => progress.Stage == "Publishing: Test publisher" && progress.CompletedChannels == 2);
         Assert.Equal(updates.Select(progress => progress.Percent).Order(), updates.Select(progress => progress.Percent));
@@ -449,7 +456,8 @@ public sealed class ScheduleProgressTests
 
     private sealed class ControlledLibrary(bool failSecond, bool paused = false) : IMediaLibrary
     {
-        public List<string> Queries { get; } = [];
+        // Added to from channels planned side by side.
+        public System.Collections.Concurrent.ConcurrentQueue<string> Queries { get; } = new();
         public bool FailSecond { get; set; } = failSecond;
         private bool _paused = paused;
         public TaskCompletionSource Entered { get; private set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -464,7 +472,7 @@ public sealed class ScheduleProgressTests
 
         public async ValueTask<IReadOnlyList<MediaItem>> SearchAsync(QueryExpression expression, CancellationToken cancellationToken = default)
         {
-            Queries.Add(expression.ToQueryString());
+            Queries.Enqueue(expression.ToQueryString());
             Entered.TrySetResult();
             if (_paused) await Release.Task.WaitAsync(cancellationToken);
             if (FailSecond && expression.ToQueryString().Contains("Second")) throw new IOException("Test library failure");

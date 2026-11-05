@@ -45,6 +45,12 @@ public sealed class ContentInclude
     public List<string> Episodes { get; set; } = [];
 
     /// <summary>
+    /// When this title may be scheduled; empty is any time. Outside every slot it isn't considered for a programme
+    /// (the rest of the collection plays instead); inside one it's considered as usual, not guaranteed to air.
+    /// </summary>
+    public List<TitleTimeslot> Timeslots { get; set; } = [];
+
+    /// <summary>
     /// Overrides the collection's playback order for this title alone, so a non-linear show can
     /// shuffle inside a collection that otherwise runs chronologically.
     /// </summary>

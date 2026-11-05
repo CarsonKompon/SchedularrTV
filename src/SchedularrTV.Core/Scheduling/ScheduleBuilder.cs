@@ -9,8 +9,8 @@ namespace SchedularrTV.Core.Scheduling;
 public sealed record ScheduleBuildProgress(string Stage, int Percent);
 
 /// <summary>
-/// Builds schedules for every configured channel. Channels are built sequentially so that shared
-/// playback state (a collection referenced by two channels) is updated deterministically.
+/// Builds schedules for every configured channel. Each channel's playback state is its own (every key starts with the
+/// channel's id), so channels can be built side by side; <see cref="BuildAllAsync"/> still goes one at a time.
 /// </summary>
 public sealed class ScheduleBuilder
 {

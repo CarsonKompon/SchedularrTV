@@ -9,12 +9,13 @@ namespace SchedularrTV.Core.Ordering;
 /// </summary>
 public sealed class JsonPlaybackStateStore : IPlaybackStateStore, IAsyncDisposable
 {
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    // Not indented: the file holds every channel's shuffle bags (thousands of ids), and is rewritten after each build.
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
 
     private readonly string _path;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly ConcurrentDictionary<string, PlaybackState> _states;
-    private bool _dirty;
+    private volatile bool _dirty;
 
     public JsonPlaybackStateStore(string path)
     {
@@ -62,14 +63,51 @@ public sealed class JsonPlaybackStateStore : IPlaybackStateStore, IAsyncDisposab
         await FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Writes the file when anything changed. Channels planned side by side save at about the same time: one write
+    /// waiting its turn takes in every change made before it starts, so the others needn't queue up behind it.
+    /// </summary>
     public async ValueTask FlushAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_dirty || Interlocked.Exchange(ref _queued, 1) == 1)
+        {
+            return;
+        }
+
+        try
+        {
+            await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Never got its turn: the next save has to be free to write.
+            Interlocked.Exchange(ref _queued, 0);
+            throw;
+        }
+
+        try
+        {
+            Interlocked.Exchange(ref _queued, 0);
+            await WriteAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    private int _queued;
+
+    // Under the write lock.
+    private async Task WriteAsync(CancellationToken cancellationToken)
     {
         if (!_dirty)
         {
             return;
         }
 
-        await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        // Cleared first: a change made while this writes marks it again, for the next write.
+        _dirty = false;
         try
         {
             string? directory = Path.GetDirectoryName(_path);
@@ -85,17 +123,26 @@ public sealed class JsonPlaybackStateStore : IPlaybackStateStore, IAsyncDisposab
             }
 
             File.Move(temp, _path, overwrite: true);
-            _dirty = false;
         }
-        finally
+        catch
         {
-            _writeLock.Release();
+            _dirty = true;
+            throw;
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        await FlushAsync(CancellationToken.None).ConfigureAwait(false);
+        await _writeLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            await WriteAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+
         _writeLock.Dispose();
     }
 

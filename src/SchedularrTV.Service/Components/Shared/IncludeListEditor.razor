@@ -45,6 +45,13 @@
                             <span class="pill pill-warn" title="@versioned.VersionHint">@versioned.VersionedEpisodes with versions</span>
                         }
 
+                        @if (include.Timeslots.Count > 0)
+                        {
+                            <span class="pill pill-accent" title="Only considered at these times">
+                                <Icon Name="clock" Size="12" />@(string.Join("; ", include.Timeslots.Select(slot => slot.Describe())))
+                            </span>
+                        }
+
                         @if (BlockCount(include) is > 0 and var blocks)
                         {
                             <span class="pill pill-ok" title="Intro and outro blocks">
@@ -82,6 +89,10 @@
             {
                 <button class="btn btn-sm" @onclick="() => EditBumpers(include)">Intros/outros…</button>
                 <button class="btn btn-sm" @onclick="() => Edit(include)">Seasons…</button>
+            }
+            @if (!string.IsNullOrWhiteSpace(include.Show) || !string.IsNullOrWhiteSpace(include.Movie))
+            {
+                <button class="btn btn-sm" title="When this title may be scheduled" @onclick="() => OpenSlots(include)">Timeslots…</button>
             }
             <button class="btn btn-sm btn-danger" @onclick="() => Remove(include)">Remove</button>
         </div>
@@ -173,6 +184,71 @@
             <div class="row" style="margin-top:16px;">
                 <div class="spacer"></div>
                 <button class="btn btn-primary" @onclick="CloseEdit">Done</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_slotsFor is not null)
+{
+    <div class="modal-backdrop" @onclick="() => _slotsFor = null">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Timeslots" @onclick:stopPropagation="true">
+            <div class="row" style="align-items:center;gap:12px;margin-bottom:8px;">
+                <h2 style="margin:0;">@_slotsFor.Describe() &mdash; timeslots</h2>
+                <div class="spacer"></div>
+                <div class="segmented" aria-label="Timeslot mode">
+                    <button type="button" class="@(_slotsAdvanced ? "" : "on")" aria-pressed="@(_slotsAdvanced ? "false" : "true")" @onclick="() => SetSlotsAdvanced(false)">Simple</button>
+                    <button type="button" class="@(_slotsAdvanced ? "on" : "")" aria-pressed="@(_slotsAdvanced ? "true" : "false")" @onclick="() => SetSlotsAdvanced(true)">Per day</button>
+                </div>
+            </div>
+            <p class="hint">
+                The only times this title is considered when the schedule is planned, in the channel's time zone. It isn't
+                guaranteed to air then; the collection's other titles fill the rest of the time. Leave everything empty for any time.
+            </p>
+
+            @if (!_slotsAdvanced)
+            {
+                <div class="check-row" role="group" aria-label="Days">
+                    @foreach (DayOfWeek day in Week)
+                    {
+                        <label class="check">
+                            <input type="checkbox" checked="@_slotDays[(int)day]" @onchange="e => _slotDays[(int)day] = e.Value is true" />
+                            <span>@day</span>
+                        </label>
+                    }
+                </div>
+                <div class="grid grid-2" style="margin-top:8px;">
+                    <label class="field"><span>From <span class="opt">(optional)</span></span>
+                        <input type="time" value="@Hm(_slotStart[0])" @onchange="e => _slotStart[0] = ParseTime(e)" /></label>
+                    <label class="field"><span>Until <span class="opt">(optional)</span></span>
+                        <input type="time" value="@Hm(_slotEnd[0])" @onchange="e => _slotEnd[0] = ParseTime(e)" /></label>
+                </div>
+                <p class="hint">No days ticked with times set means those times every day. An end before the start runs past midnight.</p>
+            }
+            else
+            {
+                <table class="media-table">
+                    <thead><tr><th>Day</th><th>From</th><th>Until</th></tr></thead>
+                    <tbody>
+                        @foreach (DayOfWeek day in Week)
+                        {
+                            int index = (int)day;
+                            <tr>
+                                <td><label class="check"><input type="checkbox" checked="@_slotDays[index]" @onchange="e => _slotDays[index] = e.Value is true" /><span>@day</span></label></td>
+                                <td><input type="time" disabled="@(!_slotDays[index])" value="@Hm(_slotStart[index])" @onchange="e => _slotStart[index] = ParseTime(e)" /></td>
+                                <td><input type="time" disabled="@(!_slotDays[index])" value="@Hm(_slotEnd[index])" @onchange="e => _slotEnd[index] = ParseTime(e)" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <p class="hint">Unticked days it isn't considered at all. Empty times mean the whole day; an end before the start runs past midnight.</p>
+            }
+
+            <div class="row" style="margin-top:16px;gap:8px;">
+                <button class="btn btn-ghost" type="button" @onclick="ClearSlots">Any time</button>
+                <div class="spacer"></div>
+                <button class="btn btn-ghost" type="button" @onclick="() => _slotsFor = null">Cancel</button>
+                <button class="btn btn-primary" type="button" @onclick="SaveSlots">Done</button>
             </div>
         </div>
     </div>
@@ -348,6 +424,117 @@
         include.Weight = int.TryParse(e.Value?.ToString(), out int weight) && weight > 1 ? weight : null;
         await Changed.InvokeAsync();
     }
+
+    // ---- Timeslots ----
+
+    private static readonly DayOfWeek[] Week =
+        [DayOfWeek.Sunday, DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday];
+
+    private ContentInclude? _slotsFor;
+    private bool _slotsAdvanced;
+    // By day of week (Sunday = 0). In simple mode only index 0 of the times is used, for every ticked day.
+    private readonly bool[] _slotDays = new bool[7];
+    private readonly TimeSpan?[] _slotStart = new TimeSpan?[7];
+    private readonly TimeSpan?[] _slotEnd = new TimeSpan?[7];
+
+    private void OpenSlots(ContentInclude include)
+    {
+        _slotsFor = include;
+        Array.Clear(_slotDays);
+        Array.Clear(_slotStart);
+        Array.Clear(_slotEnd);
+
+        // One slot is the simple form (days and times); several (each with its own times) is per day.
+        _slotsAdvanced = include.Timeslots.Count > 1;
+        if (!_slotsAdvanced && include.Timeslots.FirstOrDefault() is { } slot)
+        {
+            foreach (DayOfWeek day in slot.Days) _slotDays[(int)day] = true;
+            _slotStart[0] = slot.Start;
+            _slotEnd[0] = slot.End;
+        }
+        else
+        {
+            foreach (TitleTimeslot each in include.Timeslots)
+            {
+                IEnumerable<DayOfWeek> days = each.Days.Count == 0 ? Week : each.Days;
+                foreach (DayOfWeek day in days)
+                {
+                    _slotDays[(int)day] = true;
+                    _slotStart[(int)day] = each.Start;
+                    _slotEnd[(int)day] = each.End;
+                }
+            }
+        }
+    }
+
+    /// <summary>Switches between the simple and per-day forms, carrying the days and times across.</summary>
+    private void SetSlotsAdvanced(bool advanced)
+    {
+        if (advanced == _slotsAdvanced) return;
+        if (advanced)
+        {
+            // The simple form's times for each of its days (every day, when times are set but no day is ticked).
+            bool everyDay = !_slotDays.Any(on => on) && (_slotStart[0] is not null || _slotEnd[0] is not null);
+            TimeSpan? start = _slotStart[0], end = _slotEnd[0];
+            for (int day = 0; day < 7; day++)
+            {
+                _slotDays[day] |= everyDay;
+                _slotStart[day] = _slotDays[day] ? start : null;
+                _slotEnd[day] = _slotDays[day] ? end : null;
+            }
+        }
+        else
+        {
+            // One set of times for all the ticked days: the first ticked day's.
+            int first = Array.FindIndex(_slotDays, on => on);
+            TimeSpan? start = first >= 0 ? _slotStart[first] : null, end = first >= 0 ? _slotEnd[first] : null;
+            Array.Clear(_slotStart);
+            Array.Clear(_slotEnd);
+            _slotStart[0] = start;
+            _slotEnd[0] = end;
+        }
+
+        _slotsAdvanced = advanced;
+    }
+
+    private void ClearSlots()
+    {
+        Array.Clear(_slotDays);
+        Array.Clear(_slotStart);
+        Array.Clear(_slotEnd);
+    }
+
+    private async Task SaveSlots()
+    {
+        if (_slotsFor is null) return;
+        List<TitleTimeslot> slots = [];
+        if (_slotsAdvanced)
+        {
+            foreach (DayOfWeek day in Week.Where(day => _slotDays[(int)day]))
+            {
+                slots.Add(new TitleTimeslot { Days = [day], Start = _slotStart[(int)day], End = _slotEnd[(int)day] });
+            }
+        }
+        else
+        {
+            List<DayOfWeek> days = [.. Week.Where(day => _slotDays[(int)day])];
+            if (days.Count > 0 || _slotStart[0] is not null || _slotEnd[0] is not null)
+            {
+                // All seven ticked is the same as none: every day.
+                slots.Add(new TitleTimeslot { Days = days.Count == 7 ? [] : days, Start = _slotStart[0], End = _slotEnd[0] });
+            }
+        }
+
+        _slotsFor.Timeslots = slots;
+        _slotsFor = null;
+        await Changed.InvokeAsync();
+    }
+
+    private static string Hm(TimeSpan? time) => time is { } value ? $"{(int)value.TotalHours:00}:{value.Minutes:00}" : "";
+
+    private static TimeSpan? ParseTime(ChangeEventArgs e) =>
+        TimeSpan.TryParse(e.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, out TimeSpan time) && time > TimeSpan.Zero && time < TimeSpan.FromDays(1)
+            ? time : null;
 
     /// <summary>The popup's ticked seasons are ones left out (<see cref="ContentInclude.ExcludeSeasons"/>) rather than the only ones played.</summary>
     private bool _excludeSeasons;

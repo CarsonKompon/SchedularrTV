@@ -65,9 +65,14 @@ From each drop day, the show's first airings at its normal times are the new epi
 | **Weight** | Adjust turns per rotation; `2` plays twice as often as `1` |
 | **Drops…** | For a title on **Drop**: use the collection's schedule or give it its own |
 | **Seasons…** | Restrict a show to selected seasons or individual episodes |
+| **Timeslots…** | Limit when a show or movie may be scheduled: tick days and, optionally, a start and end time |
 | **Collection from your library** | Add an existing media-library collection when the source provides one |
 
-Leave season and episode picks empty to include the whole show. [Viewer-aware scheduling](stats.md#enable-viewer-aware-scheduling) can further adjust title weights from viewing history.
+Leave season and episode picks empty to include the whole show.
+
+**Timeslots** are the only times a title is considered when the schedule is planned, in the channel's time zone. They don't guarantee it airs then; the collection's other titles fill the rest of the day. **Simple** sets one start and end time for every ticked day. **Per day** gives each day its own times. Leave the times empty for the whole day. An end earlier than the start runs past midnight (10pm to 2am). **Any time** removes the limit. If at some moment nothing in the block is allowed to play, the limits are set aside rather than leaving the time to adverts. Fixed starts (anchors) and holiday specials ignore timeslots.
+
+In a collection that plays every episode in one order (no title rotation), a show outside its slot is skipped over, not held back. Use a **Title order** if each show should keep its own place. [Viewer-aware scheduling](stats.md#enable-viewer-aware-scheduling) can further adjust title weights from viewing history.
 
 ## Restrict content and versions
 

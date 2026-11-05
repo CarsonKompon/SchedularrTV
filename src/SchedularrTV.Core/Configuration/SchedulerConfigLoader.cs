@@ -1300,6 +1300,14 @@ public static class SchedulerConfigLoader
             include.Episodes = [.. include.Episodes.Distinct(StringComparer.OrdinalIgnoreCase)];
             // Seasons picked by inclusion or by exclusion, never both: picked ones win (as the query does).
             include.ExcludeSeasons = include.Seasons.Count > 0 ? [] : [.. include.ExcludeSeasons.Distinct().OrderBy(season => season)];
+            include.Timeslots ??= [];
+            foreach (TitleTimeslot slot in include.Timeslots)
+            {
+                slot.Days = [.. (slot.Days ?? []).Distinct().Order()];
+                // Times of day only; anything else (a whole day, a negative time) means no limit at that end.
+                slot.Start = slot.Start is { } start && start > TimeSpan.Zero && start < TimeSpan.FromDays(1) ? start : null;
+                slot.End = slot.End is { } end && end > TimeSpan.Zero && end < TimeSpan.FromDays(1) ? end : null;
+            }
             FoldLegacyBumpers(include);
         }
 
