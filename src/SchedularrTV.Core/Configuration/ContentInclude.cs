@@ -34,6 +34,13 @@ public sealed class ContentInclude
     /// <summary>Limits a <see cref="Show"/> to these seasons. Empty means every season.</summary>
     public List<int> Seasons { get; set; } = [];
 
+    /// <summary>
+    /// Leaves these seasons of a <see cref="Show"/> out and plays every other one, including seasons added to the
+    /// library later (which <see cref="Seasons"/> would need ticking one by one). Ignored when <see cref="Seasons"/> or
+    /// <see cref="Episodes"/> names its own.
+    /// </summary>
+    public List<int> ExcludeSeasons { get; set; } = [];
+
     /// <summary>Limits a <see cref="Show"/> to specific episodes, as <c>S01E03</c>.</summary>
     public List<string> Episodes { get; set; } = [];
 
@@ -74,6 +81,11 @@ public sealed class ContentInclude
     /// </summary>
     public List<BumperBlock> Bumpers { get; set; } = [];
 
+    /// <summary>The whole of a show: no seasons or episodes picked, and none left out.</summary>
+    [YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsWholeShow => Seasons.Count == 0 && Episodes.Count == 0 && ExcludeSeasons.Count == 0;
+
     [YamlIgnore]
     public bool IsEmpty =>
         string.IsNullOrWhiteSpace(Show)
@@ -94,8 +106,8 @@ public sealed class ContentInclude
                 return $"{label} ({string.Join(", ", Episodes)})";
             }
 
-            return Seasons.Count > 0
-                ? $"{label} (season {string.Join(", ", Seasons)})"
+            return Seasons.Count > 0 ? $"{label} (season {string.Join(", ", Seasons)})"
+                : ExcludeSeasons.Count > 0 ? $"{label} (all but season {string.Join(", ", ExcludeSeasons)})"
                 : label;
         }
 

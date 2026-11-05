@@ -10,17 +10,19 @@ public static class ShowCollectionEditor
         List<ContentInclude> matches = [.. target.Include.Where(include => string.IsNullOrWhiteSpace(include.ShowId)
             ? string.Equals(include.Show, show.Name, StringComparison.OrdinalIgnoreCase)
             : include.ShowId == show.Id)];
-        if (matches.Any(include => include.Seasons.Count == 0 && include.Episodes.Count == 0)) return;
+        if (matches.Any(include => include.IsWholeShow)) return;
         if (season is null && episode is null)
         {
             // Keep entry-level playback and bumper settings when widening a selection.
             ContentInclude whole = matches.FirstOrDefault() ?? new ContentInclude { Show = show.Name, ShowId = show.Id };
             whole.Seasons.Clear();
             whole.Episodes.Clear();
+            whole.ExcludeSeasons.Clear();
             if (!target.Include.Contains(whole)) target.Include.Add(whole);
             return;
         }
-        if (season is { } number && matches.Any(include => include.Episodes.Count == 0 && include.Seasons.Contains(number))) return;
+        if (season is { } number && matches.Any(include => include.Episodes.Count == 0
+            && (include.Seasons.Contains(number) || include.Seasons.Count == 0 && include.ExcludeSeasons.Count > 0 && !include.ExcludeSeasons.Contains(number)))) return;
         if (episode is not null && matches.Any(include => include.Episodes.Contains(episode, StringComparer.OrdinalIgnoreCase)
             && (include.Seasons.Count == 0 || season is { } selectedSeason && include.Seasons.Contains(selectedSeason)))) return;
         // Seasons and episodes on one entry are intersected by the query compiler. Keep separate entries for their union.

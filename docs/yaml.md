@@ -104,7 +104,15 @@ channels:
 | **`versions`** | Alternate-version selection |
 | **`state_key`** | Explicit identity for persisted playback state |
 
-An omitted **`order`** inherits from a referenced collection, otherwise defaults to shuffle. Each **`include`** entry can set its own **`order`**, **`weight`** and **`drop`**, so one show can drop new episodes inside a shuffled collection. See [Query language](scheduling.md#query-language) for fields and operators.
+An omitted **`order`** inherits from a referenced collection, otherwise defaults to shuffle. Each **`include`** entry can set its own **`order`**, **`weight`** and **`drop`**, so one show can drop new episodes inside a shuffled collection.
+
+A show's **`include`** entry picks its seasons one of two ways: **`seasons: [1, 2]`** plays only those, and **`exclude_seasons: [5]`** plays every season but those, so seasons added to the library later join the rotation without being picked. (In the editor, the show's **Seasons…** popup has a **Ticked seasons are** choice for this.) When both are set, `seasons` wins; picked **`episodes`** win over either.
+
+```yaml
+include:
+  - show: Rugrats
+    exclude_seasons: [0, 9]   # no specials, no season 9; everything else, including new seasons
+``` See [Query language](scheduling.md#query-language) for fields and operators.
 
 ## Blocks and anchors
 

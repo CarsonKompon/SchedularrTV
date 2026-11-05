@@ -23,13 +23,21 @@
                 @if (!string.IsNullOrWhiteSpace(include.Show))
                 {
                     <div class="meta">
-                        @if (include.Seasons.Count == 0 && include.Episodes.Count == 0)
+                        @if (include.IsWholeShow)
                         {
                             <span>all seasons</span>
                         }
+                        else if (include.Episodes.Count > 0)
+                        {
+                            <span>@include.Episodes.Count episode(s)</span>
+                        }
+                        else if (include.Seasons.Count > 0)
+                        {
+                            <span>@include.Seasons.Count season(s)</span>
+                        }
                         else
                         {
-                            <span>@(include.Episodes.Count > 0 ? $"{include.Episodes.Count} episode(s)" : $"{include.Seasons.Count} season(s)")</span>
+                            <span title="Seasons added later are included">all but @include.ExcludeSeasons.Count season(s)</span>
                         }
 
                         @if (Find(include) is { VersionedEpisodes: > 0 } versioned)
@@ -110,17 +118,40 @@
             <h2 style="margin-top:0;">@_editing.Show</h2>
             <p class="hint">Leave everything unticked to include the whole show.</p>
 
-            <h3>Seasons</h3>
+            <div class="row" style="align-items:center;gap:12px;">
+                <h3 style="margin:0;">Seasons</h3>
+                <label class="inline-field" title="Excluding keeps seasons added to the library later in the rotation">
+                    <span>Ticked seasons are</span>
+                    <select value="@(_excludeSeasons ? "exclude" : "include")" @onchange="SetSeasonMode">
+                        <option value="include">the only ones played</option>
+                        <option value="exclude">left out</option>
+                    </select>
+                </label>
+            </div>
+            <p class="hint" style="margin-top:4px;">
+                @if (_excludeSeasons)
+                {
+                    <text>Every other season plays, including seasons added to the library later.</text>
+                }
+                else
+                {
+                    <text>Only these play; a season added to the library later has to be ticked here before it does.</text>
+                }
+            </p>
             <div class="row row-wrap">
                 @foreach (int season in _editSeasons)
                 {
                     <label class="check" style="margin-right:12px;">
-                        <input type="checkbox" checked="@_editing.Seasons.Contains(season)"
+                        <input type="checkbox" checked="@(SeasonList.Contains(season))"
                                @onchange="e => ToggleSeason(season, (bool)(e.Value ?? false))" />
-                        <span>Season @season</span>
+                        <span>@(season == 0 ? "Specials" : $"Season {season}")</span>
                     </label>
                 }
             </div>
+            @if (_editing.Episodes.Count > 0 && SeasonList.Count > 0)
+            {
+                <p class="hint warn">Individual episodes are picked below, so they're what plays; the seasons here are ignored until they're cleared.</p>
+            }
 
             <h3>Individual episodes</h3>
             <div class="scroll-list" style="max-height:220px;">
@@ -318,9 +349,29 @@
         await Changed.InvokeAsync();
     }
 
+    /// <summary>The popup's ticked seasons are ones left out (<see cref="ContentInclude.ExcludeSeasons"/>) rather than the only ones played.</summary>
+    private bool _excludeSeasons;
+
+    private List<int> SeasonList => _editing is null ? [] : _excludeSeasons ? _editing.ExcludeSeasons : _editing.Seasons;
+
+    /// <summary>Switches what ticking means, keeping what's ticked: the same seasons, now included or now left out.</summary>
+    private void SetSeasonMode(ChangeEventArgs e)
+    {
+        if (_editing is null) return;
+        bool exclude = e.Value?.ToString() == "exclude";
+        if (exclude == _excludeSeasons) return;
+
+        List<int> ticked = [.. SeasonList];
+        _editing.Seasons.Clear();
+        _editing.ExcludeSeasons.Clear();
+        _excludeSeasons = exclude;
+        SeasonList.AddRange(ticked);
+    }
+
     private async Task Edit(ContentInclude include)
     {
         _editing = include;
+        _excludeSeasons = include.Seasons.Count == 0 && include.ExcludeSeasons.Count > 0;
 
         // Episodes are kept by series id, not name: the show as this entry means it (its pinned id, else its name).
         LibraryShow? show = Find(include);
@@ -331,7 +382,8 @@
     private void ToggleSeason(int season, bool on)
     {
         if (_editing is null) return;
-        if (on) { _editing.Seasons.Add(season); } else { _editing.Seasons.Remove(season); }
+        List<int> seasons = SeasonList;
+        if (on) { if (!seasons.Contains(season)) seasons.Add(season); } else { seasons.Remove(season); }
     }
 
     private void ToggleEpisode(string code, bool on)

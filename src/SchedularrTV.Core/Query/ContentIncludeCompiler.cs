@@ -124,6 +124,11 @@ public static partial class ContentIncludeCompiler
                 ComparisonOperator.In,
                 include.Seasons.Select(s => s.ToString(CultureInfo.InvariantCulture)).ToList()));
         }
+        else if (include.ExcludeSeasons.Count > 0)
+        {
+            // Every season but these, so seasons added to the library later are in without ticking them.
+            clauses.Add(ExcludingSeasons(include.ExcludeSeasons));
+        }
 
         return QueryExpression.And(clauses);
     }

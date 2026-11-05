@@ -405,11 +405,24 @@ else
             .Select(collection => (collection.Key, Entries: collection.Value.Include.Where(include => Matches(include, show)).ToList()))
             .Where(pair => pair.Entries.Count > 0)
             .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(pair => (pair.Key, pair.Entries.Any(include => include.Seasons.Count == 0 && include.Episodes.Count == 0)
+            .Select(pair => (pair.Key, pair.Entries.Any(include => include.IsWholeShow)
                 ? "The whole show"
-                : string.Join(", ", pair.Entries.SelectMany(include => include.Episodes.Count > 0
-                    ? include.Episodes
-                    : include.Seasons.Select(season => season == 0 ? "Specials" : $"Season {season}")))))];
+                : string.Join(", ", pair.Entries.SelectMany(Takes))))];
+
+    /// <summary>What one entry takes of a show: its episodes, its seasons, or every season but some.</summary>
+    private static IEnumerable<string> Takes(ContentInclude include)
+    {
+        if (include.Episodes.Count > 0)
+        {
+            return include.Episodes;
+        }
+
+        return include.Seasons.Count > 0
+            ? include.Seasons.Select(SeasonName)
+            : [$"Every season but {string.Join(", ", include.ExcludeSeasons.Select(SeasonName))}"];
+    }
+
+    private static string SeasonName(int season) => season == 0 ? "Specials" : $"Season {season}";
 
     private void RemoveFrom(string collection)
     {

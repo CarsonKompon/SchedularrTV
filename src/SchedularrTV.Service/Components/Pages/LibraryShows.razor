@@ -290,7 +290,7 @@ else
             .Order(StringComparer.OrdinalIgnoreCase)];
 
     private static bool HasWhole(ContentSelector collection, LibraryShow show) =>
-        collection.Include.Any(include => Matches(include, show) && include.Seasons.Count == 0 && include.Episodes.Count == 0);
+        collection.Include.Any(include => Matches(include, show) && include.IsWholeShow);
 
     /// <summary>The collections that don't yet have every one of the shows whole.</summary>
     private IReadOnlyList<string> AddableFor(IReadOnlyList<LibraryShow> shows) =>
@@ -499,7 +499,7 @@ else
         int added = 0;
         foreach (LibraryShow show in _shows.Where(s => _selected.Contains(s.Id)))
         {
-            if (target.Include.Any(i => Matches(i, show) && i.Seasons.Count == 0 && i.Episodes.Count == 0))
+            if (target.Include.Any(i => Matches(i, show) && i.IsWholeShow))
             {
                 continue;
             }

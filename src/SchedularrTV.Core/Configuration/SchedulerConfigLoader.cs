@@ -1298,6 +1298,8 @@ public static class SchedulerConfigLoader
         {
             include.Seasons = [.. include.Seasons.Distinct()];
             include.Episodes = [.. include.Episodes.Distinct(StringComparer.OrdinalIgnoreCase)];
+            // Seasons picked by inclusion or by exclusion, never both: picked ones win (as the query does).
+            include.ExcludeSeasons = include.Seasons.Count > 0 ? [] : [.. include.ExcludeSeasons.Distinct().OrderBy(season => season)];
             FoldLegacyBumpers(include);
         }
 
