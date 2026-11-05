@@ -102,7 +102,9 @@ public sealed class LineupPublisher(
                 Config = channelConfigPath,
                 Overlays = overlays,
                 TvgId = schedule.TvgId,
-                Logo = schedule.ChannelLogo,
+                // An uploaded logo's link records the address the browser used, often localhost: players on other devices
+                // need this computer's network address instead.
+                Logo = SchedularrTV.Core.Platform.NetworkAddress.Reachable(schedule.ChannelLogo, _options.LocalArtworkBaseUrl),
                 Group = schedule.ChannelGroup
             });
         }

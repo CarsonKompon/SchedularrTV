@@ -95,10 +95,14 @@ public static class SchedulerHost
         IConfiguration platformConfiguration = builder.Configuration;
         SchedularrTV.Core.Platform.PlatformSettings.Use(key => platformConfiguration[key]);
 
-        // An explicit --urls or ASPNETCORE_URLS still wins; otherwise the port chosen in the app is used.
+        // An explicit --urls or ASPNETCORE_URLS still wins; otherwise the port chosen in the app is used. It's always
+        // reachable on the network, since TVs fetch channel logos and guide pictures from it; without "Allow other
+        // devices" that's all they can fetch (GuardRemote).
+        bool picturesOnlyRemotely = false;
         if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]))
         {
-            builder.WebHost.UseUrls(AppPaths.BindUrl(AppSettingsFile.Port(userSettings), AppSettingsFile.AllowRemote(userSettings)));
+            builder.WebHost.UseUrls(AppPaths.BindUrl(AppSettingsFile.Port(userSettings)));
+            picturesOnlyRemotely = !AppSettingsFile.AllowRemote(userSettings);
         }
 
         builder.Services.AddSingleton(sp => new AppRuntime(dataDirectory, builder.Environment.ContentRootPath, sp.GetRequiredService<IHostApplicationLifetime>(),
@@ -284,6 +288,11 @@ public static class SchedulerHost
         plugins.Changed += browser.Invalidate;
         app.Services.GetRequiredService<AppRuntime>().SettingsSaved += browser.Invalidate;
 
+        if (picturesOnlyRemotely)
+        {
+            GuardRemote(app);
+        }
+
         app.UseCors();
         app.UseAntiforgery();
 
@@ -438,6 +447,27 @@ public static class SchedulerHost
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Without "Allow other devices", other computers and TVs may only fetch the pictures the M3U and guide link to
+    /// (channel logos, local shows' artwork); the app itself answers only this computer.
+    /// </summary>
+    private static void GuardRemote(WebApplication app)
+    {
+        app.Use(async (context, next) =>
+        {
+            if (RemoteGuard.Allows(context.Connection.RemoteIpAddress, context.Request.Method, context.Request.Path))
+            {
+                await next(context);
+                return;
+            }
+
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            context.Response.ContentType = "text/plain; charset=utf-8";
+            await context.Response.WriteAsync(
+                "SchedularrTV only answers this computer. Turn on \"Allow other devices\" in App settings to open it from elsewhere.");
+        });
     }
 
     /// <summary>

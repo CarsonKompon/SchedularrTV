@@ -94,8 +94,11 @@ public static class AppPaths
 
     public static string ServerExecutableName => OperatingSystem.IsWindows() ? "SchedularrTV.Service.exe" : "SchedularrTV.Service";
 
-    /// <summary>Address the server listens on.</summary>
-    public static string BindUrl(int port, bool allowRemote) => $"http://{(allowRemote ? "0.0.0.0" : "localhost")}:{port}";
+    /// <summary>
+    /// Address the server listens on: every network, always, since TVs fetch channel logos and guide pictures from it.
+    /// Whether other devices may use anything else is decided per request ("Allow other devices").
+    /// </summary>
+    public static string BindUrl(int port) => $"http://*:{port}";
 
     /// <summary>Address a browser on this machine opens; a wildcard bind isn't something to browse to.</summary>
     public static string BrowseUrl(int port) => $"http://localhost:{port}";

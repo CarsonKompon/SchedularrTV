@@ -57,6 +57,10 @@ else if (_saved && !Form.IsDirty)
             {
                 <p class="hint warn">The web UI has no password. Only turn this on for a network you trust.</p>
             }
+            else
+            {
+                <p class="hint">Other devices can still load channel logos and guide pictures, so they show on your TVs; nothing else.</p>
+            }
 
             @if (Autostart.IsSupported)
             {

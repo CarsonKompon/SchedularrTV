@@ -35,11 +35,12 @@ public sealed class ErsatzTvPlugin : IBuiltInPlugin
                 options.ArtworkBaseUrl = configuration["Jellyfin:BaseUrl"];
             }
 
-            // Local shows' and movies' pictures are served by the scheduler itself.
+            // Local shows' and movies' pictures (and uploaded channel logos) are served by the scheduler itself, at this
+            // computer's network address so a TV elsewhere on the network can fetch them.
             if (string.IsNullOrWhiteSpace(options.LocalArtworkBaseUrl))
             {
                 string port = int.TryParse(configuration["Server:Port"], out int configured) ? configured.ToString(System.Globalization.CultureInfo.InvariantCulture) : "5252";
-                options.LocalArtworkBaseUrl = $"http://localhost:{port}";
+                options.LocalArtworkBaseUrl = $"http://{SchedularrTV.Core.Platform.NetworkAddress.LanIPv4() ?? "localhost"}:{port}";
             }
         });
 
