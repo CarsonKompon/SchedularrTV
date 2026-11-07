@@ -150,6 +150,8 @@
                        ValueChanged="v => { Block.PadToNearest = v; Changed.InvokeAsync(); }" />
         <DurationInput Label="Maximum ad break" Value="Block.MaxBreak"
                        ValueChanged="v => { Block.MaxBreak = v; Changed.InvokeAsync(); }" />
+        <DurationInput Label="Minimum time between ad breaks" Value="Block.MinTimeBetweenBreaks"
+                       ValueChanged="v => { Block.MinTimeBetweenBreaks = v; Changed.InvokeAsync(); }" />
     </div>
 
     <label class="field">

@@ -61,6 +61,9 @@ public sealed class BlockConfig
     /// <summary>Overrides the channel's maximum break length inside this block.</summary>
     public TimeSpan? MaxBreak { get; set; }
 
+    /// <summary>Overrides the channel's minimum time between ad breaks inside this block.</summary>
+    public TimeSpan? MinTimeBetweenBreaks { get; set; }
+
     /// <summary>Overrides whether short programmes are stacked to fill a slot inside this block.</summary>
     public bool? StackToFill { get; set; }
 

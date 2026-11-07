@@ -83,6 +83,10 @@ public sealed class SchedulingEngine(
         DateTimeOffset slotOrigin = SlotOrigin(channel, timeZone, start);
 
         DateTimeOffset cursor = start;
+
+        // When the last break between programmes ended, for the minimum time between breaks. A build picks up where the
+        // last plan stopped (usually a break's end), so it counts from there.
+        DateTimeOffset lastBreakEnd = start;
         int anchorIndex = 0;
         int iterations = 0;
         int reportedPercent = -1;
@@ -231,7 +235,19 @@ public sealed class SchedulingEngine(
                     }
 
                     slotEnd = padded <= boundary ? padded : naturalEnd;
+
+                    // Too soon after the last break: no break this time, the next programme follows straight on (and
+                    // the next break puts the channel back on its grid). At a fixed point (a block's end, an anchor)
+                    // the break stays, as nothing else can fill it.
+                    if ((activeBlock?.Block.MinTimeBetweenBreaks ?? channel.MinTimeBetweenBreaks) is { Ticks: > 0 } spacing
+                        && slotEnd > naturalEnd && naturalEnd < boundary && naturalEnd - lastBreakEnd < spacing)
+                    {
+                        slotEnd = naturalEnd;
+                    }
                 }
+
+                // A break follows when the slot runs past its programmes.
+                bool breakAfter = slotEnd > cursor + media;
 
                 int slotEntryStart = entries.Count;
                 build.AnchorIndex = anchorIndex;
@@ -252,6 +268,10 @@ public sealed class SchedulingEngine(
                 }
 
                 build.Premieres = NoPremieres;
+                if (breakAfter)
+                {
+                    lastBreakEnd = cursor;
+                }
 
                 continue;
             }
@@ -276,6 +296,7 @@ public sealed class SchedulingEngine(
                 .ConfigureAwait(false);
 
             cursor = boundary;
+            lastBreakEnd = boundary;
         }
 
         if (iterations >= MaxIterations)

@@ -55,6 +55,7 @@ Keys use **snake_case**. Durations use units such as **`500ms`**, **`10s`**, **`
 | **`base_rotation`** | Selector for unclaimed time |
 | **`pad_to_nearest`** | Grid interval; omitted for back-to-back programming |
 | **`max_break`** | Cap on grid-created trailing breaks; may relax grid alignment |
+| **`min_time_between_breaks`** | Least time from one break's end to the next break's start (e.g. `15m`); shorter programmes play back to back until then. Mid-rolls don't count. Blocks can override it |
 | **`stack_to_fill`** | Additional whole episodes of the same show within a slot |
 | **`schedule_start`** | Explicit grid anchor as a date-time with offset |
 | **`auto_temporal_tags`** | Seasonal commercial matching |

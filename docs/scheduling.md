@@ -17,6 +17,12 @@ Overlapping windows use priority: specific-date rules default to `100`, anchor s
 
 **`pad_to_nearest`** rounds programme endings to grid boundaries. **`max_break`** can shorten grid-created gaps; **`stack_to_fill`** adds whole episodes of the same show before filling the remainder.
 
+**`min_time_between_breaks`** (**Minimum time between ad breaks** under the channel's scheduling grid, or a block's overrides) keeps breaks apart. A programme that would end sooner than that after the last break ended gets no break of its own: the next programme follows straight on. The break that finally comes puts the channel back on its grid. With `15m` on a 5-minute grid, a run of four-minute music videos breaks after every three or four videos instead of after each.
+
+- **Mid-rolls:** they keep their own settings and don't count toward this.
+- **Fixed points:** a break before a block ends or an anchor starts always happens, since nothing else can fill that time.
+- **Plan top-ups:** a top-up counts from where the previous plan stopped.
+
 ## Playback orders
 
 | Order | Behavior |

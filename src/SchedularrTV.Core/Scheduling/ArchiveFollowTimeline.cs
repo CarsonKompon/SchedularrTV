@@ -143,6 +143,7 @@ internal sealed class ArchiveFollowTimeline : ITimelineContributor
                     AutoTemporalTags = source?.AutoTemporalTags,
                     PadToNearest = source?.PadToNearest,
                     MaxBreak = source?.MaxBreak,
+                    MinTimeBetweenBreaks = source?.MinTimeBetweenBreaks,
                     StackToFill = source?.StackToFill,
                     MidRoll = source?.MidRoll,
                     Promos = source?.Promos,

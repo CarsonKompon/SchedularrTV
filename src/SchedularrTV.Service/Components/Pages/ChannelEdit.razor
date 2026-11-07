@@ -328,9 +328,13 @@ else
                                ValueChanged="v => { _channel.PadToNearest = v; Editor.MarkDirty(); }" />
                 <DurationInput Label="Maximum ad break" Value="_channel.MaxBreak"
                                ValueChanged="v => { _channel.MaxBreak = v; Editor.MarkDirty(); }" />
+                <DurationInput Label="Minimum time between ad breaks" Value="_channel.MinTimeBetweenBreaks"
+                               ValueChanged="v => { _channel.MinTimeBetweenBreaks = v; Editor.MarkDirty(); }" />
             </div>
             <p class="hint">
-                Leave the grid blank for back-to-back programming with no advert breaks at all.
+                Leave the grid blank for back-to-back programming with no advert breaks at all. With a minimum time between
+                breaks, short programmes (music videos, say) play back to back until that long has passed since the last
+                break, rather than each getting its own. Mid-rolls keep their own settings and don't count.
             </p>
 
             <label class="check">

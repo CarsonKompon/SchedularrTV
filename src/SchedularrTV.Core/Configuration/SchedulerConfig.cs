@@ -225,6 +225,13 @@ public sealed class ChannelConfig
     public TimeSpan? MaxBreak { get; set; }
 
     /// <summary>
+    /// The least time from the end of one ad break to the start of the next. A programme that would end sooner runs
+    /// straight into the next one instead, so a run of four-minute music videos breaks after every few rather than after
+    /// each. Only breaks between programmes count; mid-rolls keep their own settings. Null breaks wherever the grid does.
+    /// </summary>
+    public TimeSpan? MinTimeBetweenBreaks { get; set; }
+
+    /// <summary>
     /// Fills a slot with further episodes of the same title instead of a long advert break. Two
     /// eleven-minute episodes make a half-hour slot the way they did on air, rather than one episode
     /// followed by nineteen minutes of commercials. Only ever adds episodes that fit whole.
