@@ -125,6 +125,9 @@ Keyframe times are from the start of each appearance and opacity is 0–100, lik
 | **`{next_time}`** | Next start time |
 | **`{new}`** | `NEW` when this programme is a new episode, else blank |
 | **`{next_new}`** | `NEW` when the next programme is a new episode, else blank |
+| **`{tag.name}`** | The item's tag written as `name: value`, such as `{tag.artist}` for a tag `artist: Nirvana`; blank when it has none |
+
+**Tag tokens** work for any name: tag an episode in Jellyfin (or its NFO's `<tag>`) as `artist: Nirvana`, `album: Nevermind`, `label: DGC` or `director: Samuel Bayer`, and `{tag.artist}`, `{tag.album}`, `{tag.label}` and `{tag.director}` show them. Names are matched ignoring case and spaces at either end. Several tags with one name are listed together, separated by commas (two `director:` tags read `Jonas Åkerlund, Dave Meyers`). In the editor's preview, a tag token shows its name (`Artist`).
 
 Text layers share the generated promo editor's text controls: **Align in its box** is a 3 × 3 pad placing the text left, centre or right and top, middle or bottom (middle by default), and **Letters** can force ALL UPPERCASE or all lowercase, filled-in tokens and AI-written text included. **Word wrap** breaks long text between words (and at new lines) to fill the box before it shrinks. **Letter spacing** adds space between letters as a percentage of the text size (negative tightens), and **Line spacing** sets the distance between wrapped lines as a multiple of the font's own; both are part of the fit. In YAML: `vertical_align: bottom`, `text_case: upper`, `word_wrap: true`, `letter_spacing: 10`, `line_spacing: 1.3`.
 
@@ -203,6 +206,7 @@ Open **Conditions and sharing the screen** under the overlay's timing.
 | **The programme is** | The programme is a new episode, or isn't. In a break, the programme is the one the break interrupts or follows |
 | **What's on next is** | The next programme is a new episode, not one, an episode, or a movie |
 | **The programme matches** | The programme matches a library query |
+| **Only on these shows** | What's on screen is an episode of one of these shows. Judged on the entry itself, so with **Interstitials** ticked it's the interstitial playing (each video of a music video show, say), not the programme the break interrupts |
 
 Every condition set must hold. A new episode is the first airing of one released by a [Drop order](scheduling.md#drop-new-episodes-on-a-schedule). Naming something in a break under **Only on** (an Up Next promo, say) reaches it even when the overlay is set to programmes only. The **New episode up next** and **New episode badge** presets start from these.
 
@@ -230,6 +234,7 @@ overlays:
       on: [movie]          # episode, movie, programme, up_next, promo, commercial, filler, interstitial, break
       episodes: repeat     # new or repeat
       query: genre:'Comedy'
+      shows: [Music Videos]  # what's on screen is an episode of one of these
 ```
 
 ## Skip screen bugs on recordings that already have one

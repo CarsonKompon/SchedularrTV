@@ -432,7 +432,7 @@
                         {
                             <label class="field"><span>Text</span>
                                 <input type="text" value="@selected.Text" @onchange="e => Set(() => selected.Text = Text(e, string.Empty))" /></label>
-                            <p class="hint">{title} {episode} {season_episode} {year} {channel} {next} {next_time}</p>
+                            <p class="hint">{title} {episode} {season_episode} {year} {channel} {next} {next_time} · {tag.<em>name</em>} reads the item's <code>name: value</code> tags, e.g. {tag.artist}</p>
                             <label class="check">
                                 <input type="checkbox" checked="@(selected.Writer is not null)"
                                        @onchange="e => Set(() => selected.Writer = e.Value is true ? selected.Writer ?? new AiTextConfig() : null)" />

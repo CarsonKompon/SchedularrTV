@@ -665,7 +665,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
     public static Dictionary<string, string> Tokens(ScheduleEntry entry, ScheduleEntry? next, ChannelConfig owner)
     {
         MediaItem? item = entry.Item;
-        return new Dictionary<string, string>(StringComparer.Ordinal)
+        Dictionary<string, string> tokens = new(StringComparer.Ordinal)
         {
             ["title"] = Title(item),
             ["episode"] = item?.SeriesName is { Length: > 0 } ? item.Title : string.Empty,
@@ -677,6 +677,69 @@ public sealed class OverlayProcessor : IPlayoutProcessor
             ["new"] = entry.IsPremiere ? "NEW" : string.Empty,
             ["next_new"] = next?.IsPremiere == true ? "NEW" : string.Empty
         };
+
+        foreach ((string name, string value) in TagValues(item))
+        {
+            tokens[TagTokenPrefix + name] = value;
+        }
+
+        return tokens;
+    }
+
+    /// <summary>
+    /// Tokens <c>{tag.name}</c> read the item's tags written as <c>name: value</c> (<c>artist: Nirvana</c>,
+    /// <c>director: Samuel Bayer</c>): any name, with no setting needed. Several tags of one name are listed together.
+    /// </summary>
+    public const string TagTokenPrefix = "tag.";
+
+    /// <summary>
+    /// The item's <c>name: value</c> tags by name (lower case, trimmed), each name's values joined with commas in the
+    /// order tagged. Includes the ones the media source has already lifted out of its tags as attributes.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> TagValues(MediaItem? item)
+    {
+        Dictionary<string, List<string>> found = new(StringComparer.Ordinal);
+        if (item is null)
+        {
+            return new Dictionary<string, string>();
+        }
+
+        void Add(string name, string value)
+        {
+            string key = name.Trim().ToLowerInvariant();
+            string text = value.Trim();
+            if (key.Length == 0 || text.Length == 0 || key.Contains('{') || key.Contains('}'))
+            {
+                return;
+            }
+
+            if (!found.TryGetValue(key, out List<string>? values))
+            {
+                found[key] = values = [];
+            }
+
+            if (!values.Contains(text, StringComparer.OrdinalIgnoreCase))
+            {
+                values.Add(text);
+            }
+        }
+
+        foreach (string tag in item.Tags)
+        {
+            int separator = tag.IndexOf(':');
+            if (separator > 0)
+            {
+                Add(tag[..separator], tag[(separator + 1)..]);
+            }
+        }
+
+        // Tags a media source turns into attributes (Jellyfin's promo_type:…, say) aren't among the tags any more.
+        foreach ((string name, string value) in item.Attributes)
+        {
+            Add(name, value);
+        }
+
+        return found.ToDictionary(pair => pair.Key, pair => string.Join(", ", pair.Value), StringComparer.Ordinal);
     }
 
     private static string Title(MediaItem? item) => item is null ? string.Empty : item.SeriesName is { Length: > 0 } series ? series : item.Title;
@@ -692,6 +755,8 @@ public sealed class OverlayProcessor : IPlayoutProcessor
         ["next"] = "Another Show",
         ["next_time"] = "8:30 PM",
         ["new"] = "NEW",
-        ["next_new"] = "NEW"
+        ["next_new"] = "NEW",
+        // The editor's preview: {tag.name} tokens show their name ("Artist") rather than nothing.
+        [OverlayRenderer.SampleTagsToken] = "sample"
     };
 }

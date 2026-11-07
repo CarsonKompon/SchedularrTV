@@ -94,9 +94,17 @@ public sealed class OverlayConditions
     /// <summary>The programme matches this library query (<c>show:'Rugrats'</c>, <c>genre:'Comedy'</c>).</summary>
     public string? Query { get; set; }
 
+    /// <summary>
+    /// Shows by name, any of which will do: what's on screen is an episode of one of them. Unlike <see cref="Query"/>,
+    /// it's judged on the entry itself, so in a break it's the interstitial playing (a music video, say), not the
+    /// programme the break interrupts. Empty means any show.
+    /// </summary>
+    public List<string> Shows { get; set; } = [];
+
     [YamlDotNet.Serialization.YamlIgnore]
     public bool HasConditions =>
-        On.Count > 0 || !string.IsNullOrWhiteSpace(Episodes) || !string.IsNullOrWhiteSpace(Next) || !string.IsNullOrWhiteSpace(Query);
+        On.Count > 0 || !string.IsNullOrWhiteSpace(Episodes) || !string.IsNullOrWhiteSpace(Next) || !string.IsNullOrWhiteSpace(Query)
+        || Shows is { Count: > 0 };
 
     /// <summary>The conditions reach into breaks (an Up Next promo, commercials…).</summary>
     [YamlDotNet.Serialization.YamlIgnore]
@@ -106,6 +114,7 @@ public sealed class OverlayConditions
     {
         var copy = (OverlayConditions)MemberwiseClone();
         copy.On = [.. On];
+        copy.Shows = [.. Shows ?? []];
         return copy;
     }
 
@@ -117,6 +126,7 @@ public sealed class OverlayConditions
         if (Episodes == OverlayAiring.Repeat) parts.Add("repeats");
         if (!string.IsNullOrWhiteSpace(Next)) parts.Add(Next == OverlayAiring.New ? "before a new episode" : $"before a {Next}");
         if (!string.IsNullOrWhiteSpace(Query)) parts.Add("matching a query");
+        if (Shows is { Count: > 0 } shows) parts.Add(shows.Count <= 2 ? $"on {string.Join(" or ", shows)}" : $"on {shows.Count} shows");
         return string.Join(" · ", parts);
     }
 }
@@ -161,8 +171,20 @@ public static class OverlayConditionMatcher
             return false;
         }
 
+        if (conditions.Shows is { Count: > 0 } shows && !IsOfShow(entry, shows))
+        {
+            return false;
+        }
+
         return true;
     }
+
+    /// <summary>Whether what the entry plays is an episode of one of <paramref name="shows"/> (by name, or series id).</summary>
+    public static bool IsOfShow(ScheduleEntry entry, IReadOnlyCollection<string> shows) =>
+        entry.Item is { } item
+        && shows.Any(show => !string.IsNullOrWhiteSpace(show)
+            && ((item.SeriesName is { } name && string.Equals(name.Trim(), show.Trim(), StringComparison.OrdinalIgnoreCase))
+                || (item.SeriesId is { } id && string.Equals(id, show.Trim(), StringComparison.Ordinal))));
 
     /// <summary>Whether the entry is what <paramref name="value"/> (an <see cref="OverlayOn"/> value) names.</summary>
     public static bool IsOn(string value, ScheduleEntry entry)

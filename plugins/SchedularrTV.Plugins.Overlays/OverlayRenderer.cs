@@ -12,7 +12,7 @@ namespace SchedularrTV.Overlays;
 /// Draws design overlays into transparent, frame-sized PNGs for ErsatzTV to lay over the picture. Each distinct look
 /// (the design with its text filled in) is drawn once and kept, named by a hash of what's in it.
 /// </summary>
-public sealed class OverlayRenderer(Func<string> folder)
+public sealed partial class OverlayRenderer(Func<string> folder)
 {
     public OverlayRenderer(string folder)
         : this(() => folder)
@@ -209,7 +209,10 @@ public sealed class OverlayRenderer(Func<string> folder)
         return part;
     }
 
-    /// <summary>Fills {tokens} in a text; unknown ones are left as written.</summary>
+    /// <summary>
+    /// Fills {tokens} in a text; unknown ones are left as written, except <c>{tag.name}</c>, which reads as nothing when
+    /// the item has no such tag (or, in the editor's sample, as its name).
+    /// </summary>
     public static string Fill(string? text, IReadOnlyDictionary<string, string> tokens)
     {
         if (string.IsNullOrEmpty(text))
@@ -220,11 +223,33 @@ public sealed class OverlayRenderer(Func<string> folder)
         var result = new StringBuilder(text);
         foreach ((string name, string value) in tokens)
         {
-            result.Replace("{" + name + "}", value);
+            if (!name.StartsWith(OverlayProcessor.TagTokenPrefix, StringComparison.Ordinal))
+            {
+                result.Replace("{" + name + "}", value);
+            }
         }
 
-        return result.ToString();
+        string filled = result.ToString();
+        if (!filled.Contains("{" + OverlayProcessor.TagTokenPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return filled;
+        }
+
+        bool sample = tokens.ContainsKey(SampleTagsToken);
+        return TagToken().Replace(filled, match =>
+        {
+            string name = match.Groups[1].Value.Trim().ToLowerInvariant();
+            return tokens.TryGetValue(OverlayProcessor.TagTokenPrefix + name, out string? value) ? value
+                : sample ? CultureInfo.InvariantCulture.TextInfo.ToTitleCase(name)
+                : string.Empty;
+        });
     }
+
+    /// <summary>Present in the editor's sample tokens: <c>{tag.name}</c> shows its name there, for designing.</summary>
+    public const string SampleTagsToken = "tag.*";
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\{tag\.([^{}]+)\}", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex TagToken();
 
     /// <summary>What a design looks like with these tokens, as a short hash: the name its drawing is kept under.</summary>
     public static string Key(Overlay overlay, IReadOnlyDictionary<string, string> tokens)

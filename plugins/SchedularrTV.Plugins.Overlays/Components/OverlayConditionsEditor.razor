@@ -1,4 +1,5 @@
 @* When an overlay may show (new episodes, films, Up Next promos…) and whether it shares the screen or takes turns. *@
+@inject LibraryBrowser Library
 
 <label class="check">
     <input type="checkbox" checked="@OverlayContention.IsAdditive(Overlay)" @onchange="e => Set(() => Overlay.Additive = e.Value is true)" />
@@ -50,6 +51,29 @@
         <input type="text" value="@Conditions?.Query" placeholder="genre:'Comedy'" spellcheck="false"
                @onchange="e => Set(() => Edit().Query = Empty(e))" /></label>
 </div>
+<div class="field">
+    <span>Only on these shows <span class="muted">(any of; none means any show)</span></span>
+    @if (Conditions?.Shows is { Count: > 0 } chosen)
+    {
+        <div class="chip-row" style="margin-bottom:6px;">
+            @foreach (string show in chosen)
+            {
+                <span class="chip chip-on">
+                    @show
+                    <button type="button" class="btn btn-sm btn-ghost" style="padding:0 4px;min-height:0;" title="Remove @show"
+                            aria-label="@($"Remove {show}")" @onclick="() => Set(() => Edit().Shows.Remove(show))">×</button>
+                </span>
+            }
+        </div>
+    }
+    <TitlePicker Options="ShowOptions" Value="@_pendingShow" ValueChanged="v => _pendingShow = v" OnPicked="AddShow"
+                 Placeholder="Add a show…" AriaLabel="Show" />
+</div>
+<p class="hint" style="margin-top:0;">
+    Judged on what's on screen, so with <strong>Interstitials</strong> ticked above it's the interstitial itself (each music
+    video of a music video show, say), not the programme the break interrupts.
+</p>
+
 @if (Conditions?.Query is { Length: > 0 } conditionQuery && !SchedularrTV.Core.Query.QueryParser.TryParse(conditionQuery, out _, out string? queryError))
 {
     <p class="hint warn">That query doesn't read: @queryError</p>
@@ -64,6 +88,42 @@
     [Parameter] public EventCallback Changed { get; set; }
 
     private OverlayConditions? Conditions => Overlay.Conditions;
+
+    private List<string> _shows = [];
+    private string? _pendingShow;
+
+    // Shows not already chosen.
+    private IEnumerable<string> ShowOptions => _shows.Where(show => Conditions?.Shows?.Contains(show, StringComparer.OrdinalIgnoreCase) != true);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _shows = [.. (await Library.GetShowsAsync()).Select(show => show.Name).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
+        {
+            _shows = []; // the library can't be read right now: shows can still be typed in
+        }
+    }
+
+    private async Task AddShow(string? show)
+    {
+        _pendingShow = null;
+        if (string.IsNullOrWhiteSpace(show))
+        {
+            return;
+        }
+
+        await Set(() =>
+        {
+            List<string> shows = Edit().Shows ??= [];
+            if (!shows.Contains(show.Trim(), StringComparer.OrdinalIgnoreCase))
+            {
+                shows.Add(show.Trim());
+            }
+        });
+    }
 
     private OverlayConditions Edit() => Overlay.Conditions ??= new OverlayConditions();
 
