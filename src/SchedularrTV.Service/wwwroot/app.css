@@ -364,6 +364,8 @@ select {
 }
 select option { background: var(--panel-2); color: var(--text); }
 textarea { font-family: var(--mono); font-size: 12.5px; line-height: 1.6; resize: vertical; }
+/* Canvas text layers' text reads as text, not code. */
+textarea.multiline-text { font-family: inherit; font-size: 13.5px; line-height: 1.45; min-height: 0; }
 input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; cursor: pointer; flex: none; }
 input[type=range] { accent-color: var(--accent); }
 

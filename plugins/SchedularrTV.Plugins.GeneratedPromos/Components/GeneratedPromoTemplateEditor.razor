@@ -671,8 +671,8 @@
                     else if (selected.Kind == GeneratedLayerKind.Text)
                     {
                         <label class="field">
-                            <span>Text ({channel} is the channel name; new lines start new lines)</span>
-                            <textarea rows="2" @onchange="e => Set(() => selected.Text = Text(e))">@selected.Text</textarea>
+                            <span>Text <span class="muted">({channel} is the channel name; Enter starts a new line)</span></span>
+                            <MultilineTextInput @key="selected" Value="@selected.Text" ValueChanged="v => Set(() => selected.Text = v)" />
                         </label>
                         @(LayerChoices(selected, "wording"))
                         <label class="check">

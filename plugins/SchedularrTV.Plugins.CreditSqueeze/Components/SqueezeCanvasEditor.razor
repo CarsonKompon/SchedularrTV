@@ -194,7 +194,8 @@
                         }
                         else
                         {
-                        <label class="field"><span>Text</span><textarea @bind="selected.Text" @bind:after="Commit"></textarea></label>
+                        <label class="field"><span>Text <span class="muted">(Enter starts a new line)</span></span>
+                            <MultilineTextInput @key="selected" Value="@selected.Text" ValueChanged="async v => { selected.Text = v; await Commit(); }" /></label>
                         <p class="hint" role="note">Tokens: {show}, {up_next} (or {next}), {time}, {channel}, {heading}.</p>
                         }
                         <label class="field"><span>Font</span><select @bind="selected.FontFamily" @bind:after="Commit">@foreach (string font in Fonts) { <option value="@font">@font</option> }</select></label>

@@ -609,13 +609,14 @@ public sealed partial class OverlayRenderer(Func<string> folder)
             : null;
         paint.ImageFilter = shadow;
 
-        // Long text shrinks to fit the box rather than run out of it (shared with generated promos); with word wrap it
-        // breaks between words (and at new lines) first.
+        // Long text shrinks to fit the box rather than run out of it (shared with generated promos). New lines always start
+        // new lines; with word wrap, long lines also break between words first.
         bool wrap = layer.WordWrap == true;
         float letterSpacing = SchedularrTV.Service.Rendering.TextFit.LetterSpacing(layer.LetterSpacing);
         float lineSpacing = SchedularrTV.Service.Rendering.TextFit.LineSpacing(layer.LineSpacing);
+        string[] written = text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
         IReadOnlyList<string> lines = SchedularrTV.Service.Rendering.TextFit.Fit(
-            wrap ? text.Replace("\r\n", "\n").Split('\n') : [text], bounds, font, paint, wrap, heightAllowance: wrap ? 1f : 1.15f,
+            written, bounds, font, paint, wrap, heightAllowance: wrap || written.Length > 1 ? 1f : 1.15f,
             letterSpacing: letterSpacing, lineSpacing: lineSpacing);
 
         SKTextAlign align = layer.Align switch

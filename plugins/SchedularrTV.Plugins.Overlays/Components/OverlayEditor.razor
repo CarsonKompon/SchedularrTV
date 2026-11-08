@@ -430,8 +430,9 @@
 
                         @if (selected.Kind == OverlayLayerKinds.Text)
                         {
-                            <label class="field"><span>Text</span>
-                                <input type="text" value="@selected.Text" @onchange="e => Set(() => selected.Text = Text(e, string.Empty))" /></label>
+                            <label class="field"><span>Text <span class="muted">(Enter starts a new line)</span></span>
+                                <MultilineTextInput @key="selected" Value="@selected.Text"
+                                                    ValueChanged="v => Set(() => selected.Text = v)" /></label>
                             <p class="hint">{title} {episode} {season_episode} {year} {channel} {next} {next_time} · {tag.<em>name</em>} reads the item's <code>name: value</code> tags, e.g. {tag.artist}</p>
                             <label class="check">
                                 <input type="checkbox" checked="@(selected.Writer is not null)"

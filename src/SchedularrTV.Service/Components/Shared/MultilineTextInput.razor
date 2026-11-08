@@ -1,0 +1,91 @@
+@* A text layer's text, for the canvas editors (generated promos, overlays, credits squeeze): Enter starts a new line, the box
+   grows with the text, and the canvas follows as you type (a moment after you pause, and at once when you leave the box). *@
+@implements IDisposable
+
+<textarea class="multiline-text @Class" rows="@Rows" placeholder="@Placeholder" spellcheck="true" aria-label="@AriaLabel"
+          value="@_text" @oninput="OnInput" @onchange="OnChange"></textarea>
+
+@code {
+    [Parameter] public string? Value { get; set; }
+
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+
+    [Parameter] public string? Placeholder { get; set; }
+
+    [Parameter] public string? AriaLabel { get; set; } = "Text";
+
+    [Parameter] public int MinRows { get; set; } = 3;
+
+    [Parameter] public int MaxRows { get; set; } = 12;
+
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>How long after the last keystroke the canvas is updated.</summary>
+    [Parameter] public int DelayMs { get; set; } = 300;
+
+    // What's in the box, and the last value handed out (so a re-render with that value doesn't undo what's been typed since).
+    private string _text = string.Empty;
+    private string? _sent;
+    private CancellationTokenSource? _pending;
+
+    // Grows a line at a time with the text, within reason; it can still be dragged taller.
+    private int Rows => Math.Clamp(_text.Count(c => c == '\n') + 1, MinRows, MaxRows);
+
+    protected override void OnParametersSet()
+    {
+        string incoming = Value ?? string.Empty;
+        if (_sent is null || !string.Equals(incoming, _sent, StringComparison.Ordinal))
+        {
+            // Changed from outside (another layer chosen, an undo): show it.
+            _text = incoming;
+            _sent = incoming;
+        }
+    }
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        _text = Normalize(e.Value);
+        CancelPending();
+        var waiting = _pending = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(DelayMs, waiting.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            return; // typed again: that keystroke sends instead
+        }
+
+        await SendAsync();
+    }
+
+    private async Task OnChange(ChangeEventArgs e)
+    {
+        _text = Normalize(e.Value);
+        CancelPending();
+        await SendAsync();
+    }
+
+    private async Task SendAsync()
+    {
+        if (string.Equals(_text, _sent, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _sent = _text;
+        await ValueChanged.InvokeAsync(_text);
+    }
+
+    private void CancelPending()
+    {
+        _pending?.Cancel();
+        _pending?.Dispose();
+        _pending = null;
+    }
+
+    // Browsers send line breaks as \n, but a pasted \r\n is made the same.
+    private static string Normalize(object? value) => (value?.ToString() ?? string.Empty).Replace("\r\n", "\n", StringComparison.Ordinal);
+
+    public void Dispose() => CancelPending();
+}
