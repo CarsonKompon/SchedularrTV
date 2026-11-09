@@ -17,7 +17,9 @@ namespace SchedularrTV.Core.Configuration;
 /// </remarks>
 public static partial class YamlCommentMerger
 {
-    private enum Kind { Blank, Comment, Structural }
+    // Content: a line of a value that runs over several lines (a "|" block, or a quoted string with line breaks in it).
+    // It's part of that value: never mistaken for a comment, and written out exactly, blank lines included.
+    private enum Kind { Blank, Comment, Structural, Content }
 
     private sealed record Line(
         string Raw,
@@ -70,6 +72,12 @@ public static partial class YamlCommentMerger
 
         foreach (Line line in lines)
         {
+            // The rest of a multi-line value belongs to its key, which the regenerated document has its own copy of.
+            if (line.Kind == Kind.Content)
+            {
+                continue;
+            }
+
             if (line.Kind != Kind.Structural)
             {
                 buffer.Add(line.Raw);
@@ -114,6 +122,12 @@ public static partial class YamlCommentMerger
 
         foreach (Line line in lines)
         {
+            if (line.Kind == Kind.Content)
+            {
+                builder.Append(line.Raw).Append(newline);
+                continue;
+            }
+
             if (line.Kind != Kind.Structural)
             {
                 // The generated document has no comments of its own; its blank lines are just padding.
@@ -227,17 +241,31 @@ public static partial class YamlCommentMerger
         Dictionary<string, int> counters = new(StringComparer.Ordinal);
         int blockScalarIndent = -1;
 
+        // The quote a string with line breaks in it was opened with, until the line that closes it.
+        char openQuote = '\0';
+
         for (int i = 0; i < lines.Length; i++)
         {
             string raw = lines[i];
             string trimmed = raw.Trim();
             int indent = Indent(raw);
 
+            if (openQuote != '\0')
+            {
+                result.Add(Content(raw));
+                if (Closes(trimmed, openQuote, 0))
+                {
+                    openQuote = '\0';
+                }
+
+                continue;
+            }
+
             if (blockScalarIndent >= 0)
             {
                 if (trimmed.Length == 0 || indent > blockScalarIndent)
                 {
-                    result.Add(Passthrough(raw));
+                    result.Add(Content(raw));
                     continue;
                 }
 
@@ -284,6 +312,14 @@ public static partial class YamlCommentMerger
                 if (isItem)
                 {
                     (string itemScalar, string itemComment) = SplitComment(content);
+                    if (OpenQuote(itemScalar) is var itemQuote && itemQuote != '\0')
+                    {
+                        // "- 'first line" of a list entry that runs on: the lines up to its closing quote are its own.
+                        openQuote = itemQuote;
+                        result.Add(new Line(raw, Kind.Structural, indent, PathOf(stack), "", "", raw.Length, ""));
+                        continue;
+                    }
+
                     result.Add(new Line(
                         raw,
                         Kind.Structural,
@@ -314,6 +350,14 @@ public static partial class YamlCommentMerger
             if (scalar.StartsWith('|') || scalar.StartsWith('>'))
             {
                 blockScalarIndent = keyIndent;
+            }
+            else if (OpenQuote(scalar) is var quote && quote != '\0')
+            {
+                // A quoted string with line breaks in it: its first line is left exactly as it is (only a whole value
+                // could be compared with the hand-written one), and the lines after it are part of it.
+                openQuote = quote;
+                result.Add(new Line(raw, Kind.Structural, indent, PathOf(stack), name, "", valueStart, ""));
+                continue;
             }
 
             result.Add(new Line(raw, Kind.Structural, indent, PathOf(stack), name, scalar, valueStart, comment));
@@ -405,6 +449,44 @@ public static partial class YamlCommentMerger
     private static string PathOf(List<Frame> stack) => string.Join('.', stack.Select(f => f.Name));
 
     private static Line Passthrough(string raw) => new(raw, Kind.Comment, Indent(raw), "", "", "", 0, "");
+
+    private static Line Content(string raw) => new(raw, Kind.Content, Indent(raw), "", "", "", 0, "");
+
+    /// <summary>The quote a value opens and doesn't close on its first line ('…' or "…" with line breaks in it), else none.</summary>
+    private static char OpenQuote(string scalar) =>
+        scalar.Length > 0 && scalar[0] is '\'' or '"' && !Closes(scalar, scalar[0], 1) ? scalar[0] : '\0';
+
+    /// <summary>
+    /// Whether <paramref name="text"/> (from <paramref name="start"/>) holds the end of a <paramref name="quote"/>d
+    /// string: in single quotes '' is a quote inside it, and in double quotes \ escapes the character after it.
+    /// </summary>
+    private static bool Closes(string text, char quote, int start)
+    {
+        for (int i = start; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (quote == '"' && c == '\\')
+            {
+                i++;
+                continue;
+            }
+
+            if (c != quote)
+            {
+                continue;
+            }
+
+            if (quote == '\'' && i + 1 < text.Length && text[i + 1] == '\'')
+            {
+                i++;
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
 
     private static int Indent(string line)
     {

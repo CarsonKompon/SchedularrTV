@@ -51,6 +51,7 @@ public static class SchedulerConfigLoader
             .WithAttributeOverride<BlockConfig>(block => block.FollowOnly, new YamlIgnoreAttribute())
             .WithAttributeOverride<BlockConfig>(block => block.KeepsHoursOverArchive, new YamlIgnoreAttribute())
             .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull | DefaultValuesHandling.OmitEmptyCollections)
+            .WithEventEmitter(next => new MultilineLiteralEmitter(next))
             .Build();
 
     public static SchedulerConfig Parse(string yaml)
