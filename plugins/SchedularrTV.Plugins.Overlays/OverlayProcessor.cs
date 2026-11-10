@@ -101,8 +101,7 @@ public sealed class OverlayProcessor : IPlayoutProcessor
         List<ScheduleEntry> result = new(ordered.Count);
         bool changed = false;
         DateTimeOffset now = time.GetUtcNow();
-        List<DeferredOverlay> deferred = [];
-        for (int index = 0; index < ordered.Count; index++)
+        List<DeferredOverlay> deferred = [];        for (int index = 0; index < ordered.Count; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             ScheduleEntry entry = ordered[index];
@@ -195,9 +194,13 @@ public sealed class OverlayProcessor : IPlayoutProcessor
                     }
 
                     tokens ??= Tokens(entry, next, resolved.Owner);
-                    foreach (JsonObject layer in Layers(Written(shown, entry, tokens, prepare), entry, showing, tokens, prepare: prepare))
+                    foreach ((Overlay turn, OverlayShowing when) in TakingTurns(overlay, shown, entry, showing,
+                                 $"{context.Config.Settings.Seed}|{channel.Id}|{overlay.Name}"))
                     {
-                        layers.Add(layer);
+                        foreach (JsonObject layer in Layers(Written(turn, entry, tokens, prepare), entry, when, tokens, prepare: prepare))
+                        {
+                            layers.Add(layer);
+                        }
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -218,6 +221,39 @@ public sealed class OverlayProcessor : IPlayoutProcessor
 
         preparationMonitor?.Track(channel.Number, deferred);
         return ValueTask.FromResult(changed ? context.Schedule with { Entries = result } : context.Schedule);
+    }
+
+    /// <summary>
+    /// A file overlay with several pictures takes turns between them: each appearance (each repeat of a timed one, or the
+    /// whole entry for one shown throughout) gets one at random, never the one before it within the entry when there's a
+    /// choice. Picked from the entry's own start time, so publishing again (from a later point) never changes a programme
+    /// that's on. A variant's picture, or a variable image, shows as it is.
+    /// </summary>
+    public static IEnumerable<(Overlay Overlay, OverlayShowing Showing)> TakingTurns(
+        Overlay overlay, Overlay shown, ScheduleEntry entry, OverlayShowing showing, string seed)
+    {
+        IReadOnlyList<string> files = overlay.Files;
+        if (shown.Kind != OverlayKinds.File || files.Count < 2 || !string.IsNullOrWhiteSpace(overlay.VariableImage) || overlay.VariableImages.Count > 0
+            || shown.File is not { } current || !files.Contains(current, StringComparer.OrdinalIgnoreCase))
+        {
+            yield return (shown, showing);
+            yield break;
+        }
+
+        IReadOnlyList<OverlayShowing> appearances = OverlayTiming.EachAppearance(showing, entry) ?? [showing];
+        string? previous = null;
+        for (int index = 0; index < appearances.Count; index++)
+        {
+            List<string> choices = [.. files.Where(file => !string.Equals(file, previous, StringComparison.OrdinalIgnoreCase))];
+            var random = SchedularrTV.Core.Ordering.DeterministicRandom.FromSeedText(
+                seed, entry.Start.UtcDateTime.ToString("O", CultureInfo.InvariantCulture), index.ToString(CultureInfo.InvariantCulture));
+            string file = choices[random.Next(choices.Count)];
+            previous = file;
+
+            Overlay turn = shown.Copy();
+            turn.File = file;
+            yield return (turn, appearances[index]);
+        }
     }
 
     /// <summary>

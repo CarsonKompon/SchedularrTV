@@ -679,6 +679,37 @@
                     }
                     <p class="hint">A PNG with transparency, or a video (with an alpha channel, such as a .mov) for an animated bug.
                         @(Overlay.Variants.Count > 0 ? "Leave it empty to show only the pictures below (a rating badge with nothing for unrated shows)." : "")</p>
+
+                    @for (int moreIndex = 0; moreIndex < Overlay.MoreFiles.Count; moreIndex++)
+                    {
+                        int at = moreIndex;
+                        <div class="field"><span>Another picture or video @(at + 2)</span>
+                            <div class="row" style="gap:6px;align-items:center;">
+                                <div style="flex:1;min-width:0;">
+                                    <FilePathPicker @key="@($"more-{at}")" Value="@Overlay.MoreFiles[at]" Extensions="MediaExtensions" KeepCopyIn="@OverlayPackages.AssetCategory"
+                                                    ValueChanged="value => Set(() => { if (string.IsNullOrWhiteSpace(value)) Overlay.MoreFiles.RemoveAt(at); else Overlay.MoreFiles[at] = value; })"
+                                                    Label="picture or video" StartIn="Environment.SpecialFolder.MyPictures" />
+                                </div>
+                                <button type="button" class="btn btn-sm btn-ghost" title="Remove this picture" aria-label="@($"Remove picture {at + 2}")"
+                                        @onclick="() => Set(() => Overlay.MoreFiles.RemoveAt(at))">×</button>
+                            </div>
+                        </div>
+                        @if (Missing(Overlay.MoreFiles[at]))
+                        {
+                            <p class="hint warn">The scheduler can't find this file.</p>
+                        }
+                    }
+                    <FilePathPicker Multiple="true" ButtonText="Add pictures to take turns with…" Extensions="MediaExtensions" KeepCopyIn="@OverlayPackages.AssetCategory"
+                                    Label="pictures or videos" StartIn="Environment.SpecialFolder.MyPictures"
+                                    OnPicked="files => Set(() => AddPictures(files))" />
+                    @if (Overlay.MoreFiles.Count > 0)
+                    {
+                        <p class="hint">
+                            Each time the bug shows, one of these @(Overlay.Files.Count) pictures is picked at random: once per programme for a
+                            bug shown throughout, or for every appearance of a timed one. It's never the same picture twice in a row within
+                            a programme. A matching picture below still wins.
+                        </p>
+                    }
                 }
                 else
                 {
@@ -2273,6 +2304,22 @@
         _fonts.FirstOrDefault(font => string.Equals(font, family, StringComparison.OrdinalIgnoreCase)) ?? family;
 
     private static bool Missing(string? path) => !string.IsNullOrWhiteSpace(path) && !File.Exists(path);
+
+    // Picked pictures join the ones the bug takes turns with: the first fills an empty main picture, and repeats are left out.
+    private void AddPictures(IReadOnlyList<string> files)
+    {
+        foreach (string file in files.Where(file => !string.IsNullOrWhiteSpace(file)))
+        {
+            if (string.IsNullOrWhiteSpace(Overlay.File))
+            {
+                Overlay.File = file;
+            }
+            else if (!Overlay.Files.Contains(file, StringComparer.OrdinalIgnoreCase))
+            {
+                Overlay.MoreFiles.Add(file);
+            }
+        }
+    }
 
     private static string Label(OverlayLayer layer) => string.IsNullOrWhiteSpace(layer.Name) ? KindName(layer.Kind) : layer.Name;
 

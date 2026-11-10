@@ -153,6 +153,17 @@ public sealed class Overlay
 
     public string? File { get; set; }
 
+    /// <summary>
+    /// More pictures or videos to take turns with <see cref="File"/>: each time the overlay shows, one of them is picked at
+    /// random (never the same twice running when there's a choice). A matching <see cref="Variants"/> picture still wins.
+    /// </summary>
+    public List<string> MoreFiles { get; set; } = [];
+
+    /// <summary><see cref="File"/> and <see cref="MoreFiles"/>: every picture this overlay takes turns between.</summary>
+    [YamlDotNet.Serialization.YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<string> Files => [.. new[] { File }.Concat(MoreFiles ?? []).OfType<string>()
+        .Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase)];
+
     /// <summary>Named variable image used instead of File for a screenbug.</summary>
     public string? VariableImage { get; set; }
 
@@ -276,6 +287,7 @@ public sealed class Overlay
         var copy = (Overlay)MemberwiseClone();
         copy.Conditions = Conditions?.Copy();
         copy.Layers = [.. Layers.Select(layer => layer.Copy())];
+        copy.MoreFiles = [.. MoreFiles ?? []];
         copy.Variants = [.. Variants.Select(variant => variant.Copy())];
         copy.Schedule = Schedule?.Copy();
         // Shared images stay linked: the copy names the same ones.

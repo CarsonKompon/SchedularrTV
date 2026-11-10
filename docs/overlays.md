@@ -141,6 +141,14 @@ Use **Comes in after** and **Goes before the end** to keep text clear of a video
 
 A **file overlay** places an existing image or video at a preset position with percentage sizing and margins. **Keep inside the picture** avoids letterbox bars.
 
+**Add pictures to take turns with…** gives a file overlay several pictures or videos, and one is picked at random each time it shows. In YAML, list the extra ones under `more_files:`.
+
+- **Shown throughout:** a bug shown for the whole programme picks once per programme.
+- **Timed:** a timed bug (every few minutes, at the start, at the end) picks for each appearance, never the same picture twice in a row within a programme.
+- **Repeatable:** picks are the same each time the schedule is published, so publishing again never changes the bug on a programme that's already on.
+- **Other pictures win:** a matching variant under **Other pictures** (a holiday bug, a rating badge) still takes over.
+- **Very frequent bugs:** past 48 appearances in one programme, the bug keeps one picture for the whole programme.
+
 **Loop** is on a file overlay, each video layer, and each picture layer showing an animated GIF. It's on by default, as ErsatzTV always starts graphics videos over when they run out. Turn it off to play the video or GIF once and then keep its last frame on screen until the appearance ends. In YAML: `loop: false`.
 
 - **Editor and preview videos:** a looping video or GIF starts over; one that plays once holds its last frame.

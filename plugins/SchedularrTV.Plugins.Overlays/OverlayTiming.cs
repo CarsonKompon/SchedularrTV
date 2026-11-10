@@ -197,6 +197,56 @@ public static class OverlayTiming
         return (new OverlayShowing(video), new OverlayShowing(still));
     }
 
+    /// <summary>
+    /// Each appearance of a repeating showing on this entry as a showing of its own (timed once), so each can show
+    /// something different. Null when it doesn't repeat here (it's shown once, or throughout), or would repeat more than
+    /// <paramref name="most"/> times, when it's left as one.
+    /// </summary>
+    public static IReadOnlyList<OverlayShowing>? EachAppearance(OverlayShowing showing, ScheduleEntry entry, int most = 48)
+    {
+        long length = (long)entry.Duration.TotalMilliseconds;
+        if (showing.Timing is not { } timing || length <= 0 || timing.FrequencyMs >= length)
+        {
+            return null;
+        }
+
+        long every = Math.Max(1, timing.FrequencyMs);
+        long visible = timing.VisibleMs;
+        long first;
+        if (timing.Wall)
+        {
+            // Wall-clock cycles run from the Unix epoch: the first appearance still on as this entry starts.
+            long startMs = (entry.Start - DateTimeOffset.UnixEpoch).Ticks / TimeSpan.TicksPerMillisecond;
+            first = -(((startMs - timing.PhaseMs) % every + every) % every);
+        }
+        else
+        {
+            first = (timing.PhaseMs % every + every) % every;
+        }
+
+        List<OverlayShowing> appearances = [];
+        for (long at = first; at < length; at += every)
+        {
+            long from = Math.Max(0, at);
+            long to = Math.Min(length, at + visible);
+            if (to - from < ShortestMs)
+            {
+                continue;
+            }
+
+            if (appearances.Count == most)
+            {
+                return null;
+            }
+
+            long fade = Math.Min(timing.FadeMs, (to - from) / 3);
+            appearances.Add(new OverlayShowing(new GraphicsTiming(Wall: false, FrequencyMs: Math.Max(length + 1000, to - from + 1),
+                PhaseMs: from, FadeMs: fade, HoldMs: to - from - 2 * fade)));
+        }
+
+        return appearances;
+    }
+
     public static bool AppliesTo(Overlay overlay, ScheduleEntry entry) =>
         entry.Kind != ScheduleEntryKind.Padding && entry.Item is not null
         && (overlay.AppliesTo == OverlayAppliesTo.Everything
