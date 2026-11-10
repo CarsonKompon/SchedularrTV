@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject ConfigEditor Editor
 @inject LibraryBrowser Library
+@inject IMediaLibrary MediaLibrary
 @inject NavigationManager Nav
 
 <PageHeader Title="TV shows" Eyebrow="Library">
@@ -46,9 +47,10 @@
 <div class="library-toolbar">
     <div class="search-field">
         <Icon Name="search" Size="15" />
-        <input type="text" placeholder="Search shows, or network:abc" aria-label="Filter shows" value="@_filter"
-               @oninput="e => { _filter = e.Value?.ToString() ?? string.Empty; _limit = PageSize; }" />
+        <input type="text" placeholder="Search shows, or a query like genre:'Comedy' AND year < 1995" aria-label="Filter shows" value="@_filter"
+               @oninput="OnFilterInput" />
     </div>
+    <QueryHelpButton />
 
     <div class="segmented" aria-label="Layout">
         <button class="@(Grid ? "on" : "")" title="Poster grid" aria-pressed="@(Grid ? "true" : "false")" @onclick="@(() => SetView("grid"))"><Icon Name="grid" Size="14" /></button>
@@ -92,6 +94,16 @@
     </button>
     </div>
 </div>
+@if (_query.Mode)
+{
+    <p class="search-mode" role="status">
+        @(_query.Matches is { } matched ? $"Query: {VisibleShows.Count()} show(s) with matching episodes." : "Searching…")
+    </p>
+}
+else if (_query.Error is { } searchProblem)
+{
+    <p class="search-mode warn" role="status">Searching show names. As a query: @searchProblem</p>
+}
 
 @if (_loading)
 {
@@ -114,7 +126,7 @@ else if (!VisibleShows.Any())
         }
         else
         {
-            <button class="btn" @onclick="() => _filter = string.Empty">Clear search</button>
+            <button class="btn" @onclick="() => OnFilterInput(new ChangeEventArgs { Value = string.Empty })">Clear search</button>
         }
     </div>
 }
@@ -400,10 +412,30 @@ else
     private void SetView(string view) =>
         Nav.NavigateTo(Nav.GetUriWithQueryParameter("view", view == "grid" ? null : view), replace: true);
 
+    // A query typed into the search box: the shows with an episode it matches.
+    private readonly LibraryQuerySearch _query = new();
+
+    private async Task OnFilterInput(ChangeEventArgs e)
+    {
+        _filter = e.Value?.ToString() ?? string.Empty;
+        _limit = PageSize;
+
+        // A lone network:abc keeps finding networks by any part of their name (ABC, ABC (US), ABC Family).
+        bool networkWords = ParseFilter(_filter).Network.Length > 0;
+        await _query.UpdateAsync(networkWords ? string.Empty : _filter, MediaLibrary,
+            item => item.Kind == MediaKind.Episode && !string.IsNullOrWhiteSpace(item.SeriesName) ? item.SeriesId ?? item.SeriesName : null,
+            StateHasChanged);
+    }
+
     private IEnumerable<LibraryShow> VisibleShows
     {
         get
         {
+            if (_query.Mode)
+            {
+                return _query.Matches is { } matches ? _sort.Apply(_shows.Where(show => matches.Contains(show.Id))) : [];
+            }
+
             (string name, string network) = ParseFilter(_filter);
 
             return _sort.Apply(_shows

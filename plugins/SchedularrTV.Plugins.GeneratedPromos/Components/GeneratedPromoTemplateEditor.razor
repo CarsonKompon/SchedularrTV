@@ -169,9 +169,8 @@
         }
         <label class="field">
             <span>Only when the programme matches <span class="muted">(library query, optional)</span></span>
-            <input type="text" value="@Template.Availability?.Query" spellcheck="false"
-                   placeholder="genre:'Action'  ·  kind == 'Movie' AND year >= 1990"
-                   @onchange="SetProgrammeQuery" />
+            <QueryInput Value="@Template.Availability?.Query" Placeholder="genre:'Action'  ·  kind == 'Movie' AND year >= 1990"
+                        ValueChanged="v => SetProgrammeQuery(new ChangeEventArgs { Value = v })" />
         </label>
         @if (Template.Availability?.Query is { Length: > 0 } programmeQuery
              && !SchedularrTV.Core.Query.QueryParser.TryParse(programmeQuery, out _, out string? programmeQueryError))
@@ -2435,8 +2434,8 @@
                 }
                 <label class="field">
                     <span>Only for programmes matching (library query, optional)</span>
-                    <input type="text" value="@variant.Availability?.Query" spellcheck="false" placeholder="genre:'Action'"
-                           @onchange="e => SetVariantAvailability(variant, a => a.Query = string.IsNullOrWhiteSpace(Text(e)) ? null : Text(e).Trim())" />
+                    <QueryInput Value="@variant.Availability?.Query" Placeholder="genre:'Action'"
+                                ValueChanged="v => SetVariantAvailability(variant, a => a.Query = string.IsNullOrWhiteSpace(v) ? null : v.Trim())" />
                 </label>
                 @if (variant.Availability is not null && !GeneratedPromoEligibility.IsAvailable(variant.Availability, Preview.Now, Zone))
                 {

@@ -78,13 +78,13 @@
         <div class="grid grid-2">
             <label class="field">
                 <span>Base query</span>
-                <input type="text" value="@Commercials.BaseQuery" placeholder="tag:&quot;Commercials&quot;"
-                       @onchange="e => { Commercials.BaseQuery = Text(e); Changed.InvokeAsync(); }" />
+                <QueryInput Value="@Commercials.BaseQuery" Placeholder="tag:&quot;Commercials&quot;"
+                            ValueChanged="v => { Commercials.BaseQuery = Text(new ChangeEventArgs { Value = v }); Changed.InvokeAsync(); }" />
             </label>
             <label class="field">
                 <span>Extra filter</span>
-                <input type="text" value="@Commercials.Filter" placeholder="year >= 1990"
-                       @onchange="e => { Commercials.Filter = Text(e); Changed.InvokeAsync(); }" />
+                <QueryInput Value="@Commercials.Filter" Placeholder="year >= 1990" Scope="the filter alone, across the whole library"
+                            ValueChanged="v => { Commercials.Filter = Text(new ChangeEventArgs { Value = v }); Changed.InvokeAsync(); }" />
             </label>
         </div>
 
@@ -111,8 +111,8 @@
         <h3>Tier 3 &mdash; filler</h3>
         <label class="field">
             <span>Filler query (replaces the folder picks above)</span>
-            <input type="text" value="@Filler.Query" placeholder="tag:&quot;Bumpers&quot; OR tag:&quot;StationID&quot;"
-                   @onchange="e => { Filler.Query = Text(e); Changed.InvokeAsync(); }" />
+            <QueryInput Value="@Filler.Query" Placeholder="tag:&quot;Bumpers&quot; OR tag:&quot;StationID&quot;"
+                        ValueChanged="v => { Filler.Query = Text(new ChangeEventArgs { Value = v }); Changed.InvokeAsync(); }" />
         </label>
 
         <div class="grid grid-3">

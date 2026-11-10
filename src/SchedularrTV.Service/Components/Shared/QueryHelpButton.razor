@@ -1,0 +1,96 @@
+@* An info button that opens the query language's cheatsheet: its fields, comparisons, logic and examples. *@
+@using SchedularrTV.Core.Query
+
+<button type="button" class="btn btn-sm btn-ghost query-help-button" title="Query language cheatsheet" aria-label="Query language cheatsheet"
+        @onclick="() => _open = true">
+    <Icon Name="info" />
+</button>
+
+@if (_open)
+{
+    <div class="modal-backdrop" @onclick="() => _open = false">
+        <div class="modal query-cheatsheet" role="dialog" aria-modal="true" aria-label="Query language cheatsheet" @onclick:stopPropagation="true">
+            <div class="row" style="align-items:center;gap:12px;">
+                <h2 style="margin:0;">Query language</h2>
+                <div class="spacer"></div>
+                <button type="button" class="btn btn-sm btn-ghost" @onclick="() => _open = false">Close</button>
+            </div>
+            <p class="hint" style="margin-top:6px;">
+                A query picks items from the library: each condition is a <strong>field</strong>, a <strong>comparison</strong> and a
+                <strong>value</strong>, joined with AND, OR and NOT. Put values with spaces in quotes ('like this' or "like this").
+                Field names and keywords ignore case, and so do the values they're compared with.
+            </p>
+
+            <h3>Examples</h3>
+            <table class="media-table query-cheatsheet-examples">
+                <tbody>
+                    @foreach ((string query, string meaning) in Examples)
+                    {
+                        <tr><td><code>@query</code></td><td>@meaning</td></tr>
+                    }
+                </tbody>
+            </table>
+
+            <h3>Comparisons</h3>
+            <table class="media-table">
+                <tbody>
+                    <tr><td><code>field:value</code></td><td>Is it: one of a list field's values (tag, genre, network, collection, show), the number, or for title and plot, anywhere in the text</td></tr>
+                    <tr><td><code>==</code> <code>!=</code></td><td>Exactly this, or not this (<code>kind == 'Movie'</code>)</td></tr>
+                    <tr><td><code>&gt;</code> <code>&gt;=</code> <code>&lt;</code> <code>&lt;=</code></td><td>Numbers: season, episode, year, duration (<code>year &gt;= 1990</code>)</td></tr>
+                    <tr><td><code>CONTAINS</code></td><td>The text has this anywhere in it (<code>path CONTAINS 'Specials'</code>)</td></tr>
+                    <tr><td><code>IN [a, b]</code></td><td>Any of these (<code>genre IN ['Comedy', 'Animation']</code>)</td></tr>
+                    <tr><td><code>MATCHES</code></td><td>A regular expression (<code>title MATCHES '^The '</code>)</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Logic</h3>
+            <table class="media-table">
+                <tbody>
+                    <tr><td><code>AND</code> <span class="muted">or</span> <code>&amp;&amp;</code></td><td>Both. Two conditions side by side mean AND too</td></tr>
+                    <tr><td><code>OR</code> <span class="muted">or</span> <code>||</code></td><td>Either</td></tr>
+                    <tr><td><code>NOT</code> <span class="muted">or</span> <code>!</code></td><td>Not this (<code>NOT tag:'Holiday'</code>)</td></tr>
+                    <tr><td><code>( … )</code></td><td>Group: <code>kind == 'Movie' AND NOT (tag:'Disney' OR collection:'Pixar')</code></td></tr>
+                    <tr><td><code>*</code></td><td>Everything</td></tr>
+                </tbody>
+            </table>
+            <p class="hint">AND binds tighter than OR: <code>a OR b AND c</code> means <code>a OR (b AND c)</code>.</p>
+
+            <h3>Fields</h3>
+            <table class="media-table">
+                <thead><tr><th>Field</th><th>What it tests</th><th>Example</th></tr></thead>
+                <tbody>
+                    @foreach (QueryField field in QueryFields.All)
+                    {
+                        <tr>
+                            <td><code>@field.Name</code>@if (field.Aliases.Count > 0)
+                                {
+                                    <span class="muted"> (@string.Join(", ", field.Aliases))</span>
+                                }</td>
+                            <td>@field.Description</td>
+                            <td><code>@field.Example</code></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <p class="hint">
+                Tags written <code>name: value</code> that your media source lifts into fields of their own (Jellyfin's
+                promo_type, brand, channel…) can be tested by name too, or as <code>attr.name</code>.
+            </p>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _open;
+
+    private static readonly (string Query, string Meaning)[] Examples =
+    [
+        ("kind == 'Movie' AND NOT collection:'Disney Channel Movies'", "Movies that aren't in that collection"),
+        ("show:'Rugrats' AND season >= 2", "Rugrats from season 2 on"),
+        ("network:'Teletoon' AND kind == 'Episode'", "Episodes of shows from that network"),
+        ("genre:'Comedy' AND year >= 2000", "Comedies from 2000 on"),
+        ("title:'christmas' OR plot:'christmas'", "Anything with Christmas in its title or description"),
+        ("duration <= 900", "Fifteen minutes or shorter"),
+        ("tag:'Commercials' AND (tag:'Adult Swim' OR tag:'Any Channel')", "Ads from either of two brand folders")
+    ];
+}

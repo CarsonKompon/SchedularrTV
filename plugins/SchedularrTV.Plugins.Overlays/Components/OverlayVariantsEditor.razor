@@ -52,8 +52,8 @@
                     }
                 </div>
                 <label class="field"><span>Matches a library query <span class="muted">(optional)</span></span>
-                    <input type="text" value="@variant.Query" placeholder="show:'Rugrats' OR tag:'Halloween'" spellcheck="false"
-                           @onchange="e => Set(() => variant.Query = Text(e))" /></label>
+                    <QueryInput Value="@variant.Query" Placeholder="show:'Rugrats' OR tag:'Halloween'"
+                                ValueChanged="v => Set(() => variant.Query = Text(new ChangeEventArgs { Value = v }))" /></label>
                 @if (!string.IsNullOrWhiteSpace(variant.Query) && !SchedularrTV.Core.Query.QueryParser.TryParse(variant.Query, out _, out string? queryError))
                 {
                     <p class="hint warn">That query doesn't read: @queryError</p>

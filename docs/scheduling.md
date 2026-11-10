@@ -102,6 +102,12 @@ promo_type MATCHES 'coming_up_at_\d+pm'
 | **`:`** | Exact set membership for tags, collections, networks, and shows; substring matching for title and plot |
 | **`MATCHES`** | Regular expression with bounded execution |
 
+The info button beside any query box (and beside the TV shows and Movies search bars) opens a cheatsheet of the language: every field, comparison and logic word, with examples.
+
+The **TV shows** and **Movies** search bars take a query too. Plain words still search names (and a show's aliases). Text with a field and a comparison in it, like `genre:'Comedy' AND year < 1995`, is a query instead. On TV shows it lists every show with at least one matching episode, and on Movies every matching movie. A line under the bar says which way your text is being read, and why it fell back to a name search when it looks like a query but doesn't parse. `Star Trek: The Next Generation` stays a name search, since `Star` isn't a field. A lone `network:abc` on TV shows still matches any network with "abc" in its name.
+
+In the web UI, the eye button beside any query box shows what the query matches right now: how many items, shows and movies, their total running time, and the first 200 sorted by show, season and episode. It previews what's typed, saved or not. A filter box previews the filter on its own across the whole library, not combined with its collection.
+
 Test expressions through [**`POST /api/library/query/parse`**](rest-api.md#search-the-library). **`GET /api/metadata`** returns the editor's query vocabulary.
 
 ### Scoped search

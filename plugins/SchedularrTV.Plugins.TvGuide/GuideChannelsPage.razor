@@ -177,7 +177,8 @@
                     @if (guide.Top == TopPanel.Ads)
                     {
                         <label class="field"><span>Which commercials (a library query)</span>
-                            <input type="text" value="@guide.AdsQuery" @onchange="e => Change(() => guide.AdsQuery = Text(e))" /></label>
+                            <SchedularrTV.Service.Components.Shared.QueryInput Value="@guide.AdsQuery" Placeholder="tag:'Commercials'"
+                                ValueChanged="v => Change(() => guide.AdsQuery = Text(new ChangeEventArgs { Value = v }))" /></label>
                         <p class="hint">MP4 and WebM files play, shuffled and looping. For their sound, choose <em>The top panel's sound</em> below.</p>
                     }
                     @if (guide.Top == TopPanel.Channel)

@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject ConfigEditor Editor
 @inject LibraryBrowser Library
+@inject IMediaLibrary MediaLibrary
 @inject NavigationManager Nav
 
 <PageHeader Title="Movies" Eyebrow="Library">
@@ -28,9 +29,10 @@
 <div class="library-toolbar">
     <div class="search-field">
         <Icon Name="search" Size="15" />
-        <input type="text" placeholder="Search movies" aria-label="Filter movies" value="@_filter"
-               @oninput="e => { _filter = e.Value?.ToString() ?? string.Empty; _limit = PageSize; }" />
+        <input type="text" placeholder="Search movies, or a query like genre:'Horror' AND year < 1990" aria-label="Filter movies" value="@_filter"
+               @oninput="OnFilterInput" />
     </div>
+    <QueryHelpButton />
 
     <div class="segmented" aria-label="Layout">
         <button class="@(Grid ? "on" : "")" title="Poster grid" aria-pressed="@(Grid ? "true" : "false")" @onclick="@(() => SetView("grid"))"><Icon Name="grid" Size="14" /></button>
@@ -72,6 +74,16 @@
     </button>
     </div>
 </div>
+@if (_query.Mode)
+{
+    <p class="search-mode" role="status">
+        @(_query.Matches is not null ? $"Query: {Visible.Count()} matching movie(s)." : "Searching…")
+    </p>
+}
+else if (_query.Error is { } searchProblem)
+{
+    <p class="search-mode warn" role="status">Searching titles. As a query: @searchProblem</p>
+}
 
 @if (_loading)
 {
@@ -94,7 +106,7 @@ else if (!Visible.Any())
         }
         else
         {
-            <button class="btn" @onclick="() => _filter = string.Empty">Clear search</button>
+            <button class="btn" @onclick="() => OnFilterInput(new ChangeEventArgs { Value = string.Empty })">Clear search</button>
         }
     </div>
 }
@@ -316,9 +328,23 @@ else
     private void SetView(string view) =>
         Nav.NavigateTo(Nav.GetUriWithQueryParameter("view", view == "grid" ? null : view), replace: true);
 
-    private IEnumerable<LibraryMovie> Visible => _sort.Apply(_filter.Length == 0
-        ? _movies
-        : _movies.Where(m => m.Title.Contains(_filter, StringComparison.OrdinalIgnoreCase)));
+    // A query typed into the search box: the movies it matches (by id, or title for a movie with several versions).
+    private readonly LibraryQuerySearch _query = new();
+
+    private async Task OnFilterInput(ChangeEventArgs e)
+    {
+        _filter = e.Value?.ToString() ?? string.Empty;
+        _limit = PageSize;
+        await _query.UpdateAsync(_filter, MediaLibrary,
+            item => item.Kind == MediaKind.Movie ? item.Title : null,
+            StateHasChanged, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private IEnumerable<LibraryMovie> Visible => _query.Mode
+        ? _query.Matches is { } matches ? _sort.Apply(_movies.Where(m => matches.Contains(m.Title))) : []
+        : _sort.Apply(_filter.Length == 0
+            ? _movies
+            : _movies.Where(m => m.Title.Contains(_filter, StringComparison.OrdinalIgnoreCase)));
 
     private void Toggle(string title)
     {

@@ -115,8 +115,8 @@
             <div class="grid grid-3">
                 <label class="field">
                     <span>Base query</span>
-                    <input type="text" value="@Config.BaseQuery" placeholder="tag:&quot;Promo&quot;"
-                           @onchange="e => { Config.BaseQuery = Text(e); Changed.InvokeAsync(); }" />
+                    <QueryInput Value="@Config.BaseQuery" Placeholder="tag:&quot;Promo&quot;"
+                                ValueChanged="v => { Config.BaseQuery = Text(new ChangeEventArgs { Value = v }); Changed.InvokeAsync(); }" />
                 </label>
                 <DurationInput Label="Look ahead" Value="Config.Lookahead"
                                ValueChanged="v => { Config.Lookahead = v ?? TimeSpan.FromHours(12); Changed.InvokeAsync(); }" />

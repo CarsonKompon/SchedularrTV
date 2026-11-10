@@ -48,8 +48,8 @@
             <option value="@OverlayAiring.Movie">A movie</option>
         </select></label>
     <label class="field"><span>The programme matches <span class="muted">(library query, optional)</span></span>
-        <input type="text" value="@Conditions?.Query" placeholder="genre:'Comedy'" spellcheck="false"
-               @onchange="e => Set(() => Edit().Query = Empty(e))" /></label>
+        <QueryInput Value="@Conditions?.Query" Placeholder="genre:'Comedy'" Scope="what in the library it matches; it's checked against each programme"
+                    ValueChanged="v => Set(() => Edit().Query = Empty(new ChangeEventArgs { Value = v }))" /></label>
 </div>
 <div class="field">
     <span>Only on these shows <span class="muted">(any of; none means any show)</span></span>

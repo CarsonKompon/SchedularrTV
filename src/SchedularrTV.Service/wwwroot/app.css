@@ -364,6 +364,23 @@ select {
 }
 select option { background: var(--panel-2); color: var(--text); }
 textarea { font-family: var(--mono); font-size: 12.5px; line-height: 1.6; resize: vertical; }
+/* A query box with its preview (eye) button at the right. */
+.query-input { display: flex; gap: 6px; align-items: center; width: 100%; }
+.query-input > input { flex: 1; min-width: 0; }
+.query-input .query-preview-button, .query-help-button { flex: none; padding: 6px 8px; }
+.modal.query-cheatsheet { width: min(860px, 94vw); max-height: 88vh; overflow: auto; }
+.modal.query-cheatsheet h3 { margin: 16px 0 6px; }
+.modal.query-cheatsheet td { vertical-align: top; }
+.modal.query-cheatsheet td:first-child { white-space: nowrap; }
+.query-cheatsheet-examples td:first-child { white-space: normal; width: 55%; }
+/* A library search box that also takes queries: what it's reading the text as. */
+.search-mode { font-size: 12px; color: var(--muted); margin: 4px 0 0 2px; }
+.search-mode.warn { color: var(--warn, #e0b25c); }
+.modal.query-preview { width: min(900px, 94vw); }
+.query-preview-summary { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 10px; }
+.query-preview-list { max-height: min(60vh, 560px); overflow: auto; border-radius: var(--r-lg); }
+.query-preview-list td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+
 /* Canvas text layers' text reads as text, not code. */
 textarea.multiline-text { font-family: inherit; font-size: 13.5px; line-height: 1.45; min-height: 0; }
 input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; cursor: pointer; flex: none; }

@@ -243,8 +243,8 @@
             <h3>What plays</h3>
             <label class="field">
                 <span>Holiday episodes</span>
-                <input type="text" value="@holiday.Query" placeholder="plot:'christmas' OR plot:'xmas'"
-                       @onchange="e => Set(() => holiday.Query = Text(e))" />
+                <QueryInput Value="@holiday.Query" Placeholder="plot:'christmas' OR plot:'xmas'"
+                            ValueChanged="v => Set(() => holiday.Query = Text(new ChangeEventArgs { Value = v }))" />
             </label>
             <p class="hint">
                 A query in the library query language, e.g. <code>plot:'christmas' OR plot:'xmas'</code> &middot;

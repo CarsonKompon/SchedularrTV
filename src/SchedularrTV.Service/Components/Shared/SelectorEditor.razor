@@ -103,8 +103,8 @@
     {
         <label class="field">
             <span>Query</span>
-            <input type="text" value="@Selector.Query" placeholder="kind == 'Episode' AND duration >= 600"
-                   @onchange="OnQueryChanged" />
+            <QueryInput Value="@Selector.Query" Placeholder="kind == 'Episode' AND duration >= 600"
+                        ValueChanged="v => OnQueryChanged(new ChangeEventArgs { Value = v })" />
         </label>
         <p class="hint">e.g. <code>show:'Rugrats'</code> &middot; <code>network:'Teletoon'</code> &middot; <code>kind == 'Movie' AND year &lt; 1990</code></p>
     }
@@ -118,8 +118,8 @@
 
         <label class="field">
             <span>Filter (extra condition)</span>
-            <input type="text" value="@Selector.Filter" placeholder="plot CONTAINS 'christmas'"
-                   @onchange="OnFilterChanged" />
+            <QueryInput Value="@Selector.Filter" Placeholder="plot CONTAINS 'christmas'" Scope="the filter alone, across the whole library"
+                        ValueChanged="v => OnFilterChanged(new ChangeEventArgs { Value = v })" />
         </label>
 
         <label class="field">

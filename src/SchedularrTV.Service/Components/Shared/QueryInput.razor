@@ -1,0 +1,181 @@
+@* A library query's text box, with an eye button beside it that shows what the query matches (in a popup). *@
+@using SchedularrTV.Core.Query
+@inject IMediaLibrary Library
+
+<div class="query-input @Class">
+    <input type="text" value="@_typed" placeholder="@Placeholder" spellcheck="false" aria-label="@AriaLabel" disabled="@Disabled"
+           @oninput="e => _typed = e.Value?.ToString() ?? string.Empty" @onchange="OnChange" />
+    <button type="button" class="btn btn-sm btn-ghost query-preview-button" title="Preview what this query matches"
+            aria-label="Preview what this query matches" disabled="@(Disabled || string.IsNullOrWhiteSpace(_typed))" @onclick="OpenAsync">
+        <Icon Name="eye" />
+    </button>
+    <QueryHelpButton />
+</div>
+
+@if (_open)
+{
+    <div class="modal-backdrop" @onclick="Close">
+        <div class="modal query-preview" role="dialog" aria-modal="true" aria-label="Query preview" @onclick:stopPropagation="true">
+            <div class="row" style="align-items:center;gap:12px;">
+                <h2 style="margin:0;">What this matches</h2>
+                <div class="spacer"></div>
+                <button type="button" class="btn btn-sm btn-ghost" @onclick="Close">Close</button>
+            </div>
+            <p class="hint" style="margin-top:6px;"><code>@_previewed</code>@(Scope is { Length: > 0 } scope ? $"  ·  {scope}" : string.Empty)</p>
+
+            @if (_error is { } error)
+            {
+                <p class="hint warn">@error</p>
+            }
+            else if (_results is null)
+            {
+                <p class="hint">Searching the library…</p>
+            }
+            else if (_results.Count == 0)
+            {
+                <p class="hint">Nothing in the library matches.</p>
+            }
+            else
+            {
+                <div class="query-preview-summary">
+                    <span class="pill pill-accent">@_results.Count.ToString("N0") item(s)</span>
+                    @if (_shows > 0)
+                    {
+                        <span class="pill">@_shows.ToString("N0") show(s)</span>
+                    }
+                    @if (_movies > 0)
+                    {
+                        <span class="pill">@_movies.ToString("N0") movie(s)</span>
+                    }
+                    <span class="pill">@Runtime(_total) in all</span>
+                </div>
+                <div class="query-preview-list">
+                    <table class="media-table">
+                        <thead><tr><th>Title</th><th>Show / kind</th><th>Episode</th><th>Year</th><th>Length</th></tr></thead>
+                        <tbody>
+                            @foreach (MediaItem item in _results.Take(Shown))
+                            {
+                                <tr>
+                                    <td>@item.Title</td>
+                                    <td>@(item.SeriesName ?? item.Kind.ToString())</td>
+                                    <td>@Number(item)</td>
+                                    <td>@(item.PremiereDate?.Year.ToString() ?? item.SeriesYear?.ToString() ?? "")</td>
+                                    <td>@Runtime(item.Duration)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (_results.Count > Shown)
+                {
+                    <p class="hint">Showing the first @Shown.ToString("N0") of @_results.Count.ToString("N0").</p>
+                }
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Value { get; set; }
+
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+
+    [Parameter] public string? Placeholder { get; set; }
+
+    [Parameter] public string? AriaLabel { get; set; } = "Query";
+
+    [Parameter] public string? Class { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    /// <summary>A note shown under the query in the preview, e.g. that it's an extra condition on a collection.</summary>
+    [Parameter] public string? Scope { get; set; } = "searched across the whole library";
+
+    private const int Shown = 200;
+
+    private string _typed = string.Empty;
+    private string? _lastValue;
+    private bool _open;
+    private string _previewed = string.Empty;
+    private string? _error;
+    private List<MediaItem>? _results;
+    private int _shows;
+    private int _movies;
+    private TimeSpan _total;
+    private int _version;
+
+    protected override void OnParametersSet()
+    {
+        // Shown as given, unless that's just what was typed coming back.
+        if (!string.Equals(Value, _lastValue, StringComparison.Ordinal))
+        {
+            _typed = Value ?? string.Empty;
+            _lastValue = Value;
+        }
+    }
+
+    private async Task OnChange(ChangeEventArgs e)
+    {
+        _typed = e.Value?.ToString() ?? string.Empty;
+        _lastValue = _typed;
+        await ValueChanged.InvokeAsync(_typed);
+    }
+
+    // What's in the box right now, saved or not.
+    private async Task OpenAsync()
+    {
+        int version = ++_version;
+        _open = true;
+        _previewed = _typed.Trim();
+        _error = null;
+        _results = null;
+
+        if (!QueryParser.TryParse(_previewed, out QueryExpression expression, out string? problem))
+        {
+            _error = $"That query doesn't read: {problem}";
+            return;
+        }
+
+        try
+        {
+            IReadOnlyList<MediaItem> found = await Library.SearchAsync(expression);
+            if (version != _version)
+            {
+                return;
+            }
+
+            _results = [.. found
+                .OrderBy(item => item.SeriesName ?? item.Title, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(item => item.SeasonNumber ?? 0)
+                .ThenBy(item => item.EpisodeNumber ?? 0)
+                .ThenBy(item => item.Title, StringComparer.OrdinalIgnoreCase)];
+            _shows = _results.Where(item => item.SeriesName is { Length: > 0 }).Select(item => item.SeriesName!).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            _movies = _results.Count(item => item.Kind == MediaKind.Movie);
+            _total = TimeSpan.FromTicks(_results.Sum(item => item.Duration.Ticks));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (version == _version)
+            {
+                _error = $"Couldn't search the library: {ex.Message}";
+            }
+        }
+    }
+
+    private void Close()
+    {
+        _version++;
+        _open = false;
+        _results = null;
+    }
+
+    private static string Number(MediaItem item) =>
+        item.SeasonNumber is { } season && item.EpisodeNumber is { } episode ? $"S{season:D2}E{episode:D2}"
+        : item.EpisodeNumber is { } only ? $"E{only:D2}"
+        : string.Empty;
+
+    private static string Runtime(TimeSpan length) =>
+        length.TotalHours >= 1 ? $"{(int)length.TotalHours}h {length.Minutes:D2}m"
+        : length.TotalMinutes >= 1 ? $"{length.Minutes}m {length.Seconds:D2}s"
+        : $"{length.Seconds}s";
+}
