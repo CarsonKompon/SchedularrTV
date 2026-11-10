@@ -121,31 +121,64 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
             return null;
         }
 
+        // The spot's own clips first; its stand-ins (an ad break's bumpers) only when they've nothing that fits.
+        MediaItem? pick = await ChooseSpotAsync(spot, spot.Folders, matchByType: true, spot.Varied, showIds, at, available, isNew, isMovie, cancellationToken)
+            .ConfigureAwait(false);
+        if (pick is null && spot.FallbackFolders is { Count: > 0 } instead)
+        {
+            pick = await ChooseSpotAsync(spot, instead, matchByType: false, varied: true, showIds, at, available, isNew, isMovie, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return pick;
+    }
+
+    private async ValueTask<MediaItem?> ChooseSpotAsync(
+        PromoSpotConfig spot,
+        IReadOnlyList<PromoFolderSource>? folders,
+        bool matchByType,
+        bool varied,
+        IReadOnlyList<string> showIds,
+        DateTimeOffset at,
+        TimeSpan available,
+        bool isNew,
+        bool isMovie,
+        CancellationToken cancellationToken)
+    {
         // Clips from an ad break's folders, plus any matched by type or tag (the older way, which ad breaks keep too).
         List<MediaItem> matches = [];
-        if (spot.Folders is { } folders)
+        if (folders is not null)
         {
             matches.AddRange(await FolderMatchesAsync(folders, showIds, at, cancellationToken, isMovie: isMovie).ConfigureAwait(false));
         }
 
-        QueryExpression expression = InterstitialQueryBuilder.BuildSpot(config, spot, showIds, baseTags);
-        if (expression is not NoneExpression)
+        if (matchByType)
         {
-            matches.AddRange(Unseen(matches, await session.SearchAsync(expression, cancellationToken).ConfigureAwait(false)));
+            QueryExpression expression = InterstitialQueryBuilder.BuildSpot(config, spot, showIds, baseTags);
+            if (expression is not NoneExpression)
+            {
+                matches.AddRange(Unseen(matches, await session.SearchAsync(expression, cancellationToken).ConfigureAwait(false)));
+            }
         }
 
         // Of what fits: clips for the programme itself, else (for a movie) "any movie" ones, else "any show" ones.
         List<MediaItem> fitting = [.. BestTier(ClockMatches(matches, at, honourClock: true)
-            .Where(m => m.Duration > TimeSpan.Zero && m.Duration <= available), isMovie, spot.Folders)];
+            .Where(m => m.Duration > TimeSpan.Zero && m.Duration <= available), isMovie, folders)];
 
         // Clips made for new episodes only play for one, and win when it is.
         List<MediaItem> fresh = [.. fitting.Where(AdBreakCompiler.IsNewEpisodeClip)];
-        IEnumerable<MediaItem> eligible = isNew && fresh.Count > 0 ? fresh : fitting.Where(m => !AdBreakCompiler.IsNewEpisodeClip(m));
+        List<MediaItem> eligible = [.. (isNew && fresh.Count > 0 ? fresh : fitting.Where(m => !AdBreakCompiler.IsNewEpisodeClip(m)))
+            .OrderBy(m => m.SortKey, StringComparer.Ordinal)];
+        if (eligible.Count == 0)
+        {
+            return null;
+        }
 
-        return eligible
-            .OrderByDescending(m => m.Duration)
-            .ThenBy(m => m.SortKey, StringComparer.Ordinal)
-            .FirstOrDefault();
+        // Mixed-in clips take turns: one at random (the same each time this break is planned). Otherwise the longest
+        // that fits, so the break carries as much as it can.
+        return varied
+            ? eligible[DeterministicRandom.FromSeedText($"{at.UtcDateTime:O}|{string.Join('|', showIds)}", "promo-spot").Next(eligible.Count)]
+            : eligible.OrderByDescending(m => m.Duration).First();
     }
 
     /// <summary>

@@ -38,6 +38,19 @@ public enum BumperPlacement
     End
 }
 
+/// <summary>Whether an ad break's bumpers stand in as a promo spot's "any show" clips.</summary>
+public enum BumperPromoUse
+{
+    /// <summary>Bumpers are only bumpers.</summary>
+    Off,
+
+    /// <summary>Used when the spot has no promo of its own to play (none in its folders, or none that fits).</summary>
+    WhenNoPromo,
+
+    /// <summary>Mixed in with the spot's "any show" promos, picked among them at random.</summary>
+    Mixed
+}
+
 /// <summary>The kinds of promo an ad break can draw from a folder.</summary>
 public enum AdPromoType
 {
@@ -176,6 +189,17 @@ public sealed class AdBreakConfig
     public bool Seasonal { get; set; }
 
     public BumperPlacement BumperPlacement { get; set; } = BumperPlacement.Mixed;
+
+    /// <summary>
+    /// The ad break's bumpers as "Now Playing" clips for any show: when it has no Now Playing promo, or mixed in with its
+    /// "any show" ones. Only bumpers for the time of year play (seasonal folders count whatever <see cref="Seasonal"/> says),
+    /// and a clip made for the show still comes first.
+    /// </summary>
+    /// <remarks>Null is <see cref="BumperPromoUse.Off"/> (and keeps it out of the schedule file).</remarks>
+    public BumperPromoUse? BumpersAsNowPlaying { get; set; }
+
+    /// <summary>The ad break's bumpers as "This Has Been" clips for any show, the same way as <see cref="BumpersAsNowPlaying"/>.</summary>
+    public BumperPromoUse? BumpersAsThisHasBeen { get; set; }
 
     public List<AdBreakPromo> Promos { get; set; } = [];
 

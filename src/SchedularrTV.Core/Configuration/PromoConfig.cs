@@ -179,6 +179,22 @@ public sealed class PromoSpotConfig
     [YamlDotNet.Serialization.YamlIgnore]
     [System.Text.Json.Serialization.JsonIgnore]
     public IReadOnlyList<PromoFolderSource>? Folders { get; set; }
+
+    /// <summary>
+    /// Set from an ad break: folders used only when <see cref="Folders"/> (and type matching) have nothing that fits, such
+    /// as its bumpers standing in for a missing Now Playing. Never written.
+    /// </summary>
+    [YamlDotNet.Serialization.YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<PromoFolderSource>? FallbackFolders { get; set; }
+
+    /// <summary>
+    /// Set from an ad break: pick a fitting clip at random (the same each time a break is planned) rather than the longest,
+    /// so clips mixed in (bumpers among the "any show" promos) take turns. Never written.
+    /// </summary>
+    [YamlDotNet.Serialization.YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool Varied { get; set; }
 }
 
 public enum UpNextPlacement

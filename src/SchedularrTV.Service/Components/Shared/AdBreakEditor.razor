@@ -130,6 +130,32 @@
                 </select>
             </label>
 
+            <div class="grid grid-2">
+                <label class="field" title="Bumpers stand in as &quot;Now Playing&quot; promos for any show, last thing before a show starts">
+                    <span>Bumpers as "Now Playing"</span>
+                    <select value="@(AdBreak.BumpersAsNowPlaying ?? BumperPromoUse.Off)"
+                            @onchange="e => { AdBreak.BumpersAsNowPlaying = BumperUse(e); return Notify(); }">
+                        <option value="@BumperPromoUse.Off">No</option>
+                        <option value="@BumperPromoUse.WhenNoPromo">When there's no promo</option>
+                        <option value="@BumperPromoUse.Mixed">Mixed in with the promos</option>
+                    </select>
+                </label>
+                <label class="field" title="Bumpers stand in as &quot;This Has Been&quot; promos for any show, first thing after a show ends">
+                    <span>Bumpers as "This Has Been"</span>
+                    <select value="@(AdBreak.BumpersAsThisHasBeen ?? BumperPromoUse.Off)"
+                            @onchange="e => { AdBreak.BumpersAsThisHasBeen = BumperUse(e); return Notify(); }">
+                        <option value="@BumperPromoUse.Off">No</option>
+                        <option value="@BumperPromoUse.WhenNoPromo">When there's no promo</option>
+                        <option value="@BumperPromoUse.Mixed">Mixed in with the promos</option>
+                    </select>
+                </label>
+            </div>
+            <p class="hint">
+                Bumpers for the time of year (a <code>Christmas</code> folder in December, anything outside a dated folder all
+                year) can play as these promos for any show. A promo made for the show still comes first. Mixed in, they take
+                turns with your "any show" promos.
+            </p>
+
             <details>
                 <summary class="ab-advanced">Advanced</summary>
                 <div class="grid grid-2">
@@ -709,6 +735,10 @@
             .OrderBy(channel => channel.Number)
             .Select(channel => ($"{channel.Number} · {channel.Name}", $"channels/{Uri.EscapeDataString(channel.Id)}?tab=breaks"))
     ];
+
+    // Off is kept as null, so ad breaks that don't use it don't say so in the schedule file.
+    private static BumperPromoUse? BumperUse(ChangeEventArgs e) =>
+        Enum.TryParse(e.Value?.ToString(), out BumperPromoUse use) && use != BumperPromoUse.Off ? use : null;
 
     private static string? Text(ChangeEventArgs e) =>
         string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString()!.Trim();

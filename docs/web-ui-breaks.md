@@ -25,6 +25,20 @@ Folders inside a chosen folder follow along unless you pick otherwise. Folders n
 
 6. Select **Save changes**.
 
+### Bumpers as Now Playing and This Has Been
+
+Under **Settings**, **Bumpers as "Now Playing"** and **Bumpers as "This Has Been"** let the ad break's bumpers stand in as those promos for any show. In YAML they're `bumpers_as_now_playing` and `bumpers_as_this_has_been`.
+
+| Choice | YAML | What happens |
+| --- | --- | --- |
+| **No** | (left out) | Bumpers are only bumpers |
+| **When there's no promo** | `when_no_promo` | A bumper plays in the spot when it has no promo that fits, whether that's none for the show, none for any show, or none short enough |
+| **Mixed in with the promos** | `mixed` | Bumpers join the spot's "any show" promos, and one is picked at random each break so they take turns |
+
+- **Time of year:** only seasonal bumpers play. A `Christmas` or `December` folder's bumpers only play then, and bumpers outside such folders play all year, whether or not **Seasonal folders** is ticked.
+- **Show promos first:** a promo made for the show (in its own show folder) still comes first.
+- **Folder layout:** folders inside the bumpers folder aren't read as shows, so `Bumpers/Station/ident.mp4` counts for any show.
+
 On the **Ad Breaks** list, each ad break has **Edit**, **Rename** and delete buttons, and the same three on right-click. **Rename** opens a popup; channels, blocks and the default ad breaks that use it switch to the new name.
 
 ## Open and close a block

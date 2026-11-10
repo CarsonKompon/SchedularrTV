@@ -153,10 +153,39 @@ public static class AdBreakCompiler
         AdBreakTagRules? tagged = adBreaks.Select(adBreak => adBreak.TagRules).FirstOrDefault(rules => rules?.Promos is not null);
         PromoConfig? tagPromos = tagged?.Promos;
 
-        PromoSpotConfig Spot(AdPromoType type, PromoSpotConfig fallback, PromoSpotConfig? byTag)
+        PromoSpotConfig Spot(AdPromoType type, PromoSpotConfig fallback, PromoSpotConfig? byTag, Func<AdBreakConfig, BumperPromoUse?>? bumpers = null)
         {
             var matching = promos.Where(entry => entry.Type == type).ToList();
             AdBreakPromo? first = matching.Select(entry => entry.Options).FirstOrDefault(options => options is not null);
+
+            // Bumpers standing in as this spot's "any show" clips: mixed in with its folders, or kept for when they've
+            // nothing to play.
+            List<PromoFolderSource> folders = [.. matching.Select(entry => entry.Source)];
+            List<PromoFolderSource> instead = [];
+            bool mixed = false;
+            foreach (AdBreakConfig adBreak in adBreaks)
+            {
+                BumperPromoUse use = bumpers?.Invoke(adBreak) ?? BumperPromoUse.Off;
+                if (use == BumperPromoUse.Off)
+                {
+                    continue;
+                }
+
+                foreach (AdBreakFolder folder in adBreak.Folders.Where(folder => folder.Role == AdFolderRole.Bumpers))
+                {
+                    PromoFolderSource source = BumperFolder(adBreak, folder, temporal);
+                    if (use == BumperPromoUse.Mixed)
+                    {
+                        folders.Add(source);
+                        mixed = true;
+                    }
+                    else
+                    {
+                        instead.Add(source);
+                    }
+                }
+            }
+
             return new PromoSpotConfig
             {
                 Enabled = byTag?.Enabled ?? true,
@@ -164,7 +193,9 @@ public static class AdBreakCompiler
                 Tag = byTag?.Tag ?? string.Empty,
                 SkipWhenSameSeries = first?.SkipWhenSameSeries ?? byTag?.SkipWhenSameSeries ?? fallback.SkipWhenSameSeries,
                 Placement = first?.Placement ?? byTag?.Placement ?? fallback.Placement,
-                Folders = [.. matching.Select(entry => entry.Source)]
+                Folders = folders,
+                FallbackFolders = instead.Count > 0 ? instead : null,
+                Varied = mixed
             };
         }
 
@@ -214,8 +245,8 @@ public static class AdBreakCompiler
             MaxPerBreak = adBreaks.Select(adBreak => adBreak.MaxPromosPerBreak).FirstOrDefault(value => value is not null) ?? fallbacks.MaxPerBreak,
             Windows = windows,
             UpNext = Spot(AdPromoType.UpNext, defaults.UpNext, tagPromos?.UpNext),
-            NowPlaying = Spot(AdPromoType.NowPlaying, defaults.NowPlaying, tagPromos?.NowPlaying),
-            ThisHasBeen = Spot(AdPromoType.ThisHasBeen, defaults.ThisHasBeen, tagPromos?.ThisHasBeen),
+            NowPlaying = Spot(AdPromoType.NowPlaying, defaults.NowPlaying, tagPromos?.NowPlaying, adBreak => adBreak.BumpersAsNowPlaying),
+            ThisHasBeen = Spot(AdPromoType.ThisHasBeen, defaults.ThisHasBeen, tagPromos?.ThisHasBeen, adBreak => adBreak.BumpersAsThisHasBeen),
             YoureWatching = Spot(AdPromoType.YoureWatching, defaults.YoureWatching, tagPromos?.YoureWatching),
             BackToTheShow = Spot(AdPromoType.BackToTheShow, defaults.BackToTheShow, tagPromos?.BackToTheShow),
             Eventually = new EventuallyConfig
@@ -239,6 +270,21 @@ public static class AdBreakCompiler
         promo.Days,
         adBreak.AnyShowFolder ?? AdBreakConfig.DefaultAnyShowFolder,
         Seasonal: adBreak.Seasonal ? temporal : null,
+        AnyMovieFolder: adBreak.AnyMovieFolder);
+
+    /// <summary>
+    /// A bumper folder read as promos for any show: no show, day or start-time folders, and always seasonal, so only the
+    /// bumpers for the time of year play (a <c>Christmas</c> folder in December, everything outside such folders always).
+    /// </summary>
+    private static PromoFolderSource BumperFolder(AdBreakConfig adBreak, AdBreakFolder folder, TemporalTagOptions temporal) => new(
+        folder.Path,
+        Excluded(adBreak, folder.Path, AdFolderRole.Bumpers),
+        PerShow: false,
+        AnyShow: true,
+        Times: false,
+        Days: false,
+        adBreak.AnyShowFolder ?? AdBreakConfig.DefaultAnyShowFolder,
+        Seasonal: temporal,
         AnyMovieFolder: adBreak.AnyMovieFolder);
 
     private static PromoFolderSource RootFolder(AdBreakConfig adBreak, AdBreakPromoRoot root, AdPromoType type, TemporalTagOptions temporal) => new(
