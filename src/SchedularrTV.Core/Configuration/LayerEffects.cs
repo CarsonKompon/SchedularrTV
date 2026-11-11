@@ -10,7 +10,13 @@ public enum LayerEffectKind
     Shadow,
 
     /// <summary>A soft halo all the way around everything drawn so far.</summary>
-    Glow
+    Glow,
+
+    /// <summary>
+    /// Raised edges inside everything drawn so far: lit on the side facing the light, shaded on the other, so it looks
+    /// bevelled, 3D or metallic.
+    /// </summary>
+    Emboss
 }
 
 /// <summary>
@@ -32,14 +38,21 @@ public sealed class LayerEffect
     /// <summary>0 to 100.</summary>
     public double Opacity { get; set; } = 100;
 
-    /// <summary>An outline's thickness, in pixels.</summary>
+    /// <summary>An outline's thickness, or how far in an emboss's bevel reaches, in pixels.</summary>
     public double Width { get; set; } = 4;
 
-    /// <summary>How far a shadow falls, in pixels.</summary>
+    /// <summary>How far a shadow falls, or how deep an emboss looks, in pixels.</summary>
     public double Distance { get; set; } = 6;
 
-    /// <summary>Which way a shadow falls, in degrees: 90 straight down, 0 to the right, 135 down and to the left.</summary>
+    /// <summary>
+    /// Which way a shadow falls, in degrees: 90 straight down, 0 to the right, 135 down and to the left. For an emboss,
+    /// where the light comes from, the same way round: 270 from above, 225 from the top left.
+    /// </summary>
     public double Angle { get; set; } = 90;
+
+    /// <summary>An emboss's shaded side, as #rrggbb (<see cref="Color"/> is its lit side).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? ShadeColor { get; set; }
 
     /// <summary>How soft a shadow or glow is, in pixels (0 is sharp).</summary>
     public double Blur { get; set; } = 6;
@@ -54,6 +67,7 @@ public sealed class LayerEffect
     {
         LayerEffectKind.Outline => new LayerEffect { Kind = kind, Width = 4, Opacity = 100 },
         LayerEffectKind.Shadow => new LayerEffect { Kind = kind, Opacity = 63, Distance = 6, Angle = 90, Blur = 6 },
+        LayerEffectKind.Emboss => new LayerEffect { Kind = kind, Color = "#ffffff", ShadeColor = "#000000", Opacity = 75, Width = 4, Distance = 3, Angle = 225 },
         _ => new LayerEffect { Kind = kind, Color = "#ffffff", Opacity = 80, Blur = 12 }
     };
 
@@ -61,6 +75,7 @@ public sealed class LayerEffect
     {
         LayerEffectKind.Outline => "Outline",
         LayerEffectKind.Shadow => "Drop shadow",
+        LayerEffectKind.Emboss => "Emboss",
         _ => "Glow"
     };
 }

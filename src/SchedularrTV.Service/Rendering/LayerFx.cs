@@ -67,6 +67,7 @@ public static class LayerFx
                     LayerEffectKind.Outline => Outline(effect, current, scale, pixels, made),
                     LayerEffectKind.Shadow => Shadow(effect, current, scale, turned),
                     LayerEffectKind.Glow => Glow(effect, current, scale),
+                    LayerEffectKind.Emboss => Emboss(effect, current, scale, turned, made),
                     _ => null
                 };
                 if (next is not null)
@@ -95,6 +96,8 @@ public static class LayerFx
             {
                 LayerEffectKind.Outline => Size(effect.Width, 200) + 2,
                 LayerEffectKind.Shadow => Size(effect.Distance, 500) + 3 * Size(effect.Blur, 200) + 2,
+                // Inside what's there: it reaches no further out.
+                LayerEffectKind.Emboss => 0,
                 _ => 3 * Size(effect.Blur, 200) + 2
             };
         }
@@ -109,6 +112,7 @@ public static class LayerFx
             {
                 LayerEffectKind.Outline => Join("o", effect.Color, effect.Opacity, effect.Width),
                 LayerEffectKind.Shadow => Join("s", effect.Color, effect.Opacity, effect.Distance, effect.Angle, effect.Blur),
+                LayerEffectKind.Emboss => Join("e", $"{effect.Color}/{effect.ShadeColor}", effect.Opacity, effect.Width, effect.Distance, effect.Angle),
                 _ => Join("g", effect.Color, effect.Opacity, effect.Blur)
             }))
             : null;
@@ -213,6 +217,64 @@ public static class LayerFx
         float sigma = (float)Size(effect.Blur, 200) * scale;
         return SKImageFilter.CreateDropShadow((float)(distance * Math.Cos(radians)), (float)(distance * Math.Sin(radians)), sigma, sigma,
             TextEffects.Colour(effect.Color, effect.Opacity), input);
+    }
+
+    // How strongly an emboss's slopes light up: the softened edge's change over the depth, made bright enough to read.
+    private const float EmbossGain = 3f;
+
+    /// <summary>
+    /// A bevel inside what's there: its edges softened (by half the size) into a slope, and wherever the slope faces the
+    /// light it's lit in <see cref="LayerEffect.Color"/>, and wherever it faces away it's shaded in
+    /// <see cref="LayerEffect.ShadeColor"/>, both kept within the shape and laid over it.
+    /// </summary>
+    private static SKImageFilter? Emboss(LayerEffect effect, SKImageFilter? input, float scale, float turned, List<SKImageFilter> made)
+    {
+        float size = (float)Size(effect.Width, 200) * scale;
+        float depth = Math.Max(0.5f * scale, (float)Size(effect.Distance, 200) * scale);
+        float opacity = (float)(Math.Clamp(effect.Opacity, 0, 100) / 100);
+        if (opacity <= 0)
+        {
+            return null;
+        }
+
+        SKImageFilter Keep(SKImageFilter filter)
+        {
+            made.Add(filter);
+            return filter;
+        }
+
+        float sigma = Math.Max(0.3f, size / 2);
+        // Towards the light, set on screen (the canvas's turn here undone, as for shadows).
+        double radians = (effect.Angle - turned) * Math.PI / 180;
+        float towardX = (float)(Math.Cos(radians) * depth);
+        float towardY = (float)(Math.Sin(radians) * depth);
+
+        SKImageFilter slope = Keep(SKImageFilter.CreateBlur(sigma, sigma, input));
+        // The slope a step nearer the light, and a step further from it (an offset moves the picture, so the reverse way).
+        SKImageFilter nearer = Keep(SKImageFilter.CreateOffset(-towardX, -towardY, slope));
+        SKImageFilter further = Keep(SKImageFilter.CreateOffset(towardX, towardY, slope));
+        // Lit where the shape falls away towards the light; shaded where it falls away from it.
+        SKImageFilter lit = Keep(SKImageFilter.CreateArithmetic(0, EmbossGain, -EmbossGain, 0, true, nearer, slope));
+        SKImageFilter shaded = Keep(SKImageFilter.CreateArithmetic(0, EmbossGain, -EmbossGain, 0, true, further, slope));
+
+        SKImageFilter Tinted(SKImageFilter coverage, string? colour, string fallback)
+        {
+            SKColor tint = TextEffects.Colour(string.IsNullOrWhiteSpace(colour) ? fallback : colour, 100);
+            float[] matrix =
+            [
+                0, 0, 0, 0, tint.Red / 255f,
+                0, 0, 0, 0, tint.Green / 255f,
+                0, 0, 0, 0, tint.Blue / 255f,
+                0, 0, 0, opacity, 0
+            ];
+            using SKColorFilter tinting = SKColorFilter.CreateColorMatrix(matrix);
+            SKImageFilter tinted = Keep(SKImageFilter.CreateColorFilter(tinting, coverage));
+            // Only within the shape itself.
+            return Keep(SKImageFilter.CreateBlendMode(SKBlendMode.SrcIn, input, tinted));
+        }
+
+        SKImageFilter litOver = Keep(SKImageFilter.CreateBlendMode(SKBlendMode.SrcOver, input, Tinted(lit, effect.Color, "#ffffff")));
+        return SKImageFilter.CreateBlendMode(SKBlendMode.SrcOver, litOver, Tinted(shaded, effect.ShadeColor, "#000000"));
     }
 
     private static SKImageFilter Glow(LayerEffect effect, SKImageFilter? input, float scale)

@@ -45,8 +45,22 @@
                     @if (open)
                     {
                         <div class="fx-settings">
-                            <div class="field fx-colour"><span>Colour</span>
+                            <div class="field fx-colour"><span>@(effect.Kind == LayerEffectKind.Emboss ? "Lit side" : "Colour")</span>
                                 <ScreenColourPicker Value="@Hex(effect.Color)" ValueChanged="colour => Change(at, item => item.Color = string.IsNullOrWhiteSpace(colour) ? item.Color : colour)" /></div>
+                            @if (effect.Kind == LayerEffectKind.Emboss)
+                            {
+                                <div class="field fx-colour"><span>Shaded side</span>
+                                    <ScreenColourPicker Value="@Hex(effect.ShadeColor ?? "#000000")" ValueChanged="colour => Change(at, item => item.ShadeColor = string.IsNullOrWhiteSpace(colour) ? item.ShadeColor : colour)" /></div>
+                                <label class="field" title="How far in from the edges the bevel reaches"><span>Size px</span>
+                                    <input type="number" min="0" max="200" step="1" value="@Number(effect.Width)"
+                                           @onchange="e => Change(at, item => item.Width = Value(e, item.Width, 0, 200))" /></label>
+                                <label class="field" title="How raised it looks: more is a sharper, deeper edge"><span>Depth px</span>
+                                    <input type="number" min="0" max="200" step="0.5" value="@Number(effect.Distance)"
+                                           @onchange="e => Change(at, item => item.Distance = Value(e, item.Distance, 0, 200))" /></label>
+                                <label class="field" title="Where the light comes from: 270 is from above, 225 the top left, 0 the right"><span>Light from °</span>
+                                    <input type="number" min="0" max="360" step="15" value="@Number(effect.Angle)"
+                                           @onchange="e => Change(at, item => item.Angle = Value(e, item.Angle, -360, 360))" /></label>
+                            }
                             <label class="field"><span>Opacity %</span>
                                 <input type="number" min="0" max="100" step="5" value="@Number(effect.Opacity)"
                                        @onchange="e => Change(at, item => item.Opacity = Value(e, item.Opacity, 0, 100))" /></label>
@@ -169,6 +183,7 @@
     {
         LayerEffectKind.Outline => $"{Number(effect.Width)}px",
         LayerEffectKind.Shadow => $"{Number(effect.Distance)}px · {Number(effect.Angle)}° · blur {Number(effect.Blur)}",
+        LayerEffectKind.Emboss => $"size {Number(effect.Width)} · depth {Number(effect.Distance)} · light {Number(effect.Angle)}°",
         _ => $"{Number(effect.Blur)}px"
     } + (effect.Opacity < 100 ? $" · {Number(effect.Opacity)}%" : "");
 

@@ -136,6 +136,7 @@ Every layer except a video has a **Layer FX** list in the inspector; generated p
 - **Outline:** colour, opacity and width.
 - **Drop shadow:** colour, opacity, distance, angle (90° falls straight down) and blur.
 - **Glow:** colour, opacity and size.
+- **Emboss:** raised, bevelled edges inside the layer, lit on the side facing the light and shaded on the other, for a 3D or metallic look. Set the lit and shaded sides' colours, opacity, size (how far in the bevel reaches), depth (how sharp and raised it looks) and where the light comes from (270° is from above, 225° the top left). Tinted lit and shaded sides (pale gold over dark brown, say) on coloured text read as metal. An emboss after an outline bevels the outline too.
 
 Effects apply top to bottom, each to everything above it. Two outlines make an outline of an outline, and a shadow after them is cast by the layer and both outlines. Another outline after that goes round the whole lot. Use the arrows to reorder effects, the eye to switch one off without losing it, and the copy button to duplicate one.
 
@@ -151,6 +152,7 @@ effects:
   - { kind: outline, color: '#ffffff', opacity: 100, width: 3 }
   - { kind: shadow, color: '#000000', opacity: 63, distance: 6, angle: 90, blur: 6 }
   - { kind: glow, color: '#ffffff', opacity: 80, blur: 12, hidden: true }
+  - { kind: emboss, color: '#ffffff', shade_color: '#000000', opacity: 75, width: 4, distance: 3, angle: 225 }
 ```
 
 A text layer's **Text** box takes several lines: Enter starts a new line on screen, whether or not word wrap is on. The box grows as you type, and the canvas follows a moment after you pause. Generated promos and Credits Squeeze text layers work the same way.

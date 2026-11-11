@@ -141,6 +141,25 @@ public sealed class LayerFxTests
     }
 
     [Fact]
+    public void An_emboss_lights_the_edges_facing_the_light_and_shades_the_others_inside_the_shape()
+    {
+        var emboss = new LayerEffect
+        {
+            Kind = LayerEffectKind.Emboss, Color = "#ff0000", ShadeColor = "#0000ff", Opacity = 100, Width = 4, Distance = 3, Angle = 270
+        };
+        using SKBitmap drawn = Draw(emboss);
+
+        // Lit from above: the top edge catches the light, the bottom edge is in shade, the middle is as it was.
+        Assert.True(Is(drawn.GetPixel(60, 51), 255, 0, 0), "the top edge isn't lit");
+        Assert.True(Is(drawn.GetPixel(60, 68), 0, 0, 255), "the bottom edge isn't shaded");
+        Assert.True(Is(drawn.GetPixel(60, 60), 255, 255, 255), "the middle changed");
+        // It stays inside the shape.
+        Assert.Equal(0, drawn.GetPixel(60, 46).Alpha);
+        Assert.Equal(0, drawn.GetPixel(60, 73).Alpha);
+        Assert.Equal(0, LayerFx.Reach([emboss]));
+    }
+
+    [Fact]
     public void Nothing_switched_on_is_no_effect_at_all()
     {
         Assert.Null(LayerFx.Filter(null));
