@@ -11,11 +11,8 @@ namespace SchedularrTV.Service.Rendering;
 /// </summary>
 public static class LayerFx
 {
-    // Where a softened edge is cut to make an outline: Φ(-2), so with a blur of half the width the edge lands that far out.
-    private const float EdgeLevel = 0.0228f;
-
-    // How steeply alpha rises across the softened edge at that point, per pixel of blur: 1 / φ(2).
-    private const float EdgeSteepness = 18.5f;
+    // Outlines narrower than this (in screen pixels) are grown as a square; wider ones as a rounder shape.
+    private const float RoundFrom = 3;
 
     /// <summary>
     /// Starts drawing a layer with its effects: everything drawn until the matching <see cref="SKCanvas.Restore"/> has them
@@ -26,7 +23,10 @@ public static class LayerFx
     /// <param name="turned">How far the canvas is turned here (the layer's turn and its groups'), so shadows still fall the way they're set on screen.</param>
     public static bool Begin(SKCanvas canvas, IReadOnlyList<LayerEffect>? effects, SKRect? bounds, float scale = 1, float turned = 0)
     {
-        using SKImageFilter? filter = Filter(effects, scale, turned);
+        // How many of the canvas's real pixels one of its units covers here, so outlines are sized on whole screen pixels.
+        SKMatrix matrix = canvas.TotalMatrix;
+        float pixels = (float)Math.Sqrt(Math.Abs(matrix.ScaleX * matrix.ScaleY - matrix.SkewX * matrix.SkewY));
+        using SKImageFilter? filter = Filter(effects, scale, turned, float.IsFinite(pixels) && pixels > 0.0001f ? pixels : 1);
         if (filter is null)
         {
             return false;
@@ -48,7 +48,8 @@ public static class LayerFx
     }
 
     /// <summary>The effects as one image filter, or null when none is switched on.</summary>
-    public static SKImageFilter? Filter(IReadOnlyList<LayerEffect>? effects, float scale = 1, float turned = 0)
+    /// <param name="pixels">Screen pixels per canvas unit where it's drawn (see <see cref="Begin"/>).</param>
+    public static SKImageFilter? Filter(IReadOnlyList<LayerEffect>? effects, float scale = 1, float turned = 0, float pixels = 1)
     {
         if (!LayerEffects.Any(effects))
         {
@@ -63,7 +64,7 @@ public static class LayerFx
             {
                 SKImageFilter? next = effect.Kind switch
                 {
-                    LayerEffectKind.Outline => Outline(effect, current, scale, made),
+                    LayerEffectKind.Outline => Outline(effect, current, scale, pixels, made),
                     LayerEffectKind.Shadow => Shadow(effect, current, scale, turned),
                     LayerEffectKind.Glow => Glow(effect, current, scale),
                     _ => null
@@ -115,43 +116,93 @@ public static class LayerFx
     private static string Join(string kind, string? colour, params double[] values) =>
         kind + ":" + (colour ?? string.Empty).ToLowerInvariant() + "," + string.Join(',', values.Select(value => value.ToString("0.###", CultureInfo.InvariantCulture)));
 
-    // An edge all the way round: what's there softened by half the width, cut sharply where that edge reaches the full
-    // width out (which rounds corners, as a pen would), coloured, and put underneath.
-    private static SKImageFilter? Outline(LayerEffect effect, SKImageFilter? input, float scale, List<SKImageFilter> made)
+    // An edge all the way round: what's there grown outwards by the width (each pixel takes the most covered pixel within
+    // reach, so its own anti-aliased edge just moves out with it), coloured, and put underneath.
+    private static SKImageFilter? Outline(LayerEffect effect, SKImageFilter? input, float scale, float pixels, List<SKImageFilter> made)
     {
-        float width = (float)Size(effect.Width, 200) * scale;
-        if (width < 0.05f)
+        // Worked out in screen pixels, where growing happens a whole pixel at a time.
+        float reach = (float)Size(effect.Width, 200) * scale * pixels;
+        if (reach < 0.05f)
         {
             return null;
         }
 
-        float sigma = Math.Max(0.25f, width / 2);
-        float steep = Math.Clamp(EdgeSteepness * sigma, 2, 400);
+        SKImageFilter grown = Grow(input, reach, pixels, made);
         SKColor colour = TextEffects.Colour(effect.Color, 100);
-        float[] cut =
+        float[] tint =
         [
             0, 0, 0, 0, colour.Red / 255f,
             0, 0, 0, 0, colour.Green / 255f,
             0, 0, 0, 0, colour.Blue / 255f,
-            0, 0, 0, steep, 0.5f - steep * EdgeLevel
-        ];
-        float[] fade =
-        [
-            1, 0, 0, 0, 0,
-            0, 1, 0, 0, 0,
-            0, 0, 1, 0, 0,
             0, 0, 0, (float)(Math.Clamp(effect.Opacity, 0, 100) / 100), 0
         ];
 
-        SKImageFilter soft = SKImageFilter.CreateBlur(sigma, sigma, input);
-        made.Add(soft);
-        using SKColorFilter cutting = SKColorFilter.CreateColorMatrix(cut);
-        using SKColorFilter fading = SKColorFilter.CreateColorMatrix(fade);
-        // Two steps, so the cut is clamped before it's faded.
-        using SKColorFilter both = SKColorFilter.CreateCompose(fading, cutting);
-        SKImageFilter edge = SKImageFilter.CreateColorFilter(both, soft);
+        // Nothing stays nothing (alpha 0 times anything is 0), so it never spreads past what was grown.
+        using SKColorFilter tinting = SKColorFilter.CreateColorMatrix(tint);
+        SKImageFilter edge = SKImageFilter.CreateColorFilter(tinting, grown);
         made.Add(edge);
         return SKImageFilter.CreateBlendMode(SKBlendMode.SrcOver, edge, input);
+    }
+
+    /// <summary>
+    /// What's there grown outwards by <paramref name="reach"/> screen pixels. Narrow reaches grow as a square, a part pixel
+    /// shown by fading between the whole pixels either side (so a 1.5px outline has a soft half-covered last row, and a
+    /// 0.5px one on a small preview still shows). Wider ones grow as overlapping rectangles whose corners sit on a circle,
+    /// rounding the corners as a pen would.
+    /// </summary>
+    private static SKImageFilter Grow(SKImageFilter? input, float reach, float pixels, List<SKImageFilter> made)
+    {
+        // The filter's sizes are in canvas units; a hair over the whole pixels, so they never round down a pixel.
+        SKImageFilter Dilate(float across, float down)
+        {
+            SKImageFilter grown = SKImageFilter.CreateDilate((across + 0.02f) / pixels, (down + 0.02f) / pixels, input);
+            made.Add(grown);
+            return grown;
+        }
+
+        if (reach < RoundFrom)
+        {
+            int whole = (int)MathF.Floor(reach);
+            float part = reach - whole;
+            if (part < 0.01f)
+            {
+                return Dilate(whole, whole);
+            }
+
+            SKImageFilter more = Dilate(whole + 1, whole + 1);
+            if (part > 0.99f)
+            {
+                return more;
+            }
+
+            // Part way between the two: whole pixels (nothing grown at all, below one) and one more.
+            // (Null is what's there, ungrown.)
+            SKImageFilter? less = whole == 0 ? input : Dilate(whole, whole);
+            SKImageFilter mixed = SKImageFilter.CreateArithmetic(0, part, 1 - part, 0, true, less, more);
+            made.Add(mixed);
+            return mixed;
+        }
+
+        double[] angles = reach < 10 ? [22.5, 67.5] : [11.25, 33.75, 56.25, 78.75];
+        // Sized so the outline is exactly the width straight out from flat edges.
+        double radius = reach / Math.Cos(angles[0] * Math.PI / 180);
+        SKImageFilter? union = null;
+        foreach (double angle in angles)
+        {
+            double radians = angle * Math.PI / 180;
+            SKImageFilter piece = Dilate((float)Math.Round(radius * Math.Cos(radians)), (float)Math.Round(radius * Math.Sin(radians)));
+            if (union is null)
+            {
+                union = piece;
+                continue;
+            }
+
+            // Only their coverage matters (the colour is replaced next), and Lighten's coverage is the two together.
+            union = SKImageFilter.CreateBlendMode(SKBlendMode.Lighten, union, piece);
+            made.Add(union);
+        }
+
+        return union!;
     }
 
     private static SKImageFilter Shadow(LayerEffect effect, SKImageFilter? input, float scale, float turned)

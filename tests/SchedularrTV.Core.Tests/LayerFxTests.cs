@@ -53,6 +53,57 @@ public sealed class LayerFxTests
     }
 
     [Fact]
+    public void A_one_pixel_outline_is_one_solid_pixel_and_a_part_pixel_is_shaded()
+    {
+        // The square's top edge is at y = 50: row 49 is the first pixel out, row 48 the second.
+        using SKBitmap one = Draw(Outline("#ff0000", 1));
+        Assert.True(Is(one.GetPixel(60, 49), 255, 0, 0), "no solid 1px outline");
+        Assert.Equal(0, one.GetPixel(60, 48).Alpha);
+        Assert.True(Is(one.GetPixel(49, 49), 255, 0, 0), "the corner is missing");
+
+        using SKBitmap half = Draw(Outline("#ff0000", 1.5));
+        Assert.True(Is(half.GetPixel(60, 49), 255, 0, 0));
+        Assert.InRange(half.GetPixel(60, 48).Alpha, (byte)90, (byte)170);
+        Assert.Equal(0, half.GetPixel(60, 47).Alpha);
+    }
+
+    [Fact]
+    public void A_thin_outline_still_shows_on_a_smaller_drawing()
+    {
+        // Drawn at half size (as a small preview is), a 1px outline covers half a screen pixel: shown faintly, not lost.
+        using var bitmap = new SKBitmap(60, 70);
+        using (var canvas = new SKCanvas(bitmap))
+        {
+            canvas.Clear(SKColors.Transparent);
+            canvas.Scale(0.5f);
+            bool fx = LayerFx.Begin(canvas, [Outline("#ff0000", 1)], Square);
+            using (var paint = new SKPaint { Color = SKColors.White })
+            {
+                canvas.DrawRect(Square, paint);
+            }
+
+            if (fx) canvas.Restore();
+        }
+
+        // The square is at 25–35 on screen; the row above it is half covered.
+        Assert.InRange(bitmap.GetPixel(30, 24).Alpha, (byte)90, (byte)170);
+        Assert.Equal(0, bitmap.GetPixel(30, 22).Alpha);
+    }
+
+    [Fact]
+    public void Many_thin_outlines_stack_outwards_without_flooding_the_canvas()
+    {
+        // Thin ones were the trouble: each left empty pixels part-covered, until the whole canvas was the last colour.
+        using SKBitmap drawn = Draw(Outline("#ff0000", 1), Outline("#00ff00", 1), Outline("#0000ff", 1), Outline("#ff0000", 1),
+            Outline("#00ff00", 1), Outline("#0000ff", 1), Outline("#ff0000", 1), Outline("#00ff00", 1));
+
+        Assert.True(Is(drawn.GetPixel(60, 60), 255, 255, 255), "the layer is still on top");
+        Assert.Equal(0, drawn.GetPixel(5, 5).Alpha);
+        Assert.Equal(0, drawn.GetPixel(60, 30).Alpha);
+        Assert.True(drawn.GetPixel(60, 44).Alpha > 200, "the stacked outlines reach about 8px out");
+    }
+
+    [Fact]
     public void A_shadow_after_an_outline_is_cast_by_both_and_switched_off_effects_do_nothing()
     {
         var shadow = new LayerEffect { Kind = LayerEffectKind.Shadow, Color = "#0000ff", Opacity = 100, Distance = 40, Angle = 90, Blur = 0 };
