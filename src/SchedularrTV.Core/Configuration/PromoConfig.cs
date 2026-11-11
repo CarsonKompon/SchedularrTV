@@ -99,6 +99,11 @@ public sealed class PromoConfig
     [System.Text.Json.Serialization.JsonIgnore]
     public bool FromAdBreaks { get; set; }
 
+    /// <summary>Set from the ad breaks: promo clips that always play together. Never written.</summary>
+    [YamlDotNet.Serialization.YamlIgnore]
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<AdPromoPair> Pairs { get; set; } = [];
+
     public static IReadOnlyList<PromoWindow> DefaultWindows { get; } =
     [
         new() { Within = TimeSpan.FromMinutes(30), PromoTypes = ["up_next", "next"] },

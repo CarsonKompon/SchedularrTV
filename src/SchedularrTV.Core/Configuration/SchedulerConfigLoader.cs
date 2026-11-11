@@ -1251,7 +1251,10 @@ public static class SchedulerConfigLoader
         adBreak.Folders ??= [];
         adBreak.Promos ??= [];
         adBreak.PromoRoots ??= [];
-        adBreak.Root = string.IsNullOrWhiteSpace(adBreak.Root) ? null : adBreak.Root.Trim();
+        adBreak.PromoPairs = [.. (adBreak.PromoPairs ?? [])
+            .Select(pair => { pair.First = pair.First?.Trim() ?? string.Empty; pair.Second = pair.Second?.Trim() ?? string.Empty; return pair; })
+            .Where(pair => pair.First.Length > 0 || pair.Second.Length > 0)];
+        adBreak.Root =string.IsNullOrWhiteSpace(adBreak.Root) ? null : adBreak.Root.Trim();
         adBreak.PromoRoots = [.. adBreak.PromoRoots
             .Where(root => !string.IsNullOrWhiteSpace(root.Path))
             .Select(root => { root.Path = root.Path.Trim(); return root; })

@@ -192,24 +192,50 @@ internal sealed class PromoBreakPlan(
             _youreWatching = await ReserveForShowAsync(promoConfig.YoureWatching, showIds, playing?.Start, free, cancellationToken, watchingNew, IsMovie(playing?.Item))
                 .ConfigureAwait(false);
 
+            // A You're Watching that opens a pair (a quiz question) only goes in when its answer fits after it; otherwise
+            // another is picked.
+            MediaItem? answer = null;
+            if (PromoPairing.PartnerOf(promoConfig, AdPromoPairKind.Break, _youreWatching) is { } answerPath)
+            {
+                answer = promoConfig.BackToTheShow.Enabled ? await PromoPairing.FindAsync(Session, answerPath, cancellationToken).ConfigureAwait(false) : null;
+                if (answer is null || answer.Duration > free - _youreWatching!.Duration)
+                {
+                    answer = null;
+                    _youreWatching = await ReserveForShowAsync(promoConfig.YoureWatching, showIds, playing?.Start, free, cancellationToken, watchingNew,
+                            IsMovie(playing?.Item), clip => !PromoPairing.IsFirst(promoConfig, AdPromoPairKind.Break, clip))
+                        .ConfigureAwait(false);
+                }
+            }
+
             // A generated one can stand in for (or mix with) the library clip, like the other spots.
             if (promoConfig.Enabled && promoConfig.YoureWatching.Enabled && showIds.Count > 0
                 && generated?.Choose(context, GeneratedPromoType.YoureWatching, _youreWatching is not null, free, from, watchingNew, playing?.Item) is { } watchingTemplate)
             {
                 _youreWatching = generated.Placeholder(watchingTemplate);
                 _generatedYoureWatching = watchingTemplate.Name;
+                answer = null; // the question isn't playing, so neither is its answer
             }
 
             free -= _youreWatching?.Duration ?? TimeSpan.Zero;
 
-            _backToTheShow = await ReserveForShowAsync(promoConfig.BackToTheShow, showIds, playing?.Start, free, cancellationToken, watchingNew, IsMovie(playing?.Item))
-                .ConfigureAwait(false);
-
-            if (promoConfig.Enabled && promoConfig.BackToTheShow.Enabled && showIds.Count > 0
-                && generated?.Choose(context, GeneratedPromoType.BackToTheShow, _backToTheShow is not null, free, to, watchingNew, playing?.Item) is { } backTemplate)
+            if (answer is not null)
             {
-                _backToTheShow = generated.Placeholder(backTemplate);
-                _generatedBackToTheShow = backTemplate.Name;
+                // The pair's answer closes the break.
+                _backToTheShow = answer;
+            }
+            else
+            {
+                // An answer never plays without its question.
+                _backToTheShow = await ReserveForShowAsync(promoConfig.BackToTheShow, showIds, playing?.Start, free, cancellationToken, watchingNew,
+                        IsMovie(playing?.Item), clip => !PromoPairing.IsSecond(promoConfig, AdPromoPairKind.Break, clip))
+                    .ConfigureAwait(false);
+
+                if (promoConfig.Enabled && promoConfig.BackToTheShow.Enabled && showIds.Count > 0
+                    && generated?.Choose(context, GeneratedPromoType.BackToTheShow, _backToTheShow is not null, free, to, watchingNew, playing?.Item) is { } backTemplate)
+                {
+                    _backToTheShow = generated.Placeholder(backTemplate);
+                    _generatedBackToTheShow = backTemplate.Name;
+                }
             }
 
             // This mid-roll was picked to carry the promo for whatever follows the current show.
@@ -222,6 +248,13 @@ internal sealed class PromoBreakPlan(
         else if (context.Placement == BreakPlacement.BetweenProgrammes)
         {
             _upcoming = await ResolveUpNextTargetAsync(to, cancellationToken).ConfigureAwait(false);
+
+            // The answer owed to the Now Playing that opened the show just finished, read before this break's own Now
+            // Playing (for the next show) takes its place.
+            PendingSignOff owed = context.Build.State<PendingSignOff>();
+            string? owedPartner = owed.Partner;
+            IReadOnlyList<string> owedShows = owed.ShowIds;
+            bool replacedOwed = false;
 
             TimeSpan free = to - from;
 
@@ -243,23 +276,57 @@ internal sealed class PromoBreakPlan(
                 _generatedNowPlaying = identTemplate.Name;
             }
 
+            // A Now Playing that opens a pair owes its partner to the This Has Been once this show is over.
+            if (_nowPlaying is not null)
+            {
+                owed.Partner = _generatedNowPlaying is null ? PromoPairing.PartnerOf(promoConfig, AdPromoPairKind.Show, _nowPlaying) : null;
+                owed.ShowIds = _upcoming?.ShowIds ?? [];
+                replacedOwed = true;
+            }
+
             free -= _nowPlaying?.Duration ?? TimeSpan.Zero;
 
             // Only once the slot is done, so a stacked slot signs off after the last episode rather
             // than between every one of them.
             if (context.EndsSlot)
             {
-                _thisHasBeen = await ReserveSignOffAsync(free, cancellationToken).ConfigureAwait(false);
-
                 ScheduleEntry? finishedShow = Entries.LastOrDefault(IsShow);
                 List<string> finishedIds = ShowIdsOf(finishedShow?.Item);
                 bool sameShow = promoConfig.ThisHasBeen.SkipWhenSameSeries && _upcoming is not null
                     && _upcoming.ShowIds.Intersect(finishedIds, StringComparer.OrdinalIgnoreCase).Any();
-                if (promoConfig.ThisHasBeen.Enabled && finishedIds.Count > 0 && !sameShow
-                    && generated?.Choose(context, GeneratedPromoType.ThisHasBeen, _thisHasBeen is not null, free, from, finishedShow?.IsPremiere == true, finishedShow?.Item) is { } signOffTemplate)
+
+                // The partner of the Now Playing this show opened with, when there is one and it fits.
+                MediaItem? partner = null;
+                if (owedPartner is not null && promoConfig.Enabled && promoConfig.ThisHasBeen.Enabled && !sameShow
+                    && finishedIds.Intersect(owedShows, StringComparer.OrdinalIgnoreCase).Any())
                 {
-                    _thisHasBeen = generated.Placeholder(signOffTemplate);
-                    _generatedThisHasBeen = signOffTemplate.Name;
+                    partner = await PromoPairing.FindAsync(Session, owedPartner, cancellationToken).ConfigureAwait(false);
+                    if (partner is not null && partner.Duration > free)
+                    {
+                        partner = null;
+                    }
+                }
+
+                if (partner is not null)
+                {
+                    _thisHasBeen = partner;
+                    if (!replacedOwed)
+                    {
+                        owed.Partner = null; // answered
+                    }
+                }
+                else
+                {
+                    // A sign-off made to answer a Now Playing never plays without it.
+                    _thisHasBeen = await ReserveSignOffAsync(free, cancellationToken, clip => !PromoPairing.IsSecond(promoConfig, AdPromoPairKind.Show, clip))
+                        .ConfigureAwait(false);
+
+                    if (promoConfig.ThisHasBeen.Enabled && finishedIds.Count > 0 && !sameShow
+                        && generated?.Choose(context, GeneratedPromoType.ThisHasBeen, _thisHasBeen is not null, free, from, finishedShow?.IsPremiere == true, finishedShow?.Item) is { } signOffTemplate)
+                    {
+                        _thisHasBeen = generated.Placeholder(signOffTemplate);
+                        _generatedThisHasBeen = signOffTemplate.Name;
+                    }
                 }
             }
         }
@@ -575,7 +642,8 @@ internal sealed class PromoBreakPlan(
         TimeSpan available,
         CancellationToken cancellationToken,
         bool isNew = false,
-        bool isMovie = false)
+        bool isMovie = false,
+        Func<MediaItem, bool>? allow = null)
     {
         if (!promoConfig.Enabled || !spot.Enabled || showIds.Count == 0 || at is null || available <= TimeSpan.Zero)
         {
@@ -583,7 +651,7 @@ internal sealed class PromoBreakPlan(
         }
 
         return await new PromoSelector(Session, promoConfig, promoBaseTags)
-            .SelectSpotAsync(spot, showIds, at.Value, available, cancellationToken, isNew, isMovie)
+            .SelectSpotAsync(spot, showIds, at.Value, available, cancellationToken, isNew, isMovie, allow)
             .ConfigureAwait(false);
     }
 
@@ -591,7 +659,7 @@ internal sealed class PromoBreakPlan(
     private static bool IsMovie(MediaItem? item) => item?.Kind == MediaKind.Movie;
 
     /// <summary>Signs off the programme that just played, so the target is behind rather than ahead.</summary>
-    private async ValueTask<MediaItem?> ReserveSignOffAsync(TimeSpan available, CancellationToken cancellationToken)
+    private async ValueTask<MediaItem?> ReserveSignOffAsync(TimeSpan available, CancellationToken cancellationToken, Func<MediaItem, bool>? allow = null)
     {
         PromoSpotConfig spot = promoConfig.ThisHasBeen;
 
@@ -617,7 +685,7 @@ internal sealed class PromoBreakPlan(
         }
 
         return await new PromoSelector(Session, promoConfig, promoBaseTags)
-            .SelectSpotAsync(spot, showIds, finished!.Start, available, cancellationToken, finished.IsPremiere, IsMovie(finished.Item))
+            .SelectSpotAsync(spot, showIds, finished!.Start, available, cancellationToken, finished.IsPremiere, IsMovie(finished.Item), allow)
             .ConfigureAwait(false);
     }
 

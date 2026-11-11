@@ -348,6 +348,47 @@
             }
         </section>
 
+        <section class="card">
+            <div class="card-head"><h2>Paired promos</h2></div>
+            <p class="hint" style="margin-top:0;">
+                Two promos that always go together, like a quiz question and its answer. When the first plays, the second is the
+                one that follows, and the second never plays on its own.
+            </p>
+            @foreach (AdPromoPair pair in AdBreak.PromoPairs.ToList())
+            {
+                <div class="ab-promo">
+                    <div class="row" style="gap:8px;align-items:center;">
+                        <select aria-label="Which promos this pairs" value="@pair.Kind"
+                                @onchange="e => { pair.Kind = Enum.TryParse(e.Value?.ToString(), out AdPromoPairKind kind) ? kind : AdPromoPairKind.Break; return Notify(); }">
+                            <option value="@AdPromoPairKind.Break">You're Watching, then Back To The Show (either side of a break)</option>
+                            <option value="@AdPromoPairKind.Show">Now Playing, then This Has Been (either side of the show)</option>
+                        </select>
+                        <div class="spacer"></div>
+                        <button type="button" class="btn btn-sm btn-ghost" title="Remove this pair" aria-label="Remove this pair"
+                                @onclick="() => { AdBreak.PromoPairs.Remove(pair); return Notify(); }">×</button>
+                    </div>
+                    <div class="field"><span>@(pair.Kind == AdPromoPairKind.Break ? "You're Watching clip (going into the break)" : "Now Playing clip (before the show)")</span>
+                        <FilePathPicker Value="@pair.First" Extensions="PairExtensions" Label="the first promo"
+                                        ValueChanged="value => { pair.First = value?.Trim() ?? string.Empty; return Notify(); }" /></div>
+                    <div class="field"><span>@(pair.Kind == AdPromoPairKind.Break ? "Back To The Show clip (coming out of it)" : "This Has Been clip (after the show)")</span>
+                        <FilePathPicker Value="@pair.Second" Extensions="PairExtensions" Label="the promo that answers it"
+                                        ValueChanged="value => { pair.Second = value?.Trim() ?? string.Empty; return Notify(); }" /></div>
+                    @if (!pair.IsComplete)
+                    {
+                        <p class="hint warn">Choose both clips, or the pair isn't used.</p>
+                    }
+                </div>
+            }
+            <button type="button" class="btn btn-sm" @onclick="() => { AdBreak.PromoPairs.Add(new AdPromoPair()); return Notify(); }">
+                <Icon Name="plus" Size="14" />Add a pair
+            </button>
+            <p class="hint">
+                Each clip should also be in this ad break's promo folders of its kind, so it's picked in the first place. A
+                You're Watching that starts a pair is only picked when its answer fits in the same break. A Now Playing's
+                partner plays as the This Has Been once that show (all its stacked episodes) is over.
+            </p>
+        </section>
+
         @if (AdBreak.TagRules is { } rules)
         {
             <section class="card">
@@ -735,6 +776,9 @@
             .OrderBy(channel => channel.Number)
             .Select(channel => ($"{channel.Number} · {channel.Name}", $"channels/{Uri.EscapeDataString(channel.Id)}?tab=breaks"))
     ];
+
+    // What a promo clip can be (the file dialog then opens on Videos).
+    private static string[] PairExtensions => FileBrowsing.Videos;
 
     // Off is kept as null, so ad breaks that don't use it don't say so in the schedule file.
     private static BumperPromoUse? BumperUse(ChangeEventArgs e) =>

@@ -230,6 +230,7 @@ public static class AdBreakCompiler
         {
             Enabled = tagPromos?.Enabled ?? true,
             FromAdBreaks = true,
+            Pairs = [.. adBreaks.SelectMany(adBreak => adBreak.PromoPairs ?? []).Where(pair => pair.IsComplete)],
             BaseQuery = tagPromos?.BaseQuery,
             BaseTags = tagged?.PromoBaseTags,
             AnyShowAlias = adBreaks.Select(adBreak => adBreak.AnyShowFolder).FirstOrDefault(name => !string.IsNullOrWhiteSpace(name))

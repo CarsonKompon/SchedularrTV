@@ -25,6 +25,29 @@ Folders inside a chosen folder follow along unless you pick otherwise. Folders n
 
 6. Select **Save changes**.
 
+### Paired promos
+
+Some promos only make sense together: a quiz question going into a break and its answer coming out, or two halves made as a set. Under **Paired promos**, **Add a pair**, choose which two spots it joins, and pick the two clips.
+
+| Pair | The first plays | Then its partner plays |
+| --- | --- | --- |
+| **You're Watching, then Back To The Show** | Opening a break in the middle of a show | Closing that same break, just before the show comes back |
+| **Now Playing, then This Has Been** | Just before a show starts | Just after it ends (after the last episode of a stacked slot) |
+
+- **First, then second:** when the first clip is picked, its partner is the one that follows, and a partner never plays on its own.
+- **Same break:** a You're Watching that starts a pair is only picked when its answer fits in the same break. Otherwise another You're Watching plays.
+- **Across a show:** a Now Playing's partner waits for the end of that show. If the show doesn't get a sign-off, the partner doesn't play.
+- **Folders still decide:** keep both clips in this ad break's promo folders of their kind (the first in a You're Watching or Now Playing folder), so the first is picked in the first place.
+
+In YAML:
+
+```yaml
+promo_pairs:
+  - kind: break          # break: You're Watching → Back To The Show; show: Now Playing → This Has Been
+    first: 'D:\Media\Commercials\Any Channel\You''re Watching\quiz 1 question.mp4'
+    second: 'D:\Media\Commercials\Any Channel\Back To The Show\quiz 1 answer.mp4'
+```
+
 ### Bumpers as Now Playing and This Has Been
 
 Under **Settings**, **Bumpers as "Now Playing"** and **Bumpers as "This Has Been"** let the ad break's bumpers stand in as those promos for any show. In YAML they're `bumpers_as_now_playing` and `bumpers_as_this_has_been`.

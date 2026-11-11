@@ -51,6 +51,35 @@ public enum BumperPromoUse
     Mixed
 }
 
+/// <summary>Which two promo spots a <see cref="AdPromoPair"/> joins.</summary>
+public enum AdPromoPairKind
+{
+    /// <summary>A You're Watching going into a break, answered by a Back To The Show coming out of it.</summary>
+    Break,
+
+    /// <summary>A Now Playing before a show, answered by a This Has Been after it.</summary>
+    Show
+}
+
+/// <summary>
+/// Two promo clips that always go together: a quiz question and its answer, or two halves made as a set. When the first
+/// plays, the second is the one that closes (the same break, or the end of the same show), and the second never plays
+/// without it.
+/// </summary>
+public sealed class AdPromoPair
+{
+    public AdPromoPairKind Kind { get; set; } = AdPromoPairKind.Break;
+
+    /// <summary>The opening clip's file: a You're Watching (or Now Playing) promo.</summary>
+    public string First { get; set; } = string.Empty;
+
+    /// <summary>The closing clip's file: a Back To The Show (or This Has Been) promo.</summary>
+    public string Second { get; set; } = string.Empty;
+
+    [YamlDotNet.Serialization.YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public bool IsComplete => !string.IsNullOrWhiteSpace(First) && !string.IsNullOrWhiteSpace(Second);
+}
+
 /// <summary>The kinds of promo an ad break can draw from a folder.</summary>
 public enum AdPromoType
 {
@@ -202,6 +231,9 @@ public sealed class AdBreakConfig
     public BumperPromoUse? BumpersAsThisHasBeen { get; set; }
 
     public List<AdBreakPromo> Promos { get; set; } = [];
+
+    /// <summary>Promo clips that always play together (see <see cref="AdPromoPair"/>).</summary>
+    public List<AdPromoPair> PromoPairs { get; set; } = [];
 
     /// <summary>A show folder by this name, inside a promo folder, holds clips for any show.</summary>
     public string? AnyShowFolder { get; set; }

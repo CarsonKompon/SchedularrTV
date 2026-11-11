@@ -114,7 +114,8 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
         TimeSpan available,
         CancellationToken cancellationToken,
         bool isNew = false,
-        bool isMovie = false)
+        bool isMovie = false,
+        Func<MediaItem, bool>? allow = null)
     {
         if (!config.Enabled || !spot.Enabled || available <= TimeSpan.Zero || showIds.Count == 0)
         {
@@ -122,11 +123,11 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
         }
 
         // The spot's own clips first; its stand-ins (an ad break's bumpers) only when they've nothing that fits.
-        MediaItem? pick = await ChooseSpotAsync(spot, spot.Folders, matchByType: true, spot.Varied, showIds, at, available, isNew, isMovie, cancellationToken)
+        MediaItem? pick = await ChooseSpotAsync(spot, spot.Folders, matchByType: true, spot.Varied, showIds, at, available, isNew, isMovie, allow, cancellationToken)
             .ConfigureAwait(false);
         if (pick is null && spot.FallbackFolders is { Count: > 0 } instead)
         {
-            pick = await ChooseSpotAsync(spot, instead, matchByType: false, varied: true, showIds, at, available, isNew, isMovie, cancellationToken)
+            pick = await ChooseSpotAsync(spot, instead, matchByType: false, varied: true, showIds, at, available, isNew, isMovie, allow, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -143,6 +144,7 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
         TimeSpan available,
         bool isNew,
         bool isMovie,
+        Func<MediaItem, bool>? allow,
         CancellationToken cancellationToken)
     {
         // Clips from an ad break's folders, plus any matched by type or tag (the older way, which ad breaks keep too).
@@ -163,7 +165,7 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
 
         // Of what fits: clips for the programme itself, else (for a movie) "any movie" ones, else "any show" ones.
         List<MediaItem> fitting = [.. BestTier(ClockMatches(matches, at, honourClock: true)
-            .Where(m => m.Duration > TimeSpan.Zero && m.Duration <= available), isMovie, folders)];
+            .Where(m => m.Duration > TimeSpan.Zero && m.Duration <= available && (allow?.Invoke(m) ?? true)), isMovie, folders)];
 
         // Clips made for new episodes only play for one, and win when it is.
         List<MediaItem> fresh = [.. fitting.Where(AdBreakCompiler.IsNewEpisodeClip)];
