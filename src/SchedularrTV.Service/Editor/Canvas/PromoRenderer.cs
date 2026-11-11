@@ -250,8 +250,12 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
                 // then mask that finished image once (including any masks on nested groups or individual layers).
                 if (layer is PromoGroupLayer group)
                 {
+                    // A group's effects apply to its contents together, as they're seen on screen.
+                    bool withFx = group.Fx is not null && PromoAnimation.EvaluateInGroups(group, time, composition.Duration, composition.Height) is { Opacity: > 0 }
+                        && SchedularrTV.Service.Rendering.LayerFx.Begin(canvas, group.Fx, null);
                     foreach (PromoLayer child in composition.Layers.Where(child => ReferenceEquals(child.Parent, group)))
                         DrawNode(child);
+                    if (withFx) canvas.Restore();
                 }
                 else DrawLayer(canvas, layer, composition, time, images, videos);
             }
@@ -279,6 +283,7 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         SKRect bounds = state.Bounds;
         canvas.Save();
         // Into the space of the groups it's in, outermost first: each moves its contents to its corner and turns them about its middle.
+        float turned = 0;
         foreach (PromoGroupLayer group in Groups(layer))
         {
             if (PromoAnimation.Evaluate(group, time, composition.Duration, composition.Height) is { } around)
@@ -286,21 +291,29 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
                 Place(canvas, around, around.Bounds);
                 Pin(canvas, around);
                 canvas.Translate(around.Bounds.Left, around.Bounds.Top);
+                turned += around.Rotation;
             }
         }
 
         Place(canvas, state, bounds);
         Pin(canvas, state);
+        turned += state.Rotation;
         bool translucent = state.Opacity < 0.999f;
         if (translucent)
         {
             // Shadows spill past the text box, so leave headroom around the offscreen layer.
             SKRect area = bounds;
             area.Inflate(bounds.Height * 0.25f + 8, bounds.Height * 0.25f + 8);
+            float reach = SchedularrTV.Service.Rendering.LayerFx.Reach(layer.Fx);
+            area.Inflate(reach, reach);
             if (layer is PromoRectLayer soft) area.Inflate(soft.SoftEdges * 4, soft.SoftEdges * 4);
             using var alpha = new SKPaint { Color = SKColors.Black.WithAlpha((byte)Math.Round(Math.Clamp(state.Opacity, 0, 1) * 255)) };
             canvas.SaveLayer(area, alpha);
         }
+
+        // Its effects, inside the fade, so a fading layer's outline and shadow fade with it.
+        SKRect fxBounds = layer is PromoRectLayer feathered ? SKRect.Inflate(bounds, feathered.SoftEdges * 3, feathered.SoftEdges * 3) : bounds;
+        bool withFx = SchedularrTV.Service.Rendering.LayerFx.Begin(canvas, layer.Fx, fxBounds, turned: turned);
 
         switch (layer)
         {
@@ -320,6 +333,7 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
                 break;
         }
 
+        if (withFx) canvas.Restore();
         if (translucent) canvas.Restore();
         canvas.Restore();
     }

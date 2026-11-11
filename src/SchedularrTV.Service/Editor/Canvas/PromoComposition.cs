@@ -53,6 +53,12 @@ public abstract record PromoLayer
     public PromoCorners Corners { get; init; }
 
     /// <summary>
+    /// Layer FX, applied in order (see <see cref="SchedularrTV.Service.Rendering.LayerFx"/>), sized in the composition's
+    /// pixels; on a group, to its contents together. Null for none.
+    /// </summary>
+    public IReadOnlyList<SchedularrTV.Core.Configuration.LayerEffect>? Fx { get; init; }
+
+    /// <summary>
     /// The group this layer is inside, or null at the top. Its bounds are then in the group's space (from the group's
     /// top-left corner), and the group's movement, rotation, opacity and timing apply on top of its own.
     /// </summary>

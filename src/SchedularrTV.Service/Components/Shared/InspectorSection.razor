@@ -1,0 +1,56 @@
+@* A folding section of a canvas editor's layer inspector. Whether it's open is remembered by its name, so moving between
+   layers (or editors) keeps the sections the way they were left. *@
+@using System.Collections.Concurrent
+
+<section class="insp-section @(Open ? "open" : "")">
+    <div class="insp-head">
+        <button type="button" class="insp-toggle" aria-expanded="@(Open ? "true" : "false")" @onclick="Toggle">
+            <Icon Name="@(Open ? "chevron-down" : "chevron-right")" Size="12" />
+            @if (IconName is { Length: > 0 })
+            {
+                <Icon Name="@IconName" Size="13" />
+            }
+            <span class="insp-title">@Title</span>
+            @if (Badge is { Length: > 0 })
+            {
+                <span class="insp-badge">@Badge</span>
+            }
+        </button>
+        @if (Extra is not null)
+        {
+            <div class="insp-extra">@Extra</div>
+        }
+    </div>
+    @if (Open)
+    {
+        <div class="insp-body">@ChildContent</div>
+    }
+</section>
+
+@code {
+    // Shared by every inspector: the sections are the same kind of thing in each editor.
+    private static readonly ConcurrentDictionary<string, bool> Remembered = new(StringComparer.Ordinal);
+
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    /// <summary>What it's remembered by; its title unless set.</summary>
+    [Parameter] public string? Name { get; set; }
+
+    [Parameter] public string? IconName { get; set; }
+
+    /// <summary>A short note beside the title, such as how many effects there are.</summary>
+    [Parameter] public string? Badge { get; set; }
+
+    [Parameter] public bool StartsOpen { get; set; } = true;
+
+    /// <summary>Beside the title, always shown: a status or a button.</summary>
+    [Parameter] public RenderFragment? Extra { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string Key => Name ?? Title;
+
+    private bool Open => Remembered.TryGetValue(Key, out bool open) ? open : StartsOpen;
+
+    private void Toggle() => Remembered[Key] = !Open;
+}

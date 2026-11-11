@@ -139,9 +139,11 @@ public sealed class SqueezeCanvas
                     Pages = item.CreditsText is not null ? TextPages(item, job, timingScale) : null,
                     FontFamily = item.FontFamily, MaxFontSize = item.FontSize * scale, Bold = item.Bold,
                     FontWeight = item.FontWeight, Italic = item.Italic,
-                    Shadow = item.Shadow ? new SKColor(0, 0, 0, 160) : null,
-                    Effects = SchedularrTV.Service.Rendering.TextEffects.From(item.Shadow, item.ShadowStyle, item.Outline, item.OutlineStyle,
-                        TextShadowSettings.Promo),
+                    // Layer FX replace text's older shadow and outline once it has any.
+                    Shadow = item.Effects is null && item.Shadow ? new SKColor(0, 0, 0, 160) : null,
+                    Effects = item.Effects is null
+                        ? SchedularrTV.Service.Rendering.TextEffects.From(item.Shadow, item.ShadowStyle, item.Outline, item.OutlineStyle, TextShadowSettings.Promo)
+                        : null,
                     LetterSpacing = SchedularrTV.Service.Rendering.TextFit.LetterSpacing(item.LetterSpacing),
                     LineSpacing = SchedularrTV.Service.Rendering.TextFit.LineSpacing(item.LineSpacing),
                     Align = (SKTextAlign)item.Align, WordWrap = item.WordWrap == true,
@@ -168,6 +170,7 @@ public sealed class SqueezeCanvas
                 Start = item.Start * timingScale, End = item.End * timingScale, In = (PromoTransition)item.TransitionIn, Out = (PromoTransition)item.TransitionOut,
                 TransitionDuration = item.TransitionDuration * timingScale, TransitionOutDuration = item.TransitionOutDuration * timingScale,
                 Opacity = item.Opacity, Rotation = item.Rotation ?? 0,
+                Fx = LayerEffects.Scaled(item.Effects, scale),
                 Keyframes = item.Keyframes?.OrderBy(key => key.At).Select(key => new PromoKeyframe(key.At * timingScale,
                     Bounds(key.X, key.Y, key.Width, key.Height), key.Opacity, (PromoEasing)key.Easing, key.Rotation)).ToList()
             };

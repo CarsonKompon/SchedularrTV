@@ -1,0 +1,184 @@
+@* A canvas layer's effects (generated promos, overlays, credits squeeze) as a list: add as many outlines, shadows and glows
+   as you like, in any order. Each applies over everything above it in the list, so an outline of an outline, or a shadow
+   cast by both, works as it reads. *@
+@using System.Globalization
+
+<div class="fx-editor">
+    @if (Effects is not { Count: > 0 })
+    {
+        <p class="fx-empty">No effects yet.</p>
+    }
+    else
+    {
+        <ol class="fx-items" aria-label="Layer effects, applied top to bottom">
+            @for (int index = 0; index < Effects.Count; index++)
+            {
+                int at = index;
+                LayerEffect effect = Effects[at];
+                bool open = _open.Contains(at);
+                <li class="fx-item @(effect.IsOn ? "" : "off") @(open ? "open" : "")" @key="at">
+                    <div class="fx-row">
+                        <button type="button" class="fx-icon-btn" title="@(effect.IsOn ? "Switch off" : "Switch on")"
+                                aria-pressed="@(effect.IsOn ? "true" : "false")" aria-label="@($"{(effect.IsOn ? "Switch off" : "Switch on")} {LayerEffect.Name(effect.Kind)}")"
+                                @onclick="() => Change(at, item => item.Hidden = item.IsOn ? true : null)">
+                            <Icon Name="@(effect.IsOn ? "eye" : "eye-off")" Size="14" />
+                        </button>
+                        <button type="button" class="fx-name" aria-expanded="@(open ? "true" : "false")" @onclick="() => Toggle(at)">
+                            <span class="fx-swatch" style="background:@Hex(effect.Color)"></span>
+                            <span class="fx-title">@LayerEffect.Name(effect.Kind)</span>
+                            <span class="fx-summary">@Summary(effect)</span>
+                            <Icon Name="@(open ? "chevron-down" : "chevron-right")" Size="12" />
+                        </button>
+                        <button type="button" class="fx-icon-btn" title="Apply earlier" aria-label="Apply earlier" disabled="@(at == 0)" @onclick="() => Move(at, -1)">
+                            <Icon Name="arrow-up" Size="12" />
+                        </button>
+                        <button type="button" class="fx-icon-btn" title="Apply later" aria-label="Apply later" disabled="@(at == Effects.Count - 1)" @onclick="() => Move(at, 1)">
+                            <Icon Name="arrow-down" Size="12" />
+                        </button>
+                        <button type="button" class="fx-icon-btn" title="Duplicate" aria-label="Duplicate effect" @onclick="() => Duplicate(at)">
+                            <Icon Name="copy" Size="12" />
+                        </button>
+                        <button type="button" class="fx-icon-btn danger" title="Remove" aria-label="Remove effect" @onclick="() => Remove(at)">
+                            <Icon Name="x" Size="12" />
+                        </button>
+                    </div>
+                    @if (open)
+                    {
+                        <div class="fx-settings">
+                            <div class="field fx-colour"><span>Colour</span>
+                                <ScreenColourPicker Value="@Hex(effect.Color)" ValueChanged="colour => Change(at, item => item.Color = string.IsNullOrWhiteSpace(colour) ? item.Color : colour)" /></div>
+                            <label class="field"><span>Opacity %</span>
+                                <input type="number" min="0" max="100" step="5" value="@Number(effect.Opacity)"
+                                       @onchange="e => Change(at, item => item.Opacity = Value(e, item.Opacity, 0, 100))" /></label>
+                            @if (effect.Kind == LayerEffectKind.Outline)
+                            {
+                                <label class="field"><span>Width px</span>
+                                    <input type="number" min="0" max="200" step="0.5" value="@Number(effect.Width)"
+                                           @onchange="e => Change(at, item => item.Width = Value(e, item.Width, 0, 200))" /></label>
+                            }
+                            @if (effect.Kind == LayerEffectKind.Shadow)
+                            {
+                                <label class="field"><span>Distance px</span>
+                                    <input type="number" min="0" max="500" step="1" value="@Number(effect.Distance)"
+                                           @onchange="e => Change(at, item => item.Distance = Value(e, item.Distance, 0, 500))" /></label>
+                                <label class="field"><span>Angle °</span>
+                                    <input type="number" min="0" max="360" step="15" value="@Number(effect.Angle)" title="90 falls straight down, 0 to the right"
+                                           @onchange="e => Change(at, item => item.Angle = Value(e, item.Angle, -360, 360))" /></label>
+                            }
+                            @if (effect.Kind is LayerEffectKind.Shadow or LayerEffectKind.Glow)
+                            {
+                                <label class="field"><span>@(effect.Kind == LayerEffectKind.Glow ? "Size px" : "Blur px")</span>
+                                    <input type="number" min="0" max="200" step="1" value="@Number(effect.Blur)"
+                                           @onchange="e => Change(at, item => item.Blur = Value(e, item.Blur, 0, 200))" /></label>
+                            }
+                        </div>
+                    }
+                </li>
+            }
+        </ol>
+    }
+    <div class="fx-add" role="group" aria-label="Add an effect">
+        @foreach (LayerEffectKind kind in Enum.GetValues<LayerEffectKind>())
+        {
+            <button type="button" class="btn btn-sm" @onclick="() => Add(kind)"><Icon Name="plus" Size="12" />@LayerEffect.Name(kind)</button>
+        }
+    </div>
+    @if (Note is { Length: > 0 })
+    {
+        <p class="hint">@Note</p>
+    }
+</div>
+
+@code {
+    /// <summary>The effects as they apply, top first.</summary>
+    [Parameter] public IReadOnlyList<LayerEffect>? Effects { get; set; }
+
+    /// <summary>Called with a new list (copies throughout) after every change.</summary>
+    [Parameter] public EventCallback<List<LayerEffect>> EffectsChanged { get; set; }
+
+    /// <summary>Shown under the list, for anything special about this kind of layer.</summary>
+    [Parameter] public string? Note { get; set; }
+
+    private readonly HashSet<int> _open = [];
+
+    private void Toggle(int at)
+    {
+        if (!_open.Remove(at)) _open.Add(at);
+    }
+
+    private List<LayerEffect> Copied() => Effects?.Select(effect => effect.Copy()).ToList() ?? [];
+
+    private Task Change(int at, Action<LayerEffect> change)
+    {
+        List<LayerEffect> effects = Copied();
+        if (at < 0 || at >= effects.Count) return Task.CompletedTask;
+        change(effects[at]);
+        return EffectsChanged.InvokeAsync(effects);
+    }
+
+    private Task Add(LayerEffectKind kind)
+    {
+        List<LayerEffect> effects = Copied();
+        effects.Add(LayerEffect.New(kind));
+        // A new one opens, so it can be set up straight away.
+        _open.Add(effects.Count - 1);
+        return EffectsChanged.InvokeAsync(effects);
+    }
+
+    private Task Duplicate(int at)
+    {
+        List<LayerEffect> effects = Copied();
+        if (at < 0 || at >= effects.Count) return Task.CompletedTask;
+        effects.Insert(at + 1, effects[at].Copy());
+        Shift(at + 1, 1);
+        return EffectsChanged.InvokeAsync(effects);
+    }
+
+    private Task Remove(int at)
+    {
+        List<LayerEffect> effects = Copied();
+        if (at < 0 || at >= effects.Count) return Task.CompletedTask;
+        effects.RemoveAt(at);
+        _open.Remove(at);
+        Shift(at + 1, -1);
+        return EffectsChanged.InvokeAsync(effects);
+    }
+
+    private Task Move(int at, int by)
+    {
+        List<LayerEffect> effects = Copied();
+        int to = at + by;
+        if (at < 0 || at >= effects.Count || to < 0 || to >= effects.Count) return Task.CompletedTask;
+        (effects[at], effects[to]) = (effects[to], effects[at]);
+        // The open ones stay open as they move.
+        bool atOpen = _open.Remove(at), toOpen = _open.Remove(to);
+        if (atOpen) _open.Add(to);
+        if (toOpen) _open.Add(at);
+        return EffectsChanged.InvokeAsync(effects);
+    }
+
+    // Moves the open marks of the items from <paramref name="from"/> on by <paramref name="by"/>.
+    private void Shift(int from, int by)
+    {
+        List<int> moved = [.. _open.Where(index => index >= from)];
+        foreach (int index in moved) _open.Remove(index);
+        foreach (int index in moved) _open.Add(index + by);
+    }
+
+    private static string Summary(LayerEffect effect) => effect.Kind switch
+    {
+        LayerEffectKind.Outline => $"{Number(effect.Width)}px",
+        LayerEffectKind.Shadow => $"{Number(effect.Distance)}px · {Number(effect.Angle)}° · blur {Number(effect.Blur)}",
+        _ => $"{Number(effect.Blur)}px"
+    } + (effect.Opacity < 100 ? $" · {Number(effect.Opacity)}%" : "");
+
+    private static string Hex(string? colour) =>
+        colour is { Length: 7 } && colour[0] == '#' ? colour.ToLowerInvariant() : "#000000";
+
+    private static double Value(ChangeEventArgs e, double fallback, double min, double max) =>
+        double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) && double.IsFinite(value)
+            ? Math.Clamp(value, min, max)
+            : fallback;
+
+    private static string Number(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+}

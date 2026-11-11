@@ -274,6 +274,8 @@ public sealed partial class OverlayRenderer(Func<string> folder)
         if (layer.FontWeight is not null || layer.Italic) styled = new { Styled = styled, layer.FontWeight, layer.Italic };
         // An outline, or a shadow set up its own way: only then is it part of the hash.
         if (Effects(layer) is { } effects) styled = new { Styled = styled, Effects = effects.Key() };
+        // Layer FX likewise (an empty list too: it switches text's older shadow off).
+        if (layer.Effects is not null) styled = new { Styled = styled, Fx = SchedularrTV.Service.Rendering.LayerFx.Key(layer.Effects) ?? string.Empty };
         // Spacing likewise: only spaced text hashes differently.
         return layer.LetterSpacing is null && layer.LineSpacing is null
             ? styled
@@ -383,7 +385,11 @@ public sealed partial class OverlayRenderer(Func<string> folder)
             {
                 if (OverlayHierarchy.IsGroup(layer))
                 {
+                    // A group's effects apply to its contents together, as they're seen on screen.
+                    bool withFx = LayerEffects.Any(layer.Effects) && GroupShowing(overlay, layer, clock, envelope)
+                        && SchedularrTV.Service.Rendering.LayerFx.Begin(canvas, layer.Effects, null);
                     foreach (OverlayLayer child in OverlayHierarchy.Children(overlay, layer)) DrawNode(child);
+                    if (withFx) canvas.Restore();
                 }
                 else DrawPlaced(canvas, overlay, layer, tokens, posters, clock, envelope);
             }
@@ -406,6 +412,20 @@ public sealed partial class OverlayRenderer(Func<string> folder)
                 canvas.Restore();
             }
         }
+    }
+
+    // Whether a group (and every group around it) shows at all at the clock's moment, so a hidden one costs nothing.
+    private static bool GroupShowing(Overlay overlay, OverlayLayer group, OverlayClock? clock, double envelope)
+    {
+        double seconds = clock?.Seconds ?? 0;
+        double shown = envelope;
+        foreach (OverlayLayer layer in OverlayHierarchy.Ancestors(overlay, group).Prepend(group))
+        {
+            shown *= Math.Clamp(OverlayAnimation.PoseAt(layer, seconds).Opacity, 0, 100) / 100;
+            if (clock is not null) shown *= OverlayAnimation.Visibility(layer, clock);
+        }
+
+        return shown > 0.001;
     }
 
     /// <summary>One layer where it is: inside its groups (outermost first, each moving its contents to its corner and turning them about its middle), turned, faded.</summary>
@@ -440,6 +460,7 @@ public sealed partial class OverlayRenderer(Func<string> folder)
         }
 
         canvas.Save();
+        float turned = 0;
         foreach (OverlayPose around in groupPoses)
         {
             float turn = around.Rotation ?? 0;
@@ -449,6 +470,7 @@ public sealed partial class OverlayRenderer(Func<string> folder)
             }
 
             canvas.Translate(around.X, around.Y);
+            turned += turn;
         }
 
         SKRect bounds = SKRect.Create(pose.X, pose.Y, Math.Max(1, pose.Width), Math.Max(1, pose.Height));
@@ -459,17 +481,24 @@ public sealed partial class OverlayRenderer(Func<string> folder)
             canvas.RotateDegrees(rotation, bounds.MidX, bounds.MidY);
         }
 
+        turned += rotation;
+        // ErsatzTV plays videos itself, so they can't have effects.
+        IReadOnlyList<LayerEffect>? fx = layer.Kind == OverlayLayerKinds.Video ? null : layer.Effects;
+        float soft = layer.SoftEdges ?? 0;
         byte alpha = (byte)Math.Round(Math.Clamp(opacity, 0, 1) * 255);
         bool translucent = alpha < 255;
         if (translucent)
         {
             SKRect area = bounds;
             area.Inflate(bounds.Height * 0.25f + 8, bounds.Height * 0.25f + 8);
-            float soft = layer.SoftEdges ?? 0;
-            area.Inflate(soft * 4, soft * 4);
+            float reach = SchedularrTV.Service.Rendering.LayerFx.Reach(fx);
+            area.Inflate(soft * 4 + reach, soft * 4 + reach);
             using var fade = new SKPaint { Color = SKColors.Black.WithAlpha(alpha) };
             canvas.SaveLayer(area, fade);
         }
+
+        // Its effects, inside the fade, so a fading layer's outline and shadow fade with it.
+        bool withFx = SchedularrTV.Service.Rendering.LayerFx.Begin(canvas, fx, SKRect.Inflate(bounds, soft * 3, soft * 3), turned: turned);
 
         switch (layer.Kind)
         {
@@ -505,6 +534,11 @@ public sealed partial class OverlayRenderer(Func<string> folder)
             case OverlayLayerKinds.Video:
                 DrawVideoStill(canvas, layer, bounds, posters, FrameKey(overlay, layer));
                 break;
+        }
+
+        if (withFx)
+        {
+            canvas.Restore();
         }
 
         if (translucent)
@@ -607,7 +641,8 @@ public sealed partial class OverlayRenderer(Func<string> folder)
         if (layer.Italic && typeface.FontSlant == SKFontStyleSlant.Upright) font.SkewX = -.2f;
         using var paint = new SKPaint { Color = Colour(layer.Color, SKColors.White), IsAntialias = true };
         SchedularrTV.Service.Rendering.TextEffects? effects = Effects(layer);
-        using SKImageFilter? shadow = effects is null && layer.Shadow
+        // Layer FX replace text's older shadow and outline once it has any.
+        using SKImageFilter? shadow = effects is null && layer.Shadow && layer.Effects is null
             ? SKImageFilter.CreateDropShadow(0, font.Size * 0.05f, font.Size * 0.06f, font.Size * 0.06f, new SKColor(0, 0, 0, 170))
             : null;
         paint.ImageFilter = shadow;
@@ -691,7 +726,7 @@ public sealed partial class OverlayRenderer(Func<string> folder)
 
     /// <summary>A text layer's outline, and its shadow when set up its own way; null when it has the usual shadow (or none).</summary>
     private static SchedularrTV.Service.Rendering.TextEffects? Effects(OverlayLayer layer) =>
-        layer.Kind == OverlayLayerKinds.Text
+        layer.Kind == OverlayLayerKinds.Text && layer.Effects is null
             ? SchedularrTV.Service.Rendering.TextEffects.From(layer.Shadow, layer.ShadowStyle, layer.Outline, layer.OutlineStyle, TextShadowSettings.Overlay)
             : null;
 

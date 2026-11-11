@@ -546,6 +546,12 @@ public sealed class OverlayLayer
     /// <summary>The outline's look, once it's been changed; null is a thin black one.</summary>
     public TextOutlineSettings? OutlineStyle { get; set; }
 
+    /// <summary>
+    /// Layer FX, applied in order, each over what the ones before it drew (any kind of layer but a video; on a group, its
+    /// contents together). Once set, text's older <see cref="Shadow"/> and <see cref="Outline"/> are ignored.
+    /// </summary>
+    public List<LayerEffect>? Effects { get; set; }
+
     public float CornerRadius { get; set; }
 
     /// <summary>0 to 100.</summary>
@@ -559,6 +565,7 @@ public sealed class OverlayLayer
         var copy = (OverlayLayer)MemberwiseClone();
         copy.ShadowStyle = ShadowStyle?.Copy();
         copy.OutlineStyle = OutlineStyle?.Copy();
+        copy.Effects = LayerEffects.Copy(Effects);
         copy.Mask = Mask is null ? null : new GeneratedLayerMask { Mode = Mask.Mode, Target = Mask.Target };
         copy.Keyframes = Keyframes?.Select(key => key.Copy()).ToList();        copy.Writer = Writer is null ? null : new AiTextConfig
         {

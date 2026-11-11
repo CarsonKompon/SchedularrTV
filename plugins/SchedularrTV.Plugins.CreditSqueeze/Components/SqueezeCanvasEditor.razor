@@ -139,11 +139,15 @@
                 {
                     <div class="inspector">
                     <div class="inspector-head">
-                        <h3 class="ed-section">@LayerKind(selected)</h3><span class="spacer"></span>
+                        <span class="insp-kind" title="@LayerKind(selected)">@LayerKind(selected)</span>
+                        <input class="insp-name" aria-label="Layer name" placeholder="Layer name" @bind="selected.Name" @bind:after="Commit" />
                         <EditorIconButton Icon="copy" Label="Duplicate layer" OnClick="DuplicateLayer" />
                         <EditorIconButton Icon="trash" Label="Delete layer" Danger="true" OnClick="RemoveLayer" />
                     </div>
-                    <label class="field"><span>Name</span><input @bind="selected.Name" @bind:after="Commit" /></label>
+                    @if (selected.Kind is GeneratedLayerKind.Video or GeneratedLayerKind.Image or GeneratedLayerKind.Text)
+                    {
+                    <InspectorSection Title="@(selected.Kind == GeneratedLayerKind.Video ? "Video" : selected.Kind == GeneratedLayerKind.Image ? "Image" : selected.CreditsText is not null ? "Credits text" : "Text")"
+                                      Name="@($"squeeze-content-{selected.Kind}")">
                     @if (selected.Kind == GeneratedLayerKind.Video)
                     {
                         var video = selected.Video ??= new();
@@ -198,54 +202,66 @@
                             <MultilineTextInput @key="selected" Value="@selected.Text" ValueChanged="async v => { selected.Text = v; await Commit(); }" /></label>
                         <p class="hint" role="note">Tokens: {show}, {up_next} (or {next}), {time}, {channel}, {heading}.</p>
                         }
-                        <label class="field"><span>Font</span><select @bind="selected.FontFamily" @bind:after="Commit">@foreach (string font in Fonts) { <option value="@font">@font</option> }</select></label>
-                        <label class="field"><span>Font size</span><input type="number" min="1" max="400" @bind="selected.FontSize" @bind:after="Commit" /></label>
-                        <div class="field"><span>Alignment</span><TextAlignPad Horizontal="selected.Align" Vertical="@(selected.VerticalAlign ?? GeneratedVerticalAlign.Top)" Changed="cell => SetAlign(cell.Vertical, cell.Horizontal)" /></div>
-                        <CanvasFontStyle Weight="selected.FontWeight" Bold="selected.Bold" Italic="selected.Italic"
-                                         WeightChanged="async weight => { selected.FontWeight = weight; await Commit(); }"
-                                         ItalicChanged="async italic => { selected.Italic = italic; await Commit(); }" />
-                        <label class="field"><span>Letters</span><TextCaseSelect Value="selected.TextCase" ValueChanged="async value => { selected.TextCase = value; await Commit(); }" /></label>
-                        <label class="check"><input type="checkbox" checked="@(selected.WordWrap == true)" @onchange="e => SetWordWrap(e.Value is true)" />Wrap long lines to the box</label>
-                        <TextEffectsEditor @key="selected" UsualShadow="TextShadowSettings.Promo"
-                                           Shadow="selected.Shadow" ShadowChanged="async on => { selected.Shadow = on; await Commit(); }"
-                                           ShadowStyle="selected.ShadowStyle" ShadowStyleChanged="async style => { selected.ShadowStyle = style; await Commit(); }"
-                                           OutlineOn="selected.Outline" OutlineChanged="async on => { selected.Outline = on; await Commit(); }"
-                                           OutlineStyle="selected.OutlineStyle" OutlineStyleChanged="async style => { selected.OutlineStyle = style; await Commit(); }" />
+                    }
+                    </InspectorSection>
+                    }
+                    @if (selected.Kind == GeneratedLayerKind.Text)
+                    {
+                    <InspectorSection Title="Typography" Name="typography">
                         <div class="grid grid-2">
-                            <label class="field"><span>Letter spacing (%)</span><input type="number" min="-50" max="200" step="1" value="@N(selected.LetterSpacing ?? 0)" @onchange="e => SetSpacing(e, true)" /></label>
-                            <label class="field"><span>Line spacing (×)</span><input type="number" min="0.3" max="5" step="0.05" value="@N(selected.LineSpacing ?? 1)" @onchange="e => SetSpacing(e, false)" /></label>
+                            <label class="field"><span>Font</span><select @bind="selected.FontFamily" @bind:after="Commit">@foreach (string font in Fonts) { <option value="@font">@font</option> }</select></label>
+                            <label class="field"><span>Font size</span><input type="number" min="1" max="400" @bind="selected.FontSize" @bind:after="Commit" /></label>
+                            <div class="field"><span>Alignment</span><TextAlignPad Horizontal="selected.Align" Vertical="@(selected.VerticalAlign ?? GeneratedVerticalAlign.Top)" Changed="cell => SetAlign(cell.Vertical, cell.Horizontal)" /></div>
+                            <label class="field"><span>Letters</span><TextCaseSelect Value="selected.TextCase" ValueChanged="async value => { selected.TextCase = value; await Commit(); }" /></label>
                         </div>
+                        <div class="check-stack">
+                            <CanvasFontStyle Weight="selected.FontWeight" Bold="selected.Bold" Italic="selected.Italic"
+                                             WeightChanged="async weight => { selected.FontWeight = weight; await Commit(); }"
+                                             ItalicChanged="async italic => { selected.Italic = italic; await Commit(); }" />
+                            <label class="check"><input type="checkbox" checked="@(selected.WordWrap == true)" @onchange="e => SetWordWrap(e.Value is true)" />Wrap long lines to the box</label>
+                        </div>
+                        <div class="grid grid-2">
+                            <label class="field"><span>Letter spacing %</span><input type="number" min="-50" max="200" step="1" value="@N(selected.LetterSpacing ?? 0)" @onchange="e => SetSpacing(e, true)" /></label>
+                            <label class="field"><span>Line spacing ×</span><input type="number" min="0.3" max="5" step="0.05" value="@N(selected.LineSpacing ?? 1)" @onchange="e => SetSpacing(e, false)" /></label>
+                        </div>
+                    </InspectorSection>
                     }
                     @if (selected.Kind is GeneratedLayerKind.Text or GeneratedLayerKind.Rect)
                     {
+                    <InspectorSection Title="Appearance" Name="appearance">
                         <div class="field"><span>Colour</span><ScreenColourPicker @key="selected" Value="@selected.Color" ValueChanged="SetColour" /></div>
-                    }
-                    @if (selected.Kind == GeneratedLayerKind.Rect)
-                    {
-                        <label class="field"><span>Shape</span><select @bind="selected.Shape" @bind:after="Commit">@foreach (var shape in Enum.GetValues<GeneratedShape>()) { <option value="@shape">@shape</option> }</select></label>
-                        <div class="grid grid-2">
-                            <label class="field"><span>Corner radius</span><input type="number" min="0" max="500" @bind="selected.CornerRadius" @bind:after="Commit" /></label>
-                            <label class="field"><span>Soft edges (px)</span><input type="number" min="0" max="200" @bind="selected.SoftEdges" @bind:after="Commit" /></label>
-                        </div>
-                    }
-                    <div class="grid grid-2">
-                        @foreach (string field in new[] { "X", "Y", "Width", "Height" })
+                        @if (selected.Kind == GeneratedLayerKind.Rect)
                         {
-                            <label class="field"><span>@field</span><input type="number" step="1" value="@N(Coordinate(field))" @onchange="e => SetCoordinate(field, e)" /></label>
+                            <div class="grid grid-2">
+                                <label class="field"><span>Shape</span><select @bind="selected.Shape" @bind:after="Commit">@foreach (var shape in Enum.GetValues<GeneratedShape>()) { <option value="@shape">@shape</option> }</select></label>
+                                <label class="field"><span>Corner radius px</span><input type="number" min="0" max="500" @bind="selected.CornerRadius" @bind:after="Commit" /></label>
+                                <label class="field"><span>Soft edges px</span><input type="number" min="0" max="200" @bind="selected.SoftEdges" @bind:after="Commit" /></label>
+                            </div>
                         }
-                    </div>
-                    <label class="field"><span>Opacity · @((Opacity(selected) * 100).ToString("0"))%</span><input type="range" min="0" max="1" step="0.01" value="@N(Opacity(selected))" @onchange="SetOpacity" /></label>
-                    <details class="studio-section">
-                    <summary><Icon Name="clock" /> Timing</summary>
-                    <div class="grid grid-2">
-                        <label class="field"><span>Starts (seconds)</span><input type="number" min="0" step="0.1" value="@N(selected.Start.TotalSeconds)" @onchange="e => SetTiming(e, false)" /></label>
-                        <label class="field"><span>Ends (blank: full credits)</span><input type="number" min="0" step="0.1" value="@(selected.End is { } end ? N(end.TotalSeconds) : "")" @onchange="e => SetTiming(e, true)" /></label>
-                    </div>
-                    </details>
-                    @if (selected.Video?.Episode == SqueezeCanvas.Credits)
-                    {
-                        <button type="button" class="btn btn-sm" title="Replace this layer's keyframes with a one-second full-screen-to-box animation" @onclick="AnimateIn"><Icon Name="keyframe" />Animate squeeze-in</button>
+                    </InspectorSection>
                     }
+                    <InspectorSection Title="Layer FX" Name="layer-fx" IconName="wand" Badge="@FxBadge(FxOf(selected))">
+                        <LayerFxEditor @key="selected" Effects="FxOf(selected)" EffectsChanged="SetFx" />
+                    </InspectorSection>
+                    <InspectorSection Title="Transform" Name="transform">
+                        <div class="grid grid-4">
+                            @foreach (string field in new[] { "X", "Y", "Width", "Height" })
+                            {
+                                <label class="field"><span>@field</span><input type="number" step="1" value="@N(Coordinate(field))" @onchange="e => SetCoordinate(field, e)" /></label>
+                            }
+                        </div>
+                        <label class="field"><span>Opacity @((Opacity(selected) * 100).ToString("0"))%</span><input type="range" min="0" max="1" step="0.01" value="@N(Opacity(selected))" @onchange="SetOpacity" /></label>
+                        @if (selected.Video?.Episode == SqueezeCanvas.Credits)
+                        {
+                            <button type="button" class="btn btn-sm" title="Replace this layer's keyframes with a one-second full-screen-to-box animation" @onclick="AnimateIn"><Icon Name="keyframe" />Animate squeeze-in</button>
+                        }
+                    </InspectorSection>
+                    <InspectorSection Title="Timing" Name="timing">
+                        <div class="grid grid-2">
+                            <label class="field"><span>Starts (s)</span><input type="number" min="0" step="0.1" value="@N(selected.Start.TotalSeconds)" @onchange="e => SetTiming(e, false)" /></label>
+                            <label class="field" title="Blank runs for the full credits"><span>Ends (s)</span><input type="number" min="0" step="0.1" value="@(selected.End is { } end ? N(end.TotalSeconds) : "")" placeholder="End" @onchange="e => SetTiming(e, true)" /></label>
+                        </div>
+                    </InspectorSection>
                     </div>
                 }
             </Inspector>
@@ -566,6 +582,24 @@
         SetPose(pose);
         await Commit();
     }
+    // The layer's effects as the list shows them: its own, or text's older shadow and outline as the effects that draw the same.
+    private static IReadOnlyList<LayerEffect>? FxOf(GeneratedLayer layer) =>
+        layer.Effects ?? (layer.Kind == GeneratedLayerKind.Text
+            ? LayerEffects.FromText(layer.Shadow, layer.ShadowStyle, layer.Outline, layer.OutlineStyle, TextShadowSettings.Promo, layer.FontSize)
+            : null);
+
+    private static string? FxBadge(IReadOnlyList<LayerEffect>? effects) =>
+        effects?.Count(effect => effect.IsOn) is > 0 and var count ? count.ToString(CultureInfo.InvariantCulture) : null;
+
+    // Gives the selected layer its effects, retiring text's older shadow and outline (so an emptied list stays empty once saved).
+    private async Task SetFx(List<LayerEffect> effects)
+    {
+        if (_layer is null) return;
+        _layer.Effects = effects.Count == 0 ? null : effects;
+        (_layer.Shadow, _layer.ShadowStyle, _layer.Outline, _layer.OutlineStyle) = (false, null, null, null);
+        await Commit();
+    }
+
     private async Task SetOpacity(ChangeEventArgs e)
     {
         if (_layer is null || !float.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float value) || !float.IsFinite(value)) return;

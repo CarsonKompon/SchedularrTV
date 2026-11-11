@@ -51,6 +51,10 @@
 .canvas-studio ::deep :where(.layer-row.selected .layer-select) { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
 .canvas-studio ::deep :where(.inspector) { border-top: 1px solid var(--line); padding-top: 8px; }
 .canvas-studio ::deep :where(.inspector-head .ed-section) { margin: 0; }
+.canvas-studio ::deep .inspector-head .insp-kind { flex: 0 1 auto; max-width: 96px; padding: 2px 7px; border-radius: 999px; background: rgba(255, 255, 255, .08); color: var(--muted);
+    font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.canvas-studio ::deep .inspector-head .insp-name { flex: 1; min-width: 0; font-weight: 600; }
+.canvas-studio ::deep .inspector .ed-pin-row { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-bottom: 6px; }
 .canvas-studio ::deep :where(input[type=range]) { width: 100%; }
 .canvas-studio ::deep .ed-keyfield { display: flex; align-items: center; gap: 4px; font-size: 12px; }
 .canvas-studio ::deep .ed-keyfield input { width: 76px; }

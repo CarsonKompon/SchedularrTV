@@ -2154,6 +2154,14 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming, IGenerate
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public TextOutlineSettings? OutlineStyle { get; set; }
 
+    /// <summary>
+    /// Layer FX, applied in order, each over what the ones before it drew (any kind of layer; on a group, its contents
+    /// together). Once set, text's older <see cref="Shadow"/> and <see cref="Outline"/> are ignored. Null (none, or text
+    /// still using its older shadow and outline) keeps render keys of older templates.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<LayerEffect>? Effects { get; set; }
+
     public GeneratedUpNextOptions? UpNext { get; set; }
 
     /// <summary>Settings for Now Playing, This Has Been, Coming Up and Eventually text blocks.</summary>

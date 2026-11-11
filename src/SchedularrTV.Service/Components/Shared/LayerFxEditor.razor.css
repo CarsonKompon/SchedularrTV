@@ -1,0 +1,22 @@
+.fx-editor { display: flex; flex-direction: column; gap: 6px; }
+.fx-empty { margin: 0; color: var(--muted); font-size: 12px; }
+.fx-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; counter-reset: fx; }
+.fx-item { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); counter-increment: fx; }
+.fx-item.open { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.fx-item.off .fx-name, .fx-item.off .fx-swatch { opacity: .45; }
+.fx-row { display: flex; align-items: center; gap: 1px; padding: 2px 3px; }
+.fx-name { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; padding: 4px; border: 0; background: none; color: var(--text); cursor: pointer; text-align: left; font-size: 12px; }
+.fx-name::before { content: counter(fx); min-width: 12px; color: var(--muted); font-size: 10px; text-align: right; }
+.fx-swatch { flex: 0 0 auto; width: 12px; height: 12px; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .35); }
+.fx-title { font-weight: 600; white-space: nowrap; }
+.fx-summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
+.fx-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px;
+    background: none; color: var(--muted); cursor: pointer; flex: 0 0 auto; }
+.fx-icon-btn:hover:not(:disabled) { background: rgba(255, 255, 255, .08); color: var(--text); }
+.fx-icon-btn.danger:hover:not(:disabled) { color: var(--danger, #ef6b6b); }
+.fx-icon-btn:disabled { opacity: .3; cursor: default; }
+.fx-settings { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px 8px; padding: 4px 8px 8px; }
+.fx-settings .field { margin: 0; }
+.fx-settings .fx-colour { grid-column: 1 / -1; }
+.fx-add { display: flex; flex-wrap: wrap; gap: 4px; }
+.fx-add .btn { display: inline-flex; align-items: center; gap: 4px; }

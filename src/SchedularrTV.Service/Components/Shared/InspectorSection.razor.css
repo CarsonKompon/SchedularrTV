@@ -1,0 +1,15 @@
+.insp-section { border-bottom: 1px solid var(--line); }
+.insp-section:last-child { border-bottom: 0; }
+.insp-head { display: flex; align-items: center; gap: 6px; min-height: 34px; flex-wrap: wrap; }
+.insp-toggle { display: inline-flex; align-items: center; gap: 6px; flex: 1; min-width: 0; padding: 7px 0; border: 0; background: none; color: var(--text);
+    cursor: pointer; font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; text-align: left; }
+.insp-toggle:hover { color: var(--accent); }
+.insp-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.insp-badge { padding: 0 6px; border-radius: 999px; background: rgba(255, 255, 255, .08); color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: 0; }
+.insp-extra { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; color: var(--muted); font-size: 11px; }
+.insp-body { padding: 2px 0 10px; }
+.insp-body ::deep > :last-child { margin-bottom: 0; }
+.insp-body ::deep .grid { margin-bottom: 8px; }
+.insp-body ::deep .grid .field { margin-bottom: 0; }
+.insp-body ::deep .check { font-size: 12px; }
+.insp-body ::deep .insp-sub { margin: 10px 0 6px; color: var(--muted); font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }

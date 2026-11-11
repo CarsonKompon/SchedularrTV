@@ -1082,9 +1082,11 @@ public static partial class GeneratedPromoResolver
                     GeneratedTextAlign.Right => SKTextAlign.Right,
                     _ => SKTextAlign.Left
                 },
-                Shadow = layer.Shadow ? new SKColor(0, 0, 0, 160) : null,
-                Effects = SchedularrTV.Service.Rendering.TextEffects.From(layer.Shadow, layer.ShadowStyle, layer.Outline, layer.OutlineStyle,
-                    TextShadowSettings.Promo)
+                // Layer FX replace text's older shadow and outline once it has any.
+                Shadow = layer.Effects is null && layer.Shadow ? new SKColor(0, 0, 0, 160) : null,
+                Effects = layer.Effects is null
+                    ? SchedularrTV.Service.Rendering.TextEffects.From(layer.Shadow, layer.ShadowStyle, layer.Outline, layer.OutlineStyle, TextShadowSettings.Promo)
+                    : null
             },
             _ => null
         };
@@ -1102,7 +1104,8 @@ public static partial class GeneratedPromoResolver
             Opacity = pose.Opacity,
             Rotation = Degrees(pose.Rotation),
             Corners = PromoCorners.From(pose.Corners),
-            Keyframes = Keyframes(pose)
+            Keyframes = Keyframes(pose),
+            Fx = LayerEffects.Any(layer.Effects) ? layer.Effects : null
         };
     }
 

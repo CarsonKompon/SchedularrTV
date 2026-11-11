@@ -564,18 +564,43 @@
             {
                 <div class="inspector" aria-label="Layer settings">
                     <div class="inspector-head">
-                        <h3 class="ed-section">@KindName(selected.Kind)</h3>
-                        <div class="spacer"></div>
+                        <span class="insp-kind" title="@KindName(selected.Kind)">@KindName(selected.Kind)</span>
+                        <input type="text" class="insp-name" aria-label="Layer name" placeholder="Layer name" value="@selected.Name"
+                               @onchange="e => Set(() => selected.Name = Text(e))" />
                         <EditorIconButton Icon="copy" Label="Duplicate layer" OnClick="() => DuplicateLayer(selected)" />
                         <EditorIconButton Icon="trash" Label="Delete layer" Danger="true" OnClick="() => RemoveLayer(selected)" />
                     </div>
-                    <label class="field">
-                        <span>Layer name</span>
-                        <input type="text" value="@selected.Name" @onchange="e => Set(() => selected.Name = Text(e))" />
-                    </label>
+                    @if (selected.Variant is { } ownerId)
+                    {
+                        <div class="ed-placing-layer">
+                            <span class="hint" style="margin:0;">
+                                <span class="vt-own-badge">only in @VariantLabel(ownerId)</span> This layer belongs to that variant: everything about it is its own.
+                            </span>
+                        </div>
+                    }
+                    else if (_editVariant is { } placingFor && OverridesFor(selected))
+                    {
+                        <div class="ed-placing-layer">
+                            @if (PlacedHere(selected))
+                            {
+                                <span class="hint" style="margin:0;">
+                                    ⌖ @CustomisedParts(selected, placingFor) its own way for @VariantLabel(placingFor).
+                                </span>
+                                <button class="btn btn-sm" type="button" title="Use the default's position, size, opacity, keyframes, timing, colour and file again in this variant"
+                                        @onclick="() => ResetPlacement(selected)">Use the default's</button>
+                            }
+                            else
+                            {
+                                <span class="hint" style="margin:0;">As the default has it; move it or change its colour to set it for @VariantLabel(placingFor) only.</span>
+                            }
+                            <button class="btn btn-sm" type="button" title="Don't show this layer in this variant (it stays in the default and other variants)"
+                                    @onclick="() => SetHidden(selected, true)">Hide in this variant</button>
+                        </div>
+                    }
 
                     @if (selected.Kind is GeneratedLayerKind.Rect or GeneratedLayerKind.Image)
                     {
+                    <InspectorSection Title="Mask" Name="promo-mask" Badge="@(selected.Mask is { } usedAs ? usedAs.Mode.ToString() : null)" StartsOpen="false">
                         <label class="field">
                             <span>Use as</span>
                             <select value="@(selected.Mask?.Mode.ToString() ?? "")" @onchange="e => SetLayerMask(selected, Text(e))">
@@ -604,8 +629,12 @@
                             <p class="hint">The mask itself is invisible. Its alpha and opacity control the strength; use 100% for a full cutout. Image masks use transparency, not brightness. Targeting a group masks its combined contents, including nested groups.</p>
                             <p class="hint">Animate the mask's position and perspective corners to follow an object in the footage. Add masks reveal their combined area; subtract masks then cut holes in it.</p>
                         }
+                    </InspectorSection>
                     }
 
+                    @if (HasContent(selected.Kind))
+                    {
+                    <InspectorSection Title="@ContentTitle(selected.Kind)" Name="@($"promo-content-{selected.Kind}")">
                     @if (selected.Kind == GeneratedLayerKind.UpNext)
                     {
                         <div class="grid grid-2">
@@ -830,10 +859,12 @@
                             <p class="hint">Its sound fades in and out with the layer, and follows its opacity.</p>
                         }
                     }
+                    </InspectorSection>
+                    }
 
                     @if (selected.Kind is GeneratedLayerKind.Text or GeneratedLayerKind.UpNext || GeneratedPromoKinds.IsShowLayer(selected.Kind))
                     {
-                        <h4>Text style</h4>
+                    <InspectorSection Title="Typography" Name="typography">
                         <div class="grid grid-2">
                             <label class="field">
                                 <span>Font</span>
@@ -871,25 +902,21 @@
                                     <span>Word wrap</span>
                                 </label>
                             </div>
-                            <TextEffectsEditor @key="selected" UsualShadow="TextShadowSettings.Promo"
-                                               Shadow="selected.Shadow" ShadowChanged="on => Set(() => selected.Shadow = on)"
-                                               ShadowStyle="selected.ShadowStyle" ShadowStyleChanged="style => Set(() => selected.ShadowStyle = style)"
-                                               OutlineOn="selected.Outline" OutlineChanged="on => Set(() => selected.Outline = on)"
-                                               OutlineStyle="selected.OutlineStyle" OutlineStyleChanged="style => Set(() => selected.OutlineStyle = style)" />
                         </div>
                         <div class="grid grid-2">
-                            <label class="field">
-                                <span>Letter spacing (% of the size; negative is tighter)</span>
+                            <label class="field" title="As a percentage of the size; negative is tighter">
+                                <span>Letter spacing %</span>
                                 <input type="number" min="-50" max="200" step="1" value="@OptionalNumber(selected.LetterSpacing)" placeholder="0"
                                        @onchange="e => SetOptionalNumber(e, value => selected.LetterSpacing = value, neutral: 0, min: -50, max: 200)" />
                             </label>
-                            <label class="field">
-                                <span>Line spacing (× the font's own)</span>
+                            <label class="field" title="Times the font's own">
+                                <span>Line spacing ×</span>
                                 <input type="number" min="0.3" max="5" step="0.05" value="@OptionalNumber(selected.LineSpacing)" placeholder="1"
                                        @onchange="e => SetOptionalNumber(e, value => selected.LineSpacing = value, neutral: 1, min: 0.3f, max: 5)" />
                             </label>
                         </div>
                         <p class="hint">Text shrinks to fit its box@(selected.WordWrap == true ? ", after long lines wrap between words" : ""), spacing included.</p>
+                    </InspectorSection>
                     }
 
                     @if (selected.Kind == GeneratedLayerKind.Group)
@@ -902,6 +929,8 @@
                     }
                     @if (selected.Kind is not (GeneratedLayerKind.Image or GeneratedLayerKind.Group or GeneratedLayerKind.Video))
                     {
+                    <InspectorSection Title="Appearance" Name="appearance">
+                    @{
                         (string rgb, int alpha) = GeneratedPromoEditing.SplitColor(ColorOf(selected));
                         bool ownColour = OverridesFor(selected) && GeneratedPromoResolver.Recolour(Template, _editVariant, selected) is not null;
                         <div class="grid grid-2">
@@ -919,67 +948,52 @@
                     }
                     @if (selected.Kind == GeneratedLayerKind.Rect)
                     {
-                        <label class="field">
-                            <span>Shape</span>
-                            <select value="@(selected.Shape ?? GeneratedShape.Rectangle)"
-                                    @onchange="e => Set(() => selected.Shape = Enum.Parse<GeneratedShape>(Text(e)))">
-                                @foreach (var shape in Enum.GetValues<GeneratedShape>())
-                                {
-                                    <option value="@shape">@shape</option>
-                                }
-                            </select>
-                        </label>
-                        <label class="field">
-                            <span>Soft edges (pixels)</span>
-                            <input type="number" min="0" max="200" step="1" value="@Number(selected.SoftEdges ?? 0)"
-                                   @onchange="e => SetNumber(e, value => selected.SoftEdges = (float)Math.Clamp(value, 0, 200))" />
-                        </label>
-                        <p class="hint">Soft edges feather the outline; 0 keeps it sharp. Shape and softness apply across backgrounds; turning is under Position.</p>
-                        @if (selected.Shape is null or GeneratedShape.Rectangle)
-                        {
+                        <div class="grid grid-2">
                             <label class="field">
-                                <span>Corner radius</span>
-                                <input type="number" min="0" value="@Number(selected.CornerRadius)"
-                                       @onchange="e => SetNumber(e, value => selected.CornerRadius = (float)Math.Max(0, value))" />
+                                <span>Shape</span>
+                                <select value="@(selected.Shape ?? GeneratedShape.Rectangle)"
+                                        @onchange="e => Set(() => selected.Shape = Enum.Parse<GeneratedShape>(Text(e)))">
+                                    @foreach (var shape in Enum.GetValues<GeneratedShape>())
+                                    {
+                                        <option value="@shape">@shape</option>
+                                    }
+                                </select>
                             </label>
-                        }
+                            <label class="field" title="Feathers the outline; 0 keeps it sharp">
+                                <span>Soft edges px</span>
+                                <input type="number" min="0" max="200" step="1" value="@Number(selected.SoftEdges ?? 0)"
+                                       @onchange="e => SetNumber(e, value => selected.SoftEdges = (float)Math.Clamp(value, 0, 200))" />
+                            </label>
+                            @if (selected.Shape is null or GeneratedShape.Rectangle)
+                            {
+                                <label class="field">
+                                    <span>Corner radius px</span>
+                                    <input type="number" min="0" value="@Number(selected.CornerRadius)"
+                                           @onchange="e => SetNumber(e, value => selected.CornerRadius = (float)Math.Max(0, value))" />
+                                </label>
+                            }
+                        </div>
+                        <p class="hint">Shape and softness apply across backgrounds; turning is under Transform.</p>
+                    }
+                    </InspectorSection>
                     }
 
+                    <InspectorSection Title="Layer FX" Name="layer-fx" IconName="wand" Badge="@FxBadge(FxOf(selected))">
+                        <LayerFxEditor @key="selected" Effects="FxOf(selected)" EffectsChanged="effects => Set(() => SetFx(selected, effects))"
+                                       Note="@(selected.Kind == GeneratedLayerKind.Group ? "On a group, the effects go round everything inside it together." : null)" />
+                    </InspectorSection>
+
                     @{ LayerPose selectedPose = GeneratedPromoEditing.PoseAt(Pose(selected), Time); }
-                    @if (selected.Variant is { } ownerId)
-                    {
-                        <div class="ed-placing-layer">
-                            <span class="hint" style="margin:0;">
-                                <span class="vt-own-badge">only in @VariantLabel(ownerId)</span> This layer belongs to that variant: everything about it is its own.
-                            </span>
-                        </div>
-                    }
-                    else if (_editVariant is { } placingFor && OverridesFor(selected))
-                    {
-                        <div class="ed-placing-layer">
-                            @if (PlacedHere(selected))
-                            {
-                                <span class="hint" style="margin:0;">
-                                    ⌖ @CustomisedParts(selected, placingFor) its own way for @VariantLabel(placingFor).
-                                </span>
-                                <button class="btn btn-sm" type="button" title="Use the default's position, size, opacity, keyframes, timing, colour and file again in this variant"
-                                        @onclick="() => ResetPlacement(selected)">Use the default's</button>
-                            }
-                            else
-                            {
-                                <span class="hint" style="margin:0;">As the default has it; move it or change its colour to set it for @VariantLabel(placingFor) only.</span>
-                            }
-                            <button class="btn btn-sm" type="button" title="Don't show this layer in this variant (it stays in the default and other variants)"
-                                    @onclick="() => SetHidden(selected, true)">Hide in this variant</button>
-                        </div>
-                    }
-                    <h4>
-                        Position (pixels)
+                    <InspectorSection Title="Transform" Name="transform">
+                    <Extra>
                         @if (GeneratedPromoEditing.HasKeyframes(Pose(selected)))
                         {
-                            <span class="ed-meta">· at @($"{_time:0.00}")s; @(CurrentKeyframe is null ? "changing these adds a keyframe" : "this keyframe")</span>
+                            <span title="@(CurrentKeyframe is null ? "Changing these adds a keyframe here" : "Editing this keyframe")">
+                                <Icon Name="keyframe" Size="11" /> @($"{_time:0.00}")s@(CurrentKeyframe is null ? "" : " · key")
+                            </span>
                         }
-                    </h4>
+                    </Extra>
+                    <ChildContent>
                     <div class="grid grid-4">
                         <label class="field"><span>X</span><input type="number" value="@Number(Math.Round(selectedPose.X, 1))" @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { X = value })" /></label>
                         <label class="field"><span>Y</span><input type="number" value="@Number(Math.Round(selectedPose.Y, 1))" @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Y = value })" /></label>
@@ -987,22 +1001,22 @@
                         <label class="field"><span>Height</span><input type="number" min="1" value="@Number(Math.Round(selectedPose.Height, 1))" @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Height = value })" /></label>
                     </div>
                     <div class="grid grid-2">
-                        <label class="field">
-                            <span>Turn (degrees, clockwise)</span>
+                        <label class="field" title="Degrees, clockwise">
+                            <span>Turn °</span>
                             <input type="number" step="1" value="@Number(Math.Round(selectedPose.Rotation ?? 0, 1))"
                                    @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Rotation = value })" />
                         </label>
                         <label class="field">
-                            <span>Opacity: @($"{selectedPose.Opacity:P0}")</span>
+                            <span>Opacity @($"{selectedPose.Opacity:P0}")</span>
                             <input type="range" min="0" max="100" value="@Number(Math.Round(selectedPose.Opacity * 100))"
                                    @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Opacity = value / 100 })" />
                         </label>
                     </div>
                     <div class="ed-pin-row">
-                        <span>Perspective: @(selectedPose.Corners is { IsSquare: false } ? "corners pulled" : "square")</span>
+                        <span><Icon Name="perspective" Size="12" /> @(selectedPose.Corners is { IsSquare: false } ? "Corners pulled" : "Square")</span>
                         <div class="spacer"></div>
                         <button class="btn btn-sm @(_pinTool ? "btn-primary" : "")" type="button" aria-pressed="@(_pinTool ? "true" : "false")"
-                                @onclick="() => _pinTool = !_pinTool">@(_pinTool ? "Done pulling corners" : "Pull corners")</button>
+                                @onclick="() => _pinTool = !_pinTool">@(_pinTool ? "Done" : "Pull corners")</button>
                         @if (selectedPose.Corners is { IsSquare: false })
                         {
                             <button class="btn btn-sm" type="button" title="Square the corners up again (at this keyframe, on an animated layer)"
@@ -1021,38 +1035,27 @@
                     {
                         <p class="hint">Inside “@Label(holder)”: these are from the group's top-left corner, turned with it.</p>
                     }
-                    @if (selected.Kind != GeneratedLayerKind.Group)
-                    {
-                    <label class="check">
-                        <input type="checkbox" checked="@(selected.MutesClip == true)"
-                               @onchange="e => Set(() => selected.MutesClip = e.Value is true ? true : null)" />
-                        <span>Mutes the episode clip (as much as it's showing)</span>
-                    </label>
-                    }
-                    @if (selected.MutesClip == true)
-                    {
-                        <p class="hint @(Template.BackgroundClip is { IncludeAudio: true } ? string.Empty : "warn")">
-                            @(Template.BackgroundClip is { IncludeAudio: true } ? MutesClipHint : MutesNothingHint)
-                        </p>
-                    }
+                    </ChildContent>
+                    </InspectorSection>
 
                     @{ IGeneratedTiming timing = Timing(selected); }
-                    <h4>
-                        Timing and animation
+                    <InspectorSection Title="Timing" Name="timing">
+                    <Extra>
                         @if (_editVariant is { } timingFor && OverridesFor(selected))
                         {
                             @if (GeneratedPromoResolver.Retiming(Template, timingFor, selected) is not null)
                             {
-                                <span class="ed-meta">· this variant's own</span>
+                                <span title="This variant's own timing">variant's own</span>
                                 <button class="btn btn-sm" type="button" title="Use the default's timing and transitions again in this variant"
                                         @onclick="() => ResetTiming(selected)">Use the default's</button>
                             }
                             else
                             {
-                                <span class="ed-meta">· the default's; changing it sets this variant's</span>
+                                <span title="Changing it sets this variant's own">default's</span>
                             }
                         }
-                    </h4>
+                    </Extra>
+                    <ChildContent>
                     <div class="grid grid-2">
                         <label class="field">
                             <span>Appears at (s)</span>
@@ -1087,13 +1090,29 @@
                             <input type="number" min="0" max="5" step="0.05" value="@Number(timing.TransitionDuration.TotalSeconds)"
                                    @onchange="e => SetSeconds(e, value => EditableTiming(selected).TransitionDuration = value)" />
                         </label>
-                        <label class="field">
-                            <span>Exit length (s, blank = same as enter)</span>
+                        <label class="field" title="Blank is the same as entering">
+                            <span>Exit length (s)</span>
                             <input type="number" min="0" max="5" step="0.05" value="@OptionalSeconds(timing.TransitionOutDuration)"
                                    placeholder="@Number(timing.TransitionDuration.TotalSeconds)"
                                    @onchange="e => SetOptionalSeconds(e, value => EditableTiming(selected).TransitionOutDuration = value)" />
                         </label>
                     </div>
+                    @if (selected.Kind != GeneratedLayerKind.Group)
+                    {
+                        <label class="check">
+                            <input type="checkbox" checked="@(selected.MutesClip == true)"
+                                   @onchange="e => Set(() => selected.MutesClip = e.Value is true ? true : null)" />
+                            <span>Mutes the episode clip (as much as it's showing)</span>
+                        </label>
+                    }
+                    @if (selected.MutesClip == true)
+                    {
+                        <p class="hint @(Template.BackgroundClip is { IncludeAudio: true } ? string.Empty : "warn")">
+                            @(Template.BackgroundClip is { IncludeAudio: true } ? MutesClipHint : MutesNothingHint)
+                        </p>
+                    }
+                    </ChildContent>
+                    </InspectorSection>
                 </div>
             }
         </Inspector>
@@ -4788,6 +4807,42 @@
         _fonts.FirstOrDefault(font => string.Equals(font, family, StringComparison.OrdinalIgnoreCase)) ?? family;
 
     private static string Label(GeneratedLayer layer) => string.IsNullOrWhiteSpace(layer.Name) ? KindName(layer.Kind) : layer.Name;
+
+    // ---- Inspector sections ----
+
+    private static bool IsTextKind(GeneratedLayerKind kind) =>
+        kind is GeneratedLayerKind.Text or GeneratedLayerKind.UpNext || GeneratedPromoKinds.IsShowLayer(kind);
+
+    /// <summary>Whether the layer has settings of its own kind (what it says or shows) for the inspector's first section.</summary>
+    private static bool HasContent(GeneratedLayerKind kind) => kind is not (GeneratedLayerKind.Rect or GeneratedLayerKind.Group);
+
+    private static string ContentTitle(GeneratedLayerKind kind) => kind switch
+    {
+        GeneratedLayerKind.UpNext => "Up Next",
+        GeneratedLayerKind.Text => "Text",
+        GeneratedLayerKind.Image => "Image",
+        GeneratedLayerKind.Video => "Video",
+        _ => "Show details"
+    };
+
+    /// <summary>
+    /// The layer's effects as the list shows them: its own, or for text still using the older shadow and outline, those as
+    /// the effects that draw the same (nothing changes until the list is edited).
+    /// </summary>
+    private static IReadOnlyList<LayerEffect>? FxOf(GeneratedLayer layer) =>
+        layer.Effects ?? (IsTextKind(layer.Kind)
+            ? LayerEffects.FromText(layer.Shadow, layer.ShadowStyle, layer.Outline, layer.OutlineStyle, TextShadowSettings.Promo, layer.FontSize)
+            : null);
+
+    /// <summary>Gives the layer its effects, retiring text's older shadow and outline (so an emptied list stays empty once saved).</summary>
+    private static void SetFx(GeneratedLayer layer, List<LayerEffect> effects)
+    {
+        layer.Effects = effects.Count == 0 ? null : effects;
+        (layer.Shadow, layer.ShadowStyle, layer.Outline, layer.OutlineStyle) = (false, null, null, null);
+    }
+
+    private static string? FxBadge(IReadOnlyList<LayerEffect>? effects) =>
+        effects?.Count(effect => effect.IsOn) is > 0 and var count ? count.ToString(CultureInfo.InvariantCulture) : null;
 
     private static string KindName(GeneratedLayerKind kind) => kind switch
     {

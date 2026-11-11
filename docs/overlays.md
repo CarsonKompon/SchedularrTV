@@ -129,15 +129,29 @@ Keyframe times are from the start of each appearance and opacity is 0–100, lik
 
 **Tag tokens** work for any name: tag an episode in Jellyfin (or its NFO's `<tag>`) as `artist: Nirvana`, `album: Nevermind`, `label: DGC` or `director: Samuel Bayer`, and `{tag.artist}`, `{tag.album}`, `{tag.label}` and `{tag.director}` show them. Names are matched ignoring case and spaces at either end. Several tags with one name are listed together, separated by commas (two `director:` tags read `Jonas Åkerlund, Dave Meyers`). In the editor's preview, a tag token shows its name (`Artist`).
 
-**Outline** and **Drop shadow** are groups: tick one to turn it on and show its settings. Generated promos and Credits Squeeze text layers have the same controls.
+### Layer FX
 
-- **Outline:** colour, width and opacity.
+Every layer except a video has a **Layer FX** list in the inspector; generated promos and Credits Squeeze have the same list. Add as many effects as you like, in any order:
+
+- **Outline:** colour, opacity and width.
 - **Drop shadow:** colour, opacity, distance, angle (90° falls straight down) and blur.
-- **Sizes:** widths, distances and blur are percentages of the text size, so they keep their look as text shrinks to fit its box.
-- **Order:** the outline is drawn first, and the shadow falls from the letters and their outline together. The text fits inside its box with its outline.
-- **Until you change it:** a shadow keeps the look text always had. **Back to the usual shadow** returns to it.
+- **Glow:** colour, opacity and size.
 
-In YAML: `outline: true`, `outline_style: { color: '#000000', width: 4, opacity: 100 }`, and `shadow_style: { color: '#000000', opacity: 63, distance: 4, angle: 90, blur: 5 }`.
+Effects apply top to bottom, each to everything above it. Two outlines make an outline of an outline, and a shadow after them is cast by the layer and both outlines. Another outline after that goes round the whole lot. Use the arrows to reorder effects, the eye to switch one off without losing it, and the copy button to duplicate one.
+
+- **Sizes** are canvas pixels. A shadow keeps falling the same way on screen when its layer or group turns.
+- **On a group**, the effects go round everything inside it together. An overlay video inside a group is played by ErsatzTV, so it never gets the group's effects on air.
+- **Text from before Layer FX:** a text layer's older outline and shadow appear in the list as the effects that draw the same. Nothing changes until you edit the list; from then on the list replaces them.
+
+In YAML:
+
+```yaml
+effects:
+  - { kind: outline, color: '#000000', opacity: 100, width: 4 }
+  - { kind: outline, color: '#ffffff', opacity: 100, width: 3 }
+  - { kind: shadow, color: '#000000', opacity: 63, distance: 6, angle: 90, blur: 6 }
+  - { kind: glow, color: '#ffffff', opacity: 80, blur: 12, hidden: true }
+```
 
 A text layer's **Text** box takes several lines: Enter starts a new line on screen, whether or not word wrap is on. The box grows as you type, and the canvas follows a moment after you pause. Generated promos and Credits Squeeze text layers work the same way.
 

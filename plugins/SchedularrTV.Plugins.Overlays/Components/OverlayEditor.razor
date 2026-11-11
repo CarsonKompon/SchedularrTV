@@ -389,16 +389,16 @@
                 {
                     <div class="inspector" aria-label="Layer settings">
                         <div class="inspector-head">
-                            <h3 class="ed-section">@KindName(selected.Kind)</h3>
-                            <div class="spacer"></div>
+                            <span class="insp-kind" title="@KindName(selected.Kind)">@KindName(selected.Kind)</span>
+                            <input type="text" class="insp-name" aria-label="Layer name" placeholder="Layer name" value="@selected.Name"
+                                   @onchange="e => Set(() => selected.Name = Text(e, selected.Name))" />
                             <EditorIconButton Icon="copy" Label="Duplicate layer" OnClick="() => DuplicateLayer(selected)" />
                             <EditorIconButton Icon="trash" Label="Delete layer" Danger="true" OnClick="() => RemoveLayer(selected)" />
                         </div>
-                        <label class="field"><span>Layer name</span>
-                            <input type="text" value="@selected.Name" @onchange="e => Set(() => selected.Name = Text(e, selected.Name))" /></label>
 
                         @if (OverlayHierarchy.CanMask(selected))
                         {
+                        <InspectorSection Title="Mask" Name="overlay-mask" Badge="@(selected.Mask is { } usedAs ? usedAs.Mode.ToString() : null)" StartsOpen="false">
                             <label class="field"><span>Use as</span>
                                 <select value="@(selected.Mask?.Mode.ToString() ?? "")" @onchange="e => SetLayerMask(selected, e.Value?.ToString() ?? string.Empty)">
                                     <option value="">Visible layer</option>
@@ -426,8 +426,13 @@
                                     brightness. Add masks reveal the target only inside them; subtract masks cut holes in it. Keyframe the mask to follow something as it moves.</p>
                                 <p class="hint">A group target masks its combined contents, including nested groups. Groups containing video layers can't be masked because ErsatzTV plays those videos separately.</p>
                             }
+                        </InspectorSection>
                         }
 
+                        @if (selected.Kind is OverlayLayerKinds.Text or OverlayLayerKinds.Image or OverlayLayerKinds.Video)
+                        {
+                        <InspectorSection Title="@(selected.Kind == OverlayLayerKinds.Text ? "Text" : selected.Kind == OverlayLayerKinds.Image ? "Picture" : "Video")"
+                                          Name="@($"overlay-content-{selected.Kind}")">
                         @if (selected.Kind == OverlayLayerKinds.Text)
                         {
                             <label class="field"><span>Text <span class="muted">(Enter starts a new line)</span></span>
@@ -445,47 +450,6 @@
                                                 StylePlaceholder="@LayerStylePlaceholder" WordsPlaceholder="8" Try="@(token => TryLayer(selected, token))"
                                                 TryHint="Writes one for a sample episode." />
                             }
-
-                            <h4>Text style</h4>
-                            <div class="grid grid-2">
-                                <label class="field"><span>Font</span>
-                                    <select value="@FontName(selected.FontFamily)" style="font-family: '@selected.FontFamily'"
-                                            @onchange="e => Set(() => selected.FontFamily = Text(e, DefaultFont))">
-                                        @if (!_fonts.Contains(FontName(selected.FontFamily)))
-                                        {
-                                            <option value="@selected.FontFamily">@selected.FontFamily (not installed)</option>
-                                        }
-                                        @foreach (string font in _fonts)
-                                        {
-                                            <option value="@font" style="font-family: '@font'">@font</option>
-                                        }
-                                    </select></label>
-                                <label class="field"><span>Largest size</span>
-                                    <input type="number" min="6" max="400" value="@Number(selected.FontSize)" @onchange="e => Set(() => selected.FontSize = (float)Math.Clamp(Number(e, selected.FontSize), 6, 400))" /></label>
-                                <div class="field"><span>Align in its box</span>
-                                    @* Shared with the generated promo editor. Overlay text has always sat in the middle, so that's what null means here. *@
-                                    <TextAlignPad Horizontal="selected.HorizontalAlign" Vertical="@(selected.VerticalAlign ?? GeneratedVerticalAlign.Middle)"
-                                                  Changed="cell => SetAlign(selected, cell.Vertical, cell.Horizontal)" /></div>
-                                <label class="field"><span>Letters</span>
-                                    <TextCaseSelect Value="selected.TextCase" ValueChanged="textCase => Set(() => selected.TextCase = textCase)" /></label>
-                                <div class="check-stack">
-                                    <CanvasFontStyle Weight="selected.FontWeight" Bold="selected.Bold" Italic="selected.Italic"
-                                                     WeightChanged="weight => Set(() => selected.FontWeight = weight)" ItalicChanged="italic => Set(() => selected.Italic = italic)" />
-                                    <label class="check"><input type="checkbox" checked="@(selected.WordWrap == true)" @onchange="e => Set(() => selected.WordWrap = e.Value is true ? true : null)" /><span>Word wrap</span></label>
-                                </div>
-                                <TextEffectsEditor @key="selected" UsualShadow="TextShadowSettings.Overlay"
-                                                   Shadow="selected.Shadow" ShadowChanged="on => Set(() => selected.Shadow = on)"
-                                                   ShadowStyle="selected.ShadowStyle" ShadowStyleChanged="style => Set(() => selected.ShadowStyle = style)"
-                                                   OutlineOn="selected.Outline" OutlineChanged="on => Set(() => selected.Outline = on)"
-                                                   OutlineStyle="selected.OutlineStyle" OutlineStyleChanged="style => Set(() => selected.OutlineStyle = style)" />
-                                <label class="field"><span>Letter spacing (% of the size; negative is tighter)</span>
-                                    <input type="number" min="-50" max="200" step="1" value="@OptionalNumber(selected.LetterSpacing)" placeholder="0"
-                                           @onchange="e => SetOptionalNumber(e, value => selected.LetterSpacing = value, neutral: 0, min: -50, max: 200)" /></label>
-                                <label class="field"><span>Line spacing (× the font's own)</span>
-                                    <input type="number" min="0.3" max="5" step="0.05" value="@OptionalNumber(selected.LineSpacing)" placeholder="1"
-                                           @onchange="e => SetOptionalNumber(e, value => selected.LineSpacing = value, neutral: 1, min: 0.3f, max: 5)" /></label>
-                            </div>
-                            <p class="hint">Text shrinks to fit its box@(selected.WordWrap == true ? ", after long lines wrap between words (and at new lines)" : ""), spacing included. Line spacing applies to wrapped text.</p>
                         }
                         else if (selected.Kind == OverlayLayerKinds.Image)
                         {
@@ -523,7 +487,7 @@
                                     <span>Loop the animated picture (otherwise it stays on its last frame)</span></label>
                             }
                         }
-                        else if (selected.Kind == OverlayLayerKinds.Video)
+                        else
                         {
                             <div class="field"><span>Video</span>
                                 <FilePathPicker Value="@selected.Path" ValueChanged="value => SetVideo(selected, value)" Extensions="VideoExtensions" KeepCopyIn="@OverlayPackages.AssetCategory"
@@ -561,10 +525,52 @@
                             <label class="check"><input type="checkbox" checked="@selected.Loops" @onchange="e => Set(() => selected.Loop = e.Value is true)" />
                                 <span>Loop (otherwise it stays on its last frame)</span></label>
                             <p class="hint">A video with an alpha channel (ProRes 4444 .mov, or VP9 .webm) shows the programme through it. ErsatzTV sizes
-                                it by the box's width, keeping its shape, and can't turn, mask or animate it. It doesn't fade:
+                                it by the box's width, keeping its shape, and can't turn, mask, animate or add effects to it. It doesn't fade:
                                 its own animation brings it in and out, so time the other layers around it below.</p>
                         }
-                        else if (selected.Kind == OverlayLayerKinds.Group)
+                        </InspectorSection>
+                        }
+
+                        @if (selected.Kind == OverlayLayerKinds.Text)
+                        {
+                        <InspectorSection Title="Typography" Name="typography">
+                            <div class="grid grid-2">
+                                <label class="field"><span>Font</span>
+                                    <select value="@FontName(selected.FontFamily)" style="font-family: '@selected.FontFamily'"
+                                            @onchange="e => Set(() => selected.FontFamily = Text(e, DefaultFont))">
+                                        @if (!_fonts.Contains(FontName(selected.FontFamily)))
+                                        {
+                                            <option value="@selected.FontFamily">@selected.FontFamily (not installed)</option>
+                                        }
+                                        @foreach (string font in _fonts)
+                                        {
+                                            <option value="@font" style="font-family: '@font'">@font</option>
+                                        }
+                                    </select></label>
+                                <label class="field"><span>Largest size</span>
+                                    <input type="number" min="6" max="400" value="@Number(selected.FontSize)" @onchange="e => Set(() => selected.FontSize = (float)Math.Clamp(Number(e, selected.FontSize), 6, 400))" /></label>
+                                <div class="field"><span>Align in its box</span>
+                                    @* Shared with the generated promo editor. Overlay text has always sat in the middle, so that's what null means here. *@
+                                    <TextAlignPad Horizontal="selected.HorizontalAlign" Vertical="@(selected.VerticalAlign ?? GeneratedVerticalAlign.Middle)"
+                                                  Changed="cell => SetAlign(selected, cell.Vertical, cell.Horizontal)" /></div>
+                                <label class="field"><span>Letters</span>
+                                    <TextCaseSelect Value="selected.TextCase" ValueChanged="textCase => Set(() => selected.TextCase = textCase)" /></label>
+                                <div class="check-stack">
+                                    <CanvasFontStyle Weight="selected.FontWeight" Bold="selected.Bold" Italic="selected.Italic"
+                                                     WeightChanged="weight => Set(() => selected.FontWeight = weight)" ItalicChanged="italic => Set(() => selected.Italic = italic)" />
+                                    <label class="check"><input type="checkbox" checked="@(selected.WordWrap == true)" @onchange="e => Set(() => selected.WordWrap = e.Value is true ? true : null)" /><span>Word wrap</span></label>
+                                </div>
+                                <label class="field" title="As a percentage of the size; negative is tighter"><span>Letter spacing %</span>
+                                    <input type="number" min="-50" max="200" step="1" value="@OptionalNumber(selected.LetterSpacing)" placeholder="0"
+                                           @onchange="e => SetOptionalNumber(e, value => selected.LetterSpacing = value, neutral: 0, min: -50, max: 200)" /></label>
+                                <label class="field" title="Times the font's own"><span>Line spacing ×</span>
+                                    <input type="number" min="0.3" max="5" step="0.05" value="@OptionalNumber(selected.LineSpacing)" placeholder="1"
+                                           @onchange="e => SetOptionalNumber(e, value => selected.LineSpacing = value, neutral: 1, min: 0.3f, max: 5)" /></label>
+                            </div>
+                            <p class="hint">Text shrinks to fit its box@(selected.WordWrap == true ? ", after long lines wrap between words (and at new lines)" : ""), spacing included. Line spacing applies to wrapped text.</p>
+                        </InspectorSection>
+                        }
+                        @if (selected.Kind == OverlayLayerKinds.Group)
                         {
                             <p class="hint">
                                 A group holds @OverlayHierarchy.Children(Overlay, selected).Count layer(s). Move, turn, fade, time and keyframe it like any
@@ -575,41 +581,54 @@
 
                         @if (selected.Kind is OverlayLayerKinds.Text or OverlayLayerKinds.Rect)
                         {
+                        <InspectorSection Title="Appearance" Name="appearance">
                             <div class="field"><span>Colour</span>
                                 <ScreenColourPicker @key="selected" Value="@ColourValue(selected.Color)"
                                                     ValueChanged="colour => Set(() => selected.Color = string.IsNullOrWhiteSpace(colour) ? selected.Color : colour)" /></div>
+                            @if (selected.Kind == OverlayLayerKinds.Rect)
+                            {
+                                <div class="grid grid-2">
+                                    <label class="field"><span>Shape</span>
+                                        <select value="@(selected.Shape ?? GeneratedShape.Rectangle)"
+                                                @onchange="e => Set(() => selected.Shape = ShapeOf(e))">
+                                            @foreach (GeneratedShape shape in Enum.GetValues<GeneratedShape>())
+                                            {
+                                                <option value="@shape">@shape</option>
+                                            }
+                                        </select></label>
+                                    <label class="field" title="Feathers the outline; 0 keeps it sharp"><span>Soft edges px</span>
+                                        <input type="number" min="0" max="200" step="1" value="@Number(selected.SoftEdges ?? 0)"
+                                               @onchange="e => Set(() => selected.SoftEdges = Number(e, 0) is var soft && soft > 0 ? (float)Math.Clamp(soft, 0, 200) : null)" /></label>
+                                    @if (selected.Shape is null or GeneratedShape.Rectangle)
+                                    {
+                                        <label class="field"><span>Corner radius px</span>
+                                            <input type="number" min="0" max="500" value="@Number(selected.CornerRadius)" @onchange="e => Set(() => selected.CornerRadius = (float)Math.Max(0, Number(e, 0)))" /></label>
+                                    }
+                                </div>
+                                <p class="hint">Use equal width and height for a circle.</p>
+                            }
+                        </InspectorSection>
                         }
-                        @if (selected.Kind == OverlayLayerKinds.Rect)
+
+                        @if (selected.Kind != OverlayLayerKinds.Video)
                         {
-                            <div class="grid grid-2">
-                                <label class="field"><span>Shape</span>
-                                    <select value="@(selected.Shape ?? GeneratedShape.Rectangle)"
-                                            @onchange="e => Set(() => selected.Shape = ShapeOf(e))">
-                                        @foreach (GeneratedShape shape in Enum.GetValues<GeneratedShape>())
-                                        {
-                                            <option value="@shape">@shape</option>
-                                        }
-                                    </select></label>
-                                <label class="field"><span>Soft edges (pixels)</span>
-                                    <input type="number" min="0" max="200" step="1" value="@Number(selected.SoftEdges ?? 0)"
-                                           @onchange="e => Set(() => selected.SoftEdges = Number(e, 0) is var soft && soft > 0 ? (float)Math.Clamp(soft, 0, 200) : null)" /></label>
-                                @if (selected.Shape is null or GeneratedShape.Rectangle)
-                                {
-                                    <label class="field"><span>Corner radius</span>
-                                        <input type="number" min="0" max="500" value="@Number(selected.CornerRadius)" @onchange="e => Set(() => selected.CornerRadius = (float)Math.Max(0, Number(e, 0)))" /></label>
-                                }
-                            </div>
-                            <p class="hint">Use equal width and height for a circle. Soft edges feather the outline; 0 keeps it sharp.</p>
+                        <InspectorSection Title="Layer FX" Name="layer-fx" IconName="wand" Badge="@FxBadge(FxOf(selected))">
+                            <LayerFxEditor @key="selected" Effects="FxOf(selected)" EffectsChanged="effects => Set(() => SetFx(selected, effects))"
+                                           Note="@(OverlayHierarchy.IsGroup(selected) ? "On a group, the effects go round everything inside it together (a video inside is played by ErsatzTV, without them)." : null)" />
+                        </InspectorSection>
                         }
 
                         @{ OverlayPose selectedPose = OverlayAnimation.PoseAt(selected, _time); }
-                        <h4>
-                            Position (pixels)
+                        <InspectorSection Title="Transform" Name="transform">
+                        <Extra>
                             @if (OverlayAnimation.HasKeyframes(selected))
                             {
-                                <span class="ed-meta">· at @($"{_time:0.00}")s; @(CurrentKeyframe is null ? "changing these adds a keyframe" : "this keyframe")</span>
+                                <span title="@(CurrentKeyframe is null ? "Changing these adds a keyframe here" : "Editing this keyframe")">
+                                    <Icon Name="keyframe" Size="11" /> @($"{_time:0.00}")s@(CurrentKeyframe is null ? "" : " · key")
+                                </span>
                             }
-                        </h4>
+                        </Extra>
+                        <ChildContent>
                         <div class="grid grid-4">
                             <label class="field"><span>X</span><input type="number" value="@Number(Math.Round(selectedPose.X, 1))" @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { X = (float)value })" /></label>
                             <label class="field"><span>Y</span><input type="number" value="@Number(Math.Round(selectedPose.Y, 1))" @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Y = (float)value })" /></label>
@@ -619,11 +638,11 @@
                         <div class="grid grid-2">
                             @if (selected.Kind != OverlayLayerKinds.Video)
                             {
-                                <label class="field"><span>Turn (degrees, clockwise)</span>
+                                <label class="field" title="Degrees, clockwise"><span>Turn °</span>
                                     <input type="number" step="1" value="@Number(Math.Round(selectedPose.Rotation ?? 0, 1))"
                                            @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Rotation = (float)value })" /></label>
                             }
-                            <label class="field"><span>Opacity: @selectedPose.Opacity.ToString("0", CultureInfo.InvariantCulture)%</span>
+                            <label class="field"><span>Opacity @selectedPose.Opacity.ToString("0", CultureInfo.InvariantCulture)%</span>
                                 <input type="range" min="0" max="100" step="1" value="@Number(Math.Round(selectedPose.Opacity))"
                                        @onchange="e => SetPoseValue(e, selected, (pose, value) => pose with { Opacity = Math.Clamp(value, 0, 100) })" /></label>
                         </div>
@@ -631,12 +650,14 @@
                         {
                             <p class="hint">Inside “@Label(holder)”: these are from the group's top-left corner, turned with it.</p>
                         }
+                        </ChildContent>
+                        </InspectorSection>
 
-                        <h4>Timing within the overlay</h4>
+                        <InspectorSection Title="Timing" Name="timing">
                         <div class="grid grid-2">
-                            <label class="field"><span>Comes in after (seconds)</span>
+                            <label class="field"><span>In after (s)</span>
                                 <input type="number" min="0" step="0.1" value="@Number(selected.InSeconds)" @onchange="e => Set(() => selected.InSeconds = Math.Max(0, Number(e, 0)))" /></label>
-                            <label class="field"><span>Goes before the end (seconds)</span>
+                            <label class="field" title="Seconds before the overlay ends"><span>Out before end (s)</span>
                                 <input type="number" min="0" step="0.1" value="@Number(selected.OutSeconds)" @onchange="e => Set(() => selected.OutSeconds = Math.Max(0, Number(e, 0)))" /></label>
                         </div>
                         <p class="hint">
@@ -648,6 +669,7 @@
                                         ? "Measured from the start and end of each part of the programme (between its breaks)."
                                         : "E.g. text over a video that takes 1.5s to animate in and out: in after 1.5, out 1.5 before the end. It fades as the overlay does.")
                         </p>
+                        </InspectorSection>
                     </div>
                 }
             }
@@ -2326,6 +2348,25 @@
     }
 
     private static string Label(OverlayLayer layer) => string.IsNullOrWhiteSpace(layer.Name) ? KindName(layer.Kind) : layer.Name;
+
+    /// <summary>
+    /// The layer's effects as the list shows them: its own, or for text still using the older shadow and outline, those as
+    /// the effects that draw the same (nothing changes until the list is edited).
+    /// </summary>
+    private static IReadOnlyList<LayerEffect>? FxOf(OverlayLayer layer) =>
+        layer.Effects ?? (layer.Kind == OverlayLayerKinds.Text
+            ? LayerEffects.FromText(layer.Shadow, layer.ShadowStyle, layer.Outline, layer.OutlineStyle, TextShadowSettings.Overlay, Math.Clamp(layer.FontSize, 6, 400))
+            : null);
+
+    /// <summary>Gives the layer its effects, retiring text's older shadow and outline (so an emptied list stays empty once saved).</summary>
+    private static void SetFx(OverlayLayer layer, List<LayerEffect> effects)
+    {
+        layer.Effects = effects.Count == 0 ? null : effects;
+        (layer.Shadow, layer.ShadowStyle, layer.Outline, layer.OutlineStyle) = (false, null, null, null);
+    }
+
+    private static string? FxBadge(IReadOnlyList<LayerEffect>? effects) =>
+        effects?.Count(effect => effect.IsOn) is > 0 and var count ? count.ToString(CultureInfo.InvariantCulture) : null;
 
     private static string KindName(string kind) => kind switch
     {
