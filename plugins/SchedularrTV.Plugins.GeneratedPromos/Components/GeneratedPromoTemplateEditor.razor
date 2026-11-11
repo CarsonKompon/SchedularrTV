@@ -5019,6 +5019,18 @@
         </div>
         @if (BackgroundList.Any(background => !PromoRenderer.IsImage(background)))
         {
+            <label class="field">
+                <span>When the background video runs out</span>
+                <select value="@(Template.BackgroundHold == true ? "hold" : "loop")"
+                        @onchange="e => Set(() => Template.BackgroundHold = Text(e) == "hold" ? true : null)">
+                    <option value="loop">Loop it (start over)</option>
+                    <option value="hold">Hold its last frame</option>
+                </select>
+            </label>
+            @if (Template.BackgroundHold == true)
+            {
+                <p class="hint">A background shorter than the promo stops on its last frame, and its sound plays once.</p>
+            }
             GeneratedBackgroundSoundConfig sound = GeneratedPromoResolver.BackgroundSound(Template);
             <div class="grid grid-3">
                 <label class="check template-enabled">

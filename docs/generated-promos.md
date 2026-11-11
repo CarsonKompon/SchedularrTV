@@ -445,6 +445,8 @@ Image and video layers can pick from several files, and text layers from several
       rule: { shows: [Rugrats], only_when_matching: true, match_weight: 5 }
 ```
 
+**When the background video runs out** (under the background list) picks what a background shorter than the promo does: **Loop it** (start over, as always) or **Hold its last frame** (its sound then plays once). In YAML: `background_hold: true`. The episode clip is cut to the promo's length and isn't affected. Video layers work the same way: with **Loop** off, a layer stays on its last frame once its video runs out, in the canvas preview as in the render.
+
 A background video plays its own sound by default, looping with the picture. Under the background list, untick **Play the background video's sound** to mute it, or set its volume and whether it dips while the voice speaks. Videos without a sound track play silently. The episode clip has its own sound settings and isn't affected. **Lower the music while the episode clip's (or background video's) sound plays** also follows a background video's sound.
 
 ```yaml

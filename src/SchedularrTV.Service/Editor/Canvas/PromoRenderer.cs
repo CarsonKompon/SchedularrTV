@@ -516,9 +516,10 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         int? background = null;
         if (videoBackground)
         {
-            args.AddRange(composition.BackgroundStart > TimeSpan.Zero
-                ? ["-stream_loop", "-1", "-ss", Seconds(composition.BackgroundStart), "-i", composition.BackgroundPath!]
-                : ["-stream_loop", "-1", "-i", composition.BackgroundPath!]);
+            // Looping, it starts over when it runs out; otherwise it's played once and held on its last frame (below).
+            if (composition.BackgroundLoop) args.AddRange(["-stream_loop", "-1"]);
+            if (composition.BackgroundStart > TimeSpan.Zero) args.AddRange(["-ss", Seconds(composition.BackgroundStart)]);
+            args.AddRange(["-i", composition.BackgroundPath!]);
             background = next++;
         }
 
@@ -541,7 +542,8 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         const string centred = "overlay=(W-w)/2:(H-h)/2:format=auto";
 
         string video = background is { } index
-            ? $"{overlayChain}[{index}:v:0]scale={size}:force_original_aspect_ratio=increase,crop={size},fps={fps},setsar=1[bg];"
+            ? $"{overlayChain}[{index}:v:0]scale={size}:force_original_aspect_ratio=increase,crop={size},fps={fps},setsar=1"
+              + (composition.BackgroundLoop ? "" : $",tpad=stop_mode=clone:stop_duration={duration}") + "[bg];"
               + (overlay is null ? "[bg]" : $"[bg][ov]{centred}[base];[base]")
               + "[0:v]overlay=format=auto,format=yuv420p[v]"
             : overlay is null

@@ -245,10 +245,14 @@ public sealed class GeneratedPromoPreview(
             duration = await PromoVideoDecoder.DurationAsync(options.Value.FfprobePath, video.Path, cancellationToken).ConfigureAwait(false);
             _videoDurations[durationKey] = duration;
         }
-        double second = video.SourceSecond(TimeSpan.FromSeconds(frame / (double)Math.Max(1, fps)), duration, Math.Max(1, fps));
+        TimeSpan at = TimeSpan.FromSeconds(frame / (double)Math.Max(1, fps));
+        double second = video.SourceSecond(at, duration, Math.Max(1, fps));
+        // Run out and not looping: its very last frame, as the render holds it.
+        bool holding = video.HoldsAt(at, duration, Math.Max(1, fps));
         (int width, int height) = video.FrameSize;
         string filter = video.SizeFilter(Math.Max(1, fps));
-        string key = $"{Path.GetFullPath(video.Path)}|{File.GetLastWriteTimeUtc(video.Path).Ticks}|{second.ToString("0.###", CultureInfo.InvariantCulture)}|{width}x{height}|{filter}|layer-alpha-v2";
+        string when = holding ? "last" : second.ToString("0.###", CultureInfo.InvariantCulture);
+        string key = $"{Path.GetFullPath(video.Path)}|{File.GetLastWriteTimeUtc(video.Path).Ticks}|{when}|{width}x{height}|{filter}|layer-alpha-v2";
         if (_frames.TryGetValue(key, out string? cached) && (cached is null || File.Exists(cached)))
         {
             if (cached is not null) Used(cached);
@@ -260,12 +264,21 @@ public sealed class GeneratedPromoPreview(
         string output = Path.Combine(directory, Hash(key) + ".png");
         TrimSoon();
         string? decoder = await PromoVideoDecoder.FindAsync(options.Value.FfprobePath, video.Path, cancellationToken).ConfigureAwait(false);
-        // Loop or hold has already been resolved in source time; a failed seek gets one earlier frame.
-        string? result = await ExtractFilteredAsync(video.Path, second, filter, output, cancellationToken, decoder).ConfigureAwait(false)
-            ?? await ExtractFilteredAsync(video.Path, Math.Max(0, second - 1d / Math.Max(1, fps)), filter, output, cancellationToken, decoder).ConfigureAwait(false);
+        // Looping has already been resolved in source time; a failed seek gets one earlier frame, and a video that doesn't
+        // loop falls back on its last frame (a seek past its real end finds nothing).
+        string? result = holding
+            ? await LastFrameAsync(video.Path, filter, output, decoder, cancellationToken).ConfigureAwait(false)
+            : await ExtractFilteredAsync(video.Path, second, filter, output, cancellationToken, decoder).ConfigureAwait(false)
+              ?? await ExtractFilteredAsync(video.Path, Math.Max(0, second - 1d / Math.Max(1, fps)), filter, output, cancellationToken, decoder).ConfigureAwait(false)
+              ?? (video.Loop ? null : await LastFrameAsync(video.Path, filter, output, decoder, cancellationToken).ConfigureAwait(false));
         _frames[key] = result;
         return result;
     }
+
+    private async Task<string?> LastFrameAsync(string video, string? filter, string output, string? decoder, CancellationToken cancellationToken) =>
+        await PromoVideoLastFrame.ExtractAsync(options.Value.FfmpegPath, video, filter, output, cancellationToken, decoder).ConfigureAwait(false)
+            ? output
+            : null;
 
     private async Task<string?> ExtractFilteredAsync(string video, double second, string filter, string output, CancellationToken cancellationToken, string? decoder = null)
     {
@@ -577,12 +590,13 @@ public sealed class GeneratedPromoPreview(
         int fps = Math.Max(1, composition.Fps);
         int count = Math.Max(1, composition.FrameCount);
         int index = Math.Clamp((int)Math.Round(time.TotalSeconds * fps), 0, count - 1);
-        string source = $"{Path.GetFullPath(video)}|{File.GetLastWriteTimeUtc(video).Ticks}|{composition.BackgroundStart.Ticks}";
+        bool loop = composition.BackgroundLoop;
+        string source = $"{Path.GetFullPath(video)}|{File.GetLastWriteTimeUtc(video).Ticks}|{composition.BackgroundStart.Ticks}{(loop ? "" : "|hold")}";
         string stripKey = $"{source}|{fps}|{count}|{FrameWidth}|strip";
         string strip = Path.Combine(promos.Root, PreviewFrameCache.FolderName, Hash(stripKey));
 
         Task<string?> extracting = _strips.GetOrAdd(stripKey, _ => new Lazy<Task<string?>>(() =>
-            Task.Run(() => ExtractStripAsync(video, composition.BackgroundStart, fps, count, strip)))).Value;
+            Task.Run(() => ExtractStripAsync(video, composition.BackgroundStart, fps, count, strip, loop)))).Value;
         if (extracting.IsCompletedSuccessfully && extracting.Result is { } frames)
         {
             if (Path.Combine(frames, FrameName(index)) is var stripFrame && File.Exists(stripFrame))
@@ -610,8 +624,12 @@ public sealed class GeneratedPromoPreview(
         string directory = Path.Combine(promos.Root, PreviewFrameCache.FolderName);
         Directory.CreateDirectory(directory);
         string frame = Path.Combine(directory, Hash(key) + ".jpg");
-        string? result = await ExtractAsync(video, second, frame, cancellationToken).ConfigureAwait(false)
-            ?? await ExtractAsync(video, 0, frame, cancellationToken).ConfigureAwait(false);
+        // Held, a moment past its end finds nothing: then it's the last frame.
+        string? result = loop
+            ? await ExtractAsync(video, second, frame, cancellationToken).ConfigureAwait(false)
+              ?? await ExtractAsync(video, 0, frame, cancellationToken).ConfigureAwait(false)
+            : await ExtractAsync(video, second, frame, cancellationToken, loop: false).ConfigureAwait(false)
+              ?? await LastFrameAsync(video, $"scale='min({FrameWidth},iw)':-2", frame, null, cancellationToken).ConfigureAwait(false);
         _frames[key] = result;
         TrimSoon();
         return result;
@@ -674,7 +692,8 @@ public sealed class GeneratedPromoPreview(
     /// Every frame the promo shows of <paramref name="video"/> into <paramref name="directory"/> (1-based, like ffmpeg
     /// numbers them), or null if ffmpeg can't. Written aside and moved into place whole, so a frame is never read half-written.
     /// </summary>
-    private async Task<string?> ExtractStripAsync(string video, TimeSpan start, int fps, int count, string directory)
+    /// <param name="loop">Starts over when it runs out (as backgrounds usually do); otherwise its last frame is held.</param>
+    private async Task<string?> ExtractStripAsync(string video, TimeSpan start, int fps, int count, string directory, bool loop = true)
     {
         if (Directory.Exists(directory))
         {
@@ -692,10 +711,18 @@ public sealed class GeneratedPromoPreview(
                 CreateNoWindow = true
             };
             string Seconds(double value) => value.ToString("0.######", CultureInfo.InvariantCulture);
-            foreach (string argument in (string[])["-hide_banner", "-loglevel", "error", "-y", "-stream_loop", "-1",
-                         "-ss", Seconds(start.TotalSeconds), "-i", video, "-t", Seconds(count / (double)fps), "-an",
-                         "-vf", $"fps={fps},scale='min({FrameWidth},iw)':-2", "-q:v", "3", "-frames:v", count.ToString(CultureInfo.InvariantCulture),
-                         Path.Combine(partial, "%05d.jpg")])
+            // Held: played once, its last frame repeated for the rest of the promo, as the render does.
+            string[] arguments = loop
+                ? ["-hide_banner", "-loglevel", "error", "-y", "-stream_loop", "-1",
+                    "-ss", Seconds(start.TotalSeconds), "-i", video, "-t", Seconds(count / (double)fps), "-an",
+                    "-vf", $"fps={fps},scale='min({FrameWidth},iw)':-2", "-q:v", "3", "-frames:v", count.ToString(CultureInfo.InvariantCulture),
+                    Path.Combine(partial, "%05d.jpg")]
+                : ["-hide_banner", "-loglevel", "error", "-y",
+                    "-ss", Seconds(start.TotalSeconds), "-i", video, "-an",
+                    "-vf", $"fps={fps},scale='min({FrameWidth},iw)':-2,tpad=stop_mode=clone:stop_duration={Seconds(count / (double)fps)}",
+                    "-q:v", "3", "-frames:v", count.ToString(CultureInfo.InvariantCulture),
+                    Path.Combine(partial, "%05d.jpg")];
+            foreach (string argument in arguments)
             {
                 info.ArgumentList.Add(argument);
             }
@@ -739,7 +766,7 @@ public sealed class GeneratedPromoPreview(
         }
     }
 
-    private async Task<string?> ExtractAsync(string video, double second, string frame, CancellationToken cancellationToken)
+    private async Task<string?> ExtractAsync(string video, double second, string frame, CancellationToken cancellationToken, bool loop = true)
     {
         var info = new ProcessStartInfo(options.Value.FfmpegPath)
         {
@@ -747,8 +774,11 @@ public sealed class GeneratedPromoPreview(
             UseShellExecute = false,
             CreateNoWindow = true
         };
-        foreach (string argument in (string[])["-hide_banner", "-loglevel", "error", "-y", "-stream_loop", "-1",
-                     "-ss", second.ToString("0.###", CultureInfo.InvariantCulture), "-i", video, "-frames:v", "1", "-q:v", "3", frame])
+        List<string> arguments = ["-hide_banner", "-loglevel", "error", "-y"];
+        // Looping, a moment past the end wraps round to the start; held, it finds nothing (and the caller uses the last frame).
+        if (loop) arguments.AddRange(["-stream_loop", "-1"]);
+        arguments.AddRange(["-ss", second.ToString("0.###", CultureInfo.InvariantCulture), "-i", video, "-frames:v", "1", "-q:v", "3", frame]);
+        foreach (string argument in arguments)
         {
             info.ArgumentList.Add(argument);
         }

@@ -602,6 +602,7 @@ public static partial class GeneratedPromoResolver
             BackgroundColor = SKColor.Parse(template.BackgroundColor),
             BackgroundPath = background,
             BackgroundStart = clipPath is null ? TimeSpan.Zero : promo.ClipStart,
+            BackgroundLoop = clipPath is not null || template.BackgroundHold != true,
             BackgroundAudio = clipPath is not null
                 ? template.BackgroundClip is { IncludeAudio: true } clip
                     ? new PromoMusic(clipPath, clip.Volume, promo.ClipStart, TimeSpan.FromMilliseconds(300), TimeSpan.FromMilliseconds(600), clip.DuckUnderVoice)
@@ -609,9 +610,12 @@ public static partial class GeneratedPromoResolver
                         Levels = ClipLevels(template)
                     }
                     : null
-                // A background video loops with its own sound (the render drops it if the file has none).
+                // A background video loops with its own sound (the render drops it if the file has none); held on its
+                // last frame, its sound plays once.
                 : background is not null && !PromoRenderer.IsImage(background) && BackgroundSound(template) is { Enabled: true } sound
-                    ? new PromoMusic(background, sound.Volume, TimeSpan.Zero, TimeSpan.FromMilliseconds(300), TimeSpan.FromMilliseconds(600), sound.DuckUnderVoice)
+                    ? template.BackgroundHold == true
+                        ? new PromoMusic(background, sound.Volume, TimeSpan.Zero, TimeSpan.FromMilliseconds(300), TimeSpan.FromMilliseconds(600), sound.DuckUnderVoice, Loop: false)
+                        : new PromoMusic(background, sound.Volume, TimeSpan.Zero, TimeSpan.FromMilliseconds(300), TimeSpan.FromMilliseconds(600), sound.DuckUnderVoice)
                     : null,
             OverlayPath = generated,
             OverlayAudio = generated is not null && template.Generator is { KeepAudio: true } generator

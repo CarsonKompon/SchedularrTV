@@ -67,6 +67,14 @@ public sealed record PromoVideoLayer : PromoLayer
         return Loop ? second % sourceDuration : Math.Min(second, Math.Max(0, sourceDuration - 1d / fps));
     }
 
+    /// <summary>
+    /// Whether, not looping, it has run out (or is within a frame and a half of it) by <paramref name="playback"/>, so it
+    /// shows its last frame. Seeking that close to the end often finds no frame at all, so the last one is read instead.
+    /// </summary>
+    public bool HoldsAt(TimeSpan playback, double sourceDuration, int fps) =>
+        !Loop && double.IsFinite(sourceDuration) && sourceDuration > 0
+        && Math.Max(0, SourceStart.TotalSeconds) + Math.Max(0, playback.TotalSeconds) >= sourceDuration - 1.5 / Math.Max(1, fps);
+
     /// <summary>The ffmpeg filters that size its frames to <see cref="FrameSize"/>, fitted or filled.</summary>
     public string SizeFilter(int fps)
     {
@@ -95,6 +103,53 @@ public sealed record PromoVideoLayer : PromoLayer
         return filter + (Stretch ? $",scale={size},setsar=1,format=bgra" : Fill
             ? $",scale={size}:force_original_aspect_ratio=increase,crop={size},format=bgra"
             : $",scale={size}:force_original_aspect_ratio=decrease,pad={size}:(ow-iw)/2:(oh-ih)/2:color=black@0,format=bgra");
+    }
+}
+
+/// <summary>
+/// A video's very last frame, as a picture file: what a video that doesn't loop holds once it runs out. Read from the
+/// last second of the file through to its end, keeping only the final frame, which works however the file's length is
+/// reported (a seek to "just before the end" often lands after the last frame, and then there's nothing at all).
+/// </summary>
+public static class PromoVideoLastFrame
+{
+    /// <param name="filter">Sizes the frame as the caller needs it (null keeps it as it is).</param>
+    /// <param name="output">A picture file (.png or .jpg); written over.</param>
+    public static async Task<bool> ExtractAsync(string ffmpeg, string video, string? filter, string output, CancellationToken cancellationToken,
+        string? decoder = null)
+    {
+        var info = new ProcessStartInfo(ffmpeg) { RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
+        List<string> arguments = ["-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-sseof", "-1"];
+        if (decoder is not null) arguments.AddRange(["-c:v", decoder]);
+        arguments.AddRange(["-i", video, "-an", "-sn"]);
+        if (filter is { Length: > 0 }) arguments.AddRange(["-vf", filter]);
+        // Each frame overwrites the one before, so the file left is the last.
+        arguments.AddRange(["-update", "1", "-q:v", "3", output]);
+        foreach (string argument in arguments) info.ArgumentList.Add(argument);
+
+        try
+        {
+            File.Delete(output);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Written over below.
+        }
+
+        using Process process = Process.Start(info) ?? throw new InvalidOperationException("ffmpeg could not be started.");
+        Work.Track(process, "Generated Promos", "Reading a video's last frame");
+        try
+        {
+            await process.StandardError.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            throw;
+        }
+
+        return process.ExitCode == 0 && File.Exists(output) && new FileInfo(output).Length > 0;
     }
 }
 

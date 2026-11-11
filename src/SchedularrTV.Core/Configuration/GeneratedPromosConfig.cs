@@ -586,6 +586,14 @@ public sealed class GeneratedPromoTemplate : IGeneratedBackgrounds
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public GeneratedBackgroundSoundConfig? BackgroundSound { get; set; }
 
+    /// <summary>
+    /// A background video shorter than the promo holds its last frame (and its sound plays once) instead of starting over.
+    /// Null (not false) loops, as backgrounds always have, so templates without it keep their render keys. Not for the
+    /// episode clip, which is cut to the promo's length.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? BackgroundHold { get; set; }
+
     /// <summary>Plays a clip of the promoted episode behind everything; <see cref="Background"/> stands in when its file can't be read.</summary>
     public GeneratedClipConfig? BackgroundClip { get; set; }
 

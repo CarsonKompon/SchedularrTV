@@ -168,11 +168,14 @@ public sealed record PromoComposition
 
     public SKColor BackgroundColor { get; init; } = new(16, 24, 40);
 
-    /// <summary>Image or video filling the frame behind every layer. Videos loop.</summary>
+    /// <summary>Image or video filling the frame behind every layer. Videos loop unless <see cref="BackgroundLoop"/> is off.</summary>
     public string? BackgroundPath { get; init; }
 
     /// <summary>Offset into a background video where the promo starts.</summary>
     public TimeSpan BackgroundStart { get; init; }
+
+    /// <summary>A background video starts over when it runs out; otherwise it holds its last frame.</summary>
+    public bool BackgroundLoop { get; init; } = true;
 
     /// <summary>The background video's own sound, mixed in like music.</summary>
     public PromoMusic? BackgroundAudio { get; init; }

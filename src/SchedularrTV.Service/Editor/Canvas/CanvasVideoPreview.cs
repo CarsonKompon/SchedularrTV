@@ -32,8 +32,14 @@ public sealed class CanvasVideoPreview(string ffmpeg, string ffprobe)
         var preview = layer with { Bounds = SKRect.Create(0, 0, width * scale, height * scale), Keyframes = null };
         string filter = preview.SizeFilter(fps);
         string seek = second.ToString("0.######", CultureInfo.InvariantCulture);
-        string key = $"{sourceKey}|{seek}|{filter}";
+        // Run out and not looping: its very last frame, as the render holds it (a seek near the end often finds nothing).
+        bool holding = layer.HoldsAt(playback, source.Duration, source.FrameRate > 0 ? (int)Math.Ceiling(source.FrameRate) : fps);
+        string key = $"{sourceKey}|{(holding ? "last" : seek)}|{filter}";
         if (_frames.TryGetValue(key, out var cached)) return cached;
+        if (holding && await LastFrameAsync(file.FullName, filter, source.Decoder, cancellationToken).ConfigureAwait(false) is { } last)
+        {
+            return Keep(key, last);
+        }
 
         var start = new ProcessStartInfo(ffmpeg) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         List<string> args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-ss", seek];
@@ -50,12 +56,15 @@ public sealed class CanvasVideoPreview(string ffmpeg, string ffprobe)
         {
             await Task.WhenAll(copy, process.WaitForExitAsync(limit.Token)).ConfigureAwait(false);
             string message = await error.ConfigureAwait(false);
-            if (process.ExitCode != 0 || output.Length == 0) throw new IOException($"Couldn't decode {file.Name}: {(string.IsNullOrWhiteSpace(message) ? "No frame at this time." : message.Trim())}");
-            byte[] bytes = output.ToArray();
-            while (_frames.Count >= 24 && _order.TryDequeue(out string? oldest)) _frames.Remove(oldest);
-            _frames[key] = bytes;
-            _order.Enqueue(key);
-            return bytes;
+            if (process.ExitCode != 0 || output.Length == 0)
+            {
+                // Past its real end and not looping: it holds its last frame.
+                if (!layer.Loop && await LastFrameAsync(file.FullName, filter, source.Decoder, cancellationToken).ConfigureAwait(false) is { } last)
+                    return Keep(key, last);
+                throw new IOException($"Couldn't decode {file.Name}: {(string.IsNullOrWhiteSpace(message) ? "No frame at this time." : message.Trim())}");
+            }
+
+            return Keep(key, output.ToArray());
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -65,6 +74,34 @@ public sealed class CanvasVideoPreview(string ffmpeg, string ffprobe)
         {
             if (!process.HasExited) { process.Kill(entireProcessTree: true); await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false); }
             try { await Task.WhenAll(copy, error).ConfigureAwait(false); } catch (OperationCanceledException) { }
+        }
+    }
+
+    private byte[] Keep(string key, byte[] bytes)
+    {
+        while (_frames.Count >= 24 && _order.TryDequeue(out string? oldest)) _frames.Remove(oldest);
+        _frames[key] = bytes;
+        _order.Enqueue(key);
+        return bytes;
+    }
+
+    // The video's last frame as PNG bytes, or null when ffmpeg can't read it.
+    private async Task<byte[]?> LastFrameAsync(string video, string filter, string? decoder, CancellationToken cancellationToken)
+    {
+        string file = Path.Combine(Path.GetTempPath(), $"schedularrtv-last-{Guid.NewGuid():N}.png");
+        try
+        {
+            return await PromoVideoLastFrame.ExtractAsync(ffmpeg, video, filter, file, cancellationToken, decoder).ConfigureAwait(false)
+                ? await File.ReadAllBytesAsync(file, cancellationToken).ConfigureAwait(false)
+                : null;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
+        finally
+        {
+            try { File.Delete(file); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
     }
 }
