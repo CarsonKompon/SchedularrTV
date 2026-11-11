@@ -72,7 +72,8 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
             IReadOnlyList<MediaItem> matches;
             if (window.Folders is { } folders)
             {
-                matches = await FolderMatchesAsync(folders, target.ShowIds, target.At, cancellationToken, isMovie: isMovie).ConfigureAwait(false);
+                matches = await FolderMatchesAsync(folders, target.ShowIds, target.At, cancellationToken, isMovie: isMovie, rating: target.Sample?.Rating)
+                    .ConfigureAwait(false);
             }
             else
             {
@@ -107,6 +108,9 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
     /// The programme is a movie: clips in the "any movie" folder are used for it ahead of the "any show" ones (a clip
     /// for that movie still comes first). Otherwise "any movie" clips aren't used at all.
     /// </param>
+    /// <param name="rating">
+    /// The programme's content rating: clips in a rating folder for it are used ahead of the "any movie" and "any show" ones.
+    /// </param>
     public async ValueTask<MediaItem?> SelectSpotAsync(
         PromoSpotConfig spot,
         IReadOnlyList<string> showIds,
@@ -115,7 +119,8 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
         CancellationToken cancellationToken,
         bool isNew = false,
         bool isMovie = false,
-        Func<MediaItem, bool>? allow = null)
+        Func<MediaItem, bool>? allow = null,
+        string? rating = null)
     {
         if (!config.Enabled || !spot.Enabled || available <= TimeSpan.Zero || showIds.Count == 0)
         {
@@ -123,11 +128,11 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
         }
 
         // The spot's own clips first; its stand-ins (an ad break's bumpers) only when they've nothing that fits.
-        MediaItem? pick = await ChooseSpotAsync(spot, spot.Folders, matchByType: true, spot.Varied, showIds, at, available, isNew, isMovie, allow, cancellationToken)
+        MediaItem? pick = await ChooseSpotAsync(spot, spot.Folders, matchByType: true, spot.Varied, showIds, at, available, isNew, isMovie, allow, rating, cancellationToken)
             .ConfigureAwait(false);
         if (pick is null && spot.FallbackFolders is { Count: > 0 } instead)
         {
-            pick = await ChooseSpotAsync(spot, instead, matchByType: false, varied: true, showIds, at, available, isNew, isMovie, allow, cancellationToken)
+            pick = await ChooseSpotAsync(spot, instead, matchByType: false, varied: true, showIds, at, available, isNew, isMovie, allow, rating, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -145,13 +150,14 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
         bool isNew,
         bool isMovie,
         Func<MediaItem, bool>? allow,
+        string? rating,
         CancellationToken cancellationToken)
     {
         // Clips from an ad break's folders, plus any matched by type or tag (the older way, which ad breaks keep too).
         List<MediaItem> matches = [];
         if (folders is not null)
         {
-            matches.AddRange(await FolderMatchesAsync(folders, showIds, at, cancellationToken, isMovie: isMovie).ConfigureAwait(false));
+            matches.AddRange(await FolderMatchesAsync(folders, showIds, at, cancellationToken, isMovie: isMovie, rating: rating).ConfigureAwait(false));
         }
 
         if (matchByType)
@@ -307,7 +313,8 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
         DateTimeOffset? at,
         CancellationToken cancellationToken,
         DateTimeOffset? seasonAt = null,
-        bool isMovie = false)
+        bool isMovie = false,
+        string? rating = null)
     {
         if (folders.Count == 0)
         {
@@ -321,9 +328,10 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
         HashSet<string>? wanted = showIds is null ? null : new(showIds, StringComparer.OrdinalIgnoreCase);
         string? day = at?.DayOfWeek.ToString().ToLowerInvariant();
 
-        // A clip made for the show beats one for any movie (for a movie), which beats one for any show; the generic
-        // ones are only the fallback.
+        // A clip made for the show beats one for its rating, which beats one for any movie (for a movie), which beats one
+        // for any show; the generic ones are only the fallback.
         List<MediaItem> matches = [];
+        List<MediaItem> ratedClips = [];
         List<MediaItem> anyMovieClips = [];
         List<MediaItem> generic = [];
         foreach (MediaItem clip in clips)
@@ -331,6 +339,19 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
             if (AdBreakCompiler.Describe(clip, folders, seasonAt) is not { } described
                 || Attribute(described, "show_id") is not { } show)
             {
+                continue;
+            }
+
+            // A rating folder's clips only stand in for a programme with one of its ratings (never for trailers, which
+            // have no programme), and are never read as a show of that name.
+            if (folders.Select(folder => folder.RatingFolder(show)).FirstOrDefault(found => found is not null) is { } rated)
+            {
+                if (wanted is not null && rated.Matches(rating)
+                    && (day is null || Attribute(described, "promo_day") is not { } ratedDay || PromoDays.Matches(ratedDay, day)))
+                {
+                    ratedClips.Add(described);
+                }
+
                 continue;
             }
 
@@ -354,7 +375,7 @@ internal sealed class PromoSelector(ScheduleBuildSession session, PromoConfig co
             (anyMovie ? anyMovieClips : anyShow && wanted is not null ? generic : matches).Add(described);
         }
 
-        return matches.Count > 0 ? matches : anyMovieClips.Count > 0 ? anyMovieClips : generic;
+        return matches.Count > 0 ? matches : ratedClips.Count > 0 ? ratedClips : anyMovieClips.Count > 0 ? anyMovieClips : generic;
     }
 
     /// <summary>

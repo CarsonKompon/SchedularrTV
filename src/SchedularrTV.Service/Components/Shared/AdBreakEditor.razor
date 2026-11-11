@@ -349,6 +349,60 @@
         </section>
 
         <section class="card">
+            <div class="card-head"><h2>Rating folders</h2></div>
+            <p class="hint" style="margin-top:0;">
+                Like the "any show" folder, but only for programmes with certain ratings: put a <code>Rated 18+</code> folder
+                (with its own Now Playing, You're Watching… folders) beside your show folders for a "viewer discretion is
+                advised" promo before anything rated TV-MA or R. A promo made for the programme itself still comes first;
+                rating folders come before "any movie" and "any show".
+            </p>
+            @foreach (AdPromoRatingFolder rated in AdBreak.RatingFolders.ToList())
+            {
+                <div class="ab-promo">
+                    <div class="grid grid-2">
+                        <label class="field"><span>Folder name</span>
+                            <input type="text" value="@rated.Folder" placeholder="Rated 18+"
+                                   @onchange="e => { rated.Folder = Text(e) ?? string.Empty; return Notify(); }" /></label>
+                        <label class="field" title="Separated by commas. Compared ignoring case, spaces and dashes (TV-14 is TV14)">
+                            <span>For these ratings</span>
+                            <input type="text" value="@string.Join(", ", rated.Ratings)" placeholder="TV-MA, R, NC-17"
+                                   @onchange="e => { rated.Ratings = Ratings(e); return Notify(); }" /></label>
+                    </div>
+                    <div class="row" style="gap:8px;align-items:center;">
+                        @if (!rated.IsComplete)
+                        {
+                            <span class="hint warn" style="margin:0;">Name the folder and give it at least one rating, or it isn't used.</span>
+                        }
+                        else if (AdBreak.RatingFolders.Count(other => string.Equals(other.Folder.Trim(), rated.Folder.Trim(), StringComparison.OrdinalIgnoreCase)) > 1)
+                        {
+                            <span class="hint warn" style="margin:0;">Another rating folder has this name; only the first is used.</span>
+                        }
+                        <div class="spacer"></div>
+                        <button type="button" class="btn btn-sm btn-ghost" title="Remove this rating folder" aria-label="@($"Remove the {rated.Folder} rating folder")"
+                                @onclick="() => { AdBreak.RatingFolders.Remove(rated); return Notify(); }">×</button>
+                    </div>
+                </div>
+            }
+            <div class="row" style="gap:8px;flex-wrap:wrap;">
+                <button type="button" class="btn btn-sm" @onclick="() => { AdBreak.RatingFolders.Add(new AdPromoRatingFolder()); return Notify(); }">
+                    <Icon Name="plus" Size="14" />Add a rating folder
+                </button>
+                @if (MissingSuggestions.Count > 0)
+                {
+                    <button type="button" class="btn btn-sm" title="@($"Adds {string.Join(", ", MissingSuggestions.Select(group => group.Folder))}, covering US and Canadian TV and film ratings. Edit or remove any.")"
+                            @onclick="AddSuggestedRatings">
+                        <Icon Name="sparkles" Size="14" />Add the usual age groups
+                    </button>
+                }
+            </div>
+            <p class="hint">
+                A programme matches when its rating (from the library, its own or its series') is in the list. Programmes
+                without a rating never match. A rating folder's clips are only used for programmes with those ratings, never
+                as a show of that name.
+            </p>
+        </section>
+
+        <section class="card">
             <div class="card-head"><h2>Paired promos</h2></div>
             <p class="hint" style="margin-top:0;">
                 Two promos that always go together, like a quiz question and its answer. When the first plays, the second is the
@@ -779,6 +833,21 @@
 
     // What a promo clip can be (the file dialog then opens on Videos).
     private static string[] PairExtensions => FileBrowsing.Videos;
+
+    // Ratings typed as a list ("TV-MA, R; NC-17"), blanks and repeats left out.
+    private static List<string> Ratings(ChangeEventArgs e) =>
+        [.. (e.Value?.ToString() ?? string.Empty).Split([',', ';', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    // The suggested age groups this ad break doesn't have a folder by that name for yet.
+    private List<AdPromoRatingFolder> MissingSuggestions =>
+        [.. AdPromoRatingFolder.Suggestions.Where(group => !AdBreak.RatingFolders.Any(have => string.Equals(have.Folder.Trim(), group.Folder, StringComparison.OrdinalIgnoreCase)))];
+
+    private Task AddSuggestedRatings()
+    {
+        AdBreak.RatingFolders.AddRange(MissingSuggestions);
+        return Notify();
+    }
 
     // Off is kept as null, so ad breaks that don't use it don't say so in the schedule file.
     private static BumperPromoUse? BumperUse(ChangeEventArgs e) =>

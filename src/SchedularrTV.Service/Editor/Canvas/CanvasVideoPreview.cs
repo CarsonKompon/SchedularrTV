@@ -59,8 +59,8 @@ public sealed class CanvasVideoPreview(string ffmpeg, string ffprobe)
             if (process.ExitCode != 0 || output.Length == 0)
             {
                 // Past its real end and not looping: it holds its last frame.
-                if (!layer.Loop && await LastFrameAsync(file.FullName, filter, source.Decoder, cancellationToken).ConfigureAwait(false) is { } last)
-                    return Keep(key, last);
+                if (!layer.Loop && await LastFrameAsync(file.FullName, filter, source.Decoder, cancellationToken).ConfigureAwait(false) is { } held)
+                    return Keep(key, held);
                 throw new IOException($"Couldn't decode {file.Name}: {(string.IsNullOrWhiteSpace(message) ? "No frame at this time." : message.Trim())}");
             }
 

@@ -244,6 +244,13 @@ public sealed class AdBreakConfig
     /// </summary>
     public string? AnyMovieFolder { get; set; }
 
+    /// <summary>
+    /// Show folders standing in for any programme with certain ratings (a "Rated 18+" folder for TV-MA, R and NC-17 shows
+    /// and movies): their clips are used for such a programme ahead of the "any movie" and "any show" ones (a clip for the
+    /// programme itself still comes first).
+    /// </summary>
+    public List<AdPromoRatingFolder> RatingFolders { get; set; } = [];
+
     /// <summary>Most Coming Up and Later Today promos in one break. Null: 2.</summary>
     public int? MaxPromosPerBreak { get; set; }
 
@@ -265,6 +272,38 @@ public sealed class AdBreakConfig
     public const string DefaultAnyShowFolder = "Any Show";
 
     public const string DefaultAnyMovieFolder = "Any Movie";
+}
+
+/// <summary>
+/// A show folder, inside an ad break's promo folders, whose clips stand in for any programme with one of
+/// <see cref="Ratings"/>: the way "Any Show" stands in for any show, but only for those ratings.
+/// </summary>
+public sealed class AdPromoRatingFolder
+{
+    /// <summary>The folder's name, used where a show's name would be ("Rated 18+").</summary>
+    public string Folder { get; set; } = string.Empty;
+
+    /// <summary>The content ratings it's for (TV-MA, R, 18+…), compared ignoring case, spaces and dashes.</summary>
+    public List<string> Ratings { get; set; } = [];
+
+    [YamlDotNet.Serialization.YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public bool IsComplete => !string.IsNullOrWhiteSpace(Folder) && Ratings.Any(rating => !string.IsNullOrWhiteSpace(rating));
+
+    /// <summary>Whether a programme rated <paramref name="rating"/> is one of these.</summary>
+    public bool Matches(string? rating) =>
+        Plain(rating) is { Length: > 0 } wanted && Ratings.Any(each => string.Equals(Plain(each), wanted, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>A rating as compared: letters and digits only, so "TV-14" is "TV 14" is "tv14", and "18+" is "18".</summary>
+    public static string Plain(string? rating) => new([.. (rating ?? string.Empty).Where(char.IsLetterOrDigit)]);
+
+    /// <summary>Ready-made groups to start from: what each age band usually covers in the US and Canada.</summary>
+    public static IReadOnlyList<AdPromoRatingFolder> Suggestions =>
+    [
+        new() { Folder = "Rated Kids", Ratings = ["TV-Y", "TV-Y7", "TV-Y7-FV", "TV-G", "G", "C", "C8"] },
+        new() { Folder = "Rated PG", Ratings = ["TV-PG", "PG", "8+"] },
+        new() { Folder = "Rated 14+", Ratings = ["TV-14", "PG-13", "14+", "14A"] },
+        new() { Folder = "Rated 18+", Ratings = ["TV-MA", "R", "NC-17", "18+", "18A", "R18"] }
+    ];
 }
 
 /// <summary>

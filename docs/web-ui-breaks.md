@@ -93,11 +93,38 @@ Pick a promo choice for a folder in the tree, then adjust it under **Promos**:
 | **Show folders** | `Up Next/Top Cat/clip.mp4` plays only for Top Cat |
 | **Other clips suit any show** | Clips loose in the folder, or in `Any Show/`, play for any show |
 | *(always)* `Any Movie/` | `Now Playing/Any Movie/clip.mp4` (or `Promos/Any Movie/Now Playing/`) plays for any movie, ahead of the `Any Show` clips, and never for a show |
+| **Rating folders** | `Now Playing/Rated 18+/clip.mp4` plays for any show or movie rated TV-MA, R… (as you set), ahead of `Any Movie` and `Any Show` |
 | **Start time folders** | `Up Next/Top Cat/8pm/` plays only for an 8pm start (also `8:30pm`, `830pm`, `20:30`) |
 | **Weekday folders** | `Eventually/Top Cat/Saturday/` plays only for a Saturday airing; `Weekdays/` covers Monday to Friday and `Weekends/` Saturday and Sunday, so `Eventually/Top Cat/Weekdays/4pm/` plays for a 4pm airing on any weekday |
 | **New episode folders** | `Up Next/Top Cat/New/` plays only before a new episode (a [Drop](scheduling.md#drop-new-episodes-on-a-schedule) premiere), and wins over the others then; it works for Up Next, Now Playing, This Has Been, You're Watching and Back to the Show |
 
 With seasonal folders on, a promo under a month, season, holiday or date folder (`Promos/Christmas/Top Cat/Up Next/`) only plays then, and that folder isn't taken for a show. The tree shows greyed-out examples of the show, time and day folders each promo looks for. Clips made for the show win over clips for any show. When a movie is on, its own folder (named as the library titles it, such as `Now Playing/Good Burger/`) wins, then `Any Movie`, then `Any Show`; `Any Movie` clips never play for a show. The **"Any movie" folder name** under the ad break's **Advanced** settings renames it, as **"Any show" folder name** does for `Any Show`. Generated promos can still fill a spot no ad break has a folder for.
+
+### Promos by rating
+
+**Rating folders** (a card on the ad break's page) give programmes with certain content ratings their own promos, such as a "viewer discretion is advised" Now Playing before anything rated 18+. Each one is a folder name and the ratings it covers:
+
+| Folder | Ratings |
+| --- | --- |
+| `Rated PG` | TV-PG, PG |
+| `Rated 14+` | TV-14, PG-13, 14A |
+| `Rated 18+` | TV-MA, R, NC-17, 18A |
+
+Put the folder where a show folder would go: `Now Playing/Rated 18+/discretion.mp4`, or `Promos/Rated 18+/Now Playing/` in a folder of promos sorted by show. **Add the usual age groups** adds Kids, PG, 14+ and 18+ groups covering US and Canadian TV and film ratings, ready to edit.
+
+- **Order:** a promo made for the programme itself still wins. Then the rating folder, then `Any Movie` (for a movie), then `Any Show`.
+- **Matching:** the rating comes from the library (the episode's own, else its series'). It's compared ignoring case, spaces and dashes, so `TV-14` matches `TV14`. Programmes without a rating never match.
+- **Not a show:** a rating folder's clips are never used for a show of that name, nor for Eventually trailers.
+
+In YAML:
+
+```yaml
+ad_breaks:
+  Late Night:
+    rating_folders:
+      - folder: Rated 18+
+        ratings: [TV-MA, R, NC-17]
+```
 
 ## Use ad breaks on a channel
 

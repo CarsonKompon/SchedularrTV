@@ -271,7 +271,12 @@ public static class AdBreakCompiler
         promo.Days,
         adBreak.AnyShowFolder ?? AdBreakConfig.DefaultAnyShowFolder,
         Seasonal: adBreak.Seasonal ? temporal : null,
-        AnyMovieFolder: adBreak.AnyMovieFolder);
+        AnyMovieFolder: adBreak.AnyMovieFolder,
+        RatingFolders: RatingFolders(adBreak));
+
+    // The ad break's complete rating folders; null when it has none, so its folders read as they always have.
+    private static IReadOnlyList<AdPromoRatingFolder>? RatingFolders(AdBreakConfig adBreak) =>
+        adBreak.RatingFolders?.Where(folder => folder.IsComplete).ToList() is { Count: > 0 } folders ? folders : null;
 
     /// <summary>
     /// A bumper folder read as promos for any show: no show, day or start-time folders, and always seasonal, so only the
@@ -298,7 +303,8 @@ public static class AdBreakCompiler
         adBreak.AnyShowFolder ?? AdBreakConfig.DefaultAnyShowFolder,
         type,
         adBreak.Seasonal ? temporal : null,
-        adBreak.AnyMovieFolder);
+        adBreak.AnyMovieFolder,
+        RatingFolders(adBreak));
 
     /// <summary>Folders inside <paramref name="folder"/> that the ad break gives a different job, and so are left out of it.</summary>
     private static List<string> Excluded(AdBreakConfig adBreak, string folder, AdFolderRole? role)

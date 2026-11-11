@@ -1274,6 +1274,15 @@ public static class SchedulerConfigLoader
 
         adBreak.AnyShowFolder = string.IsNullOrWhiteSpace(adBreak.AnyShowFolder) ? null : adBreak.AnyShowFolder.Trim();
         adBreak.AnyMovieFolder = string.IsNullOrWhiteSpace(adBreak.AnyMovieFolder) ? null : adBreak.AnyMovieFolder.Trim();
+        adBreak.RatingFolders = [.. (adBreak.RatingFolders ?? [])
+            .Where(rated => rated is not null && !string.IsNullOrWhiteSpace(rated.Folder))
+            .Select(rated =>
+            {
+                rated.Folder = rated.Folder.Trim();
+                rated.Ratings = [.. (rated.Ratings ?? []).Where(rating => !string.IsNullOrWhiteSpace(rating)).Select(rating => rating.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)];
+                return rated;
+            })];
 
         if (adBreak.TagRules is { } rules)
         {

@@ -238,6 +238,9 @@ public static class AdBreakFolderJobs
 
     private static bool IsTypeFolder(CommercialFolder folder) => AdBreakPromo.FromFolderName(folder.Name) is not null;
 
+    private static string RatingHint(AdPromoRatingFolder rated, string what) =>
+        $"{what} for anything rated {string.Join(", ", rated.Ratings.Where(rating => !string.IsNullOrWhiteSpace(rating)))} (ahead of any movie's and any show's)";
+
     /// <summary>A folder named for a time of year, a weekday, a start time, or "any time"/"any show"/"any movie": a qualifier, not a show.</summary>
     private static bool IsQualifier(CommercialFolder folder, TemporalTagOptions temporal) =>
         SeasonalFolders.IsSeasonal(folder.Name, temporal)
@@ -410,6 +413,10 @@ public static class AdBreakFolderJobs
             }
 
             Add($"{adBreak.AnyMovieFolder ?? AdBreakConfig.DefaultAnyMovieFolder}/Now Playing", "Now Playing clips for any movie (used instead of any show's when a movie is on)");
+            foreach (AdPromoRatingFolder rated in adBreak.RatingFolders.Where(rated => rated.IsComplete))
+            {
+                Add($"{rated.Folder.Trim()}/Now Playing", RatingHint(rated, "Now Playing clips"));
+            }
 
             if (adBreak.Seasonal)
             {
@@ -452,6 +459,10 @@ public static class AdBreakFolderJobs
                 }
 
                 Add(adBreak.AnyMovieFolder ?? AdBreakConfig.DefaultAnyMovieFolder, "Clips for any movie (used instead of any show's when a movie is on)");
+                foreach (AdPromoRatingFolder rated in adBreak.RatingFolders.Where(rated => rated.IsComplete))
+                {
+                    Add(rated.Folder.Trim(), RatingHint(rated, "Clips"));
+                }
             }
             else if (day is not null || time is not null)
             {

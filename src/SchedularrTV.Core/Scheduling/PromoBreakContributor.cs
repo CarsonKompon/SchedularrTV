@@ -189,7 +189,8 @@ internal sealed class PromoBreakPlan(
                 free -= _rightBack.Duration;
             }
 
-            _youreWatching = await ReserveForShowAsync(promoConfig.YoureWatching, showIds, playing?.Start, free, cancellationToken, watchingNew, IsMovie(playing?.Item))
+            _youreWatching = await ReserveForShowAsync(promoConfig.YoureWatching, showIds, playing?.Start, free, cancellationToken, watchingNew, IsMovie(playing?.Item),
+                    rating: playing?.Item?.Rating)
                 .ConfigureAwait(false);
 
             // A You're Watching that opens a pair (a quiz question) only goes in when its answer fits after it; otherwise
@@ -202,7 +203,7 @@ internal sealed class PromoBreakPlan(
                 {
                     answer = null;
                     _youreWatching = await ReserveForShowAsync(promoConfig.YoureWatching, showIds, playing?.Start, free, cancellationToken, watchingNew,
-                            IsMovie(playing?.Item), clip => !PromoPairing.IsFirst(promoConfig, AdPromoPairKind.Break, clip))
+                            IsMovie(playing?.Item), clip => !PromoPairing.IsFirst(promoConfig, AdPromoPairKind.Break, clip), playing?.Item?.Rating)
                         .ConfigureAwait(false);
                 }
             }
@@ -227,7 +228,7 @@ internal sealed class PromoBreakPlan(
             {
                 // An answer never plays without its question.
                 _backToTheShow = await ReserveForShowAsync(promoConfig.BackToTheShow, showIds, playing?.Start, free, cancellationToken, watchingNew,
-                        IsMovie(playing?.Item), clip => !PromoPairing.IsSecond(promoConfig, AdPromoPairKind.Break, clip))
+                        IsMovie(playing?.Item), clip => !PromoPairing.IsSecond(promoConfig, AdPromoPairKind.Break, clip), playing?.Item?.Rating)
                     .ConfigureAwait(false);
 
                 if (promoConfig.Enabled && promoConfig.BackToTheShow.Enabled && showIds.Count > 0
@@ -630,7 +631,7 @@ internal sealed class PromoBreakPlan(
         }
 
         return await new PromoSelector(Session, promoConfig, promoBaseTags)
-            .SelectSpotAsync(spot, target.ShowIds, target.At, available, cancellationToken, target.IsNew, IsMovie(target.Sample))
+            .SelectSpotAsync(spot, target.ShowIds, target.At, available, cancellationToken, target.IsNew, IsMovie(target.Sample), rating: target.Sample?.Rating)
             .ConfigureAwait(false);
     }
 
@@ -643,7 +644,8 @@ internal sealed class PromoBreakPlan(
         CancellationToken cancellationToken,
         bool isNew = false,
         bool isMovie = false,
-        Func<MediaItem, bool>? allow = null)
+        Func<MediaItem, bool>? allow = null,
+        string? rating = null)
     {
         if (!promoConfig.Enabled || !spot.Enabled || showIds.Count == 0 || at is null || available <= TimeSpan.Zero)
         {
@@ -651,7 +653,7 @@ internal sealed class PromoBreakPlan(
         }
 
         return await new PromoSelector(Session, promoConfig, promoBaseTags)
-            .SelectSpotAsync(spot, showIds, at.Value, available, cancellationToken, isNew, isMovie, allow)
+            .SelectSpotAsync(spot, showIds, at.Value, available, cancellationToken, isNew, isMovie, allow, rating)
             .ConfigureAwait(false);
     }
 
@@ -685,7 +687,7 @@ internal sealed class PromoBreakPlan(
         }
 
         return await new PromoSelector(Session, promoConfig, promoBaseTags)
-            .SelectSpotAsync(spot, showIds, finished!.Start, available, cancellationToken, finished.IsPremiere, IsMovie(finished.Item), allow)
+            .SelectSpotAsync(spot, showIds, finished!.Start, available, cancellationToken, finished.IsPremiere, IsMovie(finished.Item), allow, finished.Item?.Rating)
             .ConfigureAwait(false);
     }
 
