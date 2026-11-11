@@ -1071,6 +1071,8 @@ public static partial class GeneratedPromoResolver
                 WordWrap = layer.WordWrap == true,
                 LetterSpacing = SchedularrTV.Service.Rendering.TextFit.LetterSpacing(layer.LetterSpacing),
                 LineSpacing = SchedularrTV.Service.Rendering.TextFit.LineSpacing(layer.LineSpacing),
+                StretchX = SchedularrTV.Service.Rendering.TextFit.Stretch(layer.StretchX),
+                StretchY = SchedularrTV.Service.Rendering.TextFit.Stretch(layer.StretchY),
                 VerticalAlign = layer.VerticalAlign switch
                 {
                     GeneratedVerticalAlign.Middle => PromoVerticalAlign.Middle,

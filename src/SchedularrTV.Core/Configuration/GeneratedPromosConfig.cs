@@ -2148,6 +2148,17 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming, IGenerate
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public float? LineSpacing { get; set; }
 
+    /// <summary>
+    /// How wide the letters are, as a percentage of their own width (50 squashes them thin, 150 stretches them wide; 10 to
+    /// 400). Null (100) keeps render keys of older templates.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public float? StretchX { get; set; }
+
+    /// <summary>How tall the letters are, as a percentage of their own height (10 to 400). Null is 100.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public float? StretchY { get; set; }
+
     public bool Shadow { get; set; } = true;
 
     /// <summary>The shadow's look, once it's been changed; null draws the one text has always had.</summary>

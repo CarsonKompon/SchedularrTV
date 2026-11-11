@@ -276,6 +276,8 @@ public sealed partial class OverlayRenderer(Func<string> folder)
         if (Effects(layer) is { } effects) styled = new { Styled = styled, Effects = effects.Key() };
         // Layer FX likewise (an empty list too: it switches text's older shadow off).
         if (layer.Effects is not null) styled = new { Styled = styled, Fx = SchedularrTV.Service.Rendering.LayerFx.Key(layer.Effects) ?? string.Empty };
+        // Squashed or stretched text likewise.
+        if (layer.StretchX is not null || layer.StretchY is not null) styled = new { Styled = styled, layer.StretchX, layer.StretchY };
         // Spacing likewise: only spaced text hashes differently.
         return layer.LetterSpacing is null && layer.LineSpacing is null
             ? styled
@@ -639,6 +641,9 @@ public sealed partial class OverlayRenderer(Func<string> folder)
         text = SchedularrTV.Service.Rendering.GlyphFallback.Apply(text, typeface);
         using var font = new SKFont(typeface, Math.Clamp(layer.FontSize, 6, 400)) { Edging = SKFontEdging.Antialias, Subpixel = true };
         if (layer.Italic && typeface.FontSlant == SKFontStyleSlant.Upright) font.SkewX = -.2f;
+        // Squashed or stretched letters; the fit below then shrinks them keeping that shape.
+        SchedularrTV.Service.Rendering.TextFit.Stretch(font, SchedularrTV.Service.Rendering.TextFit.Stretch(layer.StretchX),
+            SchedularrTV.Service.Rendering.TextFit.Stretch(layer.StretchY));
         using var paint = new SKPaint { Color = Colour(layer.Color, SKColors.White), IsAntialias = true };
         SchedularrTV.Service.Rendering.TextEffects? effects = Effects(layer);
         // Layer FX replace text's older shadow and outline once it has any.

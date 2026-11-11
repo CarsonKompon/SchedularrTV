@@ -143,6 +143,12 @@ public sealed record PromoTextLayer : PromoLayer
     /// <summary>The distance between lines, as a multiple of the font's own.</summary>
     public float LineSpacing { get; init; } = 1;
 
+    /// <summary>How wide the letters are drawn, as a multiple of their own width (0.5 squashed thin, 2 stretched wide).</summary>
+    public float StretchX { get; init; } = 1;
+
+    /// <summary>How tall the letters are drawn, as a multiple of their own height.</summary>
+    public float StretchY { get; init; } = 1;
+
     public SKColor? Shadow { get; init; } = new SKColor(0, 0, 0, 160);
 
     /// <summary>An outline, and a shadow set up its own way; when set, <see cref="Shadow"/> isn't used.</summary>

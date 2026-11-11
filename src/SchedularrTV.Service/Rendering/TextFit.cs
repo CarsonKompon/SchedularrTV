@@ -152,6 +152,24 @@ public static class TextFit
     /// <summary>A line-spacing setting as a multiple (null or nonsense is 1).</summary>
     public static float LineSpacing(float? multiple) => multiple is { } value ? Clean(value, 1) : 1;
 
+    /// <summary>A squash/stretch setting (a percentage of the letters' own width or height) as a multiple; null or nonsense is 1.</summary>
+    public static float Stretch(float? percent) => percent is { } value && float.IsFinite(value) && value > 0 ? Math.Clamp(value, 10, 400) / 100 : 1;
+
+    /// <summary>
+    /// Squashes or stretches the font's letters: <paramref name="height"/> times as tall (the font grows, so lines are
+    /// spaced to match) and <paramref name="width"/> times as wide. Shrinking the font to fit afterwards keeps the shape.
+    /// </summary>
+    public static void Stretch(SKFont font, float width, float height)
+    {
+        if (Math.Abs(width - 1) < 0.001f && Math.Abs(height - 1) < 0.001f)
+        {
+            return;
+        }
+
+        font.Size *= height;
+        font.ScaleX = width / height;
+    }
+
     // Letters as people see them: a letter with its accents, or an emoji, stays together.
     private static IReadOnlyList<(int Start, string Letter)> Letters(string line)
     {

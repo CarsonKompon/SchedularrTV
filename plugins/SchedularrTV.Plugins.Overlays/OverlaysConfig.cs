@@ -522,6 +522,12 @@ public sealed class OverlayLayer
     /// <summary>The distance between lines, as a multiple of the font's own (0.3 to 5); null is the font's own.</summary>
     public float? LineSpacing { get; set; }
 
+    /// <summary>How wide the letters are, as a percentage of their own width (10 to 400); null is 100.</summary>
+    public float? StretchX { get; set; }
+
+    /// <summary>How tall the letters are, as a percentage of their own height (10 to 400); null is 100.</summary>
+    public float? StretchY { get; set; }
+
     /// <summary><see cref="Align"/> as the shared alignment pad reads it.</summary>
     [YamlDotNet.Serialization.YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
     public GeneratedTextAlign HorizontalAlign

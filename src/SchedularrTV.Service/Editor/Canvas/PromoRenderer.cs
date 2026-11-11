@@ -424,6 +424,8 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         SKTypeface typeface = cache.Typeface(layer.FontFamily, layer.Bold, layer.FontWeight, layer.Italic);
         using var font = new SKFont(typeface, layer.MaxFontSize) { Edging = SKFontEdging.SubpixelAntialias, Subpixel = true };
         if (layer.Italic && typeface.FontSlant == SKFontStyleSlant.Upright) font.SkewX = -.2f;
+        // Squashed or stretched letters; the fit below then shrinks them keeping that shape.
+        SchedularrTV.Service.Rendering.TextFit.Stretch(font, layer.StretchX, layer.StretchY);
         using var paint = new SKPaint { Color = layer.Color, IsAntialias = true };
         using SKImageFilter? shadow = layer.Effects is null && layer.Shadow is { } shade
             ? SKImageFilter.CreateDropShadow(0, font.Size * 0.04f, font.Size * 0.05f, font.Size * 0.05f, shade)

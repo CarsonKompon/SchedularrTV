@@ -223,6 +223,10 @@
                         <div class="grid grid-2">
                             <label class="field"><span>Letter spacing %</span><input type="number" min="-50" max="200" step="1" value="@N(selected.LetterSpacing ?? 0)" @onchange="e => SetSpacing(e, true)" /></label>
                             <label class="field"><span>Line spacing ×</span><input type="number" min="0.3" max="5" step="0.05" value="@N(selected.LineSpacing ?? 1)" @onchange="e => SetSpacing(e, false)" /></label>
+                            <label class="field" title="Squash the letters thinner (under 100) or stretch them wider (over 100)"><span>Letter width %</span>
+                                <input type="number" min="10" max="400" step="5" value="@N(selected.StretchX ?? 100)" @onchange="e => SetStretch(e, width: true)" /></label>
+                            <label class="field" title="Squash the letters shorter (under 100) or stretch them taller (over 100)"><span>Letter height %</span>
+                                <input type="number" min="10" max="400" step="5" value="@N(selected.StretchY ?? 100)" @onchange="e => SetStretch(e, width: false)" /></label>
                         </div>
                     </InspectorSection>
                     }
@@ -708,6 +712,17 @@
     {
         if (_layer is null || !float.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float value) || !float.IsFinite(value)) return;
         if (letters) _layer.LetterSpacing = Math.Clamp(value, -50, 200); else _layer.LineSpacing = Math.Clamp(value, .3f, 5);
+        await Commit();
+    }
+    // Squashed or stretched letters, as a percentage; 100 (or blank) is kept as nothing, so the design's render key holds.
+    private async Task SetStretch(ChangeEventArgs e, bool width)
+    {
+        if (_layer is null) return;
+        float? stretch = float.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out float value) && float.IsFinite(value)
+            && Math.Abs(Math.Clamp(value, 10, 400) - 100) > 0.001f
+            ? Math.Clamp(value, 10, 400)
+            : null;
+        if (width) _layer.StretchX = stretch; else _layer.StretchY = stretch;
         await Commit();
     }
     private async Task AddLayer(string kind)

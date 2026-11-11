@@ -146,6 +146,8 @@ public sealed class SqueezeCanvas
                         : null,
                     LetterSpacing = SchedularrTV.Service.Rendering.TextFit.LetterSpacing(item.LetterSpacing),
                     LineSpacing = SchedularrTV.Service.Rendering.TextFit.LineSpacing(item.LineSpacing),
+                    StretchX = SchedularrTV.Service.Rendering.TextFit.Stretch(item.StretchX),
+                    StretchY = SchedularrTV.Service.Rendering.TextFit.Stretch(item.StretchY),
                     Align = (SKTextAlign)item.Align, WordWrap = item.WordWrap == true,
                     VerticalAlign = (PromoVerticalAlign)(item.VerticalAlign ?? GeneratedVerticalAlign.Top)
                 },

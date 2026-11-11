@@ -948,8 +948,18 @@
                                 <input type="number" min="0.3" max="5" step="0.05" value="@OptionalNumber(selected.LineSpacing)" placeholder="1"
                                        @onchange="e => SetOptionalNumber(e, value => selected.LineSpacing = value, neutral: 1, min: 0.3f, max: 5)" />
                             </label>
+                            <label class="field" title="Squash the letters thinner (under 100) or stretch them wider (over 100)">
+                                <span>Letter width %</span>
+                                <input type="number" min="10" max="400" step="5" value="@OptionalNumber(selected.StretchX)" placeholder="100"
+                                       @onchange="e => SetOptionalNumber(e, value => selected.StretchX = value, neutral: 100, min: 10, max: 400)" />
+                            </label>
+                            <label class="field" title="Squash the letters shorter (under 100) or stretch them taller (over 100)">
+                                <span>Letter height %</span>
+                                <input type="number" min="10" max="400" step="5" value="@OptionalNumber(selected.StretchY)" placeholder="100"
+                                       @onchange="e => SetOptionalNumber(e, value => selected.StretchY = value, neutral: 100, min: 10, max: 400)" />
+                            </label>
                         </div>
-                        <p class="hint">Text shrinks to fit its box@(selected.WordWrap == true ? ", after long lines wrap between words" : ""), spacing included.</p>
+                        <p class="hint">Text shrinks to fit its box@(selected.WordWrap == true ? ", after long lines wrap between words" : ""), spacing included, keeping its squashed or stretched shape.</p>
                     </InspectorSection>
                     }
 
