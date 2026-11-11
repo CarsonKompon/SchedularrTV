@@ -2260,6 +2260,57 @@ public sealed class GeneratedShowOptions
     public bool Time { get; set; }
 }
 
+/// <summary>One time zone Up Next text shows start times in, and what it's called beside them.</summary>
+public sealed class GeneratedUpNextZone
+{
+    /// <summary>An IANA (America/New_York) or Windows (Eastern Standard Time) time zone id.</summary>
+    public string TimeZone { get; set; } = string.Empty;
+
+    /// <summary>Shown after the time ("ET"). Null uses the usual short name for well-known zones; empty shows none.</summary>
+    public string? Label { get; set; }
+
+    /// <summary>What's shown after the time: <see cref="Label"/>, or the zone's usual short name.</summary>
+    [YamlDotNet.Serialization.YamlIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public string LabelText => Label ?? ShortName(TimeZone) ?? string.Empty;
+
+    /// <summary>The zone itself; <paramref name="fallback"/> (the channel's) when its id isn't known here.</summary>
+    public TimeZoneInfo Resolve(TimeZoneInfo fallback)
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(TimeZone.Trim());
+        }
+        catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException or ArgumentException)
+        {
+            return fallback;
+        }
+    }
+
+    /// <summary>The usual short name of a well-known zone (ET, PT…), by IANA or Windows id; null when there isn't one.</summary>
+    public static string? ShortName(string? id) => id?.Trim() switch
+    {
+        "America/New_York" or "America/Toronto" or "America/Detroit" or "US/Eastern" or "Eastern Standard Time" => "ET",
+        "America/Chicago" or "America/Winnipeg" or "US/Central" or "Central Standard Time" => "CT",
+        "America/Denver" or "America/Edmonton" or "America/Phoenix" or "US/Mountain" or "Mountain Standard Time" or "US Mountain Standard Time" => "MT",
+        "America/Los_Angeles" or "America/Vancouver" or "US/Pacific" or "Pacific Standard Time" => "PT",
+        "America/Anchorage" or "US/Alaska" or "Alaskan Standard Time" => "AKT",
+        "Pacific/Honolulu" or "US/Hawaii" or "Hawaiian Standard Time" => "HT",
+        "America/Halifax" or "Atlantic Standard Time" => "AT",
+        "America/St_Johns" or "Newfoundland Standard Time" => "NT",
+        "Etc/UTC" or "UTC" => "UTC",
+        _ => null
+    };
+
+    /// <summary>Zones offered in the editor, with their usual names.</summary>
+    public static IReadOnlyList<(string Id, string Name)> Common { get; } =
+    [
+        ("America/New_York", "Eastern (ET)"), ("America/Chicago", "Central (CT)"), ("America/Denver", "Mountain (MT)"),
+        ("America/Phoenix", "Arizona (MT, no DST)"), ("America/Los_Angeles", "Pacific (PT)"), ("America/Anchorage", "Alaska (AKT)"),
+        ("Pacific/Honolulu", "Hawaii (HT)"), ("America/Halifax", "Atlantic (AT)"), ("America/St_Johns", "Newfoundland (NT)"),
+        ("Europe/London", "London"), ("Europe/Paris", "Central Europe"), ("Australia/Sydney", "Sydney"), ("Etc/UTC", "UTC")
+    ];
+}
+
 public sealed class GeneratedUpNextOptions
 {
     /// <summary>Programmes skipped first: 0 starts with the one that follows the break, 1 with the one after.</summary>
@@ -2285,6 +2336,50 @@ public sealed class GeneratedUpNextOptions
     /// <summary>On the 12-hour clock, times end in AM or PM (7:30 PM). Null when off.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public bool? AmPm { get; set; }
+
+    /// <summary>
+    /// With <see cref="IncludeTime"/>: each line is only the start time's AM or PM, for styling it apart from the time in a
+    /// layer of its own. Wins over <see cref="TimeOnly"/>. Null when off.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? AmPmOnly { get; set; }
+
+    /// <summary>
+    /// With <see cref="IncludeTime"/>: the start times in these time zones instead of the channel's, each followed by its
+    /// label ("6:30 ET", "3:30 PT"). With only the time (or only AM/PM) each zone is a line of its own; with the show,
+    /// they're joined ("6:30 ET / 3:30 PT  Rugrats"). Null or empty uses the channel's time zone alone.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<GeneratedUpNextZone>? Zones { get; set; }
+
+    /// <summary>
+    /// A show's start time as these options show it: in the channel's time zone, or in each of <see cref="Zones"/> with its
+    /// label. Only AM or PM when <see cref="AmPmOnly"/>.
+    /// </summary>
+    public string StartTime(DateTimeOffset time, TimeZoneInfo channelZone)
+    {
+        string In(TimeZoneInfo zone) => AmPmOnly == true ? Meridiem(time, zone) : Clock(time, zone);
+        List<GeneratedUpNextZone> zones = [.. (Zones ?? []).Where(zone => !string.IsNullOrWhiteSpace(zone.TimeZone))];
+        if (zones.Count == 0)
+        {
+            return In(channelZone);
+        }
+
+        IEnumerable<string> each = zones.Select(zone =>
+        {
+            string text = In(zone.Resolve(channelZone));
+            return zone.LabelText is { Length: > 0 } label ? $"{text} {label}" : text;
+        });
+        return string.Join(TimeOnly == true || AmPmOnly == true ? "\n" : " / ", each);
+    }
+
+    /// <summary>The time zone the <c>{start_time}</c> and <c>{end_time}</c> tokens use: the first of <see cref="Zones"/>, else the channel's.</summary>
+    public TimeZoneInfo TokenZone(TimeZoneInfo channelZone) =>
+        Zones?.FirstOrDefault(zone => !string.IsNullOrWhiteSpace(zone.TimeZone)) is { } first ? first.Resolve(channelZone) : channelZone;
+
+    /// <summary>A time's AM or PM, in <paramref name="zone"/>.</summary>
+    public static string Meridiem(DateTimeOffset time, TimeZoneInfo zone) =>
+        TimeZoneInfo.ConvertTime(time, zone).ToString("tt", System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>A time as these options show it, in <paramref name="zone"/>: 7:30, 7:30 PM or 19:30.</summary>
     public string Clock(DateTimeOffset time, TimeZoneInfo zone) =>

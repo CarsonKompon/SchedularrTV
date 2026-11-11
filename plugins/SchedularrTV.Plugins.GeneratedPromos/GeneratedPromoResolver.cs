@@ -927,16 +927,21 @@ public static partial class GeneratedPromoResolver
     public static IReadOnlyList<string> UpNextLines(IReadOnlyList<UpNextListing> listings, GeneratedUpNextOptions? options,
         TimeZoneInfo zone, string channelName)
     {
-        // Times as the layer asks for them (12- or 24-hour, AM/PM); with "time only" just the times, no names.
-        string Clock(DateTimeOffset time) => options?.Clock(time, zone) ?? UpNextPromo.Clock(time, zone);
+        // Times as the layer asks for them (12- or 24-hour, AM/PM, in other time zones); with "time only" just the times.
+        // The tokens read the first of its time zones (or the channel's).
+        TimeZoneInfo tokenZone = options?.TokenZone(zone) ?? zone;
+        string Clock(DateTimeOffset time) => options?.Clock(time, tokenZone) ?? UpNextPromo.Clock(time, zone);
         List<string> lines = [.. listings.Select(listing => options?.IncludeTime == true
-            ? options.TimeOnly == true ? Clock(listing.Start) : $"{Clock(listing.Start)}  {listing.Title}"
+            ? options.TimeOnly == true || options.AmPmOnly == true
+                ? options.StartTime(listing.Start, zone)
+                : $"{options.StartTime(listing.Start, zone)}  {listing.Title}"
             : listing.Title)];
         string? prefix = options?.Prefix;
         string? suffix = options?.Suffix;
         if (lines.Count == 0 || (string.IsNullOrEmpty(prefix) && string.IsNullOrEmpty(suffix)))
         {
-            return lines;
+            // Several time zones put each on a line of its own.
+            return [.. lines.SelectMany(line => line.Split('\n'))];
         }
 
         DateTimeOffset? end = listings[^1].End

@@ -674,23 +674,67 @@
                         @if (selected.UpNext?.IncludeTime == true)
                         {
                             GeneratedUpNextOptions clock = UpNext(selected);
-                            <div class="check-stack upnext-clock">
-                                <label class="check">
-                                    <input type="checkbox" checked="@(clock.TimeOnly == true)" @onchange="e => Set(() => clock.TimeOnly = e.Value is true ? true : null)" />
-                                    <span>Only the time (no show name)</span>
-                                </label>
-                                <label class="check">
-                                    <input type="checkbox" checked="@(clock.TwentyFourHour == true)" @onchange="e => Set(() => clock.TwentyFourHour = e.Value is true ? true : null)" />
-                                    <span>24-hour clock (19:30)</span>
-                                </label>
-                                @if (clock.TwentyFourHour != true)
-                                {
+                            <label class="field">
+                                <span>Each line shows</span>
+                                <select value="@(clock.AmPmOnly == true ? "ampm" : clock.TimeOnly == true ? "time" : "both")"
+                                        @onchange="e => Set(() => { string shows = Text(e); clock.TimeOnly = shows == "time" ? true : null; clock.AmPmOnly = shows == "ampm" ? true : null; })">
+                                    <option value="both">The time and the show (7:30  Rugrats)</option>
+                                    <option value="time">Only the time (7:30)</option>
+                                    <option value="ampm">Only AM or PM (PM)</option>
+                                </select>
+                            </label>
+                            @if (clock.AmPmOnly == true)
+                            {
+                                <p class="hint">For styling AM/PM apart from the time: put the time in another Up Next layer set to "Only the time", without AM/PM.</p>
+                            }
+                            else
+                            {
+                                <div class="check-stack upnext-clock">
                                     <label class="check">
-                                        <input type="checkbox" checked="@(clock.AmPm == true)" @onchange="e => Set(() => clock.AmPm = e.Value is true ? true : null)" />
-                                        <span>Show AM/PM (7:30 PM)</span>
+                                        <input type="checkbox" checked="@(clock.TwentyFourHour == true)" @onchange="e => Set(() => clock.TwentyFourHour = e.Value is true ? true : null)" />
+                                        <span>24-hour clock (19:30)</span>
                                     </label>
+                                    @if (clock.TwentyFourHour != true)
+                                    {
+                                        <label class="check">
+                                            <input type="checkbox" checked="@(clock.AmPm == true)" @onchange="e => Set(() => clock.AmPm = e.Value is true ? true : null)" />
+                                            <span>Show AM/PM (7:30 PM)</span>
+                                        </label>
+                                    }
+                                </div>
+                            }
+                            <div class="field">
+                                <span>Time zones <span class="muted">(blank: the channel's)</span></span>
+                                @for (int zoneIndex = 0; zoneIndex < (clock.Zones?.Count ?? 0); zoneIndex++)
+                                {
+                                    int zoneAt = zoneIndex;
+                                    GeneratedUpNextZone shown = clock.Zones![zoneAt];
+                                    <div class="row" style="gap:6px;align-items:center;margin-bottom:4px;">
+                                        <input type="text" list="upnext-zones" aria-label="Time zone" placeholder="America/New_York" style="flex:2;min-width:0;"
+                                               value="@shown.TimeZone" @onchange="e => Set(() => shown.TimeZone = Text(e).Trim())" />
+                                        <input type="text" aria-label="Label" placeholder="@(GeneratedUpNextZone.ShortName(shown.TimeZone) ?? "label")" style="flex:1;min-width:0;"
+                                               title="Shown after the time; blank uses the usual short name (ET, PT…)"
+                                               value="@shown.Label" @onchange="e => Set(() => shown.Label = string.IsNullOrWhiteSpace(Text(e)) ? null : Text(e).Trim())" />
+                                        <button type="button" class="btn btn-sm btn-ghost" aria-label="Remove this time zone"
+                                                @onclick="() => Set(() => { clock.Zones!.RemoveAt(zoneAt); if (clock.Zones.Count == 0) clock.Zones = null; })">×</button>
+                                    </div>
                                 }
+                                <datalist id="upnext-zones">
+                                    @foreach ((string zoneId, string zoneName) in GeneratedUpNextZone.Common)
+                                    {
+                                        <option value="@zoneId">@zoneName</option>
+                                    }
+                                </datalist>
+                                <div class="row" style="gap:6px;flex-wrap:wrap;">
+                                    <button type="button" class="btn btn-sm" @onclick="() => Set(() => (clock.Zones ??= []).Add(new GeneratedUpNextZone { TimeZone = NextZone(clock) }))">
+                                        <Icon Name="plus" Size="12" />Add a time zone
+                                    </button>
+                                </div>
                             </div>
+                            @if (clock.Zones is { Count: > 0 })
+                            {
+                                <p class="hint">Each time is shown in every zone with its label: @(clock.TimeOnly == true || clock.AmPmOnly == true ? "one line each (6:30 ET, then 3:30 PT)" : "joined (6:30 ET / 3:30 PT  Rugrats)"). {start_time} and {end_time} use the first.</p>
+                            }
                         }
                         <div class="grid grid-2">
                             <label class="field">
@@ -4858,6 +4902,14 @@
     private static string Label(GeneratedLayer layer) => string.IsNullOrWhiteSpace(layer.Name) ? KindName(layer.Kind) : layer.Name;
 
     // ---- Inspector sections ----
+
+    // A time zone to start a new row with: Eastern first, then Pacific, then the next common one not listed yet.
+    private static string NextZone(GeneratedUpNextOptions options)
+    {
+        HashSet<string> listed = new((options.Zones ?? []).Select(zone => zone.TimeZone), StringComparer.OrdinalIgnoreCase);
+        return new[] { "America/New_York", "America/Los_Angeles" }.Concat(GeneratedUpNextZone.Common.Select(zone => zone.Id))
+            .FirstOrDefault(id => !listed.Contains(id)) ?? string.Empty;
+    }
 
     // Text ↔ Up Next text, in place: everything else about the layer stays as it is.
     private Task SwapText(GeneratedLayer layer) => Set(() => GeneratedPromoEditing.SwapText(Template, layer));

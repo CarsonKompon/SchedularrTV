@@ -540,6 +540,8 @@ With **Show start times** on, three more options appear:
 | Option | YAML | Result |
 |---|---|---|
 | **Only the time** | `time_only: true` | Each line is just the start time, without the show's name (`7:30`). |
+| **Time zones** | `zones: [{ time_zone: America/New_York }, { time_zone: America/Los_Angeles, label: PT }]` | Start times in these zones instead of the channel's, each with its label: one line per zone with only the time (`6:30 ET`, then `3:30 PT`), joined with the show (`6:30 ET / 3:30 PT  Rugrats`). The label defaults to the usual short name (ET, CT, MT, PT, AKT, HT, AT, NT); an empty label shows none. `{start_time}` and `{end_time}` use the first zone. |
+| **Only AM or PM** | `am_pm_only: true` | Each line is just the start time's `AM` or `PM`, to style it apart from the time: put the time in a second Up Next layer set to **Only the time** without AM/PM. |
 | **24-hour clock** | `twenty_four_hour: true` | `19:30`. |
 | **Show AM/PM** | `am_pm: true` | `7:30 PM` (12-hour clock only). |
 

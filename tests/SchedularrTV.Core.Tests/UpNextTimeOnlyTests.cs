@@ -32,6 +32,49 @@ public sealed class UpNextTimeOnlyTests
     }
 
     [Fact]
+    public void Am_pm_only_gives_just_the_am_or_pm_of_each_start_time()
+    {
+        var listings = new UpNextListing[]
+        {
+            new("Morning Show", new DateTimeOffset(2026, 11, 11, 9, 0, 0, TimeSpan.Zero)),
+            new("Rugrats", new DateTimeOffset(2026, 11, 11, 19, 30, 0, TimeSpan.Zero))
+        };
+        var options = new GeneratedUpNextOptions { IncludeTime = true, AmPmOnly = true, TimeOnly = true, TwentyFourHour = true };
+
+        Assert.Equal(new[] { "AM", "PM" }, GeneratedPromoResolver.UpNextLines(listings, options, TimeZoneInfo.Utc, "Nick"));
+        Assert.DoesNotContain("AmPmOnly", System.Text.Json.JsonSerializer.Serialize(new GeneratedUpNextOptions()));
+    }
+
+    [Fact]
+    public void Start_times_can_be_shown_in_other_time_zones_with_their_labels()
+    {
+        // 6:30 PM in New York is 3:30 PM in Los Angeles (both on daylight time in July).
+        var listings = new UpNextListing[] { new("Rugrats", new DateTimeOffset(2026, 7, 10, 22, 30, 0, TimeSpan.Zero)) };
+        List<GeneratedUpNextZone> zones = [new() { TimeZone = "America/New_York" }, new() { TimeZone = "America/Los_Angeles", Label = "Pacific" }];
+
+        Assert.Equal(new[] { "6:30 ET", "3:30 Pacific" },
+            GeneratedPromoResolver.UpNextLines(listings, new GeneratedUpNextOptions { IncludeTime = true, TimeOnly = true, Zones = zones }, TimeZoneInfo.Utc, "Nick"));
+        Assert.Equal(new[] { "6:30 ET / 3:30 Pacific  Rugrats" },
+            GeneratedPromoResolver.UpNextLines(listings, new GeneratedUpNextOptions { IncludeTime = true, Zones = zones }, TimeZoneInfo.Utc, "Nick"));
+        Assert.Equal(new[] { "PM ET", "PM Pacific" },
+            GeneratedPromoResolver.UpNextLines(listings, new GeneratedUpNextOptions { IncludeTime = true, AmPmOnly = true, Zones = zones }, TimeZoneInfo.Utc, "Nick"));
+    }
+
+    [Fact]
+    public void A_time_zone_that_isn_t_known_falls_back_to_the_channel_s_and_labels_can_be_left_off()
+    {
+        var listings = new UpNextListing[] { new("Doug", new DateTimeOffset(2026, 7, 10, 20, 0, 0, TimeSpan.Zero)) };
+        var options = new GeneratedUpNextOptions
+        {
+            IncludeTime = true, TimeOnly = true, Zones = [new() { TimeZone = "Not/AZone", Label = "" }]
+        };
+
+        Assert.Equal(new[] { "8:00" }, GeneratedPromoResolver.UpNextLines(listings, options, TimeZoneInfo.Utc, "Nick"));
+        Assert.Equal("PT", GeneratedUpNextZone.ShortName("Pacific Standard Time"));
+        Assert.Null(GeneratedUpNextZone.ShortName("Europe/Paris"));
+    }
+
+    [Fact]
     public void Start_and_end_time_tokens_use_the_same_clock()
     {
         var options = new GeneratedUpNextOptions { ShowsAhead = 2, TwentyFourHour = true, Prefix = "From {start_time} to {end_time}\n" };
