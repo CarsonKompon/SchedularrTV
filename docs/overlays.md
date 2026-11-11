@@ -129,6 +129,16 @@ Keyframe times are from the start of each appearance and opacity is 0–100, lik
 
 **Tag tokens** work for any name: tag an episode in Jellyfin (or its NFO's `<tag>`) as `artist: Nirvana`, `album: Nevermind`, `label: DGC` or `director: Samuel Bayer`, and `{tag.artist}`, `{tag.album}`, `{tag.label}` and `{tag.director}` show them. Names are matched ignoring case and spaces at either end. Several tags with one name are listed together, separated by commas (two `director:` tags read `Jonas Åkerlund, Dave Meyers`). In the editor's preview, a tag token shows its name (`Artist`).
 
+**Outline** and **Drop shadow** are groups: tick one to turn it on and show its settings. Generated promos and Credits Squeeze text layers have the same controls.
+
+- **Outline:** colour, width and opacity.
+- **Drop shadow:** colour, opacity, distance, angle (90° falls straight down) and blur.
+- **Sizes:** widths, distances and blur are percentages of the text size, so they keep their look as text shrinks to fit its box.
+- **Order:** the outline is drawn first, and the shadow falls from the letters and their outline together. The text fits inside its box with its outline.
+- **Until you change it:** a shadow keeps the look text always had. **Back to the usual shadow** returns to it.
+
+In YAML: `outline: true`, `outline_style: { color: '#000000', width: 4, opacity: 100 }`, and `shadow_style: { color: '#000000', opacity: 63, distance: 4, angle: 90, blur: 5 }`.
+
 A text layer's **Text** box takes several lines: Enter starts a new line on screen, whether or not word wrap is on. The box grows as you type, and the canvas follows a moment after you pause. Generated promos and Credits Squeeze text layers work the same way.
 
 Text layers share the generated promo editor's text controls: **Align in its box** is a 3 × 3 pad placing the text left, centre or right and top, middle or bottom (middle by default), and **Letters** can force ALL UPPERCASE or all lowercase, filled-in tokens and AI-written text included. **Word wrap** breaks long text between words (and at new lines) to fill the box before it shrinks. **Letter spacing** adds space between letters as a percentage of the text size (negative tightens), and **Line spacing** sets the distance between wrapped lines as a multiple of the font's own; both are part of the fit. In YAML: `vertical_align: bottom`, `text_case: upper`, `word_wrap: true`, `letter_spacing: 10`, `line_spacing: 1.3`.

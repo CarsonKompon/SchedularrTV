@@ -381,6 +381,15 @@ textarea { font-family: var(--mono); font-size: 12.5px; line-height: 1.6; resize
 .query-preview-list { max-height: min(60vh, 560px); overflow: auto; border-radius: var(--r-lg); }
 .query-preview-list td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
 
+/* A text layer's outline and drop shadow: a box that turns each on and opens its settings. */
+.effect-group { border-radius: var(--r-md, 10px); padding: 2px 10px; margin: 4px 0; }
+.effect-group.on { background: rgba(255, 255, 255, .035); padding-bottom: 8px; }
+.effect-group .effect-toggle { margin: 6px 0; font-weight: 600; }
+.effect-settings { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px 10px; }
+.effect-settings .field { margin-bottom: 0; }
+.effect-settings input[type=color] { height: 34px; padding: 2px; }
+.effect-note { margin: 6px 0 2px; }
+
 /* Canvas text layers' text reads as text, not code. */
 textarea.multiline-text { font-family: inherit; font-size: 13.5px; line-height: 1.45; min-height: 0; }
 input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; cursor: pointer; flex: none; }

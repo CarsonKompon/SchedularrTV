@@ -272,6 +272,8 @@ public sealed partial class OverlayRenderer(Func<string> folder)
             ? look
             : new { Look = look, VerticalAlign = layer.VerticalAlign?.ToString(), TextCase = layer.TextCase?.ToString(), layer.WordWrap };
         if (layer.FontWeight is not null || layer.Italic) styled = new { Styled = styled, layer.FontWeight, layer.Italic };
+        // An outline, or a shadow set up its own way: only then is it part of the hash.
+        if (Effects(layer) is { } effects) styled = new { Styled = styled, Effects = effects.Key() };
         // Spacing likewise: only spaced text hashes differently.
         return layer.LetterSpacing is null && layer.LineSpacing is null
             ? styled
@@ -604,10 +606,30 @@ public sealed partial class OverlayRenderer(Func<string> folder)
         using var font = new SKFont(typeface, Math.Clamp(layer.FontSize, 6, 400)) { Edging = SKFontEdging.Antialias, Subpixel = true };
         if (layer.Italic && typeface.FontSlant == SKFontStyleSlant.Upright) font.SkewX = -.2f;
         using var paint = new SKPaint { Color = Colour(layer.Color, SKColors.White), IsAntialias = true };
-        using SKImageFilter? shadow = layer.Shadow
+        SchedularrTV.Service.Rendering.TextEffects? effects = Effects(layer);
+        using SKImageFilter? shadow = effects is null && layer.Shadow
             ? SKImageFilter.CreateDropShadow(0, font.Size * 0.05f, font.Size * 0.06f, font.Size * 0.06f, new SKColor(0, 0, 0, 170))
             : null;
         paint.ImageFilter = shadow;
+
+        // An outline reaches past the letters: the text fits inside the box with it.
+        if (effects is not null && effects.Margin(font.Size) is > 0 and var margin)
+        {
+            bounds = SKRect.Inflate(bounds, -Math.Min(margin, bounds.Width / 4), -Math.Min(margin, bounds.Height / 4));
+        }
+
+        // With an outline or its own shadow, the lines are drawn together (see TextEffects); otherwise as they always were.
+        void DrawLine(string line, float lineX, float lineY, SKTextAlign lineAlign, List<(string, float, float)> placed, float spacing)
+        {
+            if (effects is null)
+            {
+                SchedularrTV.Service.Rendering.TextFit.Draw(canvas, line, lineX, lineY, lineAlign, font, paint, spacing);
+            }
+            else
+            {
+                placed.Add((line, lineX, lineY));
+            }
+        }
 
         // Long text shrinks to fit the box rather than run out of it (shared with generated promos). New lines always start
         // new lines; with word wrap, long lines also break between words first.
@@ -642,7 +664,9 @@ public sealed partial class OverlayRenderer(Func<string> folder)
                 GeneratedVerticalAlign.Bottom => bounds.Bottom - metrics.Descent,
                 _ => bounds.MidY - (metrics.Ascent + metrics.Descent) / 2
             };
-            SchedularrTV.Service.Rendering.TextFit.Draw(canvas, lines.Count == 0 ? text : lines[0], x, y, align, font, paint, letterSpacing);
+            List<(string, float, float)> single = [];
+            DrawLine(lines.Count == 0 ? text : lines[0], x, y, align, single, letterSpacing);
+            effects?.Draw(canvas, single, align, font, paint.Color, letterSpacing);
             return;
         }
 
@@ -655,12 +679,21 @@ public sealed partial class OverlayRenderer(Func<string> folder)
             GeneratedVerticalAlign.Bottom => bounds.Bottom - block,
             _ => bounds.Top + (bounds.Height - block) / 2
         } - metrics.Ascent;
+        List<(string, float, float)> placedLines = [];
         foreach (string line in lines)
         {
-            SchedularrTV.Service.Rendering.TextFit.Draw(canvas, line, x, top, align, font, paint, letterSpacing);
+            DrawLine(line, x, top, align, placedLines, letterSpacing);
             top += lineHeight;
         }
+
+        effects?.Draw(canvas, placedLines, align, font, paint.Color, letterSpacing);
     }
+
+    /// <summary>A text layer's outline, and its shadow when set up its own way; null when it has the usual shadow (or none).</summary>
+    private static SchedularrTV.Service.Rendering.TextEffects? Effects(OverlayLayer layer) =>
+        layer.Kind == OverlayLayerKinds.Text
+            ? SchedularrTV.Service.Rendering.TextEffects.From(layer.Shadow, layer.ShadowStyle, layer.Outline, layer.OutlineStyle, TextShadowSettings.Overlay)
+            : null;
 
     /// <summary>
     /// In the preview, a video as ErsatzTV places it: its still at the box's width from the box's top-left (ErsatzTV sizes

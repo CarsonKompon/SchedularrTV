@@ -471,9 +471,13 @@
                                 <div class="check-stack">
                                     <CanvasFontStyle Weight="selected.FontWeight" Bold="selected.Bold" Italic="selected.Italic"
                                                      WeightChanged="weight => Set(() => selected.FontWeight = weight)" ItalicChanged="italic => Set(() => selected.Italic = italic)" />
-                                    <label class="check"><input type="checkbox" checked="@selected.Shadow" @onchange="e => Set(() => selected.Shadow = e.Value is true)" /><span>Drop shadow</span></label>
                                     <label class="check"><input type="checkbox" checked="@(selected.WordWrap == true)" @onchange="e => Set(() => selected.WordWrap = e.Value is true ? true : null)" /><span>Word wrap</span></label>
                                 </div>
+                                <TextEffectsEditor @key="selected" UsualShadow="TextShadowSettings.Overlay"
+                                                   Shadow="selected.Shadow" ShadowChanged="on => Set(() => selected.Shadow = on)"
+                                                   ShadowStyle="selected.ShadowStyle" ShadowStyleChanged="style => Set(() => selected.ShadowStyle = style)"
+                                                   OutlineOn="selected.Outline" OutlineChanged="on => Set(() => selected.Outline = on)"
+                                                   OutlineStyle="selected.OutlineStyle" OutlineStyleChanged="style => Set(() => selected.OutlineStyle = style)" />
                                 <label class="field"><span>Letter spacing (% of the size; negative is tighter)</span>
                                     <input type="number" min="-50" max="200" step="1" value="@OptionalNumber(selected.LetterSpacing)" placeholder="0"
                                            @onchange="e => SetOptionalNumber(e, value => selected.LetterSpacing = value, neutral: 0, min: -50, max: 200)" /></label>

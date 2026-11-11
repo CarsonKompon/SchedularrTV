@@ -205,8 +205,12 @@
                                          WeightChanged="async weight => { selected.FontWeight = weight; await Commit(); }"
                                          ItalicChanged="async italic => { selected.Italic = italic; await Commit(); }" />
                         <label class="field"><span>Letters</span><TextCaseSelect Value="selected.TextCase" ValueChanged="async value => { selected.TextCase = value; await Commit(); }" /></label>
-                        <label class="check"><input type="checkbox" @bind="selected.Shadow" @bind:after="Commit" />Drop shadow</label>
                         <label class="check"><input type="checkbox" checked="@(selected.WordWrap == true)" @onchange="e => SetWordWrap(e.Value is true)" />Wrap long lines to the box</label>
+                        <TextEffectsEditor @key="selected" UsualShadow="TextShadowSettings.Promo"
+                                           Shadow="selected.Shadow" ShadowChanged="async on => { selected.Shadow = on; await Commit(); }"
+                                           ShadowStyle="selected.ShadowStyle" ShadowStyleChanged="async style => { selected.ShadowStyle = style; await Commit(); }"
+                                           OutlineOn="selected.Outline" OutlineChanged="async on => { selected.Outline = on; await Commit(); }"
+                                           OutlineStyle="selected.OutlineStyle" OutlineStyleChanged="async style => { selected.OutlineStyle = style; await Commit(); }" />
                         <div class="grid grid-2">
                             <label class="field"><span>Letter spacing (%)</span><input type="number" min="-50" max="200" step="1" value="@N(selected.LetterSpacing ?? 0)" @onchange="e => SetSpacing(e, true)" /></label>
                             <label class="field"><span>Line spacing (×)</span><input type="number" min="0.3" max="5" step="0.05" value="@N(selected.LineSpacing ?? 1)" @onchange="e => SetSpacing(e, false)" /></label>

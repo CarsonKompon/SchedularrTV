@@ -1,0 +1,101 @@
+@* A text layer's outline and drop shadow, for the canvas editors (generated promos, overlays, credits squeeze): each is a
+   group whose box turns it on and opens its settings. The outline comes first, as it's drawn first: the shadow falls from it too. *@
+@using System.Globalization
+
+<div class="effect-group @(Outline ? "on" : "")">
+    <label class="check effect-toggle">
+        <input type="checkbox" checked="@Outline" @onchange="e => OutlineChanged.InvokeAsync(e.Value is true ? true : null)" />
+        <span>Outline</span>
+    </label>
+    @if (Outline)
+    {
+        TextOutlineSettings outline = OutlineStyle ?? new TextOutlineSettings();
+        <div class="effect-settings">
+            <label class="field"><span>Colour</span>
+                <input type="color" value="@Hex(outline.Color)" @onchange="e => SetOutline(style => style.Color = Text(e, style.Color))" /></label>
+            <label class="field"><span>Width <span class="muted">(% of text size)</span></span>
+                <input type="number" min="0" max="50" step="0.5" value="@Number(outline.Width)" @onchange="e => SetOutline(style => style.Width = Value(e, style.Width, 0, 50))" /></label>
+            <label class="field"><span>Opacity <span class="muted">(%)</span></span>
+                <input type="number" min="0" max="100" step="5" value="@Number(outline.Opacity)" @onchange="e => SetOutline(style => style.Opacity = Value(e, style.Opacity, 0, 100))" /></label>
+        </div>
+    }
+</div>
+
+<div class="effect-group @(Shadow ? "on" : "")">
+    <label class="check effect-toggle">
+        <input type="checkbox" checked="@Shadow" @onchange="e => ShadowChanged.InvokeAsync(e.Value is true)" />
+        <span>Drop shadow</span>
+    </label>
+    @if (Shadow)
+    {
+        TextShadowSettings shadow = ShadowStyle ?? UsualShadow;
+        <div class="effect-settings">
+            <label class="field"><span>Colour</span>
+                <input type="color" value="@Hex(shadow.Color)" @onchange="e => SetShadow(style => style.Color = Text(e, style.Color))" /></label>
+            <label class="field"><span>Opacity <span class="muted">(%)</span></span>
+                <input type="number" min="0" max="100" step="5" value="@Number(shadow.Opacity)" @onchange="e => SetShadow(style => style.Opacity = Value(e, style.Opacity, 0, 100))" /></label>
+            <label class="field"><span>Distance <span class="muted">(% of text size)</span></span>
+                <input type="number" min="0" max="100" step="0.5" value="@Number(shadow.Distance)" @onchange="e => SetShadow(style => style.Distance = Value(e, style.Distance, 0, 100))" /></label>
+            <label class="field"><span>Angle <span class="muted">(°, 90 is down)</span></span>
+                <input type="number" min="0" max="360" step="15" value="@Number(shadow.Angle)" @onchange="e => SetShadow(style => style.Angle = Value(e, style.Angle, 0, 360))" /></label>
+            <label class="field"><span>Blur <span class="muted">(% of text size)</span></span>
+                <input type="number" min="0" max="100" step="0.5" value="@Number(shadow.Blur)" @onchange="e => SetShadow(style => style.Blur = Value(e, style.Blur, 0, 100))" /></label>
+        </div>
+        @if (Outline)
+        {
+            <p class="hint effect-note">The shadow falls from the outline too.</p>
+        }
+        @if (ShadowStyle is not null)
+        {
+            <button type="button" class="btn btn-sm btn-ghost" @onclick="() => ShadowStyleChanged.InvokeAsync(null)">Back to the usual shadow</button>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public bool Shadow { get; set; }
+    [Parameter] public EventCallback<bool> ShadowChanged { get; set; }
+
+    /// <summary>The shadow's own settings; null is <see cref="UsualShadow"/>.</summary>
+    [Parameter] public TextShadowSettings? ShadowStyle { get; set; }
+    [Parameter] public EventCallback<TextShadowSettings?> ShadowStyleChanged { get; set; }
+
+    /// <summary>The shadow this kind of layer has always had, shown (and started from) until it's changed.</summary>
+    [Parameter] public TextShadowSettings UsualShadow { get; set; } = TextShadowSettings.Promo;
+
+    /// <summary>Null (not false) when off, so the layer's saved form stays as it was.</summary>
+    [Parameter] public bool? OutlineOn { get; set; }
+    [Parameter] public EventCallback<bool?> OutlineChanged { get; set; }
+
+    [Parameter] public TextOutlineSettings? OutlineStyle { get; set; }
+    [Parameter] public EventCallback<TextOutlineSettings?> OutlineStyleChanged { get; set; }
+
+    private bool Outline => OutlineOn == true;
+
+    // Each change makes new settings, so layers copied from this one keep their own.
+    private Task SetShadow(Action<TextShadowSettings> change)
+    {
+        TextShadowSettings style = (ShadowStyle ?? UsualShadow).Copy();
+        change(style);
+        return ShadowStyleChanged.InvokeAsync(style);
+    }
+
+    private Task SetOutline(Action<TextOutlineSettings> change)
+    {
+        TextOutlineSettings style = (OutlineStyle ?? new TextOutlineSettings()).Copy();
+        change(style);
+        return OutlineStyleChanged.InvokeAsync(style);
+    }
+
+    private static string Hex(string? colour) =>
+        colour is { Length: 7 } && colour[0] == '#' ? colour.ToLowerInvariant() : "#000000";
+
+    private static string Text(ChangeEventArgs e, string fallback) => e.Value?.ToString() is { Length: > 0 } text ? text : fallback;
+
+    private static double Value(ChangeEventArgs e, double fallback, double min, double max) =>
+        double.TryParse(e.Value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double value) && double.IsFinite(value)
+            ? Math.Clamp(value, min, max)
+            : fallback;
+
+    private static string Number(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+}

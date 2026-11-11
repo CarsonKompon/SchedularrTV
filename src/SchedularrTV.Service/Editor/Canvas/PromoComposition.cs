@@ -138,6 +138,9 @@ public sealed record PromoTextLayer : PromoLayer
     public float LineSpacing { get; init; } = 1;
 
     public SKColor? Shadow { get; init; } = new SKColor(0, 0, 0, 160);
+
+    /// <summary>An outline, and a shadow set up its own way; when set, <see cref="Shadow"/> isn't used.</summary>
+    public SchedularrTV.Service.Rendering.TextEffects? Effects { get; init; }
 }
 
 public sealed record PromoImageLayer : PromoLayer

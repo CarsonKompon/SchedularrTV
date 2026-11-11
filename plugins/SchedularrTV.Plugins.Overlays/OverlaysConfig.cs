@@ -537,6 +537,15 @@ public sealed class OverlayLayer
 
     public bool Shadow { get; set; } = true;
 
+    /// <summary>The shadow's look, once it's been changed; null draws the one overlay text has always had.</summary>
+    public TextShadowSettings? ShadowStyle { get; set; }
+
+    /// <summary>An outline around the letters (drawn before the shadow). Null (not false) when off, so drawings are kept.</summary>
+    public bool? Outline { get; set; }
+
+    /// <summary>The outline's look, once it's been changed; null is a thin black one.</summary>
+    public TextOutlineSettings? OutlineStyle { get; set; }
+
     public float CornerRadius { get; set; }
 
     /// <summary>0 to 100.</summary>
@@ -548,6 +557,8 @@ public sealed class OverlayLayer
     public OverlayLayer Copy()
     {
         var copy = (OverlayLayer)MemberwiseClone();
+        copy.ShadowStyle = ShadowStyle?.Copy();
+        copy.OutlineStyle = OutlineStyle?.Copy();
         copy.Mask = Mask is null ? null : new GeneratedLayerMask { Mode = Mask.Mode, Target = Mask.Target };
         copy.Keyframes = Keyframes?.Select(key => key.Copy()).ToList();        copy.Writer = Writer is null ? null : new AiTextConfig
         {

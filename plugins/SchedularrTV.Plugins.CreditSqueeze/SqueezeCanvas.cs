@@ -140,6 +140,8 @@ public sealed class SqueezeCanvas
                     FontFamily = item.FontFamily, MaxFontSize = item.FontSize * scale, Bold = item.Bold,
                     FontWeight = item.FontWeight, Italic = item.Italic,
                     Shadow = item.Shadow ? new SKColor(0, 0, 0, 160) : null,
+                    Effects = SchedularrTV.Service.Rendering.TextEffects.From(item.Shadow, item.ShadowStyle, item.Outline, item.OutlineStyle,
+                        TextShadowSettings.Promo),
                     LetterSpacing = SchedularrTV.Service.Rendering.TextFit.LetterSpacing(item.LetterSpacing),
                     LineSpacing = SchedularrTV.Service.Rendering.TextFit.LineSpacing(item.LineSpacing),
                     Align = (SKTextAlign)item.Align, WordWrap = item.WordWrap == true,

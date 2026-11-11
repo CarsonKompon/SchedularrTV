@@ -2142,6 +2142,18 @@ public sealed class GeneratedLayer : IGeneratedPose, IGeneratedTiming, IGenerate
 
     public bool Shadow { get; set; } = true;
 
+    /// <summary>The shadow's look, once it's been changed; null draws the one text has always had.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public TextShadowSettings? ShadowStyle { get; set; }
+
+    /// <summary>An outline around the letters (drawn before the shadow). Null (not false) when off, so render keys hold.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Outline { get; set; }
+
+    /// <summary>The outline's look, once it's been changed; null is a thin black one.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public TextOutlineSettings? OutlineStyle { get; set; }
+
     public GeneratedUpNextOptions? UpNext { get; set; }
 
     /// <summary>Settings for Now Playing, This Has Been, Coming Up and Eventually text blocks.</summary>

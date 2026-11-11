@@ -1082,7 +1082,9 @@ public static partial class GeneratedPromoResolver
                     GeneratedTextAlign.Right => SKTextAlign.Right,
                     _ => SKTextAlign.Left
                 },
-                Shadow = layer.Shadow ? new SKColor(0, 0, 0, 160) : null
+                Shadow = layer.Shadow ? new SKColor(0, 0, 0, 160) : null,
+                Effects = SchedularrTV.Service.Rendering.TextEffects.From(layer.Shadow, layer.ShadowStyle, layer.Outline, layer.OutlineStyle,
+                    TextShadowSettings.Promo)
             },
             _ => null
         };

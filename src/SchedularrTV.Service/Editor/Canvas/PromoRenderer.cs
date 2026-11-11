@@ -411,10 +411,16 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         using var font = new SKFont(typeface, layer.MaxFontSize) { Edging = SKFontEdging.SubpixelAntialias, Subpixel = true };
         if (layer.Italic && typeface.FontSlant == SKFontStyleSlant.Upright) font.SkewX = -.2f;
         using var paint = new SKPaint { Color = layer.Color, IsAntialias = true };
-        using SKImageFilter? shadow = layer.Shadow is { } shade
+        using SKImageFilter? shadow = layer.Effects is null && layer.Shadow is { } shade
             ? SKImageFilter.CreateDropShadow(0, font.Size * 0.04f, font.Size * 0.05f, font.Size * 0.05f, shade)
             : null;
         paint.ImageFilter = shadow;
+
+        // An outline reaches past the letters: the text fits inside the box with it.
+        if (layer.Effects is { } effects && effects.Margin(font.Size) is > 0 and var margin)
+        {
+            bounds = SKRect.Inflate(bounds, -Math.Min(margin, bounds.Width / 4), -Math.Min(margin, bounds.Height / 4));
+        }
 
         // Shrinks to fit (shared with overlays), wrapping between words first when the layer asks to.
         // Letter and line spacing are part of the fit, so spaced-out text still fits its box.
@@ -439,6 +445,19 @@ public sealed class PromoRenderer(string ffmpegPath = "ffmpeg")
         } - font.Metrics.Ascent;
 
         float lineHeight = SchedularrTV.Service.Rendering.TextFit.LineHeight(font, layer.LineSpacing);
+        if (layer.Effects is { } textEffects)
+        {
+            List<(string, float, float)> placed = [];
+            foreach (string line in lines)
+            {
+                placed.Add((line, x, y));
+                y += lineHeight;
+            }
+
+            textEffects.Draw(canvas, placed, layer.Align, font, layer.Color, layer.LetterSpacing);
+            return;
+        }
+
         foreach (string line in lines)
         {
             SchedularrTV.Service.Rendering.TextFit.Draw(canvas, line, x, y, layer.Align, font, paint, layer.LetterSpacing);
