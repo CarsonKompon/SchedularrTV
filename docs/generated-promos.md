@@ -533,6 +533,18 @@ The matching layer writes the show's name and is optional: a template can show t
 
 Both prefix and suffix also accept **`{start_time}`** and **`{end_time}`**. These use the first selected show's start and last selected show's end, respecting **offset** and **shows ahead**, in the channel's local time (the same `h:mm` format as **Show start times**). For example, `prefix: '{start_time}–{end_time}: '` gives `5:00–5:30: Rugrats`. Scheduled end times include later segments and stacked episodes, excluding the trailing ad break; when only a runtime is available, the end is estimated from it. If neither is known, `{end_time}` becomes blank. Token names are case-insensitive and work in either field, including across newlines.
 
+With **Show start times** on, three more options appear:
+
+| Option | YAML | Result |
+|---|---|---|
+| **Only the time** | `time_only: true` | Each line is just the start time, without the show's name (`7:30`). |
+| **24-hour clock** | `twenty_four_hour: true` | `19:30`. |
+| **Show AM/PM** | `am_pm: true` | `7:30 PM` (12-hour clock only). |
+
+The clock options also apply to `{start_time}` and `{end_time}`.
+
+**Make Up Next** / **Make Text** (in the header of a Text or Up Next layer's first inspector section) swaps the layer between the two kinds in place, without changing its position, size, keyframes, timing, font, colour or Layer FX. Each kind's own settings are kept, so a layer's text and its Up Next options both come back when you swap again. A layer still called by its kind's default name ("Text 2") is renamed to match.
+
 ## Variable images
 
 Both canvas templates and external generators support show-dependent images:

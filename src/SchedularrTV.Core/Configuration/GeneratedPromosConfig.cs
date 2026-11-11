@@ -2253,6 +2253,26 @@ public sealed class GeneratedUpNextOptions
     public bool IncludeTime { get; set; }
 
     /// <summary>
+    /// With <see cref="IncludeTime"/>: each line is only the start time, without the show's name. Null (not false) when off,
+    /// so templates without it keep their render keys.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? TimeOnly { get; set; }
+
+    /// <summary>Times on the 24-hour clock (19:30). Null when off.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? TwentyFourHour { get; set; }
+
+    /// <summary>On the 12-hour clock, times end in AM or PM (7:30 PM). Null when off.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? AmPm { get; set; }
+
+    /// <summary>A time as these options show it, in <paramref name="zone"/>: 7:30, 7:30 PM or 19:30.</summary>
+    public string Clock(DateTimeOffset time, TimeZoneInfo zone) =>
+        TimeZoneInfo.ConvertTime(time, zone).ToString(
+            TwentyFourHour == true ? "HH:mm" : AmPm == true ? "h:mm tt" : "h:mm", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
     /// Text before the first show, e.g. <c>Up next: </c>; a new line in it puts it on its own line. <c>{channel}</c> is
     /// the channel name; <c>{start_time}</c> and <c>{end_time}</c> are the selected shows' first start and last end,
     /// in channel-local time. Null when unused, so templates without it keep their render keys.

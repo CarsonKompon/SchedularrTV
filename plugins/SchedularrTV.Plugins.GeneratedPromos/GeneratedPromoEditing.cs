@@ -82,6 +82,50 @@ public static class GeneratedPromoEditing
         return copy;
     }
 
+    /// <summary>Whether a layer can be swapped between a Text layer and Up Next text.</summary>
+    public static bool CanSwapText(GeneratedLayer layer) => layer.Kind is GeneratedLayerKind.Text or GeneratedLayerKind.UpNext;
+
+    /// <summary>
+    /// Turns a Text layer into Up Next text, or Up Next text into a Text layer, keeping everything else about it: place,
+    /// keyframes, timing, font, colour, effects and variants. What only one kind uses (the text and its AI writer, or the
+    /// Up Next settings) is kept too, so swapping back brings it all back. A name still the kind's own ("Text 2") follows
+    /// the swap. Returns false for any other kind of layer.
+    /// </summary>
+    public static bool SwapText(GeneratedPromoTemplate template, GeneratedLayer layer)
+    {
+        if (!CanSwapText(layer))
+        {
+            return false;
+        }
+
+        bool toUpNext = layer.Kind == GeneratedLayerKind.Text;
+        string from = toUpNext ? "Text" : "Up Next";
+        string to = toUpNext ? "Up Next" : "Text";
+        layer.Kind = toUpNext ? GeneratedLayerKind.UpNext : GeneratedLayerKind.Text;
+        if (toUpNext)
+        {
+            layer.UpNext ??= new GeneratedUpNextOptions();
+        }
+        else if (string.IsNullOrWhiteSpace(layer.Text))
+        {
+            // Something to see straight away, rather than an empty box.
+            layer.Text = "Up next";
+        }
+
+        if (IsOwnName(layer.Name, from))
+        {
+            layer.Name = UniqueName(template.Layers.Where(other => !ReferenceEquals(other, layer)).Select(other => other.Name), to);
+        }
+
+        return true;
+    }
+
+    // "Text", "Text 2"…: a name a new layer of that kind is given.
+    private static bool IsOwnName(string? name, string kind) =>
+        string.IsNullOrWhiteSpace(name)
+        || string.Equals(name, kind, StringComparison.OrdinalIgnoreCase)
+        || (name.StartsWith(kind + " ", StringComparison.OrdinalIgnoreCase) && int.TryParse(name[(kind.Length + 1)..], out _));
+
     public static string UniqueName(IEnumerable<string> existing, string name)
     {
         HashSet<string> taken = new(existing, StringComparer.OrdinalIgnoreCase);

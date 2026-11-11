@@ -920,11 +920,14 @@ public static partial class GeneratedPromoResolver
     /// The prefix joined onto the first line and the suffix onto the last; new lines in
     /// either start lines of their own. Nothing is added when there are no shows to list.
     /// </summary>
-    private static IReadOnlyList<string> UpNextLines(IReadOnlyList<UpNextListing> listings, GeneratedUpNextOptions? options,
+    public static IReadOnlyList<string> UpNextLines(IReadOnlyList<UpNextListing> listings, GeneratedUpNextOptions? options,
         TimeZoneInfo zone, string channelName)
     {
+        // Times as the layer asks for them (12- or 24-hour, AM/PM); with "time only" just the times, no names.
+        string Clock(DateTimeOffset time) => options?.Clock(time, zone) ?? UpNextPromo.Clock(time, zone);
         List<string> lines = [.. listings.Select(listing => options?.IncludeTime == true
-            ? $"{UpNextPromo.Clock(listing.Start, zone)}  {listing.Title}" : listing.Title)];
+            ? options.TimeOnly == true ? Clock(listing.Start) : $"{Clock(listing.Start)}  {listing.Title}"
+            : listing.Title)];
         string? prefix = options?.Prefix;
         string? suffix = options?.Suffix;
         if (lines.Count == 0 || (string.IsNullOrEmpty(prefix) && string.IsNullOrEmpty(suffix)))
@@ -935,8 +938,8 @@ public static partial class GeneratedPromoResolver
         DateTimeOffset? end = listings[^1].End
             ?? (listings[^1].Runtime is { } runtime ? listings[^1].Start + runtime : null);
         string Expand(string? text) => (Tokens(text, channelName) ?? string.Empty)
-            .Replace("{start_time}", UpNextPromo.Clock(listings[0].Start, zone), StringComparison.OrdinalIgnoreCase)
-            .Replace("{end_time}", end is { } until ? UpNextPromo.Clock(until, zone) : string.Empty, StringComparison.OrdinalIgnoreCase);
+            .Replace("{start_time}", Clock(listings[0].Start), StringComparison.OrdinalIgnoreCase)
+            .Replace("{end_time}", end is { } until ? Clock(until) : string.Empty, StringComparison.OrdinalIgnoreCase);
         string text = Expand(prefix) + string.Join('\n', lines) + Expand(suffix);
         return text.Replace("\r\n", "\n").Split('\n');
     }

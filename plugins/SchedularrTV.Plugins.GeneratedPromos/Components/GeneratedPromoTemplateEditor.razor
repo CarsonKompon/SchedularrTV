@@ -635,6 +635,18 @@
                     @if (HasContent(selected.Kind))
                     {
                     <InspectorSection Title="@ContentTitle(selected.Kind)" Name="@($"promo-content-{selected.Kind}")">
+                    <Extra>
+                        @if (GeneratedPromoEditing.CanSwapText(selected))
+                        {
+                            <button type="button" class="btn btn-sm" @onclick="() => SwapText(selected)"
+                                    title="@(selected.Kind == GeneratedLayerKind.Text
+                                        ? "Make this Up Next text, keeping its place, style, animation and effects (its text is kept for swapping back)"
+                                        : "Make this a plain Text layer, keeping its place, style, animation and effects (its Up Next settings are kept for swapping back)")">
+                                <Icon Name="refresh" Size="12" />@(selected.Kind == GeneratedLayerKind.Text ? "Make Up Next" : "Make Text")
+                            </button>
+                        }
+                    </Extra>
+                    <ChildContent>
                     @if (selected.Kind == GeneratedLayerKind.UpNext)
                     {
                         <div class="grid grid-2">
@@ -659,6 +671,27 @@
                                    @onchange="e => Set(() => UpNext(selected).IncludeTime = e.Value is true)" />
                             <span>Show start times</span>
                         </label>
+                        @if (selected.UpNext?.IncludeTime == true)
+                        {
+                            GeneratedUpNextOptions clock = UpNext(selected);
+                            <div class="check-stack upnext-clock">
+                                <label class="check">
+                                    <input type="checkbox" checked="@(clock.TimeOnly == true)" @onchange="e => Set(() => clock.TimeOnly = e.Value is true ? true : null)" />
+                                    <span>Only the time (no show name)</span>
+                                </label>
+                                <label class="check">
+                                    <input type="checkbox" checked="@(clock.TwentyFourHour == true)" @onchange="e => Set(() => clock.TwentyFourHour = e.Value is true ? true : null)" />
+                                    <span>24-hour clock (19:30)</span>
+                                </label>
+                                @if (clock.TwentyFourHour != true)
+                                {
+                                    <label class="check">
+                                        <input type="checkbox" checked="@(clock.AmPm == true)" @onchange="e => Set(() => clock.AmPm = e.Value is true ? true : null)" />
+                                        <span>Show AM/PM (7:30 PM)</span>
+                                    </label>
+                                }
+                            </div>
+                        }
                         <div class="grid grid-2">
                             <label class="field">
                                 <span>Before the shows (optional)</span>
@@ -859,6 +892,7 @@
                             <p class="hint">Its sound fades in and out with the layer, and follows its opacity.</p>
                         }
                     }
+                    </ChildContent>
                     </InspectorSection>
                     }
 
@@ -4809,6 +4843,9 @@
     private static string Label(GeneratedLayer layer) => string.IsNullOrWhiteSpace(layer.Name) ? KindName(layer.Kind) : layer.Name;
 
     // ---- Inspector sections ----
+
+    // Text ↔ Up Next text, in place: everything else about the layer stays as it is.
+    private Task SwapText(GeneratedLayer layer) => Set(() => GeneratedPromoEditing.SwapText(Template, layer));
 
     private static bool IsTextKind(GeneratedLayerKind kind) =>
         kind is GeneratedLayerKind.Text or GeneratedLayerKind.UpNext || GeneratedPromoKinds.IsShowLayer(kind);
