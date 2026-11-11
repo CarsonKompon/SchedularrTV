@@ -44,6 +44,9 @@ public sealed class SchedulerConfigProvider : IDisposable
 
     public event Action<SchedulerConfig>? ConfigChanged;
 
+    /// <summary>Channels whose id was changed (old id to new), raised just before <see cref="ConfigChanged"/>.</summary>
+    public event Action<IReadOnlyDictionary<string, string>>? ChannelIdsChanged;
+
     public string ConfigPath => Path.GetFullPath(_options.ConfigPath);
 
     public SchedulerConfig Current
@@ -82,7 +85,18 @@ public sealed class SchedulerConfigProvider : IDisposable
         SchedulerConfig parsed = SchedulerConfigLoader.Parse(yaml);
 
         // Tag-based break settings (from an import, the API or pasted YAML) are moved into ad breaks as they're saved.
-        if (SchedularrTV.Core.Scheduling.AdBreakMigration.Migrate(parsed))
+        bool rewritten = SchedularrTV.Core.Scheduling.AdBreakMigration.Migrate(parsed);
+
+        // Every channel and block keeps a uid, and (unless a backup is being put back, which is whole in itself) what still
+        // names a channel or block the way it was called before follows the rename.
+        ConfigIdentity known = ConfigIdentity.Of(Current);
+        rewritten |= ConfigIdentity.EnsureUids(parsed, known);
+        if (backupReason != ConfigBackups.BeforeRestore)
+        {
+            rewritten |= ConfigIdentity.FollowRenames(parsed, known);
+        }
+
+        if (rewritten)
         {
             yaml = YamlCommentMerger.Merge(yaml, SchedulerConfigLoader.Serialize(parsed));
         }
@@ -152,11 +166,21 @@ public sealed class SchedulerConfigProvider : IDisposable
 
             // A schedule from before ad breaks has its break and promo settings moved into them, once.
             bool movedToAdBreaks = SchedularrTV.Core.Scheduling.AdBreakMigration.Migrate(parsed);
+
+            // Channels and blocks get their uids (written into the file, so they last), and a channel id or block name
+            // changed in the file by hand is followed by what refers to it, as in the editor.
+            ConfigIdentity before = ConfigIdentity.Of(Current);
+            bool identified = ConfigIdentity.EnsureUids(parsed, before);
+            bool followed = ConfigIdentity.FollowRenames(parsed, before);
             ConfigValidationResult validation = SchedulerConfigLoader.Validate(parsed);
 
             if ((parsed.UsesOldLayout || movedToAdBreaks) && validation.IsValid)
             {
                 MigrateLayout(raw, parsed, movedToAdBreaks);
+            }
+            else if ((identified || followed) && validation.IsValid)
+            {
+                WriteBack(raw, parsed);
             }
 
             foreach (string warning in validation.Warnings)
@@ -220,12 +244,56 @@ public sealed class SchedulerConfigProvider : IDisposable
         }
     }
 
+    /// <summary>
+    /// Writes channel and block uids (and references that followed a rename) into the file, keeping its comments; the file
+    /// as it was is backed up first. A failure leaves the file as it is: it still loads, and this is tried again next time.
+    /// </summary>
+    private void WriteBack(string raw, SchedulerConfig parsed)
+    {
+        try
+        {
+            string updated = YamlCommentMerger.Merge(raw, SchedulerConfigLoader.Serialize(parsed));
+            if (string.Equals(updated, raw, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            Backups.Snapshot(raw, ConfigBackups.BeforeSave);
+            string temp = ConfigPath + ".tmp";
+            File.WriteAllText(temp, updated);
+            File.Move(temp, ConfigPath, overwrite: true);
+            lock (_gate)
+            {
+                _lastRaw = updated;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "Couldn't write channel and block ids into {Path}; it still loads as it is.", ConfigPath);
+        }
+    }
+
     private void Apply(SchedulerConfig config, ConfigValidationResult validation)
     {
+        SchedulerConfig previous;
         lock (_gate)
         {
+            previous = _config;
             _config = config;
             _validation = validation;
+        }
+
+        // Told first, so what's kept by channel id (where each rotation is up to) moves before the channel is rebuilt.
+        if (ChannelIdsChanged is not null && ConfigIdentity.ChannelRenames(config, ConfigIdentity.Of(previous)) is { Count: > 0 } renamed)
+        {
+            try
+            {
+                ChannelIdsChanged.Invoke(renamed);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Couldn't carry everything kept for the renamed channel(s) over to their new ids.");
+            }
         }
 
         ConfigChanged?.Invoke(config);

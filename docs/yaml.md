@@ -48,6 +48,7 @@ Keys use **snake_case**. Durations use units such as **`500ms`**, **`10s`**, **`
 | Field | Purpose |
 | --- | --- |
 | **`id`** | Unique channel identifier used by state and API routes |
+| **`uid`** | Written by the app; leave it alone. It stays the same when `id` changes, so another channel's generated promos or overlays taken `from` this one, its voice-over takes and where its rotations are up to all follow the new id. Blocks have one too, so Archive Follow's block mapping and block voice-over takes follow a block's new name. Change `id` or a block's `name` in the file and the same happens when it's loaded. |
 | **`name`** | Display name |
 | **`number`** | Unique positive channel number |
 | **`group`**, **`logo`** | Playlist grouping and logo URL |

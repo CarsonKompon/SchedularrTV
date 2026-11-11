@@ -16,7 +16,38 @@ public sealed class ConfigEditor(SchedulerConfigProvider provider)
 {
     private SchedulerConfig _working = Clone(provider.Current);
 
-    public SchedulerConfig Working => _working;
+    // Channel ids and block names as they were after the last change, by uid: what a rename is told apart by.
+    private ConfigIdentity? _identity;
+
+    public SchedulerConfig Working
+    {
+        get
+        {
+            // Known before anything is changed through it, so the first edit can already be told apart as a rename.
+            if (_identity is null) ForgetRenames();
+            return _working;
+        }
+    }
+
+    /// <summary>
+    /// Every channel and block has its uid, and whatever still refers to a channel or block by the id or name it had
+    /// before this change follows it (generated promos taken from a renamed channel, Archive Follow's block mapping…).
+    /// </summary>
+    private void FollowRenames()
+    {
+        // (Never known yet only if the working copy was changed without being read first: then there's nothing to compare.)
+        ConfigIdentity before = _identity ?? ConfigIdentity.Of(_working);
+        ConfigIdentity.EnsureUids(_working, before);
+        ConfigIdentity.FollowRenames(_working, before);
+        _identity = ConfigIdentity.Of(_working, before);
+    }
+
+    // What's there now is the starting point: nothing has been renamed yet.
+    private void ForgetRenames()
+    {
+        ConfigIdentity.EnsureUids(_working);
+        _identity = ConfigIdentity.Of(_working);
+    }
 
     public bool IsDirty { get; private set; }
 
@@ -37,6 +68,9 @@ public sealed class ConfigEditor(SchedulerConfigProvider provider)
         _revision++;
         IsDirty = true;
 
+        // A channel id or block name changed: what pointed at it points at it still.
+        FollowRenames();
+
         // A channel made with tag-based break settings (an import, pasted YAML) gets ad breaks straight away.
         SchedularrTV.Core.Scheduling.AdBreakMigration.Migrate(_working);
         // Templates added, imported or relinked pick up their shared images straight away, for the previews.
@@ -51,6 +85,8 @@ public sealed class ConfigEditor(SchedulerConfigProvider provider)
     public void Replace(SchedulerConfig config)
     {
         _working = config;
+        // A whole other schedule (a backup) is consistent in itself: nothing in it is a rename of what was here.
+        ForgetRenames();
         SaveError = null;
         MarkDirty();
     }
@@ -59,6 +95,7 @@ public sealed class ConfigEditor(SchedulerConfigProvider provider)
     {
         if (IsBusy) return;
         _working = Clone(provider.Current);
+        ForgetRenames();
         IsDirty = false;
         SaveError = null;
         Validate();
@@ -148,6 +185,7 @@ public sealed class ConfigEditor(SchedulerConfigProvider provider)
                 return;
             }
             _working = copy;
+            ForgetRenames();
             IsDirty = false;
             Validate();
         }
@@ -168,7 +206,7 @@ public sealed class ConfigEditor(SchedulerConfigProvider provider)
     }
 
     public ChannelConfig? FindChannel(string id) =>
-        _working.Channels.FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.OrdinalIgnoreCase));
+        Working.Channels.FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.OrdinalIgnoreCase));
 
     public ChannelConfig CopyChannelSettings(string destinationId, string sourceId)
     {
@@ -184,6 +222,8 @@ public sealed class ConfigEditor(SchedulerConfigProvider provider)
         ChannelConfig copied = SchedulerConfigLoader.Parse(SchedulerConfigLoader.Serialize(
             new SchedulerConfig { Channels = [source] })).Channels.Single();
         copied.Id = destination.Id;
+        // Still the destination channel (not a rename of the source), so references to it hold.
+        copied.Uid = destination.Uid;
         copied.Name = destination.Name;
         copied.Number = destination.Number;
         copied.Logo = destination.Logo;

@@ -10,6 +10,12 @@ public sealed class BlockConfig
 {
     public required string Name { get; set; }
 
+    /// <summary>
+    /// A stable identity within its channel, kept when the block is renamed, so what refers to the block by name (Archive
+    /// Follow's block mapping, block voice-over takes) can follow the rename. Given by the app; null until then.
+    /// </summary>
+    public string? Uid { get; set; }
+
     public bool FollowOnly { get; set; }
 
     /// <summary>

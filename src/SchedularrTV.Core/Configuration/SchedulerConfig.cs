@@ -183,6 +183,13 @@ public sealed class ChannelConfig
 {
     public required string Id { get; set; }
 
+    /// <summary>
+    /// A stable identity kept when <see cref="Id"/> is changed, so what refers to the channel by id (another channel's
+    /// generated promos or overlays <c>from</c> it, its voice-over takes) can follow the change. Given by the app; null
+    /// until then.
+    /// </summary>
+    public string? Uid { get; set; }
+
     public required string Name { get; set; }
 
     public int Number { get; set; }

@@ -3400,6 +3400,11 @@
     /// <summary>Every background what's being edited picks from, the single one older templates have included.</summary>
     private List<string> BackgroundList => GeneratedPromoEditing.Backgrounds(BackgroundHost);
 
+    // Any of the template's backgrounds (the default's or a variant's) is a video: then whether they loop is worth asking.
+    private bool HasBackgroundVideo =>
+        Template.BackgroundChoices.Concat(Template.Variants?.SelectMany(variant => variant.BackgroundChoices) ?? [])
+            .Any(background => !string.IsNullOrWhiteSpace(background) && !PromoRenderer.IsImage(background));
+
     /// <summary>Swaps the background at <paramref name="index"/> for another file, or removes it when null.</summary>
     private Task SetBackground(int index, string? value) => Set(() =>
     {
@@ -4967,7 +4972,7 @@
             <span>
                 @(Template.BackgroundClip is null || GeneratedPromoResolver.UsesClip(Template.Generator) ? "Background images or videos" : "Fallback background images or videos (when the episode file can't be read)")
                 @(EditingVariant is null ? "" : $"for {VariantLabel(_editVariant)}")
-                (optional; videos loop; with several, one is picked at random for each promo)
+                (optional; with several, one is picked at random for each promo)
             </span>
             @if (EditingVariant is not null && BackgroundList.Count == 0)
             {
@@ -5016,21 +5021,31 @@
             {
                 <p class="hint">If no background is eligible, the background colour is used@(EditingVariant is null ? "" : ", and this variant isn't picked"). Preview lets you inspect a background regardless of its rule.</p>
             }
+            @if (HasBackgroundVideo)
+            {
+                @* For every background video of the template (the default's and its variants'), so it's right here with them. *@
+                <div class="ed-bg-end" role="radiogroup" aria-label="When a background video runs out"
+                     style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:8px;">
+                    <span>When a background video runs out:</span>
+                    <label class="check">
+                        <input type="radio" name="background-end" checked="@(Template.BackgroundHold != true)"
+                               @onchange="() => Set(() => Template.BackgroundHold = null)" />
+                        <span>Loop it</span>
+                    </label>
+                    <label class="check">
+                        <input type="radio" name="background-end" checked="@(Template.BackgroundHold == true)"
+                               @onchange="() => Set(() => Template.BackgroundHold = true)" />
+                        <span>Hold its last frame</span>
+                    </label>
+                </div>
+                @if (Template.BackgroundHold == true)
+                {
+                    <p class="hint">A background video shorter than the promo stops on its last frame, and its sound plays once. Applies to every background video of this promo, variants included.</p>
+                }
+            }
         </div>
         @if (BackgroundList.Any(background => !PromoRenderer.IsImage(background)))
         {
-            <label class="field">
-                <span>When the background video runs out</span>
-                <select value="@(Template.BackgroundHold == true ? "hold" : "loop")"
-                        @onchange="e => Set(() => Template.BackgroundHold = Text(e) == "hold" ? true : null)">
-                    <option value="loop">Loop it (start over)</option>
-                    <option value="hold">Hold its last frame</option>
-                </select>
-            </label>
-            @if (Template.BackgroundHold == true)
-            {
-                <p class="hint">A background shorter than the promo stops on its last frame, and its sound plays once.</p>
-            }
             GeneratedBackgroundSoundConfig sound = GeneratedPromoResolver.BackgroundSound(Template);
             <div class="grid grid-3">
                 <label class="check template-enabled">

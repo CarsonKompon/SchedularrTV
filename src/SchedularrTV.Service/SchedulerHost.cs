@@ -189,6 +189,9 @@ public static class SchedulerHost
             ViewerPreference = sp.GetRequiredService<SchedularrTV.Service.Stats.ViewerPreferences>()
         });
 
+        // A channel given a new id keeps where its rotations are up to.
+        builder.Services.AddHostedService<ChannelRenameCarrier>();
+
         builder.Services.AddSingleton<ScheduleCoordinator>();
         builder.Services.AddSingleton<SchedularrTV.Plugins.Playout.IScheduleRepublisher, ScheduleRepublisher>();
         // Also resolvable on its own, so settings and plugin switches can ask for a rebuild.
