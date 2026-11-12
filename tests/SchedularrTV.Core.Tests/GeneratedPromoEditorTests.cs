@@ -420,6 +420,8 @@ public sealed class GeneratedPromoEditorTests : IDisposable
         services.AddSingleton<GeneratedPromoService>();
         services.AddSingleton<GeneratedPromoPreview>();
         services.AddSingleton(new GeneratorSetup(_directory, NullLogger<GeneratorSetup>.Instance));
+        // Query fields (a background rule's "for programmes matching") preview their matches from the library.
+        services.AddSingleton<SchedularrTV.Core.Media.IMediaLibrary>(new FakeMediaLibrary([]));
         return services.BuildServiceProvider();
     }
 

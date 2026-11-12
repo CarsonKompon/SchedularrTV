@@ -80,8 +80,11 @@ public sealed class ChannelCopyTests : IDisposable
         Assert.Equal(51, copied.Number);
         Assert.Equal("schedularrtv.51", copied.TvgId);
         Assert.Equal("/logos/destination.png", copied.Logo);
+        Assert.NotEqual(source.Uid, copied.Uid);
         ChannelConfig expected = SchedulerConfigLoader.Parse(sourceBefore).Channels.Single();
         expected.Id = copied.Id;
+        // Still the destination channel (its uid kept), so what refers to it holds.
+        expected.Uid = copied.Uid;
         expected.Name = copied.Name;
         expected.Number = copied.Number;
         expected.Logo = copied.Logo;
