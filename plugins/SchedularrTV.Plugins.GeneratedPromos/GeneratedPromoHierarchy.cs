@@ -411,6 +411,126 @@ public static class GeneratedPromoHierarchy
         return group;
     }
 
+    /// <summary>Whether a layer can be turned into a group around itself (not a group already, nor a mask).</summary>
+    public static bool CanConvertToGroup(GeneratedLayer layer) => !IsGroup(layer) && layer.Mask is null;
+
+    /// <summary>
+    /// Turns the layer into a group holding it, which takes over everything about where and when it shows: its place,
+    /// turn, corner pin, opacity, keyframes, timing, transitions and Layer FX, in the default look and in every variant
+    /// (and older per-background layout) that places or times it its own way, and whether a variant hides it. The layer
+    /// then just fills the group's box, so anything added to the group is placed and animated with it everywhere.
+    /// Nothing moves on screen. Size animations stay on the layer (a group's box only moves and turns), kept centred in it.
+    /// </summary>
+    public static GeneratedLayer ConvertToGroup(GeneratedPromoTemplate template, GeneratedLayer layer)
+    {
+        if (!CanConvertToGroup(layer))
+        {
+            throw new InvalidOperationException("Only a layer that isn't a group or a mask can be turned into a group.");
+        }
+
+        string layerId = layer.Id ??= NewId(template);
+        string groupId = NewId(template, [layerId]);
+        var group = new GeneratedLayer
+        {
+            Id = groupId,
+            Name = layer.Name,
+            Kind = GeneratedLayerKind.Group,
+            Parent = layer.Parent,
+            Variant = layer.Variant,
+            Locked = layer.Locked,
+            Effects = layer.Effects
+        };
+        layer.Effects = null;
+        layer.Name = GeneratedPromoEditing.UniqueName(template.Layers.Select(other => other.Name).Append(group.Name), $"{layer.Name} {KindWord(layer.Kind)}");
+
+        // When: the group's now; the layer shows whenever the group does.
+        CopyTiming(layer, group);
+        (layer.Start, layer.End, layer.TransitionIn, layer.TransitionOut, layer.TransitionDuration, layer.TransitionOutDuration) =
+            (TimeSpan.Zero, null, GeneratedTransition.None, GeneratedTransition.None, TimeSpan.Zero, null);
+
+        // Where: the group's now, in the default look...
+        Split(layer, group, layer);
+        (float Width, float Height, List<GeneratedKeyframe>? Keyframes) inside = (layer.Width, layer.Height, layer.Keyframes);
+
+        // ...and in every variant (and older per-background layout) with its own.
+        IEnumerable<IGeneratedLayerEdits> edits = (template.Variants ?? []).Cast<IGeneratedLayerEdits>().Concat(template.BackgroundOverrides ?? []);
+        foreach (IGeneratedLayerEdits edit in edits)
+        {
+            if (edit.Layers.FirstOrDefault(placed => placed.Layer == layerId) is { } placed)
+            {
+                var groupPlaced = new GeneratedLayerOverride { Layer = groupId };
+                var layerPlaced = new GeneratedLayerOverride { Layer = layerId };
+                Split(placed, groupPlaced, layerPlaced);
+                edit.Layers.Insert(edit.Layers.IndexOf(placed), groupPlaced);
+                // The layer only keeps a placement of its own here when it's sized (or resized) differently from the default.
+                if (Math.Abs(layerPlaced.Width - inside.Width) > 0.01f || Math.Abs(layerPlaced.Height - inside.Height) > 0.01f
+                    || layerPlaced.Keyframes is not null || inside.Keyframes is not null)
+                {
+                    edit.Layers[edit.Layers.IndexOf(placed)] = layerPlaced;
+                }
+                else
+                {
+                    edit.Layers.Remove(placed);
+                }
+            }
+
+            if (edit.Timings?.FirstOrDefault(timed => timed.Layer == layerId) is { } timing)
+            {
+                timing.Layer = groupId;
+            }
+
+            if (edit is GeneratedPromoVariant variant && variant.Hidden is { } hidden && hidden.Remove(layerId))
+            {
+                hidden.Add(groupId);
+            }
+        }
+
+        layer.Parent = groupId;
+        template.Layers.Insert(template.Layers.IndexOf(layer), group);
+        Tidy(template);
+        return group;
+    }
+
+    // A pose split in two: the group takes where it is (its box's middle, turn, pin, opacity and their animation), the
+    // layer fills the group's box, sized as the original was (and resized over time, centred, if it was).
+    private static void Split(IGeneratedPose source, IGeneratedPose group, IGeneratedPose inside)
+    {
+        float width = source.Width, height = source.Height;
+        List<GeneratedKeyframe>? keys = source.Keyframes is { Count: > 0 } found ? [.. found] : null;
+        bool resized = keys?.Any(key => Math.Abs(key.Width - width) > 0.01f || Math.Abs(key.Height - height) > 0.01f) == true;
+
+        (group.X, group.Y, group.Width, group.Height) = (source.X, source.Y, width, height);
+        (group.Opacity, group.Rotation, group.Corners) = (source.Opacity, source.Rotation, source.Corners);
+        group.Keyframes = keys?.Select(key => new GeneratedKeyframe
+        {
+            At = key.At, Easing = key.Easing, Opacity = key.Opacity, Rotation = key.Rotation, Corners = key.Corners,
+            // The box's middle goes where the original's did; the box keeps one size.
+            X = key.X + key.Width / 2 - width / 2, Y = key.Y + key.Height / 2 - height / 2, Width = width, Height = height
+        }).ToList();
+
+        (inside.X, inside.Y, inside.Width, inside.Height) = (0, 0, width, height);
+        (inside.Opacity, inside.Rotation, inside.Corners) = (1, null, null);
+        inside.Keyframes = resized
+            ? keys!.Select(key => new GeneratedKeyframe
+            {
+                At = key.At, Easing = key.Easing, Opacity = 1,
+                X = (width - key.Width) / 2, Y = (height - key.Height) / 2, Width = key.Width, Height = key.Height
+            }).ToList()
+            : null;
+    }
+
+    private static void CopyTiming(IGeneratedTiming from, IGeneratedTiming to) =>
+        (to.Start, to.End, to.TransitionIn, to.TransitionOut, to.TransitionDuration, to.TransitionOutDuration) =
+        (from.Start, from.End, from.TransitionIn, from.TransitionOut, from.TransitionDuration, from.TransitionOutDuration);
+
+    private static string KindWord(GeneratedLayerKind kind) => kind switch
+    {
+        GeneratedLayerKind.Image => "image",
+        GeneratedLayerKind.Video => "video",
+        GeneratedLayerKind.Rect => "shape",
+        _ => "text"
+    };
+
     private static IEnumerable<(double X, double Y)> Corners(LayerPose pose)
     {
         double centreX = pose.X + pose.Width / 2.0;

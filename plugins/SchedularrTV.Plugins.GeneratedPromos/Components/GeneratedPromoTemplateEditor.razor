@@ -567,6 +567,11 @@
                         <span class="insp-kind" title="@KindName(selected.Kind)">@KindName(selected.Kind)</span>
                         <input type="text" class="insp-name" aria-label="Layer name" placeholder="Layer name" value="@selected.Name"
                                @onchange="e => Set(() => selected.Name = Text(e))" />
+                        @if (GeneratedPromoHierarchy.CanConvertToGroup(selected))
+                        {
+                            <EditorIconButton Icon="group" Label="Turn into a group (it takes the layer's place, animation, timing and Layer FX in every variant)"
+                                              OnClick="() => ConvertToGroup(selected)" />
+                        }
                         <EditorIconButton Icon="copy" Label="Duplicate layer" OnClick="() => DuplicateLayer(selected)" />
                         <EditorIconButton Icon="trash" Label="Delete layer" Danger="true" OnClick="() => RemoveLayer(selected)" />
                     </div>
@@ -677,7 +682,7 @@
                             <label class="field">
                                 <span>Each line shows</span>
                                 <select value="@(clock.AmPmOnly == true ? "ampm" : clock.TimeOnly == true ? "time" : "both")"
-                                        @onchange="e => Set(() => { string shows = Text(e); clock.TimeOnly = shows == "time" ? true : null; clock.AmPmOnly = shows == "ampm" ? true : null; })">
+                                        @onchange="@(e => SetLineShows(clock, Text(e)))">
                                     <option value="both">The time and the show (7:30  Rugrats)</option>
                                     <option value="time">Only the time (7:30)</option>
                                     <option value="ampm">Only AM or PM (PM)</option>
@@ -3000,6 +3005,10 @@
         Select(group);
     });
 
+    // The layer becomes a group holding it, which takes its place, animation, timing and Layer FX (in every variant), so
+    // what's added to the group later goes everywhere with it.
+    private Task ConvertToGroup(GeneratedLayer layer) => Set(() => Select(GeneratedPromoHierarchy.ConvertToGroup(Template, layer)));
+
     private Task Ungroup(GeneratedLayer group) => Set(() =>
     {
         List<GeneratedLayer> members = GeneratedPromoHierarchy.Ungroup(Template, group, Time);
@@ -4902,6 +4911,13 @@
     private static string Label(GeneratedLayer layer) => string.IsNullOrWhiteSpace(layer.Name) ? KindName(layer.Kind) : layer.Name;
 
     // ---- Inspector sections ----
+
+    // What each Up Next line shows with start times on: the time and the show, only the time, or only AM/PM.
+    private Task SetLineShows(GeneratedUpNextOptions options, string shows) => Set(() =>
+    {
+        options.TimeOnly = shows == "time" ? true : null;
+        options.AmPmOnly = shows == "ampm" ? true : null;
+    });
 
     // A time zone to start a new row with: Eastern first, then Pacific, then the next common one not listed yet.
     private static string NextZone(GeneratedUpNextOptions options)
