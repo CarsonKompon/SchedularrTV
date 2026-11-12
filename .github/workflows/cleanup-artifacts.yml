@@ -1,0 +1,44 @@
+name: Clean up artifacts
+
+# Deletes build artifacts left over from earlier runs, which count against the account's Actions storage. Builds keep
+# theirs for a day now and delete them once released (see build.yml), so this mostly clears what older runs left behind
+# (they were kept 90 days). Run it by hand from the Actions tab, and it also runs once a week as a safety net.
+on:
+  workflow_dispatch:
+    inputs:
+      older_than_hours:
+        description: Delete artifacts older than this many hours (0 deletes them all)
+        default: '0'
+  schedule:
+    - cron: '17 4 * * 1'
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      # The weekly run leaves the last day's alone, in case a build is still being released.
+      HOURS: ${{ github.event.inputs.older_than_hours || '24' }}
+    steps:
+      - name: Delete old artifacts
+        run: |
+          cutoff=$(date -u -d "-${HOURS} hours" +%s)
+          # The whole list first: deleting while paging through it would shift the pages and skip some.
+          list=$(gh api "repos/$GH_REPO/actions/artifacts?per_page=100" --paginate \
+                   --jq '.artifacts[] | select(.expired | not) | "\(.id) \(.created_at) \(.size_in_bytes)"')
+          deleted=0
+          freed=0
+          while read -r id created size; do
+            [ -z "$id" ] && continue
+            if [ "$(date -u -d "$created" +%s)" -le "$cutoff" ]; then
+              if gh api -X DELETE "repos/$GH_REPO/actions/artifacts/$id"; then
+                deleted=$((deleted + 1))
+                freed=$((freed + size))
+              fi
+            fi
+          done <<< "$list"
+          echo "Deleted $deleted artifact(s), $((freed / 1048576)) MB."

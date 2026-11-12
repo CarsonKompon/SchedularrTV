@@ -142,6 +142,8 @@ jobs:
           codesign --force --sign - "$app/Contents/MacOS/server/SchedularrTV.Service" || true
           (cd publish && ditto -c -k --sequesterRsrc --keepParent SchedularrTV.app "../${{ env.PREFIX }}-build-${{ matrix.rid }}.zip")
 
+      # Artifacts only carry the builds over to the release job (the release keeps them, and release downloads don't count
+      # against Actions storage), so they're kept a day rather than GitHub's 90, and deleted once released (see below).
       - uses: actions/upload-artifact@v4
         with:
           name: SchedularrTV-${{ matrix.rid }}
@@ -149,6 +151,9 @@ jobs:
             ${{ env.PREFIX }}-build-${{ matrix.rid }}.zip
             ${{ env.PREFIX }}-build-${{ matrix.rid }}.tar.gz
           if-no-files-found: error
+          retention-days: 1
+          # Already compressed: zipping them again only takes time.
+          compression-level: 0
 
   # The optional plugins (Generated promos, the voices, web page channels…) aren't in the main download. Each is zipped on its own,
   # plus one zip of all of them that the Plugins page installs in one go. They're framework-dependent, so one build
@@ -192,6 +197,8 @@ jobs:
           name: SchedularrTV-plugins
           path: zips/*.zip
           if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
   release:
     needs: [build, plugins]
@@ -203,6 +210,8 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write
+      # To delete this run's artifacts once they're in the release.
+      actions: write
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -251,3 +260,10 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
           fi
+
+      # The builds are in the release now, so this run's copies of them only use up Actions storage.
+      - name: Delete this run's artifacts
+        if: success()
+        run: |
+          gh api "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID/artifacts" --paginate --jq '.artifacts[].id' |
+            while read -r id; do gh api -X DELETE "repos/$GH_REPO/actions/artifacts/$id" || true; done
