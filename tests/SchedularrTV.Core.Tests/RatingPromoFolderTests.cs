@@ -1,5 +1,6 @@
 using SchedularrTV.Core.Configuration;
 using SchedularrTV.Core.Media;
+using SchedularrTV.Core.Ordering;
 using SchedularrTV.Core.Scheduling;
 using SchedularrTV.Core.Temporal;
 using Xunit;

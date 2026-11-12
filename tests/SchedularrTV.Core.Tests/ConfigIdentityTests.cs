@@ -66,7 +66,7 @@ public sealed class ConfigIdentityTests
         List<GeneratedVoiceEntry> takes = config.Settings.GeneratedPromosVoicePacks[0].Phrases[0].Entries;
         Assert.Equal(GeneratedVoiceKeys.Channel("boomerang"), takes[0].Key);
         Assert.Equal(GeneratedVoiceKeys.Block("boomerang", "Mornings"), takes[1].Key);
-        Assert.Empty(SchedulerConfigLoader.Validate(config).Errors.Where(error => error.Contains("there is no channel")));
+        Assert.DoesNotContain(SchedulerConfigLoader.Validate(config).Errors, error => error.Contains("there is no channel"));
     }
 
     [Fact]
