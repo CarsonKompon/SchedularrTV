@@ -265,7 +265,13 @@ public sealed class ScheduleProgressTests
             cancellation.Cancel();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => queued);
             Assert.True(fixture.Coordinator.IsBuilding);
-            Assert.Equal(progress, fixture.Coordinator.Progress);
+            // The active build's progress is still there, untouched by the cancelled one. Its channels are planned side
+            // by side, so which of them it's naming can move on meanwhile ("First", then "Second +1 more" as the other
+            // starts); how far it's got can't, while the library holds both.
+            ScheduleRebuildProgress? now = fixture.Coordinator.Progress;
+            Assert.NotNull(now);
+            Assert.Equal((progress.CompletedChannels, progress.TotalChannels, progress.Stage, progress.Percent),
+                (now.CompletedChannels, now.TotalChannels, now.Stage, now.Percent));
         }
         finally
         {
